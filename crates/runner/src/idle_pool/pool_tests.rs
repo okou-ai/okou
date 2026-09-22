@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::ids::RunId;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
-use crate::types::{HeldSandboxState, ReusableSandboxState};
+use runner_types::ids::RunId;
+use runner_types::types::{HeldSandboxState, ReusableSandboxState};
 
 use super::test_support::ParkedIdleCandidateBuilder;
 use super::*;

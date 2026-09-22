@@ -13,7 +13,7 @@ use super::{
     Command, Entry, Input,
     protocol::{Effects, Program, Rejection, Response, Start, State},
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(super) async fn run(
     runtime: Arc<SshRuntime>,

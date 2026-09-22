@@ -217,7 +217,7 @@ fn validate_target(host: &str, port: u16) -> Result<(), FailureReason> {
             Err(FailureReason::UnsafeDestination)
         };
     }
-    if crate::firewall_hostname_policy::is_ipv4_literal_like(host.trim_end_matches('.'))
+    if runner_types::firewall_hostname_policy::is_ipv4_literal_like(host.trim_end_matches('.'))
         || host.split('.').any(|label| {
             label.is_empty()
                 || label.len() > 63

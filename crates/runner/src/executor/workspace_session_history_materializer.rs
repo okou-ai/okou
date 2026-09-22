@@ -18,10 +18,10 @@ use super::session_history_cpu::{SessionHistoryCpuJob, SessionHistoryCpuPool};
 use super::session_restore::MaterializedResumeSession;
 use crate::error::{RunnerError, RunnerResult};
 use crate::telemetry::WorkspaceSessionHistoryTelemetry;
-use crate::types::ResumeSession;
 use crate::workspace_image_cache::{
     WorkspaceSessionHistorySidecar, WorkspaceSessionHistorySidecarRepresentation,
 };
+use runner_types::types::ResumeSession;
 
 /// Owns prestarted file read and bounded CPU work for one workspace sidecar.
 pub(crate) struct WorkspaceSessionHistoryMaterializer {

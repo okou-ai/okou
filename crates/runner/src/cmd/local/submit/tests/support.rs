@@ -4,9 +4,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use super::super::{SubmitArgs, SubmitQueueEntry, run_submit_with_home};
-use crate::ids::RunId;
 use crate::local_queue::{self, JobRequest, JobResponse};
 use crate::paths::HomePaths;
+use runner_types::ids::RunId;
 
 pub(super) const TEST_SUBMIT_RENDEZVOUS_TIMEOUT: Duration = Duration::from_secs(5);
 const TEST_SUBMIT_QUEUE_POLL_INTERVAL: Duration = Duration::from_millis(1);

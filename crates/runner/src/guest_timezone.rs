@@ -1,4 +1,4 @@
-use crate::types::ExecutionContext;
+use runner_types::types::ExecutionContext;
 
 pub(crate) const DEFAULT_GUEST_TIMEZONE: &str = "UTC";
 

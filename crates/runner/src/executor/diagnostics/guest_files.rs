@@ -5,7 +5,7 @@ use tracing::warn;
 
 use super::super::session_id::invalid_session_id_diagnostic_preview;
 use super::super::{SMALL_GUEST_FILE_MAX_BYTES, guest_runtime_path};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(in crate::executor) async fn read_guest_error_file(
     sandbox: &dyn Sandbox,

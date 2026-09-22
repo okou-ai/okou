@@ -19,8 +19,8 @@ use super::env::validate_resume_session_id;
 use super::{RunnerError, RunnerResult};
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::telemetry::{HistoryCodecDecision, HistoryTransferMeasurements};
-use crate::types::{ExecutionContext, ResumeSessionHistoryRefKind, SandboxReuseResult};
 use api_contracts::generated::constants::runners::paths::CANONICAL_PI_SESSION_DIR;
+use runner_types::types::{ExecutionContext, ResumeSessionHistoryRefKind, SandboxReuseResult};
 
 const CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR: &str =
     "/home/user/.claude/projects/-home-user-workspace";

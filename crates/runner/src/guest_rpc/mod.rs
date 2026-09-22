@@ -14,7 +14,9 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::{ids::RunId, run_usage, ssh, types::ExecutionContext, vnc};
+use runner_types::{ids::RunId, types::ExecutionContext};
+
+use crate::{run_usage, ssh, vnc};
 
 const RUN_REQUEST_CAPACITY: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);

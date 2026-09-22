@@ -46,7 +46,7 @@ use guest_contracts::storage_manifest as wire;
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
-use crate::storage_manifest::StorageManifest;
+use runner_types::storage_manifest::StorageManifest;
 
 const AGENT_INSTRUCTIONS_STORAGE_NAME_PREFIX: &str = "agent-instructions@";
 

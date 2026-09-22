@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{ActiveJobsError, RunnerError, RunnerResult};
-use crate::ids::RunId;
 use crate::paths::HomePaths;
 use crate::status_file::{self, StatusFileReadError, StatusForGate};
+use runner_types::ids::RunId;
 use tracing::info;
 
 use super::diagnostic::status_field_preview;
@@ -592,7 +592,9 @@ exit 2
             started_at: chrono::DateTime::parse_from_rfc3339("2026-04-13T00:00:00.000Z")
                 .unwrap()
                 .with_timezone(&chrono::Utc),
-            run_ids: (0..run_count).map(|_| RunId::nil()).collect(),
+            run_ids: (0..run_count)
+                .map(|_| RunId::from(uuid::Uuid::nil()))
+                .collect(),
             uptime: std::time::Duration::from_secs(600),
         }
     }

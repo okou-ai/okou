@@ -6,8 +6,8 @@ use tokio::fs;
 use tracing::info;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
 use crate::storage_fingerprints::StorageFingerprints;
+use runner_types::ids::RunId;
 
 use super::fs::{
     allocated_bytes, remove_workspace_cache_path_if_exists, secure_workspace_cache_publication_file,

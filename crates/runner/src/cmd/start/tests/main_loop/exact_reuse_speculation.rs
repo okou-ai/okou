@@ -18,7 +18,7 @@ use tracing_test_support::CapturedEvents;
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use crate::provider::{ActiveRunnerPreference, JobCandidate, RunnerPreferenceTier};
-use crate::types::{ExecutionContext, SandboxReuseResult};
+use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 fn exact_generation_candidate(
     run_id: RunId,

@@ -8,9 +8,9 @@ use tracing::{info, warn};
 
 use super::idle_lifecycle::SharedIdlePool;
 use super::ownership::{OwnershipTransitions, RunSandbox};
-use crate::ids::RunId;
 use crate::process;
 use crate::status::StatusTracker;
+use runner_types::ids::RunId;
 
 const ORPHANED_ACTIVE_RUN_ABSENT_SCANS_BEFORE_REMOVE: u8 = 2;
 

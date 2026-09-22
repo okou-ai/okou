@@ -29,9 +29,9 @@ use super::super::{SshRuntime, network::Network};
 use crate::guest_rpc::{Run as RpcRun, Runtime as RpcRuntime};
 use crate::{
     http::{HttpClient, HttpClientConfig},
-    ids::RunId,
     runner_process_identity::RunnerProcessIdentity,
 };
+use runner_types::ids::RunId;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 pub(super) const TOKEN: &str = "vm0_official_test-only";

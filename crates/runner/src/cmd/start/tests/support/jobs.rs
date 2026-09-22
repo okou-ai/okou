@@ -4,7 +4,7 @@ use super::wait::assert_run_exits_within;
 use crate::provider::JobCandidate;
 use crate::test_fixtures::execution_context::execution_context_for_test;
 
-pub(in super::super) fn minimal_context(run_id: RunId) -> crate::types::ExecutionContext {
+pub(in super::super) fn minimal_context(run_id: RunId) -> runner_types::types::ExecutionContext {
     execution_context_for_test(run_id)
 }
 
@@ -13,7 +13,7 @@ pub(in super::super) fn push_job(
     env: &MockRunEnv,
     run_id: RunId,
     profile: &str,
-    ctx: Option<crate::types::ExecutionContext>,
+    ctx: Option<runner_types::types::ExecutionContext>,
 ) {
     let reuse_key = ctx.as_ref().and_then(|context| context.reuse_key.clone());
     env.provider.set_claim_result(run_id, ctx);
@@ -42,10 +42,10 @@ pub(in super::super) async fn shutdown(
 pub(in super::super) fn context_with_session(
     run_id: RunId,
     session_id: &str,
-) -> crate::types::ExecutionContext {
+) -> runner_types::types::ExecutionContext {
     let mut ctx = minimal_context(run_id);
     ctx.reuse_key = Some(session_id.into());
-    ctx.resume_session = Some(crate::types::ResumeSession::inline(
+    ctx.resume_session = Some(runner_types::types::ResumeSession::inline(
         session_id.into(),
         String::new(),
     ));

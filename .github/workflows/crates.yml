@@ -575,7 +575,7 @@ jobs:
 
       - name: Check runner firewall base URL contract
         working-directory: crates
-        run: cargo test -p runner types::tests::firewall_base_url_validation_matches_shared_contract -- --exact
+        run: cargo test -p runner-types --test firewall_base_url_contract firewall_base_url_validation_matches_shared_contract -- --exact
 
       - name: Report peak memory
         if: always()

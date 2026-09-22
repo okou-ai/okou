@@ -43,15 +43,15 @@ use super::support::{
     seed_workspace_image_cache_with_fingerprints, seed_workspace_image_cache_with_sidecar,
     test_budget_lease, test_device_rate_limits, test_executor_config, test_telemetry,
 };
-use crate::ids::RunId;
 use crate::paths::{RunnerPaths, scoped_workspace_image_cache_key};
-use crate::storage_manifest::StorageManifest;
-use crate::types::{
-    ConnectorRuntimeTargetRegistration, FirewallEntry, ResumeSession, SandboxReuseResult,
-};
 use crate::workspace_image_cache::{
     WorkspaceCacheCheckoutResult, WorkspaceCacheTerminalStatus, WorkspaceImageCache,
     WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
+};
+use runner_types::ids::RunId;
+use runner_types::storage_manifest::StorageManifest;
+use runner_types::types::{
+    ConnectorRuntimeTargetRegistration, FirewallEntry, ResumeSession, SandboxReuseResult,
 };
 use tracing::Level;
 use tracing_subscriber::prelude::*;
@@ -78,7 +78,7 @@ fn storage_archive(content: &[u8]) -> Vec<u8> {
     tar.into_inner().unwrap().finish().unwrap()
 }
 
-fn codex_oauth_context() -> crate::types::ExecutionContext {
+fn codex_oauth_context() -> runner_types::types::ExecutionContext {
     let mut context = minimal_context();
     context.cli_agent_type = "codex".into();
     context.encrypted_secrets = Some("encrypted".into());

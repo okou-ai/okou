@@ -11,9 +11,9 @@ use crate::executor::tests::support::{
     CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox, minimal_context,
     test_executor_config, test_telemetry,
 };
-use crate::ids::RunId;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
-use crate::types::SandboxReuseResult;
+use runner_types::ids::RunId;
+use runner_types::types::SandboxReuseResult;
 
 // Real HTTP I/O must make progress without advancing the paused retry clock.
 // A wall-clock watchdog also bounds assertions when Tokio time is frozen.
@@ -136,7 +136,7 @@ async fn exercise_read_backoff(run_id: RunId, cancel_while_waiting: bool) -> Dur
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -268,7 +268,7 @@ async fn run_in_sandbox_spaces_failed_api_reads_on_the_wire() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,

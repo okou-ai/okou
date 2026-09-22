@@ -26,8 +26,8 @@ use super::{
     cache::{Access, Registration},
     io::GuestIo,
 };
-use crate::ids::RunId;
 use protocol::{Effects, Info, Rejection, Response, State};
+use runner_types::ids::RunId;
 
 const CAPACITY: usize = 8;
 const FORWARDING_CAPACITY: usize = 2;

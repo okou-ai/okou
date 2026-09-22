@@ -6,7 +6,7 @@ use super::super::support::{
     wait_status_idle_empty_with_active_run,
 };
 
-use crate::types::SandboxReuseResult;
+use runner_types::types::SandboxReuseResult;
 
 // -----------------------------------------------------------------------
 // Test 12: Park notification triggers immediate heartbeat

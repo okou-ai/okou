@@ -15,7 +15,7 @@ use super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
 use crate::paths::guest;
 use crate::storage_cache::decoded::CachedFiles;
-use crate::types::ExecutionContext;
+use runner_types::types::ExecutionContext;
 
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 

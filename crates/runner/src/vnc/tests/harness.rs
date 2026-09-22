@@ -26,9 +26,9 @@ use super::{
 use crate::{
     guest_rpc::{Run as RpcRun, Runtime},
     http::{HttpClient, HttpClientConfig},
-    ids::RunId,
     runner_process_identity::RunnerProcessIdentity,
 };
+use runner_types::ids::RunId;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 const TOKEN: &str = "vm0_official_vnc-test";

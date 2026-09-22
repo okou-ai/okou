@@ -5,7 +5,7 @@ use super::super::support::{
 };
 use super::blank_session_history::history_context;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
-use crate::types::{FirewallEntry, SandboxReuseResult};
+use runner_types::types::{FirewallEntry, SandboxReuseResult};
 use sandbox::{SandboxError, SandboxOperation, SandboxOperationTimeoutStage};
 use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 use tokio::sync::oneshot;

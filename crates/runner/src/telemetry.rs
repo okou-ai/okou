@@ -14,9 +14,9 @@ use crate::archive_connection_attempt::ArchiveConnectionAttempt;
 use crate::duration::duration_ms;
 use crate::error::{ApiFailureKind, RunnerError};
 use crate::http::HttpClient;
-use crate::ids::RunId;
 use crate::resource_budget::ResourceBudget;
-use crate::types::SandboxReuseResult;
+use runner_types::ids::RunId;
+use runner_types::types::SandboxReuseResult;
 pub(crate) use session_history::{
     SessionHistoryCacheProbeMetadata, SessionHistoryContentEncodingState,
     SessionHistoryContentLengthState, SessionHistoryResponseTelemetryMetadata,
@@ -1045,7 +1045,7 @@ mod tests {
 
     use crate::http::HttpClientConfig;
     use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
-    use crate::types::{
+    use runner_types::types::{
         ResumeSessionHistoryDownloadSource, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
         ResumeSessionHistoryRefKind,
     };
@@ -1131,7 +1131,12 @@ mod tests {
 
     #[test]
     fn bounded_outcome_serializes_fixed_dimensions() {
-        let mut telemetry = JobTelemetry::new(http_client(), RunId::nil(), "tok".to_string(), None);
+        let mut telemetry = JobTelemetry::new(
+            http_client(),
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
         telemetry.record_bounded_outcome(
             "storage_cache_fresh_delivery_scan_groups",
             true,
@@ -1172,7 +1177,7 @@ mod tests {
             .await;
         let mut telemetry = JobTelemetry::new(
             http_client_for_api_url(&server.base_url()),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             None,
         );
@@ -1190,7 +1195,12 @@ mod tests {
 
     #[test]
     fn api_startup_boundaries_serialize_bounded_startup_metadata() {
-        let mut telemetry = JobTelemetry::new(http_client(), RunId::nil(), "tok".to_string(), None);
+        let mut telemetry = JobTelemetry::new(
+            http_client(),
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
         let budget = Arc::new(ResourceBudget::new(4, 400, 1.0, 0));
         let _lease = ResourceBudget::try_reserve_lease(&budget, 2, 300).unwrap();
         let mut attribution =
@@ -1270,7 +1280,7 @@ mod tests {
             .await;
         let mut telemetry = JobTelemetry::new(
             http_client_for_api_url(&server.base_url()),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "tok".into(),
             None,
         );
@@ -1455,7 +1465,12 @@ mod tests {
     #[test]
     fn new_creates_empty_telemetry() {
         let http = http_client();
-        let telemetry = JobTelemetry::new(http, RunId::nil(), "tok".to_string(), None);
+        let telemetry = JobTelemetry::new(
+            http,
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
         assert!(telemetry.pending_ops.is_empty());
         assert!(telemetry.oldest_pending.is_none());
         assert!(telemetry.in_flight_flushes.is_empty());
@@ -1464,7 +1479,12 @@ mod tests {
     #[test]
     fn record_buffers_ops() {
         let http = http_client();
-        let mut telemetry = JobTelemetry::new(http, RunId::nil(), "tok".to_string(), None);
+        let mut telemetry = JobTelemetry::new(
+            http,
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
 
         telemetry.record("sandbox_create", Duration::from_millis(500), true, None);
         telemetry.record(
@@ -1488,7 +1508,12 @@ mod tests {
     #[test]
     fn record_with_session_history_metadata_buffers_low_cardinality_buckets() {
         let http = http_client();
-        let mut telemetry = JobTelemetry::new(http, RunId::nil(), "tok".to_string(), None);
+        let mut telemetry = JobTelemetry::new(
+            http,
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
         let metadata = session_history_metadata()
             .with_cache_probe(SessionHistoryCacheProbeMetadata::new(false, true))
             .with_response(SessionHistoryResponseTelemetryMetadata::new(
@@ -1519,7 +1544,12 @@ mod tests {
     #[test]
     fn record_saturates_large_duration() {
         let http = http_client();
-        let mut telemetry = JobTelemetry::new(http, RunId::nil(), "tok".to_string(), None);
+        let mut telemetry = JobTelemetry::new(
+            http,
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
 
         telemetry.record("huge_op", Duration::MAX, true, None);
 
@@ -1530,7 +1560,12 @@ mod tests {
     #[tokio::test]
     async fn record_within_threshold_does_not_flush() {
         let http = http_client();
-        let mut telemetry = JobTelemetry::new(http, RunId::nil(), "tok".to_string(), None);
+        let mut telemetry = JobTelemetry::new(
+            http,
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
 
         telemetry.record("op1", Duration::from_millis(10), true, None);
         telemetry.record("op2", Duration::from_millis(10), true, None);
@@ -1559,7 +1594,7 @@ mod tests {
             .await;
         let mut telemetry = JobTelemetry::new(
             http_client_for_api_url(&server.base_url()),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             Some("prod-1.aws.vm3.ai".to_string()),
         );
@@ -1588,7 +1623,7 @@ mod tests {
         .await;
         let mut telemetry = JobTelemetry::new(
             http_client_for_api_url(&receiver.url()),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             None,
         );
@@ -1643,7 +1678,12 @@ mod tests {
     #[tokio::test]
     async fn auto_flush_triggers_after_threshold() {
         let http = http_client();
-        let mut telemetry = JobTelemetry::new(http, RunId::nil(), "tok".to_string(), None);
+        let mut telemetry = JobTelemetry::new(
+            http,
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
 
         telemetry.record("op1", Duration::from_millis(10), true, None);
         assert_eq!(telemetry.pending_ops_snapshot().len(), 1);
@@ -1681,7 +1721,7 @@ mod tests {
         let http = http_client_for_api_url(&api_url);
         let mut telemetry = JobTelemetry::new(
             http,
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             Some("prod-1.aws.vm3.ai".to_string()),
         );
@@ -1739,7 +1779,7 @@ mod tests {
 
         let telemetry = JobTelemetry::new(
             http_client_for_api_url(&api_url),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             None,
         );
@@ -1780,7 +1820,7 @@ mod tests {
         let evidence = oom_evidence_for_test();
         let telemetry = JobTelemetry::new(
             http_client_for_api_url(&server.url()),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "oom-evidence-token-secret".to_string(),
             None,
         );
@@ -1821,7 +1861,7 @@ mod tests {
 
         send_telemetry(
             &http_client_for_api_url(&api_url),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "telemetry-sensitive-token",
             None,
             vec![sandbox_op(
@@ -1869,7 +1909,7 @@ mod tests {
 
         let telemetry = JobTelemetry::new(
             http_client_for_api_url(&api_url),
-            RunId::nil(),
+            RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             Some("prod-1.aws.vm3.ai".to_string()),
         );

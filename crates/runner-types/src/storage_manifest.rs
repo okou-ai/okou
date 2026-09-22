@@ -6,33 +6,33 @@ use api_contracts::generated::types::runners::storage::{
 use serde::Deserialize;
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct StorageManifest {
-    pub(crate) storages: Vec<StorageEntry>,
-    pub(crate) artifacts: Vec<ArtifactEntry>,
+pub struct StorageManifest {
+    pub storages: Vec<StorageEntry>,
+    pub artifacts: Vec<ArtifactEntry>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct StorageEntry {
-    pub(crate) name: String,
-    pub(crate) mount_path: String,
-    pub(crate) vas_storage_name: String,
-    pub(crate) vas_version_id: String,
-    pub(crate) baseline_candidate: bool,
-    pub(crate) instructions_target_filename: Option<String>,
-    pub(crate) archive_url: String,
-    pub(crate) archive_size: Option<u64>,
+pub struct StorageEntry {
+    pub name: String,
+    pub mount_path: String,
+    pub vas_storage_name: String,
+    pub vas_version_id: String,
+    pub baseline_candidate: bool,
+    pub instructions_target_filename: Option<String>,
+    pub archive_url: String,
+    pub archive_size: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ArtifactEntry {
-    pub(crate) mount_path: String,
-    pub(crate) vas_storage_name: String,
-    pub(crate) vas_storage_id: String,
-    pub(crate) vas_version_id: String,
-    pub(crate) archive_url: Option<String>,
-    pub(crate) archive_size: Option<u64>,
-    pub(crate) empty: Option<bool>,
-    pub(crate) missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
+pub struct ArtifactEntry {
+    pub mount_path: String,
+    pub vas_storage_name: String,
+    pub vas_storage_id: String,
+    pub vas_version_id: String,
+    pub archive_url: Option<String>,
+    pub archive_size: Option<u64>,
+    pub empty: Option<bool>,
+    pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,
 }
 
 #[derive(Deserialize)]

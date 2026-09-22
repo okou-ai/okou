@@ -36,10 +36,10 @@ use super::connector_runtime_sync::ConnectorRuntimeSyncHandle;
 use super::{RunnerPreferenceContext, parse_runner_preference};
 use crate::active_input::ActiveInputNotifications;
 use crate::duration::duration_ms;
-use crate::ids::RunId;
 use crate::retry::{RetryState, recv_retry, sleep_until_retry};
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
-use crate::types::ConnectorRuntimeTarget;
+use runner_types::ids::RunId;
+use runner_types::types::ConnectorRuntimeTarget;
 
 const ABLY_BACKOFF_INITIAL: Duration = Duration::from_secs(5);
 const ABLY_BACKOFF_MAX: Duration = Duration::from_secs(60);

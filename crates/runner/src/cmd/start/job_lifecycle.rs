@@ -6,10 +6,10 @@ use api_contracts::generated::types::webhooks::agent::complete::RequestFailureRe
 use chrono::{DateTime, Utc};
 use sandbox::SandboxId;
 
-use crate::ids::RunId;
 use crate::provider::{CompletionAuth, JobProvider};
 use crate::resource_budget::BudgetLease;
-use crate::types::{CompleteRequest, SandboxReuseResult, WorkspaceReuseResult};
+use runner_types::ids::RunId;
+use runner_types::types::{CompleteRequest, SandboxReuseResult, WorkspaceReuseResult};
 
 use super::ownership::{OwnershipTransitions, RunSandbox};
 
@@ -286,11 +286,11 @@ mod tests {
     use async_trait::async_trait;
     use sandbox::SandboxId;
 
-    use crate::ids::RunId;
     use crate::provider::{ClaimedJob, JobCandidate, JobProvider};
     use crate::resource_budget::{BudgetLease, ResourceBudget};
     use crate::status::StatusTracker;
-    use crate::types::{HeartbeatState, SandboxReuseResult};
+    use runner_types::ids::RunId;
+    use runner_types::types::{HeartbeatState, SandboxReuseResult};
 
     use super::super::ownership::OwnershipTransitions;
 

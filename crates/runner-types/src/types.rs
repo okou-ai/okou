@@ -12,11 +12,11 @@ use crate::firewall_hostname_policy::{raw_host_from_authority, raw_url_authority
 use crate::ids::RunId;
 use crate::storage_manifest::StorageManifest;
 
-pub(crate) const MAX_HELD_SANDBOX_STATES: usize = 1024;
-pub(crate) const MAX_HELD_WORKSPACE_STATES: usize = 1024;
-pub(crate) const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
-pub(crate) const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
-pub(crate) const WORKSPACE_AFFINITY_VERSION: u8 = 1;
+pub const MAX_HELD_SANDBOX_STATES: usize = 1024;
+pub const MAX_HELD_WORKSPACE_STATES: usize = 1024;
+pub const MAX_WORKSPACE_CACHES_PER_REUSE_KEY: usize = 8;
+pub const MAX_WORKSPACE_CACHES_PER_HEARTBEAT: usize = 1024;
+pub const WORKSPACE_AFFINITY_VERSION: u8 = 1;
 
 fn is_false(value: &bool) -> bool {
     !*value
@@ -45,7 +45,7 @@ pub struct Job {
     pub runner_preference: Option<serde_json::Value>,
 }
 
-pub(crate) fn reuse_key_kind(reuse_key: &str) -> &'static str {
+pub fn reuse_key_kind(reuse_key: &str) -> &'static str {
     if reuse_key.starts_with("thread:") {
         "thread"
     } else {
@@ -54,7 +54,7 @@ pub(crate) fn reuse_key_kind(reuse_key: &str) -> &'static str {
 }
 
 impl Job {
-    pub(crate) fn reuse_key(&self) -> Option<&str> {
+    pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
     }
 }
@@ -84,7 +84,7 @@ pub struct ExecutionContext {
     pub vars: Option<HashMap<String, String>>,
     pub sandbox_token: String,
     #[serde(default)]
-    pub(crate) storage_manifest: Option<StorageManifest>,
+    pub storage_manifest: Option<StorageManifest>,
     #[serde(default)]
     pub environment: Option<HashMap<String, String>>,
     /// Trusted API-authored agent environment.
@@ -215,7 +215,7 @@ impl Firewall {
     /// schema, and payload, then owns base-variable resolution, final
     /// credentialed-destination and host-policy checks, matcher compilation,
     /// and request-time enforcement.
-    pub(crate) fn validate_for_cache(&self) -> Result<(), String> {
+    pub fn validate_for_cache(&self) -> Result<(), String> {
         self.validate_shape()?;
         for (index, api) in self.apis.iter().enumerate() {
             api.validate_for_cache()
@@ -224,7 +224,7 @@ impl Firewall {
         Ok(())
     }
 
-    pub(crate) fn validate_for_connector_runtime(&self) -> Result<(), String> {
+    pub fn validate_for_connector_runtime(&self) -> Result<(), String> {
         self.validate_shape()?;
         let mut api_ids = HashSet::new();
         for (index, api) in self.apis.iter().enumerate() {
@@ -1336,7 +1336,7 @@ pub enum ConnectorRuntimeTargetRegistration {
 }
 
 impl ConnectorRuntimeTargetRegistration {
-    pub(crate) fn target(&self) -> ConnectorRuntimeTarget {
+    pub fn target(&self) -> ConnectorRuntimeTarget {
         match self {
             Self::Builtin { connector_slug, .. } => ConnectorRuntimeTarget::Builtin {
                 connector_slug: connector_slug.clone(),
@@ -1350,14 +1350,14 @@ impl ConnectorRuntimeTargetRegistration {
         }
     }
 
-    pub(crate) fn custom_base_url_vars(&self) -> Option<&HashMap<String, String>> {
+    pub fn custom_base_url_vars(&self) -> Option<&HashMap<String, String>> {
         match self {
             Self::Custom { base_url_vars, .. } => Some(base_url_vars),
             Self::Builtin { .. } => None,
         }
     }
 
-    pub(crate) fn source_id(&self) -> Option<&str> {
+    pub fn source_id(&self) -> Option<&str> {
         match self {
             Self::Builtin { source_id, .. } | Self::Custom { source_id, .. } => {
                 source_id.as_deref()
@@ -1367,7 +1367,7 @@ impl ConnectorRuntimeTargetRegistration {
 }
 
 impl ConnectorRuntimeTarget {
-    pub(crate) fn log_identity(&self) -> String {
+    pub fn log_identity(&self) -> String {
         match self {
             Self::Builtin { connector_slug } => format!("builtin:{connector_slug}"),
             Self::Custom {
@@ -1537,7 +1537,7 @@ where
 }
 
 impl ExecutionContext {
-    pub(crate) fn reuse_key(&self) -> Option<&str> {
+    pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
     }
 
@@ -1775,31 +1775,6 @@ impl WorkspaceReuseResult {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn firewall_base_url_validation_matches_shared_contract() {
-        let mismatches: Vec<String> =
-            crate::test_fixtures::firewall_base_url_contract::firewall_base_url_validation_cases()
-                .into_iter()
-                .filter_map(|test_case| {
-                    let result = validate_firewall_base_for_cache(&test_case.base);
-                    (result.is_ok() != test_case.expected_valid).then(|| {
-                        format!(
-                            "shared case {:?} produced unexpected result for {:?}: {:?}",
-                            test_case.name,
-                            test_case.base,
-                            result.err()
-                        )
-                    })
-                })
-                .collect();
-
-        assert!(
-            mismatches.is_empty(),
-            "firewall base URL contract mismatches:\n{}",
-            mismatches.join("\n")
-        );
-    }
 
     #[test]
     fn raw_url_path_does_not_treat_query_or_fragment_content_as_path() {

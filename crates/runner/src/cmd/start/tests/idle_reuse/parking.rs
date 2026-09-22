@@ -6,7 +6,7 @@ use super::super::support::{
     wait_status_idle_empty_with_active_run, wait_status_idle_reuse_keys_and_active_runs,
 };
 
-use crate::types::SandboxReuseResult;
+use runner_types::types::SandboxReuseResult;
 
 // -----------------------------------------------------------------------
 // Test 9: idle pool park/take is gated on reuse-key availability.
@@ -15,11 +15,11 @@ use crate::types::SandboxReuseResult;
 fn context_with_session_opt(
     run_id: RunId,
     session_id: Option<&str>,
-) -> crate::types::ExecutionContext {
+) -> runner_types::types::ExecutionContext {
     let mut ctx = minimal_context(run_id);
     if let Some(sid) = session_id {
         ctx.reuse_key = Some(format!("thread:idle-{sid}"));
-        ctx.resume_session = Some(crate::types::ResumeSession::inline(
+        ctx.resume_session = Some(runner_types::types::ResumeSession::inline(
             sid.to_string(),
             String::new(),
         ));

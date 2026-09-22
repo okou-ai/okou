@@ -6,7 +6,7 @@ use sandbox::SandboxFinalExecParkHandoff;
 use tokio::sync::{Notify, oneshot, watch};
 
 use crate::idle_pool::{FinalizingHandoffCandidate, IdleParkCandidate};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 #[derive(Clone)]
 pub(super) struct ActiveRuns {
