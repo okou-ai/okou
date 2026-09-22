@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ACCOUNT_OWNERSHIP_INVENTORY,
+  NON_OWNERSHIP_COLUMNS,
   applicationOwnershipTables,
   assertOwnershipInventoryCoverage,
   userOwnedErasureRoots,
@@ -125,6 +126,77 @@ describe("account erasure ownership coverage guard", () => {
     expect(tables).toContain("user_connectors");
     expect(tables).toContain("archived_task_runs");
     expect(roots).toContainEqual({ table: "agents", ownership: ["owner"] });
+  });
+
+  it("refuses to sweep a provider identity as if it were the account", () => {
+    // `sender_user_id` holds a Slack, Teams or Telegram identity. It is `text`,
+    // exactly like a Clerk id, so a sweep comparing the subject against it
+    // parses cleanly, matches nothing, and reports the table clean while every
+    // row stays — worse than an uncovered table, which fails loudly.
+    expect(NON_OWNERSHIP_COLUMNS.chat_slack_context).toStrictEqual({
+      sender_user_id: "provider_identity",
+    });
+    expect(NON_OWNERSHIP_COLUMNS.chat_teams_context).toStrictEqual({
+      sender_user_id: "provider_identity",
+    });
+    expect(NON_OWNERSHIP_COLUMNS.chat_telegram_context).toStrictEqual({
+      sender_user_id: "provider_identity",
+      user_link_id: "covered_by_parent",
+    });
+    expect(NON_OWNERSHIP_COLUMNS.telegram_messages).toStrictEqual({
+      from_user_id: "provider_identity",
+    });
+
+    const roots = userOwnedErasureRoots().map((root) => {
+      return root.table;
+    });
+    // None of them is a root on a provider identity; the three chat contexts
+    // are reached through the thread instead.
+    expect(roots).not.toContain("chat_slack_context");
+    expect(roots).not.toContain("chat_teams_context");
+    expect(roots).not.toContain("chat_telegram_context");
+    // Telegram messages keep a root, on the account link rather than the
+    // Telegram sender.
+    expect(roots).toContain("telegram_messages");
+    expect(ACCOUNT_OWNERSHIP_INVENTORY.telegram_messages).toStrictEqual({
+      coverage: "user_root",
+      ownership: ["official_user_link_id"],
+    });
+  });
+
+  it("fails when a declared non-ownership column is renamed away", () => {
+    const renamed = schemaTables.map((table) => {
+      return table.name === "chat_slack_context"
+        ? {
+            name: table.name,
+            columns: table.columns.filter((column) => {
+              return column !== "sender_user_id";
+            }),
+          }
+        : table;
+    });
+
+    expect(() => {
+      return assertOwnershipInventoryCoverage(renamed);
+    }).toThrow(
+      "account_erasure_inventory:non_ownership_column_missing:chat_slack_context.sender_user_id",
+    );
+  });
+
+  it("excludes one column, not the whole table", () => {
+    // Declaring `sender_user_id` a provider identity must not exempt
+    // `chat_slack_context` from classification if it gains a real owner.
+    const owned = schemaTables.map((table) => {
+      return table.name === "chat_slack_context"
+        ? { name: table.name, columns: [...table.columns, "user_id"] }
+        : table;
+    });
+
+    expect(() => {
+      return assertOwnershipInventoryCoverage(owned);
+    }).toThrow(
+      "account_erasure_inventory:root_declared_as_descendant:chat_slack_context.user_id",
+    );
   });
 
   it("keeps billing records out of the deletable roots", () => {
