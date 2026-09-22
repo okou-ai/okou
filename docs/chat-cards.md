@@ -134,8 +134,9 @@ whose multiline or unusually long Markdown body cannot fit a notice row. A
 short plain diagnostic is already readable on the card and does not repeat
 itself behind a details button. A known failure resolves in place: reset, retry,
 model, settings, external-service, and new-chat controls stay in the card's
-action slot, while account identity and every exhausted reset window stay in
-separate readable supporting rows. The dialog never owns a recovery action or
+trailing-aligned action slot, with every wrapped action row aligned to that same
+edge. Account identity and every exhausted reset window stay in separate
+readable supporting rows. The dialog never owns a recovery action or
 repeats a known failure's visible copy. Banking keeps its connection polling
 owned by the card even when the dialog is closed. Preserve those action and
 lifecycle owners when adding another state.

@@ -1108,8 +1108,9 @@ test("Recover from a personal model account limit", async () => {
   expect(picker).toBeVisible();
   const actionGroup = picker.parentElement;
   expect(actionGroup).not.toBeNull();
+  expect(actionGroup).toHaveClass("justify-end");
   const actionSlot = actionGroup?.parentElement;
-  expect(actionSlot).toHaveClass("min-h-8");
+  expect(actionSlot).toHaveClass("min-h-8", "justify-end");
   expect(actionSlot).not.toHaveClass("h-[72px]");
   expect(queryButton("Try again", recovery)).toBeNull();
 

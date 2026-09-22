@@ -4793,7 +4793,8 @@ const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
  * only when the controls actually wrap. Reserving a hypothetical second row
  * leaves resolved mobile cards with false bottom padding.
  */
-const ASSISTANT_ERROR_ACTION_SLOT_CLASS = "flex min-h-8 shrink-0 items-center";
+const ASSISTANT_ERROR_ACTION_SLOT_CLASS =
+  "flex min-h-8 shrink-0 items-center justify-end";
 
 function creditsAvailableCopy(): {
   readonly headline: string;
@@ -5269,7 +5270,7 @@ function AssistantRecoveryActions({
     recovery.kind === "output-token-limit";
 
   return (
-    <div className="flex max-w-full flex-wrap items-center gap-2">
+    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
       <AssistantRecoveryModelPicker recovery={recovery} thread={thread} />
       {hasRetryAction && (
         <Button
