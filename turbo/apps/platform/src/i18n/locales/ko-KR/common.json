@@ -5866,7 +5866,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "재설정",
         "resetTimeUnavailable": "재설정 시간 사용 불가",
         "usage": "{{provider}} 사용량",
         "usageRemaining": "{{provider}} {{window}} 남음",
@@ -6202,7 +6201,6 @@
       },
       "reset": {
         "confirmDescription": "현재 사용량 창을 재설정하려면 Codex 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
-        "expiresAt": "가장 빠른 재설정 만료: {{date}}",
         "progress": "재설정 중...",
         "remaining_one": "{{value}}회 재설정 가능",
         "remaining_other": "{{value}}회 재설정 가능",

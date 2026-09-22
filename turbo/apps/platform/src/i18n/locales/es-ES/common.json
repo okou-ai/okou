@@ -5936,7 +5936,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Restablecer",
         "resetTimeUnavailable": "Hora de reinicio no disponible",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{window}} restante de {{provider}}",
@@ -6272,7 +6271,6 @@
       },
       "reset": {
         "confirmDescription": "Usa un restablecimiento de Codex para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
-        "expiresAt": "El restablecimiento más próximo vence {{date}}",
         "progress": "Restableciendo...",
         "remaining_one": "Queda {{value}} restablecimiento",
         "remaining_many": "Quedan {{value}} restablecimientos",
