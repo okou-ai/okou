@@ -7507,6 +7507,16 @@ function assemblePiLaunchResources(args: {
           args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
+        // `requiredPiAgentRuntimeVersion` and `minCliVersion` are deliberately
+        // not written yet. This launch config is persisted in the encrypted
+        // queue payload and decoded by whichever API instance serves the claim,
+        // and `piApiFirstTurnConfigSchema` is strict, so the previous release
+        // rejects a payload carrying them. Surface: API -> API during the
+        // rolling deploy and every retained rollback target. Start writing them
+        // once this release is deployed fleet-wide and outside the rollback
+        // window; until then a launch config without the fields keeps the
+        // commit-addressed `npx` launch, which is this PR's behaviour anyway.
+        // Follow-up: #35967 (PR 2, together with the `npx` removal).
       },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined

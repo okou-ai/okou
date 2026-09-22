@@ -51,6 +51,7 @@ use crate::error::{
 use crate::http::{ApiRequestBuilder, HttpClient};
 use crate::run_cancellation::RunCancellationRegistry;
 use crate::runner_process_identity::RunnerProcessIdentity;
+use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
 use runner_types::ids::RunId;
 use runner_types::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
@@ -71,6 +72,10 @@ struct ClaimRequestBody<'a> {
     runner_hostname: Option<&'a str>,
     capabilities: RunnerClaimCapabilities,
     telemetry: ClaimRequestTelemetry,
+    /// Versions of the Okou CLI installed in this runner's rootfs. Older APIs
+    /// strip the field; a runner without an installed CLI omits it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    installed_versions: Option<&'a OkouCliVersions>,
 }
 
 #[derive(Serialize)]
@@ -332,6 +337,8 @@ pub struct ApiProvider {
     api: ApiClient,
     runner_identity: RunnerProcessIdentity,
     runner_hostname: Option<String>,
+    /// Okou CLI installed into every configured rootfs, advertised at claim.
+    installed_okou_cli: Option<InstalledOkouCli>,
     group: String,
     /// Profile names this runner supports (e.g., ["vm0/default"]).
     /// Sent in poll requests so the server only returns jobs this runner can handle.
@@ -367,6 +374,7 @@ pub struct ApiProviderConfig {
     pub(crate) runner_hostname: Option<String>,
     pub group: String,
     pub supported_profiles: Vec<String>,
+    pub(crate) installed_okou_cli: Option<InstalledOkouCli>,
 }
 
 impl ApiProvider {
@@ -385,6 +393,7 @@ impl ApiProvider {
             runner_hostname,
             group,
             supported_profiles,
+            installed_okou_cli,
         } = config;
         let cancellation_reconciliation =
             CancellationReconciliation::new(http.clone(), group.clone(), runner_identity);
@@ -406,6 +415,7 @@ impl ApiProvider {
             api,
             runner_identity,
             runner_hostname,
+            installed_okou_cli,
             group,
             supported_profiles,
             poll_wakeups,
@@ -814,6 +824,9 @@ impl JobProvider for ApiProvider {
                 &candidate,
                 &self.runner_identity,
                 self.runner_hostname.as_deref(),
+                self.installed_okou_cli
+                    .as_ref()
+                    .map(|installed| &installed.versions),
             )
             .await;
         let claim_request_elapsed = claim_request_started_at.elapsed();
@@ -1490,9 +1503,15 @@ impl ApiClient {
         candidate: &JobCandidate,
         runner_identity: &RunnerProcessIdentity,
         runner_hostname: Option<&str>,
+        installed_versions: Option<&OkouCliVersions>,
     ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
         let run_id = candidate.run_id();
-        let body = claim_request_body(candidate, runner_identity, runner_hostname);
+        let body = claim_request_body(
+            candidate,
+            runner_identity,
+            runner_hostname,
+            installed_versions,
+        );
         let run_id = run_id.to_string();
         let request = self.http.request_resolved_route(
             routes::runners::jobs::by_id::claim::route(
@@ -1538,7 +1557,7 @@ impl ApiClient {
         let runner_identity =
             RunnerProcessIdentity::new("550e8400-e29b-41d4-a716-446655440000".parse().unwrap(), 7)
                 .unwrap();
-        self.claim(candidate, &runner_identity, None).await
+        self.claim(candidate, &runner_identity, None, None).await
     }
     /// Report job completion. Uses the per-job **sandbox token** for auth.
     async fn complete(&self, sandbox_token: &str, request: &CompleteRequest) -> RunnerResult<()> {
@@ -1716,6 +1735,7 @@ fn claim_request_body<'a>(
     candidate: &JobCandidate,
     runner_identity: &'a RunnerProcessIdentity,
     runner_hostname: Option<&'a str>,
+    installed_versions: Option<&'a OkouCliVersions>,
 ) -> ClaimRequestBody<'a> {
     let runner_preference_telemetry = candidate.runner_preference_claim_telemetry();
     let is_ably_candidate = candidate.discovery_source() == Some(JobDiscoverySource::Ably);
@@ -1746,6 +1766,7 @@ fn claim_request_body<'a>(
     ClaimRequestBody {
         runner_identity,
         runner_hostname,
+        installed_versions,
         capabilities: RunnerClaimCapabilities {
             pi_model_config_generations: [
                 PI_MODEL_CONFIG_LEGACY_GENERATION,
@@ -2073,7 +2094,7 @@ mod tests {
 
     fn claim_request_body_for_test(candidate: &JobCandidate) -> serde_json::Value {
         let runner_identity = test_runner_identity();
-        serde_json::to_value(claim_request_body(candidate, &runner_identity, None)).unwrap()
+        serde_json::to_value(claim_request_body(candidate, &runner_identity, None, None)).unwrap()
     }
 
     #[test]
@@ -2452,6 +2473,7 @@ mod tests {
             api,
             runner_identity: test_runner_identity(),
             runner_hostname: None,
+            installed_okou_cli: None,
             group: "default".to_string(),
             supported_profiles: vec![crate::profile::DEFAULT_PROFILE.to_string()],
             poll_wakeups,
@@ -3402,9 +3424,35 @@ mod tests {
             &candidate,
             &runner_identity,
             Some("prod-1.aws.vm3.ai"),
+            None,
         ))
         .unwrap();
         assert_eq!(attributed["runnerHostname"], "prod-1.aws.vm3.ai");
+        assert!(
+            attributed.get("installedVersions").is_none(),
+            "a runner without an installed CLI must omit installedVersions"
+        );
+
+        let installed_versions = OkouCliVersions {
+            cli: "9.353.0".to_string(),
+            pi_agent_runtime: "1.36.0".to_string(),
+            pi_sdk: "0.86.1+okou.0123456789ab".to_string(),
+        };
+        let advertised = serde_json::to_value(claim_request_body(
+            &candidate,
+            &runner_identity,
+            None,
+            Some(&installed_versions),
+        ))
+        .unwrap();
+        assert_eq!(
+            advertised["installedVersions"],
+            serde_json::json!({
+                "cli": "9.353.0",
+                "piAgentRuntime": "1.36.0",
+                "piSdk": "0.86.1+okou.0123456789ab"
+            })
+        );
     }
 
     #[test]

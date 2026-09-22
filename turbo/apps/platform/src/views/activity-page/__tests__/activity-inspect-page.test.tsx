@@ -562,11 +562,7 @@ function oversizedInspectFile(): File {
 }
 
 function getFileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!input) {
-    throw new Error("Could not find inspect log file input");
-  }
-  return input;
+  return screen.getByLabelText<HTMLInputElement>("Upload JSON");
 }
 
 function getTabByText(text: string): HTMLElement {
@@ -593,7 +589,12 @@ test("A user can inspect steps, context, and network details from an exported lo
     screen.getByText("Upload an activity log JSON file to inspect it."),
   ).toBeInTheDocument();
 
-  await user.upload(getFileInput(), inspectFile());
+  const fileInput = getFileInput();
+  const uploadLabel = screen.getByText("Upload JSON");
+  expect(uploadLabel).not.toHaveAttribute("role", "button");
+  // Upload through the visible label, so the test exercises its input association.
+  await user.upload(uploadLabel, inspectFile());
+  expect(fileInput).toHaveValue("");
 
   await waitFor(() => {
     expect(

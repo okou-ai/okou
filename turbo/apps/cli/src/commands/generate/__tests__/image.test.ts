@@ -725,7 +725,7 @@ describe("okou generate image command", () => {
     expect(stdout).toContain("Single-color hand-drawn ink fineliner");
     expect(stdout).not.toContain("portrait 1024x1536");
     expect(stdout).toContain("## Style Source");
-    expect(stdout).toContain("okou-ai/vm0-skills");
+    expect(stdout).toContain("okou-ai/okou-skills");
     expect(stdout).toContain("ink-storefront");
     expect(stdout).toContain("## Prompt Compiler Task");
     expect(stdout).toContain("If unavailable, stop without generating");

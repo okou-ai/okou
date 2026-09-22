@@ -14,7 +14,7 @@ import type {
   MailDraft,
   MailInlineImage,
 } from "@okouai/api-contracts/contracts/mail";
-import { Button } from "@okouai/ui";
+import { Button, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -1124,14 +1124,17 @@ function MailDraftDetail({
           <span />
         )}
         <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <a href={openInGmail} target="_blank" rel="noreferrer">
-              <ExternalLink size={15} />
-              {t(($) => {
-                return $.chat.mail.openInGmail;
-              })}
-            </a>
-          </Button>
+          <a
+            href={openInGmail}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
+            <ExternalLink size={15} />
+            {t(($) => {
+              return $.chat.mail.openInGmail;
+            })}
+          </a>
           {active ? (
             <Button type="button" size="sm" disabled={pending} onClick={onSend}>
               {sendLoadable.state === "loading" ? (

@@ -11,7 +11,11 @@
 #
 # Usage:
 #   bash verify-rootfs.sh --rootfs /path/to/image.ext4 [--mode template|rootfs] \
-#     --guest-dest /usr/local/bin/guest-agent [--guest-dest DESTINATION ...]
+#     --guest-dest /usr/local/bin/guest-agent [--guest-dest DESTINATION ...] \
+#     [--okou-cli-version 9.353.0]
+#
+# `--okou-cli-version` asserts that exactly that Okou CLI bundle is installed
+# in a rootfs image. Without it, both modes assert that no CLI is installed.
 
 set -euo pipefail
 
@@ -35,12 +39,14 @@ shift
 ROOTFS=""
 MODE="rootfs"
 GUEST_DESTINATIONS=()
+OKOU_CLI_VERSION=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --rootfs) ROOTFS="$2"; shift 2 ;;
     --mode)   MODE="$2";   shift 2 ;;
     --guest-dest) GUEST_DESTINATIONS+=("$2"); shift 2 ;;
+    --okou-cli-version) OKOU_CLI_VERSION="$2"; shift 2 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -57,6 +63,16 @@ if [[ ${#GUEST_DESTINATIONS[@]} -eq 0 ]]; then
   echo "error: at least one --guest-dest is required" >&2
   exit 1
 fi
+if [[ -n "$OKOU_CLI_VERSION" ]]; then
+  if [[ "$MODE" != "rootfs" ]]; then
+    echo "error: --okou-cli-version applies only to --mode rootfs" >&2
+    exit 1
+  fi
+  if [[ ! "$OKOU_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "error: --okou-cli-version must be MAJOR.MINOR.PATCH: $OKOU_CLI_VERSION" >&2
+    exit 1
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -69,6 +85,13 @@ CA_ROOTFS_DEST="usr/local/share/ca-certificates/vm0-proxy-ca.crt"
 CLAUDE_TOOL_HOOK_DEST="/etc/claude-code/managed-settings.d/90-tool-containment.json"
 CLAUDE_CLI_DEST="/usr/local/bin/claude"
 CODEX_TOOL_HOOK_DEST="/etc/codex/requirements.toml"
+# [sync:okou-cli-constants] Keep in sync with: crates/runner/scripts/customize-rootfs.sh
+# and crates/guest-contracts/src/okou_cli.rs. Enforced by
+# `okou_cli_constants_in_sync_across_scripts` in cmd/build/scripts.rs.
+OKOU_CLI_LIB_ROOT="/usr/local/lib/okou-cli"
+OKOU_CLI_INSTALLED_MANIFEST_DEST="/usr/local/lib/okou-cli/installed.json"
+OKOU_CLI_LAUNCHER_DEST="/usr/local/bin/okou"
+OKOU_CLI_NODE="/usr/bin/node"
 
 # ---------------------------------------------------------------------------
 # Cleanup
@@ -233,6 +256,36 @@ check_required_file_contains() {
   fi
 }
 
+check_required_file_matches() {
+  local path="$1" regex="$2" name="$3"
+  local resolved_path
+  if ! resolved_path="$(resolve_rootfs_path "$path")"; then
+    errors+=("${name} cannot resolve rootfs path at ${path}")
+    return
+  fi
+  if [[ ! -f "${MOUNT_DIR}${resolved_path}" ]]; then
+    errors+=("${name} not found at ${path}")
+  elif grep -Eq -- "$regex" "${MOUNT_DIR}${resolved_path}"; then
+    echo "  ${name}: found"
+  else
+    errors+=("${name} is missing required content at ${path}")
+  fi
+}
+
+check_okou_cli_absent() {
+  local contamination=0
+  local path
+  for path in "$OKOU_CLI_LIB_ROOT" "$OKOU_CLI_LAUNCHER_DEST"; do
+    if [[ -e "${MOUNT_DIR}${path}" || -L "${MOUNT_DIR}${path}" ]]; then
+      errors+=("image contains an Okou CLI install that was not requested: ${path}")
+      contamination=1
+    fi
+  done
+  if [[ "$contamination" -eq 0 ]]; then
+    echo "  Okou CLI install: absent"
+  fi
+}
+
 check_bin() {
   local pattern="$1" name="$2"
   # shellcheck disable=SC2086
@@ -269,7 +322,30 @@ if [[ "$MODE" == "rootfs" ]]; then
   check_required_file_contains "$CODEX_TOOL_HOOK_DEST" \
     'command = "/usr/local/bin/guest-tool-exec hook"' \
     "Codex tool-containment hook"
+  if [[ -n "$OKOU_CLI_VERSION" ]]; then
+    okou_cli_install_dir="${OKOU_CLI_LIB_ROOT}/${OKOU_CLI_VERSION}"
+    check_required_file_contains "${okou_cli_install_dir}/okou.js" \
+      "__agent-loop" \
+      "Okou CLI ${OKOU_CLI_VERSION} bundle"
+    check_required_file_matches "${okou_cli_install_dir}/package.json" \
+      "\"version\": *\"${OKOU_CLI_VERSION//./\\.}\"" \
+      "Okou CLI ${OKOU_CLI_VERSION} package version"
+    check_required_file_contains "$OKOU_CLI_INSTALLED_MANIFEST_DEST" \
+      "\"cli\":\"${OKOU_CLI_VERSION}\"" \
+      "Okou CLI installed manifest"
+    check_required_file_contains "$OKOU_CLI_INSTALLED_MANIFEST_DEST" \
+      "\"entrypoint\":\"${okou_cli_install_dir}/okou.js\"" \
+      "Okou CLI installed manifest entrypoint"
+    check_required_executable "$OKOU_CLI_LAUNCHER_DEST" "Okou CLI launcher"
+    check_required_file_contains "$OKOU_CLI_LAUNCHER_DEST" \
+      "${okou_cli_install_dir}/okou.js" \
+      "Okou CLI launcher target"
+    check_required_executable "$OKOU_CLI_NODE" "node for the Okou CLI launcher"
+  else
+    check_okou_cli_absent
+  fi
 else
+  check_okou_cli_absent
   guest_contamination=0
   for dest in "${GUEST_DESTINATIONS[@]}"; do
     if [[ -e "${MOUNT_DIR}${dest}" || -L "${MOUNT_DIR}${dest}" ]]; then

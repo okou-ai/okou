@@ -1050,7 +1050,7 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
   it("mounts shared skills without granting Goal authority to a fresh manual run", async () => {
     const names = ["goal", "workflow-setup"];
     const versions = names.map((name) => {
-      const fullPath = `okou-ai/vm0-skills/tree/fixture-${randomUUID()}/${name}`;
+      const fullPath = `okou-ai/okou-skills/tree/fixture-${randomUUID()}/${name}`;
       return {
         name,
         url: `https://github.com/${fullPath}`,

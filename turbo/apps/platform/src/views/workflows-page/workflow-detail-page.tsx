@@ -96,6 +96,7 @@ import {
   BrandGithub,
   BrandNotion,
   BrandStripe,
+  buttonVariants,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
@@ -7640,18 +7641,19 @@ function GithubNotInstalledNotice({
         return $.workflows.automations.github.installedRequired;
       })}{" "}
       {installUrl ? (
-        <Button
-          asChild
-          type="button"
-          variant="link"
-          className="h-auto p-0 text-xs"
+        <a
+          href={installUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={cn(
+            buttonVariants({ variant: "link" }),
+            "h-auto p-0 text-xs",
+          )}
         >
-          <a href={installUrl} target="_blank" rel="noreferrer">
-            {i18n.t(($) => {
-              return $.workflows.automations.github.installApp;
-            })}
-          </a>
-        </Button>
+          {i18n.t(($) => {
+            return $.workflows.automations.github.installApp;
+          })}
+        </a>
       ) : (
         <span>
           {i18n.t(($) => {

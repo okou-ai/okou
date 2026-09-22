@@ -503,7 +503,7 @@ describe("okou generate video command", () => {
     );
     expect(stdout).toContain('"videoTemplates": [');
     expect(stdout).toContain('"id": "video-template:epic-grandeur"');
-    expect(stdout).toContain("okou-ai/vm0-skills");
+    expect(stdout).toContain("okou-ai/okou-skills");
     expect(stdout).not.toContain("nexu-io/open-design");
     expect(stdout).not.toContain("skill:presentation-deck-tools");
     expect(stdout).not.toContain("image-style:");

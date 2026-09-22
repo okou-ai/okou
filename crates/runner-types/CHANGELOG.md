@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/okou-ai/okou/compare/runner-types-v0.1.1...runner-types-v0.1.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* **runner:** accept aws-aware firewall catalog rules ([#36026](https://github.com/okou-ai/okou/issues/36026)) ([e9fb108](https://github.com/okou-ai/okou/commit/e9fb108269c25722d84fb7b2ddca71ee940a94c2))
+
 ## [0.1.1](https://github.com/okou-ai/okou/compare/runner-types-v0.1.0...runner-types-v0.1.1) (2026-09-22)
 
 

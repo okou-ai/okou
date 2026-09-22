@@ -2382,7 +2382,6 @@
       },
       "ideasLabel": "शुरुआती सुझाव",
       "label": "शुरू करने के लिए काम",
-      "moreIdeas": "और सुझाव",
       "moreTemplates": "और टेम्पलेट",
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
@@ -2392,7 +2391,8 @@
         "image": "चित्र शैलियाँ",
         "nextPage": "अगला पृष्ठ",
         "previousPage": "पिछला पृष्ठ",
-        "website": "वेबसाइट टेम्पलेट"
+        "website": "वेबसाइट टेम्पलेट",
+        "workflows": "वर्कफ़्लो"
       },
       "tasks": {
         "image": "चित्र",
@@ -2526,7 +2526,6 @@
         "browse": "वर्कफ़्लो देखें",
         "close": "बंद करें",
         "contextPrefix": "मेरे लिए ज़रूरी: {{context}}",
-        "heading": "आप कौन सा काम सौंपना चाहते हैं?",
         "items": {
           "competitors": {
             "cadence": "रोज़ या हर हफ़्ते",

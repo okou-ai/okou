@@ -1,8 +1,6 @@
 import * as React from "react";
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
-import { useRender } from "@base-ui/react/use-render";
 
-import { asChildRender } from "../../lib/base-ui-compat";
 import { cn } from "../../lib/utils";
 import {
   Tooltip,
@@ -24,46 +22,16 @@ export interface ButtonBaseProps extends Omit<
   ButtonPrimitive.Props,
   "className" | "render"
 > {
-  asChild?: boolean;
   className?: string;
   render?: ButtonPrimitive.Props["render"];
   showTooltip?: boolean;
   tooltipFullWidth?: boolean;
 }
 
-interface ButtonAsChildProps {
-  children: React.ReactNode;
-  className?: string;
-  props: Omit<
-    ButtonPrimitive.Props,
-    "children" | "className" | "nativeButton" | "ref" | "render"
-  >;
-  ref: React.ForwardedRef<HTMLElement>;
-}
-
-function ButtonAsChild({
-  children,
-  className,
-  props,
-  ref,
-}: ButtonAsChildProps) {
-  return useRender({
-    defaultTagName: "button",
-    props: {
-      ...props,
-      className,
-      "data-slot": "button",
-    },
-    ref,
-    render: asChildRender(children),
-  });
-}
-
 /** Internal rendering and tooltip behavior shared by styled button controls. */
 export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
   (
     {
-      asChild = false,
       children,
       className,
       nativeButton,
@@ -76,11 +44,7 @@ export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
   ) => {
     const { title: _title, ...propsWithoutTitle } = props;
     const buttonProps = showTooltip ? propsWithoutTitle : props;
-    const button = asChild ? (
-      <ButtonAsChild className={className} props={buttonProps} ref={ref}>
-        {children}
-      </ButtonAsChild>
-    ) : (
+    const button = (
       <ButtonPrimitive
         className={className}
         data-slot="button"

@@ -369,11 +369,22 @@
     # provided, the build can best-effort download/upload rootfs through the
     # shared cache. Without R2 credentials, rollback intentionally preserves
     # the old offline-capable local path.
+    # A runner release that staged a versioned Okou CLI artifact keeps it under
+    # its bin_dir, so the rolled-back rootfs reinstalls the same CLI and hits
+    # the same content-addressed rootfs hash.
+    - name: Detect a staged Okou CLI artifact for this runner release
+      when: not (skip_install | default(false))
+      stat:
+        path: "{{ bin_dir }}/okou-cli/manifest.json"
+      register: okou_cli_artifact
+
     - name: Rebuild default rootfs and snapshot
       when: not (skip_install | default(false))
       command: >
         {{ bin_dir }}/runner build
         --profile vm0/default
+        {{ ('--okou-cli-artifact ' ~ bin_dir ~ '/okou-cli')
+           if (okou_cli_artifact.stat.exists | default(false)) else '' }}
       environment:
         R2_ACCOUNT_ID: "{{ r2_account_id | default('') }}"
         R2_ACCESS_KEY_ID: "{{ r2_access_key_id | default('') }}"

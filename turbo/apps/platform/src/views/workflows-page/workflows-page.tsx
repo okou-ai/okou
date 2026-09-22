@@ -41,6 +41,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
   cn,
+  buttonVariants,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
@@ -1317,20 +1318,18 @@ export function WorkflowsPage() {
           </div>
           <div className="flex items-center gap-2">
             {officialWorkflowsEnabled ? (
-              <Button
-                asChild
-                type="button"
-                variant="neutral"
-                size="sm"
-                className="h-9 shrink-0 gap-2 rounded-lg"
+              <Link
+                pathname={ROUTES.officialWorkflows}
+                className={cn(
+                  buttonVariants({ variant: "neutral", size: "sm" }),
+                  "h-9 shrink-0 gap-2 rounded-lg",
+                )}
               >
-                <Link pathname={ROUTES.officialWorkflows}>
-                  <BadgeCheck size={14} />
-                  {t(($) => {
-                    return $.workflows.official.browse;
-                  })}
-                </Link>
-              </Button>
+                <BadgeCheck size={14} />
+                {t(($) => {
+                  return $.workflows.official.browse;
+                })}
+              </Link>
             ) : null}
             <Button
               type="button"
