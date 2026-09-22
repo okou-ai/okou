@@ -1189,6 +1189,7 @@ function UnreadChatThreadsContent({
   const scrollCurrentChatThreadOnRef = useSet(
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
+  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
 
   if (list.state === "loading") {
     return (
@@ -1202,11 +1203,25 @@ function UnreadChatThreadsContent({
   }
   if (list.data.items.length === 0) {
     return (
-      <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-        {t(($) => {
-          return $.chat.sidebar.noUnread;
-        })}
-      </p>
+      <div className="px-2 py-2">
+        <p className="text-xs text-nav-copy-muted leading-relaxed">
+          {t(($) => {
+            return $.chat.sidebar.noUnread;
+          })}
+        </p>
+        <Button
+          type="button"
+          variant="link"
+          className="mt-1 h-auto p-0 text-xs"
+          onClick={() => {
+            setUnreadFilter(false);
+          }}
+        >
+          {t(($) => {
+            return $.chat.sidebar.showAllChats;
+          })}
+        </Button>
+      </div>
     );
   }
 

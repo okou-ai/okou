@@ -2122,6 +2122,7 @@
       "pinned": "고정됨",
       "rename": "채팅 이름 바꾸기",
       "renameDescription": "이 채팅 스레드의 새 이름을 입력하세요.",
+      "showAllChats": "모든 채팅 보기",
       "showArchived": "보관된 채팅 표시",
       "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",

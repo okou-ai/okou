@@ -2122,6 +2122,7 @@
       "pinned": "ピン留め済み",
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
+      "showAllChats": "すべてのチャットを表示",
       "showArchived": "アーカイブ済みを表示",
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",

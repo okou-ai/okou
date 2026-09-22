@@ -177,6 +177,27 @@ test.each(platforms)(
   },
 );
 
+test("Show all chats from the empty unread state", async () => {
+  await preparePage(platforms[0].userAgent, true);
+
+  const list = await screen.findByTestId("chat-list-column");
+  await expect(
+    within(list).findByText("Release plan"),
+  ).resolves.toBeInTheDocument();
+
+  openChatListMenu();
+  click(unreadOnlyMenuItem());
+  await expect(
+    within(list).findByText("No unread chats"),
+  ).resolves.toBeInTheDocument();
+
+  click(within(list).getByText("Show all chats"));
+  await expect(
+    within(list).findByText("Release plan"),
+  ).resolves.toBeInTheDocument();
+  expect(within(list).queryByText("No unread chats")).not.toBeInTheDocument();
+});
+
 test("Leave the browser shortcut and hints untouched when the rollout is off", async () => {
   const { userAgent, metaKey, ctrlKey, label } = platforms[0];
   await preparePage(userAgent, false);
