@@ -895,7 +895,7 @@ test("Continue from empty slash suggestions to all workflows", async () => {
     screen.findByText("No matching workflows"),
   ).resolves.toBeVisible();
 
-  click(namedLink("View all workflows"));
+  await user.click(namedLink("View all workflows"));
 
   await expect(
     screen.findByRole("heading", { name: "Workflows" }),
@@ -985,4 +985,36 @@ test("Distinguish workflow tokens from text inside URLs", async () => {
     expect(workflowHighlights(editor)).toHaveLength(0);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
+});
+
+test("Activate a slash workflow with Enter after a cancelled pointer press", async () => {
+  mockAgent();
+  mockThread();
+  installWorkflows(() => {
+    return [workflow("release-report")];
+  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  const user = userEvent.setup({ delay: null });
+  const editor = await findComposerEditor();
+  await user.click(editor);
+  await user.keyboard("Draft /release");
+  const option = await waitFor(() => {
+    return slashButton("/release-report");
+  });
+
+  await user.pointer({ target: option, keys: "[MouseLeft>]" });
+  expect(option).toHaveFocus();
+  expect(editor).toHaveTextContent("Draft /release");
+  await user.pointer({ target: editor, keys: "[/MouseLeft]" });
+  await user.pointer({ target: option, keys: "[MouseRight]" });
+  expect(editor).toHaveTextContent("Draft /release");
+
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(editor).toHaveTextContent("Draft /release-report");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(editor).toHaveFocus();
+  });
+  await user.keyboard("next");
+  expect(editor).toHaveTextContent("Draft /release-report next");
 });
