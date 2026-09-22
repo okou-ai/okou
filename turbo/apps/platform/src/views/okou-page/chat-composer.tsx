@@ -9247,8 +9247,6 @@ function ComposerRunModelPickerControl({
   const { t } = useTranslation();
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
-  const flyoutCategory = useGet(signals.model.menu.flyoutCategory$);
-  const setMediaModelCategory = useSet(signals.model.setMediaModelCategory$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
   return (
     <div
@@ -9269,12 +9267,6 @@ function ComposerRunModelPickerControl({
         // The flyout needs the room a phone does not have; narrow viewports keep
         // the menu's pages until the sheet layout lands.
         flyoutLayout={desktopLayout}
-        onSelected={() => {
-          setMediaModelCategory(
-            flyoutCategory === "chat" ? null : flyoutCategory,
-          );
-          setModelPickerOpen(false);
-        }}
         compactTrigger
         mobileIconTrigger
         open={modelPickerOpen}
@@ -9535,7 +9527,7 @@ function ComposerModelPickerSlotBase({
   );
 }
 
-/** Choosing a media model writes its pin and closes the shared popover. */
+/** Media callbacks write their pins; each native menu item owns dismissal. */
 function ComposerVideoModelPickerSlot({
   signals,
   videoModelSignals,
@@ -9543,7 +9535,6 @@ function ComposerVideoModelPickerSlot({
   signals: ComposerSignals;
   videoModelSignals: ComposerVideoModelSignals;
 }) {
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const selectedVideoModel =
     useLastResolved(videoModelSignals.selectedVideoModel$) ?? null;
   const setVideoModel = useSet(videoModelSignals.setVideoModel$);
@@ -9552,7 +9543,6 @@ function ComposerVideoModelPickerSlot({
     value: selectedVideoModel,
     onChange: (next) => {
       detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   return (
@@ -9573,7 +9563,6 @@ function ComposerExistingMediaModelPickerSlot({
   imageModelSignals: ComposerImageModelSignals;
   videoModelSignals: ComposerVideoModelSignals;
 }) {
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const selectedImageModel =
     useLastResolved(imageModelSignals.selectedImageModel$) ?? null;
   const selectedVideoModel =
@@ -9585,14 +9574,12 @@ function ComposerExistingMediaModelPickerSlot({
     value: selectedImageModel,
     onChange: (next) => {
       detach(setImageModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   const videoModel: ComposerVideoModelPickerState = {
     value: selectedVideoModel,
     onChange: (next) => {
       detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   return (
@@ -10243,6 +10230,19 @@ function ComposerConnectorsSlot({
   ): ConnectorConnectHandlers => {
     const connectorSlug = connector.slug;
     const accountOptions = defaultBuiltinConnectorAccountOptions(connector);
+    const completeDirectConnection: ConnectorConnectSuccess = (
+      connectionId,
+      signal,
+    ) => {
+      return actions.runConnectSuccess(
+        connectorSlug,
+        (_completedConnectionId, continuationSignal) => {
+          return completeConnectorAddition(connectorSlug, continuationSignal);
+        },
+        connectionId,
+        signal,
+      );
+    };
     return {
       openModal: () => {
         updateConnectorUi({
@@ -10264,9 +10264,7 @@ function ComposerConnectorsSlot({
               agentId: agentRecordId,
               ...accountOptions,
             },
-            onSuccess: (_connectionId, signal) => {
-              return completeConnectorAddition(connectorSlug, signal);
-            },
+            onSuccess: completeDirectConnection,
           },
           pageSignal,
         );
@@ -10279,9 +10277,7 @@ function ComposerConnectorsSlot({
           {
             connectorSlug,
             authMethod,
-            onSuccess: (_connectionId, signal) => {
-              return completeConnectorAddition(connectorSlug, signal);
-            },
+            onSuccess: completeDirectConnection,
             options: {
               connectorLabel: connector.label,
               agentId: agentRecordId,
@@ -10373,6 +10369,7 @@ function ComposerConnectorsSlot({
             connectedCustom={agentCustomConnectors}
             unconnectedCustom={unconnectedCustomConnectors}
             connecting={actions.connecting}
+            isConnectorConnecting={actions.isConnectorConnecting}
             connectHandlers={connectorConnectHandlers}
             onConnectCustom={(connector) => {
               updateConnectorUi({

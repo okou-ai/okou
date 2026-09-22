@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 const UNIT_PREFIX: &str = "vm0-runner-";
 const LOCK_PREFIX: &str = "service-";
@@ -31,14 +31,14 @@ pub(crate) struct RunnerServiceUnit {
 impl RunnerServiceUnit {
     /// Build a validated runner systemd unit identity from a suffix.
     ///
-    /// Validates the suffix with [`crate::runner_dirname::validate_name`] so
+    /// Validates the suffix with [`runner_host::runner_dirname::validate_name`] so
     /// that runner directory names and service name suffixes follow the same
     /// rules (bounded length, lowercase alphanumeric, hyphens, dots; no
     /// leading `.` or `-`).
     pub(crate) fn from_suffix(suffix: &str) -> RunnerResult<Self> {
-        if !crate::runner_dirname::validate_name(suffix) {
-            let diagnostic = crate::runner_dirname::invalid_name_diagnostic(suffix);
-            let rules = crate::runner_dirname::validation_rules();
+        if !runner_host::runner_dirname::validate_name(suffix) {
+            let diagnostic = runner_host::runner_dirname::invalid_name_diagnostic(suffix);
+            let rules = runner_host::runner_dirname::validation_rules();
             return Err(RunnerError::Config(format!(
                 "invalid service name suffix {diagnostic}: {rules}"
             )));
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_unit_name_accepts_max_length_suffix() {
-        let suffix = "a".repeat(crate::runner_dirname::MAX_NAME_BYTES);
+        let suffix = "a".repeat(runner_host::runner_dirname::MAX_NAME_BYTES);
         assert_eq!(unit_name(&suffix).unwrap(), format!("vm0-runner-{suffix}"));
     }
 
@@ -163,20 +163,20 @@ mod tests {
 
     #[test]
     fn test_unit_name_rejects_over_max_length_suffix() {
-        let suffix = "a".repeat(crate::runner_dirname::MAX_NAME_BYTES + 1);
+        let suffix = "a".repeat(runner_host::runner_dirname::MAX_NAME_BYTES + 1);
         let msg = unit_name(&suffix).unwrap_err().to_string();
         assert!(msg.contains("service name suffix"), "got: {msg}");
         assert!(
             msg.contains(&format!(
                 "at most {} bytes",
-                crate::runner_dirname::MAX_NAME_BYTES
+                runner_host::runner_dirname::MAX_NAME_BYTES
             )),
             "got: {msg}"
         );
         assert!(
             msg.contains(&format!(
                 "{} bytes",
-                crate::runner_dirname::MAX_NAME_BYTES + 1
+                runner_host::runner_dirname::MAX_NAME_BYTES + 1
             )),
             "got: {msg}"
         );

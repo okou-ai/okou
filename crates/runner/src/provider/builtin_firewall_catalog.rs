@@ -71,7 +71,7 @@ use crate::duration::duration_ms;
 use crate::error::{
     ApiBodyReadError, ApiTransportCause, ApiTransportError, RunnerError, RunnerResult,
 };
-use crate::lock;
+use runner_host::lock;
 use runner_types::types::Firewall;
 
 pub(super) const BUILTIN_FIREWALL_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
@@ -595,7 +595,7 @@ async fn write_catalog_cache(
     {
         return Ok(());
     }
-    crate::state_file::write_private_atomic(cache_path, &content).await?;
+    runner_host::state_file::write_private_atomic(cache_path, &content).await?;
     info!(cache_path = %cache_path.display(), "builtin firewall catalog cache refreshed");
     Ok(())
 }
@@ -619,10 +619,10 @@ async fn read_existing_catalog_cache_for_skip(
 async fn read_catalog_cache(
     cache_path: &Path,
 ) -> RunnerResult<Option<BuiltinFirewallCatalogCache>> {
-    let Some(content) = crate::state_file::read_to_string(
+    let Some(content) = runner_host::state_file::read_to_string(
         cache_path,
         BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
-        crate::state_file::OwnerCheck::CurrentEuidNoUntrustedWrites,
+        runner_host::state_file::OwnerCheck::CurrentEuidNoUntrustedWrites,
     )
     .await?
     else {

@@ -7,10 +7,10 @@ use tokio::fs;
 
 use chrono::SecondsFormat;
 
-use crate::bounded_command::{
+use crate::error::{RunnerError, RunnerResult};
+use runner_host::bounded_command::{
     BoundedCommandError, BoundedCommandOutcome, CommandOutputPolicy, run_output_bounded,
 };
-use crate::error::{RunnerError, RunnerResult};
 
 use super::WorkspaceImageCache;
 use super::types::{CacheBudget, FsStats};
@@ -39,16 +39,16 @@ impl WorkspaceImageCache {
         &self,
         cache_key: &str,
     ) -> RunnerResult<()> {
-        crate::host_file::ensure_dir(
+        runner_host::host_file::ensure_dir(
             self.workspace_image_cache_dir(),
-            crate::host_file::DirMode::Private,
+            runner_host::host_file::DirMode::Private,
             "workspace image cache root",
         )?;
         let entry_dir = self.workspace_image_cache_entry_dir(cache_key);
         remove_non_directory_workspace_cache_entry(&entry_dir).await?;
-        crate::host_file::ensure_dir(
+        runner_host::host_file::ensure_dir(
             &entry_dir,
-            crate::host_file::DirMode::Private,
+            runner_host::host_file::DirMode::Private,
             "workspace image cache entry",
         )?;
         Ok(())
@@ -136,7 +136,7 @@ pub(super) async fn remove_non_directory_workspace_cache_entry(path: &Path) -> R
 }
 
 pub(super) fn secure_workspace_cache_publication_file(path: &Path) -> RunnerResult<()> {
-    crate::host_file::validate_private_file_destination(
+    runner_host::host_file::validate_private_file_destination(
         path,
         "workspace image cache publication file",
     )?;

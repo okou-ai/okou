@@ -30,11 +30,12 @@ use tokio_util::sync::CancellationToken;
 
 use runner_types::ids::RunId;
 
-use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
+use crate::http::HttpClient;
 use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Trust};
 pub(crate) use forwarding::DirectTcpIpStream;
 use io::GuestIo;
 use network::{Network, PublicNetwork};
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 const TERMINAL_RESERVE: Duration = Duration::from_secs(1);
 

@@ -47,7 +47,7 @@ async fn temp_dir_cleanup_preserves_original_error() {
 #[tokio::test]
 async fn is_rootfs_present_ignores_staging_file() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "staging-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
 
@@ -70,7 +70,7 @@ async fn is_rootfs_present_ignores_staging_file() {
 #[tokio::test]
 async fn staging_contract_happy_path() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "happy-hash");
     let publish = LocalFilePublish::for_rootfs(&rootfs);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
@@ -97,7 +97,7 @@ async fn staging_contract_happy_path() {
 #[tokio::test]
 async fn staging_contract_crash_leaves_recoverable_state() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "fail-hash");
     let publish = LocalFilePublish::for_rootfs(&rootfs);
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
@@ -119,7 +119,7 @@ async fn staging_contract_crash_leaves_recoverable_state() {
 #[tokio::test]
 async fn stale_template_attempt_dir_is_removed_before_reuse() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "template-build-residue-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
     let build_dir = rootfs.dir().join(format!(
@@ -145,7 +145,7 @@ async fn stale_template_attempt_dir_is_removed_before_reuse() {
 #[tokio::test]
 async fn stale_template_attempt_file_is_removed_before_reuse() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "template-build-file-residue-hash");
     tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
     let build_dir = rootfs.dir().join(format!(
@@ -168,7 +168,7 @@ async fn stale_template_attempt_file_is_removed_before_reuse() {
 #[tokio::test]
 async fn template_attempt_cleanup_preserves_other_hash_parent() {
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let this_parent = template_warm_parent_dir(&home, "this-hash");
     let other_parent = template_warm_parent_dir(&home, "other-hash");
     let this_dir = template_attempt_dir(&this_parent, TEMPLATE_WARM_ATTEMPT_DIR_PREFIX);

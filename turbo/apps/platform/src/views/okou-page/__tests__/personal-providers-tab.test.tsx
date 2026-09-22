@@ -322,11 +322,57 @@ test("Review personal subscriptions through account identity", async () => {
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
   expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
+  const claudeTable = screen.getByRole("table", {
+    name: "Claude Code OAuth",
+  });
+  const codexTable = screen.getByRole("table", {
+    name: "ChatGPT (Codex)",
+  });
+  const claudeHeading = screen.getByRole("heading", {
+    name: "Claude Code OAuth",
+  });
+  const codexHeading = screen.getByRole("heading", {
+    name: "ChatGPT (Codex)",
+  });
+  for (const [table, heading] of [
+    [claudeTable, claudeHeading],
+    [codexTable, codexHeading],
+  ] as const) {
+    expect(table.parentElement).toContainElement(heading);
+    expect(table).toHaveAttribute("aria-labelledby", heading.id);
+    expect(queryAllByRoleFast("columnheader", table)).toHaveLength(0);
+  }
+  expect(screen.queryAllByRole("radiogroup")).toHaveLength(0);
+  expect(queryAllByRoleFast("radio")).toHaveLength(0);
   expect(
-    queryAllByRoleFast("button").filter((button) => {
-      return button.textContent?.trim() === "Add account";
-    }),
-  ).toHaveLength(2);
+    within(claudeTable).getByText("No accounts connected."),
+  ).toBeInTheDocument();
+  expect(within(codexTable).getByTestId(`oauth-account-${accountA.id}`)).toBe(
+    rowA,
+  );
+  expect(
+    within(claudeTable).queryByTestId(`oauth-account-${accountA.id}`),
+  ).toBeNull();
+  const addAccountButtons = queryAllByRoleFast("button").filter((button) => {
+    return button.textContent?.trim() === "Add account";
+  });
+  expect(addAccountButtons).toHaveLength(1);
+  const addAccountButton = addAccountButtons[0];
+  if (!addAccountButton) {
+    throw new Error("Add account button not found");
+  }
+  click(addAccountButton);
+  const addAccountMenu = await screen.findByRole("menu");
+  expect(
+    within(addAccountMenu).getByText("Claude Code OAuth"),
+  ).toBeInTheDocument();
+  expect(
+    within(addAccountMenu).getByText("ChatGPT (Codex)"),
+  ).toBeInTheDocument();
+  click(addAccountButton);
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
   const accountIdentity = within(rowA).getByText("account-a@example.com");
   await user.hover(accountIdentity);
   await expect(
@@ -510,7 +556,7 @@ test("Review personal subscriptions through usage details", async () => {
     queryAllByRoleFast("button").filter((button) => {
       return button.textContent?.trim() === "Add account";
     }),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   await user.hover(within(rowA).getByLabelText("2 resets left"));
   await expect(
     screen.findAllByText("2 resets left · expires in 3d"),
@@ -609,7 +655,7 @@ test("Review personal subscriptions through account switching", async () => {
     queryAllByRoleFast("button").filter((button) => {
       return button.textContent?.trim() === "Add account";
     }),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   click(activationButton("Use: account-b@example.com", rowB));
   await waitFor(() => {
     expect(
@@ -659,14 +705,44 @@ test("Offer Pro when personal subscription providers are unavailable", async () 
   ).resolves.toBeInTheDocument();
 });
 
-test("Start and close personal Claude login", async () => {
+test("Offer Pro from personal account groups when BYOK is unavailable", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Test Org",
+    role: "admin",
+  });
+  context.mocks.data.personalModelProviders([]);
+  mockBillingCapabilities({
+    supportByok: false,
+    restrictedBuiltInModels: false,
+  });
+
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+
+  const upgradeButton = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Upgrade Pro to use";
+  });
+  if (!upgradeButton) {
+    throw new Error("Upgrade Pro button not found");
+  }
+  click(upgradeButton);
+
+  await expect(
+    screen.findByRole("heading", { name: "Choose a plan" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Start and close personal Claude login from the account menu", async () => {
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
     role: "member",
   });
   context.mocks.data.personalModelProviders([]);
-  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
+  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ body, respond }) => {
+    expect(body).toStrictEqual({ scope: "personal", mode: "add" });
     return respond(200, {
       sessionToken: "mock-personal-claude-code-session",
       type: "claude-code",
@@ -677,19 +753,19 @@ test("Start and close personal Claude login", async () => {
     });
   });
 
-  await openModelSettings();
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
 
-  const claudeCodeRow = await screen.findByTestId(
-    "oauth-card-claude-code-oauth-token",
-  );
-  expect(
-    within(claudeCodeRow).getByText("Claude Code OAuth"),
-  ).toBeInTheDocument();
-  const connectButton = connectButtonInRow(
-    claudeCodeRow,
-    "Connect Claude Code OAuth",
-  );
-  click(connectButton);
+  const addAccountButton = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Add account";
+  });
+  if (!addAccountButton) {
+    throw new Error("Add account button not found");
+  }
+  click(addAccountButton);
+  const addAccountMenu = await screen.findByRole("menu");
+  click(within(addAccountMenu).getByText("Claude Code OAuth"));
 
   const authorizationCodeInputs = await screen.findAllByTestId(
     "claude-code-device-auth-code",
@@ -701,9 +777,7 @@ test("Start and close personal Claude login", async () => {
     expect(
       screen.queryAllByTestId("claude-code-device-auth-code"),
     ).toHaveLength(0);
-    expect(
-      connectButtonInRow(claudeCodeRow, "Connect Claude Code OAuth"),
-    ).toBeEnabled();
+    expect(addAccountButton).toBeEnabled();
   });
 });
 

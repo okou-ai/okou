@@ -1503,9 +1503,20 @@
         },
         "shareDialog": {
           "description": "공개 게시물을 제출하면 검토해요. 1인당 한 번 보상을 받을 수 있어요.",
+          "draft": "월요일 경쟁사 리포트를 {{assistantName}}에게 맡기고 있어요. 출처를 읽고 표로 정리해 줍니다.",
           "helper": "게시물은 공개 상태여야 하고 {{assistantName}}을(를) 언급해야 합니다.",
           "inputLabel": "게시물 링크",
+          "openX": "X 열기",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "더 하실 일은 없습니다. 크레딧은 자동으로 지급됩니다.",
+          "reviewDone": "완료",
+          "reviewExplain": "게시물이 공개되어 있고 {{assistantName}}을(를) 언급하면 보상이 자동으로 지급됩니다. 문제가 있으면 이 단계가 사유와 함께 다시 열립니다.",
+          "reviewOpenPost": "게시물 열기",
+          "reviewPending": "보통 한 시간 이내",
+          "reviewTime": "검토는 보통 한 시간 안에 끝납니다.",
+          "reviewTitle": "게시물을 검토하고 있어요",
+          "stepPaste": "링크 붙여넣기",
+          "stepWrite": "게시물 작성하기",
           "submit": "제출",
           "title": "X에 {{assistantName}} 공유하기"
         },
@@ -1948,6 +1959,11 @@
       "sent": "전달했습니다",
       "threads": "채팅",
       "title": "전달 대상"
+    },
+    "homeTasks": {
+      "existingThread": "채팅 계속하기",
+      "heading": "최근 작업에서 이어갈 일",
+      "newThread": "새 채팅"
     },
     "mail": {
       "bcc": "숨은 참조",
@@ -4215,7 +4231,7 @@
       },
       "skills": {
         "copied": "복사됨",
-        "copy": "이 프롬프트를 본인의 Codex 또는 Claude Code 세션에 붙여 넣으면 내 컴퓨터의 스킬이 Okou로 들어옵니다.",
+        "copy": "이 프롬프트를 본인의 {{provider}} 세션에 붙여 넣으면 내 컴퓨터의 스킬이 Okou로 들어옵니다.",
         "copyError": "프롬프트를 복사하지 못했습니다.",
         "copyPrompt": "프롬프트 복사",
         "importedCopy": "Okou 워크플로로 가져왔습니다.",
@@ -4224,7 +4240,7 @@
         "preparing": "가져오기 세션을 여는 중…",
         "promptCopy": "내 컴퓨터의 스킬을 읽어 Okou에 씁니다.",
         "promptLabel": "스킬 가져오기 프롬프트",
-        "promptTitle": "Codex 또는 Claude Code에서 실행하세요",
+        "promptTitle": "{{provider}}에서 실행하세요",
         "startError": "가져오기 세션을 열지 못했습니다.",
         "title": "이미 써 둔 스킬을 그대로 가져오세요.",
         "tryAgain": "다시 시도",
@@ -4272,11 +4288,6 @@
       "sources": {
         "copy": "클라우드에서, 팀이 이미 쓰는 도구로 일합니다. 성과는 10배, 운영 부담은 더 적게, 비용은 더 낮게. 소스를 하나 연결해 시작하세요.",
         "note": "어떤 계정을 연결할지는 직접 고릅니다.",
-        "searchAction": "업무에 쓸 소스 찾기",
-        "searchCopy": "작업이나 앱 이름으로 전체 카탈로그를 검색하세요.",
-        "searchEmpty": "일치하는 소스가 없습니다",
-        "searchPlaceholder": "작업 또는 앱 이름으로 검색",
-        "searchTitle": "업무에 쓸 소스 찾기",
         "title": "Okou는 당신의 것이자, 팀 전체가 함께 쓰는 것입니다."
       },
       "startingPrompt": {
@@ -6131,6 +6142,8 @@
       },
       "personal": {
         "accountFallback": "계정 {{number}}",
+        "accountsDescription": "새 실행에 각 공급자가 사용할 계정을 선택하세요.",
+        "accountsSectionTitle": "개인 계정",
         "actionForProvider": "{{provider}} {{action}}",
         "activeAccount": "활성",
         "addAccount": "계정 추가",

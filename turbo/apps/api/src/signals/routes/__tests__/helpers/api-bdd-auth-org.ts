@@ -128,6 +128,7 @@ interface BddOrgMember {
   readonly actor: ApiTestUser;
   readonly role?: ClerkOrgRole;
   readonly joinedAt?: number;
+  readonly membershipId?: string;
 }
 
 interface BddPendingInvitation {
@@ -545,8 +546,12 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
         {
           data: members.map((member) => {
             return {
+              id:
+                member.membershipId ??
+                `orgmem_${actor.orgId}_${member.actor.userId}`,
               role: member.role ?? member.actor.orgRole ?? "org:member",
               publicUserData: { userId: member.actor.userId },
+              organization: { id: actor.orgId, slug, name },
               createdAt: membershipDate(member),
             };
           }),

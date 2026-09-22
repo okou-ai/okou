@@ -1504,9 +1504,20 @@
         },
         "shareDialog": {
           "description": "Öffentlichen Beitrag zur Prüfung einreichen. Eine erfolgreiche Prämie pro Person.",
+          "draft": "Meinen Montags-Wettbewerbsreport mache ich mit {{assistantName}} — es liest die Quellen und liefert die Tabelle zurück.",
           "helper": "Der Post muss öffentlich sein und {{assistantName}} erwähnen.",
           "inputLabel": "Post-Link",
+          "openX": "X öffnen",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "Mehr ist nicht zu tun — die Credits kommen von selbst.",
+          "reviewDone": "Fertig",
+          "reviewExplain": "Wenn der Beitrag öffentlich ist und {{assistantName}} erwähnt, wird die Belohnung automatisch gutgeschrieben. Stimmt etwas nicht, öffnet sich dieser Schritt wieder mit der Begründung.",
+          "reviewOpenPost": "Beitrag öffnen",
+          "reviewPending": "Meist unter einer Stunde",
+          "reviewTime": "Die Prüfung ist meist innerhalb einer Stunde durch.",
+          "reviewTitle": "Dein Beitrag liegt bei der Prüfung",
+          "stepPaste": "Link einfügen",
+          "stepWrite": "Beitrag schreiben",
           "submit": "Einreichen",
           "title": "{{assistantName}} auf X teilen"
         },
@@ -1955,6 +1966,11 @@
       "sent": "Erfolgreich weitergeleitet",
       "threads": "Chats",
       "title": "Weiterleiten an"
+    },
+    "homeTasks": {
+      "existingThread": "Chat fortsetzen",
+      "heading": "Aus Ihrer letzten Arbeit aufgegriffen",
+      "newThread": "Neuer Chat"
     },
     "mail": {
       "bcc": "BCC",
@@ -4227,7 +4243,7 @@
       },
       "skills": {
         "copied": "Kopiert",
-        "copy": "Füge diesen Prompt in deine eigene Codex- oder Claude-Code-Sitzung ein, und er holt die Skills von deinem Rechner nach Okou.",
+        "copy": "Füge diesen Prompt in deine eigene {{provider}}-Sitzung ein, und er holt die Skills von deinem Rechner nach Okou.",
         "copyError": "Der Prompt konnte nicht kopiert werden.",
         "copyPrompt": "Prompt kopieren",
         "importedCopy": "Als Okou-Workflow importiert.",
@@ -4236,7 +4252,7 @@
         "preparing": "Deine Import-Sitzung wird geöffnet…",
         "promptCopy": "Er liest die Skills auf deinem Rechner und schreibt sie nach Okou.",
         "promptLabel": "Prompt für den Skill-Import",
-        "promptTitle": "Führe das in Codex oder Claude Code aus",
+        "promptTitle": "Führe das in {{provider}} aus",
         "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
         "title": "Bring die Skills mit, die du schon geschrieben hast.",
         "tryAgain": "Erneut versuchen",
@@ -4284,11 +4300,6 @@
       "sources": {
         "copy": "Es arbeitet in der Cloud, mit den Tools, die dein Team ohnehin nutzt. 10x Output, weniger Reibung im Betrieb, geringere Kosten. Verbinde eine Quelle, um zu starten.",
         "note": "Du entscheidest, welche Konten verbunden werden.",
-        "searchAction": "Quelle für deine Arbeit finden",
-        "searchCopy": "Durchsuche den gesamten Katalog nach Aufgabe oder App-Name.",
-        "searchEmpty": "Keine passenden Quellen",
-        "searchPlaceholder": "Nach Aufgabe oder App-Name suchen",
-        "searchTitle": "Quelle für deine Arbeit finden",
         "title": "Okou ist für dich – und für dein ganzes Team."
       },
       "startingPrompt": {
@@ -6143,6 +6154,8 @@
       },
       "personal": {
         "accountFallback": "Konto {{number}}",
+        "accountsDescription": "Wähle das Konto, das jeder Anbieter für neue Ausführungen verwendet.",
+        "accountsSectionTitle": "Persönliche Konten",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktiv",
         "addAccount": "Konto hinzufügen",

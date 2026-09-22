@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical, Plus } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
+  Badge,
   Button,
   Dialog,
   DialogContent,
@@ -19,6 +21,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  cn,
 } from "@okouai/ui";
 import type {
   ModelProviderResponse,
@@ -44,6 +47,7 @@ import { openCodexDeviceAuthDialogPersonal$ } from "../../../../signals/okou-pag
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
+import { ConnectorEntryStatus } from "../settings/connector-entry-card.tsx";
 import { ProviderIcon } from "../settings/provider-icons.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "../settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "../settings/codex-device-auth-dialog.tsx";
@@ -71,16 +75,27 @@ export function PersonalProvidersTab() {
   );
 }
 
-function PersonalModelsHeading() {
+function PersonalModelsHeading({
+  accountTable = false,
+  action,
+}: {
+  readonly accountTable?: boolean;
+  readonly action?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
     <SettingsSectionHeading
       title={t(($) => {
-        return $.settings.models.personal.sectionTitle;
+        return accountTable
+          ? $.settings.models.personal.accountsSectionTitle
+          : $.settings.models.personal.sectionTitle;
       })}
       description={t(($) => {
-        return $.settings.models.personal.description;
+        return accountTable
+          ? $.settings.models.personal.accountsDescription
+          : $.settings.models.personal.description;
       })}
+      action={action}
     />
   );
 }
@@ -98,6 +113,15 @@ const PERSONAL_ACCOUNT_PROVIDER_TYPES = [
   "claude-code-oauth-token",
   "codex-oauth-token",
 ] as const satisfies readonly ModelProviderType[];
+
+type PersonalAccountProviderType =
+  (typeof PERSONAL_ACCOUNT_PROVIDER_TYPES)[number];
+
+type PersonalProviderAccountGroup = {
+  readonly type: PersonalAccountProviderType;
+  readonly title: string;
+  readonly accounts: readonly ModelProviderResponse[];
+};
 
 function OAuthAccountGroupsSection() {
   const { t } = useTranslation();
@@ -123,9 +147,26 @@ function OAuthAccountGroupsSection() {
     modelCapabilitiesLoadable.state !== "hasData" ||
     modelCapabilitiesLoadable.data.supportByok;
   const actionPending = actionLoadable.state === "loading";
+  const accountGroups: readonly PersonalProviderAccountGroup[] =
+    PERSONAL_ACCOUNT_PROVIDER_TYPES.map((type) => {
+      return {
+        type,
+        title:
+          type === "codex-oauth-token"
+            ? t(($) => {
+                return $.settings.models.personal.codexTitle;
+              })
+            : t(($) => {
+                return $.settings.models.personal.claudeTitle;
+              }),
+        accounts: providers.filter((provider) => {
+          return provider.type === type;
+        }),
+      };
+    });
 
   const openAccountAuth = (
-    type: ModelProviderType,
+    type: PersonalAccountProviderType,
     modelProviderId?: string,
   ) => {
     if (!supportByok) {
@@ -142,64 +183,40 @@ function OAuthAccountGroupsSection() {
     detach(request, Reason.DomCallback);
   };
 
+  const addAccountAction = (
+    <AddPersonalAccountAction
+      accountGroups={accountGroups}
+      actionPending={actionPending}
+      isLoading={isLoading}
+      supportByok={supportByok}
+      onAdd={openAccountAuth}
+      onUpgrade={openBillingPlans}
+    />
+  );
+
   return (
     <section className="flex flex-col gap-4">
-      <PersonalModelsHeading />
+      <PersonalModelsHeading accountTable action={addAccountAction} />
       <TooltipProvider delayDuration={100}>
-        <div
-          className="overflow-hidden rounded-xl bg-card"
-          style={{
-            border: "var(--border-width-surface) solid hsl(var(--gray-400))",
+        <PersonalProviderAccountsTable
+          accountGroups={accountGroups}
+          actionPending={actionPending}
+          isLoading={isLoading}
+          onActivate={(id) => {
+            detach(activateAccount(id, pageSignal), Reason.DomCallback);
           }}
-        >
-          {isLoading ? (
-            <>
-              <OAuthCredentialRowSkeleton />
-              <OAuthCredentialRowSkeleton />
-            </>
-          ) : (
-            PERSONAL_ACCOUNT_PROVIDER_TYPES.map((type) => {
-              return (
-                <OAuthAccountGroup
-                  key={type}
-                  type={type}
-                  accounts={providers.filter((provider) => {
-                    return provider.type === type;
-                  })}
-                  actionPending={actionPending}
-                  actionLabel={
-                    supportByok
-                      ? t(($) => {
-                          return $.settings.models.personal.addAccount;
-                        })
-                      : t(($) => {
-                          return $.settings.models.actions.upgradePro;
-                        })
-                  }
-                  onAdd={() => {
-                    openAccountAuth(type);
-                  }}
-                  onActivate={(id) => {
-                    detach(activateAccount(id, pageSignal), Reason.DomCallback);
-                  }}
-                  onReconnect={(id) => {
-                    openAccountAuth(type, id);
-                  }}
-                  onDisconnect={(account, fallbackIndex) => {
-                    setDisconnectDialog({ account, fallbackIndex });
-                  }}
-                  onReset={(account) => {
-                    setResetDialog({
-                      open: true,
-                      resetCredits: account.subscriptionResetCredits ?? null,
-                      accountId: account.id,
-                    });
-                  }}
-                />
-              );
-            })
-          )}
-        </div>
+          onReconnect={openAccountAuth}
+          onDisconnect={(account, fallbackIndex) => {
+            setDisconnectDialog({ account, fallbackIndex });
+          }}
+          onReset={(account) => {
+            setResetDialog({
+              open: true,
+              resetCredits: account.subscriptionResetCredits ?? null,
+              accountId: account.id,
+            });
+          }}
+        />
       </TooltipProvider>
       <PersonalAccountDisconnectDialogController
         actionPending={actionPending}
@@ -212,24 +229,145 @@ function OAuthAccountGroupsSection() {
   );
 }
 
-function OAuthAccountGroup({
-  type,
-  accounts,
+function AddPersonalAccountAction({
+  accountGroups,
   actionPending,
-  actionLabel,
+  isLoading,
+  supportByok,
   onAdd,
+  onUpgrade,
+}: {
+  readonly accountGroups: readonly PersonalProviderAccountGroup[];
+  readonly actionPending: boolean;
+  readonly isLoading: boolean;
+  readonly supportByok: boolean;
+  readonly onAdd: (type: PersonalAccountProviderType) => void;
+  readonly onUpgrade: () => void;
+}) {
+  const { t } = useTranslation();
+  if (!supportByok) {
+    return (
+      <Button
+        type="button"
+        variant="neutral"
+        size="sm"
+        className="h-9 rounded-lg"
+        disabled={isLoading || actionPending}
+        onClick={() => {
+          onUpgrade();
+        }}
+      >
+        {t(($) => {
+          return $.settings.models.actions.upgradePro;
+        })}
+      </Button>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="neutral"
+            size="sm"
+            className="h-9 gap-2 rounded-lg"
+            disabled={
+              isLoading ||
+              actionPending ||
+              accountGroups.every((group) => {
+                return group.accounts.length >= 10;
+              })
+            }
+          />
+        }
+      >
+        <Plus size={14} />
+        {t(($) => {
+          return $.settings.models.personal.addAccount;
+        })}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {accountGroups.map((group) => {
+          return (
+            <DropdownMenuItem
+              key={group.type}
+              disabled={actionPending || group.accounts.length >= 10}
+              onClick={() => {
+                onAdd(group.type);
+              }}
+            >
+              <ProviderIcon type={group.type} size={16} />
+              {group.title}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function PersonalProviderAccountsTable({
+  accountGroups,
+  actionPending,
+  isLoading,
   onActivate,
   onReconnect,
   onDisconnect,
   onReset,
 }: {
-  readonly type: ModelProviderType;
-  readonly accounts: readonly ModelProviderResponse[];
+  readonly accountGroups: readonly PersonalProviderAccountGroup[];
   readonly actionPending: boolean;
-  readonly actionLabel: string;
-  readonly onAdd: () => void;
+  readonly isLoading: boolean;
   readonly onActivate: (id: string) => void;
-  readonly onReconnect: (id: string) => void;
+  readonly onReconnect: (
+    type: PersonalAccountProviderType,
+    modelProviderId: string,
+  ) => void;
+  readonly onDisconnect: (
+    account: ModelProviderResponse,
+    fallbackIndex: number,
+  ) => void;
+  readonly onReset: (account: ModelProviderResponse) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      {accountGroups.map((group) => {
+        return (
+          <PersonalProviderAccountTable
+            key={group.type}
+            group={group}
+            actionPending={actionPending}
+            isLoading={isLoading}
+            onActivate={onActivate}
+            onReconnect={onReconnect}
+            onDisconnect={onDisconnect}
+            onReset={onReset}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function PersonalProviderAccountTable({
+  group,
+  actionPending,
+  isLoading,
+  onActivate,
+  onReconnect,
+  onDisconnect,
+  onReset,
+}: {
+  readonly group: PersonalProviderAccountGroup;
+  readonly actionPending: boolean;
+  readonly isLoading: boolean;
+  readonly onActivate: (id: string) => void;
+  readonly onReconnect: (
+    type: PersonalAccountProviderType,
+    modelProviderId: string,
+  ) => void;
   readonly onDisconnect: (
     account: ModelProviderResponse,
     fallbackIndex: number,
@@ -237,89 +375,70 @@ function OAuthAccountGroup({
   readonly onReset: (account: ModelProviderResponse) => void;
 }) {
   const { t } = useTranslation();
-  const isCodex = type === "codex-oauth-token";
-  const title = isCodex
-    ? t(($) => {
-        return $.settings.models.personal.codexTitle;
-      })
-    : t(($) => {
-        return $.settings.models.personal.claudeTitle;
-      });
-  const description = isCodex
-    ? t(($) => {
-        return $.settings.models.personal.codexDescription;
-      })
-    : t(($) => {
-        return $.settings.models.personal.claudeDescription;
-      });
+  const headingId = `personal-provider-accounts-${group.type}`;
 
   return (
-    <div className="[&:not(:first-child)]:border-t [&:not(:first-child)]:border-border/50">
-      <div className="flex items-center gap-3 px-5 py-4">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-          <ProviderIcon type={type} size={20} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-foreground">
-            {title}
-          </p>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {description}
-          </p>
+    <section aria-labelledby={headingId}>
+      <div className="overflow-hidden rounded-xl border border-surface-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-100">
+            <ProviderIcon type={group.type} size={18} />
+          </span>
+          <h4 id={headingId} className="text-sm font-medium text-foreground">
+            {group.title}
+          </h4>
         </div>
-        <Button
-          type="button"
-          variant="neutral"
-          size="sm"
-          className="h-9 shrink-0 gap-1.5 rounded-lg"
-          disabled={actionPending || accounts.length >= 10}
-          onClick={onAdd}
-        >
-          <Plus size={14} />
-          {actionLabel}
-        </Button>
+        <div role="table" aria-labelledby={headingId}>
+          {isLoading ? (
+            <div role="rowgroup" className="p-2">
+              <OAuthAccountTableRowSkeleton />
+            </div>
+          ) : group.accounts.length === 0 ? (
+            <div role="rowgroup" className="p-2">
+              <div role="row" className="rounded-lg px-3 py-5">
+                <div role="cell" className="text-xs text-muted-foreground">
+                  {t(($) => {
+                    return $.settings.models.personal.noAccounts;
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div role="rowgroup" className="p-2">
+              {group.accounts.map((account, index) => {
+                return (
+                  <OAuthAccountTableRow
+                    key={account.id}
+                    account={account}
+                    fallbackIndex={index + 1}
+                    actionPending={actionPending}
+                    onActivate={() => {
+                      onActivate(account.id);
+                    }}
+                    onReconnect={() => {
+                      onReconnect(group.type, account.id);
+                    }}
+                    onDisconnect={() => {
+                      onDisconnect(account, index + 1);
+                    }}
+                    onReset={() => {
+                      onReset(account);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
-      {accounts.length === 0 ? (
-        <p className="border-t border-border/50 px-5 py-4 text-xs text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.personal.noAccounts;
-          })}
-        </p>
-      ) : (
-        <div
-          className="border-t border-border/50"
-          role="group"
-          aria-label={title}
-        >
-          {accounts.map((account, index) => {
-            return (
-              <OAuthAccountRow
-                key={account.id}
-                account={account}
-                fallbackIndex={index + 1}
-                actionPending={actionPending}
-                onActivate={() => {
-                  onActivate(account.id);
-                }}
-                onReconnect={() => {
-                  onReconnect(account.id);
-                }}
-                onDisconnect={() => {
-                  onDisconnect(account, index + 1);
-                }}
-                onReset={() => {
-                  onReset(account);
-                }}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
-function OAuthAccountRow({
+const PERSONAL_ACCOUNT_ROW_CLASS =
+  "relative grid grid-cols-[minmax(0,1fr)_auto_36px] items-center gap-x-3 gap-y-2 rounded-lg px-3 py-3.5 transition-colors after:pointer-events-none after:absolute after:bottom-0 after:left-12 after:right-3 after:h-px after:bg-divider/50 after:content-[''] last:after:hidden hover:bg-gray-50 dark:hover:bg-gray-100 lg:grid-cols-[minmax(0,1fr)_96px_236px_36px]";
+
+function OAuthAccountTableRow({
   account,
   fallbackIndex,
   actionPending,
@@ -350,97 +469,214 @@ function OAuthAccountRow({
   const plan = formatSubscriptionPlan(account);
   const detail =
     account.workspaceName === identity ? null : account.workspaceName;
+  const statusLabel = account.needsReconnect
+    ? t(($) => {
+        return $.settings.models.personal.status.stale;
+      })
+    : t(($) => {
+        return $.settings.models.personal.status.connected;
+      });
+
   return (
     <div
+      role="row"
       data-testid={`oauth-account-${account.id}`}
-      className={`relative px-5 py-3.5 [&:not(:first-child)]:border-t [&:not(:first-child)]:border-border/40 ${account.isActive ? "bg-gray-50" : ""}`}
+      className={PERSONAL_ACCOUNT_ROW_CLASS}
     >
-      {account.isActive ? (
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-foreground"
+      <div
+        role="cell"
+        className="col-start-1 col-end-3 row-start-1 flex min-w-0 items-center gap-3 lg:col-end-2"
+      >
+        <OAuthAccountActivateButton
+          actionPending={actionPending}
+          detail={detail}
+          identity={identity}
+          isActive={account.isActive ?? false}
+          onActivate={onActivate}
         />
-      ) : null}
-      <div className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1 sm:flex sm:gap-3">
-        <Button
-          showTooltip
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          className="shrink-0 rounded-full border border-border hover:border-foreground/40 disabled:cursor-default disabled:opacity-100"
-          aria-label={`${
-            account.isActive
-              ? t(($) => {
-                  return $.settings.models.personal.activeAccount;
-                })
-              : t(($) => {
-                  return $.settings.models.personal.useAccount;
-                })
-          }: ${identity}${detail ? ` (${detail})` : ""}`}
-          aria-pressed={account.isActive}
-          disabled={account.isActive || actionPending}
-          onClick={onActivate}
-        >
-          {account.isActive ? (
-            <span className="h-2 w-2 rounded-full bg-foreground" />
-          ) : null}
-        </Button>
-        <div className="flex min-w-0 flex-1 items-center gap-2">
-          {plan ? (
-            <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-brand-text">
-              {plan}
-            </span>
-          ) : null}
-          {detail ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span
-                    tabIndex={0}
-                    className="min-w-0 truncate rounded-md px-1 py-0.5 -mx-1 -my-0.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
-                  >
-                    {identity}
-                  </span>
-                }
-              />
-              <TooltipContent side="bottom" align="start" sideOffset={8}>
-                {detail}
-              </TooltipContent>
-            </Tooltip>
-          ) : (
-            <span className="min-w-0 truncate text-sm font-medium text-foreground">
-              {identity}
-            </span>
-          )}
-          {account.needsReconnect ? (
-            <span className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-              {t(($) => {
-                return $.settings.models.personal.status.stale;
-              })}
-            </span>
-          ) : null}
-        </div>
-        <div className="col-start-2 flex min-w-0 items-center justify-end gap-3 sm:ml-auto sm:shrink-0">
-          {account.type === "codex-oauth-token" ? (
-            <CodexResetCreditsButton
-              className="mr-auto sm:mr-0"
-              resetCredits={account.subscriptionResetCredits ?? null}
-              resetCreditsNextExpiresAt={
-                account.subscriptionResetCreditsNextExpiresAt
-              }
-              resetPending={actionPending}
-              onReset={onReset}
-            />
-          ) : null}
-          {!account.needsReconnect ? (
-            <SubscriptionUsageRings identity={identity} usage={usage} />
-          ) : null}
-          <OAuthAccountMenu
-            actionPending={actionPending}
-            onReconnect={onReconnect}
-            onDisconnect={onDisconnect}
+        <OAuthAccountIdentity
+          detail={detail}
+          identity={identity}
+          needsReconnect={account.needsReconnect}
+          statusLabel={statusLabel}
+        />
+      </div>
+      <div
+        role="cell"
+        className="col-start-1 row-start-2 flex items-center pl-7 lg:col-start-2 lg:row-start-1 lg:pl-0"
+      >
+        {plan ? (
+          <Badge className="text-[11px] font-normal text-muted-foreground">
+            {plan}
+          </Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+      </div>
+      <div
+        role="cell"
+        className="col-start-2 col-end-4 row-start-2 flex min-w-0 items-center justify-end gap-3 lg:col-start-3 lg:col-end-4 lg:row-start-1 lg:justify-start"
+      >
+        {!account.needsReconnect && usageWindows(usage).length > 0 ? (
+          <SubscriptionUsageRings
+            identity={identity}
+            usage={usage}
+            className="ml-0 justify-start"
           />
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        )}
+        {account.type === "codex-oauth-token" ? (
+          <CodexResetCreditsButton
+            className="ml-auto"
+            resetCredits={account.subscriptionResetCredits ?? null}
+            resetCreditsNextExpiresAt={
+              account.subscriptionResetCreditsNextExpiresAt
+            }
+            resetPending={actionPending}
+            onReset={onReset}
+          />
+        ) : null}
+      </div>
+      <div
+        role="cell"
+        className="col-start-3 row-start-1 flex items-center justify-end lg:col-start-4"
+      >
+        <OAuthAccountMenu
+          actionPending={actionPending}
+          onReconnect={onReconnect}
+          onDisconnect={onDisconnect}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Activating an account is a server-side switch, so it stays an explicit
+// command: a button that reports the confirmed account with `aria-pressed`,
+// never a radio whose arrow keys would change the account while browsing.
+function OAuthAccountActivateButton({
+  actionPending,
+  detail,
+  identity,
+  isActive,
+  onActivate,
+}: {
+  readonly actionPending: boolean;
+  readonly detail: string | null | undefined;
+  readonly identity: string;
+  readonly isActive: boolean;
+  readonly onActivate: () => void;
+}) {
+  const { t } = useTranslation();
+  const action = isActive
+    ? t(($) => {
+        return $.settings.models.personal.activeAccount;
+      })
+    : t(($) => {
+        return $.settings.models.personal.useAccount;
+      });
+
+  return (
+    <Button
+      showTooltip
+      type="button"
+      variant="quiet"
+      size="icon-2xs"
+      className={cn(
+        "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-border bg-input transition-colors hover:border-foreground/40 hover:bg-input disabled:cursor-default disabled:opacity-100",
+        isActive && "border-primary bg-primary hover:bg-primary",
+      )}
+      aria-label={`${action}: ${identity}${detail ? ` (${detail})` : ""}`}
+      aria-pressed={isActive}
+      disabled={isActive || actionPending}
+      onClick={onActivate}
+    >
+      {isActive ? (
+        <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--on-filled))]" />
+      ) : null}
+    </Button>
+  );
+}
+
+function OAuthAccountIdentity({
+  detail,
+  identity,
+  needsReconnect,
+  statusLabel,
+}: {
+  readonly detail: string | null | undefined;
+  readonly identity: string;
+  readonly needsReconnect: boolean;
+  readonly statusLabel: string;
+}) {
+  return (
+    <div className="min-w-0">
+      {detail ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                tabIndex={0}
+                className="block min-w-0 truncate rounded-md px-1 py-0.5 -mx-1 -my-0.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
+              >
+                {identity}
+              </span>
+            }
+          />
+          <TooltipContent side="bottom" align="start" sideOffset={8}>
+            {detail}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <span className="block min-w-0 truncate text-sm font-medium text-foreground">
+          {identity}
+        </span>
+      )}
+      <ConnectorEntryStatus
+        label={statusLabel}
+        tone={needsReconnect ? "warning" : "success"}
+        className="mt-0.5 text-xs text-muted-foreground"
+      />
+    </div>
+  );
+}
+
+function OAuthAccountTableRowSkeleton() {
+  return (
+    <div
+      role="row"
+      data-testid="oauth-account-table-skeleton"
+      className={cn(PERSONAL_ACCOUNT_ROW_CLASS, "hover:bg-transparent")}
+    >
+      <div
+        role="cell"
+        className="col-start-1 col-end-3 row-start-1 flex animate-pulse items-center gap-3 lg:col-end-2"
+      >
+        <span className="h-4 w-4 shrink-0 rounded-full bg-muted/50" />
+        <div>
+          <span className="block h-4 w-36 rounded bg-muted/50" />
+          <span className="mt-1.5 block h-3 w-20 rounded bg-muted/30" />
         </div>
+      </div>
+      <div
+        role="cell"
+        className="col-start-1 row-start-2 flex items-center pl-7 lg:col-start-2 lg:row-start-1 lg:pl-0"
+      >
+        <span className="block h-5 w-12 animate-pulse rounded bg-muted/30" />
+      </div>
+      <div
+        role="cell"
+        className="col-start-2 col-end-4 row-start-2 flex animate-pulse items-center justify-end gap-1.5 lg:col-start-3 lg:col-end-4 lg:row-start-1 lg:justify-start"
+      >
+        <span className="h-7 w-7 rounded-full bg-muted/30" />
+        <span className="h-7 w-7 rounded-full bg-muted/30" />
+      </div>
+      <div
+        role="cell"
+        className="col-start-3 row-start-1 flex items-center justify-end lg:col-start-4"
+      >
+        <span className="block h-8 w-8 animate-pulse rounded-lg bg-muted/30" />
       </div>
     </div>
   );
@@ -1054,9 +1290,11 @@ function usageTone(remainingPercent: number | null): {
 }
 
 function SubscriptionUsageRings({
+  className,
   identity,
   usage,
 }: {
+  readonly className?: string;
   readonly identity: string;
   readonly usage: SubscriptionUsage | null | undefined;
 }) {
@@ -1067,7 +1305,12 @@ function SubscriptionUsageRings({
   }
 
   return (
-    <span className="ml-auto flex min-w-16 shrink-0 items-center justify-end gap-1.5">
+    <span
+      className={cn(
+        "ml-auto flex min-w-16 shrink-0 items-center justify-end gap-1.5",
+        className,
+      )}
+    >
       {windows.map(({ kind, window }) => {
         return (
           <SubscriptionUsageRing

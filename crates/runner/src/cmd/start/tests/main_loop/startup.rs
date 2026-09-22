@@ -417,7 +417,7 @@ async fn non_port_dns_failure_cleans_owned_startup_resources_without_retry() {
     mitm_child.arg("60").kill_on_drop(true);
     let mitm_child = mitm_child.spawn().expect("spawn test MITM child");
     let mitm_pid = mitm_child.id().expect("test MITM child should have pid");
-    let mitm_starttime = crate::process::read_process_stat(mitm_pid)
+    let mitm_starttime = runner_host::process::read_process_stat(mitm_pid)
         .await
         .expect("test MITM child should be visible")
         .starttime;
@@ -432,7 +432,7 @@ async fn non_port_dns_failure_cleans_owned_startup_resources_without_retry() {
         .kill_on_drop(true);
     let kmsg_child = kmsg_child.spawn().expect("spawn test kmsg child");
     let kmsg_pid = kmsg_child.id().expect("test kmsg child should have pid");
-    let kmsg_starttime = crate::process::read_process_stat(kmsg_pid)
+    let kmsg_starttime = runner_host::process::read_process_stat(kmsg_pid)
         .await
         .expect("test kmsg child should be visible")
         .starttime;
@@ -478,14 +478,14 @@ async fn non_port_dns_failure_cleans_owned_startup_resources_without_retry() {
         .expect("prefetch task should observe cancellation");
     assert_eq!(memory_prefetch.task_count(), 0);
     assert_ne!(
-        crate::process::read_process_stat(mitm_pid)
+        runner_host::process::read_process_stat(mitm_pid)
             .await
             .map(|stat| stat.starttime),
         Some(mitm_starttime),
         "terminal DNS failure should reap the MITM child"
     );
     assert_ne!(
-        crate::process::read_process_stat(kmsg_pid)
+        runner_host::process::read_process_stat(kmsg_pid)
             .await
             .map(|stat| stat.starttime),
         Some(kmsg_starttime),
@@ -498,7 +498,7 @@ async fn live_runner_instance_publish_failure_shuts_down_startup_resources() {
     use tokio::io::AsyncBufReadExt;
 
     let dir = tempfile::tempdir().unwrap();
-    let home = crate::paths::HomePaths::with_root(dir.path().join("vm0-runner"));
+    let home = runner_host::paths::HomePaths::with_root(dir.path().join("vm0-runner"));
     std::fs::create_dir_all(dir.path().join("vm0-runner")).unwrap();
     std::fs::write(home.live_runner_instances_dir(), b"not a directory").unwrap();
 
@@ -545,7 +545,7 @@ done
         .expect("ignore-term child did not become ready")
         .unwrap();
     assert_eq!(ready.as_deref(), Some("ready"));
-    let proxy_child_starttime = crate::process::read_process_stat(proxy_child_pid)
+    let proxy_child_starttime = runner_host::process::read_process_stat(proxy_child_pid)
         .await
         .expect("proxy child stat should be readable after readiness")
         .starttime;
@@ -601,7 +601,7 @@ done
         .expect("prefetch task should report cancellation");
     assert_eq!(memory_prefetch.task_count(), 0);
     let proxy_child_still_exists = matches!(
-        crate::process::read_process_stat(proxy_child_pid).await,
+        runner_host::process::read_process_stat(proxy_child_pid).await,
         Some(stat) if stat.starttime == proxy_child_starttime
     );
     assert!(
@@ -845,7 +845,7 @@ async fn nameless_config_reaches_local_provider_setup_before_runtime() {
         .await
         .unwrap();
 
-    let rootfs = crate::paths::RootfsPaths::new(&home, ROOTFS_HASH);
+    let rootfs = runner_host::paths::RootfsPaths::new(&home, ROOTFS_HASH);
     let snapshot = rootfs.snapshot(SNAPSHOT_HASH);
     tokio::fs::create_dir_all(snapshot.dir()).await.unwrap();
     tokio::fs::write(rootfs.rootfs(), b"").await.unwrap();

@@ -38,6 +38,7 @@ type DropdownMenuPositionerProps = Pick<
   MenuPrimitive.Positioner.Props,
   | "align"
   | "alignOffset"
+  | "anchor"
   | "collisionAvoidance"
   | "collisionBoundary"
   | "collisionPadding"
@@ -63,6 +64,7 @@ const DropdownMenuContent = React.forwardRef<
     {
       align = "start",
       alignOffset = 0,
+      anchor,
       children,
       className,
       collisionAvoidance,
@@ -82,6 +84,7 @@ const DropdownMenuContent = React.forwardRef<
         <MenuPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
+          anchor={anchor}
           className="outline-none"
           collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}

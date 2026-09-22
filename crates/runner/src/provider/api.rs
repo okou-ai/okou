@@ -50,8 +50,8 @@ use crate::error::{
 };
 use crate::http::{ApiRequestBuilder, HttpClient};
 use crate::run_cancellation::RunCancellationRegistry;
-use crate::runner_process_identity::RunnerProcessIdentity;
 use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,

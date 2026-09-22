@@ -22,6 +22,7 @@ import {
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
 import { setupAgentChatKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
+import { subscribeHomeTaskRecommendations$ } from "./home-task-recommendations.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -95,6 +96,10 @@ export const setupAgentChatPage$ = command(
         }),
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
+    // The server refreshes recommendations by cron and announces changes over
+    // Ably. Keep the passive subscription page-owned so it stops with the route
+    // even when the card section currently renders nothing.
+    set(subscribeHomeTaskRecommendations$, signal);
 
     await set(checkUnifiedSettingsParam$, signal);
 
@@ -111,6 +116,7 @@ export const setupAgentChatPage$ = command(
       const targetDraft = agentDraft?.draft ?? get(talkDraft$);
       set(targetDraft.clear$);
       set(targetDraft.setInput$, prompt);
+      set(get(agentChatComposerSignals$).editor.focus$);
       const next = new URLSearchParams(params);
       next.delete("prompt");
       set(updateSearchParams$, next);

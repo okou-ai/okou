@@ -6,8 +6,8 @@ use super::super::{
     CACHE_FORMAT_VERSION, WORKSPACE_DRIVE_LAYOUT, WorkspaceCacheTerminalStatus,
     WorkspaceImageCache, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
 };
-use crate::paths::RunnerPaths;
 use crate::storage_fingerprints::StorageFingerprints;
+use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
 pub(super) const TEST_PROFILE_NAME: &str = "vm0/default";

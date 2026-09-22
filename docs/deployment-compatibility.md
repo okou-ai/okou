@@ -17,6 +17,17 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Onboarding model preference
+
+The source-first App sends its optional Codex or Claude Code choice as a query
+parameter on `POST /api/onboarding/complete`. An older API ignores that parameter
+and completes onboarding with the existing model seed; a newer API accepts older
+App requests without it and keeps the same seed. No database migration is needed.
+On first completion, the newer API replaces only an untouched default model seed
+with the chosen subscription models in the same transaction as the completion
+marker. A repeated completion or an already customized model policy leaves the
+policy unchanged. A member's onboarding flow does not call this admin-only route.
+
 ## Slack ingress failed status retirement (2026-09-20)
 
 Migration `1179_retire_slack_ingress_failed_status` rewrites every
@@ -745,14 +756,23 @@ Compatibility is negotiated per run rather than by deployment order:
   API-first turn with) and `minCliVersion` (the lowest CLI release that
   understands the current launch payload). They are optional so contexts
   captured by earlier backends remain valid.
-- **The backend does not write them yet.** This launch config is persisted in
-  the encrypted queue payload and decoded by whichever API instance serves the
+- **The backend writes them.** This launch config is persisted in the
+  encrypted queue payload and decoded by whichever API instance serves the
   claim, and `piApiFirstTurnConfigSchema` is strict, so a backend from before
-  these fields existed rejects a payload that carries them. The reader ships
-  first; the writer is enabled in a later release, once this one is deployed
-  across the serving fleet and outside the rollback window. This is the same
-  staging the API-first usage handoff producer (#35413) used. Until then every
-  run takes the `npx` path below. Follow-up: #35967.
+  these fields existed rejects a payload that carries them. The tolerant reader
+  shipped first with the writer off, in `8d8f3a3e14d23f7471e0773bd9acb988f59217af`
+  (#36000, released as api 1.657.0 in `1807fbf7e37dc98e99793a57e7799f6dc804ad53`);
+  the writer followed in its own release after that API was promoted. This is
+  the same staging the API-first usage handoff producer (#35413) used.
+
+  **API rollback floor: `8d8f3a3e14d23f7471e0773bd9acb988f59217af`** (#36000's
+  merge commit). An API artifact that predates it rejects, at claim time, every
+  queued Pi run created after the writer was enabled. The production rollback
+  resolver (`.github/scripts/resolve-production-rollback-target.sh`) enforces
+  the floor for API targets; verify manually with
+  `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
+  and require `ahead` or `identical`. Retained Runner tags are not constrained:
+  the guest ignores unknown launch-config fields.
 - The guest agent execs the installed CLI only when the installed
   `piAgentRuntime` equals `requiredPiAgentRuntimeVersion` and the installed
   `cli` is at or above `minCliVersion`; otherwise it launches the
@@ -768,10 +788,10 @@ Compatibility is negotiated per run rather than by deployment order:
   settled-session continuation is a complete checkpoint and is never discarded
   for a version difference.
 
-Skew in either direction is therefore safe: once the writer is enabled, a new
-backend with an old runner emits the fields into a launch config the old guest
-ignores, because the generated Rust bindings do not deny unknown fields; a new
-runner with an old backend sees no required version and launches through `npx`.
+Skew in either direction is therefore safe: a new backend with an old runner
+emits the fields into a launch config the old guest ignores, because the
+generated Rust bindings do not deny unknown fields; a new runner with an old
+backend sees no required version and launches through `npx`.
 Raise `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or
 handoff field becomes required. Retiring `CLI_PKG_URL` and the `npx` path
 follows the drain procedure below and is tracked in #35967.
@@ -2158,17 +2178,42 @@ environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
 #34081 owns Access management UI; #34370 records integrated real-Run acceptance
 and the owner-approved evidence boundaries at closure.
-Management stays inside `/connectors/ssh`. Access is a reusable host connection
-setting under the existing SSH Agent grant, not a separately authorized service.
-General availability does not replace the existing Agent permission.
+The existing management UI stays inside `/connectors/ssh` while #36038 adds a
+second standalone entry. Access is reusable owner configuration, not a separately
+authorized Agent service. SSH remains its first consumer under the existing SSH
+Agent grant; general availability does not replace that permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. Unified host forms also accept inline Access
-creation in the host write request. Existing `configId` selections remain valid;
-responses still return only the resolved binding. Deploy API support before the
-App uses inline creation. An older API rejects that write alternative;
+The deployed SSH management UI initially uses the temporary
+`/api/ssh/cloudflare-access/configs` rollout bridge. The standalone owner boundary
+adds `/api/cloudflare-access/configs` over the same rows, revisions and mutation
+service; its response names current references `sshHosts`, while the bridge keeps
+`hosts`. During this phase, configuration mutations publish both
+`cloudflare-access:changed` and `ssh:changed` with `{ orgId }` only so the
+replacement and deployed Apps can refresh. Neither event contains a token,
+configuration ID or host ID.
+
+Deploy #36037's additive API before #36038's App. A new API/old App continues
+using the SSH path and event unchanged. #36038 adds the standalone page and moves
+the retained SSH flow to the canonical API, state and event without removing its
+selector, inline creation, nested management or CRUD behavior. Both phases operate
+on the same encrypted records. There is no feature switch, schema migration, data
+copy or Runner contract change.
+
+After the App build containing #36038 is verified live in production, #36068
+raises the minimum supported App version to that exact build and removes the
+SSH-prefixed route, `hosts` projection, error adapter and Access-only legacy
+event publication. Do not combine that floor increase with the release that first
+publishes the replacement App: production promotes the API before the App, so a
+user could accept a `426` prompt while refresh still serves the previous build.
+Actual SSH host writes continue publishing `ssh:changed`; inline Access creation
+also publishes `cloudflare-access:changed` because it changes both resources.
+
+Unified host forms also accept inline Access creation in the host write request.
+Existing `configId` selections remain valid; responses still return only the
+resolved binding. Deploy API support before the App uses inline creation. An older
+API rejects that write alternative;
 clients should refresh after the current API/App deployment, without a second
 save path or automatic fallback. Existing rows and older App requests remain
 valid, and Runner versions do not need a new decoder for this management change.
@@ -3115,3 +3160,54 @@ Direct-interaction creation, read, cancel, and complete are database-only. They
 capture no page or DOM metadata and have no open endpoint. The existing
 thread-scoped Browser card opens the current Browser and its normal viewer
 heartbeat owns Browser access and lease renewal.
+
+## OOM containment proof chain removal (#36027)
+
+`OomEvidence.runtime_progress_at` is removed, together with the containment
+proof chain that consumed it. No deployment boundary observes the removal.
+
+Guest Control Server produces the evidence inside the guest image and Guest
+Control Client consumes it on the Runner host, but those are not independently
+deployed surfaces. Runner and Guest binaries ship together, and a draining
+Runner keeps executing its already-claimed runs on its own sandboxes rather
+than handing them to the new artifact, as described under
+[Runner process drain](#runner-process-drain) and in
+[guest memory policy](runner-memory-policy.md). Sandbox reuse is decided inside
+a single Runner process. The producer and the consumer are therefore always the
+same artifact, so no mixed-version pair exists for this field.
+
+The persisted copies are write-only in production. Runner writes
+`oom_evidence_log` and Guest Agent writes `<metrics_log>.oom-evidence.json`;
+neither is read back by production code, so no reader can encounter a payload
+written by an older artifact.
+
+`evidence_written_by_an_older_guest_image_still_decodes` is retained as
+`a_retired_runtime_progress_field_decodes_as_an_unknown_key`, reading
+`crates/guest-contracts/tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json`
+— a byte copy of the pre-removal `contained-tool-oom.json`. It pins the
+decoder's treatment of the retired key, not a rollout window: `OomEvidence` and
+every nested type (`MemorySnapshot`, `MemoryEvents`, `KernelOomEvent`,
+`OomIncident`) carry no `deny_unknown_fields`, so the key is ignored. It carries
+no removal gate and is not a bounded rollout fallback.
+
+The v1 telemetry payload is unchanged. `telemetry_evidence()` existed only to
+force the field to `None` before upload, and `skip_serializing_if` then omitted
+the key, so `runtime_progress_at` never appeared in a v1 payload and still does
+not. `oom_evidence_upload_payload_is_unchanged_by_the_removed_progress_field`
+uploads the legacy fixture through `JobTelemetry::upload_oom_evidence` and
+asserts the serialized `oomEvidence` bytes.
+
+The Guest Agent to Guest Control Server evidence request bytes `3` and `4` are
+removed outright. That socket is intra-guest: `guest-control-server` is linked
+into `guest-init`, and `guest-agent` and `guest-init` are pinned together by
+`guestSha256` in one runner image manifest, so both ends always ship in the same
+rootfs. An unrecognized request byte ends the exchange rather than reading a
+payload the peer never promised.
+
+`oom_classification` changes meaning at the same time. It previously reported
+whether the containment proof succeeded; it now reports which cgroup the kernel
+killed. The token `contained_tool_oom` therefore means something different
+before and after this change, and a record with no proven OOM evidence now
+carries an empty classification instead of `unproven_containment`. The
+`oom_unproven_reason` field is gone. Dashboards or saved queries that compare
+`oom_classification` across this boundary will be wrong.

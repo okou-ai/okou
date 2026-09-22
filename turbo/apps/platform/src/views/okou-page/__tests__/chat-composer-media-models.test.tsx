@@ -1,3 +1,7 @@
+import {
+  findModelMenuOption,
+  queryModelMenuOption,
+} from "./chat-model-menu-test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
@@ -117,17 +121,18 @@ function pickerTrigger(container: ParentNode = document): HTMLElement {
  */
 async function openPicker(
   container: ParentNode = document,
+  user = userEvent.setup({ delay: null }),
 ): Promise<HTMLElement> {
   await waitFor(() => {
     expect(pickerTrigger(container)).toBeInTheDocument();
   });
-  click(pickerTrigger(container));
-  return await screen.findByRole("tablist", { name: "Models" });
+  await user.click(pickerTrigger(container));
+  return await screen.findByRole("menu", { name: "Models" });
 }
 
 /** A type row in the rail, which reads as its type over its current model. */
 function category(name: "Chat" | "Image" | "Video"): HTMLElement {
-  const control = queryAllByRoleFast("tab").find((candidate) => {
+  const control = queryAllByRoleFast("menuitem").find((candidate) => {
     return candidate.textContent?.startsWith(name);
   });
   if (!control) {
@@ -143,7 +148,7 @@ function mediaModelRowLabel(option: HTMLElement): string {
 
 function mediaModelRowOrNull(label: string): HTMLElement | null {
   return (
-    queryAllByRoleFast("option").find((candidate) => {
+    queryAllByRoleFast("menuitemradio").find((candidate) => {
       return mediaModelRowLabel(candidate) === label;
     }) ?? null
   );
@@ -158,7 +163,7 @@ function mediaModelRow(label: string): HTMLElement {
 }
 
 function expectSelected(label: string): void {
-  expect(mediaModelRow(label)).toHaveAttribute("aria-selected", "true");
+  expect(mediaModelRow(label)).toHaveAttribute("aria-checked", "true");
 }
 
 /**
@@ -181,7 +186,7 @@ async function openMenuCategory(
   if (!screen.queryByRole("region", { name: `${name} models` })) {
     const overview =
       screen.queryByRole("region", { name: "Models" }) ?? (await openMenu());
-    const row = queryAllByRoleFast("button", overview).find((candidate) => {
+    const row = queryAllByRoleFast("menuitem", overview).find((candidate) => {
       return candidate
         .getAttribute("aria-label")
         ?.startsWith(`Change ${name} model,`);
@@ -199,15 +204,23 @@ async function chooseMenuMediaModel(
   label: string,
 ): Promise<void> {
   await openMenuCategory(name);
-  click(menuRow(label));
+  await userEvent.setup({ delay: null }).click(menuRow(label));
   await waitFor(() => {
     expect(screen.queryByRole("region", { name: `${name} models` })).toBeNull();
   });
+  await expect(
+    screen.findByRole("region", { name: "Models" }),
+  ).resolves.toBeVisible();
+  expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
 }
 
 /** The menu's rows, which name themselves for a narrow viewport's pages. */
 function menuRow(label: string): HTMLElement {
-  const row = queryAllByRoleFast("button").find((candidate) => {
+  const row = [
+    ...queryAllByRoleFast("button"),
+    ...queryAllByRoleFast("menuitem"),
+    ...queryAllByRoleFast("menuitemradio"),
+  ].find((candidate) => {
     return candidate.getAttribute("aria-label") === label;
   });
   if (!row) {
@@ -217,8 +230,7 @@ function menuRow(label: string): HTMLElement {
 }
 
 function expectMenuSelected(label: string): void {
-  expect(menuRow(label)).toHaveAttribute("aria-pressed", "true");
-  expect(menuRow(label)).toHaveAttribute("aria-current", "true");
+  expect(menuRow(label)).toHaveAttribute("aria-checked", "true");
 }
 
 async function chooseMediaModel(
@@ -226,23 +238,29 @@ async function chooseMediaModel(
   label: string,
   container: ParentNode = document,
 ): Promise<void> {
-  await openPicker(container);
-  click(category(categoryName));
-  await waitFor(() => {
-    expect(mediaModelRow(label)).toBeInTheDocument();
+  await openCategory(categoryName, container);
+  const option = await waitFor(() => {
+    const row = mediaModelRow(label);
+    expect(row).toBeInTheDocument();
+    return row;
   });
-  click(mediaModelRow(label));
+  // happy-dom has no geometry for the native submenu's hover corridor. The
+  // category interactions above exercise hover; activate the ready row here.
+  click(option);
   await waitFor(() => {
-    expect(screen.queryByRole("tablist", { name: "Models" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "Models" })).toBeNull();
   });
 }
 
 async function openCategory(
   categoryName: "Chat" | "Image" | "Video",
   container: ParentNode = document,
-): Promise<void> {
-  await openPicker(container);
-  click(category(categoryName));
+) {
+  const user = userEvent.setup({ delay: null });
+  await openPicker(container, user);
+  await user.click(category(categoryName));
+  await screen.findByRole("menu", { name: `${categoryName} models` });
+  return user;
 }
 
 function scopeCard(label: string): HTMLElement | null {
@@ -284,7 +302,7 @@ function assertCatalogRows(
     expect(row.querySelector("svg, img")).not.toBeNull();
     expect(row).toHaveTextContent(/\$+/u);
   }
-  const available = queryAllByRoleFast("option").map(mediaModelRowLabel);
+  const available = queryAllByRoleFast("menuitemradio").map(mediaModelRowLabel);
   for (const omittedLabel of omittedLabels) {
     expect(available).not.toContain(omittedLabel);
   }
@@ -304,7 +322,7 @@ test("Show the curated image model catalog", async () => {
 
   await openCategory("Image");
   expect(mediaModelRow("Nano Banana 2")).toHaveAttribute(
-    "aria-selected",
+    "aria-checked",
     "true",
   );
   assertCatalogRows(
@@ -391,13 +409,13 @@ test("Keep image model pins independent in split chats", async () => {
   const sideComposer = await findComposerFor(SPLIT_THREAD_ID);
 
   await chooseMediaModel("Image", "FLUX.2 Pro", mainComposer);
-  await openCategory("Image", mainComposer);
+  const user = await openCategory("Image", mainComposer);
   expectSelected("FLUX.2 Pro");
-  click(category("Chat"));
+  await user.click(category("Chat"));
   // The panel swaps in place, so the image rows leave with it.
-  await screen.findByRole("listbox", { name: "Chat models" });
+  await screen.findByRole("menu", { name: "Chat models" });
   expect(mediaModelRowOrNull("FLUX.2 Pro")).toBeNull();
-  await userEvent.setup().keyboard("{Escape}");
+  await user.keyboard("{Escape}");
 
   await openCategory("Image", sideComposer);
   expectSelected("Nano Banana 2");
@@ -418,10 +436,44 @@ test("Do not select an available image model for an unavailable pin", async () =
   await openCategory("Image");
   for (const model of PUBLIC_IMAGE_MODELS) {
     expect(mediaModelRow(IMAGE_MODEL_CONFIGS[model].label)).toHaveAttribute(
-      "aria-selected",
+      "aria-checked",
       "false",
     );
   }
+});
+
+test("An open media menu follows a live default after an unavailable selection", async () => {
+  let currentPreference = preference({
+    selectedImageModel: "fal-ai/flux-pro/v1.1",
+  });
+  installModelEnvironment(currentPreference);
+  setDesktopViewport();
+  context.mocks.api(userModelPreferenceContract.get, ({ respond }) => {
+    return respond(200, currentPreference);
+  });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await openCategory("Image");
+  for (const model of PUBLIC_IMAGE_MODELS) {
+    expect(mediaModelRow(IMAGE_MODEL_CONFIGS[model].label)).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+  }
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("userPreferenceChanged"),
+    ).toBeTruthy();
+  });
+  currentPreference = preference({ selectedImageModel: "gpt-image-2" });
+  context.mocks.ably.trigger("userPreferenceChanged", {
+    kinds: ["defaultImageModel"],
+  });
+  await waitFor(() => {
+    expectSelected("GPT Image 2");
+  });
+  expect(
+    screen.getByRole("menu", { name: "Image models" }),
+  ).toBeInTheDocument();
 });
 
 test("Follow the live image model default in an untouched new chat", async () => {
@@ -509,19 +561,18 @@ test("Follow the live video model default in an untouched new chat", async () =>
 });
 
 async function browseNewChatModelCategories(): Promise<void> {
-  await openPicker();
-  expect(category("Chat")).toHaveAttribute("aria-selected", "true");
+  const user = userEvent.setup({ delay: null });
+  await openPicker(document, user);
+  expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
   await expect(
-    screen.findByRole("option", { name: /Claude Fable 5/u }),
+    findModelMenuOption(/Claude Fable 5/u),
   ).resolves.toBeInTheDocument();
-  click(category("Image"));
+  await user.click(category("Image"));
   await waitFor(() => {
     expect(mediaModelRow("Nano Banana 2")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("option", { name: /Claude Fable 5/u }),
-    ).toBeNull();
+    expect(queryModelMenuOption(/Claude Fable 5/u)).toBeNull();
   });
-  click(category("Video"));
+  await user.click(category("Video"));
   await waitFor(() => {
     expect(mediaModelRow("MiniMax H3")).toBeInTheDocument();
     expect(
@@ -546,6 +597,7 @@ async function selectModelsAcrossNewChatCategories(): Promise<void> {
   await openMenuCategory("Image");
   expectMenuSelected("GPT Image 2");
   await userEvent.setup().keyboard("{Escape}");
+  await screen.findByRole("region", { name: "Models" });
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
     expect(scopeCard("Model for this chat")).toBeNull();
@@ -554,6 +606,7 @@ async function selectModelsAcrossNewChatCategories(): Promise<void> {
   await openMenuCategory("Video");
   expectMenuSelected("Veo 3.1 fast");
   await userEvent.setup().keyboard("{Escape}");
+  await screen.findByRole("region", { name: "Models" });
   expect(scopeCard("Video model for this chat")).not.toBeNull();
   expect(scopeCard("Image model for this chat")).toBeNull();
 }
@@ -575,7 +628,7 @@ async function openDesktopNewChatModelPicker() {
 test("Browse Chat, Image, and Video catalogs in a desktop new chat", async () => {
   await openDesktopNewChatModelPicker();
   await browseNewChatModelCategories();
-  expect(category("Video")).toHaveAttribute("aria-selected", "true");
+  expect(category("Video")).toHaveAttribute("aria-expanded", "true");
 });
 
 /**
@@ -600,23 +653,24 @@ test("Retain independent Chat, Image, and Video selections in a new chat", async
 });
 
 async function exerciseExistingChatThreeModePicker(): Promise<void> {
-  await openPicker();
-  expect(category("Chat")).toHaveAttribute("aria-selected", "true");
+  const user = userEvent.setup({ delay: null });
+  await openPicker(document, user);
+  expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
   await expect(
-    screen.findByRole("option", { name: /Claude Sonnet 4\.6/u }),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-  click(category("Image"));
+    findModelMenuOption(/Claude Sonnet 4\.6/u),
+  ).resolves.toHaveAttribute("aria-checked", "true");
+  await user.click(category("Image"));
   await waitFor(() => {
     expectSelected("GPT Image 2");
   });
-  click(category("Video"));
+  await user.click(category("Video"));
   await waitFor(() => {
     expectSelected("MiniMax H3");
   });
-  click(category("Chat"));
+  await user.click(category("Chat"));
   await expect(
-    screen.findByRole("option", { name: /Claude Sonnet 4\.6/u }),
-  ).resolves.toHaveAttribute("aria-selected", "true");
+    findModelMenuOption(/Claude Sonnet 4\.6/u),
+  ).resolves.toHaveAttribute("aria-checked", "true");
   expect(scopeCard("Model for this chat")).toBeNull();
   expect(scopeCard("Image model for this chat")).toBeNull();
   expect(scopeCard("Video model for this chat")).toBeNull();
@@ -634,7 +688,7 @@ test("Switch Chat, Image, and Video from one model picker in a desktop existing 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
   await exerciseExistingChatThreeModePicker();
-  expect(category("Chat")).toHaveAttribute("aria-selected", "true");
+  expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
 });
 
 /**
@@ -765,12 +819,10 @@ test("Selecting an image model in the desktop picker shows the disabled tool not
   expect(screen.queryByLabelText("Remove Image")).not.toBeInTheDocument();
 
   await openCategory("Chat");
-  const chatModel = await screen.findByRole("option", {
-    name: /Claude Fable 5\.1/u,
-  });
-  click(chatModel);
+  const chatModel = await findModelMenuOption(/Claude Fable 5\.1/u);
+  await userEvent.setup({ delay: null }).click(chatModel);
   await waitFor(() => {
-    expect(screen.queryByRole("tablist", { name: "Models" })).toBeNull();
+    expect(screen.queryByRole("menu", { name: "Models" })).toBeNull();
   });
   expect(
     screen.queryByText("Image generation is off for you"),
@@ -1000,7 +1052,7 @@ test("Choose image and video models from the compact overview", async () => {
   click(menuRow("Change Image model, Nano Banana 2"));
   await screen.findByRole("region", { name: "Image models" });
   expectMenuSelected("Nano Banana 2");
-  click(menuRow("GPT Image 1"));
+  await userEvent.setup({ delay: null }).click(menuRow("GPT Image 1"));
   await waitFor(() => {
     expect(images).toStrictEqual(["gpt-image-1"]);
   });
@@ -1009,8 +1061,10 @@ test("Choose image and video models from the compact overview", async () => {
       screen.queryByRole("region", { name: "Image models" }),
     ).not.toBeInTheDocument();
   });
-  click(menuRow("Claude Fable 5.1"));
-  await screen.findByRole("region", { name: "Models" });
+  await expect(
+    screen.findByRole("region", { name: "Models" }),
+  ).resolves.toBeVisible();
+  expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Image model, GPT Image 1")).toBeVisible();
   click(
     menuRow(
@@ -1018,7 +1072,7 @@ test("Choose image and video models from the compact overview", async () => {
     ),
   );
   await screen.findByRole("region", { name: "Video models" });
-  click(menuRow("Seedance 2.0"));
+  await userEvent.setup({ delay: null }).click(menuRow("Seedance 2.0"));
   await waitFor(() => {
     expect(videos).toStrictEqual(["dreamina-seedance-2-0-260128"]);
   });
@@ -1027,8 +1081,10 @@ test("Choose image and video models from the compact overview", async () => {
       screen.queryByRole("region", { name: "Video models" }),
     ).not.toBeInTheDocument();
   });
-  click(menuRow("Claude Fable 5.1"));
-  await screen.findByRole("region", { name: "Models" });
+  await expect(
+    screen.findByRole("region", { name: "Models" }),
+  ).resolves.toBeVisible();
+  expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Video model, Seedance 2.0")).toBeVisible();
   expect(menuRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
 });
@@ -1060,14 +1116,14 @@ test("Switch model type in the flyout without leaving the panel", async () => {
   click(flyoutTrigger);
 
   // Types live in their own panel; the models sit in a second one beside it.
-  const types = await screen.findByRole("tablist", { name: "Models" });
-  const typeNames = queryAllByRoleFast("tab", types).map((tab) => {
+  const types = await screen.findByRole("menu", { name: "Models" });
+  const typeNames = queryAllByRoleFast("menuitem", types).map((tab) => {
     return tab.textContent;
   });
   expect(typeNames).toHaveLength(3);
-  await screen.findByRole("listbox", { name: "Chat models" });
+  await screen.findByRole("menu", { name: "Chat models" });
 
-  const imageType = queryAllByRoleFast("tab", types).find((tab) => {
+  const imageType = queryAllByRoleFast("menuitem", types).find((tab) => {
     return tab.textContent?.includes("Image");
   });
   if (!imageType) {
@@ -1076,18 +1132,20 @@ test("Switch model type in the flyout without leaving the panel", async () => {
   click(imageType);
 
   // The panel swapped in place: no page was pushed, so nothing to go back from.
-  const imageList = await screen.findByRole("listbox", {
+  const imageList = await screen.findByRole("menu", {
     name: "Image models",
   });
   expect(screen.queryByLabelText("Back to models")).not.toBeInTheDocument();
-  expect(imageType).toHaveAttribute("aria-selected", "true");
-  const banana = queryAllByRoleFast("option", imageList).find((option) => {
-    return option.textContent?.includes("Nano Banana 2");
-  });
+  expect(imageType).toHaveAttribute("aria-expanded", "true");
+  const banana = queryAllByRoleFast("menuitemradio", imageList).find(
+    (option) => {
+      return option.textContent?.includes("Nano Banana 2");
+    },
+  );
   if (!banana) {
     throw new Error("Nano Banana 2 option not found");
   }
-  expect(banana).toHaveAttribute("aria-selected", "true");
+  expect(banana).toHaveAttribute("aria-checked", "true");
 });
 
 test("Hovering a model type opens its panel only once the pointer settles", async () => {
@@ -1114,23 +1172,21 @@ test("Hovering a model type opens its panel only once the pointer settles", asyn
   });
   click(flyoutTrigger);
 
-  const types = await screen.findByRole("tablist", { name: "Models" });
-  await screen.findByRole("listbox", { name: "Chat models" });
-  const imageType = queryAllByRoleFast("tab", types).find((tab) => {
+  const types = await screen.findByRole("menu", { name: "Models" });
+  await screen.findByRole("menu", { name: "Chat models" });
+  const imageType = queryAllByRoleFast("menuitem", types).find((tab) => {
     return tab.textContent?.includes("Image");
   });
   if (!imageType) {
     throw new Error("Image type row not found");
   }
 
-  // A pointer that only crosses the row leaves the panel where it was: the
-  // swap is scheduled, not applied, so this frame still shows chat models.
-  // `delay: null` keeps the pointer sequence instant, which keeps the
-  // assertion below well inside the dwell window.
+  // Native submenus dismiss the previous branch while waiting for the new
+  // trigger's hover intent. Passing a row must not open that branch at once.
   await userEvent.setup({ delay: null }).hover(imageType);
-  expect(screen.getByRole("listbox", { name: "Chat models" })).toBeVisible();
+  expect(imageType).toHaveAttribute("aria-expanded", "false");
 
   // Resting on the row is what opens it.
-  await screen.findByRole("listbox", { name: "Image models" });
-  expect(imageType).toHaveAttribute("aria-selected", "true");
+  await screen.findByRole("menu", { name: "Image models" });
+  expect(imageType).toHaveAttribute("aria-expanded", "true");
 });

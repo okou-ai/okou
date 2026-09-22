@@ -105,14 +105,20 @@ function composerSuggestionCaretAnchor(
   if (!range || !editor.isInitialized) {
     return undefined;
   }
+  const suggestionStart = () => {
+    return Math.max(editor.state.selection.head - (range.end - range.start), 0);
+  };
+  const { node } = editor.view.domAtPos(suggestionStart(), 1);
+  const contextElement = node instanceof Element ? node : node.parentElement;
+  if (!contextElement) {
+    throw new Error("Expected an element containing the suggestion anchor");
+  }
   return {
-    contextElement: editor.view.dom,
+    // The editor scrolls its own content. Native positioning observes scroll
+    // ancestors of contextElement, so use the token's element inside it.
+    contextElement,
     getBoundingClientRect() {
-      const suggestionStart = Math.max(
-        editor.state.selection.head - (range.end - range.start),
-        0,
-      );
-      const coords = editor.view.coordsAtPos(suggestionStart);
+      const coords = editor.view.coordsAtPos(suggestionStart());
       return new DOMRect(
         coords.left,
         coords.top,
@@ -304,7 +310,7 @@ interface ComposerSuggestionMenuState {
   readonly open: boolean;
   readonly range: ComposerSuggestionRange | null;
   readonly selectedIndex: number;
-  readonly close: () => void;
+  readonly close: (restoreEditorFocus?: boolean) => void;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   /** Non-empty only while ComposerSlashTemplatePanel is on. */
   readonly panelCategories: readonly SlashTemplateCategory[];
@@ -706,13 +712,16 @@ export function TiptapWorkflowComposer({
   });
   const handlePaste = useComposerPasteHandler(composer, onPaste);
   const setContainerRef = useSet(composer.editor.setContainerRef$);
+  const setSuggestionMenuRef = useSet(
+    composer.suggestion.setSuggestionMenuRef$,
+  );
 
   return (
     <Popover
       open={suggestionMenu.open}
-      onOpenChange={(open) => {
+      onOpenChange={(open, details) => {
         if (!open) {
-          suggestionMenu.close();
+          suggestionMenu.close(details.reason === "escape-key");
         }
       }}
     >
@@ -778,6 +787,7 @@ export function TiptapWorkflowComposer({
       </div>
       {suggestionMenu.showWorkflows && (
         <SlashWorkflowMenu
+          menuRef={setSuggestionMenuRef}
           anchor={composerSuggestionCaretAnchor(
             composer.editor.editor,
             suggestionMenu.range,
@@ -790,6 +800,7 @@ export function TiptapWorkflowComposer({
           panel={
             suggestionMenu.showTemplatePanel ? (
               <SlashTemplatePanel
+                menuRef={setSuggestionMenuRef}
                 categories={suggestionMenu.panelCategories}
                 workflows={suggestionMenu.workflows}
                 workflowsLoading={suggestionMenu.workflowsLoading}
@@ -800,6 +811,9 @@ export function TiptapWorkflowComposer({
                 onSelectTemplate={suggestionMenu.selectTemplate}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
                 onBrowseAll={suggestionMenu.browseAllTemplates}
+                onClose={() => {
+                  suggestionMenu.close(true);
+                }}
                 workflowOptionId={slashWorkflowOptionId}
                 categoryOptionId={slashWorkflowOptionId}
               />
@@ -809,6 +823,7 @@ export function TiptapWorkflowComposer({
       )}
       {suggestionMenu.showMentions && (
         <ComposerMentionSuggestionMenu
+          menuRef={setSuggestionMenuRef}
           anchor={composerSuggestionCaretAnchor(
             composer.editor.editor,
             suggestionMenu.range,

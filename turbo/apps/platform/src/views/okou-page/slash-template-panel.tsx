@@ -2,6 +2,7 @@
 // workflows you have; the right pane previews a type independently of selection.
 // Kept beside the flat menu in slash-workflow.tsx so both can render from the
 // same suggestion state while the feature switch decides which one is shown.
+import type { Ref } from "react";
 import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
 import { cn, Popover, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
@@ -25,6 +26,7 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
 
 interface SlashTemplatePanelProps {
+  readonly menuRef: Ref<HTMLDivElement>;
   /** Already filtered by the typed slash query. */
   readonly categories: readonly SlashTemplateCategory[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
@@ -41,6 +43,7 @@ interface SlashTemplatePanelProps {
   ) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
+  readonly onClose: () => void;
   readonly workflowOptionId: (workflowId: string) => string;
   readonly categoryOptionId: (category: SlashTemplateCategory) => string;
 }
@@ -103,11 +106,7 @@ function SlashTemplateCover({
         },
         { title: preview.title },
       )}
-      onMouseDown={(event) => {
-        // Keep the editor focused; the panel never takes selection.
-        event.preventDefault();
-        onSelectTemplate();
-      }}
+      onClick={onSelectTemplate}
     >
       <span
         className={cn(
@@ -249,10 +248,14 @@ function insideSlashPanel(target: EventTarget | null): boolean {
  * viewport edge — which slid the whole index out from under the pointer.
  */
 function SlashTemplateDetailFlyout({
+  menuRef,
+  onClose,
   category,
   onSelectTemplate,
   onPreview,
 }: {
+  readonly menuRef: Ref<HTMLDivElement>;
+  readonly onClose: () => void;
   readonly category: SlashTemplateCategory;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
@@ -261,14 +264,23 @@ function SlashTemplateDetailFlyout({
   readonly onPreview: (index: number | null) => void;
 }) {
   return (
-    <Popover open>
+    <Popover
+      open
+      onOpenChange={(open, details) => {
+        // Hover/category selection owns this flyout's visibility, while
+        // Escape dismisses the whole suggestion interaction from any surface.
+        if (!open && details.reason === "escape-key") {
+          onClose();
+        }
+      }}
+    >
       <PopoverContent
+        ref={menuRef}
         aria-label={slashTemplateCategoryLabel(category)}
         anchor={slashPanelAnchor}
         side="right"
         align="start"
         sideOffset={0}
-        updatePositionStrategy="always"
         // The menu's keyboard navigation stays in the editor, and the row that
         // opened this flyout keeps its focus.
         initialFocus={false}
@@ -351,8 +363,7 @@ function SlashPanelWorkflowList({
             onMouseMove={() => {
               onPreview(index);
             }}
-            onMouseDown={(event) => {
-              event.preventDefault();
+            onClick={() => {
               onSelect(workflow);
             }}
           >
@@ -373,6 +384,7 @@ function SlashPanelWorkflowList({
 }
 
 export function SlashTemplatePanel({
+  menuRef,
   categories,
   workflows,
   workflowsLoading,
@@ -383,6 +395,7 @@ export function SlashTemplatePanel({
   onSelectTemplate,
   onSelectWorkflow,
   onBrowseAll,
+  onClose,
   workflowOptionId,
   categoryOptionId,
 }: SlashTemplatePanelProps) {
@@ -439,8 +452,7 @@ export function SlashTemplatePanel({
                   onMouseMove={() => {
                     onPreview(index);
                   }}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
+                  onClick={() => {
                     onSelectCategory(category);
                   }}
                 >
@@ -474,10 +486,7 @@ export function SlashTemplatePanel({
           <button
             type="button"
             className="flex h-8 w-full items-center justify-between rounded-lg px-2 text-sm text-foreground transition-colors hover:bg-state-hover"
-            onMouseDown={(event) => {
-              event.preventDefault();
-              onBrowseAll();
-            }}
+            onClick={onBrowseAll}
           >
             <span className="truncate">
               {t(($) => {
@@ -494,6 +503,8 @@ export function SlashTemplatePanel({
       </div>
       {detailCategory !== null && (
         <SlashTemplateDetailFlyout
+          menuRef={menuRef}
+          onClose={onClose}
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}
           onPreview={onPreview}

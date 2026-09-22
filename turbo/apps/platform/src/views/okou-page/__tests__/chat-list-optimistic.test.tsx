@@ -1,4 +1,5 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
+import { screen, waitFor } from "@testing-library/react";
 import {
   chatEventsContract,
   chatThreadDraftContract,
@@ -28,12 +29,10 @@ const context = testContext();
 
 async function selectClaudeSonnet(): Promise<void> {
   click(await composerModelTrigger("GPT 5.6 Luna"));
-  const chatModels = await screen.findByRole("listbox", {
+  const chatModels = await screen.findByRole("menu", {
     name: "Chat models",
   });
-  click(
-    within(chatModels).getByRole("option", { name: /Claude Sonnet 4\.6/u }),
-  );
+  click(modelMenuOption(/Claude Sonnet 4\.6/u, chatModels));
 }
 
 async function sendComposerMessage(message: string): Promise<void> {

@@ -1504,9 +1504,20 @@
         },
         "shareDialog": {
           "description": "समीक्षा के लिए सार्वजनिक पोस्ट भेजें। हर व्यक्ति को एक स्वीकृत इनाम मिल सकता है।",
+          "draft": "सोमवार की प्रतिस्पर्धी रिपोर्ट मैं {{assistantName}} से बनवाता हूँ — यह स्रोत पढ़कर तालिका बनाकर देता है।",
           "helper": "पोस्ट सार्वजनिक होनी चाहिए और उसमें {{assistantName}} का ज़िक्र होना चाहिए।",
           "inputLabel": "पोस्ट का लिंक",
+          "openX": "X खोलें",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "अब और कुछ नहीं करना है — क्रेडिट अपने आप मिल जाएंगे।",
+          "reviewDone": "हो गया",
+          "reviewExplain": "अगर पोस्ट सार्वजनिक है और उसमें {{assistantName}} का उल्लेख है, तो इनाम अपने आप मिल जाता है। कुछ गड़बड़ होने पर यह चरण कारण के साथ फिर खुल जाएगा।",
+          "reviewOpenPost": "पोस्ट खोलें",
+          "reviewPending": "आम तौर पर एक घंटे के भीतर",
+          "reviewTime": "समीक्षा आम तौर पर एक घंटे में पूरी हो जाती है।",
+          "reviewTitle": "आपकी पोस्ट समीक्षा में है",
+          "stepPaste": "लिंक पेस्ट करें",
+          "stepWrite": "पोस्ट लिखें",
           "submit": "भेजें",
           "title": "{{assistantName}} को X पर शेयर करें"
         },
@@ -1955,6 +1966,11 @@
       "sent": "सफलतापूर्वक फ़ॉरवर्ड किया गया",
       "threads": "चैट",
       "title": "फ़ॉरवर्ड करें"
+    },
+    "homeTasks": {
+      "existingThread": "चैट जारी रखें",
+      "heading": "आपके हाल के काम से लिया गया",
+      "newThread": "नई चैट"
     },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
@@ -4227,7 +4243,7 @@
       },
       "skills": {
         "copied": "कॉपी हो गया",
-        "copy": "इस prompt को अपने Codex या Claude Code सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
+        "copy": "इस prompt को अपने {{provider}} सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
         "copyError": "prompt कॉपी नहीं हो सका।",
         "copyPrompt": "prompt कॉपी करें",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
@@ -4236,7 +4252,7 @@
         "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",
         "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
         "promptLabel": "skill इम्पोर्ट prompt",
-        "promptTitle": "इसे Codex या Claude Code में चलाएँ",
+        "promptTitle": "इसे {{provider}} में चलाएँ",
         "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
         "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।",
         "tryAgain": "फिर से कोशिश करें",
@@ -4284,11 +4300,6 @@
       "sources": {
         "copy": "यह क्लाउड में चलता है, उन्हीं टूल्स से जो आपकी टीम पहले से इस्तेमाल करती है। दस गुना नतीजा, कम परिचालन झंझट, कम लागत। शुरू करने के लिए एक स्रोत जोड़ें।",
         "note": "कौन-से खाते जोड़ने हैं, यह आप तय करते हैं।",
-        "searchAction": "अपने काम के लिए स्रोत खोजें",
-        "searchCopy": "काम या ऐप के नाम से पूरी सूची खोजें।",
-        "searchEmpty": "कोई मिलता-जुलता स्रोत नहीं",
-        "searchPlaceholder": "काम या ऐप के नाम से खोजें",
-        "searchTitle": "अपने काम के लिए स्रोत खोजें",
         "title": "Okou आपके लिए है, और आपकी पूरी टीम के साथ साझा है।"
       },
       "startingPrompt": {
@@ -6143,6 +6154,8 @@
       },
       "personal": {
         "accountFallback": "खाता {{number}}",
+        "accountsDescription": "नई रन के लिए हर प्रदाता द्वारा उपयोग किया जाने वाला खाता चुनें।",
+        "accountsSectionTitle": "व्यक्तिगत खाते",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "सक्रिय",
         "addAccount": "खाता जोड़ें",

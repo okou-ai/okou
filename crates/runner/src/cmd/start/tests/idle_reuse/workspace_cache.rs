@@ -8,8 +8,8 @@ use super::super::support::{
 };
 
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
-use crate::paths::{HomePaths, RunnerPaths};
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_host::paths::{HomePaths, RunnerPaths};
 use runner_types::types::{
     HeartbeatState, SandboxReuseResult, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
 };
@@ -166,7 +166,7 @@ async fn external_workspace_cache_publication_and_removal_trigger_immediate_hear
     );
 
     let before_removal = env.handle.heartbeat_count();
-    let cache_key = crate::paths::scoped_workspace_image_cache_key(
+    let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
         &group,
         "vm0/default",
         reuse_key,
@@ -248,7 +248,7 @@ async fn workspace_cache_change_while_draining_is_preserved_after_resume() {
         16 * 1024 * 1024,
     )
     .await;
-    let cache_key = crate::paths::scoped_workspace_image_cache_key(
+    let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
         &group,
         "vm0/default",
         reuse_key,
@@ -503,7 +503,7 @@ async fn startup_unclassified_cache_invalidated_after_scan_is_reconciled() {
     let group = config.runner.group.clone();
     let workspace_cache = WorkspaceImageCache::shared(runner_paths.clone(), &home, &group);
     let reuse_key = "thread:startup-cache-invalidation";
-    let cache_key = crate::paths::scoped_workspace_image_cache_key(
+    let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
         &group,
         "vm0/default",
         reuse_key,
@@ -657,7 +657,7 @@ async fn workspace_cache_promotion_triggers_immediate_heartbeat_without_park() {
     profiles.get_mut("vm0/default").unwrap().workspace_disk_mb = 16;
     let (mut config, env) =
         mock_run_config_with_overrides(profiles, 8, 32768, 4, Arc::clone(&overrides));
-    let runner_paths = crate::paths::RunnerPaths::new(config.paths.base_dir.clone());
+    let runner_paths = runner_host::paths::RunnerPaths::new(config.paths.base_dir.clone());
     let workspace_cache = crate::workspace_image_cache::WorkspaceImageCache::shared(
         runner_paths.clone(),
         &config.paths.home,

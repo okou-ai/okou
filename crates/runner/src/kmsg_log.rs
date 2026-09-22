@@ -46,7 +46,7 @@ impl KmsgHandle {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
+    pub(crate) fn set_reap_gate(&mut self, gate: crate::test_fixtures::ReapGate) {
         self.process.set_reap_gate(gate);
     }
 
@@ -91,7 +91,7 @@ fn configure_command(command: &mut tokio::process::Command) {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    crate::parent_death::configure_parent_death_signal(command);
+    runner_host::parent_death::configure_parent_death_signal(command);
 }
 
 impl KmsgHandle {

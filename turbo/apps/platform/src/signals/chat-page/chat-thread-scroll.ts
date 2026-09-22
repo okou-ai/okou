@@ -172,11 +172,11 @@ function applyScrollTop(
   scrollTop: number,
   behavior: ScrollBehavior = "instant",
 ): void {
+  const targetScrollTop = Math.max(
+    0,
+    Math.min(scrollTop, container.scrollHeight - container.clientHeight),
+  );
   if (behavior === "smooth") {
-    const targetScrollTop = Math.max(
-      0,
-      Math.min(scrollTop, container.scrollHeight - container.clientHeight),
-    );
     if (runtime.programmaticSmoothScrollTop === targetScrollTop) {
       return;
     }
@@ -186,6 +186,13 @@ function applyScrollTop(
     return;
   }
   runtime.programmaticSmoothScrollTop = null;
+  if (container.scrollTop === targetScrollTop) {
+    // A no-op assignment is not inert in every browser. Safari can reveal
+    // layout-taking descendant scrollbars after a programmatic scroll, so keep
+    // an already-restored viewport untouched.
+    runtime.programmaticScrollTop = container.scrollTop;
+    return;
+  }
   container.scrollTop = scrollTop;
   // Remember where this module left the container. The browser clamps the
   // assignment, so read the offset back instead of trusting the requested one.

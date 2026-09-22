@@ -380,7 +380,7 @@ mod tests {
     fn test_max_length_suffix_derived_basenames_fit_name_max() {
         const COMMON_LINUX_NAME_MAX: usize = 255;
 
-        let suffix = "a".repeat(crate::runner_dirname::MAX_NAME_BYTES);
+        let suffix = "a".repeat(runner_host::runner_dirname::MAX_NAME_BYTES);
         let unit = RunnerServiceUnit::from_suffix(&suffix).unwrap();
         let unit_file = unit.service_name().to_string();
         let service_lock = unit.lock_file_name().to_string();

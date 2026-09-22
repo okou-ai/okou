@@ -1503,9 +1503,20 @@
         },
         "shareDialog": {
           "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
+          "draft": "我每週一的競品報告都交給 {{assistantName}} 做——它會讀完資料，直接把表格給我。",
           "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
           "inputLabel": "貼文連結",
+          "openX": "開啟 X",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "不用再做什麼，點數會自己入帳。",
+          "reviewDone": "知道了",
+          "reviewExplain": "只要貼文是公開的並且提到了 {{assistantName}}，獎勵就會自動發放。如果有問題，這一步會帶著原因重新開啟。",
+          "reviewOpenPost": "開啟貼文",
+          "reviewPending": "通常一小時內",
+          "reviewTime": "審核通常一小時內完成。",
+          "reviewTitle": "貼文已經在審核了",
+          "stepPaste": "把連結貼回來",
+          "stepWrite": "寫這則貼文",
           "submit": "提交",
           "title": "在 X 上分享 {{assistantName}}"
         },
@@ -1948,6 +1959,11 @@
       "sent": "轉發成功",
       "threads": "聊天",
       "title": "轉發到"
+    },
+    "homeTasks": {
+      "existingThread": "繼續聊天",
+      "heading": "從近期工作中提取",
+      "newThread": "新增聊天"
     },
     "mail": {
       "bcc": "密送",
@@ -4215,7 +4231,7 @@
       },
       "skills": {
         "copied": "已複製",
-        "copy": "匯入一個SKILL.md，它就會變成Okou裡的工作流，輸入/即可執行。",
+        "copy": "將此提示詞貼到你的{{provider}}會話中，它會把你本機的技能匯入Okou。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
         "importedCopy": "已匯入為Okou工作流。",
@@ -4224,7 +4240,7 @@
         "preparing": "正在開啟匯入會話…",
         "promptCopy": "它會讀取你本機上的技能，並寫入Okou。",
         "promptLabel": "技能匯入提示詞",
-        "promptTitle": "在Codex或Claude Code中執行",
+        "promptTitle": "在{{provider}}中執行",
         "startError": "無法開啟匯入會話。",
         "title": "把你已經寫好的技能帶過來。",
         "tryAgain": "重試",
@@ -4272,11 +4288,6 @@
       "sources": {
         "copy": "它在雲端執行，直接用你團隊已有的工具。產出提升10倍，協作更順，成本更低。先連線一個資料來源開始。",
         "note": "連線哪些帳號，由你決定。",
-        "searchAction": "找到適合你工作的資料來源",
-        "searchCopy": "按任務或應用名稱搜尋完整目錄。",
-        "searchEmpty": "沒有匹配的資料來源",
-        "searchPlaceholder": "按任務或應用名稱搜尋",
-        "searchTitle": "找到適合你工作的資料來源",
         "title": "Okou為你所用，也服務你的整個團隊。"
       },
       "startingPrompt": {
@@ -6131,6 +6142,8 @@
       },
       "personal": {
         "accountFallback": "帳號{{number}}",
+        "accountsDescription": "選擇每個供應商在新工作中使用的帳號。",
+        "accountsSectionTitle": "個人帳號",
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "新增帳號",

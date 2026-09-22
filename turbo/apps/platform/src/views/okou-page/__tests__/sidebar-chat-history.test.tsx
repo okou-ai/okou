@@ -496,6 +496,11 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
 
   openChatListMenu();
   expect(menuItemByText("Archived")).toBeInTheDocument();
+  expect(
+    screen
+      .getByRole("menu")
+      .querySelectorAll('[data-slot="dropdown-menu-separator"]'),
+  ).toHaveLength(1);
   click(menuItemByText("Unread"));
 
   await waitFor(() => {

@@ -25,6 +25,7 @@ import {
 import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
+  PI_AGENT_RUNTIME_VERSION,
   assertPiNativeCredential,
   materializePiExecutionRoute,
   normalizePiExecutionRoute,
@@ -44,6 +45,7 @@ import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { createHash, randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
@@ -84,6 +86,7 @@ import { modelProviderSurfaceProtocolSchema } from "@okouai/api-contracts/contra
 import {
   getDefaultModel,
   getModelProviderCodexCatalogForModel,
+  getModelProviderCodexRuntimeCapabilities,
   getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getModelImageInputSupport,
@@ -2262,17 +2265,22 @@ function resolveModelProviderCodexRuntimeConfig(args: {
   readonly environment: Readonly<Record<string, string>>;
 }): ModelProviderCodexRuntimeConfig | undefined {
   const providerConfig = getModelProviderCodexRuntimeConfig(args.type);
-  if (providerConfig || !args.logicalModel || !args.runtimeModel) {
+  if (providerConfig) {
     return providerConfig;
   }
-  const modelCatalog = getModelProviderCodexCatalogForModel(
-    args.logicalModel,
-    args.runtimeModel,
+  const providerCapabilities = getModelProviderCodexRuntimeCapabilities(
     args.type,
   );
-  if (!modelCatalog) {
+  if (!providerCapabilities) {
     return undefined;
   }
+  const modelCatalog = args.logicalModel
+    ? getModelProviderCodexCatalogForModel(
+        args.logicalModel,
+        args.runtimeModel,
+        args.type,
+      )
+    : undefined;
   const baseUrl = args.environment.OPENAI_BASE_URL;
   if (!baseUrl) {
     throw new Error(`Missing OPENAI_BASE_URL for Codex provider ${args.type}`);
@@ -2284,8 +2292,8 @@ function resolveModelProviderCodexRuntimeConfig(args: {
     envKey: "OPENAI_API_KEY",
     requiresOpenaiAuth: false,
     wireApi: "responses",
-    supportsWebsockets: false,
-    modelCatalog,
+    supportsWebsockets: providerCapabilities.supportsWebsockets,
+    ...(modelCatalog ? { modelCatalog } : {}),
   };
 }
 
@@ -7507,16 +7515,15 @@ function assemblePiLaunchResources(args: {
           args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
-        // `requiredPiAgentRuntimeVersion` and `minCliVersion` are deliberately
-        // not written yet. This launch config is persisted in the encrypted
-        // queue payload and decoded by whichever API instance serves the claim,
-        // and `piApiFirstTurnConfigSchema` is strict, so the previous release
-        // rejects a payload carrying them. Surface: API -> API during the
-        // rolling deploy and every retained rollback target. Start writing them
-        // once this release is deployed fleet-wide and outside the rollback
-        // window; until then a launch config without the fields keeps the
-        // commit-addressed `npx` launch, which is this PR's behaviour anyway.
-        // Follow-up: #35967 (PR 2, together with the `npx` removal).
+        // The rootfs-installed CLI is used only for this exact runtime build;
+        // anything else launches the commit-addressed package (#35967). This
+        // launch config is persisted in the encrypted queue payload and decoded
+        // by whichever API instance serves the claim through the strict
+        // `piApiFirstTurnConfigSchema`, so the tolerant reader shipped first in
+        // 8d8f3a3e14d23f7471e0773bd9acb988f59217af (api 1.657.0), which the
+        // production rollback resolver now enforces as the API floor.
+        requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+        minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
       },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined

@@ -20,7 +20,7 @@ use crate::active_input::{
 };
 use crate::error::{RunnerError, RunnerResult};
 use crate::local_queue::{self, JobRequest, JobResponse};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 /// Poll interval for checking the result file.

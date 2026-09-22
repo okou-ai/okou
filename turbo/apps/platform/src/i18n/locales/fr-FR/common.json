@@ -1528,9 +1528,20 @@
         },
         "shareDialog": {
           "description": "Envoyez une publication publique pour vérification. Une récompense validée par personne.",
+          "draft": "Je fais mon rapport concurrents du lundi avec {{assistantName}} : il lit les sources et me rend le tableau.",
           "helper": "La publication doit être publique et mentionner {{assistantName}}.",
           "inputLabel": "Lien de la publication",
+          "openX": "Ouvrir X",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "Rien de plus à faire : les crédits arrivent tout seuls.",
+          "reviewDone": "Terminé",
+          "reviewExplain": "Si la publication est publique et mentionne {{assistantName}}, la récompense est accordée automatiquement. Si quelque chose ne va pas, cette étape se rouvre avec le motif.",
+          "reviewOpenPost": "Ouvrir la publication",
+          "reviewPending": "Généralement en moins d'une heure",
+          "reviewTime": "La vérification se termine généralement en moins d'une heure.",
+          "reviewTitle": "Votre publication est en cours de vérification",
+          "stepPaste": "Collez le lien",
+          "stepWrite": "Rédigez la publication",
           "submit": "Envoyer",
           "title": "Partager {{assistantName}} sur X"
         },
@@ -1992,6 +2003,11 @@
       "sent": "Transfert réussi",
       "threads": "Chats",
       "title": "Transférer vers"
+    },
+    "homeTasks": {
+      "existingThread": "Continuer le chat",
+      "heading": "Repris de votre travail récent",
+      "newThread": "Nouveau chat"
     },
     "mail": {
       "bcc": "bcc",
@@ -4281,7 +4297,7 @@
       },
       "skills": {
         "copied": "Copié",
-        "copy": "Collez ce prompt dans votre propre session Codex ou Claude Code : il amène dans Okou les skills présentes sur votre machine.",
+        "copy": "Collez ce prompt dans votre propre session {{provider}} : il amène dans Okou les skills présentes sur votre machine.",
         "copyError": "Le prompt n’a pas pu être copié.",
         "copyPrompt": "Copier le prompt",
         "importedCopy": "Importé comme workflow Okou.",
@@ -4290,7 +4306,7 @@
         "preparing": "Ouverture de votre session d’import…",
         "promptCopy": "Il lit les skills de votre machine et les écrit dans Okou.",
         "promptLabel": "Prompt d’import de skills",
-        "promptTitle": "Lancez ceci dans Codex ou Claude Code",
+        "promptTitle": "Lancez ceci dans {{provider}}",
         "startError": "La session d’import n’a pas pu être ouverte.",
         "title": "Amenez les skills que vous avez déjà écrites.",
         "tryAgain": "Réessayer",
@@ -4338,11 +4354,6 @@
       "sources": {
         "copy": "Il travaille dans le cloud, depuis les outils que votre équipe utilise déjà. 10 fois plus de résultats, moins de friction, un coût plus bas. Connectez une source pour commencer.",
         "note": "Vous choisissez les comptes à connecter.",
-        "searchAction": "Trouver une source pour votre travail",
-        "searchCopy": "Cherchez dans tout le catalogue par tâche ou nom d'application.",
-        "searchEmpty": "Aucune source correspondante",
-        "searchPlaceholder": "Chercher par tâche ou nom d'application",
-        "searchTitle": "Trouver une source pour votre travail",
         "title": "Okou est à vous, et partagé avec toute votre équipe."
       },
       "startingPrompt": {
@@ -6201,6 +6212,8 @@
       },
       "personal": {
         "accountFallback": "Compte {{number}}",
+        "accountsDescription": "Choisissez le compte que chaque fournisseur utilise pour les nouvelles exécutions.",
+        "accountsSectionTitle": "Comptes personnels",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Actif",
         "addAccount": "Ajouter un compte",

@@ -14,7 +14,7 @@ use super::super::super::{
     STDOUT_STREAM_OVERFLOW_MARKER, guest_runtime_path,
 };
 use super::super::support::{minimal_context, sandbox_copy_file_error, test_executor_config};
-use crate::paths::LogPaths;
+use runner_host::paths::LogPaths;
 
 #[test]
 fn guest_log_copy_failure_kind_tracks_cancellation() {
