@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
+import {
+  claimErasureWork,
+  executeErasureWork,
+  finalizeErasureJob,
+  projectErasureDecision,
+  reviseErasureInventory,
+  sealErasureCapture,
+  type ErasureSink,
+} from "@okouai/db/operations/account-erasure";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it, onTestFinished } from "vitest";
@@ -7,13 +16,17 @@ import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { ACCOUNT_OWNERSHIP_INVENTORY } from "../account-erasure-ownership-inventory";
+import { encryptErasureSelector } from "../account-erasure-selector";
 import {
+  RELATIONAL_ERASURE_COLLECTOR_VERSION,
   assertCatalogueInventoryCoverage,
   assertRelationalSweepComplete,
   catalogueForeignKeys,
   catalogueTables,
+  createRelationalErasureCollector,
   planRelationalErasure,
   relationalErasureResidual,
+  type RelationalErasurePlan,
 } from "../account-erasure-relational-collector";
 
 // Explicit external-behavior exception, matching the dormant B1 persistence
@@ -84,10 +97,16 @@ describe("relational erasure plan", () => {
     expect(position.size).toBe(plan.order.length);
 
     const keys = await catalogueForeignKeys(db);
+    // Only a key the server will refuse to violate constrains the order. A
+    // cascading key deletes the child for us and a nulling key rewrites it.
     const rootEdges = keys.filter((key) => {
-      return position.has(key.child) && position.has(key.parent);
+      return (
+        position.has(key.child) &&
+        position.has(key.parent) &&
+        (key.onDelete === "a" || key.onDelete === "r")
+      );
     });
-    // Guard against a vacuous property: roots really do reference each other.
+    // Guard against a vacuous property: blocking root-to-root keys exist.
     expect(rootEdges.length).toBeGreaterThan(0);
 
     const cycleMembers = new Set(
@@ -127,15 +146,29 @@ describe("relational erasure plan", () => {
     expect(byTable.get("agents")).toStrictEqual([
       { kind: "direct", column: "owner" },
     ]);
-    // Ordering alone cannot save the cross-owner case: `chat_threads`
-    // references `agents`, `agent_runs` and `agent_sessions` and is referenced
-    // back, so no sequence satisfies both directions. The plan says so out
-    // loud rather than implying the order is sufficient.
-    const pairs = plan.cycles.map((pair) => {
-      return pair.join("<->");
+    const order = plan.order.map((root) => {
+      return root.table;
     });
-    expect(pairs).toContain("chat_threads<->agents");
-    expect(pairs).toContain("chat_threads<->agent_runs");
+    // `chat_threads` and `agents` reference each other, but the catalogue says
+    // how: `chat_threads -> agents` is `ON DELETE CASCADE`, so it imposes no
+    // ordering and the pair is not a cycle. Treating every key as an ordering
+    // constraint is what made these look mutually blocked.
+    const keys = await catalogueForeignKeys(db);
+    const threadToAgent = keys.find((key) => {
+      return key.child === "chat_threads" && key.parent === "agents";
+    });
+    expect(threadToAgent?.onDelete).toBe("c");
+    expect(plan.cycles).toStrictEqual([]);
+
+    // The one blocking key between roots does constrain the order: `storages`
+    // references `storage_versions` with `NO ACTION`, so it is deleted first.
+    const storageEdge = keys.find((key) => {
+      return key.child === "storages" && key.parent === "storage_versions";
+    });
+    expect(storageEdge?.onDelete).toBe("a");
+    expect(order.indexOf("storages")).toBeLessThan(
+      order.indexOf("storage_versions"),
+    );
   });
 
   it("refuses to call the sweep complete while rows are unreachable", () => {
@@ -149,6 +182,7 @@ describe("relational erasure plan", () => {
         descendants: [],
         unreachableDescendants: [],
         unreachableRoots: ["chat_agentphone_context"],
+        rewritingEdges: [],
         cycles: [],
       });
     }).toThrow(
@@ -160,6 +194,7 @@ describe("relational erasure plan", () => {
         descendants: [],
         unreachableDescendants: ["email_outbox"],
         unreachableRoots: [],
+        rewritingEdges: [],
         cycles: [],
       });
     }).toThrow(
@@ -171,6 +206,7 @@ describe("relational erasure plan", () => {
         descendants: [],
         unreachableDescendants: [],
         unreachableRoots: [],
+        rewritingEdges: [],
         cycles: [],
       });
     }).not.toThrow();
@@ -280,5 +316,206 @@ describe("relational erasure plan", () => {
       plan,
     );
     expect(residual).toStrictEqual([{ table: "users", rows: 1 }]);
+  });
+});
+
+// A dormant end-to-end run of the relational sink through the B1 job. No route
+// or worker reaches this handler; the job is driven here the way the future
+// worker will drive it, so the sweep, its fence and its verification are
+// exercised against real rows rather than asserted about.
+describe("dormant relational sweep", () => {
+  const applicationName = `erasure_sweep_${randomUUID()}`;
+  const databaseUrl = new URL(env("DATABASE_URL"));
+  databaseUrl.searchParams.set("application_name", applicationName);
+  const pool = new Pool({
+    connectionString: databaseUrl.toString(),
+    application_name: applicationName,
+    max: 8,
+  });
+  const db = drizzle(pool);
+  const context = testContext();
+
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  function account(label: string) {
+    return `user_sweep_${label}_${randomUUID().replaceAll("-", "")}`;
+  }
+
+  async function sealedJob(subjectId: string, collectorVersion: string) {
+    const selector = await encryptErasureSelector({
+      version: 1,
+      kind: "subject",
+      subjectKind: "user",
+      subjectId,
+    });
+    const sink: ErasureSink = {
+      sinkId: randomUUID(),
+      domain: "relational",
+      collectorVersion,
+      selector,
+      dependencies: [],
+    };
+    const initial = await projectErasureDecision(db, {
+      subjectKind: "user",
+      subjectId,
+      generation: 1,
+      authorityId: randomUUID(),
+      decisionRef: randomUUID(),
+      decisionSequence: 1n,
+      confirmationRef: randomUUID(),
+      previousDecisionRef: null,
+      dispositionVersion: 1,
+      requestedAt: new Date("2026-09-22T00:00:00Z"),
+      deadlineAt: new Date("2090-01-01T00:00:00Z"),
+    });
+    const job = await reviseErasureInventory(db, initial.id, initial, [sink]);
+    return { job, sink };
+  }
+
+  async function seal(
+    jobId: string,
+    expected: Awaited<ReturnType<typeof sealedJob>>["job"],
+  ) {
+    return await sealErasureCapture(
+      db,
+      jobId,
+      expected,
+      {
+        verify: () => {
+          return Promise.resolve({
+            jobId,
+            generation: expected.generation,
+            captureRevision: expected.captureRevision,
+            inventoryRevision: expected.inventoryRevision,
+            reference: randomUUID(),
+          });
+        },
+      },
+      context.signal,
+    );
+  }
+
+  async function drive(subjectId: string, plan: RelationalErasurePlan) {
+    const handler = createRelationalErasureCollector(db, plan);
+    const { job } = await sealedJob(
+      subjectId,
+      RELATIONAL_ERASURE_COLLECTOR_VERSION,
+    );
+    const [collector] = await claimErasureWork(db, job.id, "inventory");
+    expect(collector).toBeDefined();
+    if (collector) {
+      await executeErasureWork(db, collector, handler, context.signal);
+    }
+    const sealed = await seal(job.id, job);
+    const claimed = await claimErasureWork(db, job.id, "verification");
+    expect(claimed.length).toBeGreaterThan(0);
+    for (const lease of claimed) {
+      await executeErasureWork(db, lease, handler, context.signal);
+    }
+    return { job, sealed };
+  }
+
+  it("deletes a thread the account created under a surviving member's Agent", async () => {
+    const mine = account("mine");
+    const theirs = account("theirs");
+    const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
+    const agentId = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(
+        sql`DELETE FROM chat_threads WHERE user_id IN (${mine}, ${theirs})`,
+      );
+      await db.execute(sql`DELETE FROM agents WHERE id = ${agentId}`);
+    });
+
+    // The other member owns the Agent; this account only owns a thread inside
+    // it. September 12 kept exactly this row.
+    await db.execute(
+      sql`INSERT INTO agents (id, name, org_id, owner)
+          VALUES (${agentId}, ${"sweep-agent"}, ${orgId}, ${theirs})`,
+    );
+    await db.execute(
+      sql`INSERT INTO chat_threads (user_id, agent_id) VALUES (${mine}, ${agentId})`,
+    );
+    await db.execute(
+      sql`INSERT INTO chat_threads (user_id, agent_id) VALUES (${theirs}, ${agentId})`,
+    );
+
+    const plan = await planRelationalErasure(db);
+    await drive(mine, {
+      ...plan,
+      // The state segment 5 produces once the fourteen unreachable descendants
+      // have explicit selectors. Narrowed here so the proof path runs before
+      // its gate opens; the gate itself is asserted in the next case.
+      unreachableDescendants: [],
+    });
+
+    const residual = await relationalErasureResidual(
+      db,
+      { subjectKind: "user", subjectId: mine },
+      plan,
+    );
+    expect(residual).toStrictEqual([]);
+
+    // The surviving member keeps their Agent and their own thread.
+    const survivors = await db.execute(
+      sql`SELECT count(*)::int AS rows FROM agents WHERE id = ${agentId}`,
+    );
+    expect(survivors.rows).toStrictEqual([{ rows: 1 }]);
+    const theirThreads = await db.execute(
+      sql`SELECT count(*)::int AS rows FROM chat_threads WHERE user_id = ${theirs}`,
+    );
+    expect(theirThreads.rows).toStrictEqual([{ rows: 1 }]);
+  });
+
+  it("refuses to verify while rows remain unreachable", async () => {
+    const subjectId = account("gated");
+    const plan = await planRelationalErasure(db);
+    // The real plan: fourteen declared descendants have no foreign key to any
+    // declared parent, so no completion claim may be made today.
+    expect(plan.unreachableDescendants.length).toBeGreaterThan(0);
+    expect(() => {
+      return assertRelationalSweepComplete(plan);
+    }).toThrow("account_erasure_relational:descendant_unreachable");
+
+    const { job, sealed } = await drive(subjectId, plan);
+    await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
+      "account_erasure:work_unresolved",
+    );
+  });
+
+  it("finalizes the job when the sweep is complete and verified", async () => {
+    const subjectId = account("clean");
+    const plan = await planRelationalErasure(db);
+    const { job, sealed } = await drive(subjectId, {
+      ...plan,
+      unreachableDescendants: [],
+    });
+
+    const finished = await finalizeErasureJob(db, job.id, sealed);
+    // No rows existed for this account, so the sink verified no applicable
+    // data rather than claiming an erasure it did not perform.
+    expect(finished.state).toBe("verified_no_applicable_data");
+  });
+
+  it("refuses a handler whose version is not the registered collector", async () => {
+    const subjectId = account("skew");
+    const plan = await planRelationalErasure(db);
+    const { job } = await sealedJob(subjectId, randomUUID());
+    const [collector] = await claimErasureWork(db, job.id, "inventory");
+    expect(collector).toBeDefined();
+    if (collector) {
+      await executeErasureWork(
+        db,
+        collector,
+        createRelationalErasureCollector(db, plan),
+        context.signal,
+      );
+    }
+    // Version skew is a capability outcome, not a sweep: nothing was deleted.
+    await expect(seal(job.id, job)).rejects.toThrow(
+      "account_erasure:capture_incomplete",
+    );
   });
 });
