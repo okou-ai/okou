@@ -17,6 +17,7 @@ use crate::r2_cache::R2ImageCache;
 mod guest;
 mod hashes;
 mod local_publish;
+mod okou_cli;
 mod scripts;
 mod sizes;
 mod snapshot;
@@ -27,6 +28,7 @@ use hashes::{
     compute_template_hash,
 };
 use local_publish::LocalFilePublish;
+use okou_cli::OkouCliArtifact;
 use scripts::{RootfsScriptDir, RootfsScripts, rootfs_script_command, run_rootfs_script};
 use sizes::file_sizes;
 
@@ -129,6 +131,9 @@ pub struct BuildArgs {
         arg(long, help = "Path to runner-rpc-client binary (required)")
     )]
     runner_rpc_client: Option<PathBuf>,
+    /// Directory holding a versioned Okou CLI artifact (package.tgz + manifest.json) to install into the rootfs
+    #[arg(long, value_name = "DIR", conflicts_with = "warm_rootfs_cache")]
+    okou_cli_artifact: Option<PathBuf>,
     /// Profile to build (determines VM resources and disk sizes)
     #[arg(long)]
     pub profile: String,
@@ -276,6 +281,9 @@ struct RootfsBuildInput<'a> {
     template: TemplateInput<'a>,
     rootfs_paths: &'a RootfsPaths,
     guests: &'a GuestBinaries,
+    /// Versioned CLI installed into the customize layer; `None` keeps the
+    /// legacy commit-addressed `npx` launch path as the only CLI delivery.
+    okou_cli: Option<&'a OkouCliArtifact>,
 }
 
 enum RootfsImageLock {
@@ -411,6 +419,10 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
         BuildMode::FullImage => Some(GuestBinaries::resolve(&mut args).await?),
         BuildMode::WarmRootfsCache => None,
     };
+    let okou_cli = match (mode, args.okou_cli_artifact.take()) {
+        (BuildMode::FullImage, Some(dir)) => Some(OkouCliArtifact::resolve(&dir).await?),
+        _ => None,
+    };
 
     let hashes = match mode {
         BuildMode::WarmRootfsCache => BuildHashes {
@@ -428,10 +440,12 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
             ca::ensure(&paths).await?;
             let ca_fingerprint = compute_ca_cert_fingerprint(&paths).await?;
             let guest_hash_inputs = guests.hash_inputs();
+            let okou_cli_hash_input = okou_cli.as_ref().map(OkouCliArtifact::hash_input);
             let rootfs_hashes = compute_rootfs_build_hashes(
                 &guest_hash_inputs,
                 &ca_fingerprint,
                 def.rootfs_disk_mb,
+                okou_cli_hash_input.as_ref(),
             )
             .await?;
             let snapshot_hash = compute_snapshot_hash(
@@ -455,6 +469,10 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
         template_hash = %hashes.template_hash,
         rootfs_hash = hashes.rootfs_hash.as_deref().unwrap_or("<warm-only>"),
         snapshot_hash = hashes.snapshot_hash.as_deref().unwrap_or("<warm-only>"),
+        okou_cli_version = okou_cli
+            .as_ref()
+            .map(OkouCliArtifact::cli_version)
+            .unwrap_or("<none>"),
         "computed build hashes"
     );
     // Machine-readable output consumed by CI workflows and ansible playbooks.
@@ -572,6 +590,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
                 template: template_input,
                 rootfs_paths,
                 guests,
+                okou_cli: okou_cli.as_ref(),
             };
             if let RootfsImageLock::Exclusive { guard } = &_rootfs_lock {
                 let template_lock_path = paths.template_lock(&hashes.template_hash);
@@ -648,7 +667,13 @@ async fn ensure_rootfs_under_lock(
             release_template_lock.release();
             let work_dir_path = scripts.path().await?;
             customize_rootfs_staging(&input, &work_dir_path).await?;
-            verify_rootfs(input.rootfs_paths, &work_dir_path).await?;
+            verify_rootfs(
+                input.rootfs_paths,
+                &work_dir_path,
+                input.okou_cli.map(OkouCliArtifact::cli_version),
+            )
+            .await?;
+            write_okou_cli_sidecar(input.rootfs_paths, input.okou_cli).await?;
             // Commit the rootfs. Same-filesystem rename is POSIX-atomic, so
             // `rootfs.ext4` only becomes visible once customization and
             // verification have fully succeeded.
@@ -1072,8 +1097,18 @@ async fn build_template_locally(
     Ok(())
 }
 
-async fn verify_rootfs(rootfs_paths: &RootfsPaths, work_dir: &RootfsScriptDir) -> RunnerResult<()> {
-    verify_rootfs_file(&rootfs_paths.rootfs_staging(), work_dir, "rootfs").await?;
+async fn verify_rootfs(
+    rootfs_paths: &RootfsPaths,
+    work_dir: &RootfsScriptDir,
+    okou_cli_version: Option<&str>,
+) -> RunnerResult<()> {
+    verify_rootfs_file(
+        &rootfs_paths.rootfs_staging(),
+        work_dir,
+        "rootfs",
+        okou_cli_version,
+    )
+    .await?;
 
     let rootfs_sz = file_sizes(&rootfs_paths.rootfs_staging()).await;
     tracing::info!(
@@ -1086,7 +1121,7 @@ async fn verify_rootfs(rootfs_paths: &RootfsPaths, work_dir: &RootfsScriptDir) -
 }
 
 async fn verify_template_file(rootfs: &Path, work_dir: &RootfsScriptDir) -> RunnerResult<()> {
-    verify_rootfs_file(rootfs, work_dir, "template").await?;
+    verify_rootfs_file(rootfs, work_dir, "template", None).await?;
 
     let rootfs_sz = file_sizes(rootfs).await;
     tracing::info!(
@@ -1102,6 +1137,7 @@ async fn verify_rootfs_file(
     rootfs: &Path,
     work_dir: &RootfsScriptDir,
     mode: &str,
+    okou_cli_version: Option<&str>,
 ) -> RunnerResult<()> {
     let mut cmd = rootfs_script_command(work_dir, "verify-rootfs.sh")?;
     cmd.command
@@ -1111,6 +1147,9 @@ async fn verify_rootfs_file(
         .arg(mode);
     for definition in guest_definitions() {
         cmd.command.arg("--guest-dest").arg(definition.destination);
+    }
+    if let Some(version) = okou_cli_version {
+        cmd.command.arg("--okou-cli-version").arg(version);
     }
     let status = run_rootfs_script(cmd, "verify-rootfs.sh").await?;
 
@@ -1172,6 +1211,13 @@ async fn customize_rootfs_staging(
             .arg(&guest.path)
             .arg(guest.definition.destination);
     }
+    if let Some(okou_cli) = input.okou_cli {
+        cmd.command
+            .arg("--okou-cli")
+            .arg(okou_cli.package_path())
+            .arg(okou_cli.cli_version())
+            .arg(okou_cli.installed_manifest_path());
+    }
     let status = run_rootfs_script(cmd, "customize-rootfs.sh").await?;
 
     if !status.success() {
@@ -1181,6 +1227,36 @@ async fn customize_rootfs_staging(
     }
 
     Ok(())
+}
+
+/// Publish or clear the installed Okou CLI sidecar for a rootfs about to commit.
+///
+/// The running service reads this file to advertise the installed versions at
+/// claim time; the rootfs hash already covers the same bytes, so a rootfs that
+/// is present on disk always has a sidecar that matches its content.
+async fn write_okou_cli_sidecar(
+    rootfs_paths: &RootfsPaths,
+    okou_cli: Option<&OkouCliArtifact>,
+) -> RunnerResult<()> {
+    let sidecar = rootfs_paths.okou_cli_manifest();
+    match okou_cli {
+        Some(okou_cli) => tokio::fs::write(&sidecar, okou_cli.installed_manifest_bytes())
+            .await
+            .map_err(|e| {
+                RunnerError::Internal(format!(
+                    "write Okou CLI sidecar {}: {e}",
+                    sidecar.display()
+                ))
+            }),
+        None => match tokio::fs::remove_file(&sidecar).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(RunnerError::Internal(format!(
+                "remove stale Okou CLI sidecar {}: {e}",
+                sidecar.display()
+            ))),
+        },
+    }
 }
 
 /// Check whether rootfs.ext4 exists.

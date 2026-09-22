@@ -611,4 +611,50 @@ grep -Fq 'runner sha mismatch' "${upload_corrupt_case}/out" || fail "successful 
 [ ! -e "${upload_corrupt_case}/manifest.json" ] || fail "corrupt upload must not publish a manifest"
 [ "$(< "${upload_corrupt_case}/gc-count")" -eq 0 ] || fail "corrupt upload must not reach GC"
 
+okou_cli_dir="${TMPDIR}/okou-cli-artifact"
+mkdir -p "$okou_cli_dir"
+printf 'cli tarball fixture\n' > "${okou_cli_dir}/package.tgz"
+okou_cli_sha=$(sha256sum "${okou_cli_dir}/package.tgz" | awk '{print $1}')
+jq -n --arg sha "$okou_cli_sha" '{
+  version: 1,
+  commitSha: "abc",
+  package: {path: "package.tgz", sha256: $sha, size: 20},
+  versions: {cli: "9.353.0", piAgentRuntime: "1.36.0", piSdk: "0.86.1+okou.0123456789ab"}
+}' > "${okou_cli_dir}/manifest.json"
+
+okou_cli_case="${TMPDIR}/okou-cli-staged"
+prepare_remote_case "$okou_cli_case"
+OKOU_CLI_ARTIFACT_DIR="$okou_cli_dir" REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 \
+  run_remote_case "$okou_cli_case"
+grep -Fqx -- 'ci@dev-arm-1 sudo mkdir -p /var/lib/vm0-runner/bin/pr-123/okou-cli' "${okou_cli_case}/ssh.log" || fail "CLI artifact staging must create the artifact directory"
+for artifact_file in package.tgz manifest.json; do
+  grep -Eq "^ci@dev-arm-1 sudo install -m 644 /dev/stdin /var/lib/vm0-runner/bin/pr-123/okou-cli/${artifact_file}\.abc\.1\.tmp\." "${okou_cli_case}/ssh.log" || fail "CLI artifact ${artifact_file} must upload through a private candidate"
+done
+grep -Fqx -- "$gc_command" "${okou_cli_case}/ssh.log" || fail "CLI artifact staging must precede GC"
+grep -Fqx -- "$setup_command" "${okou_cli_case}/ssh.log" || fail "CLI artifact staging must continue to runner setup"
+grep -Fq -- '--okou-cli-artifact "$OKOU_CLI_DIR"' "$PREPARE" || fail "runner build must receive the staged CLI artifact directory"
+
+no_okou_cli_case="${TMPDIR}/okou-cli-absent"
+prepare_remote_case "$no_okou_cli_case"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$no_okou_cli_case"
+if grep -q 'okou-cli' "${no_okou_cli_case}/ssh.log"; then
+  fail "without OKOU_CLI_ARTIFACT_DIR no CLI artifact command may reach the host"
+fi
+
+printf 'tampered\n' > "${okou_cli_dir}/package.tgz"
+if OKOU_CLI_ARTIFACT_DIR="$okou_cli_dir" \
+  JOB_REF=pr-123 \
+  HEAD_SHA=abc \
+  METAL_HOSTS=dev-1 \
+  METAL_USER=ci \
+  TARGET_TRIPLE=aarch64-unknown-linux-musl \
+  EXPECTED_REMOTE_ARCH=aarch64 \
+  RUNNER_PATH="$runner" \
+  FRESH_METADATA_PATH="$metadata" \
+  EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
+  "$PREPARE" >"${TMPDIR}/okou-cli-mismatch.out" 2>"${TMPDIR}/okou-cli-mismatch.err"; then
+  fail "expected a CLI artifact whose package does not match its manifest to fail"
+fi
+grep -q "Okou CLI package sha mismatch" "${TMPDIR}/okou-cli-mismatch.err" || fail "expected CLI artifact sha mismatch message"
+
 echo "prepare-runner-image-test: ok"

@@ -79,6 +79,40 @@ runner_sha=$(jq -r '.runnerSha256' "$FRESH_METADATA_PATH")
 runner_size=$(jq -r '.runnerSizeBytes' "$FRESH_METADATA_PATH")
 guest_sha_json=$(jq -c '.guestSha256' "$FRESH_METADATA_PATH")
 
+# Optional versioned Okou CLI artifact (package.tgz + manifest.json) installed
+# into the rootfs by `runner build --okou-cli-artifact`. Without it the image
+# keeps the legacy commit-addressed `npx` launch path only.
+OKOU_CLI_DIR="${BIN_DIR}/okou-cli"
+okou_cli_json='null'
+okou_cli_package_sha=""
+if [ -n "${OKOU_CLI_ARTIFACT_DIR:-}" ]; then
+  if [[ "$OKOU_CLI_ARTIFACT_DIR" != /* ]]; then
+    OKOU_CLI_ARTIFACT_DIR="${REPO_ROOT}/${OKOU_CLI_ARTIFACT_DIR}"
+  fi
+  for artifact_file in package.tgz manifest.json; do
+    if [ ! -f "${OKOU_CLI_ARTIFACT_DIR}/${artifact_file}" ]; then
+      echo "Okou CLI artifact is missing ${artifact_file}: ${OKOU_CLI_ARTIFACT_DIR}" >&2
+      exit 2
+    fi
+  done
+  okou_cli_package_sha=$(sha256sum "${OKOU_CLI_ARTIFACT_DIR}/package.tgz" | awk '{print $1}')
+  okou_cli_manifest_sha=$(jq -r '.package.sha256 // empty' "${OKOU_CLI_ARTIFACT_DIR}/manifest.json")
+  if [ "$okou_cli_package_sha" != "$okou_cli_manifest_sha" ]; then
+    echo "Okou CLI package sha mismatch: ${okou_cli_package_sha} != ${okou_cli_manifest_sha}" >&2
+    exit 2
+  fi
+  okou_cli_json=$(jq -c '{
+      cliVersion: .versions.cli,
+      piAgentRuntimeVersion: .versions.piAgentRuntime,
+      piSdkVersion: .versions.piSdk,
+      packageSha256: .package.sha256
+    }' "${OKOU_CLI_ARTIFACT_DIR}/manifest.json")
+  if [ "$(jq -r '.cliVersion // empty' <<<"$okou_cli_json")" = "" ]; then
+    echo "Okou CLI manifest has no versions.cli: ${OKOU_CLI_ARTIFACT_DIR}/manifest.json" >&2
+    exit 2
+  fi
+fi
+
 prepare_host() {
   local host=$1
   local host_index=$2
@@ -247,6 +281,12 @@ REMOTE_SCRIPT
     return 1
   fi
 
+  if [ -n "${OKOU_CLI_ARTIFACT_DIR:-}" ]; then
+    if ! upload_okou_cli_artifact "$host" "$host_index"; then
+      return 1
+    fi
+  fi
+
   local gc_attempt gc_status
   gc_status=0
   for gc_attempt in 1 2; do
@@ -270,6 +310,57 @@ REMOTE_SCRIPT
   echo "=== Done preparing ${host} ==="
 }
 
+# Stage the Okou CLI artifact next to the runner binary. Each file goes through
+# a private candidate, is checksummed on the host, and is only then moved to
+# its final name, mirroring the runner binary upload.
+upload_okou_cli_artifact() {
+  local host=$1
+  local host_index=$2
+  local remote="${METAL_USER}@${host}"
+  local artifact_file expected_sha tmp_candidate
+  echo "=== Staging Okou CLI artifact on ${host} ==="
+  if ! ssh "$remote" sudo mkdir -p "$OKOU_CLI_DIR"; then
+    return 1
+  fi
+  for artifact_file in package.tgz manifest.json; do
+    expected_sha=$(sha256sum "${OKOU_CLI_ARTIFACT_DIR}/${artifact_file}" | awk '{print $1}')
+    if ! tmp_candidate=$(ssh "$remote" bash -s -- "${OKOU_CLI_DIR}/${artifact_file}.${head_sha}.${host_index}.tmp.XXXXXX" <<'REMOTE_SCRIPT'
+set -euo pipefail
+sudo mktemp "$1"
+REMOTE_SCRIPT
+    ); then
+      return 1
+    fi
+    if ! OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=120 \
+      ssh "$remote" sudo install -m 644 /dev/stdin "${tmp_candidate}" < "${OKOU_CLI_ARTIFACT_DIR}/${artifact_file}"; then
+      return 1
+    fi
+    if ! ssh "$remote" bash -s -- "${tmp_candidate}" "${OKOU_CLI_DIR}/${artifact_file}" "${expected_sha}" <<'REMOTE_SCRIPT'
+set -euo pipefail
+TMP_FILE=$1
+FINAL_FILE=$2
+EXPECTED_SHA=$3
+
+cleanup_tmp() {
+  sudo rm -f "${TMP_FILE}"
+}
+trap cleanup_tmp EXIT
+
+actual_sha=$(sudo sha256sum "${TMP_FILE}" | awk '{print $1}')
+if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+  echo "okou cli artifact sha mismatch: ${actual_sha} != ${EXPECTED_SHA}" >&2
+  exit 1
+fi
+sudo mv -f "${TMP_FILE}" "${FINAL_FILE}"
+trap - EXIT
+REMOTE_SCRIPT
+    then
+      return 1
+    fi
+  done
+  echo "=== Done staging Okou CLI artifact on ${host} ==="
+}
+
 warm_rootfs_cache() {
   local host=$1
   local remote="${METAL_USER}@${host}"
@@ -288,13 +379,17 @@ warm_rootfs_cache() {
 build_snapshot_on_host() {
   local host=$1
   local remote="${METAL_USER}@${host}"
+  local build_args=(build --profile "$PROFILE")
+  if [ -n "${OKOU_CLI_ARTIFACT_DIR:-}" ]; then
+    build_args+=(--okou-cli-artifact "$OKOU_CLI_DIR")
+  fi
   echo "=== Building rootfs/snapshot on ${host} ==="
   if ! ssh "$remote" sudo \
     R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}" \
     R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" \
     R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" \
     R2_USER_STORAGES_BUCKET_NAME="${R2_USER_STORAGES_BUCKET_NAME:-}" \
-    "${BIN_DIR}/runner" build --profile "$PROFILE"; then
+    "${BIN_DIR}/runner" "${build_args[@]}"; then
     return 1
   fi
   echo "=== Done building rootfs/snapshot on ${host} ==="
@@ -380,6 +475,7 @@ jq -n \
   --arg runner_dir "$RUNNER_DIR" \
   --arg runner_sha "$runner_sha" \
   --argjson guest_sha "$guest_sha_json" \
+  --argjson okou_cli "$okou_cli_json" \
   --argjson hosts "$hosts_json" \
   '{
     schemaVersion: 1,
@@ -391,6 +487,7 @@ jq -n \
     runnerDir: $runner_dir,
     runnerSha256: $runner_sha,
     guestSha256: $guest_sha,
+    okouCli: $okou_cli,
     hosts: $hosts
   }' > "$tmp_manifest"
 mv "$tmp_manifest" "$MANIFEST_PATH"

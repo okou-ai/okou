@@ -14,6 +14,7 @@ export {
 export { normalizePiExecutionRoute } from "./execution-route";
 export type { PiExecutionRoute } from "./execution-route";
 export { PI_AGENT_THINKING_LEVELS } from "./types";
+export { PI_AGENT_RUNTIME_VERSION } from "./version";
 export type {
   PiAgentCredentialHeaderTemplate,
   PiAgentCredentialReference,

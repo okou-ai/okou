@@ -25,6 +25,12 @@ const ROOTFS_CACHE_VERSION: u32 = 2;
 /// Bump to invalidate all cached snapshots (local only; R2 stores only the template).
 const SNAPSHOT_CACHE_VERSION: u32 = 3;
 
+/// Rootfs-hash inputs contributed by an installed Okou CLI artifact.
+pub(super) struct OkouCliHashInput<'a> {
+    pub(super) package_path: &'a Path,
+    pub(super) installed_manifest: &'a [u8],
+}
+
 /// Shared template and local rootfs identities for a full image build.
 pub(super) struct RootfsBuildHashes {
     pub(super) template_hash: String,
@@ -76,15 +82,18 @@ fn update_rootfs_hash_field(hasher: &mut Sha256, label: &[u8], value: &[u8]) -> 
 /// label, the value's byte length as a big-endian `u64`, then the value bytes. The
 /// fields are ordered as version, template hash, customization script, rootfs disk
 /// size, CA fingerprint, DNS resolver, then one destination/content pair per guest
-/// binary in inventory order. Fixed-width integers use big-endian bytes and IPv4
-/// addresses use their four network-order octets. Future inputs must use
-/// `update_rootfs_hash_field` so arbitrary value bytes cannot shift field boundaries.
+/// binary in inventory order, then, only when an Okou CLI artifact is installed,
+/// its installed manifest and package bytes. Fixed-width integers use big-endian
+/// bytes and IPv4 addresses use their four network-order octets. Future inputs
+/// must use `update_rootfs_hash_field` so arbitrary value bytes cannot shift field
+/// boundaries.
 async fn compute_rootfs_hash(
     template_hash: &str,
     guest_bins: &[(&Path, &str)],
     ca_fingerprint: &str,
     dns_nameserver: Ipv4Addr,
     rootfs_disk_mb: u32,
+    okou_cli: Option<&OkouCliHashInput<'_>>,
 ) -> RunnerResult<String> {
     let mut hasher = Sha256::new();
 
@@ -115,6 +124,21 @@ async fn compute_rootfs_hash(
         update_rootfs_hash_field(&mut hasher, b"bin_content:", &content)?;
     }
 
+    if let Some(okou_cli) = okou_cli {
+        let package = tokio::fs::read(okou_cli.package_path).await.map_err(|e| {
+            RunnerError::Internal(format!(
+                "read {}: {e}",
+                okou_cli.package_path.display()
+            ))
+        })?;
+        update_rootfs_hash_field(
+            &mut hasher,
+            b"okou_cli_installed_manifest:",
+            okou_cli.installed_manifest,
+        )?;
+        update_rootfs_hash_field(&mut hasher, b"okou_cli_package:", &package)?;
+    }
+
     Ok(hex::encode(hasher.finalize()))
 }
 
@@ -123,6 +147,7 @@ pub(super) async fn compute_rootfs_build_hashes(
     guest_bins: &[(&Path, &str)],
     ca_fingerprint: &str,
     rootfs_disk_mb: u32,
+    okou_cli: Option<&OkouCliHashInput<'_>>,
 ) -> RunnerResult<RootfsBuildHashes> {
     let template_hash = compute_template_hash(rootfs_disk_mb);
     let rootfs_hash = compute_rootfs_hash(
@@ -131,6 +156,7 @@ pub(super) async fn compute_rootfs_build_hashes(
         ca_fingerprint,
         DNS_PROBE_RESOLVER_IPV4,
         rootfs_disk_mb,
+        okou_cli,
     )
     .await?;
 
@@ -230,6 +256,7 @@ mod tests {
             "ca-fingerprint",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -239,6 +266,7 @@ mod tests {
             "ca-fingerprint",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -294,6 +322,7 @@ mod tests {
             "ca-fingerprint",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -306,6 +335,7 @@ mod tests {
             "ca-fingerprint",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -328,6 +358,7 @@ mod tests {
             &[(&bin_a, "/usr/local/bin/guest-agent")],
             "ca-fingerprint",
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -335,6 +366,7 @@ mod tests {
             &[(&bin_b, "/usr/local/bin/guest-agent")],
             "ca-fingerprint",
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -363,6 +395,7 @@ mod tests {
             "ca-a",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -373,6 +406,7 @@ mod tests {
             "ca-a",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -387,6 +421,7 @@ mod tests {
             "ca-a",
             DNS_PROBE_RESOLVER_IPV4,
             32768,
+            None,
         )
         .await
         .unwrap();
@@ -398,6 +433,7 @@ mod tests {
             "ca-a",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -409,6 +445,7 @@ mod tests {
             "ca-b",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -420,6 +457,7 @@ mod tests {
             "ca-a",
             DNS_PROBE_RESOLVER_IPV4,
             16384,
+            None,
         )
         .await
         .unwrap();
@@ -431,10 +469,70 @@ mod tests {
             "ca-a",
             Ipv4Addr::new(1, 1, 1, 1),
             16384,
+            None,
         )
         .await
         .unwrap();
         assert_ne!(base, different_dns, "hash must change with DNS nameserver");
+    }
+
+    #[tokio::test]
+    async fn compute_rootfs_hash_sensitive_to_okou_cli_artifact() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("agent");
+        tokio::fs::write(&bin, b"binary-content").await.unwrap();
+        let package_a = dir.path().join("package-a.tgz");
+        let package_b = dir.path().join("package-b.tgz");
+        tokio::fs::write(&package_a, b"bundle-a").await.unwrap();
+        tokio::fs::write(&package_b, b"bundle-b").await.unwrap();
+        let bins: &[(&Path, &str)] = &[(&bin, "/usr/local/bin/guest-agent")];
+        let manifest_a = br#"{"versions":{"cli":"9.353.0"}}"#;
+        let manifest_b = br#"{"versions":{"cli":"9.353.1"}}"#;
+
+        let hash = |package: &'static Path, manifest: &'static [u8]| {
+            let okou_cli = OkouCliHashInput {
+                package_path: package,
+                installed_manifest: manifest,
+            };
+            async move {
+                compute_rootfs_hash(
+                    "template-a",
+                    bins,
+                    "ca-a",
+                    DNS_PROBE_RESOLVER_IPV4,
+                    16384,
+                    Some(&okou_cli),
+                )
+                .await
+                .unwrap()
+            }
+        };
+        let package_a: &'static Path = Box::leak(package_a.into_boxed_path());
+        let package_b: &'static Path = Box::leak(package_b.into_boxed_path());
+
+        let without = compute_rootfs_hash(
+            "template-a",
+            bins,
+            "ca-a",
+            DNS_PROBE_RESOLVER_IPV4,
+            16384,
+            None,
+        )
+        .await
+        .unwrap();
+        let with_a = hash(package_a, manifest_a).await;
+        assert_ne!(without, with_a, "installing a CLI must change the rootfs hash");
+        assert_eq!(with_a, hash(package_a, manifest_a).await, "deterministic");
+        assert_ne!(
+            with_a,
+            hash(package_b, manifest_a).await,
+            "hash must change with package bytes"
+        );
+        assert_ne!(
+            with_a,
+            hash(package_a, manifest_b).await,
+            "hash must change with the installed manifest"
+        );
     }
 
     #[test]

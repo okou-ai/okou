@@ -65,6 +65,13 @@ pub mod runners {
             pub base_session: PiLaunchConfigApiFirstTurnBaseSession,
             /// First sandbox event sequence number for the resumed session.
             pub sandbox_event_sequence_start: u64,
+            /// Exact pi-agent-runtime release the API prepared this turn with;
+            /// the guest execs the rootfs-installed CLI only on an exact match.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub required_pi_agent_runtime_version: Option<String>,
+            /// Lowest installed Okou CLI release allowed to run this launch payload.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub min_cli_version: Option<String>,
         }
 
         /// Frozen exact-version Pi memory recall selection.

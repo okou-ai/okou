@@ -25,6 +25,7 @@ import {
 import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
+  PI_AGENT_RUNTIME_VERSION,
   assertPiNativeCredential,
   materializePiExecutionRoute,
   normalizePiExecutionRoute,
@@ -44,6 +45,7 @@ import { isUnsupportedRunAdmission } from "./run-admission-input";
 import { createHash, randomUUID } from "node:crypto";
 import { command, computed, type Computed } from "ccstate";
 import {
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   CANONICAL_CLAUDE_CONFIG_DIR,
   CANONICAL_CODEX_HOME_DIR,
   CANONICAL_CODEX_MEMORY_MOUNT_PATH,
@@ -7507,6 +7509,10 @@ function assemblePiLaunchResources(args: {
           args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
+        // The rootfs-installed CLI is used only for this exact runtime build;
+        // anything else launches the commit-addressed package (#35967).
+        requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+        minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
       },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined

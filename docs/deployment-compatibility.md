@@ -717,6 +717,56 @@ its tab, so that window closes once the replacement App is live and no
 pre-rollout tab remains open. No alias permits the retired value to pass the
 persistence constraints.
 
+### Version-addressed CLI artifacts in the runner rootfs
+
+Every CLI artifact `manifest.json` records the release versions of what the
+bundle contains: `versions.cli` (`@okouai/cli`), `versions.piAgentRuntime`
+(`@okouai/pi-agent-runtime`), and `versions.piSdk` (the pinned upstream Pi SDK
+plus a digest of the first-party patch set). A release additionally publishes
+the release commit's artifact at `okou-cli/v<versions.cli>/`. That path is
+immutable: the publish step fails the release when the version already exists
+with different bytes, so one CLI version identifies exactly one bundle and the
+semantic version can serve as a compatibility identity.
+
+The runner build (`runner build --okou-cli-artifact DIR`) installs the versioned
+bundle into the rootfs customize layer at `/usr/local/lib/okou-cli/<version>/`
+with a `/usr/local/bin/okou` launcher and an installed manifest at
+`/usr/local/lib/okou-cli/installed.json`; the bundle bytes and the manifest are
+part of the rootfs hash, and `verify-rootfs.sh` asserts the install. Release
+runner builds install the CLI version tagged in `.release-please-manifest.json`
+at the same release commit; preview images install the commit artifact of their
+own head commit. A build without the artifact carries no CLI and keeps only the
+commit-addressed path below.
+
+Compatibility is negotiated per run rather than by deployment order:
+
+- The backend records `requiredPiAgentRuntimeVersion` (the runtime it prepared
+  the API-first turn with) and `minCliVersion` (the lowest CLI release that
+  understands the current launch payload) in `piLaunchConfig.apiFirstTurn`.
+  Both fields are optional so contexts captured by earlier backends remain
+  valid.
+- The guest agent execs the installed CLI only when the installed
+  `piAgentRuntime` equals `requiredPiAgentRuntimeVersion` and the installed
+  `cli` is at or above `minCliVersion`; otherwise it launches the
+  commit-addressed package through `npx`, which is always built from the
+  backend's commit. A launch config without the fields, or a rootfs without an
+  installed CLI, always takes the `npx` path.
+- The runner advertises the installed versions as an optional `installedVersions`
+  field of the claim body. Older backends ignore it; the current backend records
+  it in claim telemetry as `runner_installed_cli_version` and
+  `runner_installed_pi_agent_runtime_version`.
+- The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
+  when the required runtime version differs from the runtime it bundles. A
+  settled-session continuation is a complete checkpoint and is never discarded
+  for a version difference.
+
+Skew in either direction is therefore safe: a new backend with an old runner
+emits the fields into a launch config the old guest ignores; a new runner with
+an old backend sees no required version and launches through `npx`. Raise
+`PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or handoff
+field becomes required. Retiring `CLI_PKG_URL` and the `npx` path follows the
+drain procedure below and is tracked in #35967.
+
 ### Commit-addressed CLI artifacts
 
 The private CLI used inside supported runs is published as an immutable,

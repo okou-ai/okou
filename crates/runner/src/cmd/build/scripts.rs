@@ -492,6 +492,43 @@ exit 18
         );
     }
 
+    /// Guard the `[sync:okou-cli-constants]` contract between the rootfs
+    /// scripts and `guest_contracts::okou_cli`, which the guest agent reads at
+    /// launch. Drift would install the CLI where nothing looks for it.
+    #[test]
+    fn okou_cli_constants_in_sync_across_scripts() {
+        use guest_contracts::okou_cli::{
+            OKOU_CLI_INSTALLED_MANIFEST_PATH, OKOU_CLI_LAUNCHER_PATH, OKOU_CLI_LIB_ROOT,
+        };
+
+        for (name, value) in [
+            ("OKOU_CLI_LIB_ROOT", OKOU_CLI_LIB_ROOT),
+            (
+                "OKOU_CLI_INSTALLED_MANIFEST_DEST",
+                OKOU_CLI_INSTALLED_MANIFEST_PATH,
+            ),
+            ("OKOU_CLI_LAUNCHER_DEST", OKOU_CLI_LAUNCHER_PATH),
+        ] {
+            let line = format!("{name}=\"{value}\"");
+            assert!(
+                CUSTOMIZE_SCRIPT.contains(&line),
+                "customize-rootfs.sh missing {line} — sync with guest_contracts::okou_cli"
+            );
+            assert!(
+                VERIFY_SCRIPT.contains(&line),
+                "verify-rootfs.sh missing {line} — sync with guest_contracts::okou_cli"
+            );
+        }
+        assert!(
+            CUSTOMIZE_SCRIPT.contains("--okou-cli)"),
+            "customize-rootfs.sh must accept --okou-cli PACKAGE VERSION INSTALLED_MANIFEST"
+        );
+        assert!(
+            VERIFY_SCRIPT.contains("--okou-cli-version)"),
+            "verify-rootfs.sh must accept --okou-cli-version"
+        );
+    }
+
     /// Guard: customize-rootfs.sh must verify the CA actually made it into the
     /// system bundle after `update-ca-certificates`. `update-ca-certificates`
     /// can exit 0 while silently omitting our cert (e.g. malformed PEM),
@@ -521,8 +558,10 @@ exit 18
             "--guest",
             "--ca-dir",
             "--dns-nameserver",
+            "--okou-cli",
             "CA_ROOTFS_DEST",
             "NODE_EXTRA_CA_CERTS",
+            "OKOU_CLI_LIB_ROOT",
         ] {
             assert!(
                 !TEMPLATE_BUILD_SCRIPT.contains(forbidden),

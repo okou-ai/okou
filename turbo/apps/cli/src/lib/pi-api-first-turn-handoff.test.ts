@@ -18,6 +18,7 @@ import { http, HttpResponse } from "msw";
 import { server } from "../mocks/server";
 
 import {
+  deriveBaseSessionBytes,
   resolvePiApiFirstTurnHandoff,
   type HandoffRuntime,
 } from "./pi-api-first-turn-handoff";
@@ -152,6 +153,7 @@ function config(
   deadlineAt: number,
   sandboxEventSequenceStart = 1,
   baseSessionSha256: string | null = H0_HASH,
+  requiredPiAgentRuntimeVersion?: string,
 ): PiApiFirstTurnConfig {
   return {
     schemaVersion: 1,
@@ -161,7 +163,67 @@ function config(
     deadlineAt,
     baseSession: { sessionId: SESSION_ID, sha256: baseSessionSha256 },
     sandboxEventSequenceStart,
+    ...(requiredPiAgentRuntimeVersion === undefined
+      ? {}
+      : { requiredPiAgentRuntimeVersion, minCliVersion: "9.352.7" }),
   };
+}
+
+/** H0 (settled) and the H1 the API appended to it, from one session. */
+function continuedSessionJsonl(): { readonly h0: string; readonly h1: string } {
+  const session = MemoryPiSession.create({
+    cwd: "/home/user/workspace",
+    id: SESSION_ID,
+  });
+  session.appendMessage({ role: "user", content: "earlier", timestamp: 1 });
+  session.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "done" }],
+    api: "openai-responses",
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: 2,
+  });
+  const h0 = session.toJsonl();
+  session.appendMessage({
+    role: "user",
+    content: "continued from API",
+    timestamp: 3,
+  });
+  session.appendMessage({
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: "tool-1",
+        name: "read",
+        arguments: { path: "/home/user/workspace/README.md" },
+      },
+    ],
+    api: "openai-responses",
+    provider: "deepseek",
+    model: "deepseek-v4-flash",
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse",
+    timestamp: 4,
+  });
+  return { h0, h1: session.toJsonl() };
 }
 
 function fixedRuntime(fetchMock: typeof fetch, now = 1_000): HandoffRuntime {
@@ -359,6 +421,144 @@ describe("Pi API first-turn handoff loader", () => {
     expect(restored.langfuseParent).toStrictEqual(LANGFUSE_PARENT);
     expect(restored.apiUsage).toStrictEqual(API_USAGE);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("restarts a pending-tool handoff from H0 as sandbox-first when the API used a different runtime build", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-degrade-"));
+    temporaryDirectories.push(sessionDir);
+    const { h0, h1 } = continuedSessionJsonl();
+    expect(h1.startsWith(h0)).toBe(true);
+    const h0Hash = createHash("sha256").update(h0).digest("hex");
+    const pointer = {
+      ...manifest(h1, { apiUsage: API_USAGE }),
+      baseSession: { sessionId: SESSION_ID, sha256: h0Hash },
+    };
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      return String(input).endsWith("manifest.json")
+        ? Response.json(pointer)
+        : new Response(h1, {
+            headers: { "content-length": String(Buffer.byteLength(h1)) },
+          });
+    });
+
+    const restored = await resolvePiApiFirstTurnHandoff({
+      config: config(5_000, 4, h0Hash, "1.36.0"),
+      sessionDir,
+      sessionId: SESSION_ID,
+      runtime: fixedRuntime(fetchMock as typeof fetch),
+      installedPiAgentRuntimeVersion: "1.35.9",
+    });
+
+    expect(restored.ownershipTransferMode).toBe("sandbox-first");
+    expect(restored.boundaryControl).toStrictEqual({
+      schemaVersion: 2,
+      sandboxEventSequenceStart: 4,
+      ownershipTransferMode: "sandbox-first",
+    });
+    expect(restored.degraded).toStrictEqual({
+      reason: "runtime_parity_mismatch",
+      requiredPiAgentRuntimeVersion: "1.36.0",
+      installedPiAgentRuntimeVersion: "1.35.9",
+    });
+    expect(restored.apiUsage).toStrictEqual(API_USAGE);
+    expect(await readFile(restored.sessionFile, "utf8")).toBe(h0);
+  });
+
+  it("restarts a fresh-session pending-tool handoff from the session header on runtime mismatch", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-degrade-"));
+    temporaryDirectories.push(sessionDir);
+    const jsonl = HANDOFF_SESSION_JSONL;
+    const pointer = {
+      ...manifest(jsonl),
+      baseSession: { sessionId: SESSION_ID, sha256: null },
+    };
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      return String(input).endsWith("manifest.json")
+        ? Response.json(pointer)
+        : new Response(jsonl);
+    });
+
+    const restored = await resolvePiApiFirstTurnHandoff({
+      config: config(5_000, 4, null, "1.36.0"),
+      sessionDir,
+      sessionId: SESSION_ID,
+      runtime: fixedRuntime(fetchMock as typeof fetch),
+      installedPiAgentRuntimeVersion: "1.35.9",
+    });
+
+    expect(restored.ownershipTransferMode).toBe("sandbox-first");
+    expect(await readFile(restored.sessionFile, "utf8")).toBe(
+      jsonl.slice(0, jsonl.indexOf("\n") + 1),
+    );
+  });
+
+  it.each([
+    ["the runtime versions match", "1.36.0", "1.36.0"],
+    ["the launch config predates versioned artifacts", undefined, "1.35.9"],
+  ] as const)(
+    "continues a pending-tool handoff when %s",
+    async (_case, required, installed) => {
+      const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-parity-"));
+      temporaryDirectories.push(sessionDir);
+      const jsonl = HANDOFF_SESSION_JSONL;
+      const pointer = manifest(jsonl);
+      const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+        return String(input).endsWith("manifest.json")
+          ? Response.json(pointer)
+          : new Response(jsonl);
+      });
+
+      const restored = await resolvePiApiFirstTurnHandoff({
+        config: config(5_000, 4, H0_HASH, required),
+        sessionDir,
+        sessionId: SESSION_ID,
+        runtime: fixedRuntime(fetchMock as typeof fetch),
+        installedPiAgentRuntimeVersion: installed,
+      });
+
+      expect(restored.ownershipTransferMode).toBe("pending-tool-continuation");
+      expect(restored.degraded).toBeUndefined();
+      expect(await readFile(restored.sessionFile, "utf8")).toBe(jsonl);
+    },
+  );
+
+  it("never discards a settled-session continuation over a runtime mismatch", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-settled-"));
+    temporaryDirectories.push(sessionDir);
+    const jsonl = SETTLED_SESSION_JSONL;
+    const pointer = manifestV3(jsonl, "settled-session-continuation", 4);
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      return String(input).endsWith("manifest.json")
+        ? Response.json(pointer)
+        : new Response(jsonl);
+    });
+
+    const restored = await resolvePiApiFirstTurnHandoff({
+      config: config(5_000, 4, H0_HASH, "1.36.0"),
+      sessionDir,
+      sessionId: SESSION_ID,
+      runtime: fixedRuntime(fetchMock as typeof fetch),
+      installedPiAgentRuntimeVersion: "1.35.9",
+    });
+
+    expect(restored.ownershipTransferMode).toBe("settled-session-continuation");
+    expect(restored.degraded).toBeUndefined();
+    expect(await readFile(restored.sessionFile, "utf8")).toBe(jsonl);
+  });
+
+  it("derives H0 only from a line-aligned prefix with the configured hash", () => {
+    const { h0, h1 } = continuedSessionJsonl();
+    const h0Hash = createHash("sha256").update(h0).digest("hex");
+    expect(deriveBaseSessionBytes(Buffer.from(h1), h0Hash).toString()).toBe(h0);
+    expect(deriveBaseSessionBytes(Buffer.from(h1), null).toString()).toBe(
+      h1.slice(0, h1.indexOf("\n") + 1),
+    );
+    expect(() => deriveBaseSessionBytes(Buffer.from(h1), "0".repeat(64))).toThrow(
+      /does not extend the configured H0/,
+    );
+    expect(() => deriveBaseSessionBytes(Buffer.from("{no newline"), null)).toThrow(
+      /no session header line/,
+    );
   });
 
   it("accepts a sandbox-first manifest after the API budget but before coordination expires", async () => {
