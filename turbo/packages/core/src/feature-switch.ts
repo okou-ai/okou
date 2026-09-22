@@ -50,12 +50,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable bounded public Social data jobs and saved results",
     enabled: false,
   },
-  [FeatureSwitchKey.DurableUserExport]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Run a data export as a resumable background job that continues after an interrupted request. Turning it off runs the next export in the previous single-request exporter.",
-    enabled: true,
-  },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
     description: "Show personal paid-tool controls in Settings",
@@ -503,8 +497,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ChatUnreadOnlyShortcut]: {
     maintainer: "ethan@okou.ai",
     description: "Toggle the chat list's unread-only filter with Mod+Shift+U.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
@@ -568,8 +561,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Show a spinner beside a user message the server has not confirmed yet",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
 };
 

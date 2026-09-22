@@ -5,11 +5,8 @@ chat threads, chat messages, readable agent instructions, readable workflow
 instructions, and current personal memory. The existing status, download,
 48-hour expiry, and 24-hour completion cooldown contract remains unchanged.
 
-The `durableUserExport` switch admits new exports to a persistent job handler
-and is enabled for every owner. Its ZIP format is v3. An owner override turns
-admission off and returns that owner's next export to the v2 streaming
-exporter; jobs already accepted in either mode keep the execution mode stored
-on the job. Previously completed ZIP files keep their original contents.
+Every new export is admitted to the persistent background-job handler and uses
+ZIP format v4. Previously completed ZIP files keep their original contents.
 
 ## Reentrant execution
 
@@ -69,10 +66,11 @@ Terminal and orphaned jobs retain their cleanup obligation. After a two-minute
 grace, bounded cleanup removes staged objects and unfinished multipart uploads,
 then removes inventory/control rows. It preserves unexpired successful ZIPs and
 never deletes referenced chat snapshots or memory source objects. Cleanup retries
-start with the remaining objects. The legacy ten-minute stuck-export cleanup
-excludes durable jobs; a long-running export is not failed merely for its age.
+start with the remaining objects. The ten-minute compatibility cleanup only
+handles historical jobs whose stored execution mode predates the durable
+handler; a current export is not failed merely for its age.
 
-## ZIP format v3
+## ZIP format v4
 
 Read `export-manifest.json` and `README.md` first. The included `restore.py`
 uses Python 3.9 or newer to verify the ZIP and recover the five content groups
@@ -174,43 +172,24 @@ limits fails explicitly, preserving the checkpoint for a later retry; it never
 publishes truncated instructions or exposes unrelated volume files. Chat
 snapshots and memory archives are copied without whole-object decompression.
 
-## Rollout and rollback
+## Deployment compatibility
 
-Migration 1175 adds the job control table, nullable export execution mode,
-and export entry/part inventory. Apply it before promoting the API.
-Old code after migration ignores the additive tables/column; new code before
+Migration 1175 adds the job control table, nullable export execution mode, and
+export entry/part inventory. Apply it before promoting the API. Old code after
+the migration ignores the additive tables and column; new code before the
 migration is unsupported, including its unconditional cleanup reads.
 
-`durableUserExport` stayed disabled until every serving API and scheduled
-cleanup instance understood `execution_mode = durable-v1`, excluded those jobs
-from legacy timeout cleanup, and served the minute cron route. API 1.642.1
-shipped that boundary with migration 1175, so the switch now admits every new
-export to the durable handler.
-
-Disabling the switch stops new durable admissions while its cron continues
-existing jobs and cleanup. Keep a compatible API/cron serving until these jobs
-and their cleanup obligations drain. Rolling back to an API whose old cleanup
-fails every export after ten minutes is unsafe while durable jobs remain.
-Retain the additive schema throughout the rollback window. Handler version 1
-persists hash-wasm 4.12.0 SHA-256 state; keep that decoder compatible while jobs
-remain, or introduce a new handler version for a future incompatible change.
+API 1.642.1 shipped the compatibility boundary: every serving API and scheduled
+cleanup instance understands `execution_mode = durable-v1`, excludes those jobs
+from the historical ten-minute timeout, and serves the minute cron route. Keep
+a compatible API and cron serving until accepted jobs and their cleanup
+obligations drain. Retain the additive schema throughout the rollback window.
+Handler version 1 persists hash-wasm 4.12.0 SHA-256 state; keep that decoder
+compatible while jobs remain, or introduce a new handler version for a future
+incompatible change.
 
 Old and new clients use the same POST/GET and signed download contracts. A
-completed v3 ZIP remains downloadable by an older status/download reader because
-it does not parse the ZIP. Consumers must inspect `formatVersion`, not infer the
-layout from the client version.
-
-## Legacy format v2
-
-Legacy execution creates `chat-threads.jsonl`, per-thread
-`chat-messages/<threadId>.jsonl`, `agents.jsonl`, `workflows.jsonl`, expanded
-`memory/<orgId>/<relativePath>` files, and one `export-manifest.json`. Its manifest
-uses `formatVersion: 2` with inline record counts and file checksums. JSONL is
-UTF-8, one object per line; empty record sets produce empty files.
-
-That path combines each chat snapshot and PostgreSQL tail through the canonical
-whole-history reader, reads at most four histories concurrently, and streams a
-compressed ZIP to multipart storage. Memory extraction materializes one current
-storage archive and verifies its files against the source manifest. It retains
-its original single-invocation time limit. The durable switch and v3 layout are
-what remove that limit; legacy completed objects are never rewritten.
+completed v2, v3, or v4 ZIP remains downloadable by a status/download reader
+because that reader does not parse the archive. Consumers must inspect
+`formatVersion`, not infer the layout from the client version. Historical v2
+and v3 objects are never rewritten.

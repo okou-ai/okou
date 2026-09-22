@@ -1,82 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 
-import {
-  AbortMultipartUploadCommand,
-  CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
-  UploadPartCommand,
-} from "@aws-sdk/client-s3";
 import AdmZip from "adm-zip";
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
-
-import type { TestContext } from "../../../../__tests__/test-context";
-
-/** Keep other fixture objects readable while accepting the export upload. */
-export function installUserExportStorage(context: TestContext): void {
-  const fallback = context.mocks.s3.send.getMockImplementation();
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      command instanceof CreateMultipartUploadCommand &&
-      command.input.Key?.startsWith("exports/")
-    ) {
-      return Promise.resolve({ UploadId: randomUUID() });
-    }
-    if (
-      command instanceof UploadPartCommand &&
-      command.input.Key?.startsWith("exports/")
-    ) {
-      return Promise.resolve({ ETag: `"${randomUUID()}"` });
-    }
-    if (
-      (command instanceof CompleteMultipartUploadCommand ||
-        command instanceof AbortMultipartUploadCommand) &&
-      command.input.Key?.startsWith("exports/")
-    ) {
-      return Promise.resolve({});
-    }
-    return fallback?.(command) ?? Promise.resolve({});
-  });
-}
-
-/** The uploaded bytes are the downloadable file, independent of ZIP internals. */
-export function readUserExportZip(
-  context: TestContext,
-  exportKey: string,
-): AdmZip {
-  const complete = context.mocks.s3.send.mock.calls.find(([command]) => {
-    return (
-      command instanceof CompleteMultipartUploadCommand &&
-      command.input.Key === exportKey
-    );
-  })?.[0];
-  if (!(complete instanceof CompleteMultipartUploadCommand)) {
-    throw new Error(`Expected completed export upload for ${exportKey}`);
-  }
-  const parts = context.mocks.s3.send.mock.calls
-    .map(([command]) => {
-      return command;
-    })
-    .filter((command): command is UploadPartCommand => {
-      return (
-        command instanceof UploadPartCommand &&
-        command.input.Key === exportKey &&
-        command.input.UploadId === complete.input.UploadId
-      );
-    })
-    .sort((left, right) => {
-      return (left.input.PartNumber ?? 0) - (right.input.PartNumber ?? 0);
-    })
-    .map((command) => {
-      if (!(command.input.Body instanceof Uint8Array)) {
-        throw new Error("Expected export upload bytes");
-      }
-      return Buffer.from(command.input.Body);
-    });
-  if (parts.length === 0) {
-    throw new Error(`Expected export upload parts for ${exportKey}`);
-  }
-  return new AdmZip(Buffer.concat(parts));
-}
 
 export function readExportText(zip: AdmZip, path: string): string {
   const entry = zip.getEntry(path);
@@ -95,10 +20,70 @@ export function readExportJsonLines(zip: AdmZip, path: string) {
       });
 }
 
-export function readExportChatRows(zip: AdmZip, threadId: string) {
-  return readExportJsonLines(zip, `chat-messages/${threadId}.jsonl`).map(
-    (row) => {
-      return chatEventRowSchema.parse(row);
-    },
+function exportManifestRecord(
+  zip: AdmZip,
+  path: string,
+): Record<string, unknown> {
+  for (const entry of zip.getEntries()) {
+    if (!entry.entryName.startsWith("manifest/files-")) {
+      continue;
+    }
+    for (const record of readExportJsonLines(zip, entry.entryName)) {
+      if (record.path === path) {
+        return record;
+      }
+    }
+  }
+  throw new Error(`Expected a manifest record for ${path}`);
+}
+
+function snapshotCoverage(entryName: string): number {
+  return Number(/\/snapshots\/(\d+)-/u.exec(entryName)?.[1] ?? 0);
+}
+
+export function readDurableExportChatRows(zip: AdmZip, threadId: string) {
+  const snapshot = zip
+    .getEntries()
+    .filter((entry) => {
+      return entry.entryName.startsWith(`chat-messages/${threadId}/snapshots/`);
+    })
+    .sort((left, right) => {
+      return (
+        snapshotCoverage(left.entryName) - snapshotCoverage(right.entryName)
+      );
+    })
+    .at(-1);
+  const coverage = snapshot ? snapshotCoverage(snapshot.entryName) : 0;
+  const upperSeqId = Math.max(
+    Number(
+      exportManifestRecord(zip, `chat-threads/${threadId}.json`).upperSeqId,
+    ),
+    coverage,
   );
+  const archived = snapshot
+    ? gunzipSync(snapshot.getData())
+        .toString("utf8")
+        .trimEnd()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          return chatEventRowSchema.parse(JSON.parse(line));
+        })
+    : [];
+  const tail = zip
+    .getEntries()
+    .filter((entry) => {
+      return entry.entryName.startsWith(`chat-messages/${threadId}/tail/`);
+    })
+    .flatMap((entry) => {
+      return readExportJsonLines(zip, entry.entryName).map((row) => {
+        return chatEventRowSchema.parse(row);
+      });
+    })
+    .filter((row) => {
+      return row.seqId > coverage && row.seqId <= upperSeqId;
+    });
+  return [...archived, ...tail].sort((left, right) => {
+    return left.seqId - right.seqId;
+  });
 }

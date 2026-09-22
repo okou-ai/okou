@@ -44,6 +44,7 @@ import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
+import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
 import {
   workflowAutomationsContract,
   workflowsCollectionContract,
@@ -58,6 +59,7 @@ import {
 } from "@okouai/core/storage-names";
 import { HttpResponse, http } from "msw";
 import { Webhook } from "svix";
+import AdmZip from "adm-zip";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
@@ -77,6 +79,7 @@ import {
 import { serializeOfficialWorkflowCatalogTests } from "../../../test-fixtures/official-workflow-catalog-lease";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
 import { testChatEventSnapshotRoutes } from "../test-chat-event-snapshot";
+import { testUserExportWorkRoutes } from "../test-user-export-work";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { withBuiltInModelRuntimeRouteUnavailableForTest } from "../../../test-fixtures/built-in-model-runtime-route";
 import { holdChatEventQueueAdmissionLockFixture } from "../../../test-fixtures/chat-events";
@@ -122,11 +125,8 @@ import { setOrgDefaultAgentFixture } from "../../../test-fixtures/org-metadata";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import {
-  installUserExportStorage,
-  readExportJsonLines,
-  readUserExportZip,
-} from "./helpers/user-export-storage";
+import { readExportText } from "./helpers/user-export-storage";
+import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
@@ -5501,38 +5501,43 @@ describe("Official Workflow installations", () => {
     expect(current.body.workflow.instruction).toBe(instruction);
 
     const exports = createOpsLogsApi(context);
-    // The installed instruction is read through the legacy streaming exporter,
-    // which a new export reaches only when its owner opts out of durable
-    // admission.
-    if (!actor.orgId) {
-      throw new Error("Expected organization-scoped actor");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { orgId: actor.orgId, userId: actor.userId },
-      { [FeatureSwitchKey.DurableUserExport]: false },
-    );
-    installUserExportStorage(context);
+    const storage = installDurableUserExportStorage(context);
     const started = await exports.requestPostUserExport(actor, [202]);
     await flushWaitUntilForTest();
+    await accept(
+      setupApp({ context, routes: testUserExportWorkRoutes })(
+        testUserExportWorkContract,
+      ).action({
+        body: {
+          action: "run",
+          userId: actor.userId,
+          jobId: started.body.jobId,
+          maxSteps: 200,
+        },
+      }),
+      [200],
+    );
     const status = await exports.requestGetUserExport(actor, [200]);
     expect(status.body.job).toMatchObject({
       id: started.body.jobId,
       status: "completed",
     });
-    const zip = readUserExportZip(
-      context,
-      `exports/${actor.userId}/${started.body.jobId}.zip`,
-    );
-    expect(readExportJsonLines(zip, "workflows.jsonl")).toContainEqual(
-      expect.objectContaining({
-        id: current.body.workflow.id,
-        officialDefinitionName: definitionName,
-        displayName: current.body.workflow.displayName,
-        description: current.body.workflow.description,
-        instruction,
-      }),
-    );
+    const downloadUrl = status.body.job?.downloadUrl;
+    if (!downloadUrl) {
+      throw new Error("Expected a downloadable Official Workflow export");
+    }
+    const zip = new AdmZip(storage.download(downloadUrl));
+    expect(
+      JSON.parse(
+        readExportText(zip, `workflows/${current.body.workflow.id}.json`),
+      ),
+    ).toMatchObject({
+      id: current.body.workflow.id,
+      officialDefinitionName: definitionName,
+      displayName: current.body.workflow.displayName,
+      description: current.body.workflow.description,
+      instruction,
+    });
   });
 
   it("rejects duplicate Official Workflow installation on the same agent", async () => {
