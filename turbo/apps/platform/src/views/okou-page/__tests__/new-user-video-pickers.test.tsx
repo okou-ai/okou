@@ -104,10 +104,10 @@ test.each([
     }
 
     await openModels();
-    const models = await screen.findByRole("tablist", { name: "Models" });
-    await screen.findByRole("listbox", { name: "Chat models" });
+    const models = await screen.findByRole("menu", { name: "Models" });
+    await screen.findByRole("menu", { name: "Chat models" });
     await waitFor(() => {
-      const categories = queryAllByRoleFast("tab", models).map((tab) => {
+      const categories = queryAllByRoleFast("menuitem", models).map((tab) => {
         return tab.textContent;
       });
       expect(categories).toHaveLength(visible ? 3 : 2);
@@ -125,7 +125,7 @@ test.each([
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(
-        screen.queryByRole("tablist", { name: "Models" }),
+        screen.queryByRole("menu", { name: "Models" }),
       ).not.toBeInTheDocument();
     });
 
