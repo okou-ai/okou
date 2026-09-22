@@ -1187,9 +1187,14 @@ function ChatThreadsContent({
 }) {
   const collapsed = useGet(sessionListCollapsed$);
 
+  // The region stays mounted so the title's `aria-controls` always resolves.
+  // The attribute carries the collapsed state to assistive technology; the
+  // display utility owns the cascade, because an author `display: flex` would
+  // otherwise beat the user-agent `[hidden]` rule while expanded.
   return (
     <div
       id={contentId}
+      hidden={collapsed}
       className={cn("min-h-0 flex-1 flex-col", collapsed ? "hidden" : "flex")}
     >
       {!collapsed && stylesheetLoaded ? (

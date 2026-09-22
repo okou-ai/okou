@@ -92,7 +92,7 @@ test("Browse a long sidebar chat history", async () => {
   expect(scrollArea).toBeInTheDocument();
 });
 
-test("Toggle the chat list from its title with the keyboard", async () => {
+test("Toggle the chat list from its title with pointer and keyboard", async () => {
   const user = userEvent.setup({ delay: null });
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
@@ -115,20 +115,33 @@ test("Toggle the chat list from its title with the keyboard", async () => {
   }
 
   expect(titleButton).toHaveAttribute("aria-expanded", "true");
-  expect(content).not.toHaveClass("hidden");
+  expect(content).toBeVisible();
   titleButton.focus();
   await user.keyboard("{Enter}");
 
   expect(titleButton).toHaveFocus();
   expect(titleButton).toHaveAttribute("aria-expanded", "false");
-  expect(content).toHaveClass("hidden");
+  expect(content).not.toBeVisible();
   expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
 
   await user.keyboard(" ");
 
   expect(titleButton).toHaveAttribute("aria-expanded", "true");
-  expect(content).not.toHaveClass("hidden");
+  expect(content).toBeVisible();
   await within(list).findByText("Release plan");
+
+  // Pointer activation runs through the same control as Enter and Space.
+  click(titleButton);
+  await waitFor(() => {
+    expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
+  });
+  expect(titleButton).toHaveAttribute("aria-expanded", "false");
+  expect(content).not.toBeVisible();
+
+  click(titleButton);
+  await within(list).findByText("Release plan");
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).toBeVisible();
 
   const titleRow = titleButton.parentElement;
   if (!titleRow) {
