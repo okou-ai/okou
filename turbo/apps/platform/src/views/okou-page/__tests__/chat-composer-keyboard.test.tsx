@@ -330,7 +330,7 @@ test.each(["{Control>}{Enter}{/Control}", "{Enter}"])(
       "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36",
     );
     context.mocks.browser.matchMedia((query) => {
-      return query === "(pointer: coarse)";
+      return query === "(pointer: coarse)" || query === "(any-pointer: fine)";
     });
     const viewport = installTouchViewport();
     installComposerChat(sentPrompts, "enter");
