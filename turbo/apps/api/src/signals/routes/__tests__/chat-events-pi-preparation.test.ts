@@ -104,6 +104,42 @@ function observePendingSend<T>(send: Promise<T>) {
   return { result, beforeSettlement, joinPhases };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Preparation observations never reach an HTTP response, so the op-log
+ * transport is the only place a run's published phases are observable.
+ */
+function piPreparationRows(runId: string): Record<string, unknown>[] {
+  const dataset = `vm0-sandbox-op-log-${env("AXIOM_DATASET_SUFFIX")}`;
+  const rows: Record<string, unknown>[] = [];
+  const calls = context.mocks.axiom.sdkIngest.mock.calls;
+  for (const [actualDataset, events] of calls) {
+    if (actualDataset !== dataset || !Array.isArray(events)) {
+      continue;
+    }
+    for (const event of events) {
+      if (
+        isRecord(event) &&
+        event.run_id === runId &&
+        typeof event.op_type === "string" &&
+        event.op_type.startsWith("pi_prepare_")
+      ) {
+        rows.push(event);
+      }
+    }
+  }
+  return rows;
+}
+
+function piPreparationPhases(runId: string): unknown[] {
+  return piPreparationRows(runId).map((row) => {
+    return row.op_type;
+  });
+}
+
 describe("CHAT-02: model-first provider policies", () => {
   it("overlaps captured legacy context branches and skips deferred cache identity", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -778,6 +814,15 @@ describe("CHAT-02: model-first provider policies", () => {
         checkpointObjects.get(sessionKey)?.toString("utf8") ?? "",
       );
       expect(h0.buildSessionContext().messages).toHaveLength(0);
+      // SDK preparation failed before the model turn, so credential
+      // revalidation never ran. A skipped step must leave no row at all; a
+      // zero-duration row would read back as a step that cost nothing.
+      expect(piPreparationPhases(run.runId)).toContain(
+        "pi_prepare_activation_authorize",
+      );
+      expect(piPreparationPhases(run.runId)).not.toContain(
+        "pi_prepare_credentials_revalidate",
+      );
       expect(providerCalls).toBe(0);
       expect(sdk.initializationCount()).toBe(1);
       expect(sdk.disposeCount()).toBe(0);
@@ -996,6 +1041,113 @@ describe("CHAT-02: model-first provider policies", () => {
     },
     30_000,
   );
+
+  it("attributes the dispatch steps between the launch commit and the provider boundary", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    mockPiCheckpointObjectStore();
+    mockPiResourceArchiveDownloads();
+    let providerCalls = 0;
+    server.use(
+      http.post("https://api.openai.com/v1/responses", () => {
+        providerCalls += 1;
+        return nativeCodexSseResponse(
+          piResponsesTextSse("attributed response", providerCalls),
+        );
+      }),
+    );
+    const queued = await queueCapabilityProvenPiRun({
+      actor,
+      agentId,
+      runnerGroup,
+      prompt: "warm exact resource versions",
+    });
+    await completeChatRunOk(
+      queued.anchor.runId,
+      queued.anchorClaim.sandboxHeaders,
+      { usagePricingResolution: queued.usagePricingResolution },
+    );
+    await waitForRunStatus(actor, queued.run.runId, "completed", 10_000);
+    await flushWaitUntilForTest();
+
+    const run = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: "attribute the pre-provider interval",
+        model: "gpt-5.6-terra",
+      },
+      queued.usagePricingResolution,
+    );
+    await waitForRunStatus(actor, run.runId, "completed", 10_000);
+    await flushWaitUntilForTest();
+
+    const rows = piPreparationRows(run.runId);
+    const phases = piPreparationPhases(run.runId);
+    const occurrences = (opType: string) => {
+      return phases.filter((phase) => {
+        return phase === opType;
+      }).length;
+    };
+    expect(occurrences("pi_prepare_activation_authorize")).toBe(1);
+    expect(occurrences("pi_prepare_credentials_revalidate")).toBe(1);
+    // The window's endpoints and the phases already covering it keep their
+    // emission count, so reconstruction stays comparable across this change.
+    expect(occurrences("pi_prepare_h0_load")).toBe(1);
+    expect(occurrences("pi_prepare_model_context")).toBe(1);
+    expect(occurrences("pi_prepare_provider_boundary")).toBe(1);
+
+    const phaseRow = (opType: string): Record<string, unknown> => {
+      const row = rows.find((candidate) => {
+        return candidate.op_type === opType;
+      });
+      if (!row) {
+        throw new Error(`Expected one ${opType} observation`);
+      }
+      return row;
+    };
+    for (const opType of [
+      "pi_prepare_activation_authorize",
+      "pi_prepare_credentials_revalidate",
+    ]) {
+      const row = phaseRow(opType);
+      expect(row).toMatchObject({
+        outcome: "success",
+        success: true,
+        run_id: run.runId,
+        source: "api",
+        sandbox_type: "runner",
+        span_kind: "nested",
+      });
+      expect(row._time).toBe(row.finished_at);
+      expect(typeof row.duration_ms).toBe("number");
+      expect(typeof row.started_at).toBe("string");
+      expect(typeof row.finished_at).toBe("string");
+    }
+
+    // Both new phases are leaves on the serial dispatch path: the authority
+    // read, then credential revalidation, then the already measured model
+    // context. Wall boundaries have millisecond resolution, so a step shorter
+    // than a millisecond legitimately shares its neighbour's timestamp.
+    const wallBoundary = (opType: string, field: string): string => {
+      const value = phaseRow(opType)[field];
+      if (typeof value !== "string") {
+        throw new Error(`Expected a ${field} wall boundary on ${opType}`);
+      }
+      return value;
+    };
+    expect(
+      wallBoundary("pi_prepare_activation_authorize", "finished_at") <=
+        wallBoundary("pi_prepare_credentials_revalidate", "started_at"),
+    ).toBe(true);
+    expect(
+      wallBoundary("pi_prepare_credentials_revalidate", "finished_at") <=
+        wallBoundary("pi_prepare_model_context", "started_at"),
+    ).toBe(true);
+    expect(
+      wallBoundary("pi_prepare_model_context", "finished_at") <=
+        wallBoundary("pi_prepare_provider_boundary", "started_at"),
+    ).toBe(true);
+  }, 30_000);
 
   it("transfers authoritative H0 when API ownership expires before provider transport", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
