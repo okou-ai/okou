@@ -1,4 +1,5 @@
 import {
+  BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
   runnersBuiltinFirewallsResolveContract,
   type RunnerBuiltinFirewallsResolveResponse,
 } from "@okouai/api-contracts/contracts/runners";
@@ -169,6 +170,34 @@ describe("runner builtin firewall resolver", () => {
         ...EXPECTED_RUNNER_FIREWALL_CATALOG.names,
       ]);
     }
+  });
+
+  it("keeps the complete serialized builtin firewall catalog within the Runner byte budget", async () => {
+    const response = await rawApp().request(
+      "/api/runners/builtin-firewalls/resolve",
+      {
+        method: "POST",
+        headers: {
+          authorization: OFFICIAL_RUNNER_AUTHORIZATION,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    const bodyBytes = Buffer.from(await response.arrayBuffer());
+    const body =
+      runnersBuiltinFirewallsResolveContract.resolve.responses[200].parse(
+        JSON.parse(bodyBytes.toString("utf8")),
+      );
+    expect(body.firewalls.github?.name).toBe("github");
+    expect(body.firewalls["model-provider:openai-api-key"]?.name).toBe(
+      "model-provider:openai-api-key",
+    );
+    expect(bodyBytes.byteLength).toBeLessThanOrEqual(
+      BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
+    );
   });
 
   it("resolves the full generated builtin firewall catalog when names are omitted", async () => {
