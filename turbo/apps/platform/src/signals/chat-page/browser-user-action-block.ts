@@ -247,9 +247,30 @@ function createDraftSignals(): Pick<
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
   });
+  const clearDraftKeys$ = command(
+    ({ set }, keys: readonly string[]): void => {
+      if (keys.length === 0) {
+        return;
+      }
+      set(internalDraft$, (current) => {
+        const next = new Map(current);
+        for (const key of keys) {
+          next.delete(key);
+        }
+        return next;
+      });
+    },
+  );
   const ownForm$ = command(
-    ({ set }, _form: HTMLFormElement, signal: AbortSignal): void => {
+    ({ set }, form: HTMLFormElement, signal: AbortSignal): void => {
       signal.throwIfAborted();
+      const passwordKeys = [...form.elements].flatMap((element) => {
+        return element instanceof HTMLInputElement &&
+          element.type === "password" &&
+          element.name !== ""
+          ? [element.name]
+          : [];
+      });
       set(ownerCount$, (count) => {
         return count + 1;
       });
@@ -259,7 +280,7 @@ function createDraftSignals(): Pick<
           set(ownerCount$, (count) => {
             const next = Math.max(0, count - 1);
             if (next === 0) {
-              set(clearDraft$);
+              set(clearDraftKeys$, passwordKeys);
             }
             return next;
           });

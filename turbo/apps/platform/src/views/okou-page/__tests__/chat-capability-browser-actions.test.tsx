@@ -643,7 +643,7 @@ test("Share one action state across equivalent absolute and relative URLs", asyn
   });
 });
 
-test("Closing the browser input dialog clears unsubmitted values", async () => {
+test("Closing the browser input dialog keeps non-password values only", async () => {
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
@@ -664,9 +664,14 @@ test("Closing the browser input dialog clears unsubmitted values", async () => {
     name: "Enter information in browser",
   });
   await fill(
-    within(firstDialog).getByLabelText(/Account email/u),
+    within(firstDialog).getByLabelText("Account email"),
     "user@example.test",
   );
+  await fill(
+    within(firstDialog).getByLabelText("Password"),
+    "local-only-secret",
+  );
+  await fill(within(firstDialog).getByLabelText("Verification code"), "A1B2");
   click(within(firstDialog).getByLabelText("Close"));
   await waitFor(() => {
     expect(
@@ -678,9 +683,13 @@ test("Closing the browser input dialog clears unsubmitted values", async () => {
   const reopenedDialog = await screen.findByRole("dialog", {
     name: "Enter information in browser",
   });
-  expect(within(reopenedDialog).getByLabelText(/Account email/u)).toHaveValue(
-    "",
+  expect(within(reopenedDialog).getByLabelText("Account email")).toHaveValue(
+    "user@example.test",
   );
+  expect(within(reopenedDialog).getByLabelText("Password")).toHaveValue("");
+  expect(
+    within(reopenedDialog).getByLabelText("Verification code"),
+  ).toHaveValue("A1B2");
 });
 
 test("Cancel browser input before sending the fixed cancellation callback", async () => {
