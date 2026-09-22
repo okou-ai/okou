@@ -8,6 +8,13 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.656.0](https://github.com/okou-ai/okou/compare/api-v1.655.1...api-v1.656.0) (2026-09-22)
+
+
+### Features
+
+* **api:** execute the relational erasure sweep behind the capture fence ([#35985](https://github.com/okou-ai/okou/issues/35985)) ([ea73a18](https://github.com/okou-ai/okou/commit/ea73a1816194e55b353ec016356ffe7271b9c44c)), closes [#35874](https://github.com/okou-ai/okou/issues/35874) [#33745](https://github.com/okou-ai/okou/issues/33745)
+
 ## [1.655.1](https://github.com/okou-ai/okou/compare/api-v1.655.0...api-v1.655.1) (2026-09-22)
 
 
