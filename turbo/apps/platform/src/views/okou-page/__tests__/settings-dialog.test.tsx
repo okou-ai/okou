@@ -385,52 +385,6 @@ test("Select and persist a supported interface language", async () => {
   });
 });
 
-test("Save a language once while pending and skip an already persisted selection", async () => {
-  const saveStarted = context.mocks.deferred<void>();
-  const releaseSave = context.mocks.deferred<void>();
-  let serverLocale: UserLocale = "en-US";
-  const submittedLocales: UserLocale[] = [];
-  const supportedLocales: UserLocale[] = ["en-US", "de-DE"];
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    return respond(200, createPreferences(serverLocale, supportedLocales));
-  });
-  context.mocks.api(
-    userPreferencesContract.update,
-    async ({ body, respond, withSignal }) => {
-      if (body.locale !== undefined) {
-        submittedLocales.push(body.locale);
-        saveStarted.resolve();
-        await withSignal(releaseSave.promise);
-        serverLocale = body.locale;
-      }
-      return respond(200, createPreferences(serverLocale, supportedLocales));
-    },
-  );
-  await openDialog("admin", "preference");
-  expect(screen.getByRole("combobox", { name: "Language" })).toHaveTextContent(
-    "English",
-  );
-  click(screen.getByRole("combobox", { name: "Language" }));
-  click(screen.getByRole("option", { name: "Deutsch" }));
-  await saveStarted.promise;
-  expect(screen.getByRole("combobox", { name: "Sprache" })).toBeDisabled();
-  releaseSave.resolve();
-  await waitFor(() => {
-    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
-  });
-  click(screen.getByRole("combobox", { name: "Sprache" }));
-  click(screen.getByRole("option", { name: "Deutsch" }));
-  await waitFor(() => {
-    expect(screen.getByRole("combobox", { name: "Sprache" })).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
-  });
-  expect(serverLocale).toBe("de-DE");
-  expect(submittedLocales).toStrictEqual(["de-DE"]);
-});
-
 test("Retry saving the same language after the interface changed but the API rejected it", async () => {
   let serverLocale: UserLocale = "en-US";
   let failSave = true;

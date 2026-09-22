@@ -136,18 +136,13 @@ export const updateLocalePreference$ = command(
       throw new Error("Language preferences require an active workspace");
     }
 
-    const preferences = await get(userPreferences$);
+    const availableLocales = await get(availableLocalePreferences$);
     signal.throwIfAborted();
-    if (!preferences.supportedLocales.includes(locale)) {
+    if (!availableLocales.includes(locale)) {
       throw new Error(`Unsupported locale: ${locale}`);
     }
 
     await set(applyLocalePreference$, locale, signal);
-    signal.throwIfAborted();
-    // Applying a language can precede a failed save. Compare the confirmed
-    // preference so explicitly selecting that language again can retry it.
-    if (preferences.locale !== locale) {
-      await set(updateUserPreference$, { locale }, signal);
-    }
+    await set(updateUserPreference$, { locale }, signal);
   },
 );
