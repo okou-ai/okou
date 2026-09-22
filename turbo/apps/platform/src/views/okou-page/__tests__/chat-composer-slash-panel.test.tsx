@@ -1,4 +1,10 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
@@ -703,6 +709,10 @@ test("Activate a template cover with Space after a cancelled pointer press", asy
   });
   await user.pointer({ target: cover, keys: "[MouseRight]" });
   expect(editor).toHaveTextContent("Draft /");
+  act(() => {
+    cover.focus();
+  });
+  expect(cover).toHaveFocus();
 
   await user.keyboard(" ");
   await expectInlineTemplateInComposer(template.title);
@@ -728,6 +738,10 @@ test("Escape from a focused template cover dismisses the slash menu", async () =
   await user.pointer({
     target: screen.getByRole("dialog", { name: "Presentation" }),
     keys: "[/MouseLeft]",
+  });
+  expect(editor).toHaveTextContent("Draft /");
+  act(() => {
+    cover.focus();
   });
   expect(cover).toHaveFocus();
 
