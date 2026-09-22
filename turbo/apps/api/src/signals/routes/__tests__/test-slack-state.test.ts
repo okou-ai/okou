@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { testSlackStateRoutes } from "../test-slack-state";
+import { testSlackStateRoutes } from "../slack-state-preview";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { seedRun$ } from "./helpers/usage-state";
 import { createFixtureTracker } from "./helpers/route-test";
