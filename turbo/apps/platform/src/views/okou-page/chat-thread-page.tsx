@@ -4788,6 +4788,13 @@ const USAGE_RECOVERY_DESCRIPTION_CLASS = "min-h-20 @[640px]:min-h-10";
  */
 const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
 
+/**
+ * Recovery controls keep a one-row floor while classification loads, then grow
+ * only when the controls actually wrap. Reserving a hypothetical second row
+ * leaves resolved mobile cards with false bottom padding.
+ */
+const ASSISTANT_ERROR_ACTION_SLOT_CLASS = "flex min-h-8 shrink-0 items-center";
+
 function creditsAvailableCopy(): {
   readonly headline: string;
   readonly helper: string;
@@ -5329,7 +5336,6 @@ interface AssistantErrorCardContent {
   readonly details?: ReactNode;
   readonly actions?: ReactNode;
   readonly reserveActions?: boolean;
-  readonly wrapActions?: boolean;
   readonly testId?: string;
 }
 
@@ -5351,14 +5357,9 @@ function AssistantErrorCard({
   details,
   actions,
   reserveActions = false,
-  wrapActions = false,
   testId,
   pending = false,
 }: AssistantErrorCardContent & { readonly pending?: boolean }) {
-  const actionSlotClassName = cn(
-    CHAT_NOTICE_ACTION_SLOT_CLASS,
-    wrapActions && "h-[72px] items-start @[640px]:h-8 @[640px]:items-center",
-  );
   const hasDescription = Boolean(description);
   const accessibleDescription =
     descriptionTitle ??
@@ -5400,10 +5401,10 @@ function AssistantErrorCard({
       </div>
       {pending ? (
         reserveActions ? (
-          <div className={actionSlotClassName} />
+          <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS} />
         ) : null
       ) : actions !== undefined || details !== undefined ? (
-        <div className={actionSlotClassName}>
+        <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS}>
           {actions !== undefined ? (
             actions
           ) : (
@@ -5797,7 +5798,6 @@ function assistantErrorRecoveryContent(
         }
       : {}),
     reserveActions: hasActions,
-    wrapActions: recovery.kind === "usage-limit",
     testId: "assistant-error-recovery",
   };
 }
@@ -5882,7 +5882,6 @@ function assistantErrorFallbackContent(
         ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
         : {}),
       reserveActions: structuredFailureHasActions(knownReason.data),
-      wrapActions: knownReason.data === "usage_limit",
     };
   }
 
@@ -5981,7 +5980,6 @@ function assistantErrorFallbackContent(
         }
       : {}),
     reserveActions: showDetails || legacyUsageLimit,
-    wrapActions: legacyUsageLimit,
   };
 }
 

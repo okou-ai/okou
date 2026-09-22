@@ -42,12 +42,13 @@ choice is known at mount. Reserve geometry only where an asynchronous read can
 add content. Failure cards render their synchronous supporting copy invisibly
 while classification loads, so a one-line reason keeps its natural height
 without collapsing during that read. Usage-limit recovery separately reserves
-the account-and-window rows that provider metadata can introduce, and reserves
-two action rows below the card's 640px breakpoint because reset, model, and
-retry controls can coexist; other recovery kinds reserve one. Billing states
-keep their own two-line copy and action reservations because both can change
-after role and credit reads. Do not pay for a reservation on rows the
-asynchronous read cannot introduce.
+the account-and-window rows that provider metadata can introduce and the same
+one-row action floor as other recovery kinds. Resolved controls remain
+content-sized and add another row only when they actually wrap; do not leave an
+empty second row for a hypothetical later model change. Billing states keep
+their own two-line copy and action reservations because both can change after
+role and credit reads. Do not pay for a reservation on rows the asynchronous
+read cannot introduce.
 
 ### Keep the frame mounted
 

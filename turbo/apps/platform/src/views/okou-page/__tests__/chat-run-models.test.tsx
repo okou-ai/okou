@@ -1106,6 +1106,11 @@ test("Recover from a personal model account limit", async () => {
   expect(within(description).getByText(/Week resets/iu)).toBeVisible();
   const picker = within(recovery).getByRole("combobox");
   expect(picker).toBeVisible();
+  const actionGroup = picker.parentElement;
+  expect(actionGroup).not.toBeNull();
+  const actionSlot = actionGroup?.parentElement;
+  expect(actionSlot).toHaveClass("min-h-8");
+  expect(actionSlot).not.toHaveClass("h-[72px]");
   expect(queryButton("Try again", recovery)).toBeNull();
 
   await user.click(picker);
