@@ -322,8 +322,13 @@ const CHIP_RAIL_FADE = {
  * cannot -- a chip already at rest under the fade when focus arrives -- so a
  * keyboard user never lands on a control the row dimmed. `composer-rail.tsx`
  * pairs the same two.
+ *
+ * `:focus-visible` rather than `:focus-within`, for the reason spelled there: a
+ * chip clicked with a pointer keeps focus after the click, and the row would
+ * hold its mask off -- ending on a hard cut through a chip -- for as long as
+ * that focus lasts.
  */
-const CHIP_RAIL_FADE_OFF = "focus-within:[mask-image:none]";
+const CHIP_RAIL_FADE_OFF = "has-[:focus-visible]:[mask-image:none]";
 
 /**
  * The dialog's own surface is `--card`, not `--background`: in dark the two are
