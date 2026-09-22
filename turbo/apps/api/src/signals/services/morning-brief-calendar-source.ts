@@ -18,17 +18,26 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-calendar-collection-preview";
 
 import {
-  morningBriefProvenAuthority,
-  type MorningBriefSourceAuthorityProof,
-  type MorningBriefRetainedSourceDescriptor,
-} from "./morning-brief-source-authority";
-import {
   morningBriefItemFacts,
   type MorningBriefSourceCollection,
   type MorningBriefSourceCoverage,
   type MorningBriefSourceItem,
   type MorningBriefSourceProvenance,
 } from "./morning-brief-source-item";
+
+/**
+ * One collection, plus which provider account actually produced it.
+ *
+ * The contract envelope is the preview's published shape and carries no
+ * account, but a normalized item's identity is the calendar account it came
+ * from rather than the member's own user id. This keeps that identity beside
+ * the collection without widening the published contract, and it is provenance
+ * only: it grants nothing and is never re-checked.
+ */
+export type MorningBriefCalendarCollectionWithAccount =
+  MorningBriefCalendarCollection & {
+    readonly accountRef: string | null;
+  };
 
 /**
  * Which kind of instant this event contributes.
@@ -198,39 +207,5 @@ export function normalizeMorningBriefCalendar(
           return calendar.outcome !== "complete";
         }),
     },
-  };
-}
-
-/**
- * The credential-free descriptor a later phase revalidates Calendar against.
- *
- * `containers` names the calendars that actually contributed, so a later check
- * can ask whether those exact calendars are still readable rather than trusting
- * a digest of constants.
- */
-export function morningBriefCalendarDescriptor(args: {
-  /** What this source's reads were actually authorized by, or null. */
-  readonly proof: MorningBriefSourceAuthorityProof | null;
-  readonly membershipId: string;
-  readonly agentId: string;
-  readonly capturedAt: Date;
-  readonly contributed: boolean;
-  readonly containers: readonly string[];
-}): MorningBriefRetainedSourceDescriptor {
-  const proven = morningBriefProvenAuthority(args.proof);
-  return {
-    source: "calendar",
-    connectionId: proven.connectionId,
-    // The exact Google account the shared reader pinned, not the member's own
-    // user id: a first-party id proves nothing about which calendar account
-    // this material came from.
-    accountRef: args.proof?.accountRef ?? null,
-    scopeDigest: proven.scopeDigest,
-    endpoints: proven.endpoints,
-    membershipId: args.membershipId,
-    agentId: args.agentId,
-    capturedAt: args.capturedAt.toISOString(),
-    contributed: args.contributed,
-    containers: args.containers,
   };
 }

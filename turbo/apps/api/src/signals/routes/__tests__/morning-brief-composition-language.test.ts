@@ -23,6 +23,7 @@ import {
   seedMorningBriefChatMemberFixture,
   seedOrdinaryChatThreadFixture$,
 } from "../../../test-fixtures/morning-brief-chat-collection";
+import { withMorningBriefMemberLocaleReadFixture } from "../../../test-fixtures/morning-brief-collection";
 import { tarArchive, tarEntry } from "../../../test-fixtures/tar-archive";
 import { createDeferredPromise } from "../../utils";
 import { agentInstructionsRoutes } from "../agent-instructions";
@@ -326,123 +327,39 @@ function composeRequest(
 function digestOf(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
-
-function isOwnerLookup(args: readonly unknown[], member: Member): boolean {
-  const [query] = args;
-  if (typeof query !== "object" || query === null) {
-    return false;
-  }
-  const organizationId =
-    "organizationId" in query ? query.organizationId : undefined;
-  const userId = "userId" in query ? query.userId : undefined;
-  return (
-    organizationId === member.orgId &&
-    Array.isArray(userId) &&
-    userId.includes(member.userId)
-  );
-}
-
-interface MembershipBarrier {
-  /** Exact-member membership lookups observed since the last reset. */
-  readonly matched: () => number;
-  readonly reset: () => void;
-  /** Suspend the n-th following exact-member lookup after it has answered. */
-  readonly hold: (index: number) => {
-    readonly arrived: Promise<void>;
-    readonly release: () => void;
-  };
-}
-
 /**
- * Suspend the composition at the authority boundary it rechecks before it
- * freezes anything.
- *
- * The membership generation is resolved through Clerk once when the attempt is
- * admitted and again after every network read, so suspending that second
- * lookup stops the attempt exactly where its language context is already in
- * hand and nothing has been released. The index is calibrated by an unheld
- * composition first, so the barrier names the real final lookup instead of
- * assuming how many the path makes.
- */
-function membershipBarrier(member: Member): MembershipBarrier {
-  const lookup =
-    context.mocks.clerk.organizations.getOrganizationMembershipList;
-  const answer = lookup.getMockImplementation();
-  if (!answer) {
-    throw new Error("Expected seeded Clerk organization memberships");
-  }
-  let matched = 0;
-  let holdAt: number | null = null;
-  let arrived: ReturnType<typeof createDeferredPromise<void>> | null = null;
-  let released: ReturnType<typeof createDeferredPromise<void>> | null = null;
-  lookup.mockImplementation(async (...args: unknown[]) => {
-    const memberships = await answer(...args);
-    if (!isOwnerLookup(args, member)) {
-      return memberships;
-    }
-    matched += 1;
-    if (holdAt !== null && matched === holdAt && arrived && released) {
-      arrived.resolve();
-      await released.promise;
-    }
-    return memberships;
-  });
-  onTestFinished(() => {
-    if (released && !released.settled()) {
-      released.resolve();
-    }
-  });
-  return {
-    matched: () => {
-      return matched;
-    },
-    reset: () => {
-      matched = 0;
-    },
-    hold: (index: number) => {
-      holdAt = index;
-      arrived = createDeferredPromise<void>(context.signal);
-      released = createDeferredPromise<void>(context.signal);
-      const pendingArrived = arrived.promise;
-      const pendingReleased = released;
-      return {
-        arrived: pendingArrived,
-        release: () => {
-          if (!pendingReleased.settled()) {
-            pendingReleased.resolve();
-          }
-        },
-      };
-    },
-  };
-}
-
-/**
- * Run one composition, publish through the canonical endpoint while it holds
- * its final authority boundary, and let it finish.
+ * Run one composition, publish through the canonical endpoint while it is
+ * suspended between its frozen language context and the instruction-version
+ * fence, and let it finish.
  *
  * The publication is a real product call, so what changes underneath the held
  * attempt is exactly what an owner editing their Agent changes.
+ *
+ * The suspension point is the member locale read. It used to be the last
+ * exact-member Clerk lookup, because the attempt re-resolved its membership
+ * after every network read; no such lookup survives past collection (#35949),
+ * and holding the last remaining one would publish before the language context
+ * was even read, which proves nothing about the fence. The locale read is the
+ * one statement that always runs in the window, including for an owner with no
+ * instructions storage at all.
  */
 async function composeWhileRepublishing(
   member: Member,
   edit: (() => Promise<void>) | null,
 ) {
-  const barrier = membershipBarrier(member);
-  // Calibrate: the unheld attempt shows how many exact-member lookups the
-  // whole path makes, and the last of them is the final authority recheck.
-  await compose(member);
-  const finalLookup = barrier.matched();
-  expect(finalLookup).toBeGreaterThanOrEqual(2);
-  barrier.reset();
-  const held = barrier.hold(finalLookup);
-  const pending = composeRequest(member);
-  await held.arrived;
-  if (edit) {
-    await edit();
-  }
-  held.release();
-  return (await pending).body;
+  return await withMorningBriefMemberLocaleReadFixture(
+    member,
+    async (localeRead) => {
+      const pending = composeRequest(member);
+      await localeRead.waitForArrival();
+      if (edit) {
+        await edit();
+      }
+      localeRead.release();
+      return (await pending).body;
+    },
+    context.signal,
+  );
 }
 
 /** A valid gzipped TAR carrying exactly these entries. */

@@ -43,7 +43,6 @@ import {
   peekNativeMorningBriefEmailOwner,
   type NativeMorningBriefOwnerPreflight,
 } from "./morning-brief-native-email-admission.service";
-import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
 import {
   MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
   MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
@@ -62,11 +61,6 @@ interface EmailOutboxDrainContext {
 interface EmailOutboxItemsContext extends EmailOutboxDrainContext {
   readonly itemIds: readonly string[];
 }
-
-type RevalidateNativeMorningBriefSources = (
-  candidate: NativeMorningBriefOwnerPreflight,
-  signal: AbortSignal,
-) => Promise<string | null>;
 
 const log = logger("EmailCommon");
 const USER_CACHE_TTL_MS = 900_000;
@@ -818,12 +812,11 @@ async function drainEmailOutboxBatch(
     readonly db: Db;
     readonly context: EmailOutboxDrainContext;
     readonly clerk: ClerkClient;
-    readonly revalidateSources: RevalidateNativeMorningBriefSources;
     readonly itemIds?: readonly string[];
   },
   signal: AbortSignal,
 ): Promise<number> {
-  const { db, context, clerk, revalidateSources, itemIds } = args;
+  const { db, context, clerk, itemIds } = args;
   let processed = 0;
   const deferredIds = new Set<string>();
 
@@ -837,7 +830,6 @@ async function drainEmailOutboxBatch(
         clerk,
         dueAt: new Date(context.currentTimeMs),
         deferredIds,
-        revalidateSources,
         ...(itemIds === undefined ? {} : { itemIds }),
       },
       signal,
@@ -886,7 +878,6 @@ async function resolveNativeOwnerPreflight(
     readonly clerk: ClerkClient;
     readonly dueAt: Date;
     readonly deferredIds: ReadonlySet<string>;
-    readonly revalidateSources: RevalidateNativeMorningBriefSources;
     readonly itemIds?: readonly string[];
   },
   signal: AbortSignal,
@@ -909,12 +900,7 @@ async function resolveNativeOwnerPreflight(
     signal,
   );
   signal.throwIfAborted();
-  if (membership.unavailable === true || membership.membershipId === null) {
-    return membership;
-  }
-  const sourceRefusal = await args.revalidateSources(membership, signal);
-  signal.throwIfAborted();
-  return sourceRefusal === null ? membership : { ...membership, sourceRefusal };
+  return membership;
 }
 
 export const drainEmailOutboxBatch$ = command(
@@ -923,26 +909,11 @@ export const drainEmailOutboxBatch$ = command(
     context: EmailOutboxDrainContext,
     signal: AbortSignal,
   ): Promise<number> => {
-    const revalidateSources: RevalidateNativeMorningBriefSources = async (
-      candidate,
-      revalidationSignal,
-    ) => {
-      return await set(
-        revalidateMorningBriefStoredGenerationSources$,
-        {
-          owner: { orgId: candidate.orgId, userId: candidate.userId },
-          resultAttemptId: candidate.resultAttemptId,
-          purpose: candidate.purpose,
-        },
-        revalidationSignal,
-      );
-    };
     return await drainEmailOutboxBatch(
       {
         db: set(writeDb$),
         context,
         clerk: get(clerk$),
-        revalidateSources,
       },
       signal,
     );
@@ -955,26 +926,11 @@ export const drainEmailOutboxItems$ = command(
     context: EmailOutboxItemsContext,
     signal: AbortSignal,
   ): Promise<number> => {
-    const revalidateSources: RevalidateNativeMorningBriefSources = async (
-      candidate,
-      revalidationSignal,
-    ) => {
-      return await set(
-        revalidateMorningBriefStoredGenerationSources$,
-        {
-          owner: { orgId: candidate.orgId, userId: candidate.userId },
-          resultAttemptId: candidate.resultAttemptId,
-          purpose: candidate.purpose,
-        },
-        revalidationSignal,
-      );
-    };
     return await drainEmailOutboxBatch(
       {
         db: set(writeDb$),
         context,
         clerk: get(clerk$),
-        revalidateSources,
         itemIds: context.itemIds,
       },
       signal,

@@ -187,25 +187,6 @@ const compositionResultSchema = z.object({
       ]),
     })
     .nullable(),
-  /** Exact UTF-8 bytes of the serialized descriptor array below. */
-  descriptorBytes: z.number().int().nonnegative(),
-  /** Credential-free retained authority; never a token or a payload. */
-  descriptors: z.array(
-    z.object({
-      source: morningBriefCompositionSourceSchema,
-      connectionId: z.string().nullable(),
-      accountRef: z.string().nullable(),
-      /** Digested from the permissions the read was actually admitted under. */
-      scopeDigest: z.string(),
-      /** One endpoint per exercised permission, so a later check can re-ask. */
-      endpoints: z.array(z.string()),
-      membershipId: z.string(),
-      agentId: z.string(),
-      capturedAt: z.string().datetime(),
-      containers: z.array(z.string()),
-      contributed: z.boolean(),
-    }),
-  ),
 });
 
 const composeResponseSchema = z.discriminatedUnion("result", [
@@ -232,11 +213,6 @@ const composeResponseSchema = z.discriminatedUnion("result", [
     result: z.literal("incomplete"),
     reason: z.enum([
       "language-context-unavailable",
-      /**
-       * The retained proof could not be represented inside its declared bounds,
-       * or a supplied source could not prove the authority it was read under.
-       */
-      "retained-authority-unbounded",
       "no-item-fits",
       /** The one absolute deadline was reached before the attempt finished. */
       "deadline-exceeded",
@@ -255,7 +231,7 @@ const composeResponseSchema = z.discriminatedUnion("result", [
      */
     sources: compositionSourcesSchema,
   }),
-  /** The owner's authority moved while the attempt was reading. */
+  /** The request's instruction context moved while the attempt was reading. */
   z.object({ result: z.literal("authority-changed") }),
 ]);
 
