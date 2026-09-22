@@ -233,7 +233,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: addable.body.revision,
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(addable.body), makeBuiltInPolicy(model)],
         },
       }),
@@ -262,7 +262,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: listedAfterDisable.body.revision,
+          revision: await currentPolicyRevision(),
           policies: toUpdate(listedAfterDisable.body),
         },
       }),
@@ -307,7 +307,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: initial.body.revision,
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
         },
       }),
@@ -342,7 +342,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: initial.body.revision,
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
         },
       }),
@@ -379,7 +379,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: existing.body.revision,
+          revision: await currentPolicyRevision(),
           policies: toUpdate(existing.body).map((policy) => {
             return { ...policy, isDefault: policy.model === "gpt-6-sol" };
           }),
@@ -393,7 +393,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: existing.body.revision,
+          revision: await currentPolicyRevision(),
           policies: toUpdate(promoted.body)
             .filter((policy) => {
               return policy.model !== "gpt-6-sol";
@@ -415,7 +415,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: existing.body.revision,
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(removed.body), makeBuiltInPolicy("gpt-6-sol")],
         },
       }),
@@ -443,7 +443,7 @@ describe("GET/PUT /api/model-policies", () => {
         client.update({
           headers: authHeaders(),
           body: {
-            revision: existing.body.revision,
+            revision: await currentPolicyRevision(),
             policies: [
               ...toUpdate(existing.body),
               makeBuiltInPolicy(retiredModel),
@@ -668,7 +668,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { revision: listed.body.revision, policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -826,7 +826,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -865,7 +865,7 @@ describe("GET/PUT /api/model-policies", () => {
     const updateResponse = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -918,7 +918,7 @@ describe("GET/PUT /api/model-policies", () => {
     await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -971,7 +971,7 @@ describe("GET/PUT /api/model-policies", () => {
     await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1005,7 +1005,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1030,7 +1030,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await apiClient().update({
       headers: authHeaders(),
       body: {
-        revision: stored.revision,
+        revision: await currentPolicyRevision(),
         policies: [...toUpdate(stored), makeBuiltInPolicy("gpt-6-astra", true)],
       },
     });
@@ -1110,7 +1110,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
-          revision: stored.revision,
+          revision: await currentPolicyRevision(),
           policies: [
             ...toUpdate(stored),
             {
@@ -1160,7 +1160,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
-          revision: stored.revision,
+          revision: await currentPolicyRevision(),
           policies: toUpdate(stored).map((policy) => {
             return { ...policy, isDefault: policy.model === "gpt-6-astra" };
           }),
@@ -1186,7 +1186,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
-          revision: stored.revision,
+          revision: await currentPolicyRevision(),
           policies: toUpdate(stored).map((policy) => {
             return policy.model === "gpt-6-astra"
               ? {
@@ -1206,7 +1206,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
-          revision: stored.revision,
+          revision: await currentPolicyRevision(),
           policies: toUpdate(routed.body).map((policy) => {
             return policy.model === "gpt-6-astra"
               ? makeBuiltInPolicy("gpt-6-astra")
@@ -1238,7 +1238,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
-          revision: stored.revision,
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(stored), makeBuiltInPolicy("gpt-5.6-sol")],
         },
       }),
@@ -1270,7 +1270,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: listResponse.body.revision,
+          revision: await currentPolicyRevision(),
           policies: [
             ...toUpdate(listResponse.body),
             makeBuiltInPolicy("claude-sonnet-4-6"),
@@ -1314,7 +1314,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1383,7 +1383,7 @@ describe("GET/PUT /api/model-policies", () => {
     const updated = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listed.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1417,7 +1417,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
-          revision: listed.body.revision,
+          revision: await currentPolicyRevision(),
           policies: previousClientPolicies,
         },
       }),
@@ -1449,7 +1449,10 @@ describe("GET/PUT /api/model-policies", () => {
     const cleared = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listed.body.revision, policies: clearedPolicies },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: clearedPolicies,
+        },
       }),
       [200],
     );
@@ -1495,7 +1498,7 @@ describe("GET/PUT /api/model-policies", () => {
       const response = await accept(
         client.update({
           headers: authHeaders(),
-          body: { revision: listResponse.body.revision, policies: updates },
+          body: { revision: await currentPolicyRevision(), policies: updates },
         }),
         [200],
       );
@@ -1538,7 +1541,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1584,7 +1587,7 @@ describe("GET/PUT /api/model-policies", () => {
     await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -2014,7 +2017,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { revision: listResponse.body.revision, policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -2059,7 +2062,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { revision: listResponse.body.revision, policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2096,7 +2099,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { revision: listResponse.body.revision, policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2130,7 +2133,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { revision: listResponse.body.revision, policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2156,7 +2159,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await client.update({
       headers: authHeaders(),
       body: {
-        revision: listResponse.body.revision,
+        revision: await currentPolicyRevision(),
         policies: [
           duplicatedPolicy,
           { ...duplicatedPolicy, isDefault: false },
@@ -2188,7 +2191,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { revision: listResponse.body.revision, policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2231,13 +2234,9 @@ describe("GET/PUT /api/model-policies", () => {
     const fixture = await seedFixture();
     useSession(fixture);
 
-    const current = await accept(
-      apiClient().list({ headers: authHeaders() }),
-      [200],
-    );
     const response = await putRawModelPolicies(
       JSON.stringify({
-        revision: current.body.revision,
+        revision: await currentPolicyRevision(),
         policies: [
           {
             model: "claude-haiku-4-5",
@@ -2777,6 +2776,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
         apiClient().update({
           headers: authHeaders(),
           body: {
+            revision: await currentPolicyRevision(),
             policies: [
               makeBuiltInPolicy("gpt-5.6-luna", true),
               makeBuiltInPolicy("gpt-6-astra"),
