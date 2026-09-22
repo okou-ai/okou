@@ -308,6 +308,41 @@ test("A direct interaction serializes duplicate completion and retries only its 
   expect(callbackCount).toBe(2);
 });
 
+test("A direct cancellation fails closed when the mutation response changes action kind", async () => {
+  let callbackCount = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, directAction());
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { code: "BROWSER_NOT_FOUND", message: "Browser not found" },
+    });
+  });
+  context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
+    return respond(200, action("cancelled"));
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    callbackCount += 1;
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await screen.findByText("Finish the visual challenge");
+  click(button("Cancel"));
+
+  await waitFor(() => {
+    expect(button("Cancel")).toBeEnabled();
+  });
+  expect(callbackCount).toBe(0);
+  expect(screen.getByText("Finish the visual challenge")).toBeVisible();
+});
+
 test("A terminal standalone direct interaction retries only its stable callback", async () => {
   let callbackCount = 0;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {

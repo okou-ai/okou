@@ -532,6 +532,7 @@ function createCancelSignal({
     if (
       status === 200 &&
       actionMatches(result.body, descriptor) &&
+      result.body.kind === request.action.kind &&
       result.body.state === "cancelled"
     ) {
       set(activeMutation$, true);
