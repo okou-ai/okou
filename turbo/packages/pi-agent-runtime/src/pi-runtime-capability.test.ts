@@ -165,28 +165,28 @@ describe("pinned Pi runtime capability", () => {
     expect(disagreements).toStrictEqual([]);
   });
 
-  it("leaves a pre-launch model the pinned catalog lacks off the loop", () => {
-    // `gpt-6-sol` is absent from every pinned catalog. These are the identities
-    // its Built-in and BYOK routes would request if it were ever admitted, so
-    // admission has to refuse it before session creation can throw.
-    const identities: readonly PiRuntimeIdentity[] = [
-      { provider: "openai", model: "gpt-6-sol" },
-      { provider: "openai-codex", model: "gpt-6-sol" },
-      { provider: "openrouter", model: "openai/gpt-6-sol" },
-    ];
-    for (const identity of identities) {
-      expect(resolvesInRuntime(identity)).toBe(false);
-    }
-    for (const modelProviderType of getProvidersForModel("gpt-6-sol")) {
-      expect(
-        isPiExecutionRoute({
-          selectedModel: "gpt-6-sol",
-          modelProviderType,
-          runtimeProviderType: modelProviderType,
-          codexServiceTier: undefined,
-          piEnabled: true,
-        }),
-      ).toBe(false);
-    }
-  });
+  it.each(["gpt-6-sol", "gpt-6-luna"])(
+    "keeps %s off Pi while the pinned catalog cannot resolve it",
+    (model) => {
+      const identities: readonly PiRuntimeIdentity[] = [
+        { provider: "openai", model },
+        { provider: "openai-codex", model },
+        { provider: "openrouter", model: `openai/${model}` },
+      ];
+      for (const identity of identities) {
+        expect(resolvesInRuntime(identity)).toBe(false);
+      }
+      for (const modelProviderType of getProvidersForModel(model)) {
+        expect(
+          isPiExecutionRoute({
+            selectedModel: model,
+            modelProviderType,
+            runtimeProviderType: modelProviderType,
+            codexServiceTier: undefined,
+            piEnabled: true,
+          }),
+        ).toBe(false);
+      }
+    },
+  );
 });
