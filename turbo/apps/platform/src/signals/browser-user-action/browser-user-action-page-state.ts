@@ -1,13 +1,10 @@
-import { command, computed, state } from "ccstate";
+import { computed } from "ccstate";
 
 import {
+  createBrowserUserActionSignals,
   parseBrowserUserActionUrl,
-  type BrowserUserActionSignals,
 } from "../chat-page/browser-user-action-block.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
-
-const internalBrowserUserActionPageSignals$ =
-  state<BrowserUserActionSignals | null>(null);
 
 export const browserUserActionPageDescriptor$ = computed((get) => {
   const requestToken = String(get(pathParams$)?.browserActionToken ?? "");
@@ -19,11 +16,6 @@ export const browserUserActionPageDescriptor$ = computed((get) => {
 });
 
 export const browserUserActionPageSignals$ = computed((get) => {
-  return get(internalBrowserUserActionPageSignals$);
+  const descriptor = get(browserUserActionPageDescriptor$);
+  return descriptor ? createBrowserUserActionSignals(descriptor) : null;
 });
-
-export const setBrowserUserActionPageSignals$ = command(
-  ({ set }, signals: BrowserUserActionSignals | null): void => {
-    set(internalBrowserUserActionPageSignals$, signals);
-  },
-);

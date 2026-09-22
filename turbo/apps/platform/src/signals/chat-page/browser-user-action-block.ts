@@ -175,7 +175,12 @@ export function parseBrowserUserActionUrl(
 export function browserUserActionResourceKey(
   descriptor: BrowserUserActionDescriptor,
 ): string {
-  return descriptor.originalUrl;
+  return JSON.stringify([
+    descriptor.requestToken,
+    descriptor.agentId.toLowerCase(),
+    descriptor.threadId.toLowerCase(),
+    descriptor.callbackPrompt,
+  ]);
 }
 
 function inputActionMatches(

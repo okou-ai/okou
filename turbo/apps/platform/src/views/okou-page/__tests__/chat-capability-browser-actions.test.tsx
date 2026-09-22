@@ -109,6 +109,11 @@ function browserInputUrl(
   return url.href;
 }
 
+function browserInputRelativeUrl(): string {
+  const url = new URL(browserInputUrl());
+  return `${url.pathname}${url.search}`;
+}
+
 /**
  * The chat card surface is Tailwind utilities on the element itself, so the
  * App's utility output is the whole style source; nothing has to be lifted out
@@ -575,6 +580,10 @@ test("Apply native browser input before continuing with stable callback IDs", as
   const password = within(form).getByLabelText(/Password/u);
   const code = within(form).getByLabelText(/Verification code/u);
   expect(username).toHaveAttribute("autocomplete", "username");
+  expect(username).toHaveAccessibleName("Account email");
+  expect(username).toHaveAccessibleDescription(
+    "(Required) The email used for this account",
+  );
   expect(password).toHaveAttribute("type", "password");
   expect(password).toHaveAttribute("autocomplete", "current-password");
   expect(code).toHaveAttribute("autocomplete", "one-time-code");
@@ -590,6 +599,48 @@ test("Apply native browser input before continuing with stable callback IDs", as
     { key: "password", value: "local-only-secret" },
   ]);
   expect(screen.queryByDisplayValue("local-only-secret")).toBeNull();
+});
+
+test("Share one action state across equivalent absolute and relative URLs", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  installCapabilityChat({
+    events: completedConversation(
+      [
+        `[Absolute input](${browserInputUrl()})`,
+        `[Relative input](${browserInputRelativeUrl()})`,
+      ].join("\n\n"),
+    ),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
+    state = "succeeded";
+    return respond(200, browserInputAction(state));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+
+  click(buttonsByName("Enter information")[0]!);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await fill(
+    within(dialog).getByLabelText("Account email"),
+    "user@example.test",
+  );
+  await fill(within(dialog).getByLabelText("Password"), "local-only-secret");
+  click(buttonsByName("Add to browser", dialog)[0]!);
+
+  await waitFor(() => {
+    expect(screen.getAllByText("Agent notified")).toHaveLength(2);
+  });
 });
 
 test("Closing the browser input dialog clears unsubmitted values", async () => {

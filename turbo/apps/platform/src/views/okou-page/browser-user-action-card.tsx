@@ -362,15 +362,25 @@ function BrowserInputFields({
   const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-4">
-      {action.fields.map((field) => {
+      {action.fields.map((field, index) => {
+        const inputId = `browser-input-field-${index}`;
+        const requirementId = `${inputId}-requirement`;
+        const descriptionId = field.description
+          ? `${inputId}-description`
+          : undefined;
         return (
-          <label
+          <div
             key={field.key}
-            className="flex flex-col gap-1.5 text-sm font-medium text-foreground"
+            className="flex flex-col gap-1.5"
           >
-            <span>
-              <span>{field.label}</span>
-              <span className="ml-1 text-xs font-normal text-muted-foreground">
+            <div className="flex items-baseline gap-1 text-sm text-foreground">
+              <label htmlFor={inputId} className="font-medium">
+                {field.label}
+              </label>
+              <span
+                id={requirementId}
+                className="text-xs font-normal text-muted-foreground"
+              >
                 {field.required
                   ? t(($) => {
                       return $.chat.browserInput.required;
@@ -379,16 +389,25 @@ function BrowserInputFields({
                       return $.chat.browserInput.optional;
                     })}
               </span>
-            </span>
+            </div>
             {field.description && (
-              <span className="text-xs font-normal leading-4 text-muted-foreground">
+              <span
+                id={descriptionId}
+                className="text-xs font-normal leading-4 text-muted-foreground"
+              >
                 {field.description}
               </span>
             )}
             <Input
+              id={inputId}
               name={field.key}
               type={fieldInputType(field.fieldKind)}
               autoComplete={fieldAutocomplete(field.fieldKind)}
+              aria-describedby={
+                descriptionId
+                  ? `${requirementId} ${descriptionId}`
+                  : requirementId
+              }
               required={field.required}
               maxLength={BROWSER_USER_ACTION_MAX_VALUE_LENGTH}
               value={draft.get(field.key) ?? ""}
@@ -397,7 +416,7 @@ function BrowserInputFields({
                 onUpdate(field.key, event.currentTarget.value);
               }}
             />
-          </label>
+          </div>
         );
       })}
     </div>
