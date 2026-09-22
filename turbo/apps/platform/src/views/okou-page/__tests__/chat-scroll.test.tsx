@@ -50,6 +50,7 @@ interface ChatScrollGeometry {
   readonly bottomScrollTop: () => number;
   readonly firstVisibleAnchor: () => HTMLElement;
   readonly growBeforeMessages: (height: number) => void;
+  readonly growBeforeMessagesOnNextNoopScrollWrite: (height: number) => void;
   readonly resizeViewport: (height: number) => void;
 }
 
@@ -125,6 +126,7 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
   let clientHeight = INITIAL_VIEWPORT_HEIGHT_PX;
   let scrollTop = 0;
   let heightBeforeMessages = 0;
+  let nextNoopScrollWriteGrowth = 0;
 
   const scrollHeight = (): number => {
     return (
@@ -154,7 +156,12 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
         return scrollTop;
       },
       set: (top: number) => {
-        scrollTop = clampScrollTop(top);
+        const nextScrollTop = clampScrollTop(top);
+        if (nextScrollTop === scrollTop && nextNoopScrollWriteGrowth !== 0) {
+          heightBeforeMessages += nextNoopScrollWriteGrowth;
+          nextNoopScrollWriteGrowth = 0;
+        }
+        scrollTop = nextScrollTop;
       },
     },
   });
@@ -209,6 +216,9 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
     },
     growBeforeMessages: (height) => {
       heightBeforeMessages += height;
+    },
+    growBeforeMessagesOnNextNoopScrollWrite: (height) => {
+      nextNoopScrollWriteGrowth = height;
     },
     resizeViewport: (height) => {
       clientHeight = height;
@@ -902,6 +912,29 @@ test("Keep following the latest message while rich content finishes rendering", 
     expect(container.scrollTop).toBe(geometry.bottomScrollTop());
   });
   expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
+});
+
+test("Keep the settled tail stable across a redundant layout restore", async () => {
+  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
+  const container = await openConversation(
+    THREAD_IDS.layoutResize,
+    "History answer 8",
+  );
+  const geometry = installChatScrollGeometry(container);
+  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+
+  // Safari can reveal layout-taking horizontal scrollbars when a parent scroll
+  // offset is written, even when the requested offset is already current. Model
+  // that browser-side growth and verify a layout acknowledgement does not
+  // disturb a tail that is already settled.
+  geometry.growBeforeMessagesOnNextNoopScrollWrite(40);
+  act(() => {
+    window.dispatchEvent(new Event("resize"));
+  });
+
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
 });
 
 test("Preserve reading intent when the chat layout changes size", async () => {
