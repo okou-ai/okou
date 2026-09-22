@@ -1,9 +1,11 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
+  buttonByText,
   context,
   createThread,
   EXISTING_THREAD_ID,
@@ -60,13 +62,8 @@ function unreadShortcutEvent({
   });
 }
 
-function chatListTitleRow(list: HTMLElement): HTMLElement {
-  const menuButton = within(list).getByLabelText("Open chat list menu");
-  const titleRow = menuButton.parentElement?.parentElement;
-  if (!(titleRow instanceof HTMLElement)) {
-    throw new Error("Chat list title row not found");
-  }
-  return titleRow;
+function chatListCollapseToggle(list: HTMLElement): HTMLElement {
+  return buttonByText("Chats with Okou", list);
 }
 
 function unreadOnlyMenuItem(): HTMLElement {
@@ -82,10 +79,22 @@ function unreadOnlyMenuItem(): HTMLElement {
   return item;
 }
 
-function preparePage(userAgent: string, enabled: boolean): Promise<void> {
+function preparePage(
+  userAgent: string,
+  enabled: boolean,
+  unread = false,
+): Promise<void> {
   context.mocks.browser.userAgent(userAgent);
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+  if (unread) {
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        agents: {},
+        threads: { [EXISTING_THREAD_ID]: "unread" },
+      });
+    });
+  }
   return setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
@@ -140,7 +149,7 @@ test.each(platforms)(
       expect(within(list).getByText("Release plan")).toBeInTheDocument();
     }
 
-    click(chatListTitleRow(list));
+    click(chatListCollapseToggle(list));
     await waitFor(() => {
       expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
     });
@@ -176,6 +185,33 @@ test.each(platforms)(
     }
   },
 );
+
+test("Keep Show all chats after the unread rows", async () => {
+  await preparePage(platforms[0].userAgent, true, true);
+
+  const list = await screen.findByTestId("chat-list-column");
+  await expect(
+    within(list).findByText("Release plan"),
+  ).resolves.toBeInTheDocument();
+
+  openChatListMenu();
+  click(unreadOnlyMenuItem());
+  const title = await within(list).findByText("Release plan");
+  const showAll = within(list).getByText("Show all chats");
+  const showAllRow = showAll.closest(
+    '[data-testid="sidebar-chat-show-all-row"]',
+  );
+  if (!(showAllRow instanceof HTMLElement)) {
+    throw new Error("Show all chats row not found");
+  }
+  expect(showAllRow.previousElementSibling).toContainElement(title);
+
+  click(showAll);
+  await waitFor(() => {
+    expect(within(list).queryByText("Show all chats")).not.toBeInTheDocument();
+  });
+  expect(within(list).getByText("Release plan")).toBeInTheDocument();
+});
 
 test("Show all chats from the empty unread state", async () => {
   await preparePage(platforms[0].userAgent, true);

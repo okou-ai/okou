@@ -773,20 +773,42 @@ Compatibility is negotiated per run rather than by deployment order:
   `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
   and require `ahead` or `identical`. Retained Runner tags are not constrained:
   the guest ignores unknown launch-config fields.
-- The guest agent execs the installed CLI only when the installed
-  `piAgentRuntime` equals `requiredPiAgentRuntimeVersion` and the installed
-  `cli` is at or above `minCliVersion`; otherwise it launches the
+- `piLaunchConfig.apiFirstTurn` also accepts the optional
+  `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
+  code-determined session construction (the system prompt template and the
+  ordered tool schemas for fixed inputs, one profile without and one with the
+  memory tools) that `@okouai/pi-agent-runtime` commits in
+  `session-construction-digest.json` and whose test fails while it is stale.
+  Every CLI artifact manifest carries the same value as
+  `sessionConstruction.digest`, and the runner build copies it into the
+  installed manifest. It moves only when code that feeds the constructed
+  session changes, in whichever package that code lives, whereas
+  `piAgentRuntime` also moves on dependency-only release bumps and therefore
+  forced the `npx` launch after most releases. **The backend does not write it
+  yet**: the reader ships first, and the writer follows in its own release
+  with the reader commit as an API rollback floor, exactly as the runtime
+  version fields were staged above.
+- The guest agent execs the installed CLI only on a parity match at or above
+  the CLI floor. When the launch config carries
+  `requiredPiSessionConstructionDigest`, parity means the installed manifest's
+  `sessionConstruction.digest` is identical, and an installed CLI without a
+  digest fails parity; otherwise parity means the installed `piAgentRuntime`
+  equals `requiredPiAgentRuntimeVersion`. The installed `cli` must be at or
+  above `minCliVersion` in both cases. Every other case launches the
   commit-addressed package through `npx`, which is always built from the
-  backend's commit. A launch config without the fields, or a rootfs without an
+  backend's commit; a launch config without the fields, or a rootfs without an
   installed CLI, always takes the `npx` path.
 - The runner advertises the installed versions as an optional `installedVersions`
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
-  `runner_installed_pi_agent_runtime_version`.
+  `runner_installed_pi_agent_runtime_version`. The optional
+  `piSessionConstructionDigest` member is accepted but not advertised yet;
+  runners send it once every serving backend accepts it, and the backend then
+  records it as `runner_installed_pi_session_construction_digest`.
 - The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
-  when the required runtime version differs from the runtime it bundles. A
-  settled-session continuation is a complete checkpoint and is never discarded
-  for a version difference.
+  when the required session-construction digest, or without one the required
+  runtime version, differs from what it bundles. A settled-session continuation
+  is a complete checkpoint and is never discarded for a parity difference.
 
 Skew in either direction is therefore safe: a new backend with an old runner
 emits the fields into a launch config the old guest ignores, because the

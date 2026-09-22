@@ -1,3 +1,4 @@
+import type { Select as SelectPrimitive } from "@base-ui/react/select";
 import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -19,7 +20,7 @@ import {
   COMMON_TIMEZONES,
   getTimezoneLabel,
 } from "../../../../signals/okou-page/cron.ts";
-import { onDomEventFn } from "../../../../signals/utils.ts";
+import { detach, Reason } from "../../../../signals/utils.ts";
 import { PreferenceCardRow } from "./preference-card-row.tsx";
 
 function useTimezoneNames(): Readonly<Record<string, string>> {
@@ -102,23 +103,48 @@ export function TimezoneSettings() {
   const pageSignal = useGet(pageSignal$);
 
   const loading = tzLoadable.state === "loading";
+  const currentTimezone =
+    preferences?.timezone ??
+    new Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  const handleChange = onDomEventFn(async (value: string) => {
-    await updatePreference({ timezone: value }, pageSignal);
-  });
+  const handleChange = (
+    value: string | null,
+    details: SelectPrimitive.Root.ChangeEventDetails,
+  ) => {
+    if (value === null || loading) {
+      details.cancel();
+      return;
+    }
+    // Displaying the browser timezone does not make it a saved preference.
+    // An explicit selection can persist it; replaying the display cannot.
+    if (
+      preferences?.timezone === null &&
+      value === currentTimezone &&
+      details.reason === "none"
+    ) {
+      return;
+    }
+    if (value !== preferences?.timezone) {
+      detach(
+        updatePreference({ timezone: value }, pageSignal),
+        Reason.DomCallback,
+      );
+    }
+  };
 
   if (!preferences) {
     return <Skeleton className="h-[76px] w-full rounded-xl" />;
   }
 
-  const currentTimezone =
-    preferences.timezone ??
-    new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const timezoneOptions = (COMMON_TIMEZONES as readonly string[]).includes(
     currentTimezone,
   )
     ? COMMON_TIMEZONES
     : [currentTimezone, ...COMMON_TIMEZONES];
+
+  const timezoneItems = timezoneOptions.map((value) => {
+    return { value, label: getTimezoneLabel(value, timezoneNames[value]) };
+  });
 
   return (
     <div data-slot="timezone-setting" className="flex flex-col gap-3">
@@ -133,6 +159,7 @@ export function TimezoneSettings() {
       >
         <div className="relative w-full shrink-0 sm:w-64">
           <Select
+            items={timezoneItems}
             value={currentTimezone}
             onValueChange={handleChange}
             disabled={loading}
@@ -141,10 +168,10 @@ export function TimezoneSettings() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {timezoneOptions.map((tz) => {
+              {timezoneItems.map((item) => {
                 return (
-                  <SelectItem key={tz} value={tz}>
-                    {getTimezoneLabel(tz, timezoneNames[tz])}
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 );
               })}

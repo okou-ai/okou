@@ -16,7 +16,7 @@ import {
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { createPersonalModelProviderAuthSignals } from "./personal-model-provider-auth.ts";
 
-const internalTaglineIndex$ = state(Math.floor(Math.random() * 18));
+const internalTaglineIndex$ = state(Math.floor(Math.random() * 17));
 const internalChatGreetingHasEntered$ = state(false);
 const internalChatGreetingShouldAnimate$ = state(false);
 
@@ -30,7 +30,7 @@ export const startChatGreetingVisit$ = command(({ get, set }): boolean => {
   const shouldAnimate = !get(internalChatGreetingHasEntered$);
   set(internalChatGreetingHasEntered$, true);
   set(internalChatGreetingShouldAnimate$, shouldAnimate);
-  set(internalTaglineIndex$, Math.floor(Math.random() * 18));
+  set(internalTaglineIndex$, Math.floor(Math.random() * 17));
   return shouldAnimate;
 });
 

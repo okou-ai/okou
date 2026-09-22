@@ -1558,7 +1558,6 @@
         "enteredChat": "{{userName}} がチャットに参加しました。",
         "goodToSeeYou": "初めまして、{{userName}} さん。",
         "knewYouWouldCome": "必ず戻ってくると思っていました、{{userName}}。",
-        "letsRoll": "{{agentName}} は準備ができています、{{userName}}。転がりましょう。",
         "makeTodayCount": "今日を有意義に過ごしましょう、{{userName}}。",
         "newIdeas": "{{userName}} さん、今日は新しいアイデアがありますか?",
         "readyToBuild": "ビルドする準備はできましたか? {{userName}}?",

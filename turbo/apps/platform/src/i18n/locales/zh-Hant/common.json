@@ -1558,7 +1558,6 @@
         "enteredChat": "{{userName}} 上線了。",
         "goodToSeeYou": "見到你真好，{{userName}}。",
         "knewYouWouldCome": "就知道你會回來，{{userName}}。",
-        "letsRoll": "{{agentName}} 準備好了，{{userName}}，開工吧。",
         "makeTodayCount": "讓今天過得有價值，{{userName}}。",
         "newIdeas": "今天有什麼新想法，{{userName}}？",
         "readyToBuild": "準備開工了嗎，{{userName}}？",

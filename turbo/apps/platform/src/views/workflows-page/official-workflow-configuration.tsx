@@ -146,19 +146,40 @@ function ParameterField({
       )
     : parameter.key;
   if (parameter.type === "boolean") {
+    const booleanItems = [
+      {
+        value: "true",
+        label: i18n.t(($) => {
+          return $.workflows.official.yes;
+        }),
+      },
+      {
+        value: "false",
+        label: i18n.t(($) => {
+          return $.workflows.official.no;
+        }),
+      },
+    ];
     return (
       <div className="flex flex-col gap-1.5">
         <span className="text-sm font-medium text-foreground">{label}</span>
         <Select
-          value={typeof value === "boolean" ? String(value) : ""}
+          items={booleanItems}
+          value={typeof value === "boolean" ? String(value) : null}
           disabled={disabled}
-          onValueChange={(next) => {
-            setParameterValue({
-              blueprintKey,
-              parameterKey: parameter.key,
-              value:
-                next === "true" ? true : next === "false" ? false : undefined,
-            });
+          onValueChange={(next, details) => {
+            if (next !== "true" && next !== "false") {
+              details.cancel();
+              return;
+            }
+            const nextValue = next === "true";
+            if (nextValue !== value) {
+              setParameterValue({
+                blueprintKey,
+                parameterKey: parameter.key,
+                value: nextValue,
+              });
+            }
           }}
         >
           <SelectTrigger className="h-9 w-full" aria-label={label}>
@@ -169,16 +190,13 @@ function ParameterField({
             />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="true">
-              {i18n.t(($) => {
-                return $.workflows.official.yes;
-              })}
-            </SelectItem>
-            <SelectItem value="false">
-              {i18n.t(($) => {
-                return $.workflows.official.no;
-              })}
-            </SelectItem>
+            {booleanItems.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>
@@ -236,6 +254,9 @@ export function OfficialWorkflowConfigurationFields({
   readonly disabled: boolean;
 }) {
   const setAgent = useSet(setOfficialWorkflowConfigurationAgent$);
+  const agentItems = agents.map((agent) => {
+    return { value: agent.agentId, label: agent.displayName ?? agent.agentId };
+  });
   return (
     <div className="space-y-5">
       {showAgent ? (
@@ -246,9 +267,18 @@ export function OfficialWorkflowConfigurationFields({
             })}
           </span>
           <Select
+            items={agentItems}
             value={form.agentId}
             disabled={disabled || !agentsLoaded}
-            onValueChange={setAgent}
+            onValueChange={(agentId, details) => {
+              if (agentId === null) {
+                details.cancel();
+                return;
+              }
+              if (agentId !== form.agentId) {
+                setAgent(agentId);
+              }
+            }}
           >
             <SelectTrigger
               className="h-9 w-full"
@@ -263,10 +293,10 @@ export function OfficialWorkflowConfigurationFields({
               />
             </SelectTrigger>
             <SelectContent>
-              {agents.map((agent) => {
+              {agentItems.map((item) => {
                 return (
-                  <SelectItem key={agent.agentId} value={agent.agentId}>
-                    {agent.displayName ?? agent.agentId}
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 );
               })}

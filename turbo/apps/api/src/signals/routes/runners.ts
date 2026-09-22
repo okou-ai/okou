@@ -183,6 +183,12 @@ function runnerClaimAttributionDimensions(
           runner_installed_cli_version: attribution.installedVersions.cli,
           runner_installed_pi_agent_runtime_version:
             attribution.installedVersions.piAgentRuntime,
+          ...(attribution.installedVersions.piSessionConstructionDigest
+            ? {
+                runner_installed_pi_session_construction_digest:
+                  attribution.installedVersions.piSessionConstructionDigest,
+              }
+            : {}),
         }
       : {}),
   };

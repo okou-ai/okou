@@ -227,7 +227,10 @@ export const submitModelPolicyApiKeyRoute$ = command(
 );
 
 export const updateModelPolicyDialogModel$ = command(
-  ({ set }, model: SupportedRunModel) => {
+  ({ get, set }, model: SupportedRunModel) => {
+    if (get(internalModelPolicyDialogState$).model === model) {
+      return;
+    }
     set(internalModelPolicyDialogState$, (prev) => {
       return {
         ...prev,
@@ -245,19 +248,24 @@ export const updateModelPolicyDialogModel$ = command(
 
 export const updateModelPolicyDialogRoute$ = command(
   (
-    { set },
+    { get, set },
     params: {
       routeKind: ModelPolicyRouteKind;
       providerType: ModelProviderType | null;
       surfaceId?: string | null;
     },
   ) => {
+    const current = get(internalModelPolicyDialogState$);
+    const surfaceId = params.surfaceId ?? null;
+    if (
+      current.routeKind === params.routeKind &&
+      current.providerType === params.providerType &&
+      current.surfaceId === surfaceId
+    ) {
+      return;
+    }
     set(internalModelPolicyDialogState$, (prev) => {
-      return {
-        ...prev,
-        ...params,
-        surfaceId: params.surfaceId ?? null,
-      };
+      return { ...prev, ...params, surfaceId };
     });
     set(internalModelPolicyApiKey$, "");
     set(internalModelPolicyApiKeyTouched$, false);

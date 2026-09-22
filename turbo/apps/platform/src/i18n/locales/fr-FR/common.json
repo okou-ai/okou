@@ -1583,7 +1583,6 @@
         "enteredChat": "{{userName}} a rejoint la conversation.",
         "goodToSeeYou": "Content de te voir, {{userName}}.",
         "knewYouWouldCome": "Je savais que tu reviendrais, {{userName}}.",
-        "letsRoll": "{{agentName}} est prêt, {{userName}}. Allons-y.",
         "makeTodayCount": "Faisons en sorte que cette journée compte, {{userName}}.",
         "newIdeas": "De nouvelles idées aujourd'hui, {{userName}} ?",
         "readyToBuild": "Prêt à construire, {{userName}} ?",
