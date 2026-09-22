@@ -137,7 +137,7 @@ test("Reduced motion shows the complete greeting immediately", async () => {
   expect(tagline).toHaveAccessibleName(fullLine);
 });
 
-test("Switching agents starts a fresh greeting", async () => {
+test("Switching agents shows a complete greeting", async () => {
   const otherAgentId = "c0000000-0000-4000-a000-000000000003";
   mountedAgent([AGENT_ID, otherAgentId]);
   context.mocks.data.userPreferences({ pinnedAgentIds: [otherAgentId] });
