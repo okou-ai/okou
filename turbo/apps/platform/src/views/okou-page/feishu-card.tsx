@@ -775,7 +775,13 @@ function FeishuEventsStep({ data }: { data: FeishuDialogData | null }) {
         </div>
       </div>
       <div className="flex gap-2">
-        <Input value={data?.callbackUrl ?? ""} readOnly />
+        <Input
+          aria-label={t(($) => {
+            return $.connectors.providerSettings[platform].events.callbackLabel;
+          })}
+          value={data?.callbackUrl ?? ""}
+          readOnly
+        />
         {data?.callbackUrl ? (
           <CopyButton
             value={data.callbackUrl}
@@ -843,7 +849,13 @@ function FeishuRedirectStep({ data }: { data: FeishuDialogData | null }) {
         })}
       />
       <div className="flex gap-2">
-        <Input value={data?.oauthRedirectUrl ?? ""} readOnly />
+        <Input
+          aria-label={t(($) => {
+            return $.connectors.providerSettings[platform].redirect.label;
+          })}
+          value={data?.oauthRedirectUrl ?? ""}
+          readOnly
+        />
         {data?.oauthRedirectUrl ? (
           <CopyButton
             value={data.oauthRedirectUrl}
