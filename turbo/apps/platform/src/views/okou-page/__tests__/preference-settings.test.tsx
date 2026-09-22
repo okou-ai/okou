@@ -217,9 +217,7 @@ describe("unified preference settings", () => {
       timeStyle: "short",
       timeZone: "Asia/Shanghai",
     }).format(new Date(nextRunAt));
-    expect(
-      within(dialog).getByText(`Next brief ${formatted} (Asia/Shanghai)`),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(`Next ${formatted}`)).toBeInTheDocument();
     expect(
       within(dialog).getByRole("switch", { name: "Morning brief" }),
     ).toBeChecked();
@@ -365,7 +363,7 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
   });
   context.mocks.ably.trigger("morningBriefChanged");
   await waitFor(() => {
-    expect(within(card).getByText(/Next brief/)).toBeVisible();
+    expect(within(card).getByText(/Next /u)).toBeVisible();
   });
   expect(
     within(card).queryByText(

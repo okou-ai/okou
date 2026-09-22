@@ -1,7 +1,7 @@
 import { useGet, useSet, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Sun, Moon, Monitor, Palette } from "lucide-react";
-import { ToggleButton } from "@okouai/ui";
+import { surfaceVariants, ToggleButton } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
@@ -115,8 +115,14 @@ export function PreferenceSection() {
               })}
             />
           </div>
-          <EmailSubscriptionSettings />
-          <MorningBriefSettings />
+          <div
+            className={surfaceVariants({
+              className: "overflow-hidden",
+            })}
+          >
+            <EmailSubscriptionSettings />
+            <MorningBriefSettings />
+          </div>
         </section>
       ) : null}
 

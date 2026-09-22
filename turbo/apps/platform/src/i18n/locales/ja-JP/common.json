@@ -6485,16 +6485,15 @@
         }
       },
       "emailSubscription": {
-        "description": "すべてのワークスペースのブリーフやリマインダーなど、任意のメールを管理します。",
+        "description": "ブリーフ、リマインダー、その他のワークスペース更新をメールで受け取ります。",
+        "descriptionWithEmail": "{{email}} でブリーフ、リマインダー、その他のワークスペース更新を受け取ります。",
         "loading": "メール配信設定を確認中…",
         "retryMessage": "メール配信設定を保存または読み込めませんでした。もう一度お試しください。",
         "saving": "保存中…",
         "sectionTitle": "メール配信設定",
-        "subscribed": "配信登録済み",
-        "title": "Okouからのメールを受け取る",
+        "title": "メール通知",
         "unavailable": "メールを利用できません",
-        "unavailableDescription": "「アカウントとセキュリティ」でメールアドレスを確認してください。配信がブロックされている場合はサポートにお問い合わせください。",
-        "unsubscribed": "配信停止中"
+        "unavailableDescription": "「アカウントとセキュリティ」でメールアドレスを確認してください。配信がブロックされている場合はサポートにお問い合わせください。"
       },
       "language": {
         "description": "{{brandName}}のインターフェースで使用する言語を選択します",
@@ -6520,13 +6519,11 @@
         "chatOnly": "チャットのみ",
         "checkEmailSubscription": "上のメール配信設定で配信状況を確認してください。",
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
-        "description": "このワークスペースの毎日の優先事項を、お使いのタイムゾーンの午前7時に確認できます。",
-        "emailOff": "メールはオフです。ブリーフは引き続きチャットに表示されます。",
-        "emailWhenReady": "ブリーフの準備ができるとメールが届きます。",
+        "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
         "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "nextBrief": "次のブリーフ {{date}}（{{timezone}}）",
+        "nextBrief": "次のブリーフ {{date}}",
         "paused": "一時停止中",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",

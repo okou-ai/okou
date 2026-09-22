@@ -6559,16 +6559,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Correos opcionales, incluidos resúmenes y recordatorios, en todos tus espacios de trabajo.",
+        "description": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo por correo.",
+        "descriptionWithEmail": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo en {{email}}.",
         "loading": "Comprobando la suscripción por correo…",
         "retryMessage": "No se pudo guardar o cargar tu suscripción por correo. Inténtalo de nuevo.",
         "saving": "Guardando…",
         "sectionTitle": "Suscripciones por correo",
-        "subscribed": "Suscrito",
-        "title": "Recibir correos de Okou",
+        "title": "Actualizaciones por correo",
         "unavailable": "Correo no disponible",
-        "unavailableDescription": "Revisa tu correo en Cuenta y seguridad o contacta con soporte si la entrega está bloqueada.",
-        "unsubscribed": "Suscripción cancelada"
+        "unavailableDescription": "Revisa tu correo en Cuenta y seguridad o contacta con soporte si la entrega está bloqueada."
       },
       "language": {
         "description": "Elige tu idioma preferido para la interfaz de {{brandName}}",
@@ -6594,13 +6593,11 @@
         "chatOnly": "Solo Chat",
         "checkEmailSubscription": "Consulta la suscripción por correo de arriba para ver el estado de entrega.",
         "conflict": "Morning Brief no está disponible temporalmente porque el estado de su instalación no es coherente. Vuelve a intentarlo cuando finalice la conciliación.",
-        "description": "Recibe las prioridades diarias de este espacio de trabajo a las 7:00 en tu zona horaria.",
-        "emailOff": "El correo está desactivado. Tu resumen seguirá apareciendo en Chat.",
-        "emailWhenReady": "Recibirás un correo cuando tu resumen esté listo.",
+        "description": "Prioridades diarias a las 7:00 en tu zona horaria.",
         "loading": "Cargando la configuración de Morning Brief...",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
-        "nextBrief": "Próximo resumen {{date}} ({{timezone}})",
+        "nextBrief": "Próximo resumen {{date}}",
         "paused": "En pausa",
         "preparationFailed": "La configuración se reintentará automáticamente. También puedes reintentar ahora.",
         "preparing": "Preparando tu primer resumen matutino. Puedes desactivarlo cuando quieras.",

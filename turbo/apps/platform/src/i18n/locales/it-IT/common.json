@@ -6559,16 +6559,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Email facoltative, inclusi riepiloghi e promemoria, in tutti i tuoi spazi di lavoro.",
+        "description": "Ricevi riepiloghi, promemoria e altri aggiornamenti dello spazio di lavoro via email.",
+        "descriptionWithEmail": "Ricevi riepiloghi, promemoria e altri aggiornamenti dello spazio di lavoro all’indirizzo {{email}}.",
         "loading": "Verifica dell’iscrizione email…",
         "retryMessage": "Impossibile salvare o caricare l’iscrizione email. Riprova.",
         "saving": "Salvataggio…",
         "sectionTitle": "Iscrizioni email",
-        "subscribed": "Iscrizione attiva",
-        "title": "Ricevi email da Okou",
+        "title": "Aggiornamenti email",
         "unavailable": "Email non disponibile",
-        "unavailableDescription": "Controlla l’email in Account e sicurezza o contatta l’assistenza se la consegna è bloccata.",
-        "unsubscribed": "Iscrizione annullata"
+        "unavailableDescription": "Controlla l’email in Account e sicurezza o contatta l’assistenza se la consegna è bloccata."
       },
       "language": {
         "description": "Scegli la tua lingua preferita per l'interfaccia {{brandName}}",
@@ -6594,13 +6593,11 @@
         "chatOnly": "Solo Chat",
         "checkEmailSubscription": "Controlla l’iscrizione email qui sopra per lo stato della consegna.",
         "conflict": "Morning Brief non è temporaneamente disponibile perché lo stato dell'installazione non è coerente. Riprova al termine della riconciliazione.",
-        "description": "Ricevi le priorità quotidiane di questo spazio di lavoro alle 7:00 nel tuo fuso orario.",
-        "emailOff": "L’email è disattivata. Il riepilogo continuerà ad apparire in Chat.",
-        "emailWhenReady": "Riceverai un’email quando il riepilogo sarà pronto.",
+        "description": "Priorità quotidiane alle 7:00 nel tuo fuso orario.",
         "loading": "Caricamento delle impostazioni di Morning Brief...",
         "missingDefaultAgent": "Scegli un Agent predefinito utilizzabile prima di attivare Morning Brief.",
         "missingTimezone": "Imposta un fuso orario valido prima di attivare Morning Brief.",
-        "nextBrief": "Prossimo riepilogo {{date}} ({{timezone}})",
+        "nextBrief": "Prossimo riepilogo {{date}}",
         "paused": "In pausa",
         "preparationFailed": "La configurazione verrà ritentata automaticamente. Puoi riprovare anche ora.",
         "preparing": "Preparazione del primo riepilogo mattutino. Puoi disattivarlo in qualsiasi momento.",

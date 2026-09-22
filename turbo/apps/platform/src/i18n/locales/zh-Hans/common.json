@@ -6485,16 +6485,15 @@
         }
       },
       "emailSubscription": {
-        "description": "各个工作区的可选邮件，包括简报和提醒。",
+        "description": "通过邮件接收简报、提醒和其他工作区更新。",
+        "descriptionWithEmail": "接收发送至 {{email}} 的简报、提醒和其他工作区更新。",
         "loading": "正在检查邮件订阅…",
         "retryMessage": "无法保存或加载你的邮件订阅，请重试。",
         "saving": "保存中…",
         "sectionTitle": "邮件订阅",
-        "subscribed": "已订阅",
-        "title": "接收来自Okou的邮件",
+        "title": "邮件更新",
         "unavailable": "邮件不可用",
-        "unavailableDescription": "请在「账号与安全」中检查你的邮箱；如果邮件被拦截，请联系客服。",
-        "unsubscribed": "已取消订阅"
+        "unavailableDescription": "请在「账号与安全」中检查你的邮箱；如果邮件被拦截，请联系客服。"
       },
       "language": {
         "description": "选择{{brandName}}界面的显示语言",
@@ -6520,13 +6519,11 @@
         "chatOnly": "仅聊天",
         "checkEmailSubscription": "投递状态请查看上方的邮件订阅。",
         "conflict": "晨报的安装状态不一致，暂时无法使用。请在状态同步完成后重试。",
-        "description": "每天早上7:00（按你所在时区）获取该工作区的当日重点。",
-        "emailOff": "邮件已关闭，晨报仍会出现在聊天中。",
-        "emailWhenReady": "晨报准备好后，你会收到邮件。",
+        "description": "每天早上 7:00（按你的时区）接收当日重点。",
         "loading": "正在加载晨报设置…",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
-        "nextBrief": "下一份晨报 {{date}}（{{timezone}}）",
+        "nextBrief": "下一份晨报 {{date}}",
         "paused": "已暂停",
         "preparationFailed": "晨报设置会自动重试，你也可以现在就重试。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
