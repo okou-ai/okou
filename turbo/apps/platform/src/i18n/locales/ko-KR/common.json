@@ -3370,13 +3370,24 @@
         "connectTitle": "Lark 연결"
       },
       "slack": {
+        "accountInUseDescription": "이 Slack 계정은 다른 Okou 계정에 연결되어 있습니다. 다시 시도하기 전에 해당 계정에서 연결을 해제하세요.",
+        "accountInUseTitle": "Slack 계정이 이미 연결됨",
+        "accountMismatchDescription": "현재 Okou 계정은 여기에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
+        "accountMismatchDescriptionWorkspace": "현재 Okou 계정은 {{workspace}}에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
+        "accountMismatchTitle": "Slack 계정을 전환할까요?",
         "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
         "connectTitle": "Slack에 연결하기",
+        "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다. 다시 시도하세요.",
         "invalidDescription": "이 페이지는 Slack 연결 링크에서 열어야 합니다.",
+        "keepAccount": "{{account}} 유지",
         "open": "Slack 열기",
         "successDescription": "어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
         "successDescriptionWorkspace": "{{workspace}}에 연결되었습니다. 어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
-        "successTitle": "Slack에 연결되었습니다!"
+        "successTitle": "Slack에 연결되었습니다!",
+        "switchAccount": "{{account}}(으)로 전환",
+        "workspaceMismatchDescription": "이 Slack 워크스페이스는 현재 Okou 조직에서 사용할 수 없습니다. 조직을 전환하거나 관리자에게 도움을 요청하세요.",
+        "workspaceMismatchDescriptionNamed": "현재 Okou 조직은 {{workspace}}에 연결되어 있습니다. 조직을 전환하거나 관리자에게 제거를 요청한 후 이 Slack 워크스페이스를 연결하세요.",
+        "workspaceMismatchTitle": "Slack 워크스페이스가 일치하지 않음"
       },
       "teams": {
         "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",

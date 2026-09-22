@@ -3382,13 +3382,24 @@
         "connectTitle": "Lark से कनेक्ट करें"
       },
       "slack": {
+        "accountInUseDescription": "यह Slack खाता किसी अन्य Okou खाते से जुड़ा है। दोबारा कोशिश करने से पहले वहां से इसका कनेक्शन हटाएं।",
+        "accountInUseTitle": "Slack खाता पहले से जुड़ा है",
+        "accountMismatchDescription": "आपका Okou खाता अभी यहां Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
+        "accountMismatchDescriptionWorkspace": "आपका Okou खाता अभी {{workspace}} में Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
+        "accountMismatchTitle": "Slack खाता बदलें?",
         "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें ताकि आप Slack से सीधे अपने एजेंट से बातचीत कर सकें।",
         "connectTitle": "Slack से कनेक्ट करें",
+        "errorFallback": "Slack कनेक्शन की जांच या शुरुआत नहीं हो सकी। फिर से कोशिश करें।",
         "invalidDescription": "यह पेज Slack कनेक्ट लिंक से खोला जाना है।",
+        "keepAccount": "{{account}} बनाए रखें",
         "open": "Slack खोलें",
         "successDescription": "किसी भी चैनल में इंस्टॉल किए गए बॉट का उल्लेख करें या चैट शुरू करने के लिए DM भेजें।",
         "successDescriptionWorkspace": "आप {{workspace}} से कनेक्ट हैं. किसी भी चैनल में इंस्टॉल किए गए बॉट का उल्लेख करें या चैट शुरू करने के लिए DM भेजें।",
-        "successTitle": "Slack से जुड़ा!"
+        "successTitle": "Slack से जुड़ा!",
+        "switchAccount": "{{account}} पर स्विच करें",
+        "workspaceMismatchDescription": "यह Slack वर्कस्पेस आपके वर्तमान Okou संगठन के लिए उपलब्ध नहीं है। संगठन बदलें या किसी एडमिन से मदद मांगें।",
+        "workspaceMismatchDescriptionNamed": "आपका वर्तमान Okou संगठन {{workspace}} से जुड़ा है। संगठन बदलें या इस Slack वर्कस्पेस को जोड़ने से पहले किसी एडमिन से इसे अनइंस्टॉल करने के लिए कहें।",
+        "workspaceMismatchTitle": "Slack वर्कस्पेस मेल नहीं खाता"
       },
       "teams": {
         "connectDescription": "अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",

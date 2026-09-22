@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { db$ } from "../external/db";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
@@ -25,6 +25,21 @@ const getSlackConnectStatusInner$ = computed(async (get) => {
   return { status: 200 as const, body };
 });
 
+const getSlackConnectLinkStatusInner$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const query = get(queryOf(slackConnectContract.getLinkStatus));
+  const body = await get(
+    slackConnectStatus({
+      orgId: auth.orgId,
+      userId: auth.userId,
+      isAdmin: "orgRole" in auth && auth.orgRole === "admin",
+      workspaceId: query.workspaceId,
+      slackUserId: query.slackUserId,
+    }),
+  );
+  return { status: 200 as const, body };
+});
+
 const startConnectorOAuth$ = command(
   async (
     { get },
@@ -33,6 +48,7 @@ const startConnectorOAuth$ = command(
       readonly slackUserId: string;
       readonly channelId?: string;
       readonly threadTs?: string;
+      readonly intent?: "connect" | "switch";
     },
     signal: AbortSignal,
   ) => {
@@ -71,7 +87,7 @@ const startConnectorOAuth$ = command(
         authorizationUrl: buildSlackConnectorOAuthStartUrl(
           getOAuthApiOrigin(get(request$).raw),
           {
-            flow: "connect",
+            flow: body.intent === "switch" ? "switch" : "connect",
             orgId: auth.orgId,
             userId: auth.userId,
             workspaceId: body.workspaceId,
@@ -109,6 +125,10 @@ export const slackConnectRoutes: readonly RouteEntry[] = [
   {
     route: slackConnectContract.getStatus,
     handler: authRoute(slackConnectAuth, getSlackConnectStatusInner$),
+  },
+  {
+    route: slackConnectContract.getLinkStatus,
+    handler: authRoute(slackConnectAuth, getSlackConnectLinkStatusInner$),
   },
   {
     route: slackConnectContract.connect,

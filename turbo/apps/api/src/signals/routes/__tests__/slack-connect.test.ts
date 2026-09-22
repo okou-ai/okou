@@ -145,6 +145,115 @@ describe("GET /api/integrations/slack/connect", () => {
     });
   });
 
+  it("reports when the requested Slack account belongs to another Okou user", async () => {
+    const fixture = await track(
+      store.set(seedSlackConnectOrg$, { withConnection: true }, context.signal),
+    );
+    const currentUserId = `user_${randomUUID()}`;
+    mocks.clerk.session(currentUserId, fixture.orgId, "org:admin");
+
+    const client = setupApp({ context, routes: slackConnectRoutes })(
+      slackConnectContract,
+    );
+    const response = await accept(
+      client.getLinkStatus({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {
+          workspaceId: fixture.slackWorkspaceId,
+          slackUserId: fixture.slackUserId,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      isConnected: false,
+      isAdmin: true,
+      linkStatus: { kind: "slack_account_in_use" },
+    });
+  });
+
+  it("reports when the requested Slack workspace belongs to another organization", async () => {
+    const current = await track(
+      store.set(
+        seedSlackConnectOrg$,
+        { withConnection: true, slackWorkspaceName: "Current Workspace" },
+        context.signal,
+      ),
+    );
+    const requested = await track(
+      store.set(
+        seedSlackConnectOrg$,
+        { withConnection: true, slackWorkspaceName: "Other Workspace" },
+        context.signal,
+      ),
+    );
+    mocks.clerk.session(current.userId, current.orgId, "org:admin");
+
+    const client = setupApp({ context, routes: slackConnectRoutes })(
+      slackConnectContract,
+    );
+    const response = await accept(
+      client.getLinkStatus({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {
+          workspaceId: requested.slackWorkspaceId,
+          slackUserId: requested.slackUserId,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      isConnected: true,
+      isAdmin: true,
+      workspaceName: "Current Workspace",
+      defaultAgentName: null,
+      linkStatus: {
+        kind: "workspace_mismatch",
+        currentWorkspaceName: "Current Workspace",
+      },
+    });
+  });
+
+  it("reports when the current user is linked to a different Slack account", async () => {
+    const fixture = await track(
+      store.set(
+        seedSlackConnectOrg$,
+        { withConnection: true, slackWorkspaceName: "Test Workspace" },
+        context.signal,
+      ),
+    );
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    const requestedSlackUserId = `U_${randomUUID()}`;
+
+    const client = setupApp({ context, routes: slackConnectRoutes })(
+      slackConnectContract,
+    );
+    const response = await accept(
+      client.getLinkStatus({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {
+          workspaceId: fixture.slackWorkspaceId,
+          slackUserId: requestedSlackUserId,
+        },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      isConnected: true,
+      isAdmin: true,
+      workspaceName: "Test Workspace",
+      defaultAgentName: null,
+      linkStatus: {
+        kind: "slack_account_mismatch",
+        currentSlackUserId: fixture.slackUserId,
+        requestedSlackUserId,
+      },
+    });
+  });
+
   it("returns isAdmin: true for admin users", async () => {
     const fixture = await track(
       store.set(seedSlackConnectOrg$, { withConnection: true }, context.signal),

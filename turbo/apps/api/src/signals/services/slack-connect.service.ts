@@ -1,5 +1,6 @@
 import { awardCompletedGetStartedQuest } from "./get-started-rewards.service";
 import { command, computed, type Computed } from "ccstate";
+import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -7,7 +8,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { slackUserAgentPreferences } from "@okouai/db/schema/slack-user-agent-preference";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import {
   buildAppHomeView,
@@ -26,8 +27,9 @@ import {
   createSlackClient,
   type SlackClient,
 } from "../external/slack-message-client";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
@@ -44,6 +46,7 @@ type ConnectResult =
       readonly slackUserId: string;
       readonly channelId?: string;
       readonly threadTs?: string;
+      readonly replacedSlackUserIds: readonly string[];
     };
 
 const workspaceNotFoundMessage =
@@ -52,31 +55,29 @@ const adminRequiredMessage =
   "Only org admins can connect an unconfigured workspace. Ask your org admin to connect first.";
 const orgMismatchMessage =
   "Your active organization doesn't match this Slack workspace. Please switch to the correct organization in the platform sidebar before connecting.";
+const slackAccountInUseMessage =
+  "This Slack account is already connected to another user.";
+const slackAccountMismatchMessage =
+  "Your Okou account is connected to a different Slack account in this workspace.";
 
-async function upsertSlackConnection(
-  writeDb: Db,
+type SlackConnectionWriteResult =
+  | {
+      readonly kind: "ok";
+      readonly connectionId: string;
+      readonly replacedSlackUserIds: readonly string[];
+    }
+  | { readonly kind: "forbidden"; readonly message: string };
+
+async function connectSlackUser(
+  tx: Tx,
   args: {
     readonly slackUserId: string;
     readonly slackWorkspaceId: string;
     readonly userId: string;
+    readonly connectionIntent: "connect" | "switch";
   },
-): Promise<string> {
-  const [connection] = await writeDb
-    .insert(slackOrgConnections)
-    .values(args)
-    .onConflictDoNothing({
-      target: [
-        slackOrgConnections.slackUserId,
-        slackOrgConnections.slackWorkspaceId,
-      ],
-    })
-    .returning({ id: slackOrgConnections.id });
-
-  if (connection) {
-    return connection.id;
-  }
-
-  const [existing] = await writeDb
+): Promise<SlackConnectionWriteResult> {
+  const [targetConnection] = await tx
     .select({ id: slackOrgConnections.id, userId: slackOrgConnections.userId })
     .from(slackOrgConnections)
     .where(
@@ -87,14 +88,90 @@ async function upsertSlackConnection(
     )
     .limit(1);
 
-  if (!existing) {
-    throw new Error("Slack connection upsert did not return a row");
-  }
-  if (existing.userId !== args.userId) {
-    throw new Error("This Slack account is already connected to another user");
+  if (targetConnection && targetConnection.userId !== args.userId) {
+    return { kind: "forbidden", message: slackAccountInUseMessage };
   }
 
-  return existing.id;
+  const currentConnections = await tx
+    .select({
+      id: slackOrgConnections.id,
+      slackUserId: slackOrgConnections.slackUserId,
+    })
+    .from(slackOrgConnections)
+    .where(
+      and(
+        eq(slackOrgConnections.userId, args.userId),
+        eq(slackOrgConnections.slackWorkspaceId, args.slackWorkspaceId),
+      ),
+    );
+  const staleConnections = currentConnections.filter((connection) => {
+    return connection.id !== targetConnection?.id;
+  });
+
+  if (staleConnections.length > 0 && args.connectionIntent !== "switch") {
+    return { kind: "forbidden", message: slackAccountMismatchMessage };
+  }
+
+  let connectionId = targetConnection?.id;
+  if (!connectionId) {
+    const [inserted] = await tx
+      .insert(slackOrgConnections)
+      .values({
+        slackUserId: args.slackUserId,
+        slackWorkspaceId: args.slackWorkspaceId,
+        userId: args.userId,
+      })
+      .onConflictDoNothing({
+        target: [
+          slackOrgConnections.slackUserId,
+          slackOrgConnections.slackWorkspaceId,
+        ],
+      })
+      .returning({ id: slackOrgConnections.id });
+    connectionId = inserted?.id;
+  }
+
+  if (!connectionId) {
+    const [existing] = await tx
+      .select({
+        id: slackOrgConnections.id,
+        userId: slackOrgConnections.userId,
+      })
+      .from(slackOrgConnections)
+      .where(
+        and(
+          eq(slackOrgConnections.slackUserId, args.slackUserId),
+          eq(slackOrgConnections.slackWorkspaceId, args.slackWorkspaceId),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      throw new Error("Slack connection insert did not return a row");
+    }
+    if (existing.userId !== args.userId) {
+      return { kind: "forbidden", message: slackAccountInUseMessage };
+    }
+    connectionId = existing.id;
+  }
+
+  if (staleConnections.length > 0) {
+    await tx.delete(slackOrgConnections).where(
+      inArray(
+        slackOrgConnections.id,
+        staleConnections.map((connection) => {
+          return connection.id;
+        }),
+      ),
+    );
+  }
+
+  return {
+    kind: "ok",
+    connectionId,
+    replacedSlackUserIds: staleConnections.map((connection) => {
+      return connection.slackUserId;
+    }),
+  };
 }
 
 async function resolveDefaultComposeId(
@@ -258,16 +335,97 @@ async function refreshSlackAppHome(args: {
   );
 }
 
+async function resolveSlackConnectLinkStatus(
+  db: ReadonlyDb,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly isAdmin: boolean;
+    readonly workspaceId?: string;
+    readonly slackUserId?: string;
+  },
+  orgInstallation: SlackInstallation | undefined,
+): Promise<SlackConnectLinkStatus | undefined> {
+  if (!args.workspaceId || !args.slackUserId) {
+    return undefined;
+  }
+
+  const [requestedInstallation] = await db
+    .select()
+    .from(slackOrgInstallations)
+    .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
+    .limit(1);
+  const currentWorkspaceName =
+    orgInstallation?.slackWorkspaceId === args.workspaceId
+      ? undefined
+      : orgInstallation?.slackWorkspaceName;
+
+  if (
+    !requestedInstallation ||
+    (requestedInstallation.orgId !== null &&
+      requestedInstallation.orgId !== args.orgId) ||
+    (requestedInstallation.orgId === null &&
+      ((orgInstallation &&
+        orgInstallation.slackWorkspaceId !== args.workspaceId) ||
+        !args.isAdmin))
+  ) {
+    return {
+      kind: "workspace_mismatch",
+      ...(currentWorkspaceName !== undefined ? { currentWorkspaceName } : {}),
+    };
+  }
+
+  const [requestedConnection] = await db
+    .select({ userId: slackOrgConnections.userId })
+    .from(slackOrgConnections)
+    .where(
+      and(
+        eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+        eq(slackOrgConnections.slackUserId, args.slackUserId),
+      ),
+    )
+    .limit(1);
+  if (requestedConnection && requestedConnection.userId !== args.userId) {
+    return { kind: "slack_account_in_use" };
+  }
+  if (requestedConnection?.userId === args.userId) {
+    return { kind: "connected" };
+  }
+
+  const [currentConnection] = await db
+    .select({ slackUserId: slackOrgConnections.slackUserId })
+    .from(slackOrgConnections)
+    .where(
+      and(
+        eq(slackOrgConnections.userId, args.userId),
+        eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+      ),
+    )
+    .limit(1);
+  if (currentConnection) {
+    return {
+      kind: "slack_account_mismatch",
+      currentSlackUserId: currentConnection.slackUserId,
+      requestedSlackUserId: args.slackUserId,
+    };
+  }
+
+  return { kind: "connect" };
+}
+
 export function slackConnectStatus(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly isAdmin: boolean;
+  readonly workspaceId?: string;
+  readonly slackUserId?: string;
 }): Computed<
   Promise<{
     readonly isConnected: boolean;
     readonly isAdmin: boolean;
     readonly workspaceName?: string | null;
     readonly defaultAgentName?: string | null;
+    readonly linkStatus?: SlackConnectLinkStatus;
   }>
 > {
   return computed(async (get) => {
@@ -277,6 +435,11 @@ export function slackConnectStatus(args: {
       .from(slackOrgInstallations)
       .where(eq(slackOrgInstallations.orgId, args.orgId))
       .limit(1);
+    const linkStatus = await resolveSlackConnectLinkStatus(
+      db,
+      args,
+      orgInstallation,
+    );
 
     const [connection] = orgInstallation
       ? await db
@@ -295,7 +458,11 @@ export function slackConnectStatus(args: {
       : [];
 
     if (!connection) {
-      return { isConnected: false, isAdmin: args.isAdmin };
+      return {
+        isConnected: false,
+        isAdmin: args.isAdmin,
+        ...(linkStatus ? { linkStatus } : {}),
+      };
     }
 
     const [metadata] = await db
@@ -317,6 +484,7 @@ export function slackConnectStatus(args: {
       workspaceName: orgInstallation?.slackWorkspaceName ?? null,
       isAdmin: args.isAdmin,
       defaultAgentName: agent?.name ?? null,
+      ...(linkStatus ? { linkStatus } : {}),
     };
   });
 }
@@ -333,109 +501,87 @@ export const connectSlackWorkspace$ = command(
       readonly channelId?: string;
       readonly threadTs?: string;
       readonly pendingPrompt?: string;
+      readonly connectionIntent?: "connect" | "switch";
     },
     signal: AbortSignal,
   ): Promise<ConnectResult> => {
     const writeDb = set(writeDb$);
-    const [installation] = await writeDb
-      .select()
-      .from(slackOrgInstallations)
-      .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
-      .limit(1);
     signal.throwIfAborted();
+    const result = await writeDb.transaction(
+      async (tx): Promise<ConnectResult> => {
+        const [installation] = await tx
+          .select()
+          .from(slackOrgInstallations)
+          .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
+          .for("update")
+          .limit(1);
 
-    if (!installation) {
-      return { kind: "not_found", message: workspaceNotFoundMessage };
-    }
+        if (!installation) {
+          return { kind: "not_found", message: workspaceNotFoundMessage };
+        }
 
-    if (installation.orgId === null) {
-      if (args.orgRole !== "admin") {
-        return { kind: "forbidden", message: adminRequiredMessage };
-      }
+        if (installation.orgId === null && args.orgRole !== "admin") {
+          return { kind: "forbidden", message: adminRequiredMessage };
+        }
+        if (installation.orgId !== null && installation.orgId !== args.orgId) {
+          return { kind: "forbidden", message: orgMismatchMessage };
+        }
 
-      const updated = await writeDb.transaction(async (tx) => {
-        const [bound] = await tx
-          .update(slackOrgInstallations)
-          .set({
-            orgId: args.orgId,
-            installedByUserId: args.userId,
-            publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId),
-              isNull(slackOrgInstallations.orgId),
-            ),
-          )
-          .returning();
-        if (bound) {
+        const connection = await connectSlackUser(tx, {
+          slackUserId: args.slackUserId,
+          slackWorkspaceId: args.workspaceId,
+          userId: args.userId,
+          connectionIntent: args.connectionIntent ?? "connect",
+        });
+        if (connection.kind !== "ok") {
+          return connection;
+        }
+
+        let boundInstallation = installation;
+        let role = args.orgRole;
+        if (installation.orgId === null) {
+          const [updated] = await tx
+            .update(slackOrgInstallations)
+            .set({
+              orgId: args.orgId,
+              installedByUserId: args.userId,
+              publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
+              updatedAt: nowDate(),
+            })
+            .where(
+              and(
+                eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId),
+                isNull(slackOrgInstallations.orgId),
+              ),
+            )
+            .returning();
+          if (!updated) {
+            throw new Error("Locked Slack installation could not be bound");
+          }
           await awardCompletedGetStartedQuest(tx, {
             orgId: args.orgId,
             userId: args.userId,
             questKey: "slack",
             sourceKey: args.workspaceId,
           });
+          boundInstallation = updated;
+          role = "admin";
         }
-        return bound;
-      });
-      signal.throwIfAborted();
 
-      let boundInstallation = updated;
-      if (!boundInstallation) {
-        const [existing] = await writeDb
-          .select()
-          .from(slackOrgInstallations)
-          .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
-          .limit(1);
-        signal.throwIfAborted();
-        if (!existing) {
-          return { kind: "not_found", message: workspaceNotFoundMessage };
-        }
-        if (existing.orgId !== args.orgId) {
-          return { kind: "forbidden", message: orgMismatchMessage };
-        }
-        boundInstallation = existing;
-      }
-
-      const connectionId = await upsertSlackConnection(writeDb, {
-        slackUserId: args.slackUserId,
-        slackWorkspaceId: args.workspaceId,
-        userId: args.userId,
-      });
-      signal.throwIfAborted();
-
-      return {
-        kind: "ok",
-        connectionId,
-        role: "admin",
-        installation: boundInstallation,
-        slackUserId: args.slackUserId,
-        channelId: args.channelId,
-        threadTs: args.threadTs,
-      };
-    }
-
-    if (installation.orgId !== args.orgId) {
-      return { kind: "forbidden", message: orgMismatchMessage };
-    }
-
-    const connectionId = await upsertSlackConnection(writeDb, {
-      slackUserId: args.slackUserId,
-      slackWorkspaceId: args.workspaceId,
-      userId: args.userId,
-    });
+        return {
+          kind: "ok",
+          connectionId: connection.connectionId,
+          role,
+          installation: boundInstallation,
+          slackUserId: args.slackUserId,
+          channelId: args.channelId,
+          threadTs: args.threadTs,
+          replacedSlackUserIds: connection.replacedSlackUserIds,
+        };
+      },
+    );
     signal.throwIfAborted();
-
-    return {
-      kind: "ok",
-      connectionId,
-      role: args.orgRole,
-      installation,
-      slackUserId: args.slackUserId,
-      channelId: args.channelId,
-      threadTs: args.threadTs,
-    };
+    return result;
   },
 );
 
@@ -483,6 +629,7 @@ export const notifySlackConnect$ = command(
       readonly channelId?: string;
       readonly threadTs?: string;
       readonly pendingPrompt?: string;
+      readonly replacedSlackUserIds?: readonly string[];
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -560,6 +707,17 @@ export const notifySlackConnect$ = command(
           );
         signal.throwIfAborted();
       }
+    }
+
+    for (const replacedSlackUserId of args.replacedSlackUserIds ?? []) {
+      await refreshSlackAppHome({
+        db: writeDb,
+        clerkClient: get(clerk$),
+        client,
+        installation: args.installation,
+        slackUserId: replacedSlackUserId,
+      });
+      signal.throwIfAborted();
     }
 
     await refreshSlackAppHome({

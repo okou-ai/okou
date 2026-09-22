@@ -34,6 +34,17 @@ export const apiIntegrationsSlackConnectHandlers = [
     });
   }),
 
+  // GET /api/integrations/slack/connect/link-status — inspect a Slack link
+  mockApi(slackConnectContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: mockData.isConnected,
+      isAdmin: false,
+      linkStatus: {
+        kind: mockData.isConnected ? "connected" : "connect",
+      },
+    });
+  }),
+
   // POST /api/integrations/slack/connect — start user OAuth
   mockApi(slackConnectContract.connect, ({ respond }) => {
     if (mockData.postError) {

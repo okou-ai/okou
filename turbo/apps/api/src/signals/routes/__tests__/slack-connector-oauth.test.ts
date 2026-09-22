@@ -147,7 +147,11 @@ async function startInstall(): Promise<URL> {
 
 async function startConnect(
   current: Actor,
-  origin: { readonly channelId?: string; readonly threadTs?: string } = {},
+  origin: {
+    readonly channelId?: string;
+    readonly threadTs?: string;
+    readonly intent?: "connect" | "switch";
+  } = {},
 ): Promise<URL> {
   const pending = await accept(
     clients()(slackConnectContract).connect({
@@ -626,6 +630,50 @@ test("a Slack connect OAuth callback sends a DM welcome without channel context"
       thread_ts: "1.0",
     }),
   );
+});
+
+test("an explicit Slack account switch replaces the previous identity after OAuth", async () => {
+  const current = actor();
+  await complete(await startInstall(), current);
+  await flushWaitUntilForTest();
+
+  const nextSlackUserId = `U_${randomUUID()}`;
+  const nextIdentity = { ...current, slackUserId: nextSlackUserId };
+  const switched = await complete(
+    await startConnect(nextIdentity, { intent: "switch" }),
+    nextIdentity,
+  );
+  expect(switched.searchParams.get("status")).toBe("connected");
+  await flushWaitUntilForTest();
+
+  const client = clients()(slackConnectContract);
+  const nextStatus = await accept(
+    client.getLinkStatus({
+      headers,
+      query: {
+        workspaceId: current.workspaceId,
+        slackUserId: nextSlackUserId,
+      },
+    }),
+    [200],
+  );
+  expect(nextStatus.body.linkStatus).toStrictEqual({ kind: "connected" });
+
+  const previousStatus = await accept(
+    client.getLinkStatus({
+      headers,
+      query: {
+        workspaceId: current.workspaceId,
+        slackUserId: current.slackUserId,
+      },
+    }),
+    [200],
+  );
+  expect(previousStatus.body.linkStatus).toStrictEqual({
+    kind: "slack_account_mismatch",
+    currentSlackUserId: nextSlackUserId,
+    requestedSlackUserId: current.slackUserId,
+  });
 });
 
 test("a Slack connect OAuth callback recovers a failed channel confirmation by DM", async () => {

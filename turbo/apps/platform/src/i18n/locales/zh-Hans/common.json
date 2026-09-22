@@ -3370,13 +3370,24 @@
         "connectTitle": "连接到Lark"
       },
       "slack": {
+        "accountInUseDescription": "这个Slack账号已连接到另一个Okou账号。请先在原账号中断开连接，然后重试。",
+        "accountInUseTitle": "Slack账号已被连接",
+        "accountMismatchDescription": "你的Okou账号当前在这里使用Slack账号{{currentAccount}}。要切换到打开此链接的{{requestedAccount}}吗？",
+        "accountMismatchDescriptionWorkspace": "你的Okou账号当前在{{workspace}}使用Slack账号{{currentAccount}}。要切换到打开此链接的{{requestedAccount}}吗？",
+        "accountMismatchTitle": "切换Slack账号？",
         "connectDescription": "把你的账号关联到这个Slack工作区，就可以直接在Slack里与你的智能体交流。",
         "connectTitle": "连接到Slack",
+        "errorFallback": "无法检查或开始Slack连接，请重试。",
         "invalidDescription": "此页面需要从Slack连接链接打开。",
+        "keepAccount": "保留{{account}}",
         "open": "打开Slack",
         "successDescription": "在任意频道@已安装的机器人，或给它发私信，即可开始对话。",
         "successDescriptionWorkspace": "你已连接到{{workspace}}。在任意频道@已安装的机器人，或给它发私信，即可开始对话。",
-        "successTitle": "已连接到Slack！"
+        "successTitle": "已连接到Slack！",
+        "switchAccount": "切换到{{account}}",
+        "workspaceMismatchDescription": "此Slack工作区不属于你当前的Okou组织。请切换组织，或联系管理员处理。",
+        "workspaceMismatchDescriptionNamed": "你当前的Okou组织已连接到{{workspace}}。请切换组织，或让管理员先卸载，再连接此Slack工作区。",
+        "workspaceMismatchTitle": "Slack工作区不匹配"
       },
       "teams": {
         "connectDescription": "关联你的Teams账号，就可以直接在Microsoft Teams里与你的智能体交流。",
