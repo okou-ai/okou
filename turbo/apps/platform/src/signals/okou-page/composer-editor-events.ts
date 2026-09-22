@@ -19,47 +19,43 @@ export function createComposerEditorEvents(editor: Editor) {
       if (!handlers) {
         throw new Error("Composer handlers must be committed before binding");
       }
-      const { handleKeyDown, handlePaste } = editor.options.editorProps;
-      const { handleDOMEvents } = editor.options.editorProps;
-      editor.setOptions({
-        editorProps: {
-          ...editor.options.editorProps,
-          handleDOMEvents: {
-            ...handleDOMEvents,
-            keydown: (view, event) => {
-              // ProseMirror skips handleKeyDown for every Chrome Android Enter
-              // (including hardware send shortcuts). Its native DOM hook runs
-              // after NodeView stopEvent and requires explicit cancellation.
-              if (
-                /Android \d/.test(navigator.userAgent) &&
-                /Chrome\/\d/.test(navigator.userAgent) &&
-                event.key === "Enter" &&
-                !view.composing &&
-                handlers.keyDown(event)
-              ) {
-                event.preventDefault();
-                return true;
-              }
-              return handleDOMEvents?.keydown?.(view, event) ?? false;
-            },
+      const view = editor.view;
+      const { handleKeyDown, handlePaste, handleDOMEvents } = view.props;
+      view.setProps({
+        handleDOMEvents: {
+          ...handleDOMEvents,
+          keydown: (currentView, event) => {
+            // ProseMirror skips handleKeyDown for every Chrome Android Enter
+            // (including hardware send shortcuts). Its native DOM hook runs
+            // after NodeView stopEvent and requires explicit cancellation.
+            if (
+              /Android \d/.test(navigator.userAgent) &&
+              /Chrome\/\d/.test(navigator.userAgent) &&
+              event.key === "Enter" &&
+              !currentView.composing &&
+              handlers.keyDown(event)
+            ) {
+              event.preventDefault();
+              return true;
+            }
+            return handleDOMEvents?.keydown?.(currentView, event) ?? false;
           },
-          handleKeyDown: (_view, event) => {
-            return handlers.keyDown(event);
-          },
-          handlePaste: (_view, event) => {
-            return handlers.paste(event);
-          },
+        },
+        handleKeyDown: (_view, event) => {
+          return handlers.keyDown(event);
+        },
+        handlePaste: (_view, event) => {
+          return handlers.paste(event);
         },
       });
       signal.addEventListener("abort", () => {
-        editor.setOptions({
-          editorProps: {
-            ...editor.options.editorProps,
+        if (!view.isDestroyed) {
+          view.setProps({
             handleKeyDown,
             handlePaste,
             handleDOMEvents,
-          },
-        });
+          });
+        }
         set(handlers$, null);
       });
     }),
