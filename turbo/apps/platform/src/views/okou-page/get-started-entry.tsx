@@ -724,7 +724,15 @@ function CheckinBlock({
   );
   // Claimed, so there is nothing left to press: a status line rather than a
   // control, the same way a finished quest row renders.
-  const className = `-mx-1 mt-2 rounded-lg px-1 py-1.5 [&_svg]:size-4 [&_svg]:shrink-0 ${
+  //
+  // `block` is load-bearing on the pressable branch. `DropdownMenuItem` ships
+  // `flex items-center`, and a caller's utility only removes a base utility in
+  // the same group, so naming no display left this block's two rows -- the
+  // header and the streak track -- laid out side by side. The track is a flex
+  // item with no basis, so it shrank to its content and its seven `flex-1`
+  // segments each measured 0px: the whole week read as 24px of bare gaps.
+  // Every quest row escaped this only by starting with `grid`.
+  const className = `-mx-1 mt-2 block rounded-lg px-1 py-1.5 [&_svg]:size-4 [&_svg]:shrink-0 ${
     pending ? "opacity-50" : ""
   }`;
   if (onSelect === null) {
