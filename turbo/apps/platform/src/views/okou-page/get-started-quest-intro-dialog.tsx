@@ -94,25 +94,35 @@ function questArtUrl(name: keyof typeof QUEST_ART): string {
 }
 
 /**
- * The band a quest drawing is printed on.
+ * The panel a quest drawing is printed on.
  *
- * It runs edge to edge at the top of the shell, above the header, which is the
- * anatomy Atlassian's `benefits modal` states for this job: illustration, then
- * title, then message, then at most two actions.
+ * One fixed-width column, full bleed to the card's own edge, with the drawing
+ * centred in it. The paper is the same value in both themes: it is the sheet
+ * the drawing is printed on rather than a UI surface, the argument the style
+ * guide already makes for illustration stroke weights -- and it is what lets
+ * one asset serve Light and Dark instead of needing a second drawing.
  *
- * The paper is the same value in both themes. It is the sheet the drawing is
- * printed on rather than a UI surface, the argument the style guide already
- * makes for illustration stroke weights -- and it is what lets one asset serve
- * Light and Dark instead of needing a second drawing.
+ * The drawing is capped in both directions, not just width. Capping width alone
+ * let a portrait drawing set the panel's height from its own aspect ratio: the
+ * gears landed at 280x317 and took 57% of the dialog while the landscape art
+ * took 43%, so the same shell changed shape depending on which file it got.
+ * With both capped the column is a constant and the words decide the height.
  */
+const FIGURE_W = 248;
+const ART_MAX = 188;
+
 function QuestFigure({ art }: { art: keyof typeof QUEST_ART }) {
   return (
-    <div className="flex w-full items-center justify-center bg-illustration-canvas px-6 py-6">
+    <div
+      className="flex shrink-0 items-center justify-center bg-illustration-canvas p-5"
+      style={{ width: FIGURE_W }}
+    >
       <img
         src={questArtUrl(art)}
         alt=""
         aria-hidden
-        className="block h-auto w-full max-w-[280px] object-contain"
+        className="block w-full object-contain"
+        style={{ maxHeight: ART_MAX }}
       />
     </div>
   );
@@ -188,33 +198,31 @@ function IntroLayout({
   /** Only the quests that hand something over draw a body under the figure. */
   children?: ReactNode;
 }) {
-  return (
+  const body = (
     <>
-      {/* The drawing runs edge to edge above the header, so it escapes the
-          body's padding rather than sitting inside it. The close button is
-          light-on-washed either way, so it needs no ground of its own. */}
-      {figure !== undefined && <div className="-mx-6 -mt-6">{figure}</div>}
       <DialogHeader>
         {/* The close button is absolutely placed at the top right, so a title
             long enough to wrap runs underneath it without this inset. */}
         <DialogTitle className="pr-7">{title}</DialogTitle>
-        {/* The price rides the description: the title is the argument, and what
-            the step pays is a fact about it. The row that led here is the only
-            place it used to appear, which is the one place the decision is not
-            being made. */}
-        <div className="flex flex-wrap items-center gap-2">
-          <DialogDescription>{description}</DialogDescription>
-          {reward !== undefined && (
-            <Badge className="shrink-0 text-xs font-semibold tabular-nums text-brand-text">
-              <Coins />+{formatLocalizedNumber(reward)}
-            </Badge>
-          )}
-        </div>
+        <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
-      {children !== undefined && (
-        <div className="flex flex-col gap-3">{children}</div>
+      {/* The price is its own row rather than trailing the description: in a
+          column this narrow a chip sharing that line pushes the sentence into
+          an extra wrap. The title is the argument and the price is a fact
+          about it, so it sits directly under both.
+
+          The width has to be the chip's own, because this row lands in two
+          different formatting contexts: the flex column below, and the shell's
+          `grid gap-4 p-6` for a step that keeps the plain padded body. A grid
+          item is blockified and stretched by the initial `justify-self`, so an
+          alignment utility alone left the chip spanning the whole column. */}
+      {reward !== undefined && (
+        <Badge className="w-fit text-xs font-semibold tabular-nums text-brand-text">
+          <Coins />+{formatLocalizedNumber(reward)}
+        </Badge>
       )}
-      <DialogFooter>
+      {children}
+      <DialogFooter className="mt-auto">
         <Button type="button" variant="outline" onClick={onSecondary}>
           {secondaryLabel}
         </Button>
@@ -227,6 +235,35 @@ function IntroLayout({
         </Button>
       </DialogFooter>
     </>
+  );
+
+  /*
+   * A step whose body is already structured -- the connector catalog -- keeps
+   * the plain padded shell. Only a step whose argument is otherwise just prose
+   * earns the drawing, and then the dialog becomes two panels.
+   */
+  if (figure === undefined) {
+    return body;
+  }
+
+  /*
+   * The drawing takes a column and the words take the rest.
+   *
+   * Spanning the header across both panels is what left the earlier version
+   * hollow: the picture had nothing beside it at the top and the prose had
+   * nothing to sit under, so three lines floated in the middle of the column
+   * with unowned white above and below. With the whole text block inside the
+   * column, every edge of both panels is doing something.
+   *
+   * `-m-6` cancels the body's own padding so the drawing reaches its own edge.
+   * An inset tile reads as a thumbnail pasted on; a panel reads as part of the
+   * card.
+   */
+  return (
+    <div className="-m-6 flex items-stretch">
+      {figure}
+      <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">{body}</div>
+    </div>
   );
 }
 
@@ -579,12 +616,12 @@ export function GetStartedQuestIntroDialog({
         }}
       >
         <DialogContent
-          // Two widths, by what the body is. The connector step carries the
-          // whole one-click catalog and needs the room; a step whose body is a
-          // drawing and three lines reads better narrow, because a single
-          // illustration centred across 680 cannot fill it. 560 is the nearest
-          // width the shell registers, and the one the check-in already uses.
-          smMaxWidth={introducedKey === "connector" ? 760 : 560}
+          // One width for every quest modal. The split layout holds the
+          // drawing in its own column, so a wide shell no longer leaves a
+          // centred illustration swimming -- which was the only reason the
+          // illustrated steps were narrower than the catalog in the first
+          // place.
+          smMaxWidth={680}
         >
           {introducedKey === "connector" && (
             <ConnectorIntro {...props} onNeedsChoice={needsChoice} />
@@ -653,56 +690,66 @@ export function GetStartedCheckinDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth={560}>
-        <QuestFigure art="checkinWeek" />
-        {/* The one screen in the checklist that is purely a reward, so it is
-            centred and reads top to bottom: the mark, what was earned, what it
-            is for, and where the checklist now stands. */}
-        <DialogHeader className="items-center text-center">
-          <DialogTitle className="text-xl">
-            {t(($) => {
-              return $.chat.agentPage.getStarted.intro.checkin.title;
-            })}
-          </DialogTitle>
-          <p className="text-3xl font-semibold tabular-nums tracking-tight text-brand-text">
-            {t(
-              ($) => {
-                return $.chat.agentPage.getStarted.intro.checkin.amount;
-              },
-              { amount: formatLocalizedNumber(reward) },
-            )}
-          </p>
-          {/* The streak, not the amount, is what brings someone back
-              tomorrow, and the screen never said it. */}
-          {streak > 0 && (
-            <p className="text-sm font-medium text-foreground">
+      <DialogContent smMaxWidth={680}>
+        {/* The milestone joins the same two panels as every other quest
+            screen. It keeps the one thing a reward screen needs that a step
+            screen does not -- the amount at display size -- but it stops
+            being the one dialog in the flow with its own shape. */}
+        <div className="-m-6 flex items-stretch">
+          <QuestFigure art="checkinWeek" />
+          <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">
+            <DialogHeader>
+              <DialogTitle className="pr-7">
+                {t(($) => {
+                  return $.chat.agentPage.getStarted.intro.checkin.title;
+                })}
+              </DialogTitle>
+              {/* The streak, not the amount, is what brings someone back
+                  tomorrow, and the screen never said it. It reads as the
+                  subtitle but it is not the dialog's description: a milestone
+                  at streak 0 is reachable, and the slot that names the screen
+                  has to be the line that is always there. */}
+              {streak > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  {t(
+                    ($) => {
+                      return $.chat.agentPage.getStarted.streak;
+                    },
+                    { amount: formatLocalizedNumber(streak) },
+                  )}
+                </p>
+              )}
+            </DialogHeader>
+            <p className="text-2xl font-semibold tabular-nums tracking-tight text-brand-text">
               {t(
                 ($) => {
-                  return $.chat.agentPage.getStarted.streak;
+                  return $.chat.agentPage.getStarted.intro.checkin.amount;
                 },
-                { amount: formatLocalizedNumber(streak) },
+                { amount: formatLocalizedNumber(reward) },
               )}
             </p>
-          )}
-          <DialogDescription className="max-w-[380px]">
-            {t(($) => {
-              return $.chat.agentPage.getStarted.intro.checkin.description;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="sm:justify-center">
-          <Button
-            type="button"
-            className="min-w-[160px]"
-            onClick={() => {
-              setOpen(false);
-            }}
-          >
-            {t(($) => {
-              return $.chat.agentPage.getStarted.intro.checkin.confirm;
-            })}
-          </Button>
-        </DialogFooter>
+            {/* The component rather than a hand-written paragraph, so this
+                screen's body prose takes the same leading as the other six
+                instead of its own. */}
+            <DialogDescription>
+              {t(($) => {
+                return $.chat.agentPage.getStarted.intro.checkin.description;
+              })}
+            </DialogDescription>
+            <DialogFooter className="mt-auto">
+              <Button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                }}
+              >
+                {t(($) => {
+                  return $.chat.agentPage.getStarted.intro.checkin.confirm;
+                })}
+              </Button>
+            </DialogFooter>
+          </div>
+        </div>
       </DialogContent>
     </Dialog>
   );
