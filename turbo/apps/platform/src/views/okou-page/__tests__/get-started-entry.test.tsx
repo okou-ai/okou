@@ -737,9 +737,9 @@ test("The daily step leads the list on the same grammar as every other step", as
   const rows = within(panel).getAllByTestId(/^get-started-quest-/u);
   expect(
     rows.map((row) => {
-      return row.getAttribute("data-testid");
+      return row.dataset.testid;
     }),
-  ).toEqual([
+  ).toStrictEqual([
     "get-started-quest-checkin",
     "get-started-quest-connector",
     "get-started-quest-workflow",
