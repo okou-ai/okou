@@ -658,6 +658,12 @@ export default [
       // a schema fixture would defeat the point of a layer that exists because
       // TypeScript exports are not the database.
       "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
+      // The hosted-site object sink proves bytes do not outlive the catalog row
+      // that named them, so its central case deletes the deployment row before
+      // any object is touched. No endpoint can construct a captured locator
+      // whose row is already gone, and object absence is read back from the
+      // provider rather than from a response this API serves.
+      "src/signals/services/__tests__/account-erasure-hosted-site-collector.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
