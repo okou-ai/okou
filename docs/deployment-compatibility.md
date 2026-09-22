@@ -1853,11 +1853,28 @@ The complete authority, provider, lifecycle, ingress, and failure model is in
 
 ### Locale compatibility
 
-Locale-capable clients receive a `supportedLocales` handshake derived from the
-capabilities in their client version. The API projects a stored locale to
-`en-US` when the requesting client cannot parse that locale and rejects locale
-writes that the client did not advertise. Keep this compatibility layer until
-stale browser clients and API rollback windows have closed.
+The App advertises its locale bundles with the optional comma-separated
+`supportedLocales` query on all three `/api/user-preferences` endpoints. The API
+returns the intersection with its supported locales, always including `en-US`.
+Requests without that query retain the preceding twelve-locale contract. A
+stored locale outside that intersection is projected to `en-US` in the response
+without changing the saved preference; locale writes outside the intersection
+are rejected. Other preference updates preserve the stored locale.
+
+An old App against the new API therefore receives only values it can render. A
+new App against the preceding API can still bootstrap: that API ignores the new
+query and returns its twelve-locale handshake, which hides unavailable choices
+and keeps automatic locale selection within the server's capabilities. The
+query uses existing requests and does not add a CORS header requirement.
+
+No schema migration or web-client version floor changes are needed. However,
+after a member saves one of the eleven new locale values, an API rollback must
+retain this locale parser: the preceding API cannot parse those persisted
+values. Before any rollback below this implementation, explicitly migrate
+those preferences to supported values or retain locale-reading compatibility.
+Keep the response projection while stale browser clients remain supported.
+This change does not perform a release, client force-upgrade, or production
+preference rewrite.
 
 ### Retired Limelight color theme
 

@@ -6,7 +6,10 @@ import {
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import {
+  userPreferencesContract,
+  SUPPORTED_USER_LOCALES,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
@@ -107,7 +110,14 @@ export const initializeMorningBriefEnrollment$ = command(
   ): Promise<void> => {
     const client = get(apiClient$)(userPreferencesContract);
     const result = await settle(
-      accept(client.initialize({ body, fetchOptions: { signal } }), [200]),
+      accept(
+        client.initialize({
+          body,
+          query: { supportedLocales: SUPPORTED_USER_LOCALES.join(",") },
+          fetchOptions: { signal },
+        }),
+        [200],
+      ),
       signal,
     );
     signal.throwIfAborted();

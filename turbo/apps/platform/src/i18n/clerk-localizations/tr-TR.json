@@ -1,0 +1,1332 @@
+{
+  "locale": "tr-TR",
+  "apiKeys": {
+    "copySecret": {
+      "formButtonPrimary__copyAndClose": "Kopyala ve kapat",
+      "formHint": "Güvenlik nedenleriyle, daha sonra tekrar görüntülemenize izin vermeyeceğiz.",
+      "formTitle": "\"{{name}}\" API anahtarınızı şimdi kopyalayın"
+    },
+    "revokeConfirmation": {}
+  },
+  "backButton": "Geri",
+  "badge__default": "Varsayılan",
+  "badge__otherImpersonatorDevice": "Diğer taklit eden cihaz",
+  "badge__primary": "Birincil",
+  "badge__requiresAction": "Eylem gerekli",
+  "badge__thisDevice": "Bu cihaz",
+  "badge__unverified": "Doğrulanmamış",
+  "badge__userDevice": "Kullanıcı cihazı",
+  "badge__you": "Siz",
+  "billing": {
+    "checkout": {
+      "emailForm": {},
+      "lineItems": {}
+    },
+    "paymentMethod": {
+      "applePayDescription": {},
+      "dev": {}
+    },
+    "pricingTable": {
+      "seatCost": {
+        "tooltip": {}
+      }
+    },
+    "subscriptionDetails": {}
+  },
+  "configureDirectorySync": {
+    "attributeMappingStep": {
+      "columns": {}
+    },
+    "configureStep": {
+      "error__ssoRequired": {},
+      "instructions": {
+        "custom": {},
+        "entra": {},
+        "okta": {}
+      },
+      "warning__googleUnsupported": {}
+    },
+    "navbar": {},
+    "providers": {},
+    "stepper": {},
+    "testStep": {}
+  },
+  "configureSSO": {
+    "activate": {},
+    "changeProviderDialog": {},
+    "configureStep": {
+      "activeConnectionWarning": {},
+      "attributeMappingTable": {
+        "badges": {}
+      },
+      "oidcCustom": {
+        "credentialsStep": {
+          "clientId": {},
+          "clientSecret": {}
+        },
+        "endpointsStep": {
+          "discoveryUrl": {},
+          "manual": {
+            "authUrl": {},
+            "tokenUrl": {},
+            "userInfoUrl": {}
+          },
+          "modes": {}
+        },
+        "redirectUriStep": {
+          "claims": {
+            "table": {
+              "columns": {},
+              "rows": {
+                "email": {},
+                "firstName": {},
+                "lastName": {},
+                "subject": {}
+              }
+            }
+          },
+          "redirectUri": {}
+        }
+      },
+      "samlCustom": {
+        "assignUsersStep": {},
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "createAppInstructions": {},
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        }
+      },
+      "samlGoogle": {
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "configureUserAccess": {
+          "assignUsersInstructions": {}
+        },
+        "createAppStep": {
+          "createAppInstructions": {}
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataFile": {},
+          "modes": {}
+        },
+        "serviceProviderStep": {
+          "nameIdInstructions": {},
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        }
+      },
+      "samlMicrosoft": {
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "assignUsersInstructions": {},
+          "createAppInstructions": {
+            "step4": {
+              "subSteps": {}
+            }
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        },
+        "serviceProviderStep": {
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        }
+      },
+      "samlOkta": {
+        "assignUsersStep": {
+          "assignUsersInstructions": {}
+        },
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "completeSamlIntegrationInstructions": {},
+          "createAppInstructions": {},
+          "serviceProviderInstructions": {
+            "serviceProviderFields": {
+              "acsUrl": {},
+              "spEntityId": {}
+            }
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        }
+      },
+      "unsupportedProvider": {}
+    },
+    "connectionScopeBanner": {},
+    "missingManageEnterpriseConnectionsPermission": {
+      "subtitle": "İzinlerinizi yükseltmek için organizasyonunuzun yöneticisiyle iletişime geçin.",
+      "title": "Tek Oturum Açmayı (SSO) yönetme izniniz yok"
+    },
+    "navbar": {
+      "title": "Tek Oturum Açmayı (SSO) Yapılandır"
+    },
+    "organizationDomainsStep": {
+      "domainCard": {
+        "badge__unverified": "Doğrulanmadı",
+        "badge__verified": "Doğrulandı",
+        "txtRecord": {
+          "hostLabel": "Ana bilgisayar / Ad",
+          "instructions": "Bu TXT kaydını DNS sağlayıcınıza ekleyin. Kayıt yayına girer girmez otomatik olarak doğrulayacağız.",
+          "typeLabel": "Tür",
+          "valueLabel": "Değer"
+        },
+        "verifiedAtLabel": "{{ date | shortDate('tr-TR') }} tarihinde doğrulandı"
+      },
+      "domainSuggestion": {
+        "formButtonPrimary__add": "{{domain}} ekle",
+        "messageLabel": "E-postanız {{domain}} kullanıyor. Eklemek ister misiniz?"
+      },
+      "formButtonPrimary__add": "Ekle",
+      "formFieldInputPlaceholder__domain": "Alan adı ekle",
+      "formFieldLabel__domain": "Alan adı",
+      "removeDomainDialog": {},
+      "subtitle": "Kuruluşunuzun oturum açmak için kullandığı alan adlarının sahipliğini ekleyin ve doğrulayın.",
+      "title": "SSO alan adları ekle"
+    },
+    "resetConnectionDialog": {},
+    "selectProviderStep": {
+      "oidc": {},
+      "saml": {
+        "customSaml": "Özel SAML Sağlayıcısı",
+        "groupLabel": "SAML",
+        "okta": "Okta Workforce"
+      },
+      "subtitle": "SSO'yu ayarlayacağınız sağlayıcıyı seçin.",
+      "title": "Sağlayıcıyı seçin",
+      "warning": "Bir sağlayıcı seçildikten sonra yapılandırma bitene kadar tekrar değiştiremezsiniz"
+    },
+    "testConfigurationStep": {
+      "testResults": {
+        "empty": {}
+      },
+      "testRunDetails": {
+        "howToFix": {
+          "oauth_access_denied": {},
+          "oauth_fetch_user_error": {},
+          "oauth_token_exchange_error": {},
+          "saml_email_address_domain_mismatch": {},
+          "saml_response_relaystate_missing": {},
+          "saml_user_attribute_missing": {}
+        },
+        "parsedUserInfo": {},
+        "runDetails": {}
+      },
+      "testUrl": {}
+    }
+  },
+  "createOrganization": {
+    "formButtonSubmit": "Oluştur",
+    "invitePage": {
+      "formButtonReset": "Atla"
+    },
+    "title": "Organizasyon oluştur"
+  },
+  "dates": {
+    "lastDay": "Dün saat {{ date | timeString('tr-TR') }}",
+    "next6Days": "{{ date | weekday('tr-TR','long') }} saat {{ date | timeString('tr-TR') }}",
+    "nextDay": "Yarın saat {{ date | timeString('tr-TR') }}",
+    "numeric": "{{ date | numeric('tr-TR') }}",
+    "previous6Days": "Geçen hafta {{ date | weekday('tr-TR','long') }} saat {{ date | timeString('tr-TR') }}",
+    "sameDay": "Bugün saat {{ date | timeString('tr-TR') }}"
+  },
+  "dividerText": "veya",
+  "footerActionLink__useAnotherMethod": "Başka bir yöntem kullan",
+  "footerPageLink__help": "Yardım",
+  "footerPageLink__privacy": "Gizlilik",
+  "footerPageLink__terms": "Şartlar",
+  "formButtonPrimary": "İleri",
+  "formButtonPrimary__verify": "Doğrula",
+  "formFieldAction__forgotPassword": "Şifremi unuttum",
+  "formFieldError__matchingPasswords": "Şifreler eşleşmeli.",
+  "formFieldError__notMatchingPasswords": "Şifreler eşleşmiyor.",
+  "formFieldError__verificationLinkExpired": "Doğrulama bağlantısının süresi doldu. Lütfen yeni bir bağlantı isteyin.",
+  "formFieldHintText__optional": "İsteğe bağlı",
+  "formFieldHintText__slug": "Slug, okunabilir bir ID'dir ve benzersiz olmalıdır. Genellikle URL'lerde kullanılır.",
+  "formFieldInputPlaceholder__backupCode": "Yedek kodu girin",
+  "formFieldInputPlaceholder__confirmDeletionUserAccount": "Hesabı sil",
+  "formFieldInputPlaceholder__emailAddress": "ornek@email.com",
+  "formFieldInputPlaceholder__emailAddress_username": "email veya kullanıcı adı",
+  "formFieldInputPlaceholder__emailAddresses": "ornek@email.com, ornek2@email.com",
+  "formFieldInputPlaceholder__firstName": "Adınızı girin",
+  "formFieldInputPlaceholder__lastName": "Soyadınızı girin",
+  "formFieldInputPlaceholder__organizationDomain": "Kuruluş alan adını girin",
+  "formFieldInputPlaceholder__organizationDomainEmailAddress": "Kuruluş e-posta adresini girin",
+  "formFieldInputPlaceholder__organizationName": "Kuruluş adını girin",
+  "formFieldInputPlaceholder__organizationSlug": "kurulus-adi",
+  "formFieldInputPlaceholder__password": "Şifrenizi girin",
+  "formFieldInputPlaceholder__phoneNumber": "Telefon numaranızı girin",
+  "formFieldInputPlaceholder__username": "Kullanıcı adınızı girin",
+  "formFieldLabel__apiKey": "API anahtarı",
+  "formFieldLabel__apiKeyDescription": "Açıklama",
+  "formFieldLabel__apiKeyExpiration": "Son kullanma",
+  "formFieldLabel__apiKeyName": "Gizli anahtar adı",
+  "formFieldLabel__automaticInvitations": "Bu alan adı için otomatik davetleri etkinleştir",
+  "formFieldLabel__backupCode": "Yedekleme kodu",
+  "formFieldLabel__confirmDeletion": "Onayla",
+  "formFieldLabel__confirmPassword": "Şifreyi onayla",
+  "formFieldLabel__currentPassword": "Mevcut şifre",
+  "formFieldLabel__emailAddress": "E-posta adresi",
+  "formFieldLabel__emailAddress_username": "E-posta adresi veya kullanıcı adı",
+  "formFieldLabel__emailAddresses": "E-posta adresleri",
+  "formFieldLabel__firstName": "Ad",
+  "formFieldLabel__lastName": "Soyad",
+  "formFieldLabel__newPassword": "Yeni şifre",
+  "formFieldLabel__organizationDomain": "Alan adı",
+  "formFieldLabel__organizationDomainDeletePending": "Bekleyen davetiyeleri ve önerileri sil",
+  "formFieldLabel__organizationDomainEmailAddress": "Doğrulama e-posta adresi",
+  "formFieldLabel__organizationDomainEmailAddressDescription": "Bu alan adı için bir e-posta adresi girin, doğrulama kodunu alın ve alan adını doğrulayın.",
+  "formFieldLabel__organizationName": "Organizasyon adı",
+  "formFieldLabel__organizationSlug": "Organizasyon bağlantı metni",
+  "formFieldLabel__passkeyName": "Geçiş anahtarının adı",
+  "formFieldLabel__password": "Şifre",
+  "formFieldLabel__phoneNumber": "Telefon numarası",
+  "formFieldLabel__role": "Rol",
+  "formFieldLabel__signOutOfOtherSessions": "Diğer cihazlardaki oturumlardan çık",
+  "formFieldLabel__username": "Kullanıcı adı",
+  "impersonationFab": {
+    "action__signOut": "Çıkış yap",
+    "title": "{{identifier}} olarak giriş yapıldı"
+  },
+  "lastAuthenticationStrategy": "Son kullanılan",
+  "maintenanceMode": "Şu anda bakımdayız, ancak endişelenmeyin, kısa bir süre içinde tamamlanacaktır.",
+  "membershipRole__admin": "Yönetici",
+  "membershipRole__basicMember": "Üye",
+  "membershipRole__guestMember": "Misafir",
+  "oauthConsent": {
+    "redirectUriModal": {},
+    "scopeList": {}
+  },
+  "oauthDeviceVerification": {
+    "confirmation": {},
+    "error": {},
+    "start": {},
+    "status": {}
+  },
+  "organizationList": {
+    "action__createOrganization": "Organizasyon oluştur",
+    "action__invitationAccept": "Katıl",
+    "action__suggestionsAccept": "Katılmak için talepte bulun",
+    "createOrganization": "Organizasyon Oluştur",
+    "invitationAcceptedLabel": "Katılım başarılı",
+    "subtitle": "{{applicationName}} ile devam edin",
+    "suggestionsAcceptedLabel": "Onay bekleniyor",
+    "title": "Bir hesap seçin",
+    "titleWithoutPersonal": "Bir organizasyon seçin"
+  },
+  "organizationProfile": {
+    "apiKeysPage": {},
+    "badge__automaticInvitation": "Otomatik davetler",
+    "badge__automaticSuggestion": "Otomatik öneriler",
+    "badge__manualInvitation": "Davetler",
+    "badge__unverified": "Doğrulanmamış",
+    "billingPage": {
+      "accountCreditsSection": {},
+      "creditHistoryPage": {},
+      "paymentHistorySection": {},
+      "paymentMethodsSection": {
+        "removeMethod": {}
+      },
+      "start": {},
+      "statementsSection": {},
+      "subscriptionsListSection": {},
+      "subscriptionsSection": {},
+      "switchPlansSection": {}
+    },
+    "createDomainPage": {
+      "subtitle": "Alan adını ekleyerek doğrulama yapın. Bu alana sahip e-posta adresleri ile kaydolan kullanıcılar organizasyona otomatik olarak katılabilir veya katılma talebi gönderebilir.",
+      "title": "Alan adı ekle"
+    },
+    "invitePage": {
+      "detailsTitle__inviteFailed": "Davetiyeler gönderilemedi. Aşağıdaki e-posta adresleri için zaten bekleyen davetler var: {{email_addresses}}.",
+      "formButtonPrimary__continue": "Davetiye gönder",
+      "selectDropdown__role": "Rol seçin",
+      "subtitle": "Boşluk veya virgülle ayırarak bir veya daha fazla e-posta adresi girin veya yapıştırın.",
+      "successMessage": "Davetler başarıyla gönderildi",
+      "title": "Yeni üyeler davet edin"
+    },
+    "membersPage": {
+      "action__invite": "Davet et",
+      "action__search": "Ara",
+      "activeMembersTab": {
+        "menuAction__remove": "Üyeyi kaldır",
+        "tableHeader__actions": "İşlemler",
+        "tableHeader__joined": "Katılma tarihi",
+        "tableHeader__role": "Rol",
+        "tableHeader__user": "Kullanıcı"
+      },
+      "alerts": {
+        "roleSetMigrationInProgress": {
+          "subtitle": "Mevcut rolleri güncelliyoruz. Bu tamamlandığında rolleri tekrar güncelleyebileceksiniz.",
+          "title": "Roller geçici olarak kilitlendi"
+        }
+      },
+      "detailsTitle__emptyRow": "Görüntülenecek üye yok",
+      "invitationsTab": {
+        "autoInvitations": {
+          "headerSubtitle": "Organizasyonunuzla ilişkili bir alan adı uzantısına sahip e-posta adresini girerek kullanıcıları otomatik olarak davet edin. Bu alana sahip e-posta ile kaydolan herkes, istediği zaman organizasyona katılabilir.",
+          "headerTitle": "Otomatik davetler",
+          "primaryButton": "Doğrulanmış alan adlarını yönet"
+        },
+        "table__emptyRow": "Gösterilecek davetiye yok"
+      },
+      "invitedMembersTab": {
+        "menuAction__revoke": "Daveti iptal et",
+        "tableHeader__invited": "Davet Edilenler"
+      },
+      "requestsTab": {
+        "autoSuggestions": {
+          "headerSubtitle": "Eşleşen alan adı uzantısına sahip e-posta ile kaydolan kullanıcılar, katılma talebi gönderebilmek için otomatik öneri alacaklar.",
+          "headerTitle": "Otomatik öneriler",
+          "primaryButton": "Doğrulanmış alan adlarını yönet"
+        },
+        "menuAction__approve": "Onayla",
+        "menuAction__reject": "Reddet",
+        "tableHeader__requested": "Katılma isteği",
+        "table__emptyRow": "Görüntülenecek herhangi bir istek yok"
+      },
+      "start": {
+        "headerTitle__invitations": "Davetler",
+        "headerTitle__members": "Üyeler",
+        "headerTitle__requests": "İstekler"
+      }
+    },
+    "navbar": {
+      "description": "Organizasyonunuzu yönetin.",
+      "general": "Genel",
+      "members": "Üyeler",
+      "title": "Organizasyon"
+    },
+    "plansPage": {
+      "alerts": {}
+    },
+    "profilePage": {
+      "dangerSection": {
+        "deleteOrganization": {
+          "actionDescription": "Devam etmek için aşağıya “{{organizationName}}” yazın.",
+          "messageLine1": "Bu organizasyonu silmek istediğinizden emin misiniz?",
+          "messageLine2": "Bu işlem kalıcıdır ve geri alınamaz.",
+          "successMessage": "Organizasyonu sildiniz.",
+          "title": "Organizasyonu sil"
+        },
+        "leaveOrganization": {
+          "actionDescription": "Devam etmek için aşağıya “{{organizationName}}” yazın.",
+          "messageLine1": "Bu organizasyondan ayrılmak istediğinizden emin misiniz? Bu organizasyona ve uygulamalarına erişiminizi kaybedeceksiniz.",
+          "messageLine2": "Bu işlem kalıcıdır ve geri alınamaz.",
+          "successMessage": "Organizasyondan ayrıldınız.",
+          "title": "Organizasyondan ayrıl"
+        },
+        "title": "Tehlike"
+      },
+      "domainSection": {
+        "menuAction__manage": "Yönet",
+        "menuAction__remove": "Sil",
+        "menuAction__verify": "Doğrula",
+        "primaryButton": "Alan adı ekle",
+        "subtitle": "Kullanıcıların organizasyona otomatik olarak katılmasına veya doğrulanmış bir alan adı uzantılı e-posta ile katılma isteğinde bulunmasına izin verin.",
+        "title": "Doğrulanmış alan adları"
+      },
+      "successMessage": "Organizasyon güncellendi.",
+      "title": "Organizasyon profili"
+    },
+    "removeDomainPage": {
+      "messageLine1": "{{domain}} Alan adı kaldırılacaktır.",
+      "messageLine2": "Kullanıcılar bundan sonra organizasyona otomatik olarak katılamayacaklar.",
+      "successMessage": "{{domain}} kaldırıldı.",
+      "title": "Alan adını kaldır"
+    },
+    "securityPage": {
+      "directorySyncSection": {
+        "removeDialog": {}
+      },
+      "removeDialog": {},
+      "ssoSection": {}
+    },
+    "start": {
+      "headerTitle__general": "Genel",
+      "headerTitle__members": "Üyeler",
+      "profileSection": {
+        "primaryButton": "Güncelle",
+        "title": "Organizasyon Profili",
+        "uploadAction__title": "Logo"
+      }
+    },
+    "verifiedDomainPage": {
+      "dangerTab": {
+        "calloutInfoLabel": "Bu alan adını kaldırmak, davet edilmiş kullanıcıları etkileyecektir.",
+        "removeDomainActionLabel__remove": "Alan adını kaldır",
+        "removeDomainSubtitle": "Bu alan adını doğrulanmış alan adlarınızdan kaldırın",
+        "removeDomainTitle": "Alan adını kaldır"
+      },
+      "enrollmentTab": {
+        "automaticInvitationOption__description": "Kullanıcılar, kayıt olduklarında otomatik olarak organizasyona davet edilir ve istedikleri zaman katılabilirler.",
+        "automaticInvitationOption__label": "Otomatik davetler",
+        "automaticSuggestionOption__description": "Kullanıcılar, katılma talebinde bulunmak için otomatik öneri alırlar; ancak organizasyona katılabilmeleri için bir yönetici onayı gereklidir.",
+        "automaticSuggestionOption__label": "Otomatik öneriler",
+        "calloutInfoLabel": "Kayıt türünün değiştirilmesi yalnızca yeni kullanıcıları etkileyecektir.",
+        "calloutInvitationCountLabel": "Kullanıcılara gönderilen ve bekleyen davetler: {{count}}",
+        "calloutSuggestionCountLabel": "Kullanıcılara gönderilen ve bekleyen öneriler: {{count}}",
+        "manualInvitationOption__description": "Kullanıcılar organizasyona sadece manuel olarak davet edilebilir.",
+        "manualInvitationOption__label": "Manuel davet",
+        "subtitle": "Bu alan adı altındaki kullanıcıların organizasyona nasıl katılacaklarını seçin."
+      },
+      "start": {
+        "headerTitle__danger": "Tehlike",
+        "headerTitle__enrollment": "Kayıt seçenekleri"
+      },
+      "subtitle": "Alan adı {{domain}} şimdi doğrulandı. Devam etmek için kayıt modunu seçin.",
+      "title": "{{domain}} adlı alan adını güncelle"
+    },
+    "verifyDomainPage": {
+      "formSubtitle": "E-posta adresinize gönderilen doğrulama kodunu girin",
+      "formTitle": "Doğrulama kodu",
+      "resendButton": "Kod almadınız mı? Tekrar gönderin",
+      "subtitle": "{{domainName}} Alan adının e-posta ile doğrulanması gerekiyor.",
+      "subtitleVerificationCodeScreen": "{{emailAddress}} adresine bir doğrulama kodu gönderildi. Devam etmek için kodu giriniz.",
+      "title": "Alan adını doğrula"
+    }
+  },
+  "organizationSwitcher": {
+    "action__createOrganization": "Organizasyon oluştur",
+    "action__invitationAccept": "Katıl",
+    "action__manageOrganization": "Organizasyonu yönet",
+    "action__suggestionsAccept": "Katılmak için talepte bulun",
+    "notSelected": "Organizasyon seçilmedi",
+    "personalWorkspace": "Kişisel Çalışma Alanı",
+    "suggestionsAcceptedLabel": "Onay bekleniyor"
+  },
+  "paginationButton__next": "İleri",
+  "paginationButton__previous": "Geri",
+  "paginationRowText__displaying": "Sayfa bilgisi:",
+  "paginationRowText__of": "-",
+  "reverification": {
+    "alternativeMethods": {
+      "actionLink": "Yardım almak için buraya tıklayın",
+      "actionText": "Alternatif doğrulama yöntemlerini kullanmak ister misiniz?",
+      "blockButton__backupCode": "Yedek kodu kullan",
+      "blockButton__emailCode": "E-posta kodu gönder",
+      "blockButton__password": "Şifreyi gir",
+      "blockButton__phoneCode": "Telefon kodu gönder",
+      "blockButton__totp": "TOTP kodu kullan",
+      "getHelp": {
+        "blockButton__emailSupport": "E-posta ile destek alın",
+        "content": "Hala yardıma ihtiyacınız varsa, destek ekibimizle iletişime geçin.",
+        "title": "Yardım Al"
+      },
+      "subtitle": "Doğrulama işlemi için alternatif yöntemler.",
+      "title": "Alternatif Doğrulama Yöntemleri"
+    },
+    "backupCodeMfa": {
+      "subtitle": "Yedek kodu girerek doğrulamanızı tamamlayabilirsiniz.",
+      "title": "Yedek Kod ile Doğrulama"
+    },
+    "emailCode": {
+      "formTitle": "E-posta ile Doğrulama",
+      "resendButton": "Tekrar gönder",
+      "subtitle": "E-posta adresinize gönderilen doğrulama kodunu girin.",
+      "title": "E-posta Kodunu Girin"
+    },
+    "noAvailableMethods": {
+      "message": "Alternatif doğrulama yöntemleri mevcut değil.",
+      "subtitle": "Lütfen farklı bir doğrulama yöntemi deneyin.",
+      "title": "Doğrulama Yöntemleri Yok"
+    },
+    "passkey": {},
+    "password": {
+      "actionLink": "Şifremi unuttum",
+      "subtitle": "Şifrenizi girerek devam edebilirsiniz.",
+      "title": "Şifre ile Giriş Yapın"
+    },
+    "phoneCode": {
+      "formTitle": "Telefon Kodu ile Doğrulama",
+      "resendButton": "Telefon kodunu tekrar gönder",
+      "subtitle": "Telefonunuza gönderilen doğrulama kodunu girin.",
+      "title": "Telefon Kodu Girin"
+    },
+    "phoneCodeMfa": {
+      "formTitle": "Telefon Koduyla MFA Doğrulaması",
+      "resendButton": "Telefon kodunu tekrar gönder",
+      "subtitle": "Telefonunuza gönderilen doğrulama kodunu girin.",
+      "title": "Telefon Koduyla Doğrulama"
+    },
+    "totpMfa": {
+      "formTitle": "TOTP ile MFA Doğrulaması",
+      "subtitle": "Mobil uygulamanızdan TOTP kodunu girin.",
+      "title": "TOTP Kodunu Girin"
+    }
+  },
+  "searchInput": {},
+  "signIn": {
+    "accountSwitcher": {
+      "action__addAccount": "Hesap ekle",
+      "action__signOutAll": "Mevcut tüm oturumları kapatın",
+      "subtitle": "Devam etmek istediğiniz hesabı seçin.",
+      "title": "Bir hesap seçiniz"
+    },
+    "alternativeMethods": {
+      "actionLink": "Yardım al",
+      "actionText": "Bunlardan hiçbiri yok mu?",
+      "blockButton__backupCode": "Yedekleme kodu kullan",
+      "blockButton__emailCode": "{{identifier}} adresine doğrulama kodu gönder",
+      "blockButton__emailLink": "{{identifier}} adresine doğrulama bağlantısı gönder",
+      "blockButton__passkey": "Geçiş anahtarınızla oturum açın",
+      "blockButton__password": "Şifreyle giriş yap",
+      "blockButton__phoneCode": "{{identifier}} numarasına doğrulama kodu gönder",
+      "blockButton__totp": "Authenticator uygulaması kullan",
+      "getHelp": {
+        "blockButton__emailSupport": "E-posta desteği",
+        "content": "Eğer hesabınıza giriş yapmakta zorluk yaşıyorsanız, hesabınıza erişiminizi sağlayabilmemiz için bize bir e-posta gönderin ve size yardımcı olalım.",
+        "title": "Yardım al"
+      },
+      "subtitle": "Sorunlarla mı karşılaşıyorsunuz? Oturum açmak için bu yöntemlerden birini deneyebilirsiniz.",
+      "title": "Farklı bir yöntem kullan"
+    },
+    "alternativePhoneCodeProvider": {},
+    "backupCodeMfa": {
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "Yedekleme kodu girişi"
+    },
+    "emailCode": {
+      "formTitle": "Doğrulama kodu",
+      "resendButton": "Kodu tekrar gönder",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "E-posta kutunuzu kontrol edin"
+    },
+    "emailCodeMfa": {
+      "formTitle": "E-posta kutunuzu kontrol edin",
+      "resendButton": "Kod almadınız mı? Tekrar gönderin",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "E-posta kutunuzu kontrol edin"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Devam etmek için, oturum açma işlemini başlattığınız cihaz ve tarayıcıdaki doğrulama bağlantısını açın",
+        "title": "Doğrulama bağlantısı bu cihaz için geçersiz"
+      },
+      "expired": {
+        "subtitle": "Devam etmek için en baştaki sekmeye dönün",
+        "title": "Bu doğrulama bağlantısının süresi dolmuş"
+      },
+      "failed": {
+        "subtitle": "Devam etmek için en baştaki sekmeye dönün",
+        "title": "Bu doğrulama bağlantısı geçersiz"
+      },
+      "formSubtitle": "E-posta adresinize gönderdiğimiz doğrulama bağlantısına tıklayın",
+      "formTitle": "Doğrulama bağlantısı",
+      "loading": {
+        "subtitle": "Birazdan yeniden yönlendirileceksiniz",
+        "title": "Giriş yapılıyor..."
+      },
+      "resendButton": "Tekrar gönder",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "E-posta kutunuzu kontrol edin",
+      "unusedTab": {
+        "title": "Bu sekmeyi kapatabilirsiniz"
+      },
+      "verified": {
+        "subtitle": "Birazdan yeniden yönlendirileceksiniz",
+        "title": "Başarıyla giriş yapıldı"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Devam etmek için en baştaki sekmeye dönün",
+        "subtitleNewTab": "Devam etmek için yeni açılmış sekmeye dönün",
+        "titleNewTab": "Farklı bir sekmede giriş yapıldı"
+      },
+      "verifiedTransferable": {}
+    },
+    "emailLinkMfa": {
+      "formSubtitle": "E-postanıza gönderilen doğrulama bağlantısını kullanın",
+      "resendButton": "Bağlantıyı almadınız mı? Yeniden gönder",
+      "subtitle": "{{applicationName}} uygulamasına devam etmek için",
+      "title": "E-postanızı kontrol edin"
+    },
+    "enterpriseConnections": {},
+    "enterpriseSSO": {},
+    "forgotPassword": {
+      "formTitle": "Şifre sıfırlama kodu",
+      "resendButton": "Tekrar gönder",
+      "subtitle": "Şifrenizi sıfırlamak için",
+      "subtitle_email": "İlk olarak, e-posta kimliğinize gönderilen kodu girin",
+      "subtitle_phone": "İlk olarak, telefonunuza gönderilen kodu girin",
+      "title": "Şifreyi sıfırla"
+    },
+    "forgotPasswordAlternativeMethods": {
+      "blockButton__resetPassword": "Şifremi sıfırla",
+      "label__alternativeMethods": "Veya başka bir yöntem kullanın:",
+      "title": "Şifremi unuttum"
+    },
+    "newDeviceVerificationNotice": "Yeni bir cihazdan oturum açıyorsunuz. Hesabınızın güvenliğini sağlamak için doğrulama istiyoruz.",
+    "noAvailableMethods": {
+      "message": "Hesabınızda giriş yapmak için kullanabileceğiniz bir yöntem bulunmuyor.",
+      "subtitle": "Bir hata oluştu",
+      "title": "Giriş yapılamıyor"
+    },
+    "passkey": {
+      "subtitle": "Geçiş anahtarınızı kullanarak siz olduğunuzu onaylayın. Cihazınız parmak izinizi, yüzünüzü veya ekran kilidinizi isteyebilir.",
+      "title": "Geçiş anahtarınızı kullanın"
+    },
+    "password": {
+      "actionLink": "Başka bir yöntem kullan",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "Şifrenizi girin"
+    },
+    "passwordCompromised": {},
+    "passwordPwned": {
+      "title": "Şifre ele geçirildi"
+    },
+    "passwordUntrusted": {},
+    "phoneCode": {
+      "formTitle": "Doğrulama kodu",
+      "resendButton": "Kod almadınız mı? Tekrar gönderin",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "Telefonuza gönderilen kodu girin"
+    },
+    "phoneCodeMfa": {
+      "formTitle": "Doğrulama kodu",
+      "resendButton": "Kod almadınız mı? Tekrar gönderin",
+      "subtitle": "Devam etmek için lütfen telefonunuza gönderilen doğrulama kodunu girin",
+      "title": "Telefonuza gönderilen kodu girin"
+    },
+    "protectCheck": {},
+    "resetPassword": {
+      "formButtonPrimary": "Şifremi sıfırla",
+      "requiredMessage": "Güvenlik nedeniyle şifrenizi sıfırlamanız gerekmektedir.",
+      "successMessage": "Şifreniz başarıyla değiştirildi. Oturumunuz açılıyor, lütfen biraz bekleyin.",
+      "title": "Şifre sıfırlama"
+    },
+    "resetPasswordMfa": {
+      "detailsLabel": "Şifrenizi sıfırlamadan önce kimliğinizi doğrulamamız gerekiyor."
+    },
+    "ssoFallback": {
+      "code": {}
+    },
+    "start": {
+      "actionLink": "Kayıt ol",
+      "actionLink__join_waitlist": "Bekleme listesine katıl",
+      "actionLink__use_email": "E-posta kullan",
+      "actionLink__use_email_username": "E-posta veya kullanıcı adı kullan",
+      "actionLink__use_passkey": "Bunun yerine geçiş anahtarını kullanın",
+      "actionLink__use_phone": "Telefon kullan",
+      "actionLink__use_username": "Kullanıcı adı kullan",
+      "actionText": "Hesabınız yok mu?",
+      "actionText__join_waitlist": "Bekleme listesine katılın",
+      "alternativePhoneCodeProvider": {},
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "Giriş yap"
+    },
+    "totpMfa": {
+      "formTitle": "Doğrulama kodu",
+      "subtitle": "Devam etmek için lütfen kimlik doğrulayıcı uygulamanız tarafından oluşturulan doğrulama kodunu girin",
+      "title": "İki aşamalı doğrulama"
+    },
+    "web3Solana": {
+      "subtitle": "Giriş yapmak için aşağıdan bir cüzdan seçin",
+      "title": "Solana ile giriş yap"
+    }
+  },
+  "signInEnterPasswordTitle": "Şifrenizi girin",
+  "signUp": {
+    "alternativePhoneCodeProvider": {},
+    "continue": {
+      "actionLink": "Giriş yap",
+      "actionText": "Hesabınız var mı?",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "Eksik bilgileri tamamlayın"
+    },
+    "emailCode": {
+      "formSubtitle": "E-posta adresinize gönderdiğimiz doğrulama kodunu giriniz",
+      "formTitle": "Doğrulama kodu",
+      "resendButton": "Kodu tekrar gönder",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "E-posta adresinizi doğrulayın"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Devam etmek için, kayıt işlemini başlattığınız cihazda ve tarayıcıda doğrulama bağlantısını açın",
+        "title": "Doğrulama bağlantısı bu cihaz için geçersiz"
+      },
+      "formSubtitle": "E-posta adresinize gönderdiğimiz doğrulama bağlantısına tıklayın",
+      "formTitle": "Doğrulama bağlantısı",
+      "loading": {
+        "title": "Giriş yapılıyor..."
+      },
+      "resendButton": "Bağlantı almadınız mı? Tekrar gönder",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "E-posta adresinizi doğrulayın",
+      "verified": {
+        "title": "Başarıyla doğrulandı"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Devam etmek için yeni açılmış sekmeye dönün",
+        "subtitleNewTab": "Devam etmek için önceki sekmeye dönün",
+        "title": "E-posta adresiniz başarıyla doğrulandı"
+      }
+    },
+    "enterpriseConnections": {},
+    "legalConsent": {
+      "checkbox": {
+        "label__onlyPrivacyPolicy": "Gizlilik Politikası'nı kabul ediyorum",
+        "label__onlyTermsOfService": "Hizmet Şartları'nı kabul ediyorum",
+        "label__termsOfServiceAndPrivacyPolicy": "{{ termsOfServiceLink || link('Hizmet Şartları') }} ve {{ privacyPolicyLink || link('Gizlilik Politikası') }}'nı kabul ediyorum"
+      },
+      "continue": {
+        "subtitle": "Devam etmek için lütfen gerekli adımları takip edin.",
+        "title": "Devam Et"
+      }
+    },
+    "phoneCode": {
+      "formSubtitle": "Telefon numaranıza gönderdiğimiz doğrulama kodunu giriniz",
+      "formTitle": "Doğrulama kodu",
+      "resendButton": "Kodu tekrar gönder",
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "title": "Telefon numaranızı doğrulayın"
+    },
+    "protectCheck": {},
+    "restrictedAccess": {
+      "actionLink": "Yardım almak için destekle iletişime geçin",
+      "actionText": "Erişiminiz kısıtlandı mı?",
+      "blockButton__emailSupport": "E-posta ile destek al",
+      "blockButton__joinWaitlist": "Bekleme listesine katıl",
+      "subtitle": "Erişim kısıtlaması nedeniyle bu sayfaya erişim sağlanamıyor.",
+      "subtitleWaitlist": "Erişim için bekleme listesine kaydınız alındı.",
+      "title": "Kısıtlı Erişim"
+    },
+    "start": {
+      "actionLink": "Giriş yap",
+      "actionLink__use_email": "Bunun yerine e-posta kullanın",
+      "actionLink__use_phone": "Bunun yerine telefon kullanın",
+      "actionText": "Hesabınız var mı?",
+      "alternativePhoneCodeProvider": {},
+      "subtitle": "{{applicationName}} ile devam etmek için",
+      "subtitleCombined": "{{applicationName}} ile devam etmek için",
+      "title": "Hesap oluştur",
+      "titleCombined": "Hesap oluştur"
+    },
+    "web3Solana": {
+      "subtitle": "Kaydolmak için aşağıdan bir cüzdan seçin",
+      "title": "Solana ile kaydol"
+    }
+  },
+  "socialButtonsBlockButton": "{{provider|titleize}} ile giriş yapın",
+  "socialButtonsBlockButtonManyInView": "{{provider|titleize}}",
+  "taskChooseOrganization": {
+    "alerts": {
+      "organizationAlreadyExists": "Tespit edilen şirket adı ({{organizationName}}) ve {{organizationDomain}} için bir organizasyon zaten mevcut. Davetiye ile katılın."
+    },
+    "chooseOrganization": {
+      "action__createOrganization": "Yeni organizasyon oluştur",
+      "action__invitationAccept": "Katıl",
+      "action__suggestionsAccept": "Katılım iste",
+      "subtitle": "Mevcut bir organizasyona katılın veya yeni bir tane oluşturun",
+      "subtitle__createOrganizationDisabled": "Mevcut bir organizasyona katılın",
+      "suggestionsAcceptedLabel": "Onay bekleniyor",
+      "title": "Bir organizasyon seçin"
+    },
+    "createOrganization": {
+      "formButtonReset": "İptal",
+      "formButtonSubmit": "Devam et",
+      "formFieldInputPlaceholder__name": "Organizasyonum",
+      "formFieldInputPlaceholder__slug": "organizasyonum",
+      "formFieldLabel__name": "Ad",
+      "formFieldLabel__slug": "Slug",
+      "subtitle": "Devam etmek için organizasyon bilgilerinizi girin",
+      "title": "Organizasyonunuzu ayarlayın"
+    },
+    "organizationCreationDisabled": {
+      "subtitle": "Davet için organizasyon yöneticinizle iletişime geçin.",
+      "title": "Bir organizasyona ait olmalısınız"
+    },
+    "signOut": {
+      "actionLink": "Çıkış yap",
+      "actionText": "{{identifier}} olarak giriş yapıldı"
+    }
+  },
+  "taskResetPassword": {
+    "signOut": {}
+  },
+  "taskSetupMfa": {
+    "signOut": {},
+    "smsCode": {
+      "addPhone": {},
+      "success": {},
+      "verifyPhone": {}
+    },
+    "start": {
+      "methodSelection": {}
+    },
+    "totpCode": {
+      "addAuthenticatorApp": {},
+      "success": {},
+      "verifyTotp": {}
+    }
+  },
+  "unstable__errors": {
+    "already_a_member_in_organization": "Bu organizasyonda zaten üyesiniz.",
+    "avatar_file_size_exceeded": "Dosya boyutu maksimum 10 MB sınırını aşıyor. Lütfen daha küçük bir dosya seçin.",
+    "avatar_file_type_invalid": "Dosya türü desteklenmiyor. Lütfen JPG, PNG, GIF veya WEBP formatında bir görsel yükleyin.",
+    "captcha_invalid": "Güvenlik doğrulamalarındaki hatalar nedeniyle kayıt yapılamadı. Lütfen tekrar denemek için sayfayı yenileyin veya daha fazla yardım için destek ekibi ile iletişime geçin.",
+    "captcha_unavailable": "Bot doğrulaması başarısız olduğu için kayıt yapılamadı. Lütfen tekrar denemek için sayfayı yenileyin veya daha fazla yardım için destek ekibi ile iletişime geçin.",
+    "form_code_incorrect": "Hatalı kod.",
+    "form_email_address_blocked": "Geçici e-posta hizmetleri desteklenmemektedir. Lütfen hesap oluşturmak için normal e-posta adresinizi kullanın.",
+    "form_identifier_exists__email_address": "Bu e-posta adresi zaten kullanılıyor.",
+    "form_identifier_exists__phone_number": "Bu telefon numarası zaten kullanılıyor.",
+    "form_identifier_exists__username": "Bu kullanıcı adı zaten kullanılıyor.",
+    "form_identifier_not_found": "Bu bilgilere sahip bir hesap bulunamadı.",
+    "form_param_format_invalid": "Parametre formatı geçersiz.",
+    "form_param_format_invalid__email_address": "E-posta adresi geçerli olmalıdır.",
+    "form_param_format_invalid__phone_number": "Telefon numarası geçerli olmalıdır.",
+    "form_param_max_length_exceeded__first_name": "Ad 256 karakteri aşmamalıdır.",
+    "form_param_max_length_exceeded__last_name": "Soyad 256 karakteri aşmamalıdır.",
+    "form_param_max_length_exceeded__name": "İsim 256 karakteri aşmamalıdır.",
+    "form_param_nil": "Parametre boş olamaz.",
+    "form_param_value_invalid": "Parametre değeri geçersiz.",
+    "form_password_incorrect": "Şifre yanlış.",
+    "form_password_length_too_short": "Şifre çok kısa.",
+    "form_password_not_strong_enough": "Şifreniz yeterince güçlü değil.",
+    "form_password_or_identifier_incorrect": "Şifre veya e-posta adresi yanlış. Tekrar deneyin veya başka bir yöntem kullanın.",
+    "form_password_pwned": "Bu şifre bir veri ihlalinde tespit edildi ve kullanılamaz. Lütfen başka bir şifre deneyin.",
+    "form_password_pwned__sign_in": "Bu şifre bir veri ihlalinde tespit edildi ve oturum açmak için kullanılamaz. Lütfen başka bir şifre seçin.",
+    "form_password_size_in_bytes_exceeded": "Şifreniz izin verilen maksimum byte sayısını aştı, lütfen kısaltın veya bazı özel karakterleri çıkarın.",
+    "form_password_validation_failed": "Şifre doğrulaması başarısız.",
+    "form_username_invalid_character": "Kullanıcı adı geçersiz karakterler içeriyor.",
+    "form_username_invalid_length": "Kullanıcı adı 3 ile 50 karakter arasında olmalıdır.",
+    "form_username_needs_non_number_char": "Kullanıcı adınız en az bir sayısal olmayan karakter içermelidir.",
+    "identification_deletion_failed": "Son kimliğinizi silemezsiniz.",
+    "not_allowed_access": "E-posta adresiniz veya telefon numaranız kayıt için izin verilmiyor. Bu, e-posta adresinizde '+', '=', '#' veya '.' kullanmanız, geçici e-posta hizmetiyle ilişkilendirilmiş bir alan adı kullanmanız veya açık bir engellemeyle ilgili olabilir.",
+    "organization_domain_blocked": "Organizasyon alan adı engellendi.",
+    "organization_domain_common": "Organizasyon alan adı çok yaygın.",
+    "organization_domain_exists_for_enterprise_connection": "Kurumsal bağlantı için bu alan adı zaten mevcut.",
+    "organization_membership_quota_exceeded": "Organizasyon üye kotası aşıldı.",
+    "organization_minimum_permissions_needed": "Bu işlemi gerçekleştirmek için gerekli asgari izinlere sahip olmalısınız.",
+    "passkey_already_exists": "Bu hesaba zaten bir geçiş anahtarı bağlı.",
+    "passkey_not_supported": "Geçiş anahtarları şu anda desteklenmiyor.",
+    "passkey_pa_not_supported": "Bu platform için geçiş anahtarları desteklenmiyor.",
+    "passkey_registration_cancelled": "Geçiş anahtarı kaydı iptal edildi.",
+    "passkey_retrieval_cancelled": "Geçiş anahtarını geri yükleme işlemi iptal edildi.",
+    "passwordComplexity": {
+      "maximumLength": "En fazla {{length}} karakter olmalı",
+      "minimumLength": "En az {{length}} karakter olmalı",
+      "requireLowercase": "bir küçük harf içermeli",
+      "requireNumbers": "bir sayı içermeli",
+      "requireSpecialCharacter": "bir özel karakter içermeli",
+      "requireUppercase": "bir büyük harf içermeli",
+      "sentencePrefix": "Şifreniz;"
+    },
+    "phone_number_exists": "Bu telefon numarası zaten kullanılıyor. Lütfen başka bir numara deneyin.",
+    "session_exists": "Zaten giriş yapmışsınız.",
+    "web3_missing_identifier": "Web3 için tanımlayıcı eksik.",
+    "web3_signature_request_rejected": "İmza isteğini reddettiniz. Devam etmek için lütfen tekrar deneyin.",
+    "web3_solana_signature_generation_failed": "İmza oluşturulurken bir hata oluştu. Devam etmek için lütfen tekrar deneyin.",
+    "zxcvbn": {
+      "couldBeStronger": "Şifreniz kriterleri karşılıyor; fakat birkaç karakter daha ekleyerek daha güçlü bir şifre oluşturabilirsiniz.",
+      "goodPassword": "Harika! Parolanız gerekli tüm gereksinimleri karşılıyor.",
+      "notEnough": "Şifreniz yeterince güçlü değil.",
+      "suggestions": {
+        "allUppercase": "Tüm harfleri büyük yazmak yerine rastgele büyük harfler kullanın.",
+        "anotherWord": "Şifreniz daha az bilinen kelimeler içermeli.",
+        "associatedYears": "Kendinizle alakası olan yılları kullanmayın.",
+        "capitalization": "Sadece ilk harfi büyük yazmak yerine rastgele büyük harfler kullanın.",
+        "dates": "Kendinizle alakası olan tarihleri kullanmayın.",
+        "l33t": "\"a\" yerine \"@\" kullanmak gibi tahmin edilebilir harf ikamelerinden kaçının.",
+        "longerKeyboardPattern": "Daha uzun ve karmaşık klavye desenleri kullanın.",
+        "noNeed": "Özel karakter, sayı veya büyük harf kullanmadan da güçlü bir şifre oluşturabilirsiniz.",
+        "pwned": "Bu şifre bir veri ihlalinde tespit edildi. Başka bir yerde kullanıyorsanız, değiştirmeniz önerilir.",
+        "recentYears": "Günümüze yakın yılları kullanmayın.",
+        "repeated": "Kelime veya karakter tekrarlarını azaltın.",
+        "reverseWords": "Yaygın kelimelerin tersini kullanmaktan kaçının.",
+        "sequences": "Yaygın desenleri kullanmayın.",
+        "useWords": "Birden fazla sözcük kullanın ama yaygın deyişlerden kaçının."
+      },
+      "warnings": {
+        "common": "Bu yaygın bir şifre.",
+        "commonNames": "Yaygın adlar ve soyadlar kolay tahmin edilir.",
+        "dates": "Tarihleri tahmin etmek kolaydır.",
+        "extendedRepeat": "\"abcabcabc\" gibi tekrarlanan desenler kolay tahmin edilir.",
+        "keyPattern": "Kısa klavye desenleri kolay tahmin edilir.",
+        "namesByThemselves": "Adlar ya da soyadlar kolay tahmin edilir.",
+        "pwned": "Bu şifre bir veri ihlalinde tespit edilmiş.",
+        "recentYears": "Yakın yıllar kolay tahmin edilir.",
+        "sequences": "\"abc\" gibi yaygın desenlerin tahmini kolaydır.",
+        "similarToCommon": "Bu yaygın kullanılan şifrelere çok benziyor.",
+        "simpleRepeat": "Tekrarlanan karakterler kolay tahmin edilir.",
+        "straightRow": "Klavyede ardışık karakterler kolay tahmin edilir.",
+        "topHundred": "Bu çok yaygın bir şifre.",
+        "topTen": "Bu epey yaygın bir şifre.",
+        "userInputs": "Şifreniz kişisel bilgiler içermemeli.",
+        "wordByItself": "Tek sözcükler kolay tahmin edilir."
+      }
+    }
+  },
+  "userButton": {
+    "action__addAccount": "Hesap ekle",
+    "action__manageAccount": "Hesabı yönet",
+    "action__signOut": "Çıkış yap",
+    "action__signOutAll": "Tüm hesaplardan çıkış yap",
+    "label__accountActions": "Hesap eylemleri",
+    "label__activeSessions": "Aktif oturumlar",
+    "label__userButtonPopover": "Hesap paneli"
+  },
+  "userProfile": {
+    "apiKeysPage": {},
+    "backupCodePage": {
+      "actionLabel__copied": "Kopyalandı!",
+      "actionLabel__copy": "Hepsini kopyala",
+      "actionLabel__download": ".txt olarak indir",
+      "actionLabel__print": "Yazdır",
+      "infoText1": "Yedekleme kodları bu hesap için etkinleştirilecektir.",
+      "infoText2": "Yedekleme kodlarınızı güvenli bir yerde saklayın. Eğer bu kodlarınızın başkasının eline geçtiğini düşünürseniz, yenilerini oluşturabilirsiniz.",
+      "subtitle__codelist": "Yedekleme kodlarınızı güvenli bir yerde saklayın.",
+      "successMessage": "Yedekleme kodları başarıyla eklendi. Eğer Authenticator uygulamanızın olduğu cihaza erişiminizi kaybettiyseniz, oturum açarken bu kodlardan birini girebilirsiniz. Her kod en fazla bir kez kullanılabilir.",
+      "successSubtitle": "Eğer Authenticator uygulamanızın olduğu cihazınıza erişiminizi kaybederseniz, bu kodlardan birini kullanarak hesabınıza giriş yapabilirsiniz.",
+      "title": "Yedekleme kodu doğrulaması ekle",
+      "title__codelist": "Yedekleme kodları"
+    },
+    "billingPage": {
+      "accountCreditsSection": {},
+      "creditHistoryPage": {},
+      "paymentHistorySection": {},
+      "paymentMethodsSection": {
+        "removeMethod": {}
+      },
+      "start": {},
+      "statementsSection": {},
+      "subscriptionsListSection": {},
+      "subscriptionsSection": {},
+      "switchPlansSection": {}
+    },
+    "connectedAccountPage": {
+      "formHint": "Yeni bir hesap bağlamak için bir sağlayıcı seçiniz.",
+      "formHint__noAccounts": "Kullanılabilir bir sağlayıcı yok.",
+      "removeResource": {
+        "messageLine1": "{{identifier}} hesabınızdan kaldırılacaktır.",
+        "messageLine2": "Artık bu bağlı hesabı kullanarak oturum açmanız mümkün olmayacaktır ve buna bağlı özellikler çalışmayacaktır.",
+        "successMessage": "{{connectedAccount}} hesabınızdan kaldırıldı.",
+        "title": "Bağlı hesabı kaldır"
+      },
+      "socialButtonsBlockButton": "{{provider|titleize}} hesabı bağla",
+      "successMessage": "Sağlayıcı hesabınıza bağlandı.",
+      "title": "Hesap bağla"
+    },
+    "deletePage": {
+      "actionDescription": "Devam etmek için aşağıya “Hesabı sil” yazın.",
+      "confirm": "Hesabı sil",
+      "messageLine1": "Hesabınızı silmek istediğinizden emin misiniz? Bazı ilişkili veriler saklanabilir. Tam veri silme talebinde bulunmak için lütfen destek ekibiyle iletişime geçin.",
+      "messageLine2": "Bu işlem kalıcıdır ve geri alınamaz.",
+      "title": "Hesabı sil"
+    },
+    "emailAddressPage": {
+      "emailCode": {
+        "formHint": "Doğrulama kodunu içeren bir e-posta belirttiğiniz adrese gönderilecektir.",
+        "formSubtitle": "{{identifier}} adresine gönderilen doğrulama kodunu giriniz",
+        "formTitle": "Doğrulama kodu",
+        "resendButton": "Yeniden gönder",
+        "successMessage": "{{identifier}} adresi hesabınıza eklendi."
+      },
+      "emailLink": {
+        "formHint": "Doğrulama bağlantısını içeren bir e-posta belirttiğiniz adrese gönderilecektir.",
+        "formSubtitle": "{{identifier}} adresine gönderilen doğrulama bağlantısını tıklayınız",
+        "formTitle": "Doğrulama bağlantısı",
+        "resendButton": "Yeniden gönder",
+        "successMessage": "{{identifier}} adresi hesabınıza eklendi."
+      },
+      "enterpriseSSOLink": {
+        "formButton": "Bağlan",
+        "formSubtitle": "Kurumsal SSO kullanın"
+      },
+      "removeResource": {
+        "messageLine1": "{{identifier}} adresi hesabınızdan kaldırılacaktır.",
+        "messageLine2": "Artık bu e-posta adresini kullanarak oturum açmanız mümkün olmayacaktır.",
+        "successMessage": "{{emailAddress}} adresi hesabınızdan kaldırıldı.",
+        "title": "E-posta adresini kaldır"
+      },
+      "title": "E-posta adresi ekle",
+      "verifyTitle": "E-posta adresini doğrulayın"
+    },
+    "formButtonPrimary__add": "Ekle",
+    "formButtonPrimary__continue": "İlerle",
+    "formButtonPrimary__finish": "Bitir",
+    "formButtonPrimary__remove": "Kaldır",
+    "formButtonPrimary__save": "Kaydet",
+    "formButtonReset": "İptal",
+    "mfaPage": {
+      "formHint": "Eklemek için bir yöntem seçiniz.",
+      "title": "İki aşamalı doğrulama yöntemi ekle"
+    },
+    "mfaPhoneCodePage": {
+      "backButton": "Mevcut numarayı kullan",
+      "primaryButton__addPhoneNumber": "Telefon numarası ekle",
+      "removeResource": {
+        "messageLine1": "Giriş yaparken artık {{identifier}} numarasına SMS kodu gönderilmeyecektir.",
+        "messageLine2": "Hesabınızın güvenliği azalabilir. Devam etmek istediğinizden emin misiniz?",
+        "successMessage": "İki aşamalı SMS kodu doğrulaması {{mfaPhoneCode}} numarasından kaldırıldı.",
+        "title": "İki aşamalı doğrulamayı kaldır"
+      },
+      "subtitle__availablePhoneNumbers": "İki aşamalı SMS kodu doğrulaması için bir telefon numarası seçin.",
+      "subtitle__unavailablePhoneNumbers": "İki aşamalı SMS kodu doğrulaması için kullanılabilir bir telefon numarası yok.",
+      "successMessage1": "Oturum açarken, ek bir adım olarak bu telefon numarasına gönderilen bir doğrulama kodunu girmeniz gerekecektir.",
+      "successMessage2": "Bu yedek kodları kaydedin ve güvenli bir yerde saklayın. Kimlik doğrulama cihazınıza erişiminizi kaybederseniz oturum açmak için yedek kodları kullanabilirsiniz.",
+      "successTitle": "SMS kodu doğrulaması etkin",
+      "title": "SMS kodu doğrulaması ekle"
+    },
+    "mfaTOTPPage": {
+      "authenticatorApp": {
+        "buttonAbleToScan__nonPrimary": "Veya QR kodunu tara",
+        "buttonUnableToScan__nonPrimary": "QR kodunu tarayamıyorum",
+        "infoText__ableToScan": "Authenticator uygulamanızda yeni bir giriş yöntemi ayarlayın ve hesabınızla bağlamak için aşağıdaki QR kodunu tarayın.",
+        "infoText__unableToScan": "Authenticator uygulamanızda yeni bir giriş yöntemi ekleme seçeneğini bulun ve aşağıda verilen değeri girin:",
+        "inputLabel__unableToScan1": "Zaman bazlı veya tek seferlik şifrelerin etkinleştirildiğinden emin olun, ardından hesabınızı bağlamayı tamamlayın.",
+        "inputLabel__unableToScan2": "Alternatif olarak doğrulayıcınız TOTP URI’leri destekliyorsa, tam URI’yi de kopyalayabilirsiniz."
+      },
+      "removeResource": {
+        "messageLine1": "Artık giriş yaparken authenticator'dan gelecek doğrulama kodları gerekmeyecektir.",
+        "messageLine2": "Hesabınızın güvenliği azalabilir. Devam etmek istediğinizden emin misiniz?",
+        "successMessage": "İki aşamalı doğrulama yöntemi kaldırıldı.",
+        "title": "İki aşamalı doğrulamayı kaldır"
+      },
+      "successMessage": "İki aşamalı doğrulama yöntemi başarıyla eklendi. Oturum açarken, ek bir adım olarak bu doğrulayıcıdan bir doğrulama kodu girmeniz gerekecektir.",
+      "title": "Authenticator uygulaması ekle",
+      "verifySubtitle": "Authenticator uygulamanızda oluşturulan doğrulama kodunu giriniz",
+      "verifyTitle": "Doğrulama kodu"
+    },
+    "mobileButton__menu": "Menü",
+    "navbar": {
+      "account": "Profil",
+      "description": "Hesap bilgilerinizi yönetin.",
+      "security": "Güvenlik",
+      "title": "Hesap"
+    },
+    "passkeyScreen": {
+      "removeResource": {
+        "messageLine1": "{{name}} bu hesaptan kaldırılacaktır.",
+        "title": "Geçiş anahtarını kaldır"
+      },
+      "subtitle__rename": "Bulmayı kolaylaştırmak için geçiş anahtarı adını değiştirebilirsiniz.",
+      "title__rename": "Geçiş Anahtarını Yeniden Adlandır"
+    },
+    "passwordPage": {
+      "checkboxInfoText__signOutOfOtherSessions": "Eski şifrenizi kullanmış olabilecek diğer tüm cihazlardan çıkış yapmanız önerilir.",
+      "readonly": "Profil bilgileriniz kurumsal bağlantı üzerinden sağlandığı için düzenlenemez.",
+      "successMessage__set": "Şifreniz başarıyla değiştirildi.",
+      "successMessage__signOutOfOtherSessions": "Diğer tüm cihazlardaki oturumlarınız sonlandırıldı.",
+      "successMessage__update": "Şifreniz güncellendi.",
+      "title__set": "Şifreyi değiştir",
+      "title__update": "Yeni şifre girin"
+    },
+    "phoneNumberPage": {
+      "infoText": "Belirtilen numaraya doğrulama kodunu içeren bir SMS gönderilecektir.",
+      "removeResource": {
+        "messageLine1": "{{identifier}} numarası hesabınızdan kaldırılacaktır.",
+        "messageLine2": "Artık bu telefon numarasını kullanarak oturum açmanız mümkün olmayacaktır.",
+        "successMessage": "{{phoneNumber}} numarası hesabınızdan kaldırıldı.",
+        "title": "Telefon numarasını kaldır"
+      },
+      "successMessage": "{{identifier}} numarası hesabınıza eklendi.",
+      "title": "Telefon numarası ekle",
+      "verifySubtitle": "{{identifier}} numarasına gönderilen doğrulama kodunu girin",
+      "verifyTitle": "Telefon numarasını doğrulayın"
+    },
+    "plansPage": {},
+    "profilePage": {
+      "fileDropAreaHint": "10 MB'tan küçük boyutta bir JPG, PNG, GIF, veya WEBP dosyası yükle",
+      "imageFormDestructiveActionSubtitle": "Görseli kaldır",
+      "imageFormSubtitle": "Görsel yükle",
+      "imageFormTitle": "Profil görseli",
+      "readonly": "Profil bilgileriniz kurumsal bağlantı üzerinden sağlandığı için düzenlenemez.",
+      "successMessage": "Profiliniz güncellendi.",
+      "title": "Profili güncelle"
+    },
+    "start": {
+      "activeDevicesSection": {
+        "destructiveAction": "Cihaz oturumunu sonlandır",
+        "title": "Aktif cihazlar"
+      },
+      "connectedAccountsSection": {
+        "actionLabel__connectionFailed": "Yeniden dene",
+        "actionLabel__reauthorize": "Yetkilendir",
+        "destructiveActionTitle": "Kaldır",
+        "primaryButton": "Hesap bağla",
+        "subtitle__disconnected": "Bu hesabın bağlantısı kesildi.",
+        "subtitle__reauthorize": "Gerekli kapsamlar güncellendi ve sınırlı işlevsellik yaşayabilirsiniz. Sorunları önlemek için lütfen bu uygulamayı yeniden yetkilendirin",
+        "title": "Bağlı hesaplar"
+      },
+      "dangerSection": {
+        "deleteAccountButton": "Hesabı sil",
+        "title": "Tehlike"
+      },
+      "emailAddressesSection": {
+        "destructiveAction": "E-posta adresini kaldır",
+        "detailsAction__nonPrimary": "Birincil e-posta adresi yap",
+        "detailsAction__primary": "Doğrulamayı tamamla",
+        "detailsAction__unverified": "Doğrulamayı tamamla",
+        "primaryButton": "E-posta adresi ekle",
+        "title": "E-posta adresleri"
+      },
+      "enterpriseAccountsSection": {
+        "primaryButton": "Hesap bağla",
+        "title": "Kurumsal hesaplar"
+      },
+      "headerTitle__account": "Hesap",
+      "headerTitle__security": "Güvenlik",
+      "mfaSection": {
+        "backupCodes": {
+          "actionLabel__regenerate": "Kodları yenile",
+          "headerTitle": "Yedekleme kodları",
+          "subtitle__regenerate": "Yeni bir dizi güvenli yedekleme kodu alın. Önceki yedekleme kodları silinecek ve kullanılamayacaktır.",
+          "title__regenerate": "Yedekleme kodlarını yenile"
+        },
+        "phoneCode": {
+          "actionLabel__setDefault": "Varsayılan olarak ayarla",
+          "destructiveActionLabel": "Telefon numarasını kaldır"
+        },
+        "primaryButton": "İki aşamalı doğrulama ekle",
+        "title": "İki aşamalı doğrulama",
+        "totp": {
+          "destructiveActionTitle": "Kaldır",
+          "headerTitle": "Authenticator uygulaması"
+        }
+      },
+      "passkeysSection": {
+        "menuAction__destructive": "Kaldır",
+        "menuAction__rename": "Yeniden Adlandır",
+        "title": "Geçiş Anahtarları"
+      },
+      "passwordSection": {
+        "primaryButton__setPassword": "Şifreyi güncelle",
+        "primaryButton__updatePassword": "Şifreyi değiştir",
+        "title": "Şifre"
+      },
+      "phoneNumbersSection": {
+        "destructiveAction": "Telefon numarasını kaldır",
+        "detailsAction__nonPrimary": "Birincil yap",
+        "detailsAction__primary": "Doğrulamayı tamamla",
+        "detailsAction__unverified": "Doğrulamayı tamamla",
+        "primaryButton": "Telefon numarası ekle",
+        "title": "Telefon numaraları"
+      },
+      "profileSection": {
+        "primaryButton": "Profili güncelle",
+        "title": "Profil"
+      },
+      "usernameSection": {
+        "primaryButton__setUsername": "Kullanıcı adını ayarla",
+        "primaryButton__updateUsername": "Kullanıcı adını değiştir",
+        "title": "Kullanıcı adı"
+      },
+      "web3WalletsSection": {
+        "destructiveAction": "Cüzdanı kaldır",
+        "primaryButton": "Web3 cüzdanları",
+        "title": "Web3 cüzdanları",
+        "web3SelectSolanaWalletScreen": {
+          "subtitle": "Hesabınıza bağlamak için bir Solana cüzdanı seçin.",
+          "title": "Bir Solana cüzdanı ekle"
+        }
+      }
+    },
+    "usernamePage": {
+      "successMessage": "Kullanıcı adınız güncellendi.",
+      "title__set": "Kullanıcı adını güncelle",
+      "title__update": "Kullanıcı adını güncelle"
+    },
+    "web3WalletPage": {
+      "removeResource": {
+        "messageLine1": "{{identifier}} cüzdanı hesabınızdan kaldırılacaktır.",
+        "messageLine2": "Artık bu cüzdanı kullanarak oturum açmanız mümkün olmayacaktır.",
+        "successMessage": "{{web3Wallet}} cüzdanı hesabınızdan kaldırıldı.",
+        "title": "Web3 cüzdanını kaldır"
+      },
+      "subtitle__availableWallets": "Hesabınıza eklemek için bir web3 cüzdanı seçiniz.",
+      "subtitle__unavailableWallets": "Kullanılabilir bir web3 cüzdanı yok.",
+      "successMessage": "Web3 cüzdanınız hesabınıza eklendi.",
+      "title": "Web3 cüzdanı ekle",
+      "web3WalletButtonsBlockButton": "Web3 cüzdanınızı bağlamak için tıklayın"
+    }
+  },
+  "waitlist": {
+    "start": {
+      "actionLink": "Giriş yap",
+      "actionText": "Hesabınız var mı?",
+      "formButton": "Kayıt Ol",
+      "subtitle": "Kaydolduktan sonra erken erişim kazanabilirsiniz.",
+      "title": "Bekleme Listesine Katılın"
+    },
+    "success": {
+      "message": "Başarıyla bekleme listesine eklendiniz. Erken erişim için sizi bilgilendireceğiz.",
+      "subtitle": "Bekleme listesinde olduğunuz için teşekkür ederiz.",
+      "title": "Bekleme Listesine Katıldınız"
+    }
+  },
+  "web3SolanaWalletButtons": {
+    "connect": "{{walletName}} ile bağlan",
+    "continue": "{{walletName}} ile devam et",
+    "noneAvailable": "Solana Web3 cüzdanı tespit edilmedi. Lütfen Web3 destekli {{ solanaWalletsLink || link(\"wallet extension\") }} kurun."
+  }
+}

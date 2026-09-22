@@ -1,0 +1,641 @@
+{
+  "actions": {
+    "cancel": "Anuluj",
+    "close": "Zamknij",
+    "copying": "Kopiowanie…",
+    "create": "Utwórz",
+    "delete": "Usuń agenta",
+    "deleting": "Usuwanie…",
+    "discard": "Odrzuć",
+    "retry": "Ponów",
+    "save": "Zapisz",
+    "saving": "Zapisywanie…"
+  },
+  "authorization": {
+    "closeSearch": "Zamknij wyszukiwanie",
+    "connectorsLink": "Konektory",
+    "connectorsSaved": "Konektory zapisane",
+    "customConnectors": {
+      "description": "Niestandardowe konektory zarejestrowane przez Twoją organizację.",
+      "saved": "Niestandardowe łączniki zapisane"
+    },
+    "description": "Podczas działania agent może bezpiecznie korzystać z połączonych usług. Dostęp można zarządzać lub wyłączyć w dowolnym momencie.",
+    "findConnectors": "Znajdź konektory",
+    "noConnectorsAfterLink": " strona do połączenia pierwszej usługi.",
+    "noConnectorsAlt": "Brak konektorów",
+    "noConnectorsBeforeLink": "Brak podłączonych usług. Przejdź do ",
+    "noResults": "Brak wyników dla „{{search}}”",
+    "permissionLoadError": "Nie udało się załadować uprawnień",
+    "permissionsUpdated": "Uprawnienia zaktualizowane",
+    "searchPlaceholder": "Znajdź konektory..."
+  },
+  "avatar": {
+    "accessibilityDescription": "Dostosuj styl awatara agenta, kolor i szczegóły twarzy.",
+    "actions": {
+      "customize": "Dostosuj awatar"
+    },
+    "create": "Utwórz niestandardowy awatar",
+    "description": "Wybierz styl lub przetasuj, aby uzyskać niespodziankę.",
+    "editDescription": "Dostosuj dowolną część lub przetasuj, aby uzyskać nowy wygląd.",
+    "editTitle": "Edytuj awatar",
+    "nextStep": "Następny krok",
+    "previousStep": "Poprzedni krok",
+    "randomize": "Losowy awatar",
+    "shuffleHint": "Wymieszaj — wypróbuj losowy wygląd!",
+    "steps": {
+      "color": "Color",
+      "face": "Twarz",
+      "hair": "Włosy",
+      "mood": "Nastrój",
+      "skin": "Skóra",
+      "sweater": "Sweter"
+    },
+    "title": "Nadaj swojemu agentowi twarz",
+    "use": "Użyj tego awatara"
+  },
+  "delete": {
+    "dangerZone": "Strefa zagrożenia",
+    "dangerZoneDescription": "Trwale usuń tego agenta i wszystkie jego dane. Tej operacji nie można cofnąć.",
+    "description": "Usuwa agenta, jego przepływy pracy, automatyzacje i historię czatów wszystkich użytkowników.",
+    "irreversible": "Tego nie można cofnąć.",
+    "success": "Agent usunięty",
+    "title": "Usunąć {{agentName}}?",
+    "workflows": {
+      "copiedTitle": "Już skopiowano",
+      "copiedTo": "{{workflowTitle}} skopiowano do {{agentName}}",
+      "copyTo": "Kopiuj do {{agentName}}",
+      "deleteWithAgent": "Usuń z agentem",
+      "description": "Skopiuj przepływ pracy do innego agenta, aby go zachować. Wszystko, co pozostało, zostanie usunięte.",
+      "handle": "Obsłuż workflow {{workflowTitle}}",
+      "loadFailed": "Nie można załadować przepływów pracy. Spróbuj ponownie przed usunięciem tego agenta.",
+      "loading": "Ładowanie przepływów pracy…",
+      "title": "Zachować jakieś przepływy pracy?",
+      "untitled": "Proces"
+    }
+  },
+  "detail": {
+    "chatWith": "Czatuj z {{agentName}}",
+    "defaultDescription": "Twój kolega z zespołu AI, dostosowany do Ciebie",
+    "notFound": {
+      "back": "Powrót do zespołu",
+      "description": "Agent „{{agentId}}” nie istnieje lub nie masz do niego dostępu.",
+      "title": "Agent nie znaleziony"
+    },
+    "tabs": {
+      "authorization": "Autoryzacja",
+      "instructions": "Instrukcje",
+      "profile": "Profil"
+    },
+    "viewProfile": "Wyświetl profil agenta"
+  },
+  "errors": {
+    "unknown": "Nieznany błąd"
+  },
+  "fallbackName": "Agent",
+  "ideation": {
+    "all": "Wszystko",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optymalizuj i przekształcaj obrazy masowo",
+            "title": "Optymalizator mediów Cloudinary"
+          },
+          "elevenlabs-audio-content": {
+            "description": "Narracja głosowa z artykułów Notion zapisana na Dysku",
+            "title": "Treści audio ElevenLabs"
+          },
+          "fal-ai-image-generation": {
+            "description": "Generuj obrazy produktów z opisów w Notion",
+            "title": "Generowanie obrazów Fal AI"
+          },
+          "heygen-video-from-script": {
+            "description": "Skrypt Notion staje się filmem HeyGen z pingiem zespołu",
+            "title": "Wideo HeyGen ze scenariusza"
+          },
+          "runway-video-from-brief": {
+            "description": "Generuj krótkie filmy z briefu kreatywnego",
+            "title": "Wideo z Runway z briefu"
+          }
+        },
+        "title": "Kreatywny"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Wklej listę, a {{assistantName}} otworzy dla Ciebie problemy",
+            "title": "Masowe tworzenie problemów"
+          },
+          "browserbase-web-testing": {
+            "description": "Zautomatyzowane testy przeglądarki dla Twojej aplikacji internetowej",
+            "title": "Testowanie sieci Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Cotygodniowe podsumowanie ruchu i zdarzeń bezpieczeństwa Slack",
+            "title": "Raport ruchu i bezpieczeństwa Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "Podaj URL, a {{assistantName}} prześledzi błąd w repozytorium",
+            "title": "Badanie bazy kodu"
+          },
+          "daily-standup-report": {
+            "description": "Poranne metryki stają się prezentacją slajdów opublikowaną w Slack",
+            "title": "Raport dzienny"
+          },
+          "deep-research-code-analysis": {
+            "description": "Wyjaśnia, jak działa podsystem w Twojej bazie kodu",
+            "title": "Głęboka analiza kodu"
+          },
+          "github-pr-summarizer": {
+            "description": "Scalone podsumowania żądań ściągnięcia w Notion z opcjonalnymi postami Slack",
+            "title": "Sumator PR GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "Cotygodniowa aktywność repozytorium podsumowana według funkcji",
+            "title": "Postęp GitHub co tydzień"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Odbija problemy GitLab i żądania scalenia do GitHub",
+            "title": "Pomocnik migracji GitLab do GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Utrzymuje synchronizację biletów Jira i problemów GitHub",
+            "title": "Synchronizacja problemów Jira ↔ GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "Projektuj wieloetapowe scenariusze Make na podstawie opisu",
+            "title": "Utwórz kreator scenariuszy"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Cotygodniowe alerty bezpieczeństwa i zależności z GitHub",
+            "title": "Podsumowanie alertów bezpieczeństwa i zależności"
+          },
+          "sentry-issue-digest": {
+            "description": "Poranny przegląd problemów pogrupowanych według ważności",
+            "title": "Podsumowanie problemów Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "Łączy każde wdrożenie z jego zatwierdzeniem i ostrzega Slack, gdy wdrożenie się nie powiedzie",
+            "title": "Podsumowanie wdrożenia Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Odtwórz swoje przepływy pracy Zapier jako agenci {{brandName}}",
+            "title": "Migracja Zapier → {{brandName}}"
+          }
+        },
+        "title": "Inżynieria"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Otwiera stronę w przeglądarce i zwraca zrzut ekranu",
+            "title": "Zrzuty ekranu przeglądarki"
+          },
+          "calendar-optimizer": {
+            "description": "Pomaga w konfliktach, przeciążeniu i czasie skupienia",
+            "title": "Optymalizator kalendarza"
+          },
+          "calendly-booking-sync": {
+            "description": "Nowe rezerwacje w Twoim kalendarzu z powiadomieniem Slack",
+            "title": "Synchronizacja rezerwacji Calendly"
+          },
+          "email-assistant": {
+            "description": "Poranne podsumowanie skrzynki odbiorczej z sugerowanymi kolejnymi krokami",
+            "title": "Asystent e-mail"
+          },
+          "granola-notes-to-notion": {
+            "description": "Notatki ze spotkań Granola zsynchronizowane z bazą danych Notion",
+            "title": "Notatki Granola do Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Przekazuje wiadomości między Lark i Slack w obie strony",
+            "title": "Przekaźnik wiadomości Lark ↔ Slack"
+          },
+          "line-message-relay": {
+            "description": "Przekazuj wiadomości LINE do Slack i odwrotnie",
+            "title": "Przekazywanie wiadomości LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Notatki Fireflies do Notion z dalszymi działaniami w Slack",
+            "title": "Potok notatek ze spotkań"
+          },
+          "morning-brief": {
+            "description": "E-mail, kalendarz i notatki zamienione w krótki plan dzienny",
+            "title": "Poranne podsumowanie"
+          },
+          "perplexity-deep-research": {
+            "description": "Podsumowania badań wspomagane przez AI zapisane w Notion",
+            "title": "Głębokie badania Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "Żądania ściągnięcia, e-mail i kalendarz w jednej aktualizacji Slack",
+            "title": "Osobiste cotygodniowe podsumowanie"
+          },
+          "self-update-instructions": {
+            "description": "Zaktualizuj instrukcje agenta bezpośrednio w czacie",
+            "title": "Instrukcje samodzielnej aktualizacji"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Publikuje ogłoszenia zespołu w Slack za Ciebie",
+            "title": "Wysyłaj wiadomości w Twoim imieniu"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Cotygodniowe podsumowanie aktywności zespołu opublikowane w Slack",
+            "title": "Podsumowanie kondycji zespołu Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Przeszukaj sieć i skompiluj wyniki w Notion",
+            "title": "Potok badań internetowych Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Nagrania spotkań podsumowane w Notion z elementami działań",
+            "title": "Podsumowanie spotkania tl;dv"
+          }
+        },
+        "title": "Wszyscy"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify skanuje witryny w ustrukturyzowane wiersze Google Sheets",
+            "title": "Apify web scraper do Arkuszy"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Zautomatyzowane sekwencje e-maili z wydarzeń CRM",
+            "title": "Sekwencja pielęgnacji e-maili Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl monitoruje witryny konkurencji i rejestruje zmiany w Notion",
+            "title": "Scraper danych wywiadowczych konkurencji"
+          },
+          "competitor-research-to-notion": {
+            "description": "Badania na X zapisane jako ustrukturyzowane notatki w Notion",
+            "title": "Badania konkurencji do Notion"
+          },
+          "content-planner": {
+            "description": "Burza mózgów na temat tematów i zarys kalendarza redakcyjnego",
+            "title": "Planer treści"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Publikuje posty Notion na Dev.to i linkuje je na X",
+            "title": "Automatyczny wydawca Dev.to"
+          },
+          "discord-community-insights": {
+            "description": "Opinie Discord w Notion z cotygodniowym podsumowaniem Slack",
+            "title": "Wglądy społeczności Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Zaangażowanie w Arkuszach z cotygodniowymi podsumowaniami Slack",
+            "title": "Monitor zaangażowania Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "Sporządź i wyślij e-maile transakcyjne za pośrednictwem Loops",
+            "title": "Kampania e-mailowa Loops"
+          },
+          "marketing-automation-system": {
+            "description": "Trzech agentów do badań, cotygodniowego monitorowania i pracy ad hoc",
+            "title": "System automatyzacji marketingu"
+          },
+          "marketing-content-planning": {
+            "description": "Plany uruchamiają historie z Slack, wywiadów i konkurentów",
+            "title": "Planowanie treści marketingowych"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Znajduje kąty wdrożenia z Slack i wywiadów",
+            "title": "Przypadki użycia e-maili onboardingowych"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Śledź cotygodniowe rankingi słów kluczowych i zapisuj w Arkuszach",
+            "title": "Śledzenie słów kluczowych SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Wskaźniki ruchu w porównaniu z konkurencją zapisane w Notion",
+            "title": "Porównanie ruchu SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "Zamienia kalendarz Arkuszy w posty dla każdej sieci",
+            "title": "Kalendarz treści mediów społecznościowych"
+          },
+          "x-brand-monitor": {
+            "description": "Wzmianki o marce na X zapisane w Notion z alertami zespołu",
+            "title": "Monitor marki X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Gdy zostanie opublikowany nowy film YouTube, wygeneruj podsumowanie Notion i wątek X, aby go promować.",
+            "title": "YouTube do X narzędzie do ponownego wykorzystania wątków"
+          }
+        },
+        "title": "Marketing"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Twórz i zarządzaj skrzynkami odbiorczymi za pomocą AgentMail API",
+            "title": "Skrzynka odbiorcza AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "Codzienne zadania ClickUp publikowane jako standup w Slack",
+            "title": "ClickUp → Slack standupy"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Partie Google Docs w Notion z zachowanym układem",
+            "title": "Migrator Google Docs → Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "Nowe pliki automatycznie sortowane do folderów",
+            "title": "Organizator plików Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Odpowiedzi z formularza trafiają do Notion z powiadomieniami Slack",
+            "title": "Pobieranie danych z Jotform do Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Cotygodniowy postęp tablicy z Monday.com w Slack",
+            "title": "Cotygodniowe podsumowanie Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Pola umowy w Notion z przypomnieniami przed wygaśnięciem",
+            "title": "Procesor umów PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Metryki subskrypcji w Arkuszach z alertami o rezygnacji w Slack",
+            "title": "Podsumowanie subskrypcji RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Zadania Todoist odzwierciedlone w Notion dla zespołu",
+            "title": "Synchronizacja zadań Todoist → Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "Cotygodniowe podsumowania postępów Wrike w Slack",
+            "title": "Reporter projektu Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "Cotygodniowy zysk i przepływy pieniężne z Xero w Slack",
+            "title": "Podsumowanie finansowe Xero"
+          }
+        },
+        "title": "Operacje"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Kamienie milowe i zadania Asana odzwierciedlone w Notion",
+            "title": "Synchronizacja projektu Asana → Notion"
+          },
+          "feedback-router": {
+            "description": "Opinie Slack kierowane przez Twoje zasady we właściwe miejsce",
+            "title": "Router opinii"
+          },
+          "linear-prd-implementer": {
+            "description": "Specyfikacje Notion stają się projektami i problemami Linear",
+            "title": "Implementator PRD Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Migawki pulpitu publikowane automatycznie w Slack",
+            "title": "Podsumowanie pulpitu nawigacyjnego Metabase"
+          },
+          "pricing-analysis": {
+            "description": "Analizuj strategie cenowe konkurencji i porównuj z podobnymi produktami",
+            "title": "Analiza cen"
+          },
+          "product-copy-naming": {
+            "description": "Przyjaźniejsze nazwy dla terminów technicznych w produkcie",
+            "title": "Kopia produktu i nazewnictwo"
+          }
+        },
+        "title": "Produkt"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Transakcje synchronizują się z Arkuszami i Slack po ich zamknięciu",
+            "title": "Śledzenie transakcji Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Nowe leady Bitrix otrzymują zadania uzupełniające i pingi Slack",
+            "title": "Pielęgnacja leadów Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Cotygodniowe podsumowania HubSpot zapisane jako ustrukturyzowane raporty",
+            "title": "Reporter sprzedaży HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Nowe leady stają się zadaniami HubSpot z alertami Slack",
+            "title": "Potok śledzenia leadów"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Cotygodniowe aktualizacje możliwości Salesforce w Slack",
+            "title": "Podsumowanie potoku Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "Cotygodniowe statystyki lejka CRM z Gmail w Slack",
+            "title": "Raport potoku Streak"
+          },
+          "win-loss-reporter": {
+            "description": "Trendy wygranych i przegranych z lejka w Slack",
+            "title": "Raport wygranych/przegranych"
+          }
+        },
+        "title": "Sprzedaż"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Rozmowy z klientami rejestrowane i kategoryzowane w Notion",
+            "title": "Chatwoot → Dziennik wsparcia Notion"
+          },
+          "customer-support-bot": {
+            "description": "Odpowiedzi z bazy wiedzy i zadania dotyczące luk",
+            "title": "Bot obsługi klienta"
+          },
+          "intercom-conversation-triager": {
+            "description": "Czaty Intercom stają się priorytetowymi zadaniami Notion",
+            "title": "Sortownik rozmów Intercom"
+          },
+          "support-ticket-router": {
+            "description": "Bilety trafiają do Notion, a pilne powiadamiają Slack",
+            "title": "Router zgłoszeń do pomocy technicznej"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "Wyodrębnij często zadawane pytania Zendesk i automatycznie dodaj je do FAQ Notion",
+            "title": "Baza wiedzy Zendesk → Notion"
+          }
+        },
+        "title": "Wsparcie"
+      }
+    },
+    "chat": "Czat",
+    "description": "Kliknij dowolną kartę, aby rozpocząć rozmowę. Może to stać się zadaniem na żądanie, cyklicznym przepływem pracy lub subagentem.",
+    "search": {
+      "accessibilityLabel": "Szukaj przypadków użycia",
+      "empty": "Brak przypadków użycia pasujących do Twojego wyszukiwania.",
+      "placeholder": "Szukaj"
+    },
+    "title": "Pomysły i przypadki użycia"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "Edytor instrukcji",
+      "footerHint": "Edytuj instrukcje bezpośrednio, aby dostosować zachowanie swojego agenta.",
+      "placeholder": "Napisz instrukcje dla swojego agenta...",
+      "toolbar": {
+        "blockquote": "Cytat blokowy",
+        "bold": "Pogrubienie",
+        "bulletList": "Lista punktowana",
+        "heading1": "Nagłówek 1",
+        "heading2": "Nagłówek 2",
+        "heading3": "Nagłówek 3",
+        "inlineCode": "Kod w tekście",
+        "italic": "Kursywa",
+        "orderedList": "Lista uporządkowana",
+        "strikethrough": "Przekreślenie"
+      }
+    },
+    "saved": "Instrukcje zapisane"
+  },
+  "list": {
+    "actions": {
+      "new": "Nowy agent"
+    },
+    "cards": {
+      "coreDescription": "Twój główny agent",
+      "createdBy": "Utworzone przez {{creator}}",
+      "subagentDescription": "Sub-agent",
+      "unknownCreator": "Nieznany"
+    },
+    "create": {
+      "accessibilityDescription": "Nazwij nowego agenta, wybierz jego widoczność i dostosuj jego awatar.",
+      "creating": "Tworzenie…",
+      "description": "Nazwij swojego agenta i ustaw, kto może go używać.",
+      "namePlaceholder": "np. Asystent badawczy",
+      "newAgentAlt": "Nowy agent",
+      "success": "{{agentName}} utworzono pomyślnie",
+      "title": "Utwórz nowego agenta",
+      "visibility": {
+        "private": {
+          "description": "(tylko Ty możesz to widzieć i używać)",
+          "label": "Prywatne"
+        },
+        "public": {
+          "description": "(każdy w tym obszarze roboczym może z niego korzystać)",
+          "label": "Publiczny"
+        }
+      },
+      "visibilityLabel": "Widoczność"
+    },
+    "description": "{{agentName}} i subagenci współpracują, aby uruchamiać dostosowane przepływy pracy dla Ciebie i Twojego zespołu.",
+    "documentTitle": "Agenci",
+    "privateEmpty": {
+      "description": "Utwórz agenta, którego tylko Ty możesz widzieć i używać. Prywatni agenci są nieograniczeni.",
+      "title": "Brak prywatnych agentów"
+    },
+    "tabs": {
+      "private": "Prywatne",
+      "public": "Publiczny"
+    },
+    "title": "Agenci"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "Stwórz własnego awatara.",
+        "label": "Awatar"
+      },
+      "description": {
+        "description": "W czym ten agent pomaga — widoczne dla członków zespołu.",
+        "label": "Opis",
+        "placeholder": "Co robi ten agent?"
+      },
+      "name": {
+        "description": "Wyświetlane na liście zespołu i gdy ten agent mówi.",
+        "label": "Nazwa",
+        "placeholder": "Jak powinniśmy ich nazwać?"
+      },
+      "tone": {
+        "accessibilityLabel": "Jak brzmi {{agentName}}",
+        "description": "Styl głosu dla odpowiedzi. Podgląd aktualizacji po zmianie tonu.",
+        "groupLabel": "Ton",
+        "label": "Jak brzmią"
+      },
+      "visibility": {
+        "defaultDescription": "Domyślny agent obszaru roboczego musi pozostać publiczny dla wszystkich członków obszaru roboczego.",
+        "description": "Widoczne dla wszystkich w tym obszarze roboczym.",
+        "label": "Uczyń publicznym"
+      }
+    },
+    "makePrivate": {
+      "confirm": "Uczyń prywatnym",
+      "description": "Gdy ten agent jest prywatny, inni członkowie tracą dostęp do swojej historii czatów pod nim. Odzyskują dostęp, jeśli ponownie go upublicznisz.",
+      "title": "Uczynić {{agentName}} prywatnym?",
+      "warningDescription": "Inni członkowie nie będą już widzieć {{agentName}} ani ich czatów pod nim.",
+      "warningTitle": "Członkowie tracą dostęp"
+    },
+    "saved": "Profil zapisany",
+    "tones": {
+      "direct": {
+        "agentSample": "Piątek. Szkic wyślę w czwartek.",
+        "hint": "Do rzeczy",
+        "label": "Bezpośredni",
+        "userSample": "Potrzebuję raportu za III kwartał do piątku."
+      },
+      "friendly": {
+        "agentSample": "Jasne! Przekażę Ci raport za III kwartał do piątku — szkic wyślę w czwartek, żebyś mógł go przejrzeć.",
+        "hint": "Ciepły i przystępny",
+        "label": "Przyjazny",
+        "userSample": "Potrzebuję raportu za III kwartał do piątku."
+      },
+      "professional": {
+        "agentSample": "Raport za III kwartał będzie gotowy do piątku. Szkic wyślę do czwartku do wglądu.",
+        "hint": "Czysty i dopracowany",
+        "label": "Profesjonalny",
+        "userSample": "Potrzebuję raportu za III kwartał do piątku."
+      },
+      "supportive": {
+        "agentSample": "Upewnię się, że raport za III kwartał będzie gotowy do piątku. Szkic wyślę w czwartek, abyś miał czas na przejrzenie — daj mi znać, jeśli potrzebujesz czegoś jeszcze.",
+        "hint": "W twoim narożniku",
+        "label": "Wspierający",
+        "userSample": "Potrzebuję raportu za III kwartał do piątku."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "Przypnij",
+    "clearSearch": "Wyczyść wyszukiwanie",
+    "escapeShortcut": "Esc",
+    "filterAll": "Wszystko",
+    "markAllRead": "Oznacz wszystko jako przeczytane",
+    "more": "Więcej",
+    "noAgentsToPin": "Nie masz jeszcze żadnych innych agentów.",
+    "noResults": "Nie znaleziono wyników",
+    "openMenu": "Otwórz menu agenta",
+    "pin": "Przypnij do paska bocznego",
+    "pinAgent": "Przypnij agenta",
+    "pinAgentDescription": "Wybierz agenta do przypięcia do paska bocznego.",
+    "pinned": "Przypięte",
+    "pinnedAgents": "Przypięci agenci",
+    "pinSuccess": "{{agentName}} przypięte",
+    "resultCount_one": "{{count}} wynik",
+    "resultCount_few": "{{count}} wyniki",
+    "resultCount_many": "{{count}} wyników",
+    "resultCount_other": "{{count}} wyniku",
+    "searchAgents": "Szukaj agentów...",
+    "searching": "Wyszukiwanie...",
+    "searchWorkspace": "Wyszukaj obszar roboczy...",
+    "sections": {
+      "agents": "Agenci",
+      "artifacts": "Artefakty",
+      "chats": "Czaty",
+      "messages": "Wiadomości",
+      "others": "Inni",
+      "workflows": "Procesy"
+    },
+    "unpin": "Odepnij",
+    "unpinSuccess": "{{agentName}} odpięty"
+  },
+  "status": {
+    "unread": "Nieprzeczytane"
+  },
+  "unsaved": {
+    "message": "Masz niezapisane zmiany"
+  }
+}

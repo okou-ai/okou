@@ -3,6 +3,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
+  SUPPORTED_USER_LOCALES,
   type UserLocale,
   type UserPreferencesResponse,
   userPreferencesContract,
@@ -56,20 +57,7 @@ async function openDialog(
 
 function createPreferences(
   locale: UserLocale | null,
-  supportedLocales: UserLocale[] = [
-    "en-US",
-    "pt-BR",
-    "ja-JP",
-    "ko-KR",
-    "id-ID",
-    "de-DE",
-    "es-ES",
-    "it-IT",
-    "fr-FR",
-    "hi-IN",
-    "zh-Hans",
-    "zh-Hant",
-  ],
+  supportedLocales: UserLocale[] = [...SUPPORTED_USER_LOCALES],
 ): UserPreferencesResponse {
   return {
     timezone: null,
@@ -178,6 +166,80 @@ test("Offer only the workspace's supported languages", async () => {
     }),
   ).toStrictEqual(["English", "Português (Brasil)", "Deutsch"]);
   expect(screen.queryByRole("option", { name: "Italiano" })).toBeNull();
+});
+
+test.each([
+  { locale: "tr-TR", signUp: "Kayıt ol", name: "Türkçe", label: "Dil" },
+  { locale: "vi-VN", signUp: "Đăng ký", name: "Tiếng Việt", label: "Ngôn ngữ" },
+  { locale: "th-TH", signUp: "สมัครสมาชิก", name: "ไทย", label: "ภาษา" },
+  { locale: "nl-NL", signUp: "Registreren", name: "Nederlands", label: "Taal" },
+  { locale: "sv-SE", signUp: "Skapa konto", name: "Svenska", label: "Språk" },
+  { locale: "da-DK", signUp: "Tilmeld dig", name: "Dansk", label: "Sprog" },
+  {
+    locale: "nb-NO",
+    signUp: "Opprett konto",
+    name: "Norsk bokmål",
+    label: "Språk",
+  },
+  { locale: "fi-FI", signUp: "Rekisteröidy", name: "Suomi", label: "Kieli" },
+  { locale: "he-IL", signUp: "הרשמה", name: "עברית", label: "שפה" },
+  {
+    locale: "pl-PL",
+    signUp: "Zarejestruj się",
+    name: "Polski",
+    label: "Język",
+  },
+  {
+    locale: "cs-CZ",
+    signUp: "Registrovat se",
+    name: "Čeština",
+    label: "Jazyk",
+  },
+])("Select $locale and restore English layout", async (language) => {
+  let preferences = createPreferences("en-US");
+  context.mocks.api(userPreferencesContract.get, ({ query, respond }) => {
+    expect(query?.supportedLocales?.split(",")).toContain(language.locale);
+    return respond(200, preferences);
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    ({ body, query, respond }) => {
+      expect(query?.supportedLocales?.split(",")).toContain(language.locale);
+      preferences = { ...preferences, ...body };
+      return respond(200, preferences);
+    },
+  );
+  await openDialog("admin", "preference");
+
+  click(await screen.findByRole("combobox", { name: "Language" }));
+  click(screen.getByRole("option", { name: language.name }));
+  const picker = await screen.findByRole("combobox", { name: language.label });
+  await waitFor(() => {
+    expect(picker).toBeEnabled();
+    expect(picker).toHaveTextContent(language.name);
+    expect(document.documentElement).toHaveAttribute("lang", language.locale);
+    expect(document.documentElement).toHaveAttribute(
+      "dir",
+      language.locale === "he-IL" ? "rtl" : "ltr",
+    );
+    expect(preferences.locale).toBe(language.locale);
+    expect(screen.getByTestId("clerk-provider-config")).toHaveAttribute(
+      "data-clerk-sign-in-start-action-link",
+      language.signUp,
+    );
+  });
+
+  click(picker);
+  click(screen.getByRole("option", { name: "English" }));
+  const englishPicker = await screen.findByRole("combobox", {
+    name: "Language",
+  });
+  await waitFor(() => {
+    expect(englishPicker).toBeEnabled();
+    expect(englishPicker).toHaveTextContent("English");
+    expect(document.documentElement).toHaveAttribute("dir", "ltr");
+    expect(preferences.locale).toBe("en-US");
+  });
 });
 
 async function saveSingleLanguagePreference() {
@@ -291,33 +353,37 @@ test.each([
   },
 );
 
-test("Persist English when an initial locale hint is outside the API handshake", async () => {
-  let serverLocale: UserLocale | null = null;
-  const submittedLocales: UserLocale[] = [];
-  const supportedLocales: UserLocale[] = ["en-US", "pt-BR"];
-  context.mocks.browser.cookie(`${OKOU_LOCALE_COOKIE_NAME}=v1.fr-FR`);
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    return respond(200, createPreferences(serverLocale, supportedLocales));
-  });
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
-    if (body.locale !== undefined) {
-      submittedLocales.push(body.locale);
-      serverLocale = body.locale;
-    }
-    return respond(200, createPreferences(serverLocale, supportedLocales));
-  });
+test.each(["fr-FR", "he-IL"])(
+  "Persist English when %s is outside the API handshake",
+  async (locale) => {
+    let serverLocale: UserLocale | null = null;
+    const submittedLocales: UserLocale[] = [];
+    const supportedLocales: UserLocale[] = ["en-US", "pt-BR"];
+    context.mocks.browser.cookie(`${OKOU_LOCALE_COOKIE_NAME}=v1.${locale}`);
+    context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+      return respond(200, createPreferences(serverLocale, supportedLocales));
+    });
+    context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+      if (body.locale !== undefined) {
+        submittedLocales.push(body.locale);
+        serverLocale = body.locale;
+      }
+      return respond(200, createPreferences(serverLocale, supportedLocales));
+    });
 
-  await openDialog("admin", "preference", "app.okou.ai");
+    await openDialog("admin", "preference", "app.okou.ai");
 
-  await waitFor(() => {
-    expect(serverLocale).toBe("en-US");
-    expect(document.documentElement).toHaveAttribute("lang", "en-US");
-    expect(
-      screen.getByRole("combobox", { name: "Language" }),
-    ).toHaveTextContent("English");
-  });
-  expect(submittedLocales).not.toContain("fr-FR");
-});
+    await waitFor(() => {
+      expect(serverLocale).toBe("en-US");
+      expect(document.documentElement).toHaveAttribute("lang", "en-US");
+      expect(
+        screen.getByRole("combobox", { name: "Language" }),
+      ).toHaveTextContent("English");
+    });
+    expect(submittedLocales).not.toContain(locale);
+    expect(document.documentElement).toHaveAttribute("dir", "ltr");
+  },
+);
 
 test("Keep settings usable and persist English when automatic locale assets fail", async () => {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});

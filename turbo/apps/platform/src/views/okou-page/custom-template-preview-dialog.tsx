@@ -256,8 +256,8 @@ export function CustomTemplatePreviewDialog({
             imported-deck preview header already carries for the same reason.
             Padding alone left the title 10px above the button and the button
             itself hanging past the border below it. */}
-        <DialogHeader className="h-[68px] shrink-0 justify-center border-b border-border px-5 pr-14 text-left sm:pr-16">
-          <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
+        <DialogHeader className="h-[68px] shrink-0 justify-center border-b border-border px-5 pe-14 text-start sm:pe-16">
+          <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-start text-base leading-none">
             <button
               type="button"
               className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

@@ -682,7 +682,7 @@ export function CustomTemplatePickerPane({
               <CustomTemplateKindFilters kind={view.kind} />
             </>
           ) : null}
-          <div className="absolute -top-[50px] right-0 shrink-0 sm:right-9 sm:top-[18px]">
+          <div className="absolute -top-[50px] end-0 shrink-0 sm:end-9 sm:top-[18px]">
             <CustomTemplateImportButton
               signals={signals}
               onImported={onImported}

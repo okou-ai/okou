@@ -364,7 +364,7 @@ function ModelFirstTriggerLabel({
       mobileIcon={mobileIcon}
       iconType={iconType}
       label={
-        <span className="min-w-0 truncate">
+        <span className="min-w-0 truncate" dir="auto">
           {selectionLabel({
             selection,
             placeholder,
@@ -498,7 +498,9 @@ function ModelFirstPolicyRowContent({
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
       <span className="min-w-0 flex-1 truncate">
-        {policy.modelLabel || getCanonicalModelDisplayName(policy.model)}
+        <bdi>
+          {policy.modelLabel || getCanonicalModelDisplayName(policy.model)}
+        </bdi>
       </span>
       {builtInPriceTier !== undefined ? (
         <PriceTierBadge

@@ -1,0 +1,639 @@
+{
+  "actions": {
+    "cancel": "İptal",
+    "close": "Kapat",
+    "copying": "Kopyalanıyor…",
+    "create": "Oluştur",
+    "delete": "Aracıyı sil",
+    "deleting": "Siliniyor…",
+    "discard": "At",
+    "retry": "Tekrar Dene",
+    "save": "Kaydet",
+    "saving": "Kaydediliyor…"
+  },
+  "authorization": {
+    "closeSearch": "Aramayı kapat",
+    "connectorsLink": "Bağlayıcılar",
+    "connectorsSaved": "Bağlayıcılar kaydedildi",
+    "customConnectors": {
+      "description": "Kuruluşunuz tarafından kaydedilen özel bağlayıcılar.",
+      "saved": "Özel bağlayıcılar kaydedildi"
+    },
+    "description": "Çalışırken, temsilci bağlı hizmetlerinizi güvenli bir şekilde kullanabilir. Erişimi istediğiniz zaman yönetebilir veya kapatabilirsiniz.",
+    "findConnectors": "Bağlayıcıları bul",
+    "noConnectorsAfterLink": " ilk hizmetinizi bağlamak için sayfa.",
+    "noConnectorsAlt": "Bağlayıcı yok",
+    "noConnectorsBeforeLink": "Henüz bağlı hizmet yok. Şuraya gidin: ",
+    "noResults": "“{{search}}” için sonuç yok",
+    "permissionLoadError": "İzin verme işlemleri yüklenemedi",
+    "permissionsUpdated": "İzinler güncellendi",
+    "searchPlaceholder": "Bağlayıcıları bul..."
+  },
+  "avatar": {
+    "accessibilityDescription": "Aracı avatar stilini, rengini ve yüz detaylarını özelleştirin.",
+    "actions": {
+      "customize": "Avatarı özelleştir"
+    },
+    "create": "Özel avatar oluştur",
+    "description": "Bir stil seçin veya sürpriz için karıştırın.",
+    "editDescription": "Herhangi bir bölümü düzenleyin veya yeni bir görünüm için karıştırın.",
+    "editTitle": "Avatarı düzenle",
+    "nextStep": "Sonraki adım",
+    "previousStep": "Önceki adım",
+    "randomize": "Avatarı rastgele seç",
+    "shuffleHint": "Karıştır — rastgele bir görünüm dene!",
+    "steps": {
+      "color": "Color",
+      "face": "Yüz",
+      "hair": "Saç",
+      "mood": "Ruh Hali",
+      "skin": "Cilt",
+      "sweater": "Kazak"
+    },
+    "title": "Aracınıza bir yüz verin",
+    "use": "Bu avatarı kullan"
+  },
+  "delete": {
+    "dangerZone": "Tehlike bölgesi",
+    "dangerZoneDescription": "Bu aracıyı ve tüm verilerini kalıcı olarak kaldırın. Bu eylem geri alınamaz.",
+    "description": "Ajanı, iş akışlarını, otomasyonlarını ve herkesin sohbet geçmişini siler.",
+    "irreversible": "Bu geri alınamaz.",
+    "success": "Aracı silindi",
+    "title": "{{agentName}}'i sil?",
+    "workflows": {
+      "copiedTitle": "Zaten kopyalandı",
+      "copiedTo": "{{workflowTitle}}, {{agentName}}'e kopyalandı",
+      "copyTo": "{{agentName}}'e kopyala",
+      "deleteWithAgent": "Aracıyla sil",
+      "description": "Bir iş akışını başka bir ajana kopyalayarak saklayın. Kalan her şey silinir.",
+      "handle": "{{workflowTitle}} iş akışını ele al",
+      "loadFailed": "İş akışları yüklenemedi. Bu aracıyı silmeden önce tekrar deneyin.",
+      "loading": "İş akışları yükleniyor…",
+      "title": "Herhangi bir iş akışı tutulsun mu?",
+      "untitled": "İş akışı"
+    }
+  },
+  "detail": {
+    "chatWith": "{{agentName}} ile sohbet et",
+    "defaultDescription": "Size özel yapay zeka takım arkadaşınız",
+    "notFound": {
+      "back": "Ekibe geri dön",
+      "description": "“{{agentId}}” ajanı mevcut değil veya ona erişiminiz yok.",
+      "title": "Aracı bulunamadı"
+    },
+    "tabs": {
+      "authorization": "Yetkilendirme",
+      "instructions": "Talimatlar",
+      "profile": "Profil"
+    },
+    "viewProfile": "Aracı profilini görüntüle"
+  },
+  "errors": {
+    "unknown": "Bilinmeyen hata"
+  },
+  "fallbackName": "Ajan",
+  "ideation": {
+    "all": "Tümü",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Görüntüleri toplu olarak optimize edin ve dönüştürün",
+            "title": "Cloudinary medya optimize edici"
+          },
+          "elevenlabs-audio-content": {
+            "description": "Notion makalelerinden sesli anlatım Drive'a kaydedildi",
+            "title": "ElevenLabs ses içeriği"
+          },
+          "fal-ai-image-generation": {
+            "description": "Notion'deki açıklamalardan ürün görselleri oluşturun",
+            "title": "Fal AI görsel oluşturma"
+          },
+          "heygen-video-from-script": {
+            "description": "Notion betiği, bir ekip ping'i ile HeyGen videosu haline gelir",
+            "title": "Betikten HeyGen videosu"
+          },
+          "runway-video-from-brief": {
+            "description": "Yaratıcı bir brifingden kısa videolar oluşturun",
+            "title": "Briften podyum videosu"
+          }
+        },
+        "title": "Yaratıcı"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Bir liste yapıştırın ve {{assistantName}} sizin için sorunları açar",
+            "title": "Toplu sorun oluştur"
+          },
+          "browserbase-web-testing": {
+            "description": "Web uygulamanız için otomatik tarayıcı testleri",
+            "title": "Browserbase web testi"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Trafik ve güvenlik olaylarının haftalık Slack özeti",
+            "title": "Cloudflare trafik ve güvenlik raporu"
+          },
+          "codebase-investigation": {
+            "description": "Bir URL verin ve {{assistantName}} hatayı depo boyunca izlesin",
+            "title": "Kod tabanı incelemesi"
+          },
+          "daily-standup-report": {
+            "description": "Sabah metrikleri Slack'ye gönderilen bir slayt destesi haline gelir",
+            "title": "Günlük durum raporu"
+          },
+          "deep-research-code-analysis": {
+            "description": "Kod tabanınızdaki bir alt sistemin nasıl çalıştığını açıklar",
+            "title": "Derinlemesine araştırma kodu analizi"
+          },
+          "github-pr-summarizer": {
+            "description": "Notion'de birleştirilmiş çekme isteği özetleri, isteğe bağlı Slack gönderileriyle",
+            "title": "GitHub PR özetleyici"
+          },
+          "github-progress-weekly": {
+            "description": "Haftalık depo etkinliği özelliğe göre özetlenmiştir",
+            "title": "GitHub ilerleme haftalık"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "GitLab sorunlarını ve birleştirme isteklerini GitHub'ye yansıtır",
+            "title": "GitLab'dan GitHub'ye geçiş yardımcısı"
+          },
+          "jira-github-issue-sync": {
+            "description": "Jira biletlerini ve GitHub sorunlarını senkronize tutar",
+            "title": "Jira ↔ GitHub sorun senkronizasyonu"
+          },
+          "make-scenario-builder": {
+            "description": "Bir açıklamadan çok adımlı Make senaryoları tasarlayın",
+            "title": "Senaryo oluşturucu yap"
+          },
+          "security-dependency-alert-digest": {
+            "description": "GitHub'den haftalık güvenlik ve bağımlılık uyarıları",
+            "title": "Güvenlik ve bağımlılık uyarısı özeti"
+          },
+          "sentry-issue-digest": {
+            "description": "Şiddete göre gruplandırılmış sorunların sabah özeti",
+            "title": "Sentry sorun özeti"
+          },
+          "vercel-deploy-digest": {
+            "description": "Her dağıtımı taahhüdüne bağlar ve bir dağıtım başarısız olduğunda Slack'yi uyarır",
+            "title": "Vercel dağıtım özeti"
+          },
+          "zapier-okou-migration": {
+            "description": "Zapier iş akışlarınızı {{brandName}} ajanları olarak yeniden oluşturun",
+            "title": "Zapier → {{brandName}} geçişi"
+          }
+        },
+        "title": "Mühendislik"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Tarayıcıda bir sayfa açar ve bir ekran görüntüsü döndürür",
+            "title": "Tarayıcı ekran görüntüleri"
+          },
+          "calendar-optimizer": {
+            "description": "Çatışmalar, aşırı yük ve odaklanma süresi konusunda yardımcı olur",
+            "title": "Takvim optimize edici"
+          },
+          "calendly-booking-sync": {
+            "description": "Takviminizdeki yeni rezervasyonlar Slack pingi ile",
+            "title": "Calendly rezervasyon senkronizasyonu"
+          },
+          "email-assistant": {
+            "description": "Önerilen sonraki adımlarla sabah gelen kutusu özeti",
+            "title": "E-posta asistanı"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola toplantı notları bir Notion veritabanıyla senkronize edildi",
+            "title": "Granola notları Notion'ye"
+          },
+          "lark-slack-message-relay": {
+            "description": "Lark ve Slack arasında mesajları iki yönlü iletir",
+            "title": "Lark ↔ Slack mesaj aktarımı"
+          },
+          "line-message-relay": {
+            "description": "LINE mesajlarını Slack'ye ve tersine iletin",
+            "title": "LINE mesaj aktarımı"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies notları Notion'ye, takip edenler Slack'de",
+            "title": "Toplantı notları boru hattı"
+          },
+          "morning-brief": {
+            "description": "E-posta, takvim ve notlar kısa bir günlük plana dönüştürüldü",
+            "title": "Sabah özeti"
+          },
+          "perplexity-deep-research": {
+            "description": "Yapay zeka destekli araştırma özetleri Notion'ye kaydedildi",
+            "title": "Perplexity derin araştırma"
+          },
+          "personal-weekly-digest": {
+            "description": "Tek bir Slack güncellemesinde çekme istekleri, e-posta ve takvim",
+            "title": "Kişisel haftalık özet"
+          },
+          "self-update-instructions": {
+            "description": "Temsilci talimatlarını doğrudan sohbette güncelleyin",
+            "title": "Kendi kendine güncelleme talimatları"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Ekip duyurularını sizin için Slack'e gönderir",
+            "title": "Sizin adınıza mesaj gönder"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Haftalık ekip etkinliği özeti Slack'ye gönderildi",
+            "title": "Strava ekip fitness özeti"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Web'de arama yapın ve bulguları Notion'de derleyin",
+            "title": "Tavily web araştırma hattı"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Toplantı kayıtları Notion'de eylem öğeleriyle özetlendi",
+            "title": "tl;dv toplantı özeti"
+          }
+        },
+        "title": "Herkes"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify, siteleri yapılandırılmış Google Sheets satırlarına kazır",
+            "title": "Apify web kazıyıcıdan E-Tablolara"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "CRM etkinliklerinden otomatik e-posta dizileri",
+            "title": "Brevo e-posta besleme dizisi"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl rakip siteleri izler ve değişiklikleri Notion'ye kaydeder",
+            "title": "Rekabetçi istihbarat kazıyıcı"
+          },
+          "competitor-research-to-notion": {
+            "description": "X üzerindeki araştırmalar Notion'de yapılandırılmış notlar olarak kaydedildi",
+            "title": "Rakip araştırması Notion'ye"
+          },
+          "content-planner": {
+            "description": "Konuları beyin fırtınası yapın ve bir editoryal takvim taslağı oluşturun",
+            "title": "İçerik planlayıcı"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Notion gönderilerini Dev.to'ya yayınlar ve X'te bağlantılarını verir",
+            "title": "Dev.to otomatik yayıncı"
+          },
+          "discord-community-insights": {
+            "description": "Notion'de Discord geri bildirimi, haftalık Slack özeti ile",
+            "title": "Discord topluluk içgörüleri"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Haftalık Slack özetleriyle E-Tablolar'da etkileşim",
+            "title": "Instagram etkileşim takipçisi"
+          },
+          "loops-email-campaign": {
+            "description": "Loops aracılığıyla işlem e-postaları taslağı oluşturun ve gönderin",
+            "title": "Döngüler e-posta kampanyası"
+          },
+          "marketing-automation-system": {
+            "description": "Araştırma, haftalık izleme ve özel işler için üç temsilci",
+            "title": "Pazarlama otomasyon sistemi"
+          },
+          "marketing-content-planning": {
+            "description": "Slack, röportajlar ve rakiplerden hikayeler başlatmayı planlar",
+            "title": "Pazarlama içeriği planlaması"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Slack ve mülakatlardan işe alım açılarını bulur",
+            "title": "İşe alım e-posta kullanım durumları"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Anahtar kelime sıralamalarını haftalık olarak takip edin ve E-Tablolar'a kaydedin",
+            "title": "SerpAPI anahtar kelime izleyici"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Rakiplere karşı trafik kıyaslamaları Notion'ye kaydedildi",
+            "title": "SimilarWeb trafik karşılaştırması"
+          },
+          "social-media-content-calendar": {
+            "description": "Bir E-Tablolar takvimini her ağ için gönderilere dönüştürür",
+            "title": "Sosyal medya içerik takvimi"
+          },
+          "x-brand-monitor": {
+            "description": "X üzerindeki marka bahsetmeleri Notion'de ekip uyarılarıyla kaydedildi",
+            "title": "X marka monitörü"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Yeni bir YouTube videosu yayınlandığında, bir Notion özeti ve tanıtım için bir X iş parçacığı oluşturun",
+            "title": "YouTube'den X iş parçacığı yeniden kullanıcısı"
+          }
+        },
+        "title": "Pazarlama"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "AgentMail API ile gelen kutularını oluşturun ve yönetin",
+            "title": "AgentMail gelen kutusu"
+          },
+          "clickup-slack-standups": {
+            "description": "Günlük ClickUp görevleri Slack'de bir standup olarak yayınlandı",
+            "title": "ClickUp → Slack günlük toplantıları"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Dokümanlar, düzeni korunarak Notion'ye toplu olarak aktarılır",
+            "title": "Google Docs → Notion taşıyıcı"
+          },
+          "google-drive-file-organizer": {
+            "description": "Yeni dosyalar otomatik olarak klasörlere sıralanır",
+            "title": "Google Drive dosya düzenleyici"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Form yanıtları Notion'ye Slack bildirimleriyle düşer",
+            "title": "Jotform girişi Notion'ye"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Slack'de Monday.com'dan haftalık pano ilerlemesi",
+            "title": "Monday.com haftalık özeti"
+          },
+          "pdf-contract-processor": {
+            "description": "Notion'deki sözleşme alanları, sona ermeden önce hatırlatıcılarla",
+            "title": "PDF sözleşme işlemcisi"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "E-Tablolar'da abonelik metrikleri ve Slack'de müşteri kaybı uyarıları",
+            "title": "RevenueCat abonelik özeti"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist görevleri ekip için Notion'de yansıtıldı",
+            "title": "Todoist → Notion görev senkronizasyonu"
+          },
+          "wrike-project-reporter": {
+            "description": "Slack'de haftalık Wrike ilerleme özetleri",
+            "title": "Wrike proje raporlayıcısı"
+          },
+          "xero-financial-summary": {
+            "description": "Slack'deki Xero'den haftalık kar ve nakit akışı",
+            "title": "Xero finansal özeti"
+          }
+        },
+        "title": "İşlemler"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana kilometre taşları ve görevleri Notion'de yansıtıldı",
+            "title": "Asana → Notion proje senkronizasyonu"
+          },
+          "feedback-router": {
+            "description": "Slack geri bildirimi, kurallarınız tarafından doğru yere yönlendirilir",
+            "title": "Geri bildirim yönlendiricisi"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion özellikleri Linear projeleri ve sorunları haline gelir",
+            "title": "Linear PRD uygulayıcısı"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Gösterge tablosu anlık görüntüleri otomatik olarak Slack'ye gönderilir",
+            "title": "Metabase kontrol paneli özeti"
+          },
+          "pricing-analysis": {
+            "description": "Rakip fiyatlandırma stratejilerini analiz edin ve benzer ürünlerle karşılaştırın",
+            "title": "Fiyat analizi"
+          },
+          "product-copy-naming": {
+            "description": "Üründeki teknik terimler için daha samimi isimler",
+            "title": "Ürün kopyası ve adlandırma"
+          }
+        },
+        "title": "Ürün"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Anlaşmalar kapandığında E-Tablolar ve Slack ile senkronize olur",
+            "title": "Airtable anlaşma takipçisi"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Yeni Bitrix potansiyel müşterileri takip görevleri ve Slack pingleri alır",
+            "title": "Bitrix24 potansiyel müşteri yetiştirme"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Haftalık HubSpot özetleri yapılandırılmış raporlar olarak kaydedildi",
+            "title": "HubSpot satış raporcusu"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Yeni potansiyel müşteriler Slack uyarılarıyla HubSpot görevleri haline gelir",
+            "title": "Potansiyel müşteri takibi hattı"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Slack'de haftalık Salesforce fırsat güncellemeleri",
+            "title": "Salesforce boru hattı özeti"
+          },
+          "streak-pipeline-report": {
+            "description": "Slack'deki Gmail'den haftalık CRM satış hattı istatistikleri",
+            "title": "Streak boru hattı raporu"
+          },
+          "win-loss-reporter": {
+            "description": "Slack'deki satış hattından kazanma ve kaybetme eğilimleri",
+            "title": "Kazanma/kaybetme raporlayıcısı"
+          }
+        },
+        "title": "Satışlar"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Müşteri konuşmaları Notion'de kaydedildi ve kategorize edildi",
+            "title": "Chatwoot → Notion destek günlüğü"
+          },
+          "customer-support-bot": {
+            "description": "Bilgi tabanından yanıtlar ve eksiklikler için görevler",
+            "title": "Müşteri destek botu"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom sohbetleri öncelikli Notion görevleri haline gelir",
+            "title": "Intercom konuşma tasnifçisi"
+          },
+          "support-ticket-router": {
+            "description": "Biletler Notion'ye gider ve acil olanlar Slack'yi pingler",
+            "title": "Destek bileti yönlendiricisi"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "Sıkça sorulan Zendesk sorularını ayıklayın ve bunları otomatik olarak bir Notion SSS'ye ekleyin",
+            "title": "Zendesk → Notion bilgi tabanı"
+          }
+        },
+        "title": "Destek"
+      }
+    },
+    "chat": "Sohbet",
+    "description": "Bir konuşma başlatmak için herhangi bir karta tıklayın. Bu, isteğe bağlı bir görev, yinelenen bir iş akışı veya bir alt temsilci olabilir.",
+    "search": {
+      "accessibilityLabel": "Kullanım durumlarını ara",
+      "empty": "Aramanızla eşleşen kullanım durumu yok.",
+      "placeholder": "Ara"
+    },
+    "title": "Fikirler ve Kullanım Durumları"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "Talimatlar düzenleyici",
+      "footerHint": "Temsilcinizin davranışını özelleştirmek için talimatları doğrudan düzenleyin.",
+      "placeholder": "Ajanınız için talimatlar yazın...",
+      "toolbar": {
+        "blockquote": "Alıntı",
+        "bold": "Kalın",
+        "bulletList": "Madde işaretli liste",
+        "heading1": "Başlık 1",
+        "heading2": "Başlık 2",
+        "heading3": "Başlık 3",
+        "inlineCode": "Satır içi kod",
+        "italic": "İtalik",
+        "orderedList": "Sıralı liste",
+        "strikethrough": "Üstü çizili"
+      }
+    },
+    "saved": "Talimatlar kaydedildi"
+  },
+  "list": {
+    "actions": {
+      "new": "Yeni ajan"
+    },
+    "cards": {
+      "coreDescription": "Temel aracınız",
+      "createdBy": "{{creator}} tarafından oluşturuldu",
+      "subagentDescription": "Alt ajan",
+      "unknownCreator": "Bilinmiyor"
+    },
+    "create": {
+      "accessibilityDescription": "Yeni ajana bir ad verin, görünürlüğünü seçin ve avatarını özelleştirin.",
+      "creating": "Oluşturuluyor…",
+      "description": "Ajanınıza bir ad verin ve kimlerin kullanabileceğini ayarlayın.",
+      "namePlaceholder": "örn. Araştırma Asistanı",
+      "newAgentAlt": "Yeni ajan",
+      "success": "{{agentName}} başarıyla oluşturuldu",
+      "title": "Yeni bir aracı oluştur",
+      "visibility": {
+        "private": {
+          "description": "(sadece siz görebilir ve kullanabilirsiniz)",
+          "label": "Özel"
+        },
+        "public": {
+          "description": "(bu çalışma alanındaki herkes kullanabilir)",
+          "label": "Genel"
+        }
+      },
+      "visibilityLabel": "Görünürlük"
+    },
+    "description": "{{agentName}} ve alt temsilciler, sizin ve ekibiniz için özel iş akışları yürütmek üzere birlikte çalışıyor.",
+    "documentTitle": "Ajanlar",
+    "privateEmpty": {
+      "description": "Yalnızca sizin görebileceğiniz ve kullanabileceğiniz bir ajan oluşturun. Özel ajanlar sınırsızdır.",
+      "title": "Henüz özel aracı yok"
+    },
+    "tabs": {
+      "private": "Özel",
+      "public": "Genel"
+    },
+    "title": "Ajanlar"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "Kendi avatarınızı oluşturun.",
+        "label": "Avatar"
+      },
+      "description": {
+        "description": "Bu aracının neye yardımcı olduğu—ekip arkadaşlarına görünür.",
+        "label": "Açıklama",
+        "placeholder": "Bu ajan ne yapar?"
+      },
+      "name": {
+        "description": "Ekip listesinde ve bu temsilci konuştuğunda gösterilir.",
+        "label": "Ad",
+        "placeholder": "Onlara ne demeliyiz?"
+      },
+      "tone": {
+        "accessibilityLabel": "{{agentName}} nasıl ses çıkarır",
+        "description": "Yanıtlar için ses stili. Tonu değiştirdiğinizde güncellemeleri önizleyin.",
+        "groupLabel": "Ton",
+        "label": "Nasıl ses çıkarıyorlar"
+      },
+      "visibility": {
+        "defaultDescription": "Çalışma alanı varsayılan ajanı tüm çalışma alanı üyeleri için herkese açık kalmalıdır.",
+        "description": "Bu çalışma alanındaki herkes tarafından görülebilir.",
+        "label": "Herkese açık yap"
+      }
+    },
+    "makePrivate": {
+      "confirm": "Özel yap",
+      "description": "Bu aracı özel olduğu sürece, diğer üyeler altındaki sohbet geçmişlerine erişimi kaybeder. Tekrar herkese açık hale getirirseniz erişimi yeniden kazanırlar.",
+      "title": "{{agentName}}'yi özel yap?",
+      "warningDescription": "Diğer üyeler artık {{agentName}}'yi veya altındaki sohbetlerini görmeyecek.",
+      "warningTitle": "Üyeler erişimi kaybeder"
+    },
+    "saved": "Profil kaydedildi",
+    "tones": {
+      "direct": {
+        "agentSample": "Cuma. Perşembe günü bir taslak göndereceğim.",
+        "hint": "Konuya odaklı",
+        "label": "Doğrudan",
+        "userSample": "Cuma gününe kadar 3. çeyrek raporuna ihtiyacım var."
+      },
+      "friendly": {
+        "agentSample": "Elbette! O 3. çeyrek raporunu Cuma gününe kadar size ulaştıracağım—Perşembe günü bir taslak göndereceğim, böylece bir göz atabilirsiniz.",
+        "hint": "Sıcak ve ulaşılabilir",
+        "label": "Dostça",
+        "userSample": "Cuma gününe kadar 3. çeyrek raporuna ihtiyacım var."
+      },
+      "professional": {
+        "agentSample": "3. çeyrek raporunu Cuma gününe kadar hazır edeceğim. Perşembe gününe kadar incelemeniz için bir taslak göndereceğim.",
+        "hint": "Temiz ve cilalı",
+        "label": "Profesyonel",
+        "userSample": "Cuma gününe kadar 3. çeyrek raporuna ihtiyacım var."
+      },
+      "supportive": {
+        "agentSample": "Cuma gününe kadar 3. çeyrek raporunu size ulaştıracağım. Perşembe günü bir taslak göndereceğim, böylece incelemek için zamanınız olur; başka bir şey isterseniz bana bildirin.",
+        "hint": "Sizin köşenizde",
+        "label": "Destekleyici",
+        "userSample": "Cuma gününe kadar 3. çeyrek raporuna ihtiyacım var."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "Sabitle",
+    "clearSearch": "Aramayı temizle",
+    "escapeShortcut": "Esc",
+    "filterAll": "Tümü",
+    "markAllRead": "Tümünü okundu olarak işaretle",
+    "more": "Daha Fazla",
+    "noAgentsToPin": "Henüz başka ajanınız yok.",
+    "noResults": "Sonuç bulunamadı",
+    "openMenu": "Aracı menüsünü aç",
+    "pin": "Kenar çubuğuna sabitle",
+    "pinAgent": "Bir aracı sabitle",
+    "pinAgentDescription": "Kenar çubuğuna sabitlemek için bir ajan seçin.",
+    "pinned": "Sabitlenmiş",
+    "pinnedAgents": "Sabitlenmiş aracılar",
+    "pinSuccess": "{{agentName}} sabitlendi",
+    "resultCount_one": "{{count}} sonuç",
+    "resultCount_other": "{{count}} sonuçları",
+    "searchAgents": "Aracıları ara...",
+    "searching": "Aranıyor...",
+    "searchWorkspace": "Çalışma alanını ara...",
+    "sections": {
+      "agents": "Ajanlar",
+      "artifacts": "Yapıtlar",
+      "chats": "Sohbetler",
+      "messages": "Mesajlar",
+      "others": "Diğerleri",
+      "workflows": "İş akışları"
+    },
+    "unpin": "Sabitlemeyi Kaldır",
+    "unpinSuccess": "{{agentName}} sabitlemesi kaldırıldı"
+  },
+  "status": {
+    "unread": "Okunmamış"
+  },
+  "unsaved": {
+    "message": "Kaydedilmemiş değişiklikleriniz var"
+  }
+}

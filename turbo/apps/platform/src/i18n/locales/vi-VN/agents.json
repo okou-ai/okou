@@ -1,0 +1,638 @@
+{
+  "actions": {
+    "cancel": "Hủy",
+    "close": "Đóng",
+    "copying": "Đang sao chép…",
+    "create": "Tạo",
+    "delete": "Xóa tác nhân",
+    "deleting": "Đang xóa…",
+    "discard": "Hủy bỏ",
+    "retry": "Thử lại",
+    "save": "Lưu",
+    "saving": "Đang lưu…"
+  },
+  "authorization": {
+    "closeSearch": "Đóng tìm kiếm",
+    "connectorsLink": "Các trình kết nối",
+    "connectorsSaved": "Trình kết nối đã lưu",
+    "customConnectors": {
+      "description": "Các trình kết nối tùy chỉnh được đăng ký bởi tổ chức của bạn.",
+      "saved": "Đã lưu các trình kết nối tùy chỉnh"
+    },
+    "description": "Khi chạy, tác nhân có thể sử dụng an toàn các dịch vụ đã kết nối của bạn. Bạn có thể quản lý hoặc tắt quyền truy cập bất cứ lúc nào.",
+    "findConnectors": "Tìm trình kết nối",
+    "noConnectorsAfterLink": " trang để kết nối dịch vụ đầu tiên của bạn.",
+    "noConnectorsAlt": "Không có trình kết nối",
+    "noConnectorsBeforeLink": "Chưa có dịch vụ nào được kết nối. Hãy đến ",
+    "noResults": "Không có kết quả cho “{{search}}”",
+    "permissionLoadError": "Không thể tải các quyền được cấp",
+    "permissionsUpdated": "Quyền đã cập nhật",
+    "searchPlaceholder": "Tìm trình kết nối..."
+  },
+  "avatar": {
+    "accessibilityDescription": "Tùy chỉnh kiểu hình đại diện tác nhân, màu sắc và chi tiết khuôn mặt.",
+    "actions": {
+      "customize": "Tùy chỉnh hình đại diện"
+    },
+    "create": "Tạo hình đại diện tùy chỉnh",
+    "description": "Chọn một phong cách hoặc nhấn xáo trộn để có một bất ngờ.",
+    "editDescription": "Điều chỉnh bất kỳ phần nào, hoặc xáo trộn để có một giao diện mới.",
+    "editTitle": "Chỉnh sửa hình đại diện",
+    "nextStep": "Bước tiếp theo",
+    "previousStep": "Bước trước",
+    "randomize": "Ngẫu nhiên hóa hình đại diện",
+    "shuffleHint": "Xáo trộn — thử một giao diện ngẫu nhiên!",
+    "steps": {
+      "color": "Color",
+      "face": "Mặt",
+      "hair": "Tóc",
+      "mood": "Tâm trạng",
+      "skin": "Da",
+      "sweater": "Áo len"
+    },
+    "title": "Tạo khuôn mặt cho tác nhân của bạn",
+    "use": "Sử dụng hình đại diện này"
+  },
+  "delete": {
+    "dangerZone": "Vùng nguy hiểm",
+    "dangerZoneDescription": "Xóa vĩnh viễn tác nhân này và tất cả dữ liệu của nó. Hành động này không thể hoàn tác.",
+    "description": "Xóa tác nhân, các quy trình làm việc, tự động hóa và lịch sử trò chuyện của mọi người.",
+    "irreversible": "Điều này không thể hoàn tác.",
+    "success": "Đã xóa tác nhân",
+    "title": "Xóa {{agentName}}?",
+    "workflows": {
+      "copiedTitle": "Đã sao chép",
+      "copiedTo": "{{workflowTitle}} đã sao chép vào {{agentName}}",
+      "copyTo": "Sao chép vào {{agentName}}",
+      "deleteWithAgent": "Xóa bằng tác nhân",
+      "description": "Sao chép một quy trình làm việc sang một tác nhân khác để giữ nó. Bất cứ thứ gì còn lại đều bị xóa.",
+      "handle": "Xử lý quy trình làm việc {{workflowTitle}}",
+      "loadFailed": "Không thể tải quy trình làm việc. Thử lại trước khi xóa tác nhân này.",
+      "loading": "Đang tải quy trình làm việc…",
+      "title": "Giữ bất kỳ quy trình làm việc nào?",
+      "untitled": "Quy trình"
+    }
+  },
+  "detail": {
+    "chatWith": "Trò chuyện với {{agentName}}",
+    "defaultDescription": "Đồng đội AI của bạn, được điều chỉnh cho bạn",
+    "notFound": {
+      "back": "Quay lại nhóm",
+      "description": "Tác nhân “{{agentId}}” không tồn tại hoặc bạn không có quyền truy cập vào nó.",
+      "title": "Không tìm thấy tác nhân"
+    },
+    "tabs": {
+      "authorization": "Ủy quyền",
+      "instructions": "Hướng dẫn",
+      "profile": "Hồ sơ"
+    },
+    "viewProfile": "Xem hồ sơ tác nhân"
+  },
+  "errors": {
+    "unknown": "Lỗi không xác định"
+  },
+  "fallbackName": "Trợ lý AI",
+  "ideation": {
+    "all": "Tất cả",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Tối ưu hóa và chuyển đổi hình ảnh hàng loạt",
+            "title": "Trình tối ưu hóa phương tiện Cloudinary"
+          },
+          "elevenlabs-audio-content": {
+            "description": "Lời tường thuật bằng giọng nói từ các bài viết Notion được lưu vào Drive",
+            "title": "Nội dung âm thanh ElevenLabs"
+          },
+          "fal-ai-image-generation": {
+            "description": "Tạo hình ảnh sản phẩm từ mô tả trong Notion",
+            "title": "Tạo hình ảnh AI của Fal"
+          },
+          "heygen-video-from-script": {
+            "description": "Kịch bản Notion trở thành video HeyGen với một ping nhóm",
+            "title": "Video HeyGen từ kịch bản"
+          },
+          "runway-video-from-brief": {
+            "description": "Tạo video ngắn từ một bản tóm tắt sáng tạo",
+            "title": "Video đường băng từ bản tóm tắt"
+          }
+        },
+        "title": "Sáng tạo"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Dán một danh sách và {{assistantName}} sẽ mở các vấn đề cho bạn",
+            "title": "Tạo hàng loạt vấn đề"
+          },
+          "browserbase-web-testing": {
+            "description": "Kiểm tra trình duyệt tự động cho ứng dụng web của bạn",
+            "title": "Kiểm tra web Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Tóm tắt Slack hàng tuần về lưu lượng truy cập và các sự kiện bảo mật",
+            "title": "Báo cáo lưu lượng truy cập & bảo mật Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "Cung cấp URL và {{assistantName}} theo dõi lỗi thông qua kho lưu trữ",
+            "title": "Điều tra cơ sở mã"
+          },
+          "daily-standup-report": {
+            "description": "Số liệu buổi sáng trở thành một bản trình bày được đăng lên Slack",
+            "title": "Báo cáo họp giao ban hàng ngày"
+          },
+          "deep-research-code-analysis": {
+            "description": "Giải thích cách một hệ thống con hoạt động trong cơ sở mã của bạn",
+            "title": "Phân tích mã nghiên cứu sâu"
+          },
+          "github-pr-summarizer": {
+            "description": "Tóm tắt yêu cầu kéo đã hợp nhất trong Notion với các bài đăng Slack tùy chọn",
+            "title": "Trình tóm tắt PR GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "Hoạt động kho lưu trữ hàng tuần được tóm tắt theo tính năng",
+            "title": "Tiến độ GitHub hàng tuần"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Phản ánh các vấn đề và yêu cầu hợp nhất của GitLab vào GitHub",
+            "title": "Trợ giúp di chuyển GitLab sang GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Giữ các vé Jira và các vấn đề GitHub đồng bộ",
+            "title": "Đồng bộ hóa vấn đề Jira ↔ GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "Thiết kế các kịch bản Make nhiều bước từ một mô tả",
+            "title": "Tạo trình tạo kịch bản"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Cảnh báo bảo mật và phụ thuộc hàng tuần từ GitHub",
+            "title": "Tóm tắt cảnh báo bảo mật & phụ thuộc"
+          },
+          "sentry-issue-digest": {
+            "description": "Bản tóm tắt buổi sáng về các vấn đề được nhóm theo mức độ nghiêm trọng",
+            "title": "Tóm tắt vấn đề Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "Nó liên kết mỗi triển khai với cam kết của nó và cảnh báo Slack khi một triển khai thất bại",
+            "title": "Tóm tắt triển khai Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Tạo lại quy trình làm việc Zapier của bạn dưới dạng tác nhân {{brandName}}",
+            "title": "Di chuyển Zapier → {{brandName}}"
+          }
+        },
+        "title": "Kỹ thuật"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Mở một trang trong trình duyệt và trả về một ảnh chụp màn hình",
+            "title": "Ảnh chụp màn hình trình duyệt"
+          },
+          "calendar-optimizer": {
+            "description": "Giúp giải quyết xung đột, quá tải và thời gian tập trung",
+            "title": "Trình tối ưu hóa lịch"
+          },
+          "calendly-booking-sync": {
+            "description": "Các đặt chỗ mới trên lịch của bạn với một ping Slack",
+            "title": "Đồng bộ hóa đặt chỗ Calendly"
+          },
+          "email-assistant": {
+            "description": "Tóm tắt hộp thư đến buổi sáng với các bước tiếp theo được đề xuất",
+            "title": "Trợ lý email"
+          },
+          "granola-notes-to-notion": {
+            "description": "Ghi chú cuộc họp Granola được đồng bộ hóa với cơ sở dữ liệu Notion",
+            "title": "Ghi chú Granola cho Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Chuyển tiếp tin nhắn giữa Lark và Slack cả hai chiều",
+            "title": "Chuyển tiếp tin nhắn Lark ↔ Slack"
+          },
+          "line-message-relay": {
+            "description": "Chuyển tiếp tin nhắn LINE đến Slack và ngược lại",
+            "title": "Chuyển tiếp tin nhắn LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Ghi chú Fireflies đến Notion với các theo dõi trong Slack",
+            "title": "Đường ống ghi chú cuộc họp"
+          },
+          "morning-brief": {
+            "description": "Email, lịch và ghi chú được biến thành một kế hoạch hàng ngày ngắn gọn",
+            "title": "Bản tin buổi sáng"
+          },
+          "perplexity-deep-research": {
+            "description": "Tóm tắt nghiên cứu được hỗ trợ bởi AI được lưu vào Notion",
+            "title": "Nghiên cứu sâu Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "Yêu cầu kéo, email và lịch trong một bản cập nhật Slack",
+            "title": "Tóm tắt cá nhân hàng tuần"
+          },
+          "self-update-instructions": {
+            "description": "Cập nhật hướng dẫn tác nhân ngay trong cuộc trò chuyện",
+            "title": "Hướng dẫn tự cập nhật"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Đăng thông báo nhóm lên Slack cho bạn",
+            "title": "Gửi tin nhắn thay mặt bạn"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Tóm tắt hoạt động nhóm hàng tuần được đăng lên Slack",
+            "title": "Tóm tắt thể lực nhóm Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Tìm kiếm trên web và tổng hợp các phát hiện trong Notion",
+            "title": "Quy trình nghiên cứu web Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Bản ghi cuộc họp được tóm tắt trong Notion với các mục hành động",
+            "title": "Tóm tắt cuộc họp tl;dv"
+          }
+        },
+        "title": "Mọi người"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify quét các trang web thành các hàng Google Sheets có cấu trúc",
+            "title": "Trình cạo web Apify sang Trang tính"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Chuỗi email tự động từ các sự kiện CRM",
+            "title": "Chuỗi nuôi dưỡng email Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl theo dõi các trang web của đối thủ cạnh tranh và ghi lại các thay đổi trong Notion",
+            "title": "Trình cạo thông tin cạnh tranh"
+          },
+          "competitor-research-to-notion": {
+            "description": "Nghiên cứu trên X được lưu dưới dạng ghi chú có cấu trúc trong Notion",
+            "title": "Nghiên cứu đối thủ cạnh tranh sang Notion"
+          },
+          "content-planner": {
+            "description": "Động não các chủ đề và phác thảo lịch biên tập",
+            "title": "Người lập kế hoạch nội dung"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Xuất bản các bài đăng Notion lên Dev.to và liên kết chúng trên X",
+            "title": "Trình tự động xuất bản Dev.to"
+          },
+          "discord-community-insights": {
+            "description": "Phản hồi Discord trong Notion với bản tóm tắt Slack hàng tuần",
+            "title": "Thông tin chi tiết cộng đồng Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Tương tác trong Trang tính với tóm tắt Slack hàng tuần",
+            "title": "Trình theo dõi tương tác Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "Soạn và gửi email giao dịch qua Loops",
+            "title": "Chiến dịch email vòng lặp"
+          },
+          "marketing-automation-system": {
+            "description": "Ba tác nhân cho nghiên cứu, giám sát hàng tuần và công việc đặc biệt",
+            "title": "Hệ thống tự động hóa tiếp thị"
+          },
+          "marketing-content-planning": {
+            "description": "Kế hoạch ra mắt câu chuyện từ Slack, các cuộc phỏng vấn và đối thủ cạnh tranh",
+            "title": "Lập kế hoạch nội dung tiếp thị"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Tìm các góc độ giới thiệu từ Slack và các cuộc phỏng vấn",
+            "title": "Các trường hợp sử dụng email giới thiệu"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Theo dõi thứ hạng từ khóa hàng tuần và ghi vào Trang tính",
+            "title": "Trình theo dõi từ khóa SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Điểm chuẩn lưu lượng truy cập so với đối thủ cạnh tranh được lưu trong Notion",
+            "title": "So sánh lưu lượng truy cập SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "Biến lịch Trang tính thành các bài đăng cho mỗi mạng",
+            "title": "Lịch nội dung mạng xã hội"
+          },
+          "x-brand-monitor": {
+            "description": "Các đề cập thương hiệu trên X được lưu trong Notion với cảnh báo nhóm",
+            "title": "Màn hình thương hiệu X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Khi một video YouTube mới được xuất bản, hãy tạo bản tóm tắt Notion và một luồng X để quảng bá nó",
+            "title": "Trình tái sử dụng luồng YouTube sang X"
+          }
+        },
+        "title": "Tiếp thị"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Tạo và quản lý hộp thư đến với AgentMail API",
+            "title": "Hộp thư đến AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "Các tác vụ ClickUp hàng ngày được đăng dưới dạng standup trong Slack",
+            "title": "ClickUp → Slack standups"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Docs được nhóm thành Notion với bố cục được giữ nguyên",
+            "title": "Trình di chuyển Google Docs → Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "Các tệp mới được tự động sắp xếp vào các thư mục",
+            "title": "Trình tổ chức tệp Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Câu trả lời biểu mẫu đến Notion với thông báo Slack",
+            "title": "Đầu vào Jotform đến Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Tiến độ bảng hàng tuần từ Monday.com trong Slack",
+            "title": "Bản tóm tắt hàng tuần của Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Các trường hợp đồng trong Notion với lời nhắc trước khi hết hạn",
+            "title": "Bộ xử lý hợp đồng PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Số liệu đăng ký trong Trang tính với cảnh báo hủy đăng ký trong Slack",
+            "title": "Tóm tắt đăng ký RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Các nhiệm vụ Todoist được phản ánh trong Notion cho nhóm",
+            "title": "Đồng bộ hóa tác vụ Todoist → Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "Tóm tắt tiến độ Wrike hàng tuần trong Slack",
+            "title": "Báo cáo dự án Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "Lợi nhuận và dòng tiền hàng tuần từ Xero trong Slack",
+            "title": "Tóm tắt tài chính Xero"
+          }
+        },
+        "title": "Hoạt động"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Các mốc quan trọng và nhiệm vụ của Asana được phản ánh trong Notion",
+            "title": "Đồng bộ hóa dự án Asana → Notion"
+          },
+          "feedback-router": {
+            "description": "Phản hồi Slack được định tuyến theo quy tắc của bạn đến đúng nơi",
+            "title": "Bộ định tuyến phản hồi"
+          },
+          "linear-prd-implementer": {
+            "description": "Thông số kỹ thuật Notion trở thành dự án và vấn đề Linear",
+            "title": "Người triển khai PRD Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Ảnh chụp nhanh bảng điều khiển được đăng tự động lên Slack",
+            "title": "Bản tóm tắt bảng điều khiển Metabase"
+          },
+          "pricing-analysis": {
+            "description": "Phân tích chiến lược định giá của đối thủ cạnh tranh và so sánh với các sản phẩm tương tự",
+            "title": "Phân tích giá"
+          },
+          "product-copy-naming": {
+            "description": "Tên thân thiện hơn cho các thuật ngữ kỹ thuật trong sản phẩm",
+            "title": "Sao chép & đặt tên sản phẩm"
+          }
+        },
+        "title": "Sản phẩm"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Giao dịch đồng bộ hóa với Trang tính và Slack khi chúng kết thúc",
+            "title": "Trình theo dõi giao dịch Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Khách hàng tiềm năng Bitrix mới nhận được các tác vụ theo dõi và ping Slack",
+            "title": "Nuôi dưỡng khách hàng tiềm năng Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Tóm tắt HubSpot hàng tuần được lưu dưới dạng báo cáo có cấu trúc",
+            "title": "Người báo cáo bán hàng HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Khách hàng tiềm năng mới trở thành tác vụ HubSpot với cảnh báo Slack",
+            "title": "Đường ống theo dõi khách hàng tiềm năng"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Cập nhật cơ hội Salesforce hàng tuần trong Slack",
+            "title": "Tóm tắt quy trình Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "Thống kê kênh CRM hàng tuần từ Gmail trong Slack",
+            "title": "Báo cáo đường ống Streak"
+          },
+          "win-loss-reporter": {
+            "description": "Xu hướng thắng và thua từ kênh trong Slack",
+            "title": "Báo cáo thắng/thua"
+          }
+        },
+        "title": "Bán hàng"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Các cuộc trò chuyện của khách hàng được ghi lại và phân loại trong Notion",
+            "title": "Nhật ký hỗ trợ Chatwoot → Notion"
+          },
+          "customer-support-bot": {
+            "description": "Câu trả lời từ cơ sở kiến thức và nhiệm vụ cho các khoảng trống",
+            "title": "Bot hỗ trợ khách hàng"
+          },
+          "intercom-conversation-triager": {
+            "description": "Các cuộc trò chuyện Intercom trở thành nhiệm vụ Notion được ưu tiên",
+            "title": "Trình phân loại cuộc trò chuyện Intercom"
+          },
+          "support-ticket-router": {
+            "description": "Vé đến Notion và những vé khẩn cấp ping Slack",
+            "title": "Bộ định tuyến phiếu hỗ trợ"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "Trích xuất các câu hỏi thường gặp của Zendesk và tự động thêm chúng vào Notion FAQ",
+            "title": "Cơ sở kiến thức Zendesk → Notion"
+          }
+        },
+        "title": "Hỗ trợ"
+      }
+    },
+    "chat": "Trò chuyện",
+    "description": "Nhấp vào bất kỳ thẻ nào để bắt đầu cuộc trò chuyện. Nó có thể trở thành một tác vụ theo yêu cầu, một quy trình làm việc định kỳ hoặc một tác nhân phụ.",
+    "search": {
+      "accessibilityLabel": "Tìm kiếm trường hợp sử dụng",
+      "empty": "Không có trường hợp sử dụng nào khớp với tìm kiếm của bạn.",
+      "placeholder": "Tìm kiếm"
+    },
+    "title": "Ý tưởng & Trường hợp sử dụng"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "Trình chỉnh sửa hướng dẫn",
+      "footerHint": "Chỉnh sửa trực tiếp các hướng dẫn để tùy chỉnh hành vi của tác nhân của bạn.",
+      "placeholder": "Viết hướng dẫn cho tác nhân của bạn...",
+      "toolbar": {
+        "blockquote": "Trích dẫn khối",
+        "bold": "In đậm",
+        "bulletList": "Danh sách dấu đầu dòng",
+        "heading1": "Tiêu đề 1",
+        "heading2": "Tiêu đề 2",
+        "heading3": "Tiêu đề 3",
+        "inlineCode": "Mã nội tuyến",
+        "italic": "In nghiêng",
+        "orderedList": "Danh sách có thứ tự",
+        "strikethrough": "Gạch ngang"
+      }
+    },
+    "saved": "Hướng dẫn đã lưu"
+  },
+  "list": {
+    "actions": {
+      "new": "Tác nhân mới"
+    },
+    "cards": {
+      "coreDescription": "Tác nhân cốt lõi của bạn",
+      "createdBy": "Được tạo bởi {{creator}}",
+      "subagentDescription": "Tác nhân phụ",
+      "unknownCreator": "Không xác định"
+    },
+    "create": {
+      "accessibilityDescription": "Đặt tên cho tác nhân mới, chọn khả năng hiển thị của nó và tùy chỉnh hình đại diện của nó.",
+      "creating": "Đang tạo…",
+      "description": "Đặt tên cho tác nhân của bạn và đặt người có thể sử dụng nó.",
+      "namePlaceholder": "ví dụ: Trợ lý nghiên cứu",
+      "newAgentAlt": "Tác nhân mới",
+      "success": "{{agentName}} đã tạo thành công",
+      "title": "Tạo tác nhân mới",
+      "visibility": {
+        "private": {
+          "description": "(chỉ bạn mới có thể nhìn thấy và sử dụng nó)",
+          "label": "Riêng tư"
+        },
+        "public": {
+          "description": "(bất kỳ ai trong không gian làm việc này đều có thể sử dụng nó)",
+          "label": "Công khai"
+        }
+      },
+      "visibilityLabel": "Khả năng hiển thị"
+    },
+    "description": "{{agentName}} và các tác nhân phụ cùng nhau chạy các quy trình làm việc phù hợp cho bạn và nhóm của bạn.",
+    "documentTitle": "Các trợ lý AI",
+    "privateEmpty": {
+      "description": "Tạo một tác nhân mà chỉ bạn mới có thể nhìn thấy và sử dụng. Các tác nhân riêng tư là không giới hạn.",
+      "title": "Chưa có tác nhân riêng tư nào"
+    },
+    "tabs": {
+      "private": "Riêng tư",
+      "public": "Công khai"
+    },
+    "title": "Các trợ lý AI"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "Tạo avatar của riêng bạn.",
+        "label": "Ảnh đại diện"
+      },
+      "description": {
+        "description": "Điều mà tác nhân này giúp đỡ—hiển thị cho đồng đội.",
+        "label": "Mô tả",
+        "placeholder": "Tác nhân này làm gì?"
+      },
+      "name": {
+        "description": "Hiển thị trong danh sách nhóm và khi tác nhân này nói.",
+        "label": "Tên",
+        "placeholder": "Chúng ta nên gọi chúng là gì?"
+      },
+      "tone": {
+        "accessibilityLabel": "{{agentName}} nghe như thế nào",
+        "description": "Phong cách giọng nói cho các câu trả lời. Xem trước các bản cập nhật khi bạn thay đổi giọng điệu.",
+        "groupLabel": "Giọng điệu",
+        "label": "Cách chúng phát ra âm thanh"
+      },
+      "visibility": {
+        "defaultDescription": "Tác nhân mặc định của không gian làm việc phải luôn công khai đối với tất cả các thành viên không gian làm việc.",
+        "description": "Hiển thị cho mọi người trong không gian làm việc này.",
+        "label": "Đặt công khai"
+      }
+    },
+    "makePrivate": {
+      "confirm": "Đặt riêng tư",
+      "description": "Trong khi đặc vụ này là riêng tư, các thành viên khác sẽ mất quyền truy cập vào lịch sử trò chuyện của họ dưới nó. Họ sẽ lấy lại quyền truy cập nếu bạn công khai lại nó.",
+      "title": "Đặt {{agentName}} ở chế độ riêng tư?",
+      "warningDescription": "Các thành viên khác sẽ không còn thấy {{agentName}} hoặc các cuộc trò chuyện của họ dưới đó.",
+      "warningTitle": "Thành viên mất quyền truy cập"
+    },
+    "saved": "Đã lưu hồ sơ",
+    "tones": {
+      "direct": {
+        "agentSample": "Thứ Sáu. Tôi sẽ gửi bản nháp vào thứ Năm.",
+        "hint": "Đi thẳng vào vấn đề",
+        "label": "Trực tiếp",
+        "userSample": "Tôi cần báo cáo quý 3 trước thứ Sáu."
+      },
+      "friendly": {
+        "agentSample": "Chắc chắn rồi! Tôi sẽ gửi báo cáo quý 3 đó cho bạn trước thứ Sáu—tôi sẽ gửi bản nháp vào thứ Năm để bạn có thể xem qua.",
+        "hint": "Ấm áp và dễ gần",
+        "label": "Thân thiện",
+        "userSample": "Tôi cần báo cáo quý 3 trước thứ Sáu."
+      },
+      "professional": {
+        "agentSample": "Tôi sẽ có báo cáo Q3 sẵn sàng vào thứ Sáu. Tôi sẽ gửi bản nháp vào thứ Năm để bạn xem xét.",
+        "hint": "Rõ ràng và bóng bẩy",
+        "label": "Chuyên nghiệp",
+        "userSample": "Tôi cần báo cáo quý 3 trước thứ Sáu."
+      },
+      "supportive": {
+        "agentSample": "Tôi sẽ đảm bảo bạn có báo cáo quý 3 trước thứ Sáu. Tôi sẽ gửi bản nháp vào thứ Năm để bạn có thời gian xem xét — hãy cho tôi biết nếu bạn muốn bất cứ điều gì khác.",
+        "hint": "Trong góc của bạn",
+        "label": "Hỗ trợ",
+        "userSample": "Tôi cần báo cáo quý 3 trước thứ Sáu."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "Ghim",
+    "clearSearch": "Xóa tìm kiếm",
+    "escapeShortcut": "Esc",
+    "filterAll": "Tất cả",
+    "markAllRead": "Đánh dấu tất cả đã đọc",
+    "more": "Thêm",
+    "noAgentsToPin": "Bạn chưa có bất kỳ tác nhân nào khác.",
+    "noResults": "Không tìm thấy kết quả nào",
+    "openMenu": "Mở menu tác nhân",
+    "pin": "Ghim vào thanh bên",
+    "pinAgent": "Ghim một tác nhân",
+    "pinAgentDescription": "Chọn một tác nhân để ghim vào thanh bên.",
+    "pinned": "Đã ghim",
+    "pinnedAgents": "Tác nhân đã ghim",
+    "pinSuccess": "{{agentName}} đã ghim",
+    "resultCount_other": "Kết quả {{count}}",
+    "searchAgents": "Tìm kiếm tác nhân...",
+    "searching": "Đang tìm kiếm...",
+    "searchWorkspace": "Tìm kiếm không gian làm việc...",
+    "sections": {
+      "agents": "Các trợ lý AI",
+      "artifacts": "Tạo tác",
+      "chats": "Trò chuyện",
+      "messages": "Tin nhắn",
+      "others": "Khác",
+      "workflows": "Các quy trình"
+    },
+    "unpin": "Bỏ ghim",
+    "unpinSuccess": "{{agentName}} đã bỏ ghim"
+  },
+  "status": {
+    "unread": "Chưa đọc"
+  },
+  "unsaved": {
+    "message": "Bạn có các thay đổi chưa lưu"
+  }
+}

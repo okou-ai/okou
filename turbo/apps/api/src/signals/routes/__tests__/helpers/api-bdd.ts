@@ -20,6 +20,7 @@ import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import {
   userPreferencesContract,
   type UserLocale,
+  SUPPORTED_USER_LOCALES,
 } from "@okouai/api-contracts/contracts/user-preferences";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
@@ -294,6 +295,7 @@ export function createBddApi(context: TestContext) {
         userPreferencesClient().update({
           headers: authenticate(nextUser),
           body: { locale },
+          query: { supportedLocales: SUPPORTED_USER_LOCALES.join(",") },
         }),
         [200],
       );

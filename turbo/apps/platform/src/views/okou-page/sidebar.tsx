@@ -242,7 +242,7 @@ function ExpandedSidebar() {
         // A fixed mobile drawer escapes the page shell, so its content owns an
         // immutable safe-area boundary.
         "max-md:box-border max-md:p-safe",
-        "h-full w-[300px] shrink-0 flex-col border-r border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
+        "h-full w-[300px] shrink-0 flex-col border-e border-nav-border bg-sidebar transition-all duration-300 max-md:fixed max-md:inset-y-0 max-md:start-0 max-md:z-40 max-md:h-auto max-md:shadow-xl",
         "hidden data-[sidebar-expanded]:max-md:flex md:hidden",
       )}
     >
@@ -319,7 +319,7 @@ function ExpandedManageSection() {
   return (
     <div className="shrink-0">
       <div
-        className="group flex h-8 shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 hover:bg-state-hover transition-colors"
+        className="group flex h-8 shrink-0 cursor-pointer items-center justify-between rounded-lg ps-2 pe-0 hover:bg-state-hover transition-colors"
         onClick={() => {
           return setManageCollapsed(!manageCollapsed);
         }}
@@ -330,7 +330,7 @@ function ExpandedManageSection() {
           })}
           <span className="shrink-0 opacity-0 group-hover:opacity-100">
             <ChevronRight
-              className={`opacity-35 ${manageCollapsed ? "" : "rotate-90"}`}
+              className={`opacity-35 ${manageCollapsed ? "rtl:rotate-180" : "rotate-90"}`}
               size={12}
             />
           </span>
@@ -349,7 +349,7 @@ function ExpandedManageSection() {
                   pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
                   onClick={onLinkClick}
                   aria-current={isActive ? "page" : undefined}
-                  className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
+                  className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-start text-sm leading-5 transition-colors duration-200 ${
                     isActive
                       ? "bg-state-selected text-sidebar-foreground font-medium"
                       : "text-sidebar-foreground hover:bg-state-hover"
@@ -419,7 +419,7 @@ function ExpandedFooter() {
                 key={id}
                 pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
                 onClick={onLinkClick}
-                className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
+                className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-start text-sm leading-5 transition-colors duration-200 ${
                   isActive
                     ? "bg-state-selected text-sidebar-foreground font-medium"
                     : "text-sidebar-foreground hover:bg-state-hover"
@@ -466,7 +466,7 @@ function ExpandedFooter() {
    what puts the workspace logo and the account mark the same distance from
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
-  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
+  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-e border-nav-border bg-nav-rail px-1.5 py-[18px]";
 
 function LabeledRailLink({
   id,
@@ -543,7 +543,7 @@ function LabeledRailLink({
           <Icon size={19} className="shrink-0 opacity-70" />
         )}
         {showBadge && (
-          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
+          <span className="absolute -end-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500" />
         )}
       </span>
       <span
@@ -752,7 +752,7 @@ function ChatListColumn() {
           CHAT_LIST_INSET,
         )}
       >
-        <span className="flex-1 pl-2 text-[15px] font-semibold text-nav-copy">
+        <span className="flex-1 ps-2 text-[15px] font-semibold text-nav-copy">
           {t(($) => {
             return $.appShell.sidebar.chat;
           })}

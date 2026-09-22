@@ -39,10 +39,9 @@ interface CoverageWording {
 /**
  * One fixed translation per supported output language.
  *
- * These cover the ten Settings locales plus the two Chinese scripts the Agent
- * language contract adds. They are deliberately short and factual: this line
- * describes the pipeline's own limits, so it must not read as part of the
- * summary the model wrote.
+ * These cover every Settings locale, including the two Chinese scripts. They
+ * are deliberately short and factual: this line describes the pipeline's own
+ * limits, so it must not read as part of the summary the model wrote.
  */
 const WORDINGS: Readonly<Record<string, CoverageWording>> = {
   "en-US": {
@@ -152,6 +151,94 @@ const WORDINGS: Readonly<Record<string, CoverageWording>> = {
       return `${count.toString()} 則內容未能納入本摘要`;
     },
     separator: "；",
+  },
+  "tr-TR": {
+    label: "Kapsam",
+    bounded: "Kapsamdaki bazı mesajlar okunmadı",
+    omitted: (count) => {
+      return `Bu özette yer verilmeyen öğe sayısı: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "vi-VN": {
+    label: "Phạm vi",
+    bounded: "Một số tin nhắn trong phạm vi chưa được đọc",
+    omitted: (count) => {
+      return `Số mục bị lược khỏi bản tóm tắt này: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "th-TH": {
+    label: "ขอบเขต",
+    bounded: "ยังไม่ได้อ่านข้อความบางส่วนที่อยู่ในขอบเขต",
+    omitted: (count) => {
+      return `จำนวนรายการที่ไม่ได้รวมไว้ในสรุปนี้: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "nl-NL": {
+    label: "Dekking",
+    bounded: "Sommige berichten binnen het bereik zijn niet gelezen",
+    omitted: (count) => {
+      return `Items weggelaten uit deze samenvatting: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "sv-SE": {
+    label: "Täckning",
+    bounded: "Vissa meddelanden som ingår i underlaget har inte lästs",
+    omitted: (count) => {
+      return `Poster som utelämnats ur sammanfattningen: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "da-DK": {
+    label: "Dækning",
+    bounded: "Nogle af de omfattede beskeder blev ikke læst",
+    omitted: (count) => {
+      return `Elementer udeladt fra dette resumé: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "nb-NO": {
+    label: "Dekning",
+    bounded: "Noen av meldingene som omfattes, ble ikke lest",
+    omitted: (count) => {
+      return `Elementer utelatt fra dette sammendraget: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "fi-FI": {
+    label: "Kattavuus",
+    bounded: "Joitakin tarkasteluun kuuluvia viestejä ei luettu",
+    omitted: (count) => {
+      return `Tästä yhteenvedosta pois jätettyjen kohteiden määrä: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "he-IL": {
+    label: "כיסוי",
+    bounded: "חלק מההודעות שבטווח הסקירה לא נקראו",
+    omitted: (count) => {
+      return `פריטים שהושמטו מהסיכום הזה: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "pl-PL": {
+    label: "Zakres",
+    bounded: "Nie przeczytano części wiadomości objętych zakresem",
+    omitted: (count) => {
+      return `Elementy pominięte w tym podsumowaniu: ${count.toString()}`;
+    },
+    separator: "; ",
+  },
+  "cs-CZ": {
+    label: "Pokrytí",
+    bounded: "Některé zprávy v daném rozsahu nebyly přečteny",
+    omitted: (count) => {
+      return `Položky vynechané z tohoto shrnutí: ${count.toString()}`;
+    },
+    separator: "; ",
   },
 };
 

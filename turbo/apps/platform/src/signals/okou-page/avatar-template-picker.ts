@@ -90,6 +90,17 @@ const PREFERRED_VOICE_LANGUAGE_BY_LOCALE = {
   "pt-BR": "portuguese",
   "zh-Hans": "chinese",
   "zh-Hant": "chinese",
+  "tr-TR": "turkish",
+  "vi-VN": "vietnamese",
+  "th-TH": "thai",
+  "nl-NL": "dutch",
+  "sv-SE": "swedish",
+  "da-DK": "danish",
+  "nb-NO": "norwegian",
+  "fi-FI": "finnish",
+  "he-IL": "hebrew",
+  "pl-PL": "polish",
+  "cs-CZ": "czech",
 } as const satisfies Record<SupportedLocale, string>;
 
 const PREFERRED_VOICE_USE_CASE_BY_AVATAR_STYLE = {

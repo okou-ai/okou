@@ -172,7 +172,7 @@ function WorkflowComposerPlaceholder({
   }
   return (
     <div
-      className={`pointer-events-none absolute left-0 px-4 text-[0.9375rem] leading-6 text-muted-foreground/80 ${
+      className={`pointer-events-none absolute start-0 px-4 text-[0.9375rem] leading-6 text-muted-foreground/80 ${
         hasTemplateAttachment ? "top-[54px]" : "top-0 pt-4"
       }`}
       aria-hidden="true"

@@ -1759,6 +1759,7 @@ function createWorkflowEditor(
     content: valueToWorkflowComposerDoc(""),
     editorProps: {
       attributes: {
+        dir: "auto",
         "aria-label": i18n.t(($) => {
           return $.chat.composer.message;
         }),
@@ -1850,6 +1851,7 @@ function configureMountedWorkflowEditor(editor: Editor): void {
     editorProps: {
       clipboardTextSerializer: workflowComposerClipboardText,
       attributes: {
+        dir: "auto",
         "aria-label": i18n.t(($) => {
           return $.chat.composer.message;
         }),
@@ -1866,6 +1868,7 @@ function refreshMountedWorkflowEditorLocalization(editor: Editor): void {
     editorProps: {
       ...editor.options.editorProps,
       attributes: {
+        dir: "auto",
         ...editor.options.editorProps.attributes,
         "aria-label": i18n.t(($) => {
           return $.chat.composer.message;

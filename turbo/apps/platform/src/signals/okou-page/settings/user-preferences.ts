@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import {
   userPreferencesContract,
+  SUPPORTED_USER_LOCALES,
   type UpdateUserPreferencesRequest,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { apiClient$ } from "../../api-client.ts";
@@ -30,7 +31,12 @@ export const userPreferences$ = computed(async (get) => {
   get(internalReloadPreferences$);
   const createClient = get(apiClient$);
   const client = createClient(userPreferencesContract);
-  const result = await accept(client.get(), [200]);
+  const result = await accept(
+    client.get({
+      query: { supportedLocales: SUPPORTED_USER_LOCALES.join(",") },
+    }),
+    [200],
+  );
   return result.body;
 });
 
@@ -48,6 +54,7 @@ export const updateUserPreference$ = command(
     const client = createClient(userPreferencesContract);
     await accept(
       client.update({
+        query: { supportedLocales: SUPPORTED_USER_LOCALES.join(",") },
         body: update,
         fetchOptions: { signal },
       }),

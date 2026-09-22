@@ -124,6 +124,17 @@ describe("user preferences contract", () => {
       "hi-IN",
       "zh-Hans",
       "zh-Hant",
+      "tr-TR",
+      "vi-VN",
+      "th-TH",
+      "nl-NL",
+      "sv-SE",
+      "da-DK",
+      "nb-NO",
+      "fi-FI",
+      "he-IL",
+      "pl-PL",
+      "cs-CZ",
     ]);
 
     const preferences = userPreferencesResponseSchema.parse({

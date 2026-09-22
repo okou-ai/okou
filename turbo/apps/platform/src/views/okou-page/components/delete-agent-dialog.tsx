@@ -48,7 +48,7 @@ function DeleteDangerHeader({ agentName }: { agentName: string }) {
 
   return (
     <>
-      <DialogHeader className="space-y-0 text-left">
+      <DialogHeader className="space-y-0 text-start">
         <div className="flex items-center gap-2">
           <AlertTriangle size={20} className="shrink-0 text-destructive" />
           <DialogTitle>

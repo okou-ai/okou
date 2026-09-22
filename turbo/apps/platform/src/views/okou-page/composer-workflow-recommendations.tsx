@@ -376,7 +376,7 @@ function WorkflowDialog({ signals }: { readonly signals: ComposerSignals }) {
       onOpenChangeComplete={onCloseComplete}
     >
       <DialogContent maxWidth="4xl" closeLabel={copy.close}>
-        <DialogHeader className="pr-10">
+        <DialogHeader className="pe-10">
           <DialogTitle>{item && copy.items[item.id].name}</DialogTitle>
           <DialogDescription>
             {item && copy.items[item.id].description}

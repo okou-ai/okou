@@ -46,7 +46,7 @@ export function ChatCardDetails({
           return $.settings.shared.close;
         })}
       >
-        <DialogHeader className="pr-6">
+        <DialogHeader className="pe-6">
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         <div className="min-w-0 space-y-4 break-words text-sm text-muted-foreground">

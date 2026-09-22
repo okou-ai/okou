@@ -4,13 +4,18 @@ import { and, eq, isNull } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { command, computed } from "ccstate";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import {
+  userPreferencesContract,
+  SUPPORTED_USER_LOCALES,
+  type UserLocale,
+  type UserPreferencesResponse,
+} from "@okouai/api-contracts/contracts/user-preferences";
 
 import { badRequestMessage } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf } from "../context/request";
+import { bodyResultOf, queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -27,6 +32,49 @@ import { settle, tapError } from "../utils";
 const L = logger("user-preferences");
 
 const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
+
+// Clients without the capability query predate the additional locale bundles.
+const LEGACY_CLIENT_LOCALES = [
+  "en-US",
+  "pt-BR",
+  "ja-JP",
+  "ko-KR",
+  "id-ID",
+  "de-DE",
+  "es-ES",
+  "it-IT",
+  "fr-FR",
+  "hi-IN",
+  "zh-Hans",
+  "zh-Hant",
+] as const satisfies readonly UserLocale[];
+
+function supportedLocalesForClient(
+  advertisedLocales: string | undefined,
+): readonly UserLocale[] {
+  if (advertisedLocales === undefined) {
+    return LEGACY_CLIENT_LOCALES;
+  }
+  const advertised = new Set(advertisedLocales.split(","));
+  return SUPPORTED_USER_LOCALES.filter((locale) => {
+    return locale === "en-US" || advertised.has(locale);
+  });
+}
+
+function projectUserPreferences(
+  preferences: UserPreferencesResponse,
+  supportedLocales: readonly UserLocale[],
+): UserPreferencesResponse {
+  return {
+    ...preferences,
+    locale:
+      preferences.locale === null ||
+      supportedLocales.includes(preferences.locale)
+        ? preferences.locale
+        : "en-US",
+    supportedLocales: [...supportedLocales],
+  };
+}
 
 async function observeMorningBriefProvisioning(
   task: Promise<EnsureMorningBriefDefaultEnabledResult>,
@@ -57,12 +105,14 @@ function enqueueMorningBriefProvisioning(
 
 const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   const auth = get(organizationAuthContext$);
+  const query = get(queryOf(userPreferencesContract.get));
+  const supportedLocales = supportedLocalesForClient(query?.supportedLocales);
   const preferences = await get(
     userPreferences({ orgId: auth.orgId, userId: auth.userId }),
   );
   return {
     status: 200 as const,
-    body: preferences,
+    body: projectUserPreferences(preferences, supportedLocales),
   };
 });
 
@@ -73,6 +123,15 @@ const updateUserPreferencesInner$ = command(
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
+    }
+
+    const query = get(queryOf(userPreferencesContract.update));
+    const supportedLocales = supportedLocalesForClient(query?.supportedLocales);
+    if (
+      body.data.locale !== undefined &&
+      !supportedLocales.includes(body.data.locale)
+    ) {
+      return badRequestMessage("Locale is not supported by this client");
     }
 
     const result = await set(
@@ -113,7 +172,7 @@ const updateUserPreferencesInner$ = command(
     }
     return {
       status: 200 as const,
-      body: result.data,
+      body: projectUserPreferences(result.data, supportedLocales),
     };
   },
 );
@@ -191,7 +250,12 @@ const initializeUserPreferencesInner$ = command(
     signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: { ...current, timezone: preferences?.timezone ?? null },
+      body: projectUserPreferences(
+        { ...current, timezone: preferences?.timezone ?? null },
+        supportedLocalesForClient(
+          get(queryOf(userPreferencesContract.initialize))?.supportedLocales,
+        ),
+      ),
     };
   },
 );

@@ -1234,8 +1234,8 @@ function PricingStepDialog({
       >
         {/* The close button is an item in this row rather than a box pinned to
             the frame, so the title, the step counter and the close glyph share
-            one centre line and one right inset. */}
-        <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 space-y-0 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
+            one centre line and one end inset. */}
+        <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 space-y-0 border-b border-[hsl(var(--gray-200))] py-0 ps-6 pe-4 text-start">
           {onBack && <PricingBackButton onBack={onBack} />}
           <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
             {title ?? pricingStepTitle(step)}
@@ -1244,7 +1244,7 @@ function PricingStepDialog({
           <DialogClose
             render={
               <IconButton
-                className="-ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+                className="-ms-1 shrink-0 text-muted-foreground hover:text-foreground"
                 aria-label={t(($) => {
                   return $.settings.shared.close;
                 })}

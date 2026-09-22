@@ -7940,7 +7940,7 @@ function RelatedArtifactsDialog({
         contentClassName="flex flex-col overflow-hidden gap-0 p-0"
         data-testid="chat-run-related-artifacts-dialog"
       >
-        <DialogHeader className="shrink-0 px-5 pb-4 pt-5 pr-12">
+        <DialogHeader className="shrink-0 px-5 pb-4 pt-5 pe-12">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <span>{title}</span>
             <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-muted-foreground">

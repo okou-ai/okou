@@ -1,3 +1,6 @@
+import { DirectionProvider } from "@base-ui/react/direction-provider";
+import { localeDirection } from "../i18n/resources.ts";
+import { locale$ } from "../signals/locale.ts";
 import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { page$, pageLayout$ } from "../signals/react-router.ts";
@@ -43,11 +46,12 @@ export function AppSkeletonOverlay() {
 }
 
 export function Router() {
+  const locale = useGet(locale$);
   return (
-    <>
+    <DirectionProvider direction={localeDirection(locale)}>
       <LayoutHost>
         <PageSlot />
       </LayoutHost>
-    </>
+    </DirectionProvider>
   );
 }

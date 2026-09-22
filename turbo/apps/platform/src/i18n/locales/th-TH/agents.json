@@ -1,0 +1,638 @@
+{
+  "actions": {
+    "cancel": "ยกเลิก",
+    "close": "ปิด",
+    "copying": "กำลังคัดลอก…",
+    "create": "สร้าง",
+    "delete": "ลบเอเจนต์",
+    "deleting": "กำลังลบ…",
+    "discard": "ทิ้ง",
+    "retry": "ลองใหม่",
+    "save": "บันทึก",
+    "saving": "กำลังบันทึก…"
+  },
+  "authorization": {
+    "closeSearch": "ปิดการค้นหา",
+    "connectorsLink": "ตัวเชื่อมต่อ",
+    "connectorsSaved": "บันทึกตัวเชื่อมต่อแล้ว",
+    "customConnectors": {
+      "description": "ตัวเชื่อมต่อที่กำหนดเองที่ลงทะเบียนโดยองค์กรของคุณ",
+      "saved": "บันทึกตัวเชื่อมต่อที่กำหนดเองแล้ว"
+    },
+    "description": "เมื่อทำงาน ตัวแทนสามารถใช้บริการที่เชื่อมต่อของคุณได้อย่างปลอดภัย คุณสามารถจัดการหรือปิดการเข้าถึงได้ตลอดเวลา",
+    "findConnectors": "ค้นหาตัวเชื่อมต่อ",
+    "noConnectorsAfterLink": " หน้าเพื่อเชื่อมต่อบริการแรกของคุณ",
+    "noConnectorsAlt": "ไม่มีตัวเชื่อมต่อ",
+    "noConnectorsBeforeLink": "ยังไม่มีบริการที่เชื่อมต่อ ไปที่ ",
+    "noResults": "ไม่มีผลลัพธ์สำหรับ “{{search}}”",
+    "permissionLoadError": "ไม่สามารถโหลดการอนุญาตได้",
+    "permissionsUpdated": "อัปเดตสิทธิ์แล้ว",
+    "searchPlaceholder": "ค้นหาตัวเชื่อมต่อ..."
+  },
+  "avatar": {
+    "accessibilityDescription": "ปรับแต่งสไตล์อวตารของ Agent สี และรายละเอียดใบหน้า",
+    "actions": {
+      "customize": "ปรับแต่งอวตาร"
+    },
+    "create": "สร้างอวตารที่กำหนดเอง",
+    "description": "เลือกสไตล์หรือกดสลับเพื่อความประหลาดใจ",
+    "editDescription": "ปรับแต่งส่วนใดก็ได้ หรือสลับเพื่อรูปลักษณ์ใหม่",
+    "editTitle": "แก้ไขอวตาร",
+    "nextStep": "ขั้นตอนถัดไป",
+    "previousStep": "ขั้นตอนก่อนหน้า",
+    "randomize": "สุ่มอวตาร",
+    "shuffleHint": "สุ่ม — ลองดูแบบสุ่ม!",
+    "steps": {
+      "color": "Color",
+      "face": "ใบหน้า",
+      "hair": "ผม",
+      "mood": "อารมณ์",
+      "skin": "ผิว",
+      "sweater": "เสื้อกันหนาว"
+    },
+    "title": "ให้เอเจนต์ของคุณมีใบหน้า",
+    "use": "ใช้อวตารนี้"
+  },
+  "delete": {
+    "dangerZone": "เขตอันตราย",
+    "dangerZoneDescription": "ลบตัวแทนนี้และข้อมูลทั้งหมดอย่างถาวร การดำเนินการนี้ไม่สามารถยกเลิกได้",
+    "description": "ลบเอเจนต์ เวิร์กโฟลว์ ระบบอัตโนมัติ และประวัติการแชทของทุกคน",
+    "irreversible": "ไม่สามารถยกเลิกได้",
+    "success": "ลบเอเจนต์แล้ว",
+    "title": "ลบ {{agentName}} หรือไม่",
+    "workflows": {
+      "copiedTitle": "คัดลอกแล้ว",
+      "copiedTo": "{{workflowTitle}} คัดลอกไปยัง {{agentName}}",
+      "copyTo": "คัดลอกไปยัง {{agentName}}",
+      "deleteWithAgent": "ลบด้วยเอเจนต์",
+      "description": "คัดลอกเวิร์กโฟลว์ไปยังเอเจนต์อื่นเพื่อเก็บไว้ สิ่งที่เหลือจะถูกลบ",
+      "handle": "จัดการเวิร์กโฟลว์ {{workflowTitle}}",
+      "loadFailed": "ไม่สามารถโหลดเวิร์กโฟลว์ได้ ลองอีกครั้งก่อนลบ Agent นี้",
+      "loading": "กำลังโหลดเวิร์กโฟลว์…",
+      "title": "เก็บเวิร์กโฟลว์ใดๆ ไว้หรือไม่?",
+      "untitled": "เวิร์กโฟลว์"
+    }
+  },
+  "detail": {
+    "chatWith": "แชทกับ {{agentName}}",
+    "defaultDescription": "เพื่อนร่วมทีม AI ของคุณ ปรับแต่งมาเพื่อคุณ",
+    "notFound": {
+      "back": "กลับสู่ทีม",
+      "description": "เอเจนต์ “{{agentId}}” ไม่มีอยู่จริง หรือคุณไม่มีสิทธิ์เข้าถึง",
+      "title": "ไม่พบเอเจนต์"
+    },
+    "tabs": {
+      "authorization": "การอนุญาต",
+      "instructions": "คำแนะนำ",
+      "profile": "โปรไฟล์"
+    },
+    "viewProfile": "ดูโปรไฟล์เอเจนต์"
+  },
+  "errors": {
+    "unknown": "ข้อผิดพลาดที่ไม่รู้จัก"
+  },
+  "fallbackName": "เอเจนต์",
+  "ideation": {
+    "all": "ทั้งหมด",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "ปรับแต่งและแปลงรูปภาพจำนวนมาก",
+            "title": "ตัวเพิ่มประสิทธิภาพสื่อ Cloudinary"
+          },
+          "elevenlabs-audio-content": {
+            "description": "การบรรยายเสียงจากบทความ Notion บันทึกลงใน Drive",
+            "title": "เนื้อหาเสียง ElevenLabs"
+          },
+          "fal-ai-image-generation": {
+            "description": "สร้างภาพผลิตภัณฑ์จากคำอธิบายใน Notion",
+            "title": "การสร้างภาพ AI ของ Fal"
+          },
+          "heygen-video-from-script": {
+            "description": "สคริปต์ Notion กลายเป็นวิดีโอ HeyGen พร้อมการแจ้งเตือนทีม",
+            "title": "วิดีโอ HeyGen จากสคริปต์"
+          },
+          "runway-video-from-brief": {
+            "description": "สร้างวิดีโอสั้นจากสรุปความคิดสร้างสรรค์",
+            "title": "วิดีโอรันเวย์จากสรุป"
+          }
+        },
+        "title": "สร้างสรรค์"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "วางรายการและ {{assistantName}} จะเปิดปัญหาให้คุณ",
+            "title": "สร้างปัญหาเป็นชุด"
+          },
+          "browserbase-web-testing": {
+            "description": "การทดสอบเบราว์เซอร์อัตโนมัติสำหรับเว็บแอปของคุณ",
+            "title": "การทดสอบเว็บ Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "สรุป Slack รายสัปดาห์ของเหตุการณ์การจราจรและความปลอดภัย",
+            "title": "รายงานการจราจรและความปลอดภัยของ Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "ให้ URL และ {{assistantName}} ติดตามข้อผิดพลาดผ่านที่เก็บ",
+            "title": "การตรวจสอบฐานรหัส"
+          },
+          "daily-standup-report": {
+            "description": "เมตริกตอนเช้ากลายเป็นสไลด์เด็คที่โพสต์ไปยัง Slack",
+            "title": "รายงานการประชุมประจำวัน"
+          },
+          "deep-research-code-analysis": {
+            "description": "อธิบายว่าระบบย่อยทำงานอย่างไรใน codebase ของคุณ",
+            "title": "การวิเคราะห์โค้ดเชิงลึก"
+          },
+          "github-pr-summarizer": {
+            "description": "สรุปคำขอดึงที่รวมเข้าด้วยกันใน Notion พร้อมโพสต์ Slack ที่เป็นทางเลือก",
+            "title": "ตัวสรุป PR ของ GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "สรุปกิจกรรม repo รายสัปดาห์ตามคุณสมบัติ",
+            "title": "ความคืบหน้า GitHub รายสัปดาห์"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "สะท้อนปัญหา GitLab และคำขอรวมเข้าสู่ GitHub",
+            "title": "ตัวช่วยการย้ายข้อมูล GitLab ไปยัง GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "ซิงค์ตั๋ว Jira และปัญหา GitHub",
+            "title": "Jira ↔ การซิงค์ปัญหา GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "ออกแบบสถานการณ์ Make หลายขั้นตอนจากคำอธิบาย",
+            "title": "สร้างตัวสร้างสถานการณ์"
+          },
+          "security-dependency-alert-digest": {
+            "description": "การแจ้งเตือนความปลอดภัยและการพึ่งพารายสัปดาห์จาก GitHub",
+            "title": "สรุปการแจ้งเตือนด้านความปลอดภัยและการพึ่งพา"
+          },
+          "sentry-issue-digest": {
+            "description": "สรุปปัญหาช่วงเช้าที่จัดกลุ่มตามความรุนแรง",
+            "title": "สรุปปัญหา Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "มันเชื่อมโยงการปรับใช้แต่ละครั้งกับการคอมมิต และแจ้งเตือน Slack เมื่อการปรับใช้ล้มเหลว",
+            "title": "สรุปการปรับใช้ Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "สร้างเวิร์กโฟลว์ Zapier ของคุณใหม่เป็น Agent {{brandName}}",
+            "title": "การย้ายข้อมูล Zapier → {{brandName}}"
+          }
+        },
+        "title": "วิศวกรรม"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "เปิดหน้าในเบราว์เซอร์และส่งคืนภาพหน้าจอ",
+            "title": "ภาพหน้าจอเบราว์เซอร์"
+          },
+          "calendar-optimizer": {
+            "description": "ช่วยเรื่องความขัดแย้ง ภาระงานที่มากเกินไป และเวลาที่ต้องใช้สมาธิ",
+            "title": "ตัวเพิ่มประสิทธิภาพปฏิทิน"
+          },
+          "calendly-booking-sync": {
+            "description": "การจองใหม่ในปฏิทินของคุณพร้อมการแจ้งเตือน Slack",
+            "title": "การซิงค์การจอง Calendly"
+          },
+          "email-assistant": {
+            "description": "สรุปกล่องจดหมายตอนเช้าพร้อมขั้นตอนถัดไปที่แนะนำ",
+            "title": "ผู้ช่วยอีเมล"
+          },
+          "granola-notes-to-notion": {
+            "description": "บันทึกการประชุม Granola ซิงค์กับฐานข้อมูล Notion",
+            "title": "บันทึก Granola ถึง Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "ส่งต่อข้อความระหว่าง Lark และ Slack ทั้งสองทาง",
+            "title": "การส่งต่อข้อความ Lark ↔ Slack"
+          },
+          "line-message-relay": {
+            "description": "ส่งต่อข้อความ LINE ไปยัง Slack และในทางกลับกัน",
+            "title": "การส่งต่อข้อความ LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "บันทึก Fireflies ไปยัง Notion พร้อมการติดตามผลใน Slack",
+            "title": "ไปป์ไลน์บันทึกการประชุม"
+          },
+          "morning-brief": {
+            "description": "อีเมล ปฏิทิน และบันทึกถูกเปลี่ยนเป็นแผนรายวันสั้นๆ",
+            "title": "สรุปตอนเช้า"
+          },
+          "perplexity-deep-research": {
+            "description": "สรุปการวิจัยที่ขับเคลื่อนด้วย AI ที่บันทึกไว้ใน Notion",
+            "title": "การวิจัยเชิงลึกของ Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "คำขอดึง อีเมล และปฏิทินในการอัปเดต Slack เดียว",
+            "title": "สรุปส่วนตัวรายสัปดาห์"
+          },
+          "self-update-instructions": {
+            "description": "อัปเดตคำแนะนำเอเจนต์ในแชทได้เลย",
+            "title": "คำแนะนำการอัปเดตตัวเอง"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "โพสต์ประกาศทีมไปยัง Slack ให้คุณ",
+            "title": "ส่งข้อความในนามของคุณ"
+          },
+          "strava-team-fitness-digest": {
+            "description": "สรุปกิจกรรมทีมรายสัปดาห์ที่โพสต์ไปยัง Slack",
+            "title": "สรุปความฟิตของทีม Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "ค้นหาเว็บและรวบรวมข้อมูลใน Notion",
+            "title": "ไปป์ไลน์การวิจัยเว็บ Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "บันทึกการประชุมสรุปใน Notion พร้อมรายการดำเนินการ",
+            "title": "สรุปการประชุม tl;dv"
+          }
+        },
+        "title": "ทุกคน"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify ขูดเว็บไซต์เป็นแถว Google Sheets ที่มีโครงสร้าง",
+            "title": "Apify web scraper ไปยัง Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "ลำดับอีเมลอัตโนมัติจากเหตุการณ์ CRM",
+            "title": "ลำดับการดูแลอีเมล Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl เฝ้าดูเว็บไซต์คู่แข่งและบันทึกการเปลี่ยนแปลงใน Notion",
+            "title": "เครื่องมือรวบรวมข้อมูลข่าวกรองคู่แข่ง"
+          },
+          "competitor-research-to-notion": {
+            "description": "การวิจัยบน X บันทึกเป็นบันทึกที่มีโครงสร้างใน Notion",
+            "title": "การวิจัยคู่แข่งไปยัง Notion"
+          },
+          "content-planner": {
+            "description": "ระดมสมองหัวข้อและร่างปฏิทินบรรณาธิการ",
+            "title": "ผู้วางแผนเนื้อหา"
+          },
+          "dev-to-auto-publisher": {
+            "description": "เผยแพร่โพสต์ Notion ไปยัง Dev.to และเชื่อมโยงบน X",
+            "title": "ผู้เผยแพร่ Dev.to อัตโนมัติ"
+          },
+          "discord-community-insights": {
+            "description": "ข้อเสนอแนะ Discord ใน Notion พร้อมสรุป Slack รายสัปดาห์",
+            "title": "ข้อมูลเชิงลึกของชุมชน Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "การมีส่วนร่วมใน Sheets พร้อมสรุป Slack รายสัปดาห์",
+            "title": "ตัวติดตามการมีส่วนร่วม Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "ร่างและส่งอีเมลธุรกรรมผ่าน Loops",
+            "title": "แคมเปญอีเมลแบบวนซ้ำ"
+          },
+          "marketing-automation-system": {
+            "description": "ตัวแทนสามคนสำหรับการวิจัย การตรวจสอบรายสัปดาห์ และงานเฉพาะกิจ",
+            "title": "ระบบอัตโนมัติทางการตลาด"
+          },
+          "marketing-content-planning": {
+            "description": "วางแผนเรื่องราวการเปิดตัวจาก Slack, การสัมภาษณ์ และคู่แข่ง",
+            "title": "การวางแผนเนื้อหาการตลาด"
+          },
+          "onboarding-email-use-cases": {
+            "description": "ค้นหามุมมองการเริ่มต้นใช้งานจาก Slack และการสัมภาษณ์",
+            "title": "กรณีการใช้งานอีเมลสำหรับการเริ่มต้นใช้งาน"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "ติดตามอันดับคีย์เวิร์ดรายสัปดาห์และบันทึกลงใน Sheets",
+            "title": "ตัวติดตามคำหลัก SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "เกณฑ์มาตรฐานการเข้าชมเทียบกับคู่แข่งที่บันทึกไว้ใน Notion",
+            "title": "การเปรียบเทียบปริมาณการเข้าชม SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "เปลี่ยนปฏิทิน Sheets ให้เป็นโพสต์สำหรับแต่ละเครือข่าย",
+            "title": "ปฏิทินเนื้อหาสื่อสังคมออนไลน์"
+          },
+          "x-brand-monitor": {
+            "description": "การกล่าวถึงแบรนด์บน X บันทึกใน Notion พร้อมการแจ้งเตือนทีม",
+            "title": "จอภาพแบรนด์ X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "เมื่อวิดีโอ YouTube ใหม่เผยแพร่ ให้สร้างสรุป Notion และเธรด X เพื่อโปรโมต",
+            "title": "ตัวนำวิดีโอ YouTube ไปยัง X"
+          }
+        },
+        "title": "การตลาด"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "สร้างและจัดการกล่องจดหมายด้วย AgentMail API",
+            "title": "กล่องจดหมาย AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "งาน ClickUp รายวันโพสต์เป็น standup ใน Slack",
+            "title": "ClickUp → Slack standups"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Docs เป็นชุดใน Notion โดยยังคงเค้าโครงไว้",
+            "title": "ตัวย้ายข้อมูล Google Docs → Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "ไฟล์ใหม่ถูกจัดเรียงลงในโฟลเดอร์โดยอัตโนมัติ",
+            "title": "ตัวจัดระเบียบไฟล์ Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "คำตอบแบบฟอร์มจะไปที่ Notion พร้อมการแจ้งเตือน Slack",
+            "title": "การรับ Jotform ไปยัง Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "ความคืบหน้าของบอร์ดรายสัปดาห์จาก Monday.com ใน Slack",
+            "title": "สรุปรายสัปดาห์ของ Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "ฟิลด์สัญญาใน Notion พร้อมการแจ้งเตือนก่อนหมดอายุ",
+            "title": "ตัวประมวลผลสัญญา PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "เมตริกการสมัครสมาชิกใน Sheets พร้อมการแจ้งเตือนการยกเลิกใน Slack",
+            "title": "สรุปการสมัครสมาชิก RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "งาน Todoist ที่สะท้อนใน Notion สำหรับทีม",
+            "title": "การซิงค์งาน Todoist → Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "สรุปความคืบหน้า Wrike รายสัปดาห์ใน Slack",
+            "title": "ผู้รายงานโครงการ Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "กำไรและกระแสเงินสดรายสัปดาห์จาก Xero ใน Slack",
+            "title": "สรุปทางการเงินของ Xero"
+          }
+        },
+        "title": "การดำเนินงาน"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "เหตุการณ์สำคัญและงาน Asana ที่สะท้อนใน Notion",
+            "title": "การซิงค์โครงการ Asana → Notion"
+          },
+          "feedback-router": {
+            "description": "ข้อเสนอแนะ Slack ถูกกำหนดเส้นทางตามกฎของคุณไปยังตำแหน่งที่ถูกต้อง",
+            "title": "เราเตอร์ข้อเสนอแนะ"
+          },
+          "linear-prd-implementer": {
+            "description": "ข้อมูลจำเพาะของ Notion กลายเป็นโปรเจกต์และปัญหาของ Linear",
+            "title": "ผู้ใช้งาน Linear PRD"
+          },
+          "metabase-dashboard-digest": {
+            "description": "สแนปช็อตแดชบอร์ดโพสต์ไปยัง Slack โดยอัตโนมัติ",
+            "title": "สรุปแดชบอร์ด Metabase"
+          },
+          "pricing-analysis": {
+            "description": "วิเคราะห์กลยุทธ์การกำหนดราคาของคู่แข่งและเปรียบเทียบกับผลิตภัณฑ์ที่คล้ายกัน",
+            "title": "การวิเคราะห์ราคา"
+          },
+          "product-copy-naming": {
+            "description": "ชื่อที่เป็นมิตรมากขึ้นสำหรับคำศัพท์ทางเทคนิคในผลิตภัณฑ์",
+            "title": "สำเนาผลิตภัณฑ์และการตั้งชื่อ"
+          }
+        },
+        "title": "ผลิตภัณฑ์"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "ข้อตกลงจะซิงค์กับ Sheets และ Slack เมื่อปิด",
+            "title": "ตัวติดตามข้อตกลง Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "ลูกค้าเป้าหมาย Bitrix ใหม่จะได้รับงานติดตามผลและการแจ้งเตือน Slack",
+            "title": "การดูแลลูกค้าเป้าหมาย Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "สรุป HubSpot รายสัปดาห์บันทึกเป็นรายงานที่มีโครงสร้าง",
+            "title": "ผู้รายงานการขาย HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "ลูกค้าเป้าหมายใหม่กลายเป็นงาน HubSpot พร้อมการแจ้งเตือน Slack",
+            "title": "ไปป์ไลน์ติดตามลูกค้าเป้าหมาย"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "การอัปเดตโอกาส Salesforce รายสัปดาห์ใน Slack",
+            "title": "สรุปไปป์ไลน์ Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "สถิติไปป์ไลน์ CRM รายสัปดาห์จาก Gmail ใน Slack",
+            "title": "รายงานไปป์ไลน์ Streak"
+          },
+          "win-loss-reporter": {
+            "description": "แนวโน้มการชนะและการแพ้จากไปป์ไลน์ใน Slack",
+            "title": "ผู้รายงานผลแพ้/ชนะ"
+          }
+        },
+        "title": "การขาย"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "การสนทนากับลูกค้าถูกบันทึกและจัดหมวดหมู่ใน Notion",
+            "title": "บันทึกการสนับสนุน Chatwoot → Notion"
+          },
+          "customer-support-bot": {
+            "description": "คำตอบจากฐานความรู้และงานสำหรับช่องว่าง",
+            "title": "บอทสนับสนุนลูกค้า"
+          },
+          "intercom-conversation-triager": {
+            "description": "การแชทของ Intercom กลายเป็นงาน Notion ที่จัดลำดับความสำคัญ",
+            "title": "ตัวคัดแยกการสนทนา Intercom"
+          },
+          "support-ticket-router": {
+            "description": "ตั๋วจะไปที่ Notion และตั๋วเร่งด่วนจะแจ้งเตือน Slack",
+            "title": "เราเตอร์ตั๋วสนับสนุน"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "ดึงคำถามที่พบบ่อยของ Zendesk และเพิ่มลงใน Notion FAQ โดยอัตโนมัติ",
+            "title": "ฐานความรู้ Zendesk → Notion"
+          }
+        },
+        "title": "สนับสนุน"
+      }
+    },
+    "chat": "แชท",
+    "description": "คลิกการ์ดใดก็ได้เพื่อเริ่มการสนทนา มันอาจกลายเป็นงานตามความต้องการ เวิร์กโฟลว์ที่เกิดซ้ำ หรือตัวแทนย่อย",
+    "search": {
+      "accessibilityLabel": "ค้นหากรณีการใช้งาน",
+      "empty": "ไม่มีกรณีการใช้งานที่ตรงกับการค้นหาของคุณ",
+      "placeholder": "ค้นหา"
+    },
+    "title": "แนวคิดและกรณีการใช้งาน"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "ตัวแก้ไขคำแนะนำ",
+      "footerHint": "แก้ไขคำแนะนำโดยตรงเพื่อปรับแต่งพฤติกรรมของตัวแทนของคุณ",
+      "placeholder": "เขียนคำแนะนำสำหรับเอเจนต์ของคุณ...",
+      "toolbar": {
+        "blockquote": "บล็อกคำพูด",
+        "bold": "ตัวหนา",
+        "bulletList": "รายการหัวข้อย่อย",
+        "heading1": "หัวข้อ 1",
+        "heading2": "หัวข้อ 2",
+        "heading3": "หัวข้อ 3",
+        "inlineCode": "โค้ดในบรรทัด",
+        "italic": "ตัวเอียง",
+        "orderedList": "รายการลำดับ",
+        "strikethrough": "ขีดฆ่า"
+      }
+    },
+    "saved": "บันทึกคำแนะนำแล้ว"
+  },
+  "list": {
+    "actions": {
+      "new": "เอเจนต์ใหม่"
+    },
+    "cards": {
+      "coreDescription": "เอเจนต์หลักของคุณ",
+      "createdBy": "สร้างโดย {{creator}}",
+      "subagentDescription": "เอเจนต์ย่อย",
+      "unknownCreator": "ไม่ทราบ"
+    },
+    "create": {
+      "accessibilityDescription": "ตั้งชื่อเอเจนต์ใหม่ เลือกการมองเห็น และปรับแต่งอวาตาร์",
+      "creating": "กำลังสร้าง…",
+      "description": "ตั้งชื่อเอเจนต์ของคุณและกำหนดว่าใครสามารถใช้งานได้",
+      "namePlaceholder": "เช่น ผู้ช่วยวิจัย",
+      "newAgentAlt": "เอเจนต์ใหม่",
+      "success": "สร้าง {{agentName}} สำเร็จแล้ว",
+      "title": "สร้างเอเจนต์ใหม่",
+      "visibility": {
+        "private": {
+          "description": "(มีเพียงคุณเท่านั้นที่สามารถเห็นและใช้งานได้)",
+          "label": "ส่วนตัว"
+        },
+        "public": {
+          "description": "(ทุกคนในพื้นที่ทำงานนี้สามารถใช้ได้)",
+          "label": "สาธารณะ"
+        }
+      },
+      "visibilityLabel": "การมองเห็น"
+    },
+    "description": "{{agentName}} และตัวแทนย่อยทำงานร่วมกันเพื่อเรียกใช้เวิร์กโฟลว์ที่ปรับแต่งให้เหมาะกับคุณและทีมของคุณ",
+    "documentTitle": "เอเจนต์",
+    "privateEmpty": {
+      "description": "สร้างเอเจนต์ที่คุณเท่านั้นที่สามารถเห็นและใช้งานได้ เอเจนต์ส่วนตัวไม่จำกัดจำนวน",
+      "title": "ยังไม่มีเอเจนต์ส่วนตัว"
+    },
+    "tabs": {
+      "private": "ส่วนตัว",
+      "public": "สาธารณะ"
+    },
+    "title": "เอเจนต์"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "สร้างอวตารของคุณเอง",
+        "label": "อวตาร"
+      },
+      "description": {
+        "description": "สิ่งที่ตัวแทนนี้ช่วยได้—มองเห็นได้สำหรับเพื่อนร่วมทีม",
+        "label": "คำอธิบาย",
+        "placeholder": "ตัวแทนนี้ทำอะไร"
+      },
+      "name": {
+        "description": "แสดงในรายการทีมและเมื่อตัวแทนนี้พูด",
+        "label": "ชื่อ",
+        "placeholder": "เราควรเรียกพวกเขาว่าอะไร?"
+      },
+      "tone": {
+        "accessibilityLabel": "{{agentName}} มีเสียงอย่างไร",
+        "description": "รูปแบบเสียงสำหรับการตอบกลับ ดูตัวอย่างการอัปเดตเมื่อคุณเปลี่ยนโทนเสียง",
+        "groupLabel": "โทน",
+        "label": "เสียงของพวกเขาเป็นอย่างไร"
+      },
+      "visibility": {
+        "defaultDescription": "ตัวแทนเริ่มต้นของพื้นที่ทำงานต้องยังคงเป็นสาธารณะสำหรับสมาชิกพื้นที่ทำงานทุกคน",
+        "description": "มองเห็นได้สำหรับทุกคนในพื้นที่ทำงานนี้",
+        "label": "ตั้งเป็นสาธารณะ"
+      }
+    },
+    "makePrivate": {
+      "confirm": "ตั้งเป็นส่วนตัว",
+      "description": "ในขณะที่ Agent นี้เป็นส่วนตัว สมาชิกคนอื่นจะสูญเสียการเข้าถึงประวัติการแชทภายใต้ Agent นี้ พวกเขาจะกลับมาเข้าถึงได้อีกครั้งหากคุณทำให้เป็นสาธารณะ",
+      "title": "ทำให้ {{agentName}} เป็นส่วนตัวหรือไม่?",
+      "warningDescription": "สมาชิกคนอื่นจะไม่เห็น {{agentName}} หรือแชทภายใต้นั้นอีกต่อไป",
+      "warningTitle": "สมาชิกจะเสียสิทธิ์การเข้าถึง"
+    },
+    "saved": "บันทึกโปรไฟล์แล้ว",
+    "tones": {
+      "direct": {
+        "agentSample": "วันศุกร์ ฉันจะส่งฉบับร่างในวันพฤหัสบดี",
+        "hint": "ตรงประเด็น",
+        "label": "โดยตรง",
+        "userSample": "ฉันต้องการรายงานไตรมาส 3 ภายในวันศุกร์"
+      },
+      "friendly": {
+        "agentSample": "แน่นอน! ฉันจะส่งรายงานไตรมาส 3 ให้คุณภายในวันศุกร์นี้ ฉันจะส่งฉบับร่างให้คุณในวันพฤหัสบดีเพื่อให้คุณได้ดู",
+        "hint": "อบอุ่นและเข้าถึงง่าย",
+        "label": "เป็นมิตร",
+        "userSample": "ฉันต้องการรายงานไตรมาส 3 ภายในวันศุกร์"
+      },
+      "professional": {
+        "agentSample": "ฉันจะเตรียมรายงานไตรมาส 3 ให้เสร็จภายในวันศุกร์ ฉันจะส่งฉบับร่างให้คุณตรวจสอบภายในวันพฤหัสบดี",
+        "hint": "ชัดเจนและขัดเกลา",
+        "label": "มืออาชีพ",
+        "userSample": "ฉันต้องการรายงานไตรมาส 3 ภายในวันศุกร์"
+      },
+      "supportive": {
+        "agentSample": "ฉันจะตรวจสอบให้แน่ใจว่าคุณได้รับรายงานไตรมาส 3 ภายในวันศุกร์ ฉันจะส่งฉบับร่างในวันพฤหัสบดีเพื่อให้คุณมีเวลาตรวจสอบ — แจ้งให้ฉันทราบหากคุณต้องการสิ่งอื่นใด",
+        "hint": "อยู่ข้างคุณ",
+        "label": "สนับสนุน",
+        "userSample": "ฉันต้องการรายงานไตรมาส 3 ภายในวันศุกร์"
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "ปักหมุด",
+    "clearSearch": "ล้างการค้นหา",
+    "escapeShortcut": "Esc",
+    "filterAll": "ทั้งหมด",
+    "markAllRead": "ทำเครื่องหมายว่าอ่านทั้งหมด",
+    "more": "เพิ่มเติม",
+    "noAgentsToPin": "คุณยังไม่มีเอเจนต์อื่น",
+    "noResults": "ไม่พบผลลัพธ์",
+    "openMenu": "เปิดเมนูเอเจนต์",
+    "pin": "ปักหมุดไปที่แถบด้านข้าง",
+    "pinAgent": "ปักหมุดเอเจนต์",
+    "pinAgentDescription": "เลือกเอเจนต์เพื่อปักหมุดไว้ที่แถบด้านข้าง",
+    "pinned": "ปักหมุดแล้ว",
+    "pinnedAgents": "เอเจนต์ที่ปักหมุด",
+    "pinSuccess": "{{agentName}} ปักหมุดแล้ว",
+    "resultCount_other": "ผลลัพธ์ {{count}}",
+    "searchAgents": "ค้นหาเอเจนต์...",
+    "searching": "กำลังค้นหา...",
+    "searchWorkspace": "ค้นหาพื้นที่ทำงาน...",
+    "sections": {
+      "agents": "เอเจนต์",
+      "artifacts": "สิ่งประดิษฐ์",
+      "chats": "แชท",
+      "messages": "ข้อความ",
+      "others": "อื่นๆ",
+      "workflows": "เวิร์กโฟลว์"
+    },
+    "unpin": "เลิกปักหมุด",
+    "unpinSuccess": "{{agentName}} ไม่ได้ปักหมุด"
+  },
+  "status": {
+    "unread": "ยังไม่ได้อ่าน"
+  },
+  "unsaved": {
+    "message": "คุณมีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก"
+  }
+}

@@ -213,24 +213,97 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
       "hi-IN",
       "zh-Hans",
       "zh-Hant",
+      "tr-TR",
+      "vi-VN",
+      "th-TH",
+      "nl-NL",
+      "sv-SE",
+      "da-DK",
+      "nb-NO",
+      "fi-FI",
+      "he-IL",
+      "pl-PL",
+      "cs-CZ",
     ] as const;
 
+    const advertised = supportedLocales.join(",");
+
     for (const locale of supportedLocales) {
-      const current = await api.readPreferences(admin);
+      const current = await api.readPreferences(admin, advertised);
       expect(current.body.supportedLocales).toStrictEqual(supportedLocales);
 
-      const updated = await api.updatePreferences(admin, { locale }, [200]);
+      const updated = await api.updatePreferences(
+        admin,
+        { locale },
+        [200],
+        advertised,
+      );
       expect(updated.body).toMatchObject({
         locale,
         supportedLocales,
       });
     }
 
-    const allLocales = await api.readPreferences(admin);
+    const allLocales = await api.readPreferences(admin, advertised);
     expect(allLocales.body).toMatchObject({
-      locale: "zh-Hant",
+      locale: "cs-CZ",
       supportedLocales,
     });
+  });
+  it("projects a new stored locale for older clients without overwriting it", async () => {
+    const { api, admin } = testActors();
+    const updated = await api.updatePreferences(
+      admin,
+      { locale: "he-IL" },
+      [200],
+      "en-US,he-IL",
+    );
+    expect(updated.body).toMatchObject({
+      locale: "he-IL",
+      supportedLocales: ["en-US", "he-IL"],
+    });
+
+    const initialized = await api.initializePreferences(admin);
+    expect(initialized.body.locale).toBe("en-US");
+    expect(initialized.body.supportedLocales).not.toContain("he-IL");
+
+    const legacy = await api.readPreferences(admin);
+    expect(legacy.body.locale).toBe("en-US");
+    expect(legacy.body.supportedLocales).toContain("zh-Hant");
+    expect(legacy.body.supportedLocales).not.toContain("he-IL");
+
+    const otherPreference = await api.updatePreferences(
+      admin,
+      { sendMode: "cmd-enter" },
+      [200],
+    );
+    expect(otherPreference.body.locale).toBe("en-US");
+    const capable = await api.readPreferences(
+      admin,
+      "en-US,he-IL,not-a-locale",
+    );
+    expect(capable.body).toMatchObject({
+      locale: "he-IL",
+      supportedLocales: ["en-US", "he-IL"],
+      sendMode: "cmd-enter",
+    });
+  });
+
+  it("rejects locale writes the caller cannot render", async () => {
+    const { api, admin } = testActors();
+    for (const advertised of [undefined, "en-US,nl-NL", ""]) {
+      const rejected = await api.updatePreferences(
+        admin,
+        { locale: "he-IL" },
+        [400],
+        advertised,
+      );
+      expect(rejected.body.error.message).toBe(
+        "Locale is not supported by this client",
+      );
+    }
+    const persisted = await api.readPreferences(admin, "en-US,he-IL");
+    expect(persisted.body.locale).toBeNull();
   });
 });
 

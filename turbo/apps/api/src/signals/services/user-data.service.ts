@@ -7,6 +7,7 @@ import {
   themePreferenceSchema,
   type ThemePreference,
   type UserLocale,
+  userLocaleSchema,
   type UpdateUserPreferencesRequest,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -74,24 +75,7 @@ function parseColorTheme(value: unknown): ColorTheme | null {
 }
 
 function parseUserLocale(value: unknown): UserLocale | null {
-  if (
-    value === null ||
-    value === "en-US" ||
-    value === "pt-BR" ||
-    value === "ja-JP" ||
-    value === "ko-KR" ||
-    value === "id-ID" ||
-    value === "de-DE" ||
-    value === "es-ES" ||
-    value === "it-IT" ||
-    value === "fr-FR" ||
-    value === "hi-IN" ||
-    value === "zh-Hans" ||
-    value === "zh-Hant"
-  ) {
-    return value;
-  }
-  throw new Error(`Unexpected user locale: ${String(value)}`);
+  return userLocaleSchema.nullable().parse(value);
 }
 
 function parseSecretType(value: string): SecretType {

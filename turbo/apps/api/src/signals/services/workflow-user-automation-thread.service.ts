@@ -45,6 +45,17 @@ const OFFICIAL_WORKFLOW_THREAD_TITLES: Readonly<
     "hi-IN": "Okou सुबह की ब्रीफ़",
     "zh-Hans": "Okou 晨间简报",
     "zh-Hant": "Okou 晨間簡報",
+    "tr-TR": "Okou Sabah Özeti",
+    "vi-VN": "Bản tin buổi sáng Okou",
+    "th-TH": "สรุปข่าวเช้า Okou",
+    "nl-NL": "Okou Ochtendoverzicht",
+    "sv-SE": "Okou Morgonöversikt",
+    "da-DK": "Okou Morgenoverblik",
+    "nb-NO": "Okou Morgenoversikt",
+    "fi-FI": "Okou Aamukooste",
+    "he-IL": "תדריך הבוקר של Okou",
+    "pl-PL": "Okou Przegląd poranny",
+    "cs-CZ": "Okou Ranní přehled",
   },
 };
 

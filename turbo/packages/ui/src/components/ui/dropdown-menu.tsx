@@ -170,19 +170,24 @@ DropdownMenuSubTrigger.displayName = "DropdownMenuSubTrigger";
 const DropdownMenuSubContent = React.forwardRef<
   HTMLDivElement,
   DropdownMenuContentProps
->(({ align = "start", alignOffset = -3, side = "right", ...props }, ref) => {
-  return (
-    <DropdownMenuContent
-      ref={ref}
-      data-slot="dropdown-menu-sub-content"
-      align={align}
-      alignOffset={alignOffset}
-      side={side}
-      sideOffset={0}
-      {...props}
-    />
-  );
-});
+>(
+  (
+    { align = "start", alignOffset = -3, side = "inline-end", ...props },
+    ref,
+  ) => {
+    return (
+      <DropdownMenuContent
+        ref={ref}
+        data-slot="dropdown-menu-sub-content"
+        align={align}
+        alignOffset={alignOffset}
+        side={side}
+        sideOffset={0}
+        {...props}
+      />
+    );
+  },
+);
 DropdownMenuSubContent.displayName = "DropdownMenuSubContent";
 
 export {

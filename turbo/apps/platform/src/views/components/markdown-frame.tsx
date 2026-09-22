@@ -18,6 +18,7 @@ export function MarkdownFrame({
   return (
     <div
       data-color-mode={theme}
+      dir="auto"
       className={cn(
         "wmde-markdown",
         "min-w-0 max-w-full !bg-transparent !text-foreground text-sm",

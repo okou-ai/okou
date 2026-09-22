@@ -138,7 +138,7 @@ function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
   return (
     <SelectPrimitive.Value
       data-slot="select-value"
-      className={cn("line-clamp-1 w-full text-left", className)}
+      className={cn("line-clamp-1 w-full text-start", className)}
       {...props}
     />
   );
@@ -339,7 +339,7 @@ const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
         ref={ref}
         data-slot="select-item"
         className={cn(
-          "relative flex w-full cursor-pointer select-none items-center rounded-lg pl-2 pr-8 outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
+          "relative flex w-full cursor-pointer select-none items-center rounded-lg ps-2 pe-8 outline-none transition-colors hover:bg-state-hover hover:text-accent-foreground data-highlighted:bg-state-hover data-highlighted:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50",
           MENU_ROW_HEIGHT_CLASS,
           className,
         )}
@@ -348,7 +348,7 @@ const SelectItem = React.forwardRef<HTMLElement, SelectPrimitive.Item.Props>(
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
         <SelectPrimitive.ItemIndicator
           render={
-            <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center" />
+            <span className="absolute end-2 flex h-3.5 w-3.5 items-center justify-center" />
           }
         >
           <Check className="h-4 w-4" />

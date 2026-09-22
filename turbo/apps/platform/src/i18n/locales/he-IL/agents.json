@@ -1,0 +1,640 @@
+{
+  "actions": {
+    "cancel": "בטל",
+    "close": "סגור",
+    "copying": "מעתיק…",
+    "create": "צור",
+    "delete": "מחק סוכן",
+    "deleting": "מוחק…",
+    "discard": "בטל שינויים",
+    "retry": "נסה שוב",
+    "save": "שמור",
+    "saving": "שומר…"
+  },
+  "authorization": {
+    "closeSearch": "סגור חיפוש",
+    "connectorsLink": "מחברים",
+    "connectorsSaved": "מחברים נשמרו",
+    "customConnectors": {
+      "description": "מחברים מותאמים אישית הרשומים על ידי הארגון שלך.",
+      "saved": "מחברים מותאמים אישית נשמרו"
+    },
+    "description": "כאשר הסוכן פועל, הוא יכול להשתמש בשירותים המחוברים שלך בצורה מאובטחת. תוכל לנהל או לכבות גישה בכל עת.",
+    "findConnectors": "מצא מחברים",
+    "noConnectorsAfterLink": " דף לחיבור השירות הראשון שלך.",
+    "noConnectorsAlt": "אין מחברים",
+    "noConnectorsBeforeLink": "עדיין אין שירותים מחוברים. עבור אל ",
+    "noResults": "אין תוצאות עבור \"{{search}}\"",
+    "permissionLoadError": "נכשל בטעינת הרשאות",
+    "permissionsUpdated": "הרשאות עודכנו",
+    "searchPlaceholder": "מצא מחברים..."
+  },
+  "avatar": {
+    "accessibilityDescription": "התאם אישית את סגנון אווטאר הסוכן, צבעו ופרטי הפנים.",
+    "actions": {
+      "customize": "התאם אישית אווטאר"
+    },
+    "create": "צור אווטאר מותאם אישית",
+    "description": "בחר סגנון או לחץ על ערבב להפתעה.",
+    "editDescription": "שנה כל חלק, או ערבב למראה חדש.",
+    "editTitle": "ערוך אווטאר",
+    "nextStep": "שלב הבא",
+    "previousStep": "שלב קודם",
+    "randomize": "אווטאר אקראי",
+    "shuffleHint": "ערבב — נסה מראה אקראי!",
+    "steps": {
+      "color": "Color",
+      "face": "פנים",
+      "hair": "שיער",
+      "mood": "מצב רוח",
+      "skin": "עור",
+      "sweater": "סוודר"
+    },
+    "title": "תן לסוכן שלך פנים",
+    "use": "השתמש באווטאר זה"
+  },
+  "delete": {
+    "dangerZone": "אזור סכנה",
+    "dangerZoneDescription": "הסר לצמיתות סוכן זה ואת כל הנתונים שלו. פעולה זו אינה ניתנת לביטול.",
+    "description": "מוחק את הסוכן, את זרימות העבודה שלו, את האוטומציות שלו ואת היסטוריית הצ'אט של כולם.",
+    "irreversible": "לא ניתן לבטל זאת.",
+    "success": "סוכן נמחק",
+    "title": "למחוק את {{agentName}}?",
+    "workflows": {
+      "copiedTitle": "כבר הועתק",
+      "copiedTo": "{{workflowTitle}} הועתק ל-{{agentName}}",
+      "copyTo": "העתק ל-{{agentName}}",
+      "deleteWithAgent": "מחק עם סוכן",
+      "description": "העתק זרימת עבודה לסוכן אחר כדי לשמור אותה. כל מה שנותר נמחק.",
+      "handle": "טפל בזרימת עבודה {{workflowTitle}}",
+      "loadFailed": "לא ניתן היה לטעון זרימות עבודה. נסה שוב לפני מחיקת סוכן זה.",
+      "loading": "טוען זרימות עבודה…",
+      "title": "לשמור זרימות עבודה כלשהן?",
+      "untitled": "תהליך עבודה"
+    }
+  },
+  "detail": {
+    "chatWith": "שוחח עם {{agentName}}",
+    "defaultDescription": "שותף ה-AI שלך, מכוונן אליך",
+    "notFound": {
+      "back": "חזרה לצוות",
+      "description": "הסוכן \"{{agentId}}\" אינו קיים או שאין לך גישה אליו.",
+      "title": "הסוכן לא נמצא"
+    },
+    "tabs": {
+      "authorization": "הרשאה",
+      "instructions": "הוראות",
+      "profile": "פרופיל"
+    },
+    "viewProfile": "הצג פרופיל סוכן"
+  },
+  "errors": {
+    "unknown": "שגיאה לא ידועה"
+  },
+  "fallbackName": "סוכן",
+  "ideation": {
+    "all": "הכל",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "בצע אופטימיזציה והמרת תמונות בכמות גדולה",
+            "title": "ממטב מדיה של Cloudinary"
+          },
+          "elevenlabs-audio-content": {
+            "description": "קריינות קולית ממאמרי Notion נשמרה ב-Drive",
+            "title": "תוכן אודיו של ElevenLabs"
+          },
+          "fal-ai-image-generation": {
+            "description": "צור תמונות מוצר מתיאורים ב-Notion",
+            "title": "יצירת תמונות AI של Fal"
+          },
+          "heygen-video-from-script": {
+            "description": "סקריפט Notion הופך לסרטון HeyGen עם פינג צוותי",
+            "title": "סרטון HeyGen מתסריט"
+          },
+          "runway-video-from-brief": {
+            "description": "צור סרטונים קצרים מתיאור קריאייטיבי",
+            "title": "סרטון מסלול המראה מתקציר"
+          }
+        },
+        "title": "יצירתי"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "הדבק רשימה ו-{{assistantName}} יפתח את הבעיות עבורך",
+            "title": "צור בעיות בקבוצות"
+          },
+          "browserbase-web-testing": {
+            "description": "בדיקות דפדפן אוטומטיות עבור יישום האינטרנט שלך",
+            "title": "בדיקות אינטרנט של Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "סיכום שבועי של Slack של אירועי תעבורה ואבטחה",
+            "title": "דוח תנועה ואבטחה של Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "תן URL ו-{{assistantName}} עוקב אחר הבאג דרך המאגר",
+            "title": "חקירת בסיס קוד"
+          },
+          "daily-standup-report": {
+            "description": "מדדי בוקר הופכים למצגת שפורסמה ל-Slack",
+            "title": "דוח עמידה יומי"
+          },
+          "deep-research-code-analysis": {
+            "description": "מסביר כיצד תת-מערכת פועלת בבסיס הקוד שלך",
+            "title": "ניתוח קוד מחקר מעמיק"
+          },
+          "github-pr-summarizer": {
+            "description": "סיכומי בקשות משיכה ממוזגות ב-Notion עם פוסטים אופציונליים ב-Slack",
+            "title": "מסכם PR של GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "פעילות מאגר שבועית מסוכמת לפי תכונה",
+            "title": "התקדמות GitHub שבועית"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "משקף בעיות GitLab ובקשות מיזוג ל-GitHub",
+            "title": "עוזר העברה מ-GitLab ל-GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "שומר על סנכרון כרטיסי Jira ובעיות GitHub",
+            "title": "סנכרון בעיות Jira ↔ GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "תכנן תרחישי Make מרובי שלבים מתיאור",
+            "title": "בנה בונה תרחישים"
+          },
+          "security-dependency-alert-digest": {
+            "description": "התראות אבטחה ותלות שבועיות מ-GitHub",
+            "title": "תקציר התראות אבטחה ותלות"
+          },
+          "sentry-issue-digest": {
+            "description": "תקציר בוקר של בעיות מקובצות לפי חומרה",
+            "title": "תקציר בעיות Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "הוא מקשר כל פריסה לקומיט שלה ומתריע ל-Slack כאשר פריסה נכשלת",
+            "title": "תקציר פריסת Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "צור מחדש את זרימות העבודה של Zapier שלך כסוכני {{brandName}}",
+            "title": "העברת Zapier ← {{brandName}}"
+          }
+        },
+        "title": "הנדסה"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "פותח דף בדפדפן ומחזיר צילום מסך",
+            "title": "צילומי מסך של דפדפן"
+          },
+          "calendar-optimizer": {
+            "description": "עוזר עם קונפליקטים, עומס וזמן מיקוד",
+            "title": "ממטב לוח שנה"
+          },
+          "calendly-booking-sync": {
+            "description": "הזמנות חדשות ביומן שלך עם פינג Slack",
+            "title": "סנכרון הזמנות של Calendly"
+          },
+          "email-assistant": {
+            "description": "סיכום תיבת דואר נכנס בבוקר עם הצעות לשלבים הבאים",
+            "title": "עוזר אימייל"
+          },
+          "granola-notes-to-notion": {
+            "description": "הערות פגישה של גרנולה מסונכרנות למסד נתונים של Notion",
+            "title": "הערות גרנולה ל-Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "מעביר הודעות בין Lark ל-Slack בשני הכיוונים",
+            "title": "העברת הודעות Lark ↔ Slack"
+          },
+          "line-message-relay": {
+            "description": "העבר הודעות LINE ל-Slack ולהיפך",
+            "title": "העברת הודעות LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "הערות Fireflies ל-Notion עם מעקבים ב-Slack",
+            "title": "צינור הערות פגישה"
+          },
+          "morning-brief": {
+            "description": "דוא\"ל, יומן והערות הפכו לתוכנית יומית קצרה",
+            "title": "תדריך בוקר"
+          },
+          "perplexity-deep-research": {
+            "description": "סיכומי מחקר מבוססי AI נשמרו ב-Notion",
+            "title": "מחקר מעמיק של Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "בקשות משיכה, דוא\"ל ויומן בעדכון Slack אחד",
+            "title": "תקציר שבועי אישי"
+          },
+          "self-update-instructions": {
+            "description": "עדכן את הוראות הסוכן ישירות בצ'אט",
+            "title": "הוראות עדכון עצמי"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "מפרסם הודעות צוות ל-Slack עבורך",
+            "title": "שלח הודעות בשמך"
+          },
+          "strava-team-fitness-digest": {
+            "description": "סיכום פעילות צוות שבועי פורסם ב-Slack",
+            "title": "תקציר כושר צוות Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "חפש באינטרנט וקמפל ממצאים ב-Notion",
+            "title": "צינור מחקר אינטרנט Tavily"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "הקלטות פגישות מסוכמות ב-Notion עם פריטי פעולה",
+            "title": "סיכום פגישת tl;dv"
+          }
+        },
+        "title": "כולם"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify מגרד אתרים לשורות Google Sheets מובנות",
+            "title": "Apify web scraper ל-Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "רצפי דוא\"ל אוטומטיים מאירועי CRM",
+            "title": "רצף טיפוח אימייל של Brevo"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl צופה באתרי מתחרים ורושם שינויים ב-Notion",
+            "title": "מגרד מודיעין תחרותי"
+          },
+          "competitor-research-to-notion": {
+            "description": "מחקר ב-X נשמר כהערות מובנות ב-Notion",
+            "title": "מחקר מתחרים ל-Notion"
+          },
+          "content-planner": {
+            "description": "סיעור מוחות בנושאים ותכנון לוח שנה עריכתי",
+            "title": "מתכנן תוכן"
+          },
+          "dev-to-auto-publisher": {
+            "description": "מפרסם פוסטים של Notion ל-Dev.to ומקשר אותם ב-X",
+            "title": "מפרסם אוטומטי של Dev.to"
+          },
+          "discord-community-insights": {
+            "description": "משוב Discord ב-Notion עם תקציר Slack שבועי",
+            "title": "תובנות קהילתיות של Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "מעורבות בגיליונות עם סיכומי Slack שבועיים",
+            "title": "מעקב מעורבות Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "טיוטה ושלח הודעות דוא\"ל טרנזקציונליות באמצעות Loops",
+            "title": "קמפיין אימייל של Loops"
+          },
+          "marketing-automation-system": {
+            "description": "שלושה סוכנים למחקר, ניטור שבועי ועבודה אד-הוק",
+            "title": "מערכת אוטומציה שיווקית"
+          },
+          "marketing-content-planning": {
+            "description": "מתכנן סיפורי השקה מ-Slack, ראיונות ומתחרים",
+            "title": "תכנון תוכן שיווקי"
+          },
+          "onboarding-email-use-cases": {
+            "description": "מוצא זוויות קליטה מ-Slack וראיונות",
+            "title": "מקרי שימוש באימייל קליטה"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "עקוב אחר דירוגי מילות מפתח שבועית ותעד בגיליונות",
+            "title": "מעקב מילות מפתח של SerpAPI"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "מדדי תנועה לעומת מתחרים נשמרו ב-Notion",
+            "title": "השוואת תעבורה של SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "הופך יומן גיליונות לפוסטים עבור כל רשת",
+            "title": "לוח שנה של תוכן למדיה חברתית"
+          },
+          "x-brand-monitor": {
+            "description": "אזכורים של מותגים ב-X נשמרו ב-Notion עם התראות צוות",
+            "title": "צג מותג X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "כאשר סרטון YouTube חדש מתפרסם, צור סיכום Notion ושרשור X כדי לקדם אותו",
+            "title": "ממיר מחדש שרשור YouTube ל-X"
+          }
+        },
+        "title": "שיווק"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "צור ונהל תיבות דואר נכנס עם AgentMail API",
+            "title": "תיבת דואר נכנס של AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "משימות ClickUp יומיות שפורסמו כסטנדאפ ב-Slack",
+            "title": "ClickUp ← Slack עמידות"
+          },
+          "google-docs-notion-migrator": {
+            "description": "אצוות Google Docs ל-Notion עם שמירת פריסה",
+            "title": "מעביר מ-Google Docs ל-Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "קבצים חדשים ממוינים לתיקיות באופן אוטומטי",
+            "title": "מארגן קבצים Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "תשובות טופס נוחתות ב-Notion עם התראות Slack",
+            "title": "קליטת Jotform ל-Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "התקדמות לוח שבועית מ-Monday.com ב-Slack",
+            "title": "תקציר שבועי של Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "שדות חוזה ב-Notion עם תזכורות לפני תפוגה",
+            "title": "מעבד חוזים של PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "מדדי מנוי בגיליונות עם התראות נטישה ב-Slack",
+            "title": "תקציר מנוי RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "משימות Todoist משתקפות ב-Notion עבור הצוות",
+            "title": "סנכרון משימות Todoist → Notion"
+          },
+          "wrike-project-reporter": {
+            "description": "סיכומי התקדמות שבועיים של Wrike ב-Slack",
+            "title": "כתב דוחות פרויקטים של Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "רווח ותזרים מזומנים שבועיים מ-Xero ב-Slack",
+            "title": "סיכום פיננסי של Xero"
+          }
+        },
+        "title": "פעולות"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "אבני דרך ומשימות של Asana משתקפות ב-Notion",
+            "title": "סנכרון פרויקטים Asana → Notion"
+          },
+          "feedback-router": {
+            "description": "משוב Slack מנותב לפי הכללים שלך למקום הנכון",
+            "title": "נתב משוב"
+          },
+          "linear-prd-implementer": {
+            "description": "מפרטי Notion הופכים לפרויקטים ובעיות של Linear",
+            "title": "מיישם PRD של Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "תמונות מצב של לוח המחוונים פורסמו אוטומטית ל-Slack",
+            "title": "תקציר לוח מחוונים של Metabase"
+          },
+          "pricing-analysis": {
+            "description": "נתח אסטרטגיות תמחור של מתחרים והשווה למוצרים דומים",
+            "title": "ניתוח מחירים"
+          },
+          "product-copy-naming": {
+            "description": "שמות ידידותיים יותר למונחים טכניים במוצר",
+            "title": "עותק ושמות מוצרים"
+          }
+        },
+        "title": "מוצר"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "עסקאות מסתנכרנות לגיליונות ול-Slack כשהן נסגרות",
+            "title": "מעקב עסקאות Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "לידים חדשים של Bitrix מקבלים משימות מעקב ופינגים של Slack",
+            "title": "טיפוח לידים של Bitrix24"
+          },
+          "hubspot-sales-reporter": {
+            "description": "סיכומי HubSpot שבועיים נשמרו כדוחות מובנים",
+            "title": "כתב מכירות HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "לידים חדשים הופכים למשימות HubSpot עם התראות Slack",
+            "title": "צינור מעקב אחר לידים"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "עדכוני הזדמנויות שבועיים של Salesforce ב-Slack",
+            "title": "תקציר צינור Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "סטטיסטיקות צינור CRM שבועיות מ-Gmail ב-Slack",
+            "title": "דוח צינור Streak"
+          },
+          "win-loss-reporter": {
+            "description": "מגמות ניצחון והפסד מהצינור ב-Slack",
+            "title": "מדווח ניצחונות/הפסדים"
+          }
+        },
+        "title": "מכירות"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "שיחות לקוחות מתועדות ומסווגות ב-Notion",
+            "title": "יומן תמיכה Chatwoot → Notion"
+          },
+          "customer-support-bot": {
+            "description": "תשובות ממאגר הידע ומשימות לפערים",
+            "title": "בוט תמיכת לקוחות"
+          },
+          "intercom-conversation-triager": {
+            "description": "צ'אטים של Intercom הופכים למשימות Notion בעדיפות",
+            "title": "ממיין שיחות Intercom"
+          },
+          "support-ticket-router": {
+            "description": "כרטיסים עוברים ל-Notion והדחופים מפינגים את Slack",
+            "title": "נתב כרטיסי תמיכה"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "חלץ שאלות נפוצות מ-Zendesk והוסף אותן אוטומטית לשאלות נפוצות של Notion",
+            "title": "Zendesk ← בסיס ידע Notion"
+          }
+        },
+        "title": "תמיכה"
+      }
+    },
+    "chat": "צ'אט",
+    "description": "לחץ על כל כרטיס כדי להתחיל שיחה. זה יכול להפוך למשימה לפי דרישה, זרימת עבודה חוזרת, או סוכן משנה.",
+    "search": {
+      "accessibilityLabel": "חפש מקרי שימוש",
+      "empty": "אין מקרי שימוש התואמים לחיפוש שלך.",
+      "placeholder": "חיפוש"
+    },
+    "title": "רעיונות ומקרי שימוש"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "עורך הוראות",
+      "footerHint": "ערוך את ההוראות ישירות כדי להתאים אישית את התנהגות הסוכן שלך.",
+      "placeholder": "כתוב הוראות עבור הסוכן שלך...",
+      "toolbar": {
+        "blockquote": "ציטוט",
+        "bold": "מודגש",
+        "bulletList": "רשימת תבליטים",
+        "heading1": "כותרת 1",
+        "heading2": "כותרת 2",
+        "heading3": "כותרת 3",
+        "inlineCode": "קוד מוטבע",
+        "italic": "נטוי",
+        "orderedList": "רשימה ממוספרת",
+        "strikethrough": "קו חוצה"
+      }
+    },
+    "saved": "הוראות נשמרו"
+  },
+  "list": {
+    "actions": {
+      "new": "סוכן חדש"
+    },
+    "cards": {
+      "coreDescription": "הסוכן הראשי שלך",
+      "createdBy": "נוצר על ידי {{creator}}",
+      "subagentDescription": "תת-סוכן",
+      "unknownCreator": "לא ידוע"
+    },
+    "create": {
+      "accessibilityDescription": "תן שם לסוכן החדש, בחר את נראותו והתאם אישית את האווטאר שלו.",
+      "creating": "יוצר…",
+      "description": "תן שם לסוכן שלך וקבע מי יכול להשתמש בו.",
+      "namePlaceholder": "לדוגמה, עוזר מחקר",
+      "newAgentAlt": "סוכן חדש",
+      "success": "{{agentName}} נוצר בהצלחה",
+      "title": "צור סוכן חדש",
+      "visibility": {
+        "private": {
+          "description": "(רק אתה יכול לראות ולהשתמש בזה)",
+          "label": "פרטי"
+        },
+        "public": {
+          "description": "(כל אחד בסביבת עבודה זו יכול להשתמש בו)",
+          "label": "ציבורי"
+        }
+      },
+      "visibilityLabel": "נראות"
+    },
+    "description": "{{agentName}} וסוכני משנה עובדים יחד כדי להפעיל זרימות עבודה מותאמות אישית עבורך ועבור הצוות שלך.",
+    "documentTitle": "סוכנים",
+    "privateEmpty": {
+      "description": "צור סוכן שרק אתה יכול לראות ולהשתמש בו. סוכנים פרטיים הם בלתי מוגבלים.",
+      "title": "אין סוכנים פרטיים עדיין"
+    },
+    "tabs": {
+      "private": "פרטי",
+      "public": "ציבורי"
+    },
+    "title": "סוכנים"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "צור אווטאר משלך.",
+        "label": "אווטאר"
+      },
+      "description": {
+        "description": "במה סוכן זה עוזר — גלוי לחברי צוות.",
+        "label": "תיאור",
+        "placeholder": "מה עושה הסוכן הזה?"
+      },
+      "name": {
+        "description": "מוצג ברשימת הצוות וכאשר סוכן זה מדבר.",
+        "label": "שם",
+        "placeholder": "איך נקרא להם?"
+      },
+      "tone": {
+        "accessibilityLabel": "איך {{agentName}} נשמע",
+        "description": "סגנון קולי לתשובות. הצג תצוגה מקדימה של עדכונים כאשר אתה משנה טון.",
+        "groupLabel": "טון",
+        "label": "איך הם נשמעים"
+      },
+      "visibility": {
+        "defaultDescription": "סוכן ברירת המחדל של סביבת העבודה חייב להישאר ציבורי עבור כל חברי סביבת העבודה.",
+        "description": "גלוי לכולם בסביבת עבודה זו.",
+        "label": "הפוך לציבורי"
+      }
+    },
+    "makePrivate": {
+      "confirm": "הפוך לפרטי",
+      "description": "כל עוד סוכן זה פרטי, חברים אחרים מאבדים גישה להיסטוריית הצ'אט שלהם תחתיו. הם מקבלים גישה מחדש אם תהפוך אותו לציבורי שוב.",
+      "title": "הפוך את {{agentName}} לפרטי?",
+      "warningDescription": "חברים אחרים לא יראו עוד את {{agentName}} או את הצ'אטים שלהם תחתיו.",
+      "warningTitle": "חברים מאבדים גישה"
+    },
+    "saved": "פרופיל נשמר",
+    "tones": {
+      "direct": {
+        "agentSample": "יום שישי. אשלח טיוטה ביום חמישי.",
+        "hint": "לעיניין",
+        "label": "ישיר",
+        "userSample": "אני צריך את דוח הרבעון השלישי עד יום שישי."
+      },
+      "friendly": {
+        "agentSample": "בטח! אשלח לך את דוח הרבעון השלישי עד יום שישי – אשלח טיוטה ביום חמישי כדי שתוכל להעיף מבט.",
+        "hint": "חם ונגיש",
+        "label": "ידידותי",
+        "userSample": "אני צריך את דוח הרבעון השלישי עד יום שישי."
+      },
+      "professional": {
+        "agentSample": "דוח הרבעון השלישי יהיה מוכן עד יום שישי. אשלח טיוטה עד יום חמישי לבדיקתך.",
+        "hint": "ברור ומלוטש",
+        "label": "מקצועי",
+        "userSample": "אני צריך את דוח הרבעון השלישי עד יום שישי."
+      },
+      "supportive": {
+        "agentSample": "אני אדאג שיהיה לך את דוח הרבעון השלישי עד יום שישי. אשלח טיוטה ביום חמישי כדי שיהיה לך זמן לעיין – תודיע לי אם תרצה משהו נוסף.",
+        "hint": "בפינה שלך",
+        "label": "תומך",
+        "userSample": "אני צריך את דוח הרבעון השלישי עד יום שישי."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "הצמד",
+    "clearSearch": "נקה חיפוש",
+    "escapeShortcut": "אסק",
+    "filterAll": "הכל",
+    "markAllRead": "סמן הכל כנקרא",
+    "more": "עוד",
+    "noAgentsToPin": "עדיין אין לך סוכנים אחרים.",
+    "noResults": "לא נמצאו תוצאות",
+    "openMenu": "פתח תפריט סוכן",
+    "pin": "הצמד לסרגל הצד",
+    "pinAgent": "הצמד סוכן",
+    "pinAgentDescription": "בחר סוכן להצמיד לסרגל הצד.",
+    "pinned": "מוצמד",
+    "pinnedAgents": "סוכנים מוצמדים",
+    "pinSuccess": "{{agentName}} הוצמד",
+    "resultCount_one": "{{count}} תוצאה",
+    "resultCount_two": "{{count}} תוצאות",
+    "resultCount_other": "{{count}} תוצאות",
+    "searchAgents": "חפש סוכנים...",
+    "searching": "מחפש...",
+    "searchWorkspace": "חפש סביבת עבודה...",
+    "sections": {
+      "agents": "סוכנים",
+      "artifacts": "חפצים",
+      "chats": "צ'אטים",
+      "messages": "הודעות",
+      "others": "אחרים",
+      "workflows": "תהליכי עבודה"
+    },
+    "unpin": "בטל הצמדה",
+    "unpinSuccess": "{{agentName}} לא מוצמד"
+  },
+  "status": {
+    "unread": "לא נקרא"
+  },
+  "unsaved": {
+    "message": "יש לך שינויים שלא נשמרו"
+  }
+}

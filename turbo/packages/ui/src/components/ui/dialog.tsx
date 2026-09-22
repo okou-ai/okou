@@ -203,7 +203,7 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
                   data-slot="dialog-close"
                   render={
                     <IconButton
-                      className="absolute top-4 right-4 opacity-70 hover:opacity-100"
+                      className="absolute top-4 end-4 opacity-70 hover:opacity-100"
                       aria-label={closeLabel}
                     />
                   }
@@ -249,7 +249,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="dialog-header"
       className={cn(
-        "flex flex-col space-y-1.5 text-center sm:text-left",
+        "flex flex-col space-y-1.5 text-center sm:text-start",
         className,
       )}
       {...props}

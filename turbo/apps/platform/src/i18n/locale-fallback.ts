@@ -53,6 +53,12 @@ function chineseLocaleForSubtags(subtags: readonly string[]): SupportedLocale {
 function localeForBrowserLanguage(language: string): SupportedLocale | null {
   const subtags = language.trim().toLowerCase().split("-");
   const primaryLanguage = subtags[0];
+  if (primaryLanguage === "no") {
+    return "nb-NO";
+  }
+  if (primaryLanguage === "iw") {
+    return "he-IL";
+  }
   if (primaryLanguage === "zh") {
     return chineseLocaleForSubtags(subtags.slice(1));
   }

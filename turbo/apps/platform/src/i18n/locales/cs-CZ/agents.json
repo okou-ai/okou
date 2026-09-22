@@ -1,0 +1,641 @@
+{
+  "actions": {
+    "cancel": "Zrušit",
+    "close": "Zavřít",
+    "copying": "Kopírování…",
+    "create": "Vytvořit",
+    "delete": "Smazat agenta",
+    "deleting": "Mažu…",
+    "discard": "Zahodit",
+    "retry": "Zkusit znovu",
+    "save": "Uložit",
+    "saving": "Ukládám…"
+  },
+  "authorization": {
+    "closeSearch": "Zavřít hledání",
+    "connectorsLink": "Konektory",
+    "connectorsSaved": "Konektory uloženy",
+    "customConnectors": {
+      "description": "Vlastní konektory registrované vaší organizací.",
+      "saved": "Vlastní konektory uloženy"
+    },
+    "description": "Při spuštění může agent bezpečně používat vaše připojené služby. Přístup můžete kdykoli spravovat nebo vypnout.",
+    "findConnectors": "Najít konektory",
+    "noConnectorsAfterLink": " stránku pro připojení vaší první služby.",
+    "noConnectorsAlt": "Žádné konektory",
+    "noConnectorsBeforeLink": "Zatím nejsou připojeny žádné služby. Přejděte na ",
+    "noResults": "Žádné výsledky pro „{{search}}“",
+    "permissionLoadError": "Nepodařilo se načíst udělená oprávnění",
+    "permissionsUpdated": "Oprávnění aktualizována",
+    "searchPlaceholder": "Najít konektory..."
+  },
+  "avatar": {
+    "accessibilityDescription": "Přizpůsobte styl avatara agenta, barvu a detaily obličeje.",
+    "actions": {
+      "customize": "Přizpůsobit avatara"
+    },
+    "create": "Vytvořit vlastní avatar",
+    "description": "Vyberte styl nebo zamíchejte pro překvapení.",
+    "editDescription": "Upravte libovolnou část nebo zamíchejte pro nový vzhled.",
+    "editTitle": "Upravit avatara",
+    "nextStep": "Další krok",
+    "previousStep": "Předchozí krok",
+    "randomize": "Náhodný avatar",
+    "shuffleHint": "Zamíchat — vyzkoušejte náhodný vzhled!",
+    "steps": {
+      "color": "Color",
+      "face": "Tvář",
+      "hair": "Vlasy",
+      "mood": "Nálada",
+      "skin": "Kůže",
+      "sweater": "Svetr"
+    },
+    "title": "Dejte svému agentovi tvář",
+    "use": "Použít tohoto avatara"
+  },
+  "delete": {
+    "dangerZone": "Nebezpečná zóna",
+    "dangerZoneDescription": "Trvale odeberte tohoto agenta a všechna jeho data. Tuto akci nelze vrátit zpět.",
+    "description": "Odstraní agenta, jeho pracovní postupy, automatizace a historii chatu všech.",
+    "irreversible": "Toto nelze vrátit zpět.",
+    "success": "Agent smazán",
+    "title": "Smazat {{agentName}}?",
+    "workflows": {
+      "copiedTitle": "Již zkopírováno",
+      "copiedTo": "{{workflowTitle}} zkopírováno do {{agentName}}",
+      "copyTo": "Kopírovat do {{agentName}}",
+      "deleteWithAgent": "Smazat s agentem",
+      "description": "Zkopírujte pracovní postup jinému agentovi, abyste jej zachovali. Vše ostatní bude smazáno.",
+      "handle": "Zpracovat pracovní postup {{workflowTitle}}",
+      "loadFailed": "Nepodařilo se načíst pracovní postupy. Zkuste to znovu před smazáním tohoto agenta.",
+      "loading": "Načítání pracovních postupů…",
+      "title": "Ponechat nějaké pracovní postupy?",
+      "untitled": "Pracovní postup"
+    }
+  },
+  "detail": {
+    "chatWith": "Chatujte s {{agentName}}",
+    "defaultDescription": "Váš AI spoluhráč, vyladěný pro vás",
+    "notFound": {
+      "back": "Zpět do týmu",
+      "description": "Agent „{{agentId}}“ neexistuje nebo k němu nemáte přístup.",
+      "title": "Agent nenalezen"
+    },
+    "tabs": {
+      "authorization": "Autorizace",
+      "instructions": "Instrukce",
+      "profile": "Profil"
+    },
+    "viewProfile": "Zobrazit profil agenta"
+  },
+  "errors": {
+    "unknown": "Neznámá chyba"
+  },
+  "fallbackName": "Agent",
+  "ideation": {
+    "all": "Vše",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimalizujte a transformujte obrázky hromadně",
+            "title": "Optimalizátor médií Cloudinary"
+          },
+          "elevenlabs-audio-content": {
+            "description": "Hlasový komentář z článků Notion uložený na Disku",
+            "title": "Audio obsah ElevenLabs"
+          },
+          "fal-ai-image-generation": {
+            "description": "Generujte obrázky produktů z popisů v Notion",
+            "title": "Generování obrázků Fal AI"
+          },
+          "heygen-video-from-script": {
+            "description": "Skript Notion se stane videem HeyGen s týmovým upozorněním",
+            "title": "Video HeyGen ze skriptu"
+          },
+          "runway-video-from-brief": {
+            "description": "Generujte krátká videa z kreativního briefu",
+            "title": "Video z Runway z briefu"
+          }
+        },
+        "title": "Kreativní"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Vložte seznam a {{assistantName}} vám otevře problémy",
+            "title": "Hromadné vytváření problémů"
+          },
+          "browserbase-web-testing": {
+            "description": "Automatizované testy prohlížeče pro vaši webovou aplikaci",
+            "title": "Webové testování Browserbase"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Týdenní rekapitulace provozu a bezpečnostních událostí Slack",
+            "title": "Zpráva o provozu a zabezpečení Cloudflare"
+          },
+          "codebase-investigation": {
+            "description": "Dejte URL a {{assistantName}} sleduje chybu v repozitáři",
+            "title": "Vyšetřování kódu"
+          },
+          "daily-standup-report": {
+            "description": "Ranní metriky se stávají prezentací zveřejněnou v Slack",
+            "title": "Denní zpráva o stavu"
+          },
+          "deep-research-code-analysis": {
+            "description": "Vysvětluje, jak funguje subsystém ve vaší kódové základně",
+            "title": "Hloubková analýza kódu"
+          },
+          "github-pr-summarizer": {
+            "description": "Sloučené souhrny žádostí o stažení v Notion s volitelnými příspěvky Slack",
+            "title": "Sumarizátor PR GitHub"
+          },
+          "github-progress-weekly": {
+            "description": "Týdenní aktivita repozitáře shrnutá podle funkce",
+            "title": "Týdenní pokrok GitHub"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Zrcadlí problémy a žádosti o sloučení GitLab do GitHub",
+            "title": "Pomocník pro migraci GitLab na GitHub"
+          },
+          "jira-github-issue-sync": {
+            "description": "Udržuje lístky Jira a problémy GitHub synchronizované",
+            "title": "Jira ↔ synchronizace problémů GitHub"
+          },
+          "make-scenario-builder": {
+            "description": "Navrhněte vícestupňové scénáře Make z popisu",
+            "title": "Vytvořit tvůrce scénářů"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Týdenní bezpečnostní a závislostní upozornění z GitHub",
+            "title": "Souhrn upozornění na zabezpečení a závislosti"
+          },
+          "sentry-issue-digest": {
+            "description": "Ranní souhrn problémů seskupených podle závažnosti",
+            "title": "Souhrn problému Sentry"
+          },
+          "vercel-deploy-digest": {
+            "description": "Propojuje každé nasazení s jeho commitem a upozorní Slack, když nasazení selže",
+            "title": "Souhrn nasazení Vercel"
+          },
+          "zapier-okou-migration": {
+            "description": "Znovu vytvořte své pracovní postupy Zapier jako agenty {{brandName}}",
+            "title": "Migrace Zapier → {{brandName}}"
+          }
+        },
+        "title": "Inženýrství"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Otevře stránku v prohlížeči a vrátí snímek obrazovky",
+            "title": "Snímky obrazovky prohlížeče"
+          },
+          "calendar-optimizer": {
+            "description": "Pomáhá s konflikty, přetížením a časem na soustředění",
+            "title": "Optimalizátor kalendáře"
+          },
+          "calendly-booking-sync": {
+            "description": "Nové rezervace ve vašem kalendáři s pingem Slack",
+            "title": "Synchronizace rezervací Calendly"
+          },
+          "email-assistant": {
+            "description": "Ranní souhrn doručené pošty s navrhovanými dalšími kroky",
+            "title": "E-mailový asistent"
+          },
+          "granola-notes-to-notion": {
+            "description": "Poznámky ze schůzky Granola synchronizované s databází Notion",
+            "title": "Poznámky Granola pro Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Přeposílá zprávy mezi Lark a Slack oběma směry",
+            "title": "Lark ↔ Slack předávání zpráv"
+          },
+          "line-message-relay": {
+            "description": "Přeposílejte zprávy LINE do Slack a naopak",
+            "title": "Přenos zpráv LINE"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Poznámky Fireflies do Notion s následnými kroky v Slack",
+            "title": "Pipeline poznámek ze schůzky"
+          },
+          "morning-brief": {
+            "description": "E-mail, kalendář a poznámky převedené na krátký denní plán",
+            "title": "Ranní přehled"
+          },
+          "perplexity-deep-research": {
+            "description": "Souhrny výzkumu poháněné AI uložené do Notion",
+            "title": "Hloubkový výzkum Perplexity"
+          },
+          "personal-weekly-digest": {
+            "description": "Žádosti o stažení, e-mail a kalendář v jedné aktualizaci Slack",
+            "title": "Osobní týdenní souhrn"
+          },
+          "self-update-instructions": {
+            "description": "Aktualizujte pokyny agenta přímo v chatu",
+            "title": "Pokyny pro samoaktualizaci"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Zveřejňuje týmová oznámení na Slack za vás",
+            "title": "Odesílat zprávy vaším jménem"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Týdenní souhrn týmové aktivity zveřejněný na Slack",
+            "title": "Přehled týmové kondice Strava"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Prohledejte web a sestavte zjištění v Notion",
+            "title": "Tavily webová výzkumná pipeline"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Záznamy ze schůzek shrnuté v Notion s akčními položkami",
+            "title": "Shrnutí schůzky tl;dv"
+          }
+        },
+        "title": "Všichni"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify stahuje weby do strukturovaných řádků Google Sheets",
+            "title": "Webový scraper Apify do Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Automatizované e-mailové sekvence z událostí CRM",
+            "title": "Brevo e-mailová sekvence pro pěstování vztahů"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl sleduje konkurenční weby a zaznamenává změny v Notion",
+            "title": "Škrabka konkurenčních informací"
+          },
+          "competitor-research-to-notion": {
+            "description": "Výzkum na X uložený jako strukturované poznámky v Notion",
+            "title": "Výzkum konkurence do Notion"
+          },
+          "content-planner": {
+            "description": "Brainstorming témat a nastínění redakčního kalendáře",
+            "title": "Plánovač obsahu"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Publikuje příspěvky Notion na Dev.to a odkazuje na ně na X",
+            "title": "Dev.to auto-publisher"
+          },
+          "discord-community-insights": {
+            "description": "Zpětná vazba Discord v Notion s týdenním přehledem Slack",
+            "title": "Statistiky komunity Discord"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Zapojení v Tabulkách s týdenními souhrny Slack",
+            "title": "Sledovač zapojení Instagram"
+          },
+          "loops-email-campaign": {
+            "description": "Navrhněte a odešlete transakční e-maily přes Loops",
+            "title": "E-mailová kampaň Loops"
+          },
+          "marketing-automation-system": {
+            "description": "Tři agenti pro výzkum, týdenní monitorování a ad hoc práci",
+            "title": "Systém marketingové automatizace"
+          },
+          "marketing-content-planning": {
+            "description": "Plány spouštějí příběhy z Slack, rozhovory a konkurenty",
+            "title": "Plánování marketingového obsahu"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Najde úhly onboardingu z Slack a rozhovorů",
+            "title": "Případy použití e-mailu pro onboarding"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Sledujte týdenní hodnocení klíčových slov a zaznamenávejte do Tabulek",
+            "title": "SerpAPI sledovač klíčových slov"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Srovnávací ukazatele provozu oproti konkurentům uložené v Notion",
+            "title": "Porovnání návštěvnosti SimilarWeb"
+          },
+          "social-media-content-calendar": {
+            "description": "Přemění kalendář Tabulek na příspěvky pro každou síť",
+            "title": "Kalendář obsahu sociálních médií"
+          },
+          "x-brand-monitor": {
+            "description": "Zmínky o značce na X uložené v Notion s týmovými upozorněními",
+            "title": "Monitor značky X"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Když je publikováno nové video YouTube, vygenerujte souhrn Notion a vlákno X pro jeho propagaci.",
+            "title": "Přepracovač vláken YouTube na X"
+          }
+        },
+        "title": "Marketing"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Vytvářejte a spravujte doručené pošty pomocí AgentMail API",
+            "title": "Schránka AgentMail"
+          },
+          "clickup-slack-standups": {
+            "description": "Denní úkoly ClickUp zveřejněné jako standup v Slack",
+            "title": "ClickUp → Slack standupy"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Dávky Google Docs do Notion se zachováním rozložení",
+            "title": "Migrátor Google Docs → Notion"
+          },
+          "google-drive-file-organizer": {
+            "description": "Nové soubory automaticky seřazené do složek",
+            "title": "Organizátor souborů Google Drive"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Odpovědi z formuláře přistanou v Notion s upozorněními Slack",
+            "title": "Příjem Jotform do Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Týdenní pokrok na nástěnce z Monday.com v Slack",
+            "title": "Týdenní souhrn Monday.com"
+          },
+          "pdf-contract-processor": {
+            "description": "Pole smlouvy v Notion s připomenutím před vypršením platnosti",
+            "title": "Zpracovatel smluv PDF"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Metriky předplatného v tabulkách s upozorněními na odliv v Slack",
+            "title": "Souhrn předplatného RevenueCat"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Úkoly Todoist zrcadlené v Notion pro tým",
+            "title": "Todoist → Notion synchronizace úkolů"
+          },
+          "wrike-project-reporter": {
+            "description": "Týdenní souhrny pokroku Wrike v Slack",
+            "title": "Reportér projektu Wrike"
+          },
+          "xero-financial-summary": {
+            "description": "Týdenní zisk a peněžní tok z Xero v Slack",
+            "title": "Finanční souhrn Xero"
+          }
+        },
+        "title": "Operace"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Milníky a úkoly Asana zrcadlené v Notion",
+            "title": "Asana → Notion synchronizace projektu"
+          },
+          "feedback-router": {
+            "description": "Zpětná vazba Slack směrovaná vašimi pravidly na správné místo",
+            "title": "Směrovač zpětné vazby"
+          },
+          "linear-prd-implementer": {
+            "description": "Specifikace Notion se stávají projekty a problémy Linear",
+            "title": "Implementátor PRD Linear"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Snímky řídicího panelu automaticky zveřejněné v Slack",
+            "title": "Souhrn dashboardu Metabase"
+          },
+          "pricing-analysis": {
+            "description": "Analyzujte cenové strategie konkurence a porovnejte je s podobnými produkty",
+            "title": "Analýza cen"
+          },
+          "product-copy-naming": {
+            "description": "Přátelštější názvy pro technické termíny v produktu",
+            "title": "Kopie a pojmenování produktu"
+          }
+        },
+        "title": "Produkt"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Obchody se synchronizují do Tabulek a Slack, když se uzavřou",
+            "title": "Sledovač obchodů Airtable"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Nové potenciální zákazníky Bitrix získají následné úkoly a pingy Slack",
+            "title": "Bitrix24 péče o potenciální zákazníky"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Týdenní souhrny HubSpot uložené jako strukturované zprávy",
+            "title": "Reportér prodeje HubSpot"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Nové potenciální zákazníky se stávají úkoly HubSpot s upozorněními Slack",
+            "title": "Pipeline pro sledování potenciálních zákazníků"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Týdenní aktualizace příležitostí Salesforce v Slack",
+            "title": "Přehled pipeline Salesforce"
+          },
+          "streak-pipeline-report": {
+            "description": "Týdenní statistiky CRM pipeline z Gmail v Slack",
+            "title": "Zpráva o pipeline Streak"
+          },
+          "win-loss-reporter": {
+            "description": "Trendy výher a proher z pipeline v Slack",
+            "title": "Reportér výher/proher"
+          }
+        },
+        "title": "Prodej"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Zákaznické konverzace zaznamenané a kategorizované v Notion",
+            "title": "Chatwoot → Notion protokol podpory"
+          },
+          "customer-support-bot": {
+            "description": "Odpovědi z báze znalostí a úkoly pro mezery",
+            "title": "Bot zákaznické podpory"
+          },
+          "intercom-conversation-triager": {
+            "description": "Chaty Intercom se stávají prioritními úkoly Notion",
+            "title": "Třídič konverzací Intercom"
+          },
+          "support-ticket-router": {
+            "description": "Lístky jdou do Notion a naléhavé pingují Slack",
+            "title": "Směrovač lístků podpory"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "Extrahujte často kladené otázky ze Zendesk a automaticky je přidejte do FAQ Notion",
+            "title": "Zendesk → znalostní báze Notion"
+          }
+        },
+        "title": "Podpora"
+      }
+    },
+    "chat": "Chat",
+    "description": "Kliknutím na libovolnou kartu zahájíte konverzaci. Může se stát úkolem na vyžádání, opakujícím se pracovním postupem nebo subagentem.",
+    "search": {
+      "accessibilityLabel": "Hledat případy použití",
+      "empty": "Žádné případy použití neodpovídají vašemu hledání.",
+      "placeholder": "Hledat"
+    },
+    "title": "Nápady a případy použití"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "Editor pokynů",
+      "footerHint": "Upravte pokyny přímo, abyste přizpůsobili chování svého agenta.",
+      "placeholder": "Napište instrukce pro svého agenta...",
+      "toolbar": {
+        "blockquote": "Bloková citace",
+        "bold": "Tučné",
+        "bulletList": "Seznam s odrážkami",
+        "heading1": "Nadpis 1",
+        "heading2": "Nadpis 2",
+        "heading3": "Nadpis 3",
+        "inlineCode": "Vložený kód",
+        "italic": "Kurzíva",
+        "orderedList": "Seřazený seznam",
+        "strikethrough": "Přeškrtnutí"
+      }
+    },
+    "saved": "Pokyny uloženy"
+  },
+  "list": {
+    "actions": {
+      "new": "Nový agent"
+    },
+    "cards": {
+      "coreDescription": "Váš hlavní agent",
+      "createdBy": "Vytvořeno {{creator}}",
+      "subagentDescription": "Podagent",
+      "unknownCreator": "Neznámý"
+    },
+    "create": {
+      "accessibilityDescription": "Pojmenujte nového agenta, zvolte jeho viditelnost a přizpůsobte jeho avatara.",
+      "creating": "Vytvářím…",
+      "description": "Pojmenujte svého agenta a nastavte, kdo ho může používat.",
+      "namePlaceholder": "např. Asistent výzkumu",
+      "newAgentAlt": "Nový agent",
+      "success": "{{agentName}} úspěšně vytvořeno",
+      "title": "Vytvořit nového agenta",
+      "visibility": {
+        "private": {
+          "description": "(pouze vy to můžete vidět a používat)",
+          "label": "Soukromé"
+        },
+        "public": {
+          "description": "(kdokoli v tomto pracovním prostoru jej může použít)",
+          "label": "Veřejné"
+        }
+      },
+      "visibilityLabel": "Viditelnost"
+    },
+    "description": "{{agentName}} a subagenti spolupracují na spouštění přizpůsobených pracovních postupů pro vás a váš tým.",
+    "documentTitle": "Agenti",
+    "privateEmpty": {
+      "description": "Vytvořte agenta, kterého uvidíte a budete používat pouze vy. Soukromí agenti jsou neomezení.",
+      "title": "Zatím žádní soukromí agenti"
+    },
+    "tabs": {
+      "private": "Soukromé",
+      "public": "Veřejné"
+    },
+    "title": "Agenti"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "Vytvořte si vlastního avatara.",
+        "label": "Avatar"
+      },
+      "description": {
+        "description": "S čím tento agent pomáhá – viditelné pro spoluhráče.",
+        "label": "Popis",
+        "placeholder": "Co dělá tento agent?"
+      },
+      "name": {
+        "description": "Zobrazeno v seznamu týmu a když tento agent mluví.",
+        "label": "Jméno",
+        "placeholder": "Jak jim budeme říkat?"
+      },
+      "tone": {
+        "accessibilityLabel": "Jak zní {{agentName}}",
+        "description": "Hlasový styl pro odpovědi. Náhled aktualizací při změně tónu.",
+        "groupLabel": "Tón",
+        "label": "Jak zní"
+      },
+      "visibility": {
+        "defaultDescription": "Výchozí agent pracovního prostoru musí zůstat veřejný pro všechny členy pracovního prostoru.",
+        "description": "Viditelné pro všechny v tomto pracovním prostoru.",
+        "label": "Zveřejnit"
+      }
+    },
+    "makePrivate": {
+      "confirm": "Nastavit jako soukromé",
+      "description": "Dokud je tento agent soukromý, ostatní členové ztratí přístup ke své historii chatu pod ním. Znovu získají přístup, pokud ho znovu zveřejníte.",
+      "title": "Zpřístupnit {{agentName}} soukromým?",
+      "warningDescription": "Ostatní členové již neuvidí {{agentName}} ani jejich chaty pod ním.",
+      "warningTitle": "Členové ztrácejí přístup"
+    },
+    "saved": "Profil uložen",
+    "tones": {
+      "direct": {
+        "agentSample": "Pátek. Návrh pošlu ve čtvrtek.",
+        "hint": "K věci",
+        "label": "Přímé",
+        "userSample": "Zprávu za 3. čtvrtletí potřebuji do pátku."
+      },
+      "friendly": {
+        "agentSample": "Jasně! Zprávu za 3. čtvrtletí vám pošlu do pátku – návrh pošlu ve čtvrtek, abyste se na něj mohli podívat.",
+        "hint": "Teplé a přístupné",
+        "label": "Přátelský",
+        "userSample": "Zprávu za 3. čtvrtletí potřebuji do pátku."
+      },
+      "professional": {
+        "agentSample": "Zprávu za Q3 budu mít hotovou do pátku. Návrh pošlu do čtvrtka k vaší recenzi.",
+        "hint": "Jasné a uhlazené",
+        "label": "Profesionální",
+        "userSample": "Zprávu za 3. čtvrtletí potřebuji do pátku."
+      },
+      "supportive": {
+        "agentSample": "Zajistím, abyste měli zprávu za 3. čtvrtletí do pátku. Návrh pošlu ve čtvrtek, abyste měli čas na kontrolu – dejte mi vědět, pokud byste chtěli něco jiného.",
+        "hint": "Ve vašem rohu",
+        "label": "Podpůrné",
+        "userSample": "Zprávu za 3. čtvrtletí potřebuji do pátku."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "Připnout",
+    "clearSearch": "Vymazat hledání",
+    "escapeShortcut": "Esc",
+    "filterAll": "Vše",
+    "markAllRead": "Označit vše jako přečtené",
+    "more": "Více",
+    "noAgentsToPin": "Zatím nemáte žádné další agenty.",
+    "noResults": "Žádné výsledky nenalezeny",
+    "openMenu": "Otevřít nabídku agenta",
+    "pin": "Připnout na postranní panel",
+    "pinAgent": "Připnout agenta",
+    "pinAgentDescription": "Vyberte agenta, kterého chcete připnout na postranní panel.",
+    "pinned": "Připnuto",
+    "pinnedAgents": "Připnutí agenti",
+    "pinSuccess": "{{agentName}} připnuto",
+    "resultCount_one": "{{count}} výsledek",
+    "resultCount_few": "{{count}} výsledky",
+    "resultCount_many": "{{count}} výsledku",
+    "resultCount_other": "{{count}} výsledků",
+    "searchAgents": "Hledat agenty...",
+    "searching": "Hledám...",
+    "searchWorkspace": "Hledat pracovní prostor...",
+    "sections": {
+      "agents": "Agenti",
+      "artifacts": "Artefakty",
+      "chats": "Chaty",
+      "messages": "Zprávy",
+      "others": "Ostatní",
+      "workflows": "Pracovní postupy"
+    },
+    "unpin": "Odepnout",
+    "unpinSuccess": "{{agentName}} odepnuto"
+  },
+  "status": {
+    "unread": "Nepřečteno"
+  },
+  "unsaved": {
+    "message": "Máte neuložené změny"
+  }
+}

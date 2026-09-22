@@ -47,6 +47,17 @@ export const SUPPORTED_USER_LOCALES = [
   // not resolve to the Simplified bundle.
   "zh-Hans",
   "zh-Hant",
+  "tr-TR",
+  "vi-VN",
+  "th-TH",
+  "nl-NL",
+  "sv-SE",
+  "da-DK",
+  "nb-NO",
+  "fi-FI",
+  "he-IL",
+  "pl-PL",
+  "cs-CZ",
 ] as const;
 export const userLocaleSchema = z.enum(SUPPORTED_USER_LOCALES);
 export type UserLocale = z.infer<typeof userLocaleSchema>;
@@ -112,11 +123,16 @@ export type UpdateUserPreferencesRequest = z.infer<
  * GET: Get current user's preferences
  * POST: Update user preferences
  */
+const userPreferencesQuerySchema = z
+  .object({ supportedLocales: z.string().max(512).optional() })
+  .optional();
+
 export const userPreferencesContract = c.router({
   initialize: {
     method: "POST",
     path: "/api/user-preferences/initialize",
     headers: authHeadersSchema,
+    query: userPreferencesQuerySchema,
     body: z.object({ timezone: z.string().min(1).optional() }),
     responses: {
       200: userPreferencesResponseSchema,
@@ -131,8 +147,10 @@ export const userPreferencesContract = c.router({
     method: "GET",
     path: "/api/user-preferences",
     headers: authHeadersSchema,
+    query: userPreferencesQuerySchema,
     responses: {
       200: userPreferencesResponseSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
@@ -142,6 +160,7 @@ export const userPreferencesContract = c.router({
     method: "POST",
     path: "/api/user-preferences",
     headers: authHeadersSchema,
+    query: userPreferencesQuerySchema,
     body: updateUserPreferencesRequestSchema,
     responses: {
       200: userPreferencesResponseSchema,

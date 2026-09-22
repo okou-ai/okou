@@ -1,5 +1,6 @@
 import {
   type UserPreferencesResponse,
+  SUPPORTED_USER_LOCALES,
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { mockApi } from "../msw-contract.ts";
@@ -7,20 +8,7 @@ import { mockApi } from "../msw-contract.ts";
 let mockPreferences: UserPreferencesResponse = {
   timezone: null,
   locale: null,
-  supportedLocales: [
-    "en-US",
-    "pt-BR",
-    "ja-JP",
-    "ko-KR",
-    "id-ID",
-    "de-DE",
-    "es-ES",
-    "it-IT",
-    "fr-FR",
-    "hi-IN",
-    "zh-Hans",
-    "zh-Hant",
-  ],
+  supportedLocales: [...SUPPORTED_USER_LOCALES],
   pinnedAgentIds: [],
   sendMode: "enter",
   cloudBrowserEnabledByDefault: true,
@@ -38,20 +26,7 @@ export function resetMockUserPreferences(): void {
   mockPreferences = {
     timezone: null,
     locale: null,
-    supportedLocales: [
-      "en-US",
-      "pt-BR",
-      "ja-JP",
-      "ko-KR",
-      "id-ID",
-      "de-DE",
-      "es-ES",
-      "it-IT",
-      "fr-FR",
-      "hi-IN",
-      "zh-Hans",
-      "zh-Hant",
-    ],
+    supportedLocales: [...SUPPORTED_USER_LOCALES],
     pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,

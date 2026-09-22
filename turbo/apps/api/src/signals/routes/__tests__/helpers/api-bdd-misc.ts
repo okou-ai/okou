@@ -267,12 +267,26 @@ export function createMiscRoutesApi(context: TestContext) {
       );
     },
 
-    async readPreferences(actor: ApiTestUser) {
+    async readPreferences(actor: ApiTestUser, supportedLocales?: string) {
       return await accept(
         setupApp({ context, routes: userPreferencesRoutes })(
           userPreferencesContract,
         ).get({
           headers: authenticate(context, actor),
+          query: { supportedLocales },
+        }),
+        [200],
+      );
+    },
+
+    async initializePreferences(actor: ApiTestUser, supportedLocales?: string) {
+      return await accept(
+        setupApp({ context, routes: userPreferencesRoutes })(
+          userPreferencesContract,
+        ).initialize({
+          headers: authenticate(context, actor),
+          query: { supportedLocales },
+          body: {},
         }),
         [200],
       );
@@ -282,12 +296,14 @@ export function createMiscRoutesApi(context: TestContext) {
       actor: ApiTestUser,
       body: UpdateUserPreferencesInput,
       statuses: readonly TStatus[],
+      supportedLocales?: string,
     ) {
       return await accept(
         setupApp({ context, routes: userPreferencesRoutes })(
           userPreferencesContract,
         ).update({
           headers: authenticate(context, actor),
+          query: { supportedLocales },
           body,
         }),
         statuses,

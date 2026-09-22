@@ -243,6 +243,7 @@ export function TiptapInstructionsEditor({
     editable: !disabled,
     editorProps: {
       attributes: {
+        dir: "auto",
         class: editorClassName,
         "aria-label": resolvedAriaLabel,
         "data-placeholder": resolvedPlaceholder,

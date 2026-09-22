@@ -16,6 +16,18 @@ import pt from "./welcome-thread-content/pt-BR.json";
 import zhHans from "./welcome-thread-content/zh-Hans.json";
 import zhHant from "./welcome-thread-content/zh-Hant.json";
 
+import trTR from "./welcome-thread-content/tr-TR.json";
+import viVN from "./welcome-thread-content/vi-VN.json";
+import thTH from "./welcome-thread-content/th-TH.json";
+import nlNL from "./welcome-thread-content/nl-NL.json";
+import svSE from "./welcome-thread-content/sv-SE.json";
+import daDK from "./welcome-thread-content/da-DK.json";
+import nbNO from "./welcome-thread-content/nb-NO.json";
+import fiFI from "./welcome-thread-content/fi-FI.json";
+import heIL from "./welcome-thread-content/he-IL.json";
+import plPL from "./welcome-thread-content/pl-PL.json";
+import csCZ from "./welcome-thread-content/cs-CZ.json";
+
 interface WelcomeContent {
   readonly title: string;
   readonly content: string;
@@ -41,6 +53,17 @@ const WELCOME_THREAD_TEMPLATE = Object.freeze({
     "hi-IN": hi,
     "zh-Hans": zhHans,
     "zh-Hant": zhHant,
+    "tr-TR": trTR,
+    "vi-VN": viVN,
+    "th-TH": thTH,
+    "nl-NL": nlNL,
+    "sv-SE": svSE,
+    "da-DK": daDK,
+    "nb-NO": nbNO,
+    "fi-FI": fiFI,
+    "he-IL": heIL,
+    "pl-PL": plPL,
+    "cs-CZ": csCZ,
   } satisfies Record<UserLocale, WelcomeContent>,
 });
 

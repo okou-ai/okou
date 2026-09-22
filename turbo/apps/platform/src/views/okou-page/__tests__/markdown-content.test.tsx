@@ -222,6 +222,41 @@ test("Fenced code stays readable for known and unknown languages", async () => {
   expect(unknownCode).toBeVisible();
 });
 
+test("Hebrew chat keeps mixed prose automatic and code left to right", async () => {
+  context.mocks.browser.languages(["he-IL"]);
+  context.mocks.data.userPreferences({ locale: "he-IL" });
+  const chat = createMarkdownChatFixture(context);
+  const rows = completedMessageRows(
+    chat,
+    [
+      "שלום לצוות Okou",
+      "",
+      "English paragraph with https://example.com",
+      "",
+      "```javascript",
+      "const total = 123;",
+      "```",
+    ].join("\n"),
+  );
+  chat.install({
+    rows: () => {
+      return rows;
+    },
+  });
+  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
+
+  const paragraph = await screen.findByText("שלום לצוות Okou");
+  expect(document.documentElement).toHaveAttribute("dir", "rtl");
+  expect(paragraph).toHaveAttribute("dir", "auto");
+  const frame = markdownFrameFor(paragraph);
+  expect(frame).toHaveAttribute("dir", "auto");
+  const code = frame.querySelector("code.language-javascript");
+  expect(code).toHaveTextContent("const total = 123;");
+  expect(code).toHaveAttribute("dir", "ltr");
+  expect(code?.closest("pre")).toHaveAttribute("dir", "ltr");
+  expect(screen.getByRole("textbox")).toHaveAttribute("dir", "auto");
+});
+
 test("Media links keep their text while image syntax shows a preview", async () => {
   const chat = createMarkdownChatFixture(context);
   const source = [

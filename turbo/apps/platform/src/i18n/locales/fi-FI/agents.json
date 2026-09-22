@@ -1,0 +1,639 @@
+{
+  "actions": {
+    "cancel": "Peruuta",
+    "close": "Sulje",
+    "copying": "Kopioidaan…",
+    "create": "Luo",
+    "delete": "Poista agentti",
+    "deleting": "Poistetaan…",
+    "discard": "Hylkää",
+    "retry": "Yritä uudelleen",
+    "save": "Tallenna",
+    "saving": "Tallennetaan…"
+  },
+  "authorization": {
+    "closeSearch": "Sulje haku",
+    "connectorsLink": "Yhdistimet",
+    "connectorsSaved": "Liittimet tallennettu",
+    "customConnectors": {
+      "description": "Organisaatiosi rekisteröimät mukautetut liittimet.",
+      "saved": "Mukautetut liittimet tallennettu"
+    },
+    "description": "Käynnissä ollessaan agentti voi käyttää turvallisesti yhdistettyjä palveluitasi. Voit hallita tai poistaa pääsyn milloin tahansa.",
+    "findConnectors": "Etsi liittimiä",
+    "noConnectorsAfterLink": " sivu ensimmäisen palvelun yhdistämiseksi.",
+    "noConnectorsAlt": "Ei liittimiä",
+    "noConnectorsBeforeLink": "Ei vielä yhdistettyjä palveluita. Siirry kohtaan ",
+    "noResults": "Ei tuloksia haulle ”{{search}}”",
+    "permissionLoadError": "Lupien lataaminen epäonnistui",
+    "permissionsUpdated": "Käyttöoikeudet päivitetty",
+    "searchPlaceholder": "Etsi liittimiä..."
+  },
+  "avatar": {
+    "accessibilityDescription": "Mukauta agentin avatarin tyyliä, väriä ja kasvojen yksityiskohtia.",
+    "actions": {
+      "customize": "Mukauta avataria"
+    },
+    "create": "Luo mukautettu avatar",
+    "description": "Valitse tyyli tai sekoita yllätyksen saamiseksi.",
+    "editDescription": "Muokkaa mitä tahansa osaa tai sekoita uuden ilmeen saamiseksi.",
+    "editTitle": "Muokkaa avataria",
+    "nextStep": "Seuraava vaihe",
+    "previousStep": "Edellinen vaihe",
+    "randomize": "Satunnaista avatar",
+    "shuffleHint": "Sekoita – kokeile satunnaista ulkoasua!",
+    "steps": {
+      "color": "Color",
+      "face": "Kasvot",
+      "hair": "Hiukset",
+      "mood": "Mieliala",
+      "skin": "Iho",
+      "sweater": "Villapaita"
+    },
+    "title": "Anna agentillesi kasvot",
+    "use": "Käytä tätä avataria"
+  },
+  "delete": {
+    "dangerZone": "Vaaravyöhyke",
+    "dangerZoneDescription": "Poista tämä agentti ja kaikki sen tiedot pysyvästi. Tätä toimintoa ei voi kumota.",
+    "description": "Poistaa agentin, sen työnkulut, automaatiot ja kaikkien chat-historian.",
+    "irreversible": "Tätä ei voi kumota.",
+    "success": "Agentti poistettu",
+    "title": "Poistetaanko {{agentName}}?",
+    "workflows": {
+      "copiedTitle": "Jo kopioitu",
+      "copiedTo": "{{workflowTitle}} kopioitu kohteeseen {{agentName}}",
+      "copyTo": "Kopioi {{agentName}}-palveluun",
+      "deleteWithAgent": "Poista agentin kanssa",
+      "description": "Kopioi työnkulku toiselle agentille säilyttääksesi sen. Kaikki muu poistetaan.",
+      "handle": "Käsittele työnkulku {{workflowTitle}}",
+      "loadFailed": "Työnkulkuja ei voitu ladata. Yritä uudelleen ennen tämän agentin poistamista.",
+      "loading": "Ladataan työnkulkuja…",
+      "title": "Säilytetäänkö työnkulkuja?",
+      "untitled": "Työnkulku"
+    }
+  },
+  "detail": {
+    "chatWith": "Keskustele {{agentName}}:n kanssa",
+    "defaultDescription": "Tekoälytiimikaverisi, sinulle viritettynä",
+    "notFound": {
+      "back": "Takaisin tiimiin",
+      "description": "Agenttia ”{{agentId}}” ei ole olemassa tai sinulla ei ole pääsyä siihen.",
+      "title": "Agenttia ei löytynyt"
+    },
+    "tabs": {
+      "authorization": "Valtuutus",
+      "instructions": "Ohjeet",
+      "profile": "Profiili"
+    },
+    "viewProfile": "Näytä agenttiprofiili"
+  },
+  "errors": {
+    "unknown": "Tuntematon virhe"
+  },
+  "fallbackName": "Agentti",
+  "ideation": {
+    "all": "Kaikki",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimoi ja muunna kuvia massana",
+            "title": "Cloudinary-median optimoija"
+          },
+          "elevenlabs-audio-content": {
+            "description": "Äänikerronta Notion-artikkeleista tallennettu Driveen",
+            "title": "ElevenLabsin äänisisältö"
+          },
+          "fal-ai-image-generation": {
+            "description": "Luo tuotekuvia kuvauksista Notion:ssä",
+            "title": "Fal AI -kuvagenerointi"
+          },
+          "heygen-video-from-script": {
+            "description": "Notion-skriptistä tulee HeyGen-video tiimipinkillä",
+            "title": "HeyGen-video käsikirjoituksesta"
+          },
+          "runway-video-from-brief": {
+            "description": "Luo lyhyitä videoita luovasta briefistä",
+            "title": "Runway-video ohjeesta"
+          }
+        },
+        "title": "Luova"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Liitä luettelo ja {{assistantName}} avaa ongelmat puolestasi",
+            "title": "Eräluo ongelmia"
+          },
+          "browserbase-web-testing": {
+            "description": "Automatisoidut selaintestit verkkosovelluksellesi",
+            "title": "Browserbase-verkkotestaus"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Viikoittainen Slack-yhteenveto liikenne- ja tietoturvatapahtumista",
+            "title": "Cloudflare liikenne- ja turvallisuusraportti"
+          },
+          "codebase-investigation": {
+            "description": "Anna URL ja {{assistantName}} jäljittää virheen repossa",
+            "title": "Koodikannan tutkimus"
+          },
+          "daily-standup-report": {
+            "description": "Aamun mittareista tulee diaesitys, joka julkaistaan Slack:ään",
+            "title": "Päivittäinen tilanneraportti"
+          },
+          "deep-research-code-analysis": {
+            "description": "Selittää, miten alijärjestelmä toimii koodikannassasi",
+            "title": "Syvällinen koodianalyysi"
+          },
+          "github-pr-summarizer": {
+            "description": "Yhdistetyt pull-pyyntöjen yhteenvedot Notion:ssä valinnaisilla Slack-julkaisuilla",
+            "title": "GitHub PR-yhteenveto"
+          },
+          "github-progress-weekly": {
+            "description": "Viikoittainen repo-aktiviteetti yhteenvetona ominaisuuksittain",
+            "title": "GitHub-edistyminen viikoittain"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Peilaa GitLab-ongelmat ja yhdistämispyynnöt GitHub:ään",
+            "title": "GitLabista GitHub-siirtoapuohjelma"
+          },
+          "jira-github-issue-sync": {
+            "description": "Pitää Jira-liput ja GitHub-ongelmat synkronoituna",
+            "title": "Jira ↔ GitHub-ongelmien synkronointi"
+          },
+          "make-scenario-builder": {
+            "description": "Suunnittele monivaiheisia Make-skenaarioita kuvauksesta",
+            "title": "Tee skenaariorakentaja"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Viikoittaiset tietoturva- ja riippuvuushälytykset GitHub:stä",
+            "title": "Turvallisuus- ja riippuvuusvaroitusten yhteenveto"
+          },
+          "sentry-issue-digest": {
+            "description": "Aamun yhteenveto ongelmista ryhmiteltynä vakavuuden mukaan",
+            "title": "Sentry-ongelman yhteenveto"
+          },
+          "vercel-deploy-digest": {
+            "description": "Se linkittää jokaisen käyttöönoton sen commit-tunnukseen ja hälyttää Slack-palvelua, kun käyttöönotto epäonnistuu.",
+            "title": "Vercel-käyttöönoton yhteenveto"
+          },
+          "zapier-okou-migration": {
+            "description": "Luo Zapier-työnkulkusi uudelleen {{brandName}}-agentteina",
+            "title": "Zapier → {{brandName}}-siirto"
+          }
+        },
+        "title": "Tekniikka"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Avaa sivu selaimessa ja palauttaa kuvakaappauksen",
+            "title": "Selaimen kuvakaappaukset"
+          },
+          "calendar-optimizer": {
+            "description": "Auttaa ristiriidoissa, ylikuormituksessa ja keskittymisajassa",
+            "title": "Kalenterin optimoija"
+          },
+          "calendly-booking-sync": {
+            "description": "Uudet varaukset kalenterissasi Slack-pingillä",
+            "title": "Calendly-varauksen synkronointi"
+          },
+          "email-assistant": {
+            "description": "Aamun saapuneet-yhteenveto ehdotetuilla seuraavilla vaiheilla",
+            "title": "Sähköpostiassistentti"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola-kokousmuistiinpanot synkronoitu Notion-tietokantaan",
+            "title": "Granola-muistiinpanot kohteelle Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Välittää viestejä Larkin ja Slack:n välillä molempiin suuntiin",
+            "title": "Lark ↔ Slack-viestin välitys"
+          },
+          "line-message-relay": {
+            "description": "Välitä LINE-viestit Slack:ään ja päinvastoin",
+            "title": "LINE-viestin välitys"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies-muistiinpanot Notion:ään seurannoilla Slack:ssä",
+            "title": "Kokousmuistiinpanojen putki"
+          },
+          "morning-brief": {
+            "description": "Sähköposti, kalenteri ja muistiinpanot muutettu lyhyeksi päivittäiseksi suunnitelmaksi",
+            "title": "Aamun tiedote"
+          },
+          "perplexity-deep-research": {
+            "description": "Tekoälyllä toimivat tutkimusyhteenvedot tallennettu Notion:ään",
+            "title": "Perplexity syvä tutkimus"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull-pyynnöt, sähköposti ja kalenteri yhdessä Slack-päivityksessä",
+            "title": "Henkilökohtainen viikoittainen yhteenveto"
+          },
+          "self-update-instructions": {
+            "description": "Päivitä agentin ohjeet suoraan chatissa",
+            "title": "Itsepäivitysohjeet"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Julkaisee tiimin ilmoitukset Slack:ään puolestasi",
+            "title": "Lähetä viestejä puolestasi"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Viikoittainen tiimin toimintayhteenveto julkaistu Slack:ssä",
+            "title": "Strava-tiimin kuntoiluyhteenveto"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Hae verkosta ja kokoa löydökset Notion:ään",
+            "title": "Tavily-verkkotutkimusputki"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Kokoustallenteet tiivistetty kohteeseen Notion toimintakohteiden kanssa",
+            "title": "tl;dv-kokouksen yhteenveto"
+          }
+        },
+        "title": "Kaikki"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify kaapii sivustoja jäsenneltyihin Google Sheets-riveihin",
+            "title": "Apify-verkkokaavin Sheetsiin"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Automatisoidut sähköpostisekvenssit CRM-tapahtumista",
+            "title": "Brevo-sähköpostin hoitosarja"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl tarkkailee kilpailijoiden sivustoja ja kirjaa muutokset Notion:ään",
+            "title": "Kilpailutiedustelun kaavin"
+          },
+          "competitor-research-to-notion": {
+            "description": "Tutkimus X:stä tallennettu strukturoituina muistiinpanoina Notion:ään",
+            "title": "Kilpailijatutkimus kohteeseen Notion"
+          },
+          "content-planner": {
+            "description": "Ideoi aiheita ja hahmottele toimituskalenteri",
+            "title": "Sisällön suunnittelija"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Julkaisee Notion-julkaisut Dev.to:hon ja linkittää ne X:ään",
+            "title": "Dev.to-automaattinen julkaisija"
+          },
+          "discord-community-insights": {
+            "description": "Discord-palaute kohteessa Notion viikoittaisella Slack-yhteenvedolla",
+            "title": "Discord-yhteisön oivalluksia"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Sitoutuminen Sheetsissä viikoittaisilla Slack-yhteenvedoilla",
+            "title": "Instagram-sitoutumisen seuranta"
+          },
+          "loops-email-campaign": {
+            "description": "Laadi ja lähetä transaktiomeilejä Loopsin kautta",
+            "title": "Loops-sähköpostikampanja"
+          },
+          "marketing-automation-system": {
+            "description": "Kolme agenttia tutkimukseen, viikoittaiseen seurantaan ja ad hoc -työhön",
+            "title": "Markkinoinnin automaatiojärjestelmä"
+          },
+          "marketing-content-planning": {
+            "description": "Suunnitelmat julkaisevat tarinoita Slack:stä, haastatteluista ja kilpailijoista",
+            "title": "Markkinointisisällön suunnittelu"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Löytää perehdytyskulmia Slack:stä ja haastatteluista",
+            "title": "Perehdytyssähköpostin käyttötapaukset"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Seuraa avainsanojen sijoituksia viikoittain ja kirjaa Sheetsiin",
+            "title": "SerpAPI-avainsanaseuranta"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Liikenteen vertailuarvot kilpailijoihin verrattuna tallennettu kohteeseen Notion",
+            "title": "SimilarWeb-liikennevertailu"
+          },
+          "social-media-content-calendar": {
+            "description": "Muuttaa Sheets-kalenterin julkaisuiksi jokaiseen verkkoon",
+            "title": "Sosiaalisen median sisältökalenteri"
+          },
+          "x-brand-monitor": {
+            "description": "Brändimaininnat X:ssä tallennettu Notion:ään tiimihälytyksillä",
+            "title": "X-brändin seuranta"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Kun uusi YouTube-video julkaistaan, luo Notion-yhteenveto ja X-ketju sen mainostamiseksi",
+            "title": "YouTube X-ketjun uudelleenkäyttäjä"
+          }
+        },
+        "title": "Markkinointi"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Luo ja hallitse postilaatikoita AgentMail API:llä",
+            "title": "AgentMail-saapuneet"
+          },
+          "clickup-slack-standups": {
+            "description": "Päivittäiset ClickUp-tehtävät julkaistaan standupina Slack:ssä",
+            "title": "ClickUp → Slack standupit"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Docs -erät kohteeseen Notion asettelun säilyttäen",
+            "title": "Google Docs → Notion-siirtotyökalu"
+          },
+          "google-drive-file-organizer": {
+            "description": "Uudet tiedostot lajitellaan automaattisesti kansioihin",
+            "title": "Google Drive-tiedoston järjestäjä"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Lomakevastaukset laskeutuvat Notion:ään Slack-ilmoituksilla",
+            "title": "Jotform-syöte kohteeseen Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Viikoittainen taulun edistyminen Monday.comista Slack:ssä",
+            "title": "Monday.com viikoittainen tiivistelmä"
+          },
+          "pdf-contract-processor": {
+            "description": "Sopimuskentät kohteessa Notion muistutuksilla ennen vanhenemista",
+            "title": "PDF-sopimuskäsittelijä"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Tilausmittarit taulukoissa, joissa on poistumisilmoitukset kohteessa Slack",
+            "title": "RevenueCat-tilausyhteenveto"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist-tehtävät peilattu Notion:ään tiimille",
+            "title": "Todoist → Notion-tehtävien synkronointi"
+          },
+          "wrike-project-reporter": {
+            "description": "Viikoittaiset Wrike-edistymisyhteenvedot Slack:ssä",
+            "title": "Wrike-projektiraportoija"
+          },
+          "xero-financial-summary": {
+            "description": "Viikoittainen voitto ja kassavirta Xero:stä Slack:ssä",
+            "title": "Xero taloudellinen yhteenveto"
+          }
+        },
+        "title": "Toiminnot"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana-virstanpylväät ja tehtävät peilattu Notion:ään",
+            "title": "Asana → Notion-projektin synkronointi"
+          },
+          "feedback-router": {
+            "description": "Slack-palaute reititetään sääntöjesi mukaisesti oikeaan paikkaan",
+            "title": "Palauteohjain"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion-määrityksistä tulee Linear-projekteja ja -ongelmia",
+            "title": "Linear PRD-toteuttaja"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Hallintapaneelin tilannekuvat julkaistaan Slack:ään automaattisesti",
+            "title": "Metabase-kojelautatiivistelmä"
+          },
+          "pricing-analysis": {
+            "description": "Analysoi kilpailijoiden hinnoittelustrategioita ja vertaa samankaltaisiin tuotteisiin",
+            "title": "Hinnoitteluanalyysi"
+          },
+          "product-copy-naming": {
+            "description": "Ystävällisempiä nimiä tuotteen teknisille termeille",
+            "title": "Tuotekopio ja nimeäminen"
+          }
+        },
+        "title": "Tuote"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Kaupat synkronoidaan Sheetsiin ja Slack:ään, kun ne sulkeutuvat",
+            "title": "Airtable-kauppaseuranta"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Uudet Bitrix-liidit saavat seurantatehtäviä ja Slack-pingejä",
+            "title": "Bitrix24-liidien hoito"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Viikoittaiset HubSpot-yhteenvedot tallennettuina jäsenneltyinä raportteina",
+            "title": "HubSpot-myyntiraportoija"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Uusista liideistä tulee HubSpot-tehtäviä Slack-hälytyksillä",
+            "title": "Liidien seurannan putki"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Viikoittaiset Salesforce-mahdollisuuspäivitykset Slack:ssä",
+            "title": "Salesforce-putken yhteenveto"
+          },
+          "streak-pipeline-report": {
+            "description": "Viikoittaiset CRM-putken tilastot Gmail:stä Slack:ssä",
+            "title": "Streak-putkiraportti"
+          },
+          "win-loss-reporter": {
+            "description": "Voitto- ja tappiotrendit putkesta Slack:ssä",
+            "title": "Voitto/tappio-raportoija"
+          }
+        },
+        "title": "Myynti"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Asiakaskeskustelut kirjattu ja luokiteltu kohteeseen Notion",
+            "title": "Chatwoot → Notion-tukiloki"
+          },
+          "customer-support-bot": {
+            "description": "Vastauksia tietokannasta ja tehtäviä puutteiden varalta",
+            "title": "Asiakastukibotti"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom-chateista tulee priorisoituja Notion-tehtäviä",
+            "title": "Intercom-keskustelun lajittelija"
+          },
+          "support-ticket-router": {
+            "description": "Liput menevät Notion:ään ja kiireelliset pingaavat Slack:ään",
+            "title": "Tukipyyntöjen reititin"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "Poimi usein kysytyt Zendesk-kysymykset ja lisää ne automaattisesti Notion-UKK-osioon",
+            "title": "Zendesk → Notion-tietokanta"
+          }
+        },
+        "title": "Tuki"
+      }
+    },
+    "chat": "Chat",
+    "description": "Napsauta mitä tahansa korttia aloittaaksesi keskustelun. Siitä voi tulla tilaustehtävä, toistuva työnkulku tai aliedustaja.",
+    "search": {
+      "accessibilityLabel": "Hae käyttötapauksia",
+      "empty": "Hakusi ei vastaa yhtään käyttötapausta.",
+      "placeholder": "Haku"
+    },
+    "title": "Ideat ja käyttötapaukset"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "Ohjeiden muokkaaja",
+      "footerHint": "Muokkaa ohjeita suoraan mukauttaaksesi agenttisi käyttäytymistä.",
+      "placeholder": "Kirjoita ohjeet agentillesi...",
+      "toolbar": {
+        "blockquote": "Lohkolainaus",
+        "bold": "Lihavoitu",
+        "bulletList": "Luettelomerkitty lista",
+        "heading1": "Otsikko 1",
+        "heading2": "Otsikko 2",
+        "heading3": "Otsikko 3",
+        "inlineCode": "Sisäinen koodi",
+        "italic": "Kursivoitu",
+        "orderedList": "Järjestetty luettelo",
+        "strikethrough": "Yliviivaus"
+      }
+    },
+    "saved": "Ohjeet tallennettu"
+  },
+  "list": {
+    "actions": {
+      "new": "Uusi agentti"
+    },
+    "cards": {
+      "coreDescription": "Ydinagenttisi",
+      "createdBy": "Luonut {{creator}}",
+      "subagentDescription": "Ala-agentti",
+      "unknownCreator": "Tuntematon"
+    },
+    "create": {
+      "accessibilityDescription": "Nimeä uusi agentti, valitse sen näkyvyys ja mukauta sen avataria.",
+      "creating": "Luodaan…",
+      "description": "Nimeä agenttisi ja määritä, kuka voi käyttää sitä.",
+      "namePlaceholder": "esim. Tutkimusavustaja",
+      "newAgentAlt": "Uusi agentti",
+      "success": "{{agentName}} luotu onnistuneesti",
+      "title": "Luo uusi agentti",
+      "visibility": {
+        "private": {
+          "description": "(vain sinä voit nähdä ja käyttää sitä)",
+          "label": "Yksityinen"
+        },
+        "public": {
+          "description": "(kuka tahansa tässä työtilassa voi käyttää sitä)",
+          "label": "Julkinen"
+        }
+      },
+      "visibilityLabel": "Näkyvyys"
+    },
+    "description": "{{agentName}} ja aliedustajat työskentelevät yhdessä suorittaakseen räätälöityjä työnkulkuja sinulle ja tiimillesi.",
+    "documentTitle": "Agentit",
+    "privateEmpty": {
+      "description": "Luo agentti, jonka vain sinä voit nähdä ja käyttää. Yksityisiä agentteja on rajoittamaton määrä.",
+      "title": "Ei vielä yksityisiä agentteja"
+    },
+    "tabs": {
+      "private": "Yksityinen",
+      "public": "Julkinen"
+    },
+    "title": "Agentit"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "Luo oma avatarisi.",
+        "label": "Avatar"
+      },
+      "description": {
+        "description": "Mitä tämä agentti auttaa – näkyy tiimitovereille.",
+        "label": "Kuvaus",
+        "placeholder": "Mitä tämä agentti tekee?"
+      },
+      "name": {
+        "description": "Näkyy tiimilistassa ja kun tämä agentti puhuu.",
+        "label": "Nimi",
+        "placeholder": "Miksi meidän pitäisi kutsua heitä?"
+      },
+      "tone": {
+        "accessibilityLabel": "Miltä {{agentName}} kuulostaa",
+        "description": "Äänityyli vastauksille. Esikatsele päivityksiä, kun muutat sävyä.",
+        "groupLabel": "Sävy",
+        "label": "Miltä ne kuulostavat"
+      },
+      "visibility": {
+        "defaultDescription": "Työtilan oletusagentin on pysyttävä julkisena kaikille työtilan jäsenille.",
+        "description": "Näkyvissä kaikille tässä työtilassa.",
+        "label": "Tee julkiseksi"
+      }
+    },
+    "makePrivate": {
+      "confirm": "Tee yksityiseksi",
+      "description": "Vaikka tämä agentti on yksityinen, muut jäsenet menettävät pääsyn chat-historiaansa sen alla. He saavat pääsyn takaisin, jos teet siitä jälleen julkisen.",
+      "title": "Tehdäänkö {{agentName}} yksityiseksi?",
+      "warningDescription": "Muut jäsenet eivät enää näe {{agentName}}-palvelua tai sen alla olevia keskusteluja.",
+      "warningTitle": "Jäsenet menettävät käyttöoikeuden"
+    },
+    "saved": "Profiili tallennettu",
+    "tones": {
+      "direct": {
+        "agentSample": "Perjantai. Lähetän luonnoksen torstaina.",
+        "hint": "Asiaan",
+        "label": "Suora",
+        "userSample": "Tarvitsen Q3-raportin perjantaihin mennessä."
+      },
+      "friendly": {
+        "agentSample": "Toki! Toimitan Q3-raportin sinulle perjantaihin mennessä – lähetän luonnoksen torstaina, jotta voit tutustua siihen.",
+        "hint": "Lämmin ja lähestyttävä",
+        "label": "Ystävällinen",
+        "userSample": "Tarvitsen Q3-raportin perjantaihin mennessä."
+      },
+      "professional": {
+        "agentSample": "Q3-raportti on valmis perjantaihin mennessä. Lähetän luonnoksen torstaihin mennessä tarkistettavaksi.",
+        "hint": "Selkeä ja hiottu",
+        "label": "Ammattilainen",
+        "userSample": "Tarvitsen Q3-raportin perjantaihin mennessä."
+      },
+      "supportive": {
+        "agentSample": "Varmistan, että saat Q3-raportin perjantaihin mennessä. Lähetän luonnoksen torstaina, jotta sinulla on aikaa tarkistaa – kerro, jos haluat jotain muuta.",
+        "hint": "Kulmassasi",
+        "label": "Tukeva",
+        "userSample": "Tarvitsen Q3-raportin perjantaihin mennessä."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "Kiinnitä",
+    "clearSearch": "Tyhjennä haku",
+    "escapeShortcut": "Esc",
+    "filterAll": "Kaikki",
+    "markAllRead": "Merkitse kaikki luetuksi",
+    "more": "Lisää",
+    "noAgentsToPin": "Sinulla ei ole vielä muita agentteja.",
+    "noResults": "Tuloksia ei löytynyt",
+    "openMenu": "Avaa agenttivalikko",
+    "pin": "Kiinnitä sivupalkkiin",
+    "pinAgent": "Kiinnitä agentti",
+    "pinAgentDescription": "Valitse agentti kiinnitettäväksi sivupalkkiin.",
+    "pinned": "Kiinnitetty",
+    "pinnedAgents": "Kiinnitetyt agentit",
+    "pinSuccess": "{{agentName}} kiinnitetty",
+    "resultCount_one": "{{count}} tulos",
+    "resultCount_other": "{{count}}-tulokset",
+    "searchAgents": "Hae agentteja...",
+    "searching": "Haetaan...",
+    "searchWorkspace": "Hae työtilasta...",
+    "sections": {
+      "agents": "Agentit",
+      "artifacts": "Artefaktit",
+      "chats": "Chatit",
+      "messages": "Viestit",
+      "others": "Muut",
+      "workflows": "Työnkulut"
+    },
+    "unpin": "Irrota",
+    "unpinSuccess": "{{agentName}} irrotettu"
+  },
+  "status": {
+    "unread": "Lukematon"
+  },
+  "unsaved": {
+    "message": "Sinulla on tallentamattomia muutoksia"
+  }
+}

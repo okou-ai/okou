@@ -33,82 +33,79 @@ function useLanguageSelectItems(
   availableLocales: readonly SupportedLocale[],
 ): LanguageSelectItem[] {
   const { t } = useTranslation();
-  const items: LanguageSelectItem[] = [
-    {
-      value: "en-US",
-      label: t(($) => {
-        return $.settings.preferences.language.options.english;
-      }),
-    },
-    {
-      value: "pt-BR",
-      label: t(($) => {
-        return $.settings.preferences.language.options.portugueseBrazil;
-      }),
-    },
-    {
-      value: "ja-JP",
-      label: t(($) => {
-        return $.settings.preferences.language.options.japanese;
-      }),
-    },
-    {
-      value: "ko-KR",
-      label: t(($) => {
-        return $.settings.preferences.language.options.korean;
-      }),
-    },
-    {
-      value: "id-ID",
-      label: t(($) => {
-        return $.settings.preferences.language.options.indonesian;
-      }),
-    },
-    {
-      value: "de-DE",
-      label: t(($) => {
-        return $.settings.preferences.language.options.german;
-      }),
-    },
-    {
-      value: "es-ES",
-      label: t(($) => {
-        return $.settings.preferences.language.options.spanish;
-      }),
-    },
-    {
-      value: "it-IT",
-      label: t(($) => {
-        return $.settings.preferences.language.options.italian;
-      }),
-    },
-    {
-      value: "fr-FR",
-      label: t(($) => {
-        return $.settings.preferences.language.options.french;
-      }),
-    },
-    {
-      value: "hi-IN",
-      label: t(($) => {
-        return $.settings.preferences.language.options.hindi;
-      }),
-    },
-    {
-      value: "zh-Hans",
-      label: t(($) => {
-        return $.settings.preferences.language.options.chineseSimplified;
-      }),
-    },
-    {
-      value: "zh-Hant",
-      label: t(($) => {
-        return $.settings.preferences.language.options.chineseTraditional;
-      }),
-    },
-  ];
-  return items.filter((item) => {
-    return availableLocales.includes(item.value);
+  const labels: Record<SupportedLocale, string> = {
+    "en-US": t(($) => {
+      return $.settings.preferences.language.options.english;
+    }),
+    "pt-BR": t(($) => {
+      return $.settings.preferences.language.options.portugueseBrazil;
+    }),
+    "ja-JP": t(($) => {
+      return $.settings.preferences.language.options.japanese;
+    }),
+    "ko-KR": t(($) => {
+      return $.settings.preferences.language.options.korean;
+    }),
+    "id-ID": t(($) => {
+      return $.settings.preferences.language.options.indonesian;
+    }),
+    "de-DE": t(($) => {
+      return $.settings.preferences.language.options.german;
+    }),
+    "es-ES": t(($) => {
+      return $.settings.preferences.language.options.spanish;
+    }),
+    "it-IT": t(($) => {
+      return $.settings.preferences.language.options.italian;
+    }),
+    "fr-FR": t(($) => {
+      return $.settings.preferences.language.options.french;
+    }),
+    "hi-IN": t(($) => {
+      return $.settings.preferences.language.options.hindi;
+    }),
+    "zh-Hans": t(($) => {
+      return $.settings.preferences.language.options.chineseSimplified;
+    }),
+    "zh-Hant": t(($) => {
+      return $.settings.preferences.language.options.chineseTraditional;
+    }),
+    "tr-TR": t(($) => {
+      return $.settings.preferences.language.options.turkish;
+    }),
+    "vi-VN": t(($) => {
+      return $.settings.preferences.language.options.vietnamese;
+    }),
+    "th-TH": t(($) => {
+      return $.settings.preferences.language.options.thai;
+    }),
+    "nl-NL": t(($) => {
+      return $.settings.preferences.language.options.dutch;
+    }),
+    "sv-SE": t(($) => {
+      return $.settings.preferences.language.options.swedish;
+    }),
+    "da-DK": t(($) => {
+      return $.settings.preferences.language.options.danish;
+    }),
+    "nb-NO": t(($) => {
+      return $.settings.preferences.language.options.norwegianBokmal;
+    }),
+    "fi-FI": t(($) => {
+      return $.settings.preferences.language.options.finnish;
+    }),
+    "he-IL": t(($) => {
+      return $.settings.preferences.language.options.hebrew;
+    }),
+    "pl-PL": t(($) => {
+      return $.settings.preferences.language.options.polish;
+    }),
+    "cs-CZ": t(($) => {
+      return $.settings.preferences.language.options.czech;
+    }),
+  };
+  return availableLocales.map((value) => {
+    return { value, label: labels[value] };
   });
 }
 
@@ -122,7 +119,7 @@ function LanguageSelectContent({
       {items.map((item) => {
         return (
           <SelectItem key={item.value} value={item.value}>
-            {item.label}
+            <bdi>{item.label}</bdi>
           </SelectItem>
         );
       })}

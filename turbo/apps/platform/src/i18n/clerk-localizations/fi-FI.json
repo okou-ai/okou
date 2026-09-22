@@ -1,0 +1,1717 @@
+{
+  "locale": "fi-FI",
+  "apiKeys": {
+    "action__add": "Lisää uusi avain",
+    "action__search": "Etsi avaimia",
+    "copySecret": {
+      "formButtonPrimary__copyAndClose": "Kopioi ja sulje",
+      "formHint": "Tietoturvasyistä emme voi sallia sen tarkastelua myöhemmin.",
+      "formTitle": "Kopioi API-avaimesi \"{{name}}\" nyt"
+    },
+    "createdAndExpirationStatus__expiresOn": "Luotu {{ createdDate | shortDate('fi-FI') }} • Vanhenee {{ expiresDate | longDate('fi-FI') }}",
+    "createdAndExpirationStatus__never": "Luotu {{ createdDate | shortDate('fi-FI') }} • Ei vanhene koskaan",
+    "detailsTitle__emptyRow": "API-avaimia ei löytynyt",
+    "formButtonPrimary__add": "Luo avain",
+    "formFieldCaption__expiration__expiresOn": "Vanhenee {{ date }}",
+    "formFieldCaption__expiration__never": "Tämä avain ei vanhene koskaan",
+    "formFieldOption__expiration__180d": "180 päivää",
+    "formFieldOption__expiration__1d": "1 päivä",
+    "formFieldOption__expiration__1y": "1 vuosi",
+    "formFieldOption__expiration__30d": "30 päivää",
+    "formFieldOption__expiration__60d": "60 päivää",
+    "formFieldOption__expiration__7d": "7 päivää",
+    "formFieldOption__expiration__90d": "90 päivää",
+    "formFieldOption__expiration__never": "Ei koskaan",
+    "formHint": "Anna nimi uuden avaimen luomiseksi. Voit peruuttaa sen milloin tahansa.",
+    "formTitle": "Lisää uusi API-avain",
+    "lastUsed__days": "{{days}} pv sitten",
+    "lastUsed__hours": "{{hours}} h sitten",
+    "lastUsed__minutes": "{{minutes}} min sitten",
+    "lastUsed__months": "{{months}} kk sitten",
+    "lastUsed__seconds": "{{seconds}} s sitten",
+    "lastUsed__years": "{{years}} v sitten",
+    "menuAction__revoke": "Peruuta avain",
+    "revokeConfirmation": {
+      "confirmationText": "Peruuta",
+      "formButtonPrimary__revoke": "Peruuta avain",
+      "formHint": "Haluatko varmasti poistaa tämän salaisen avaimen?",
+      "formTitle": "Peruuttaako \"{{apiKeyName}}\" salainen avain?"
+    }
+  },
+  "backButton": "Takaisin",
+  "badge__activePlan": "Aktiivinen",
+  "badge__canceledEndsAt": "Peruutettu • Päättyy {{ date | shortDate('fi-FI') }}",
+  "badge__currentPlan": "Nykyinen paketti",
+  "badge__default": "Oletus",
+  "badge__endsAt": "Päättyy {{ date | shortDate('fi-FI') }}",
+  "badge__expired": "Vanhentunut",
+  "badge__freeTrial": "Ilmainen kokeilu",
+  "badge__otherImpersonatorDevice": "Toinen jäljitelty laite",
+  "badge__pastDueAt": "Erääntynyt {{ date | shortDate('fi-FI') }}",
+  "badge__pastDuePlan": "Erääntynyt",
+  "badge__primary": "Ensisijainen",
+  "badge__renewsAt": "Uusitaan {{ date | shortDate('fi-FI') }}",
+  "badge__requiresAction": "Vaaditaan toimia",
+  "badge__startsAt": "Alkaa {{ date | shortDate('fi-FI') }}",
+  "badge__thisDevice": "Tämä laite",
+  "badge__trialEndsAt": "Kokeilu päättyy {{ date | shortDate('fi-FI') }}",
+  "badge__unverified": "Vahvistamaton",
+  "badge__upcomingPlan": "Tuleva",
+  "badge__userDevice": "Käyttäjän laite",
+  "badge__you": "Sinä",
+  "billing": {
+    "accountCredit": "Tilihyvitys",
+    "addPaymentMethod__label": "Lisää maksutapa",
+    "alwaysFree": "Aina ilmainen",
+    "annually": "Vuosittain",
+    "availableFeatures": "Sisältyvät ominaisuudet",
+    "billedAnnually": "Laskutetaan vuosittain",
+    "billedAnnuallyOnly": "Laskutus vain vuosittain",
+    "billedMonthlyOnly": "Laskutus vain kuukausittain",
+    "cancelFreeTrial": "Peruuta ilmainen kokeilu",
+    "cancelFreeTrialAccessUntil": "Kokeilusi pysyy aktiivisena {{ date | longDate('fi-FI') }} asti. Tämän jälkeen menetät pääsyn kokeiluominaisuuksiin. Sinulta ei veloiteta.",
+    "cancelFreeTrialTitle": "Peruuttaako {{plan}}-paketin ilmainen kokeilu?",
+    "cancelSubscription": "Peruuta tilaus",
+    "cancelSubscriptionAccessUntil": "Voit käyttää '{{plan}}' ominaisuuksia {{ date | longDate('fi-FI') }} asti, minkä jälkeen pääsy päättyy.",
+    "cancelSubscriptionNoCharge": "Tilauksesta ei veloiteta.",
+    "cancelSubscriptionPastDue": "Tilauksesi päättyy välittömästi ja menetät pääsyn kaikkiin tilauksen ominaisuuksiin. Sinulta pyydetään maksamaan erääntynyt summa seuraavassa tilauksessa.",
+    "cancelSubscriptionTitle": "Peruuttaako {{plan}}-tilauksen?",
+    "cannotSubscribeMonthly": "Et voi tilata tätä pakettia kuukausimaksulla. Tilataksesi tämän sinun on valittava vuositilaus.",
+    "cannotSubscribeUnrecoverable": "Et voi tilata tätä pakettia. Nykyinen tilauksesi on kalliimpi kuin tämä paketti.",
+    "checkout": {
+      "description__paymentSuccessful": "Maksusi onnistui.",
+      "description__subscriptionSuccessful": "Uusi tilauksesi on valmis.",
+      "downgradeNotice": "Säilytät nykyisen tilauksesi ja sen ominaisuudet laskutuskauden loppuun asti, minkä jälkeen siirryt tähän tilaukseen.",
+      "emailForm": {
+        "subtitle": "Ennen ostoksen viimeistelyä sinun on lisättävä sähköpostiosoite, johon kuitit lähetetään.",
+        "title": "Lisää sähköpostiosoite"
+      },
+      "lineItems": {
+        "title__freeTrialEndsAt": "Kokeilu päättyy",
+        "title__paymentMethod": "Maksutapa",
+        "title__statementId": "Tositenumero",
+        "title__subscriptionBegins": "Tilaus alkaa",
+        "title__totalPaid": "Maksettu yhteensä"
+      },
+      "pastDueNotice": "Edellinen tilauksesi oli erääntynyt eikä maksua ole suoritettu.",
+      "perMonth": "kuukaudessa",
+      "title": "Kassa",
+      "title__paymentSuccessful": "Maksu onnistui!",
+      "title__subscriptionSuccessful": "Onnistui!",
+      "title__trialSuccess": "Kokeilu aloitettu onnistuneesti!",
+      "totalDueAfterTrial": "Erääntyy kokeilun päätyttyä {{days}} päivän kuluttua"
+    },
+    "credit": "Hyvitys",
+    "creditRemainder": "Hyvitys nykyisen tilauksesi jäljellä olevalta ajalta.",
+    "defaultFreePlanActive": "Olet tällä hetkellä ilmaisella tilauksella.",
+    "free": "Ilmainen",
+    "getStarted": "Aloita",
+    "highlightedPlanBadge": "Suosittu",
+    "keepFreeTrial": "Pidä ilmainen kokeilu",
+    "keepSubscription": "Pidä tilaus",
+    "manage": "Hallinnoi",
+    "manageSubscription": "Hallinnoi tilausta",
+    "month": "Kuukausi",
+    "monthAbbreviation": "kk",
+    "monthPerUnit": "Kuukausi per {{unitName}}",
+    "monthly": "Kuukausittain",
+    "pastDue": "Erääntynyt",
+    "pay": "Maksa {{amount}}",
+    "payerCreditRemainder": "Hyvitys tilin saldosta.",
+    "paymentMethod": {
+      "applePayDescription": {
+        "annual": "Vuosimaksu",
+        "monthly": "Kuukausimaksu"
+      },
+      "dev": {
+        "anyNumbers": "Mitkä tahansa numerot",
+        "cardNumber": "Kortin numero",
+        "cvcZip": "CVC, postinumero",
+        "developmentMode": "Kehitystila",
+        "expirationDate": "Vanhenemispäivä",
+        "testCardInfo": "Testikortin tiedot"
+      }
+    },
+    "paymentMethods__label": "Maksutavat",
+    "pricingTable": {
+      "billingCycle": "Laskutusjakso",
+      "included": "Sisältyy",
+      "seatCost": {
+        "additionalSeats": "({{additionalTierFeePerBlockAmount}}/{{periodAbbreviation}} lisäpaikoista)",
+        "freeUpToSeats": "Ilmainen enintään {{endsAfterBlock}} paikalle",
+        "includedSeats": "{{includedSeats}} paikkaa sisältyy",
+        "perSeat": "{{feePerBlockAmount}}/{{periodAbbreviation}} per paikka",
+        "tooltip": {
+          "additionalSeatsEach": "Lisäpaikat {{feePerBlockAmount}}/{{period}} kappale.",
+          "firstSeatsIncludedInPlan": "Ensimmäiset {{endsAfterBlock}} paikkaa sisältyvät tilaukseen.",
+          "freeForUpToSeats": "Ilmainen enintään {{endsAfterBlock}} paikalle."
+        },
+        "unlimitedSeats": "Rajattomasti paikkoja",
+        "upToSeats": "Enintään {{endsAfterBlock}} paikkaa"
+      }
+    },
+    "prorationCredit": "Suhteutettu hyvitys",
+    "reSubscribe": "Tilaa uudelleen",
+    "seats": "Paikat",
+    "seeAllFeatures": "Näytä kaikki ominaisuudet",
+    "startFreeTrial": "Aloita ilmainen kokeilu",
+    "startFreeTrial__days": "Aloita {{days}} päivän ilmainen kokeilu",
+    "subscribe": "Tilaa",
+    "subscriptionDetails": {
+      "beginsOn": "Alkaa",
+      "currentBillingCycle": "Nykyinen laskutusjakso",
+      "endsOn": "Päättyy",
+      "firstPaymentAmount": "Ensimmäinen maksu",
+      "firstPaymentOn": "Ensimmäinen maksu",
+      "nextPaymentAmount": "Seuraava maksu",
+      "nextPaymentOn": "Seuraava maksu",
+      "pastDueAt": "Erääntynyt",
+      "renewsAt": "Uusitaan",
+      "subscribedOn": "Tilattu",
+      "title": "Tilaus",
+      "trialEndsOn": "Kokeilu päättyy",
+      "trialStartedOn": "Kokeilu alkanut"
+    },
+    "subtotal": "Välisumma",
+    "switchPlan": "Vaihda tähän tilaukseen",
+    "switchToAnnual": "Vaihda vuositilaukseen",
+    "switchToAnnualWithAnnualPrice": "Vaihda vuositilaukseen {{price}}{{currency}} / vuosi",
+    "switchToMonthly": "Vaihda kuukausitilaukseen",
+    "switchToMonthlyWithPrice": "Vaihda kuukausitilaukseen {{price}}{{currency}} / kuukausi",
+    "totalDue": "Maksettava yhteensä",
+    "totalDueToday": "Maksettava tänään",
+    "viewFeatures": "Näytä ominaisuudet",
+    "viewPayment": "Näytä maksu",
+    "year": "Vuosi",
+    "yearAbbreviation": "v",
+    "yearPerUnit": "Vuosi per {{unitName}}"
+  },
+  "configureDirectorySync": {
+    "attributeMappingStep": {
+      "columns": {}
+    },
+    "configureStep": {
+      "error__ssoRequired": {},
+      "instructions": {
+        "custom": {},
+        "entra": {},
+        "okta": {}
+      },
+      "warning__googleUnsupported": {}
+    },
+    "navbar": {},
+    "providers": {},
+    "stepper": {},
+    "testStep": {}
+  },
+  "configureSSO": {
+    "activate": {},
+    "changeProviderDialog": {},
+    "configureStep": {
+      "activeConnectionWarning": {},
+      "attributeMappingTable": {
+        "badges": {}
+      },
+      "oidcCustom": {
+        "credentialsStep": {
+          "clientId": {},
+          "clientSecret": {}
+        },
+        "endpointsStep": {
+          "discoveryUrl": {},
+          "manual": {
+            "authUrl": {},
+            "tokenUrl": {},
+            "userInfoUrl": {}
+          },
+          "modes": {}
+        },
+        "redirectUriStep": {
+          "claims": {
+            "table": {
+              "columns": {},
+              "rows": {
+                "email": {},
+                "firstName": {},
+                "lastName": {},
+                "subject": {}
+              }
+            }
+          },
+          "redirectUri": {}
+        }
+      },
+      "samlCustom": {
+        "assignUsersStep": {},
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "createAppInstructions": {},
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        }
+      },
+      "samlGoogle": {
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "configureUserAccess": {
+          "assignUsersInstructions": {}
+        },
+        "createAppStep": {
+          "createAppInstructions": {}
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataFile": {},
+          "modes": {}
+        },
+        "serviceProviderStep": {
+          "nameIdInstructions": {},
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        }
+      },
+      "samlMicrosoft": {
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "assignUsersInstructions": {},
+          "createAppInstructions": {
+            "step4": {
+              "subSteps": {}
+            }
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        },
+        "serviceProviderStep": {
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        }
+      },
+      "samlOkta": {
+        "assignUsersStep": {
+          "assignUsersInstructions": {}
+        },
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "completeSamlIntegrationInstructions": {},
+          "createAppInstructions": {},
+          "serviceProviderInstructions": {
+            "serviceProviderFields": {
+              "acsUrl": {},
+              "spEntityId": {}
+            }
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        }
+      },
+      "unsupportedProvider": {}
+    },
+    "connectionScopeBanner": {},
+    "missingManageEnterpriseConnectionsPermission": {
+      "subtitle": "Ota yhteyttä organisaatiosi järjestelmänvalvojaan päivittääksesi oikeuksiasi.",
+      "title": "Sinulla ei ole oikeutta hallita kertakirjautumista (SSO)"
+    },
+    "navbar": {
+      "title": "Määritä kertakirjautuminen (SSO)"
+    },
+    "organizationDomainsStep": {
+      "domainCard": {
+        "badge__unverified": "Vahvistamaton",
+        "badge__verified": "Vahvistettu",
+        "txtRecord": {
+          "hostLabel": "Isäntä / Nimi",
+          "instructions": "Lisää tämä TXT-tietue DNS-palveluntarjoajallesi. Vahvistamme sen automaattisesti, kun tietue on aktiivinen.",
+          "typeLabel": "Tyyppi",
+          "valueLabel": "Arvo"
+        },
+        "verifiedAtLabel": "Vahvistettu {{ date | shortDate('fi-FI') }}"
+      },
+      "domainSuggestion": {
+        "formButtonPrimary__add": "Lisää {{domain}}",
+        "messageLabel": "Sähköpostisi käyttää osoitetta {{domain}}. Haluatko lisätä sen?"
+      },
+      "formButtonPrimary__add": "Lisää",
+      "formFieldInputPlaceholder__domain": "Lisää verkkotunnus",
+      "formFieldLabel__domain": "Verkkotunnus",
+      "removeDomainDialog": {},
+      "subtitle": "Lisää ja vahvista niiden verkkotunnusten omistajuus, joita organisaatiosi käyttää kirjautumiseen.",
+      "title": "Lisää SSO-verkkotunnuksia"
+    },
+    "resetConnectionDialog": {},
+    "selectProviderStep": {
+      "oidc": {},
+      "saml": {
+        "customSaml": "Mukautettu SAML-palveluntarjoaja",
+        "groupLabel": "SAML",
+        "okta": "Okta Workforce"
+      },
+      "subtitle": "Valitse palveluntarjoaja, jolle määrität SSO:n.",
+      "title": "Valitse palveluntarjoaja",
+      "warning": "Kun palveluntarjoaja on valittu, et voi vaihtaa sitä ennen kuin määritys on valmis"
+    },
+    "testConfigurationStep": {
+      "testResults": {
+        "empty": {}
+      },
+      "testRunDetails": {
+        "howToFix": {
+          "oauth_access_denied": {},
+          "oauth_fetch_user_error": {},
+          "oauth_token_exchange_error": {},
+          "saml_email_address_domain_mismatch": {},
+          "saml_response_relaystate_missing": {},
+          "saml_user_attribute_missing": {}
+        },
+        "parsedUserInfo": {},
+        "runDetails": {}
+      },
+      "testUrl": {}
+    }
+  },
+  "createOrganization": {
+    "formButtonSubmit": "Luo organisaatio",
+    "invitePage": {
+      "formButtonReset": "Ohita"
+    },
+    "title": "Luo organisaatio"
+  },
+  "dates": {
+    "lastDay": "Eilen klo {{ date | timeString('fi-FI') }}",
+    "next6Days": "{{ date | weekday('fi-FI','long') }} klo {{ date | timeString('fi-FI') }}",
+    "nextDay": "Huomenna klo {{ date | timeString('fi-FI') }}",
+    "numeric": "{{ date | numeric('fi-FI') }}",
+    "previous6Days": "Viime {{ date | weekday('fi-FI','long') }} klo {{ date | timeString('fi-FI') }}",
+    "sameDay": "Tänään klo {{ date | timeString('fi-FI') }}"
+  },
+  "dividerText": "tai",
+  "footerActionLink__alternativePhoneCodeProvider": "Lähetä koodi tekstiviestillä",
+  "footerActionLink__useAnotherMethod": "Käytä toista tapaa",
+  "footerPageLink__help": "Apua",
+  "footerPageLink__privacy": "Tietosuoja",
+  "footerPageLink__terms": "Käyttöehdot",
+  "formButtonPrimary": "Jatka",
+  "formButtonPrimary__verify": "Vahvista",
+  "formFieldAction__forgotPassword": "Unohditko salasanasi?",
+  "formFieldError__matchingPasswords": "Salasanat täsmäävät.",
+  "formFieldError__notMatchingPasswords": "Salasanat eivät täsmää.",
+  "formFieldError__verificationLinkExpired": "Vahvistuslinkki on vanhentunut. Pyydä uusi linkki.",
+  "formFieldHintText__optional": "Valinnainen",
+  "formFieldHintText__slug": "Slug on luettava tunniste, joka on oltava yksilöllinen. Sitä käytetään usein URL-osoitteissa.",
+  "formFieldInputPlaceholder__apiKeyDescription": "Syötä selite API-avaimelle",
+  "formFieldInputPlaceholder__apiKeyExpirationDate": "Valitse päivämäärä",
+  "formFieldInputPlaceholder__apiKeyName": "Syötä API-avaimen nimi",
+  "formFieldInputPlaceholder__backupCode": "Syötä varakoodi",
+  "formFieldInputPlaceholder__confirmDeletionUserAccount": "Poista tili",
+  "formFieldInputPlaceholder__emailAddress": "Syötä sähköpostiosoitteesi",
+  "formFieldInputPlaceholder__emailAddress_username": "Syötä käyttäjänimi tai sähköpostiosoite",
+  "formFieldInputPlaceholder__emailAddresses": "esimerkki@domain.fi, esimerkki2@domain.fi",
+  "formFieldInputPlaceholder__firstName": "Etunimi",
+  "formFieldInputPlaceholder__lastName": "Sukunimi",
+  "formFieldInputPlaceholder__organizationDomain": "esimerkki.fi",
+  "formFieldInputPlaceholder__organizationDomainEmailAddress": "sinä@esimerkki.fi",
+  "formFieldInputPlaceholder__organizationName": "Organisaation nimi",
+  "formFieldInputPlaceholder__organizationSlug": "minun-org",
+  "formFieldInputPlaceholder__password": "Syötä salasanasi",
+  "formFieldInputPlaceholder__phoneNumber": "Syötä puhelinnumerosi",
+  "formFieldInputPlaceholder__signUpPassword": "Luo salasana",
+  "formFieldInputPlaceholder__username": "Syötä käyttäjänimesi",
+  "formFieldInput__emailAddress_format": "Esimerkki: nimi@esimerkki.fi",
+  "formFieldLabel__apiKey": "API-avain",
+  "formFieldLabel__apiKeyDescription": "Kuvaus",
+  "formFieldLabel__apiKeyExpiration": "Vanheneminen",
+  "formFieldLabel__apiKeyName": "Salaisen avaimen nimi",
+  "formFieldLabel__automaticInvitations": "Ota automaattiset kutsut käyttöön tälle verkkotunnukselle",
+  "formFieldLabel__backupCode": "Varakoodi",
+  "formFieldLabel__confirmDeletion": "Vahvistus",
+  "formFieldLabel__confirmPassword": "Vahvista salasana",
+  "formFieldLabel__currentPassword": "Nykyinen salasana",
+  "formFieldLabel__emailAddress": "Sähköpostiosoite",
+  "formFieldLabel__emailAddress_username": "Sähköpostiosoite tai käyttäjänimi",
+  "formFieldLabel__emailAddresses": "Sähköpostiosoitteet",
+  "formFieldLabel__firstName": "Etunimi",
+  "formFieldLabel__lastName": "Sukunimi",
+  "formFieldLabel__newPassword": "Uusi salasana",
+  "formFieldLabel__organizationDomain": "Verkkotunnus",
+  "formFieldLabel__organizationDomainDeletePending": "Poista odottavat kutsut ja ehdotukset",
+  "formFieldLabel__organizationDomainEmailAddress": "Vahvistussähköpostiosoite",
+  "formFieldLabel__organizationDomainEmailAddressDescription": "Syötä sähköpostiosoite tälle verkkotunnukselle saadaksesi koodin ja vahvistaaksesi tämän verkkotunnuksen.",
+  "formFieldLabel__organizationName": "Nimi",
+  "formFieldLabel__organizationSlug": "Slug",
+  "formFieldLabel__passkeyName": "Pääsyavaimen nimi",
+  "formFieldLabel__password": "Salasana",
+  "formFieldLabel__phoneNumber": "Puhelinnumero",
+  "formFieldLabel__role": "Rooli",
+  "formFieldLabel__signOutOfOtherSessions": "Kirjaudu ulos kaikista muista laitteista",
+  "formFieldLabel__username": "Käyttäjänimi",
+  "impersonationFab": {
+    "action__signOut": "Kirjaudu ulos",
+    "title": "Kirjautuneena käyttäjänä {{identifier}}"
+  },
+  "lastAuthenticationStrategy": "Viimeksi käytetty",
+  "maintenanceMode": "Olemme tällä hetkellä huoltotilassa, mutta älä huoli, se ei kestä kauempaa kuin muutama minuutti.",
+  "membershipRole__admin": "Ylläpitäjä",
+  "membershipRole__basicMember": "Jäsen",
+  "membershipRole__guestMember": "Vieras",
+  "oauthConsent": {
+    "redirectUriModal": {},
+    "scopeList": {}
+  },
+  "oauthDeviceVerification": {
+    "confirmation": {},
+    "error": {},
+    "start": {},
+    "status": {}
+  },
+  "organizationList": {
+    "action__createOrganization": "Luo organisaatio",
+    "action__invitationAccept": "Liity",
+    "action__suggestionsAccept": "Pyydä liittymistä",
+    "createOrganization": "Luo organisaatio",
+    "invitationAcceptedLabel": "Liittynyt",
+    "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+    "suggestionsAcceptedLabel": "Odottaa hyväksyntää",
+    "title": "Valitse tili",
+    "titleWithoutPersonal": "Valitse organisaatio"
+  },
+  "organizationProfile": {
+    "apiKeysPage": {
+      "title": "API-avaimet"
+    },
+    "badge__automaticInvitation": "Automaattiset kutsut",
+    "badge__automaticSuggestion": "Automaattiset ehdotukset",
+    "badge__manualInvitation": "Ei automaattista liittymistä",
+    "badge__unverified": "Vahvistamaton",
+    "billingPage": {
+      "accountCreditsSection": {},
+      "creditHistoryPage": {},
+      "paymentHistorySection": {
+        "empty": "Ei maksuhistoriaa",
+        "notFound": "Maksuyritystä ei löytynyt",
+        "tableHeader__amount": "Summa",
+        "tableHeader__date": "Päivämäärä",
+        "tableHeader__status": "Tila"
+      },
+      "paymentMethodsSection": {
+        "actionLabel__default": "Aseta oletukseksi",
+        "actionLabel__remove": "Poista",
+        "add": "Lisää uusi maksutapa",
+        "addSubtitle": "Lisää uusi maksutapa tilillesi.",
+        "cancelButton": "Peruuta",
+        "formButtonPrimary__add": "Lisää maksutapa",
+        "formButtonPrimary__pay": "Maksa {{amount}}",
+        "payWithTestCardButton": "Maksa testikortilla",
+        "removeMethod": {
+          "messageLine1": "{{identifier}} poistetaan tältä tililtä.",
+          "messageLine2": "Et voi enää käyttää tätä maksutapaa, ja siihen sidotut toistuvat tilaukset lakkaavat toimimasta.",
+          "successMessage": "{{paymentMethod}} on poistettu tililtäsi.",
+          "title": "Poista maksutapa"
+        },
+        "title": "Maksutavat"
+      },
+      "start": {
+        "headerTitle__payments": "Maksut",
+        "headerTitle__plans": "Paketit",
+        "headerTitle__statements": "Tositteet",
+        "headerTitle__subscriptions": "Tilaukset"
+      },
+      "statementsSection": {
+        "empty": "Ei tositteita näytettäväksi",
+        "itemCaption__paidForPlan": "Maksettu {{plan}} {{period}} -tilauksesta",
+        "itemCaption__payerCredit": "Hyvitys tilin saldosta",
+        "itemCaption__proratedCredit": "Suhteutettu hyvitys edellisen tilauksen osittaisesta käytöstä",
+        "itemCaption__subscribedAndPaidForPlan": "Tilattu ja maksettu {{plan}} {{period}} -tilaus",
+        "notFound": "Tosite ei löytynyt",
+        "tableHeader__amount": "Summa",
+        "tableHeader__date": "Päivämäärä",
+        "title": "Tositteet",
+        "totalPaid": "Maksettu yhteensä"
+      },
+      "subscriptionsListSection": {
+        "actionLabel__manageSubscription": "Hallinnoi",
+        "actionLabel__newSubscription": "Tilaa",
+        "actionLabel__switchPlan": "Vaihda tilausta",
+        "tableHeader__edit": "Muokkaa",
+        "tableHeader__plan": "Paketti",
+        "tableHeader__startDate": "Aloituspäivä",
+        "title": "Tilaus"
+      },
+      "subscriptionsSection": {
+        "actionLabel__default": "Hallinnoi"
+      },
+      "switchPlansSection": {
+        "title": "Vaihda tilausta"
+      },
+      "title": "Laskutus"
+    },
+    "createDomainPage": {
+      "subtitle": "Lisää verkkotunnus vahvistaaksesi. Tämän verkkotunnuksen sähköpostiosoitteilla varustetut käyttäjät voivat liittyä organisaatioon automaattisesti tai pyytää liittymistä.",
+      "title": "Lisää verkkotunnus"
+    },
+    "invitePage": {
+      "detailsTitle__inviteFailed": "Kutsuja ei voitu lähettää. Seuraaville sähköpostiosoitteille on jo odottavia kutsuja: {{email_addresses}}.",
+      "formButtonPrimary__continue": "Lähetä kutsuja",
+      "selectDropdown__role": "Valitse rooli",
+      "subtitle": "Kirjoita tai liitä yksi tai useampi sähköpostiosoite, erotettuna välilyönneillä tai pilkuilla.",
+      "successMessage": "Kutsut lähetetty onnistuneesti",
+      "title": "Kutsu uusia jäseniä"
+    },
+    "membersPage": {
+      "action__invite": "Kutsu",
+      "action__search": "Etsi",
+      "activeMembersTab": {
+        "menuAction__remove": "Poista jäsen",
+        "tableHeader__actions": "Toiminnot",
+        "tableHeader__joined": "Liittynyt",
+        "tableHeader__role": "Rooli",
+        "tableHeader__user": "Käyttäjä"
+      },
+      "alerts": {
+        "roleSetMigrationInProgress": {
+          "subtitle": "Päivitämme käytettävissä olevia rooleja. Kun se on tehty, voit päivittää rooleja uudelleen.",
+          "title": "Roolit on tilapäisesti lukittu"
+        }
+      },
+      "detailsTitle__emptyRow": "Ei jäseniä näytettäväksi",
+      "invitationsTab": {
+        "autoInvitations": {
+          "headerSubtitle": "Kutsu käyttäjiä yhdistämällä sähköpostiverkkotunnus organisaatioosi. Kaikki, jotka rekisteröityvät vastaavalla sähköpostiverkkotunnuksella, voivat liittyä organisaatioon milloin tahansa.",
+          "headerTitle": "Automaattiset kutsut",
+          "primaryButton": "Hallitse vahvistettuja verkkotunnuksia"
+        },
+        "table__emptyRow": "Ei kutsuja näytettäväksi"
+      },
+      "invitedMembersTab": {
+        "menuAction__revoke": "Peruuta kutsu",
+        "tableHeader__invited": "Kutsuttu"
+      },
+      "requestsTab": {
+        "autoSuggestions": {
+          "headerSubtitle": "Käyttäjät, jotka rekisteröityvät vastaavalla sähköpostiverkkotunnuksella, voivat nähdä ehdotuksen liittymisestä organisaatioosi.",
+          "headerTitle": "Automaattiset ehdotukset",
+          "primaryButton": "Hallitse vahvistettuja verkkotunnuksia"
+        },
+        "menuAction__approve": "Hyväksy",
+        "menuAction__reject": "Hylkää",
+        "tableHeader__requested": "Pyydetty pääsy",
+        "table__emptyRow": "Ei pyyntöjä näytettäväksi"
+      },
+      "start": {
+        "headerTitle__invitations": "Kutsut",
+        "headerTitle__members": "Jäsenet",
+        "headerTitle__requests": "Pyyntöjä"
+      }
+    },
+    "navbar": {
+      "apiKeys": "API-avaimet",
+      "billing": "Laskutus",
+      "description": "Hallitse organisaatiotasi.",
+      "general": "Yleinen",
+      "members": "Jäsenet",
+      "title": "Organisaatio"
+    },
+    "plansPage": {
+      "alerts": {
+        "noPermissionsToManageBilling": "Sinulla ei ole oikeuksia hallinnoida tämän organisaation laskutusta.",
+        "planMembershipLimitExceeded": "Organisaatiossasi on {{count}} jäsentä (sisältäen odottavat kutsut). Tämä paketti sallii vain {{limit}} jäsentä."
+      },
+      "title": "Tilaukset"
+    },
+    "profilePage": {
+      "dangerSection": {
+        "deleteOrganization": {
+          "actionDescription": "Kirjoita \"{{organizationName}}\" jatkaaksesi.",
+          "messageLine1": "Oletko varma, että haluat poistaa tämän organisaation?",
+          "messageLine2": "Tämä toiminto on pysyvä ja peruuttamaton.",
+          "successMessage": "Olet poistanut organisaation.",
+          "title": "Poista organisaatio"
+        },
+        "leaveOrganization": {
+          "actionDescription": "Kirjoita \"{{organizationName}}\" jatkaaksesi.",
+          "messageLine1": "Oletko varma, että haluat poistua tästä organisaatiosta? Menetät pääsyn tähän organisaatioon ja sen sovelluksiin.",
+          "messageLine2": "Tämä toiminto on pysyvä ja peruuttamaton.",
+          "successMessage": "Olet poistunut organisaatiosta.",
+          "title": "Poistu organisaatiosta"
+        },
+        "title": "Vaara"
+      },
+      "domainSection": {
+        "menuAction__manage": "Hallitse",
+        "menuAction__remove": "Poista",
+        "menuAction__verify": "Vahvista",
+        "primaryButton": "Lisää verkkotunnus",
+        "subtitle": "Salli käyttäjien liittyä organisaatioon automaattisesti tai pyytää liittymistä vahvistetun sähköpostiverkkotunnuksen perusteella.",
+        "title": "Vahvistetut verkkotunnukset"
+      },
+      "successMessage": "Organisaatiota on päivitetty.",
+      "title": "Päivitä profiili"
+    },
+    "removeDomainPage": {
+      "messageLine1": "Sähköpostiverkkotunnus {{domain}} poistetaan.",
+      "messageLine2": "Käyttäjät eivät voi liittyä organisaatioon automaattisesti tämän jälkeen.",
+      "successMessage": "{{domain}} on poistettu.",
+      "title": "Poista verkkotunnus"
+    },
+    "securityPage": {
+      "directorySyncSection": {
+        "removeDialog": {}
+      },
+      "removeDialog": {},
+      "ssoSection": {}
+    },
+    "start": {
+      "headerTitle__general": "Yleinen",
+      "headerTitle__members": "Jäsenet",
+      "membershipSeatUsageLabel": "{{count}} / {{limit}} paikkaa käytössä",
+      "profileSection": {
+        "primaryButton": "Päivitä profiili",
+        "title": "Organisaation profiili",
+        "uploadAction__title": "Logo"
+      }
+    },
+    "verifiedDomainPage": {
+      "dangerTab": {
+        "calloutInfoLabel": "Tämän verkkotunnuksen poistaminen vaikuttaa kutsuttuihin käyttäjiin.",
+        "removeDomainActionLabel__remove": "Poista verkkotunnus",
+        "removeDomainSubtitle": "Poista tämä verkkotunnus vahvistetuista verkkotunnuksistasi",
+        "removeDomainTitle": "Poista verkkotunnus"
+      },
+      "enrollmentTab": {
+        "automaticInvitationOption__description": "Käyttäjät kutsutaan automaattisesti liittymään organisaatioon rekisteröityessään ja voivat liittyä milloin tahansa.",
+        "automaticInvitationOption__label": "Automaattiset kutsut",
+        "automaticSuggestionOption__description": "Käyttäjät saavat ehdotuksen liittymisestä, mutta heidän on saatava ylläpitäjän hyväksyntä ennen kuin he voivat liittyä organisaatioon.",
+        "automaticSuggestionOption__label": "Automaattiset ehdotukset",
+        "calloutInfoLabel": "Enrollment-tilan muuttaminen vaikuttaa vain uusiin käyttäjiin.",
+        "calloutInvitationCountLabel": "Käyttäjille lähetetyt odottavat kutsut: {{count}}",
+        "calloutSuggestionCountLabel": "Käyttäjille lähetetyt odottavat ehdotukset: {{count}}",
+        "manualInvitationOption__description": "Käyttäjiä voidaan kutsua vain manuaalisesti organisaatioon.",
+        "manualInvitationOption__label": "Ei automaattista liittymistä",
+        "subtitle": "Valitse, miten tämän verkkotunnuksen käyttäjät voivat liittyä organisaatioon."
+      },
+      "start": {
+        "headerTitle__danger": "Vaara",
+        "headerTitle__enrollment": "Liittymisvaihtoehdot"
+      },
+      "subtitle": "Verkkotunnus {{domain}} on nyt vahvistettu. Jatka valitsemalla liittymistila.",
+      "title": "Päivitä {{domain}}"
+    },
+    "verifyDomainPage": {
+      "formSubtitle": "Syötä sähköpostiosoitteeseesi lähetetty vahvistuskoodi",
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Verkkotunnus {{domainName}} on vahvistettava sähköpostitse.",
+      "subtitleVerificationCodeScreen": "Vahvistuskoodi lähetettiin osoitteeseen {{emailAddress}}. Syötä koodi jatkaaksesi.",
+      "title": "Vahvista verkkotunnus"
+    }
+  },
+  "organizationSwitcher": {
+    "action__closeOrganizationSwitcher": "Sulje organisaatiovalitsin",
+    "action__createOrganization": "Luo organisaatio",
+    "action__invitationAccept": "Liity",
+    "action__manageOrganization": "Hallitse",
+    "action__openOrganizationSwitcher": "Avaa organisaatiovalitsin",
+    "action__suggestionsAccept": "Pyydä liittymistä",
+    "notSelected": "Ei valittua organisaatiota",
+    "personalWorkspace": "Henkilökohtainen tili",
+    "suggestionsAcceptedLabel": "Odottaa hyväksyntää"
+  },
+  "paginationButton__next": "Seuraava",
+  "paginationButton__previous": "Edellinen",
+  "paginationRowText__displaying": "Näytetään",
+  "paginationRowText__of": "yhteensä",
+  "reverification": {
+    "alternativeMethods": {
+      "actionLink": "Hae apua",
+      "actionText": "Eikö mikään näistä ole käytettävissä?",
+      "blockButton__backupCode": "Käytä varakoodia",
+      "blockButton__emailCode": "Lähetä koodi sähköpostitse {{identifier}}",
+      "blockButton__passkey": "Käytä pääsyavaintasi",
+      "blockButton__password": "Jatka salasanallasi",
+      "blockButton__phoneCode": "Lähetä SMS-koodi {{identifier}}",
+      "blockButton__totp": "Käytä todennussovellustasi",
+      "getHelp": {
+        "blockButton__emailSupport": "Sähköpostituki",
+        "content": "Jos sinulla on ongelmia tilisi vahvistamisessa, lähetä meille sähköpostia, niin autamme sinua palauttamaan pääsyn mahdollisimman pian.",
+        "title": "Hae apua"
+      },
+      "subtitle": "Ongelmia? Voit käyttää mitä tahansa näistä vahvistusmenetelmistä.",
+      "title": "Käytä toista menetelmää"
+    },
+    "backupCodeMfa": {
+      "subtitle": "Syötä varakoodi, jonka sait kaksivaiheista todennusta asettaessasi",
+      "title": "Syötä varakoodi"
+    },
+    "emailCode": {
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Syötä sähköpostiisi lähetetty koodi jatkaaksesi",
+      "title": "Vahvistus vaaditaan"
+    },
+    "noAvailableMethods": {
+      "message": "Vahvistusta ei voida suorittaa. Sopivaa todennusmenetelmää ei ole määritetty.",
+      "subtitle": "Tapahtui virhe",
+      "title": "Tiliä ei voi vahvistaa"
+    },
+    "passkey": {
+      "blockButton__passkey": "Käytä pääsyavaintasi",
+      "subtitle": "Pääsyavaimen käyttö vahvistaa henkilöllisyytesi. Laitteesi saattaa pyytää sormenjälkeä, kasvoja tai näytön lukitusta.",
+      "title": "Käytä pääsyavaintasi"
+    },
+    "password": {
+      "actionLink": "Käytä toista menetelmää",
+      "subtitle": "Syötä nykyinen salasanasi jatkaaksesi",
+      "title": "Vahvistus vaaditaan"
+    },
+    "phoneCode": {
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Syötä puhelimeesi lähetetty koodi jatkaaksesi",
+      "title": "Vahvistus vaaditaan"
+    },
+    "phoneCodeMfa": {
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Syötä puhelimeesi lähetetty koodi jatkaaksesi",
+      "title": "Vahvistus vaaditaan"
+    },
+    "totpMfa": {
+      "formTitle": "Vahvistuskoodi",
+      "subtitle": "Syötä todennussovelluksesi luoma koodi jatkaaksesi",
+      "title": "Vahvistus vaaditaan"
+    }
+  },
+  "searchInput": {},
+  "signIn": {
+    "accountSwitcher": {
+      "action__addAccount": "Lisää tili",
+      "action__signOutAll": "Kirjaudu ulos kaikista tileistä",
+      "subtitle": "Valitse tili, jolla haluat jatkaa.",
+      "title": "Valitse tili"
+    },
+    "alternativeMethods": {
+      "actionLink": "Ota yhteyttä ongelmatilanteissa",
+      "actionText": "Eikö sinulla ole näitä?",
+      "blockButton__backupCode": "Käytä varakoodia",
+      "blockButton__emailCode": "Lähetä koodi sähköpostitse {{identifier}}",
+      "blockButton__emailLink": "Lähetä linkki sähköpostitse {{identifier}}",
+      "blockButton__passkey": "Kirjaudu sisään pääsyavaimellasi",
+      "blockButton__password": "Kirjaudu sisään salasanallasi",
+      "blockButton__phoneCode": "Lähetä SMS-koodi osoitteeseen {{identifier}}",
+      "blockButton__totp": "Käytä todennussovellustasi",
+      "getHelp": {
+        "blockButton__emailSupport": "Sähköpostituki",
+        "content": "Jos sinulla on vaikeuksia kirjautua tilillesi, lähetä meille sähköpostia, niin autamme sinua palauttamaan pääsyn tiliisi mahdollisimman pian.",
+        "title": "Ota yhteyttä ongelmatilanteissa"
+      },
+      "subtitle": "Ongelmia? Voit kirjautua sisään millä tahansa näistä tavoista.",
+      "title": "Käytä toista tapaa"
+    },
+    "alternativePhoneCodeProvider": {
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+      "title": "Tarkista {{provider}}"
+    },
+    "backupCodeMfa": {
+      "subtitle": "Varakoodi on se, jonka sait asettaessasi kaksivaiheisen todennuksen.",
+      "title": "Syötä varakoodi"
+    },
+    "emailCode": {
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+      "title": "Tarkista sähköpostisi"
+    },
+    "emailCodeMfa": {
+      "formTitle": "Tarkista sähköpostisi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+      "title": "Tarkista sähköpostisi"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Jatkaaksesi avaa vahvistuslinkki laitteella ja selaimella, josta aloitit kirjautumisen",
+        "title": "Vahvistuslinkki on virheellinen tälle laitteelle"
+      },
+      "expired": {
+        "subtitle": "Palaa alkuperäiseen välilehteen jatkaaksesi.",
+        "title": "Tämä vahvistuslinkki on vanhentunut"
+      },
+      "failed": {
+        "subtitle": "Palaa alkuperäiseen välilehteen jatkaaksesi.",
+        "title": "Tämä vahvistuslinkki on virheellinen"
+      },
+      "formSubtitle": "Käytä sähköpostiisi lähetettyä vahvistuslinkkiä",
+      "formTitle": "Vahvistuslinkki",
+      "loading": {
+        "subtitle": "Sinut ohjataan pian",
+        "title": "Kirjaudutaan sisään..."
+      },
+      "resendButton": "Et saanut linkkiä? Lähetä uudelleen",
+      "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+      "title": "Tarkista sähköpostisi",
+      "unusedTab": {
+        "title": "Voit sulkea tämän välilehden"
+      },
+      "verified": {
+        "subtitle": "Sinut ohjataan pian",
+        "title": "Kirjautuminen onnistui"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Palaa alkuperäiseen välilehteen jatkaaksesi",
+        "subtitleNewTab": "Palaa uuteen välilehteen jatkaaksesi",
+        "titleNewTab": "Kirjautunut toiseen välilehteen"
+      },
+      "verifiedTransferable": {
+        "subtitle": "Palaa alkuperäiseen välilehteen jatkaaksesi",
+        "title": "Sähköposti vahvistettu"
+      }
+    },
+    "emailLinkMfa": {
+      "formSubtitle": "Käytä sähköpostiisi lähetettyä vahvistuslinkkiä",
+      "resendButton": "Etkö saanut linkkiä? Lähetä uudelleen",
+      "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+      "title": "Tarkista sähköpostisi"
+    },
+    "enterpriseConnections": {
+      "subtitle": "Valitse yritystili, jolla haluat jatkaa.",
+      "title": "Valitse yritystilisi"
+    },
+    "enterpriseSSO": {},
+    "forgotPassword": {
+      "formTitle": "Nollaa salasana",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "nollataksesi salasanasi",
+      "subtitle_email": "Syötä ensin sähköpostiisi lähetetty koodi",
+      "subtitle_phone": "Syötä ensin puhelimeesi lähetetty koodi",
+      "title": "Nollaa salasana"
+    },
+    "forgotPasswordAlternativeMethods": {
+      "blockButton__resetPassword": "Nollaa salasanasi",
+      "label__alternativeMethods": "tai kirjaudu sisään toisella tavalla",
+      "title": "Unohditko salasanasi?"
+    },
+    "newDeviceVerificationNotice": "Kirjaudut sisään uudesta laitteesta. Pyydämme vahvistusta tilisi turvallisuuden varmistamiseksi.",
+    "noAvailableMethods": {
+      "message": "Kirjautuminen ei onnistu. Käytettävissä ei ole yhtään todennusmenetelmää.",
+      "subtitle": "Tapahtui virhe",
+      "title": "Ei voi kirjautua"
+    },
+    "passkey": {
+      "subtitle": "Käyttämällä pääsyavaintasi vahvistat, että olet se joka väität olevasi. Laite voi pyytää sormenjälkeäsi, kasvojasi tai näytön lukitusta.",
+      "title": "Käytä pääsyavaintasi"
+    },
+    "password": {
+      "actionLink": "Käytä toista tapaa",
+      "subtitle": "Syötä tilisi salasana",
+      "title": "Syötä salasanasi"
+    },
+    "passwordCompromised": {
+      "title": "Salasana vaarantunut"
+    },
+    "passwordPwned": {
+      "title": "Salasana tietomurrossa"
+    },
+    "passwordUntrusted": {
+      "title": "Salasana epäluotettava"
+    },
+    "phoneCode": {
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+      "title": "Tarkista puhelimesi"
+    },
+    "phoneCodeMfa": {
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Syötä jatkaaksesi puhelimeesi lähetetty vahvistuskoodi",
+      "title": "Tarkista puhelimesi"
+    },
+    "protectCheck": {
+      "loading": "Ladataan…",
+      "retryButton": "Yritä uudelleen",
+      "subtitle": "Odota hetki, tarkistamme pyyntöäsi.",
+      "title": "Tarkistetaan pyyntöäsi"
+    },
+    "resetPassword": {
+      "formButtonPrimary": "Nollaa salasana",
+      "requiredMessage": "Turvallisuussyistä on tarpeen nollata salasanasi.",
+      "successMessage": "Salasanasi on vaihdettu onnistuneesti. Kirjaudutaan sisään, odota hetki.",
+      "title": "Aseta uusi salasana"
+    },
+    "resetPasswordMfa": {
+      "detailsLabel": "Ennen salasanan nollaamista on varmistettava henkilöllisyytesi."
+    },
+    "ssoFallback": {
+      "code": {}
+    },
+    "start": {
+      "actionLink": "Rekisteröidy",
+      "actionLink__join_waitlist": "Liity jonotuslistalle",
+      "actionLink__use_email": "Käytä sähköpostia",
+      "actionLink__use_email_username": "Käytä sähköpostia tai käyttäjänimeä",
+      "actionLink__use_passkey": "Käytä pääsyavainta",
+      "actionLink__use_phone": "Käytä puhelinta",
+      "actionLink__use_username": "Käytä käyttäjänimeä",
+      "actionText": "Eikö sinulla ole tiliä?",
+      "actionText__join_waitlist": "Haluatko varhaisen pääsyn?",
+      "alternativePhoneCodeProvider": {
+        "actionLink": "Käytä toista tapaa",
+        "label": "{{provider}}-puhelinnumero",
+        "subtitle": "Syötä puhelinnumerosi saadaksesi vahvistuskoodin {{provider}} kautta.",
+        "title": "Kirjaudu {{applicationName}}-palveluun {{provider}} avulla"
+      },
+      "subtitle": "Tervetuloa takaisin! Kirjaudu sisään jatkaaksesi",
+      "title": "Kirjaudu sisään",
+      "titleCombined": "Jatka kohteeseen {{applicationName}}"
+    },
+    "totpMfa": {
+      "formTitle": "Todennuskoodi",
+      "subtitle": "Syötä todennuskoodi autentikointisovelluksestasi",
+      "title": "Kaksivaiheinen todennus"
+    },
+    "web3Solana": {
+      "subtitle": "Valitse alta lompakko kirjautumista varten",
+      "title": "Kirjaudu sisään Solanalla"
+    }
+  },
+  "signInEnterPasswordTitle": "Syötä salasanasi",
+  "signUp": {
+    "alternativePhoneCodeProvider": {
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Syötä {{provider}}-palveluun lähetetty vahvistuskoodi",
+      "title": "Vahvista {{provider}}"
+    },
+    "continue": {
+      "actionLink": "Kirjaudu sisään",
+      "actionText": "Onko sinulla jo tili?",
+      "subtitle": "Täytä loput tiedot jatkaaksesi.",
+      "title": "Täytä puuttuvat kentät."
+    },
+    "emailCode": {
+      "formSubtitle": "Syötä sähköpostiisi lähetetty koodi",
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Syötä sähköpostiisi lähetetty koodi jatkaaksesi.",
+      "title": "Tarkista sähköpostisi"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Jatkaaksesi avaa vahvistuslinkki laitteella ja selaimella, josta aloitit rekisteröitymisen",
+        "title": "Vahvistuslinkki on virheellinen tälle laitteelle"
+      },
+      "formSubtitle": "Käytä sähköpostiisi lähetettyä vahvistuslinkkiä",
+      "formTitle": "Vahvistuslinkki",
+      "loading": {
+        "title": "Rekisteröidytään..."
+      },
+      "resendButton": "Etkö saanut linkkiä? Lähetä uudelleen",
+      "subtitle": "jatkaaksesi kohteeseen {{applicationName}}",
+      "title": "Vahvista sähköpostisi",
+      "verified": {
+        "title": "Rekisteröityminen onnistui"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Palaa alkuperäiseen välilehteen jatkaaksesi",
+        "subtitleNewTab": "Palaa uuteen välilehteen jatkaaksesi",
+        "title": "Rekisteröitynyt toiseen välilehteen"
+      }
+    },
+    "enterpriseConnections": {
+      "subtitle": "Valitse yritystili, jolla haluat jatkaa.",
+      "title": "Valitse yritystilisi"
+    },
+    "legalConsent": {
+      "checkbox": {
+        "label__onlyPrivacyPolicy": "Hyväksyn {{ privacyPolicyLink || link(\"tietosuojaselosteen\") }}",
+        "label__onlyTermsOfService": "Hyväksyn {{ termsOfServiceLink || link(\"käyttöehdot\") }}",
+        "label__termsOfServiceAndPrivacyPolicy": "Hyväksyn {{ termsOfServiceLink || link(\"käyttöehdot\") }} ja {{ privacyPolicyLink || link(\"tietosuojaselosteen\") }}"
+      },
+      "continue": {
+        "subtitle": "Lue ja hyväksy ehdot jatkaaksesi",
+        "title": "Käyttöehdot ja tietosuojaseloste"
+      }
+    },
+    "phoneCode": {
+      "formSubtitle": "Syötä puhelimeesi lähetetty koodi",
+      "formTitle": "Vahvistuskoodi",
+      "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+      "subtitle": "Syötä puhelimeesi lähetetty koodi jatkaaksesi.",
+      "title": "Tarkista puhelimesi"
+    },
+    "protectCheck": {
+      "loading": "Ladataan…",
+      "retryButton": "Yritä uudelleen",
+      "subtitle": "Odota hetki, tarkistamme pyyntöäsi.",
+      "title": "Tarkistetaan pyyntöäsi"
+    },
+    "restrictedAccess": {
+      "actionLink": "Kirjaudu sisään",
+      "actionText": "Onko sinulla jo tili?",
+      "blockButton__emailSupport": "Sähköpostituki",
+      "blockButton__joinWaitlist": "Liity jonotuslistalle",
+      "subtitle": "Rekisteröityminen on tällä hetkellä pois käytöstä. Jos uskot, että sinulla pitäisi olla pääsy, ota yhteyttä tukeen.",
+      "subtitleWaitlist": "Rekisteröityminen on tällä hetkellä pois käytöstä. Liity jonotuslistalle saadaksesi tiedon heti kun palvelu avautuu.",
+      "title": "Pääsy rajoitettu"
+    },
+    "start": {
+      "actionLink": "Kirjaudu sisään",
+      "actionLink__use_email": "Käytä sähköpostia",
+      "actionLink__use_phone": "Käytä puhelinta",
+      "actionText": "Onko sinulla jo tili?",
+      "alternativePhoneCodeProvider": {
+        "actionLink": "Käytä toista tapaa",
+        "label": "{{provider}}-puhelinnumero",
+        "subtitle": "Syötä puhelinnumerosi saadaksesi vahvistuskoodin {{provider}} kautta.",
+        "title": "Rekisteröidy {{applicationName}}-palveluun {{provider}} avulla"
+      },
+      "subtitle": "Tervetuloa! Luo tili jatkaaksesi.",
+      "subtitleCombined": "Tervetuloa! Luo tili jatkaaksesi.",
+      "title": "Luo tili",
+      "titleCombined": "Luo tili"
+    },
+    "web3Solana": {
+      "subtitle": "Valitse alta lompakko rekisteröitymistä varten",
+      "title": "Rekisteröidy Solanalla"
+    }
+  },
+  "socialButtonsBlockButton": "Jatka palvelun {{provider|titleize}} avulla",
+  "socialButtonsBlockButtonManyInView": "{{provider|titleize}}",
+  "taskChooseOrganization": {
+    "alerts": {
+      "organizationAlreadyExists": "Organisaatio on jo olemassa havaitulle yrityksen nimelle ({{organizationName}}) ja {{organizationDomain}}. Liity kutsulla."
+    },
+    "chooseOrganization": {
+      "action__createOrganization": "Luo uusi organisaatio",
+      "action__invitationAccept": "Liity",
+      "action__suggestionsAccept": "Pyydä liittymistä",
+      "subtitle": "Liity olemassa olevaan organisaatioon tai luo uusi",
+      "subtitle__createOrganizationDisabled": "Liity olemassa olevaan organisaatioon",
+      "suggestionsAcceptedLabel": "Odottaa hyväksyntää",
+      "title": "Valitse organisaatio"
+    },
+    "createOrganization": {
+      "formButtonReset": "Peruuta",
+      "formButtonSubmit": "Jatka",
+      "formFieldInputPlaceholder__name": "Oma organisaatio",
+      "formFieldInputPlaceholder__slug": "oma-organisaatio",
+      "formFieldLabel__name": "Nimi",
+      "formFieldLabel__slug": "Slug",
+      "subtitle": "Syötä organisaation tiedot jatkaaksesi",
+      "title": "Määritä organisaatiosi"
+    },
+    "organizationCreationDisabled": {
+      "subtitle": "Ota yhteyttä organisaatiosi ylläpitäjään saadaksesi kutsun.",
+      "title": "Sinun on kuuluttava organisaatioon"
+    },
+    "signOut": {
+      "actionLink": "Kirjaudu ulos",
+      "actionText": "Kirjautuneena käyttäjänä {{identifier}}"
+    }
+  },
+  "taskResetPassword": {
+    "formButtonPrimary": "Nollaa salasana",
+    "signOut": {
+      "actionLink": "Kirjaudu ulos",
+      "actionText": "Kirjautuneena käyttäjänä {{identifier}}"
+    },
+    "subtitle": "Tilisi vaatii uuden salasanan ennen kuin voit jatkaa",
+    "title": "Nollaa salasanasi"
+  },
+  "taskSetupMfa": {
+    "badge": "Kaksivaiheisen todennuksen asennus",
+    "signOut": {
+      "actionLink": "Kirjaudu ulos",
+      "actionText": "Kirjautuneena käyttäjänä {{identifier}}"
+    },
+    "smsCode": {
+      "addPhone": {
+        "formButtonPrimary": "Jatka",
+        "infoText": "Vahvistuskoodin sisältävä tekstiviesti lähetetään tähän puhelinnumeroon. Viesti- ja tiedonsiirtomaksuja saatetaan periä."
+      },
+      "addPhoneNumber": "Lisää puhelinnumero",
+      "cancel": "Peruuta",
+      "subtitle": "Valitse puhelinnumero, jota haluat käyttää SMS-koodin kaksivaiheiseen todennukseen",
+      "success": {
+        "finishButton": "Jatka",
+        "message1": "Kaksivaiheinen todennus on nyt käytössä. Kirjautuessasi sinun on syötettävä tähän puhelinnumeroon lähetetty vahvistuskoodi lisävaiheena.",
+        "message2": "Tallenna nämä varakoodit ja säilytä ne turvallisessa paikassa. Jos menetät pääsyn todennuslaitteeseesi, voit käyttää varakoodeja kirjautuaksesi sisään.",
+        "title": "SMS-koodin todennus käytössä"
+      },
+      "title": "Lisää SMS-koodin todennus",
+      "verifyPhone": {
+        "formButtonPrimary": "Jatka",
+        "formTitle": "Vahvistuskoodi",
+        "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+        "subtitle": "Syötä vahvistuskoodi, joka lähetettiin numeroon",
+        "title": "Vahvista puhelinnumerosi"
+      }
+    },
+    "start": {
+      "methodSelection": {
+        "phoneCode": "SMS-koodi",
+        "totp": "Todennussovellus"
+      },
+      "subtitle": "Valitse menetelmä, jolla haluat suojata tilisi ylimääräisellä turvallisuustasolla",
+      "title": "Ota kaksivaiheinen todennus käyttöön"
+    },
+    "totpCode": {
+      "addAuthenticatorApp": {
+        "buttonAbleToScan__nonPrimary": "Skannaa sen sijaan QR-koodi",
+        "buttonUnableToScan__nonPrimary": "Etkö voi skannata QR-koodia?",
+        "formButtonPrimary": "Jatka",
+        "formButtonReset": "Peruuta",
+        "infoText__ableToScan": "Aseta uusi kirjautumistapa todennussovellukseesi ja skannaa seuraava QR-koodi linkittääksesi se tilillesi.",
+        "infoText__unableToScan": "Aseta uusi kirjautumistapa todennussovellukseesi ja syötä alla annettu avain.",
+        "inputLabel__unableToScan1": "Varmista, että Aikaperusteiset tai Yksittäiset salasanat on käytössä ja viimeistele tilin linkitys."
+      },
+      "success": {
+        "finishButton": "Jatka",
+        "message1": "Kaksivaiheinen todennus on nyt käytössä. Kirjautuessasi sinun on syötettävä vahvistuskoodi tästä todennussovelluksesta lisävaiheena.",
+        "message2": "Tallenna nämä varakoodit ja säilytä ne turvallisessa paikassa. Jos menetät pääsyn todennuslaitteeseesi, voit käyttää varakoodeja kirjautuaksesi sisään.",
+        "title": "Todennussovelluksen todennus käytössä"
+      },
+      "title": "Lisää todennussovellus",
+      "verifyTotp": {
+        "formButtonPrimary": "Jatka",
+        "formButtonReset": "Peruuta",
+        "formTitle": "Vahvistuskoodi",
+        "subtitle": "Syötä todennussovelluksesi luoma vahvistuskoodi",
+        "title": "Lisää todennussovellus"
+      }
+    }
+  },
+  "unstable__errors": {
+    "action_blocked": "Toimintoa ei voitu suorittaa. Yritä myöhemmin uudelleen tai ota yhteyttä tukeen, jos ongelma jatkuu.",
+    "already_a_member_in_organization": "{{email}} on jo tämän organisaation jäsen.",
+    "api_key_name_already_exists": "API-avaimen nimi on jo olemassa.",
+    "api_key_usage_exceeded": "Olet saavuttanut käyttörajasi. Voit poistaa rajoituksen siirtymällä maksulliseen tilaukseen.",
+    "avatar_file_size_exceeded": "Tiedostokoko ylittää enimmäisrajan 10 Mt. Valitse pienempi tiedosto.",
+    "avatar_file_type_invalid": "Tiedostotyyppiä ei tueta. Lataa JPG-, PNG-, GIF- tai WEBP-kuva.",
+    "captcha_invalid": "Rekisteröityminen epäonnistui epäonnistuneiden tietoturvatarkistusten vuoksi. Päivitä sivu ja yritä uudelleen tai ota yhteyttä tukeen.",
+    "captcha_unavailable": "Rekisteröityminen epäonnistui, koska botin vahvistus epäonnistui. Päivitä sivu ja yritä uudelleen tai ota yhteyttä tukeen.",
+    "form_email_address_blocked": "Väliaikaiset sähköpostipalvelut eivät ole tuettuja. Käytä tavallista sähköpostiosoitetta tilin luomiseen.",
+    "form_identifier_exists__email_address": "Tämä sähköpostiosoite on jo käytössä. Kokeile toista.",
+    "form_identifier_exists__phone_number": "Tämä puhelinnumero on jo käytössä. Kokeile toista.",
+    "form_identifier_exists__username": "Tämä käyttäjänimi on jo käytössä. Kokeile toista.",
+    "form_identifier_not_found": "Ei voi löytää tiliä näillä tiedoilla.",
+    "form_new_password_matches_current": "Uusi salasana ei voi olla sama kuin nykyinen salasana.",
+    "form_param_format_invalid__email_address": "Sähköpostiosoiteen tulee olla kelvollinen.",
+    "form_param_format_invalid__phone_number": "Puhelinnumeron on oltava kelvollisessa kansainvälisessä muodossa",
+    "form_param_max_length_exceeded__first_name": "Etunimi saa olla enintään 256 merkkiä pitkä.",
+    "form_param_max_length_exceeded__last_name": "Sukunimi saa olla enintään 256 merkkiä pitkä.",
+    "form_param_max_length_exceeded__name": "Nimi saa olla enintään 256 merkkiä pitkä.",
+    "form_password_length_too_short": "Salasanasi on liian lyhyt. Sen on oltava vähintään 8 merkkiä pitkä.",
+    "form_password_matches_identifier": "Salasana ei voi olla sama kuin sähköpostiosoitteesi, puhelinnumerosi tai käyttäjänimesi. Valitse tilisi turvallisuuden vuoksi toinen salasana.",
+    "form_password_not_strong_enough": "Salasana ei ole riittävän vahva.",
+    "form_password_or_identifier_incorrect": "Salasana tai sähköpostiosoite on väärä. Yritä uudelleen tai käytä toista menetelmää.",
+    "form_password_pwned": "Salasana on ollut mukana julkisissa tietovuodoissa. Valitse toinen salasana.",
+    "form_password_pwned__sign_in": "Salasana on ollut mukana julkisissa tietovuodoissa. Vaihdathan salasanasi.",
+    "form_password_size_in_bytes_exceeded": "Salasanasi on ylittänyt sallitun tavumäärän, lyhennä sitä tai poista joitain erikoismerkkejä.",
+    "form_password_untrusted__sign_in": "Salasanasi on saattanut vaarantua. Tilisi suojaamiseksi jatka vaihtoehtoisella kirjautumismenetelmällä. Sinun on vaihdettava salasanasi kirjautumisen jälkeen.",
+    "form_password_validation_failed": "Väärä salasana.",
+    "form_username_invalid_length": "Käyttäjänimen on oltava {{min_length}}–{{max_length}} merkkiä pitkä.",
+    "form_username_needs_non_number_char": "Käyttäjänimessä tulee olla vähintään yksi ei-numeerinen merkki.",
+    "identification_deletion_failed": "Et voi poistaa viimeistä henkilöllisyyttäsi.",
+    "not_allowed_access": "Sähköpostiosoitteella tai puhelinnumerolla ei voi rekisteröityä. Syynä voi olla, että sähköpostiosoite sisältää merkkejä '+', '=', '#' tai '.', että verkkotunnus kuuluu väliaikaiseen sähköpostipalveluun, tai että osoite on erikseen estetty. Jos tämä on mielestäsi virhe, ota yhteyttä tukeen.",
+    "oauth_access_denied": "Et myöntänyt käyttöoikeutta tiliisi.",
+    "organization_membership_quota_exceeded": "Olet saavuttanut organisaation jäsenmäärän ylärajan, mukaan lukien odottavat kutsut.",
+    "organization_not_found_or_unauthorized": "Et ole enää tämän organisaation jäsen. Valitse tai luo toinen organisaatio.",
+    "organization_not_found_or_unauthorized_with_create_organization_disabled": "Et ole enää tämän organisaation jäsen. Valitse toinen organisaatio.",
+    "passkey_already_exists": "Pääsyavain on jo rekisteröity tähän laitteeseen.",
+    "passkey_not_supported": "Pääsyavain ei ole tuettu tällä laitteella.",
+    "passkey_pa_not_supported": "Rekisteröinti vaatii alustan autentikaattorin, mutta laite ei tue sitä.",
+    "passkey_registration_cancelled": "Pääsyavaimen lisääminen peruutettiin tai aikakatkaistiin.",
+    "passkey_retrieval_cancelled": "Pääsyavaimella kirjautuminen peruutettiin tai aikakatkaistiin.",
+    "passwordComplexity": {
+      "maximumLength": "enintään {{length}} merkkiä",
+      "minimumLength": "vähintään {{length}} merkkiä",
+      "requireLowercase": "pieni kirjain",
+      "requireNumbers": "numero",
+      "requireSpecialCharacter": "erikoismerkki",
+      "requireUppercase": "iso kirjain",
+      "sentencePrefix": "Salasanan on sisällettävä"
+    },
+    "phone_number_exists": "Tämä puhelinnumero on jo käytössä. Kokeile toista.",
+    "protect_check_execution_failed": "Tarkistus ei valmistunut. Yritä uudelleen.",
+    "protect_check_invalid_script": "Tarkistusta ei voitu ladata. Ota yhteyttä tukeen, jos ongelma jatkuu.",
+    "protect_check_invalid_sdk_url": "Tarkistusta ei voitu käynnistää. Ota yhteyttä tukeen.",
+    "protect_check_script_load_failed": "Tarkistusta ei voitu ladata. Syynä voi olla verkkoyhteys tai sisällön suojauskäytäntö, joka estää tarkistuksen skriptin. Yritä uudelleen tai ota yhteyttä tukeen.",
+    "protect_check_timed_out": "Tarkistus ei valmistunut ajoissa. Yritä uudelleen.",
+    "protect_check_unsupported_environment": "Tarkistusta ei tueta tässä ympäristössä. Jatka tavallisella selaimella tai ota yhteyttä tukeen.",
+    "session_exists": "Olet jo kirjautunut sisään.",
+    "web3_missing_identifier": "Web3-lompakkoa ei löytynyt. Asenna sellainen jatkaaksesi.",
+    "web3_signature_request_rejected": "Hylkäsit allekirjoituspyynnön. Yritä uudelleen jatkaaksesi.",
+    "web3_solana_signature_generation_failed": "Allekirjoitusta luotaessa tapahtui virhe. Yritä uudelleen jatkaaksesi.",
+    "zxcvbn": {
+      "couldBeStronger": "Salasanasi toimii, mutta se voisi olla vahvempi. Kokeile lisätä erikoismerkkejä tai numeroita.",
+      "goodPassword": "Salasanasi täyttää kaikki tarvittavat vaatimukset.",
+      "notEnough": "Salasanasi ei ole riittävän vahva.",
+      "suggestions": {
+        "allUppercase": "Käytä isoja kirjaimia, mutta ei kaikkia kirjaimia.",
+        "anotherWord": "Älä käytä yleisiä sanoja.",
+        "associatedYears": "Älä käytä vuosilukuja, jotka liittyvät sinuun.",
+        "capitalization": "Käytä isoja ja pieniä kirjaimia.",
+        "dates": "Älä käytä päivämääriä.",
+        "l33t": "Älä käytä l33t-kieltä.",
+        "longerKeyboardPattern": "Vältä pitkiä näppäinkuvioita.",
+        "noNeed": "Älä käytä tätä sanaa.",
+        "pwned": "Älä käytä salasanaa, joka on ollut osallisena tietovuodossa.",
+        "recentYears": "Älä käytä viimeaikaisia vuosilukuja.",
+        "repeated": "Älä käytä toistuvia sanoja.",
+        "reverseWords": "Älä käytä sanoja takaperin.",
+        "sequences": "Vältä peräkkäisiä numeroita tai kirjaimia.",
+        "useWords": "Älä käytä yleisiä sanoja."
+      },
+      "warnings": {
+        "common": "Tämä on yleinen salasana.",
+        "commonNames": "Yleiset nimet ja sukunimet ovat helppo arvata.",
+        "dates": "Päivämäärät ovat helppo arvata.",
+        "extendedRepeat": "Toistuvat merkit ovat helppo arvata.",
+        "keyPattern": "Näppäinkuvioita on helppo arvata.",
+        "namesByThemselves": "Nimet ovat helppo arvata.",
+        "pwned": "Tämä salasana on ollut osallisena tietovuodossa.",
+        "recentYears": "Viimeaikaiset vuodet ovat helppo arvata.",
+        "sequences": "Peräkkäiset numerot ja kirjaimet ovat helppo arvata.",
+        "similarToCommon": "Tämä on samanlainen kuin yleinen salasana.",
+        "simpleRepeat": "Toistuvat merkit ovat helppo arvata.",
+        "straightRow": "Peräkkäiset merkit ovat helppo arvata.",
+        "topHundred": "Tämä on yleinen salasana.",
+        "topTen": "Tämä on yleinen salasana.",
+        "userInputs": "Salasana perustuu käyttäjän syötteisiin.",
+        "wordByItself": "Yksittäinen sana on helppo arvata."
+      }
+    }
+  },
+  "userButton": {
+    "action__addAccount": "Lisää tili",
+    "action__closeUserMenu": "Sulje käyttäjävalikko",
+    "action__manageAccount": "Hallitse tiliä",
+    "action__openUserMenu": "Avaa käyttäjävalikko",
+    "action__signOut": "Kirjaudu ulos",
+    "action__signOutAll": "Kirjaudu ulos kaikilta tileiltä",
+    "label__accountActions": "Tilin toiminnot",
+    "label__activeSessions": "Aktiiviset istunnot",
+    "label__userButtonPopover": "Tilin paneeli"
+  },
+  "userProfile": {
+    "apiKeysPage": {
+      "title": "API-avaimet"
+    },
+    "backupCodePage": {
+      "actionLabel__copied": "Kopioitu",
+      "actionLabel__copy": "Kopioi",
+      "actionLabel__download": "Lataa .txt",
+      "actionLabel__print": "Tulosta",
+      "infoText1": "Varakoodit otetaan käyttöön tälle tilille.",
+      "infoText2": "Pidä varakoodit salassa ja säilytä ne turvallisesti. Voit luoda uudelleen varakoodit, jos epäilet, että ne ovat vaarantuneet.",
+      "subtitle__codelist": "Säilytä varakoodit turvallisessa paikassa ja pidä ne salassa.",
+      "successMessage": "Varakoodit ovat nyt käytössä. Voit käyttää jotakin näistä kirjautuaksesi tilillesi, jos menetät käyttöoikeuden todennuslaitteeseesi. Jokaista koodia voi käyttää vain kerran.",
+      "successSubtitle": "Voit käyttää jotakin näistä kirjautuaksesi tilillesi, jos menetät käyttöoikeuden todennuslaitteeseesi.",
+      "title": "Lisää varakoodin vahvistus",
+      "title__codelist": "Varakoodit"
+    },
+    "billingPage": {
+      "accountCreditsSection": {},
+      "creditHistoryPage": {},
+      "paymentHistorySection": {
+        "empty": "Ei maksuhistoriaa",
+        "notFound": "Maksuyritystä ei löytynyt",
+        "tableHeader__amount": "Summa",
+        "tableHeader__date": "Päivämäärä",
+        "tableHeader__status": "Tila"
+      },
+      "paymentMethodsSection": {
+        "actionLabel__default": "Aseta oletukseksi",
+        "actionLabel__remove": "Poista",
+        "add": "Lisää uusi maksutapa",
+        "addSubtitle": "Lisää uusi maksutapa tilillesi.",
+        "cancelButton": "Peruuta",
+        "formButtonPrimary__add": "Lisää maksutapa",
+        "formButtonPrimary__pay": "Maksa {{amount}}",
+        "payWithTestCardButton": "Maksa testikortilla",
+        "removeMethod": {
+          "messageLine1": "{{identifier}} poistetaan tältä tililtä.",
+          "messageLine2": "Et voi enää käyttää tätä maksutapaa, ja siihen sidotut toistuvat tilaukset lakkaavat toimimasta.",
+          "successMessage": "{{paymentMethod}} on poistettu tililtäsi.",
+          "title": "Poista maksutapa"
+        },
+        "title": "Maksutavat"
+      },
+      "start": {
+        "headerTitle__payments": "Maksut",
+        "headerTitle__plans": "Paketit",
+        "headerTitle__statements": "Tositteet",
+        "headerTitle__subscriptions": "Tilaukset"
+      },
+      "statementsSection": {
+        "empty": "Ei tositteita näytettäväksi",
+        "itemCaption__paidForPlan": "Maksettu {{plan}} {{period}} -paketista",
+        "itemCaption__payerCredit": "Hyvitys tilin saldosta",
+        "itemCaption__proratedCredit": "Suhteutettu hyvitys edellisen tilauksen osittaisesta käytöstä",
+        "itemCaption__subscribedAndPaidForPlan": "Tilattu ja maksettu {{plan}} {{period}} -paketti",
+        "notFound": "Tosite ei löytynyt",
+        "tableHeader__amount": "Summa",
+        "tableHeader__date": "Päivämäärä",
+        "title": "Tositteet",
+        "totalPaid": "Maksettu yhteensä"
+      },
+      "subscriptionsListSection": {
+        "actionLabel__manageSubscription": "Hallinnoi",
+        "actionLabel__newSubscription": "Tilaa paketti",
+        "actionLabel__switchPlan": "Vaihda pakettia",
+        "tableHeader__edit": "Muokkaa",
+        "tableHeader__plan": "Paketti",
+        "tableHeader__startDate": "Aloituspäivä",
+        "title": "Tilaus"
+      },
+      "subscriptionsSection": {
+        "actionLabel__default": "Hallinnoi"
+      },
+      "switchPlansSection": {
+        "title": "Vaihda pakettia"
+      },
+      "title": "Laskutus"
+    },
+    "connectedAccountPage": {
+      "formHint": "Valitse palveluntarjoaja yhdistääksesi tilisi.",
+      "formHint__noAccounts": "Ulkoisia tilintarjoajia ei ole saatavilla.",
+      "removeResource": {
+        "messageLine1": "{{identifier}} poistetaan tililtäsi.",
+        "messageLine2": "Tämä ei poista tiliäsi palveluntarjoajalta, mutta et voi enää käyttää sitä kirjautumiseen tai muihin toimintoihin tämän tilin kautta.",
+        "successMessage": "{{connectedAccount}} on poistettu tililtäsi.",
+        "title": "Poista yhdistetty tili"
+      },
+      "socialButtonsBlockButton": "{{provider|titleize}}",
+      "successMessage": "Palveluntarjoaja on lisätty tilillesi",
+      "title": "Lisää yhdistetty tili"
+    },
+    "deletePage": {
+      "actionDescription": "Kirjoita \"Poista tili\" poistaaksesi tilisi.",
+      "confirm": "Poista tili",
+      "messageLine1": "Haluatko varmasti poistaa tilisi? Joitakin liittyviä tietoja saatetaan säilyttää. Pyydä täydellistä tietojen poistamista ottamalla yhteyttä tukeen.",
+      "messageLine2": "Tämä toiminto on pysyvä ja peruuttamaton.",
+      "title": "Poista tili"
+    },
+    "emailAddressPage": {
+      "emailCode": {
+        "formHint": "Vahvistuskoodin sisältävä sähköposti lähetetään tähän sähköpostiosoitteeseen.",
+        "formSubtitle": "Syötä sähköpostiisi {{identifier}} lähetetty koodi",
+        "formTitle": "Vahvistuskoodi",
+        "resendButton": "Etkö saanut koodia? Lähetä uudelleen",
+        "successMessage": "Sähköpostiosoitteesi {{identifier}} on nyt lisätty tilillesi."
+      },
+      "emailLink": {
+        "formHint": "Vahvistuslinkki lähetetään tähän sähköpostiosoitteeseen.",
+        "formSubtitle": "Käytä sähköpostiisi lähetettyä vahvistuslinkkiä",
+        "formTitle": "Vahvistuslinkki",
+        "resendButton": "Et saanut linkkiä? Lähetä uudelleen",
+        "successMessage": "Sähköpostiosoitteesi {{identifier}} on nyt lisätty tilillesi."
+      },
+      "enterpriseSSOLink": {
+        "formButton": "Kirjaudu sisään",
+        "formSubtitle": "Viimeistele kirjautuminen {{identifier}} avulla"
+      },
+      "formHint": "Sinun on vahvistettava tämä sähköpostiosoite ennen kuin se voidaan lisätä tilillesi.",
+      "removeResource": {
+        "messageLine1": "{{identifier}} poistetaan tililtäsi.",
+        "messageLine2": "Tämä ei poista sähköpostiosoitettasi, mutta et voi enää käyttää sitä kirjautumiseen tai muihin toimintoihin tämän tilin kautta.",
+        "successMessage": "{{emailAddress}} on poistettu tililtäsi.",
+        "title": "Poista sähköpostiosoite"
+      },
+      "title": "Lisää sähköpostiosoite",
+      "verifyTitle": "Vahvista sähköpostiosoite"
+    },
+    "formButtonPrimary__add": "Lisää",
+    "formButtonPrimary__continue": "Jatka",
+    "formButtonPrimary__finish": "Valmis",
+    "formButtonPrimary__remove": "Poista",
+    "formButtonPrimary__save": "Tallenna",
+    "formButtonReset": "Peruuta",
+    "mfaPage": {
+      "formHint": "Valitse todennusmenetelmä.",
+      "title": "Lisää kaksivaiheinen todennus"
+    },
+    "mfaPhoneCodePage": {
+      "backButton": "Käytä olemassa olevaa numeroa",
+      "primaryButton__addPhoneNumber": "Lisää puhelinnumero",
+      "removeResource": {
+        "messageLine1": "{{identifier}} ei enää vastaanota vahvistuskoodeja kirjautuessaan sisään.",
+        "messageLine2": "Tilisi ei ehkä ole yhtä turvallinen. Haluatko varmasti jatkaa?",
+        "successMessage": "SMS-koodin kaksivaiheinen todennus on poistettu {{mfaPhoneCode}}",
+        "title": "Poista kaksivaiheinen todennus"
+      },
+      "subtitle__availablePhoneNumbers": "Valitse olemassa oleva puhelinnumero rekisteröityäksesi SMS-koodin kaksivaiheiseen todennukseen tai lisää uusi.",
+      "subtitle__unavailablePhoneNumbers": "Ei ole käytettävissä olevia puhelinnumeroita rekisteröityäksesi SMS-koodin kaksivaiheiseen todennukseen, lisää uusi.",
+      "successMessage1": "Kirjautuessasi sinun on annettava vahvistuskoodi, joka on lähetetty tähän puhelinnumeroon lisävaiheena.",
+      "successMessage2": "Tallenna nämä varakoodit ja säilytä ne jossain turvallisessa paikassa. Jos menetät pääsyn todennuslaitteeseesi, voit käyttää varakoodeja kirjautuaksesi sisään.",
+      "successTitle": "SMS-koodin todennus on otettu käyttöön",
+      "title": "Lisää SMS-koodin todennus"
+    },
+    "mfaTOTPPage": {
+      "authenticatorApp": {
+        "buttonAbleToScan__nonPrimary": "Skannaa sen sijaan QR-koodi",
+        "buttonUnableToScan__nonPrimary": "Et voi skannata QR-koodia?",
+        "infoText__ableToScan": "Aseta uusi kirjautumistapa todennussovellukseesi ja skannaa seuraava QR-koodi linkittääksesi se tilillesi.",
+        "infoText__unableToScan": "Aseta uusi kirjautumistapa todennussovellukseesi ja syötä alla annettu avain.",
+        "inputLabel__unableToScan1": "Varmista, että Aikaperusteiset tai Yksittäiset salasanat on käytössä ja viimeistele tilin linkitys.",
+        "inputLabel__unableToScan2": "Vaihtoehtoisesti, jos todennussovelluksesi tukee TOTP-URI:ta, voit myös kopioida koko URI:n."
+      },
+      "removeResource": {
+        "messageLine1": "Tämän todennussovelluksen avulla ei enää tarvita vahvistuskoodia kirjautuessasi sisään.",
+        "messageLine2": "Tilisi ei ehkä ole yhtä turvallinen. Haluatko varmasti jatkaa?",
+        "successMessage": "Kaksivaiheinen todennus todennussovelluksen avulla on poistettu.",
+        "title": "Poista kaksivaiheinen todennus"
+      },
+      "successMessage": "Kaksivaiheinen todennus on nyt otettu käyttöön. Kirjautuessasi sinun on annettava vahvistuskoodi tästä todennussovelluksesta lisävaiheena.",
+      "title": "Lisää todennussovellus",
+      "verifySubtitle": "Syötä todennuskoodi, jonka todennussovelluksesi on luonut",
+      "verifyTitle": "Vahvistuskoodi"
+    },
+    "mobileButton__menu": "Valikko",
+    "navbar": {
+      "account": "Profiili",
+      "apiKeys": "API-avaimet",
+      "billing": "Laskutus",
+      "description": "Hallitse tilisi tietoja",
+      "security": "Turvallisuus",
+      "title": "Tili"
+    },
+    "passkeyScreen": {
+      "removeResource": {
+        "messageLine1": "{{name}} poistetaan tililtäsi.",
+        "title": "Poista pääsyavain"
+      },
+      "subtitle__rename": "Voit muuttaa pääsyavaimen nimeä helpottaaksesi sen löytämistä.",
+      "title__rename": "Nimeä pääsyavain uudelleen"
+    },
+    "passwordPage": {
+      "checkboxInfoText__signOutOfOtherSessions": "Suositellaan kirjautumista ulos kaikista muista laitteista, jotka saattavat käyttää vanhaa salasanaasi.",
+      "readonly": "Salasanaa ei voi muuttaa, koska kirjautuminen on mahdollista vain yrityksen yhteyden kautta.",
+      "successMessage__set": "Salasanasi on asetettu.",
+      "successMessage__signOutOfOtherSessions": "Kaikki muut laitteet on kirjattu ulos.",
+      "successMessage__update": "Salasanasi on päivitetty.",
+      "title__set": "Aseta salasana",
+      "title__update": "Päivitä salasana"
+    },
+    "phoneNumberPage": {
+      "infoText": "Vahvistuskoodin sisältävä tekstiviesti lähetetään tähän puhelinnumeroon. Viesti- ja tiedonsiirtomaksuja saatetaan periä.",
+      "removeResource": {
+        "messageLine1": "{{identifier}} poistetaan tililtäsi.",
+        "messageLine2": "Tämä ei poista puhelinnumeroasi, mutta et voi enää käyttää sitä kirjautumiseen tai muihin toimintoihin tämän tilin kautta.",
+        "successMessage": "{{phoneNumber}} on poistettu tililtäsi.",
+        "title": "Poista puhelinnumero"
+      },
+      "successMessage": "Puhelinnumerosi {{identifier}} on nyt lisätty tilillesi.",
+      "title": "Lisää puhelinnumero",
+      "verifySubtitle": "Syötä puhelimeesi lähetetty vahvistuskoodi: {{identifier}}",
+      "verifyTitle": "Vahvista puhelinnumero"
+    },
+    "plansPage": {
+      "title": "Paketit"
+    },
+    "profilePage": {
+      "fileDropAreaHint": "Suositeltu koko 1:1, enintään 10 Mt.",
+      "imageFormDestructiveActionSubtitle": "Poista kuva",
+      "imageFormSubtitle": "Lataa kuva",
+      "imageFormTitle": "Profiilikuva",
+      "readonly": "Profiilitietosi on annettu yrityksen yhteyden kautta eikä niitä voi muuttaa.",
+      "successMessage": "Profiilisi on päivitetty.",
+      "title": "Päivitä profiili"
+    },
+    "start": {
+      "activeDevicesSection": {
+        "destructiveAction": "Kirjaudu ulos laitteesta",
+        "title": "Aktiiviset laitteet"
+      },
+      "connectedAccountsSection": {
+        "actionLabel__connectionFailed": "Yritä uudelleen",
+        "actionLabel__reauthorize": "Valtuuta nyt",
+        "destructiveActionTitle": "Poista",
+        "primaryButton": "Yhdistä tili",
+        "subtitle__disconnected": "Tämän tilin liitos on katkaistu.",
+        "subtitle__reauthorize": "Tarvittavat käyttöoikeudet on päivitetty, ja saatat kokea rajoitettua toiminnallisuutta. Valtuuta tämä sovellus välttääksesi mahdolliset ongelmat.",
+        "title": "Yhdistetyt tilit"
+      },
+      "dangerSection": {
+        "deleteAccountButton": "Poista tili",
+        "title": "Poista tili"
+      },
+      "emailAddressesSection": {
+        "destructiveAction": "Poista sähköpostiosoite",
+        "detailsAction__nonPrimary": "Aseta ensisijaiseksi",
+        "detailsAction__primary": "Viimeistele vahvistus",
+        "detailsAction__unverified": "Vahvista sähköpostiosoite",
+        "primaryButton": "Lisää sähköpostiosoite",
+        "title": "Sähköpostiosoitteet"
+      },
+      "enterpriseAccountsSection": {
+        "primaryButton": "Yhdistä tili",
+        "title": "Yritystilit"
+      },
+      "headerTitle__account": "Tili",
+      "headerTitle__security": "Turvallisuus",
+      "mfaSection": {
+        "backupCodes": {
+          "actionLabel__regenerate": "Luo uudet",
+          "headerTitle": "Varakoodit",
+          "subtitle__regenerate": "Hanki uusi sarja turvallisia varakoodeja. Aiemmat varakoodit poistetaan eivätkä ne ole enää käytettävissä.",
+          "title__regenerate": "Luo uudet varakoodit"
+        },
+        "phoneCode": {
+          "actionLabel__setDefault": "Aseta oletukseksi",
+          "destructiveActionLabel": "Poista"
+        },
+        "primaryButton": "Lisää kaksivaiheinen todennus",
+        "title": "Kaksivaiheinen todennus",
+        "totp": {
+          "destructiveActionTitle": "Poista",
+          "headerTitle": "Todennussovellus"
+        }
+      },
+      "passkeysSection": {
+        "menuAction__destructive": "Poista",
+        "menuAction__rename": "Nimeä uudelleen",
+        "primaryButton": "Lisää pääsyavain",
+        "title": "Pääsyavaimet"
+      },
+      "passwordSection": {
+        "primaryButton__setPassword": "Aseta salasana",
+        "primaryButton__updatePassword": "Päivitä salasana",
+        "title": "Salasana"
+      },
+      "phoneNumbersSection": {
+        "destructiveAction": "Poista puhelinnumero",
+        "detailsAction__nonPrimary": "Aseta ensisijaiseksi",
+        "detailsAction__primary": "Viimeistele vahvistus",
+        "detailsAction__unverified": "Vahvista puhelinnumero",
+        "primaryButton": "Lisää puhelinnumero",
+        "title": "Puhelinnumerot"
+      },
+      "profileSection": {
+        "primaryButton": "Päivitä profiili",
+        "title": "Profiili"
+      },
+      "usernameSection": {
+        "primaryButton__setUsername": "Aseta käyttäjänimi",
+        "primaryButton__updateUsername": "Päivitä käyttäjänimi",
+        "title": "Käyttäjänimi"
+      },
+      "web3WalletsSection": {
+        "destructiveAction": "Poista lompakko",
+        "detailsAction__nonPrimary": "Aseta ensisijaiseksi",
+        "primaryButton": "Yhdistä lompakko",
+        "title": "Web3-lompakot",
+        "web3SelectSolanaWalletScreen": {
+          "subtitle": "Valitse Solana-lompakko yhdistettäväksi tiliisi.",
+          "title": "Lisää Solana-lompakko"
+        }
+      }
+    },
+    "usernamePage": {
+      "successMessage": "Käyttäjänimesi on päivitetty.",
+      "title__set": "Aseta käyttäjänimi",
+      "title__update": "Päivitä käyttäjänimi"
+    },
+    "web3WalletPage": {
+      "removeResource": {
+        "messageLine1": "{{identifier}} poistetaan tililtäsi.",
+        "messageLine2": "Et voi enää kirjautua sisään tällä web3-lompakolla.",
+        "successMessage": "{{web3Wallet}} on poistettu tililtäsi.",
+        "title": "Poista web3-lompakko"
+      },
+      "subtitle__availableWallets": "Valitse web3-lompakko yhdistääksesi tilisi.",
+      "subtitle__unavailableWallets": "Ei ole käytettävissä olevia web3-lompakoita yhdistääksesi tilisi.",
+      "successMessage": "Web3-lompakko on lisätty tilillesi.",
+      "title": "Lisää web3-lompakko",
+      "web3WalletButtonsBlockButton": "{{provider|titleize}}"
+    }
+  },
+  "waitlist": {
+    "start": {
+      "actionLink": "Kirjaudu sisään",
+      "actionText": "Onko sinulla jo pääsy?",
+      "formButton": "Liity jonotuslistalle",
+      "subtitle": "Syötä sähköpostiosoitteesi ja ilmoitamme sinulle, kun paikkasi on valmis",
+      "title": "Liity jonotuslistalle"
+    },
+    "success": {
+      "message": "Sinut ohjataan pian...",
+      "subtitle": "Otamme yhteyttä, kun paikkasi on valmis",
+      "title": "Kiitos liittymisestä jonotuslistalle!"
+    }
+  },
+  "web3SolanaWalletButtons": {
+    "connect": "Yhdistä {{walletName}}",
+    "continue": "Jatka {{walletName}}",
+    "noneAvailable": "Solana Web3 -lompakoita ei havaittu. Asenna Web3-yhteensopiva {{ solanaWalletsLink || link(\"wallet extension\") }}."
+  }
+}

@@ -357,7 +357,7 @@ function SettingsDialog({
 
         <div className="flex flex-col sm:flex-row h-full min-h-0">
           {/* Mobile: dropdown nav */}
-          <div className="sm:hidden shrink-0 px-4 pr-14 pt-4 pb-4 border-b border-border/50 bg-[hsl(var(--gray-0))]">
+          <div className="sm:hidden shrink-0 px-4 pe-14 pt-4 pb-4 border-b border-border/50 bg-[hsl(var(--gray-0))]">
             <Select
               value={resolvedSection}
               onValueChange={(v) => {
@@ -382,11 +382,11 @@ function SettingsDialog({
           </div>
 
           {/* Desktop: sidebar nav */}
-          <nav className="hidden sm:flex sm:flex-col w-52 shrink-0 p-3 pt-3 pb-4 gap-4 overflow-y-auto border-r border-r-gray-300 bg-[hsl(var(--gray-0))]">
+          <nav className="hidden sm:flex sm:flex-col w-52 shrink-0 p-3 pt-3 pb-4 gap-4 overflow-y-auto border-e border-e-gray-300 bg-[hsl(var(--gray-0))]">
             {sidebarGroups.map((group) => {
               return (
                 <div key={group.label} className="shrink-0">
-                  <div className="h-7 flex items-center pl-2">
+                  <div className="h-7 flex items-center ps-2">
                     <span className="text-[13px] leading-4 text-sidebar-foreground/50 font-medium">
                       {group.label}
                     </span>
@@ -403,7 +403,7 @@ function SettingsDialog({
                             handleSectionChange(item.id);
                           }}
                           className={cn(
-                            "flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 focus-visible:bg-state-hover focus-visible:outline-none",
+                            "flex w-full h-8 items-center gap-2 rounded-lg p-2 text-start text-sm leading-5 transition-colors duration-200 focus-visible:bg-state-hover focus-visible:outline-none",
                             isActive
                               ? "bg-state-selected text-foreground font-medium"
                               : "text-sidebar-foreground hover:bg-state-hover",

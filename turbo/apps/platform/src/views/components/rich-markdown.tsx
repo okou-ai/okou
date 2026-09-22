@@ -86,7 +86,13 @@ function omitMarkdownNodeProp<Props extends object>(
 function PlainLink({ href, children, ...rest }: MarkdownAnchorProps) {
   const linkProps = omitMarkdownNodeProp(rest);
   return (
-    <a {...linkProps} href={href} target="_blank" rel="noopener noreferrer">
+    <a
+      {...linkProps}
+      href={href}
+      dir="auto"
+      target="_blank"
+      rel="noopener noreferrer"
+    >
       {children}
     </a>
   );
@@ -646,7 +652,11 @@ function MediaParagraphRenderer({
       </div>
     );
   }
-  return <p {...props}>{children}</p>;
+  return (
+    <p {...props} dir="auto">
+      {children}
+    </p>
+  );
 }
 
 function MarkdownSpanRenderer(props: MarkdownSpanProps) {
@@ -716,7 +726,43 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
   return <div {...omitMarkdownNodeProp(rest)}>{children}</div>;
 }
 
+function MarkdownParagraphRenderer({
+  children,
+  ...props
+}: ComponentPropsWithoutRef<"p"> & MarkdownNodeProp) {
+  return (
+    <p {...omitMarkdownNodeProp(props)} dir="auto">
+      {children}
+    </p>
+  );
+}
+
+function MarkdownCodeRenderer({
+  children,
+  ...props
+}: ComponentPropsWithoutRef<"code"> & MarkdownNodeProp) {
+  return (
+    <code {...omitMarkdownNodeProp(props)} dir="ltr">
+      {children}
+    </code>
+  );
+}
+
+function MarkdownPreRenderer({
+  children,
+  ...props
+}: ComponentPropsWithoutRef<"pre"> & MarkdownNodeProp) {
+  return (
+    <pre {...omitMarkdownNodeProp(props)} dir="ltr">
+      {children}
+    </pre>
+  );
+}
+
 const PLAIN_MARKDOWN_COMPONENTS = {
+  p: MarkdownParagraphRenderer,
+  pre: MarkdownPreRenderer,
+  code: MarkdownCodeRenderer,
   table: ResponsiveTable,
   a: PlainLinkRenderer,
   img: PlainImageRenderer,
@@ -726,6 +772,8 @@ const PLAIN_MARKDOWN_COMPONENTS = {
 } as const;
 
 const MEDIA_MARKDOWN_COMPONENTS = {
+  pre: MarkdownPreRenderer,
+  code: MarkdownCodeRenderer,
   table: ResponsiveTable,
   p: MediaParagraphRenderer,
   a: MediaLinkRenderer,

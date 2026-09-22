@@ -197,8 +197,8 @@ function renderAccountTrigger(
         size="sm"
         shape={avatarShape}
       />
-      <span className="min-w-0 flex-1 text-left text-sm font-medium leading-tight truncate">
-        {display.name}
+      <span className="min-w-0 flex-1 text-start text-sm font-medium leading-tight truncate">
+        <bdi>{display.name}</bdi>
       </span>
     </button>
   );
@@ -226,10 +226,10 @@ function CurrentAccountHeader({
           />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-foreground truncate">
-              {display.name}
+              <bdi>{display.name}</bdi>
             </div>
             <div className="text-xs text-muted-foreground truncate">
-              {display.email}
+              <bdi>{display.email}</bdi>
             </div>
           </div>
         </div>
@@ -481,7 +481,7 @@ function AccountManagementGroup({
             return $.settings.accountMenu.switchAccount;
           })}
         </span>
-        <ChevronRight size={14} className="" />
+        <ChevronRight size={14} className="rtl:rotate-180" />
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent className="w-[220px]">
         {others.map((account) => {
@@ -500,10 +500,10 @@ function AccountManagementGroup({
               />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-foreground truncate">
-                  {account.name}
+                  <bdi>{account.name}</bdi>
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
-                  {account.email}
+                  <bdi>{account.email}</bdi>
                 </div>
               </div>
             </DropdownMenuItem>

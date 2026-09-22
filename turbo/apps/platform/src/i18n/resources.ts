@@ -27,6 +27,28 @@ import zhHansAgentsUrl from "./locales/zh-Hans/agents.json?url";
 import zhHansCommonUrl from "./locales/zh-Hans/common.json?url";
 import zhHantAgentsUrl from "./locales/zh-Hant/agents.json?url";
 import zhHantCommonUrl from "./locales/zh-Hant/common.json?url";
+import trTRAgentsUrl from "./locales/tr-TR/agents.json?url";
+import trTRCommonUrl from "./locales/tr-TR/common.json?url";
+import viVNAgentsUrl from "./locales/vi-VN/agents.json?url";
+import viVNCommonUrl from "./locales/vi-VN/common.json?url";
+import thTHAgentsUrl from "./locales/th-TH/agents.json?url";
+import thTHCommonUrl from "./locales/th-TH/common.json?url";
+import nlNLAgentsUrl from "./locales/nl-NL/agents.json?url";
+import nlNLCommonUrl from "./locales/nl-NL/common.json?url";
+import svSEAgentsUrl from "./locales/sv-SE/agents.json?url";
+import svSECommonUrl from "./locales/sv-SE/common.json?url";
+import daDKAgentsUrl from "./locales/da-DK/agents.json?url";
+import daDKCommonUrl from "./locales/da-DK/common.json?url";
+import nbNOAgentsUrl from "./locales/nb-NO/agents.json?url";
+import nbNOCommonUrl from "./locales/nb-NO/common.json?url";
+import fiFIAgentsUrl from "./locales/fi-FI/agents.json?url";
+import fiFICommonUrl from "./locales/fi-FI/common.json?url";
+import heILAgentsUrl from "./locales/he-IL/agents.json?url";
+import heILCommonUrl from "./locales/he-IL/common.json?url";
+import plPLAgentsUrl from "./locales/pl-PL/agents.json?url";
+import plPLCommonUrl from "./locales/pl-PL/common.json?url";
+import csCZAgentsUrl from "./locales/cs-CZ/agents.json?url";
+import csCZCommonUrl from "./locales/cs-CZ/common.json?url";
 
 export const DEFAULT_LOCALE = "en-US";
 export const DEFAULT_NAMESPACE = "common";
@@ -34,6 +56,10 @@ export const SUPPORTED_LOCALES = SUPPORTED_USER_LOCALES;
 
 export type SupportedLocale = UserLocale;
 type NonDefaultLocale = Exclude<SupportedLocale, typeof DEFAULT_LOCALE>;
+
+export function localeDirection(locale: SupportedLocale): "ltr" | "rtl" {
+  return locale === "he-IL" ? "rtl" : "ltr";
+}
 
 export interface LocaleResourceNamespace {
   readonly [key: string]: string | LocaleResourceNamespace;
@@ -56,43 +82,30 @@ export function isSupportedLocale(value: string): value is SupportedLocale {
   });
 }
 
-function localeResourceUrls(locale: NonDefaultLocale): LocaleResourceUrls {
-  switch (locale) {
-    case "pt-BR": {
-      return { agents: ptBRAgentsUrl, common: ptBRCommonUrl };
-    }
-    case "ja-JP": {
-      return { agents: jaJPAgentsUrl, common: jaJPCommonUrl };
-    }
-    case "ko-KR": {
-      return { agents: koKRAgentsUrl, common: koKRCommonUrl };
-    }
-    case "id-ID": {
-      return { agents: idIDAgentsUrl, common: idIDCommonUrl };
-    }
-    case "de-DE": {
-      return { agents: deDEAgentsUrl, common: deDECommonUrl };
-    }
-    case "es-ES": {
-      return { agents: esESAgentsUrl, common: esESCommonUrl };
-    }
-    case "it-IT": {
-      return { agents: itITAgentsUrl, common: itITCommonUrl };
-    }
-    case "fr-FR": {
-      return { agents: frFRAgentsUrl, common: frFRCommonUrl };
-    }
-    case "hi-IN": {
-      return { agents: hiINAgentsUrl, common: hiINCommonUrl };
-    }
-    case "zh-Hans": {
-      return { agents: zhHansAgentsUrl, common: zhHansCommonUrl };
-    }
-    case "zh-Hant": {
-      return { agents: zhHantAgentsUrl, common: zhHantCommonUrl };
-    }
-  }
-}
+const LOCALE_RESOURCE_URLS = {
+  "pt-BR": { agents: ptBRAgentsUrl, common: ptBRCommonUrl },
+  "ja-JP": { agents: jaJPAgentsUrl, common: jaJPCommonUrl },
+  "ko-KR": { agents: koKRAgentsUrl, common: koKRCommonUrl },
+  "id-ID": { agents: idIDAgentsUrl, common: idIDCommonUrl },
+  "de-DE": { agents: deDEAgentsUrl, common: deDECommonUrl },
+  "es-ES": { agents: esESAgentsUrl, common: esESCommonUrl },
+  "it-IT": { agents: itITAgentsUrl, common: itITCommonUrl },
+  "fr-FR": { agents: frFRAgentsUrl, common: frFRCommonUrl },
+  "hi-IN": { agents: hiINAgentsUrl, common: hiINCommonUrl },
+  "zh-Hans": { agents: zhHansAgentsUrl, common: zhHansCommonUrl },
+  "zh-Hant": { agents: zhHantAgentsUrl, common: zhHantCommonUrl },
+  "tr-TR": { agents: trTRAgentsUrl, common: trTRCommonUrl },
+  "vi-VN": { agents: viVNAgentsUrl, common: viVNCommonUrl },
+  "th-TH": { agents: thTHAgentsUrl, common: thTHCommonUrl },
+  "nl-NL": { agents: nlNLAgentsUrl, common: nlNLCommonUrl },
+  "sv-SE": { agents: svSEAgentsUrl, common: svSECommonUrl },
+  "da-DK": { agents: daDKAgentsUrl, common: daDKCommonUrl },
+  "nb-NO": { agents: nbNOAgentsUrl, common: nbNOCommonUrl },
+  "fi-FI": { agents: fiFIAgentsUrl, common: fiFICommonUrl },
+  "he-IL": { agents: heILAgentsUrl, common: heILCommonUrl },
+  "pl-PL": { agents: plPLAgentsUrl, common: plPLCommonUrl },
+  "cs-CZ": { agents: csCZAgentsUrl, common: csCZCommonUrl },
+} as const satisfies Record<NonDefaultLocale, LocaleResourceUrls>;
 
 function isLocaleResourceNamespace(
   value: unknown,
@@ -136,7 +149,7 @@ export async function loadLocaleResources(
     return { agents: enUSAgents, common: enUSCommon };
   }
 
-  const urls = localeResourceUrls(locale);
+  const urls = LOCALE_RESOURCE_URLS[locale];
   const [agents, common] = await Promise.all([
     loadLocaleResourceNamespace(urls.agents, locale, "agents", signal),
     loadLocaleResourceNamespace(urls.common, locale, "common", signal),
@@ -160,4 +173,15 @@ export const CHAT_ATTACHMENT_HEADINGS = {
   "hi-IN": "संलग्नक",
   "zh-Hans": "附件",
   "zh-Hant": "附件",
+  "tr-TR": "Ekler",
+  "vi-VN": "Tệp đính kèm",
+  "th-TH": "ไฟล์แนบ",
+  "nl-NL": "Bijlagen",
+  "sv-SE": "Bilagor",
+  "da-DK": "Vedhæftninger",
+  "nb-NO": "Vedlegg",
+  "fi-FI": "Liitteet",
+  "he-IL": "קבצים מצורפים",
+  "pl-PL": "Załączniki",
+  "cs-CZ": "Přílohy",
 } as const satisfies Record<SupportedLocale, string>;

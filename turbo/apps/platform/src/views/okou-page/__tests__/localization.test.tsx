@@ -404,7 +404,7 @@ test("Switching back reuses the previously loaded authentication language", asyn
 });
 
 test("An unsupported language falls back and repairs the workspace cache", async () => {
-  context.mocks.browser.language("nl-NL");
+  context.mocks.browser.language("ar-SA");
   const updates: unknown[] = [];
   const initialPreferences = preferences({ locale: null });
   context.mocks.data.userPreferences(initialPreferences);

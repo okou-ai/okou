@@ -1083,42 +1083,44 @@ body {
 
 /* --- Blockquote --------------------------------------------------------- */
 .wmde-markdown blockquote {
-  padding-left: 10px;
+  padding-inline-start: 10px;
   color: hsl(var(--muted-foreground));
-  border-left: 3px solid hsl(var(--gray-300));
+  border-inline-start: 3px solid hsl(var(--gray-300));
+  border-inline-end: 0;
 }
 
 /* --- Lists -------------------------------------------------------------- */
 .wmde-markdown ul,
 .wmde-markdown ol {
-  padding-left: 8px;
+  padding-inline-start: 8px;
+  padding-inline-end: 0;
 }
 
 .wmde-markdown ul ul,
 .wmde-markdown ol ul,
 .wmde-markdown ul ol,
 .wmde-markdown ol ol {
-  padding-left: 6px;
+  padding-inline-start: 6px;
 }
 
 .wmde-markdown ul {
   list-style-type: disc;
-  padding-left: 20px;
+  padding-inline-start: 20px;
 }
 
 .wmde-markdown ol {
   list-style-type: decimal;
-  padding-left: 24px;
+  padding-inline-start: 24px;
 }
 
 .wmde-markdown ul ul {
   list-style-type: circle;
-  padding-left: 18px;
+  padding-inline-start: 18px;
 }
 
 .wmde-markdown ol ol {
   list-style-type: lower-alpha;
-  padding-left: 22px;
+  padding-inline-start: 22px;
 }
 
 /* --- Horizontal Rule ---------------------------------------------------- */
@@ -1148,7 +1150,7 @@ body {
 .wmde-markdown table td {
   border: none;
   padding: 8px 12px;
-  text-align: left;
+  text-align: start;
   color: hsl(var(--foreground));
 }
 

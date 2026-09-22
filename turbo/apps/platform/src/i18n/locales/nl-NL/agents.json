@@ -1,0 +1,639 @@
+{
+  "actions": {
+    "cancel": "Annuleren",
+    "close": "Sluiten",
+    "copying": "Kopiëren…",
+    "create": "Maken",
+    "delete": "Agent verwijderen",
+    "deleting": "Verwijderen…",
+    "discard": "Verwerpen",
+    "retry": "Opnieuw proberen",
+    "save": "Opslaan",
+    "saving": "Opslaan…"
+  },
+  "authorization": {
+    "closeSearch": "Zoeken sluiten",
+    "connectorsLink": "Connectors",
+    "connectorsSaved": "Connectoren opgeslagen",
+    "customConnectors": {
+      "description": "Aangepaste connectors geregistreerd door uw organisatie.",
+      "saved": "Aangepaste connectors opgeslagen"
+    },
+    "description": "Tijdens het uitvoeren kan de agent veilig uw verbonden services gebruiken. U kunt de toegang op elk moment beheren of uitschakelen.",
+    "findConnectors": "Connectoren zoeken",
+    "noConnectorsAfterLink": " pagina om uw eerste service te verbinden.",
+    "noConnectorsAlt": "Geen connectors",
+    "noConnectorsBeforeLink": "Nog geen verbonden services. Ga naar de ",
+    "noResults": "Geen resultaten voor “{{search}}”",
+    "permissionLoadError": "Machtigingsverleningen konden niet worden geladen",
+    "permissionsUpdated": "Machtigingen bijgewerkt",
+    "searchPlaceholder": "Connectoren zoeken..."
+  },
+  "avatar": {
+    "accessibilityDescription": "Pas de avatarstijl, kleur en gezichtsdetails van de agent aan.",
+    "actions": {
+      "customize": "Avatar aanpassen"
+    },
+    "create": "Aangepaste avatar maken",
+    "description": "Kies een stijl of schud voor een verrassing.",
+    "editDescription": "Pas elk onderdeel aan, of schud voor een nieuwe look.",
+    "editTitle": "Avatar bewerken",
+    "nextStep": "Volgende stap",
+    "previousStep": "Vorige stap",
+    "randomize": "Avatar randomiseren",
+    "shuffleHint": "Schudden — probeer een willekeurige look!",
+    "steps": {
+      "color": "Color",
+      "face": "Gezicht",
+      "hair": "Haar",
+      "mood": "Stemming",
+      "skin": "Huid",
+      "sweater": "Trui"
+    },
+    "title": "Geef uw agent een gezicht",
+    "use": "Gebruik deze avatar"
+  },
+  "delete": {
+    "dangerZone": "Gevarenzone",
+    "dangerZoneDescription": "Verwijder deze agent en al zijn gegevens permanent. Deze actie kan niet ongedaan worden gemaakt.",
+    "description": "Verwijdert de agent, de workflows, automatiseringen en de chatgeschiedenis van iedereen.",
+    "irreversible": "Dit kan niet ongedaan worden gemaakt.",
+    "success": "Agent verwijderd",
+    "title": "{{agentName}} verwijderen?",
+    "workflows": {
+      "copiedTitle": "Al gekopieerd",
+      "copiedTo": "{{workflowTitle}} gekopieerd naar {{agentName}}",
+      "copyTo": "Kopiëren naar {{agentName}}",
+      "deleteWithAgent": "Verwijderen met agent",
+      "description": "Kopieer een workflow naar een andere agent om deze te behouden. Alles wat overblijft, wordt verwijderd.",
+      "handle": "Verwerk workflow {{workflowTitle}}",
+      "loadFailed": "Kon workflows niet laden. Probeer het opnieuw voordat je deze agent verwijdert.",
+      "loading": "Workflows laden…",
+      "title": "Workflows behouden?",
+      "untitled": "Workflow"
+    }
+  },
+  "detail": {
+    "chatWith": "Chat met {{agentName}}",
+    "defaultDescription": "Uw AI-teamgenoot, op u afgestemd",
+    "notFound": {
+      "back": "Terug naar team",
+      "description": "De agent “{{agentId}}” bestaat niet of je hebt er geen toegang toe.",
+      "title": "Agent niet gevonden"
+    },
+    "tabs": {
+      "authorization": "Autorisatie",
+      "instructions": "Instructies",
+      "profile": "Profiel"
+    },
+    "viewProfile": "Agentprofiel bekijken"
+  },
+  "errors": {
+    "unknown": "Onbekende fout"
+  },
+  "fallbackName": "Agent",
+  "ideation": {
+    "all": "Alle",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimaliseer en transformeer afbeeldingen in bulk",
+            "title": "Cloudinary media-optimalisatie"
+          },
+          "elevenlabs-audio-content": {
+            "description": "Voice-over van Notion-artikelen opgeslagen in Drive",
+            "title": "ElevenLabs audiocontent"
+          },
+          "fal-ai-image-generation": {
+            "description": "Genereer productafbeeldingen uit beschrijvingen in Notion",
+            "title": "Fal AI-beeldgeneratie"
+          },
+          "heygen-video-from-script": {
+            "description": "Notion script wordt een HeyGen video met een team ping",
+            "title": "HeyGen-video van script"
+          },
+          "runway-video-from-brief": {
+            "description": "Genereer korte video's op basis van een creatieve briefing",
+            "title": "Runway-video van briefing"
+          }
+        },
+        "title": "Creatief"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Plak een lijst en {{assistantName}} opent de problemen voor je",
+            "title": "Batchgewijs problemen aanmaken"
+          },
+          "browserbase-web-testing": {
+            "description": "Geautomatiseerde browsertests voor uw web-app",
+            "title": "Browserbase webtesten"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Wekelijkse Slack-samenvatting van verkeers- en beveiligingsgebeurtenissen",
+            "title": "Cloudflare verkeers- & beveiligingsrapport"
+          },
+          "codebase-investigation": {
+            "description": "Geef een URL en {{assistantName}} traceert de bug door de repository",
+            "title": "Codebase-onderzoek"
+          },
+          "daily-standup-report": {
+            "description": "Ochtendstatistieken worden een diavoorstelling die naar Slack wordt geplaatst",
+            "title": "Dagelijks stand-up rapport"
+          },
+          "deep-research-code-analysis": {
+            "description": "Legt uit hoe een subsysteem werkt in uw codebase",
+            "title": "Diepgaande codeanalyse"
+          },
+          "github-pr-summarizer": {
+            "description": "Samengevoegde pull-aanvraagsamenvattingen in Notion met optionele Slack-berichten",
+            "title": "GitHub PR-samenvatter"
+          },
+          "github-progress-weekly": {
+            "description": "Wekelijkse repo-activiteit samengevat per functie",
+            "title": "GitHub voortgang wekelijks"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Spiegelt GitLab-issues en merge-requests in GitHub",
+            "title": "GitLab naar GitHub migratiehelper"
+          },
+          "jira-github-issue-sync": {
+            "description": "Houdt Jira-tickets en GitHub-problemen synchroon",
+            "title": "Jira ↔ GitHub probleem synchronisatie"
+          },
+          "make-scenario-builder": {
+            "description": "Ontwerp meerstaps Make-scenario's vanuit een beschrijving",
+            "title": "Scenariobouwer maken"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Wekelijkse beveiligings- en afhankelijkheidswaarschuwingen van GitHub",
+            "title": "Beveiligings- & afhankelijkheidswaarschuwingsoverzicht"
+          },
+          "sentry-issue-digest": {
+            "description": "Ochtendoverzicht van problemen gegroepeerd op ernst",
+            "title": "Sentry probleemoverzicht"
+          },
+          "vercel-deploy-digest": {
+            "description": "Het koppelt elke implementatie aan de commit en waarschuwt Slack wanneer een implementatie mislukt",
+            "title": "Vercel implementatieoverzicht"
+          },
+          "zapier-okou-migration": {
+            "description": "Maak je Zapier-workflows opnieuw als {{brandName}}-agents",
+            "title": "Zapier → {{brandName}}-migratie"
+          }
+        },
+        "title": "Engineering"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Opent een pagina in de browser en retourneert een screenshot",
+            "title": "Browserschermafbeeldingen"
+          },
+          "calendar-optimizer": {
+            "description": "Helpt bij conflicten, overbelasting en focustijd",
+            "title": "Kalenderoptimalisator"
+          },
+          "calendly-booking-sync": {
+            "description": "Nieuwe boekingen in uw agenda met een Slack-ping",
+            "title": "Calendly boekingssynchronisatie"
+          },
+          "email-assistant": {
+            "description": "Ochtendinboxoverzicht met voorgestelde volgende stappen",
+            "title": "E-mailassistent"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola-vergadernotities gesynchroniseerd met een Notion-database",
+            "title": "Granola-notities naar Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Stuurt berichten tussen Lark en Slack beide kanten op",
+            "title": "Lark ↔ Slack berichtrelais"
+          },
+          "line-message-relay": {
+            "description": "Stuur LINE-berichten door naar Slack en vice versa",
+            "title": "LINE-berichtdoorzending"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies-notities naar Notion met follow-ups in Slack",
+            "title": "Pijplijn vergadernotities"
+          },
+          "morning-brief": {
+            "description": "E-mail, agenda en notities omgezet in een kort dagelijks plan",
+            "title": "Ochtendbriefing"
+          },
+          "perplexity-deep-research": {
+            "description": "AI-gestuurde onderzoekssamenvattingen opgeslagen in Notion",
+            "title": "Perplexity diepgaand onderzoek"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull-aanvragen, e-mail en agenda in één Slack update",
+            "title": "Persoonlijk weekoverzicht"
+          },
+          "self-update-instructions": {
+            "description": "Werk de agentinstructies direct in de chat bij",
+            "title": "Zelf-update instructies"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Plaatst teammededelingen voor u op Slack",
+            "title": "Berichten verzenden namens u"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Wekelijkse samenvatting van teamactiviteit geplaatst op Slack",
+            "title": "Strava team fitnessoverzicht"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Zoek op het web en verzamel bevindingen in Notion",
+            "title": "Tavily webonderzoekspijplijn"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Vergaderopnames samengevat in Notion met actiepunten",
+            "title": "tl;dv vergaderoverzicht"
+          }
+        },
+        "title": "Iedereen"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify schraapt sites in gestructureerde Google Sheets rijen",
+            "title": "Apify webscraper naar Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Geautomatiseerde e-mailreeksen van CRM-gebeurtenissen",
+            "title": "Brevo e-mail nurture-reeks"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl bewaakt concurrerende sites en logt wijzigingen in Notion",
+            "title": "Concurrerende intelligentie scraper"
+          },
+          "competitor-research-to-notion": {
+            "description": "Onderzoek op X opgeslagen als gestructureerde notities in Notion",
+            "title": "Concurrentieonderzoek naar Notion"
+          },
+          "content-planner": {
+            "description": "Brainstorm over onderwerpen en schets een redactionele kalender",
+            "title": "Contentplanner"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Publiceert Notion-posts naar Dev.to en linkt ze op X",
+            "title": "Dev.to automatische uitgever"
+          },
+          "discord-community-insights": {
+            "description": "Discord feedback in Notion met een wekelijkse Slack samenvatting",
+            "title": "Discord community-inzichten"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Betrokkenheid in Sheets met wekelijkse Slack-samenvattingen",
+            "title": "Instagram betrokkenheidstracker"
+          },
+          "loops-email-campaign": {
+            "description": "Stel transactionele e-mails op en verstuur ze via Loops",
+            "title": "Loops e-mailcampagne"
+          },
+          "marketing-automation-system": {
+            "description": "Drie agenten voor onderzoek, wekelijkse monitoring en ad-hocwerk",
+            "title": "Marketingautomatiseringssysteem"
+          },
+          "marketing-content-planning": {
+            "description": "Plant lanceringsverhalen van Slack, interviews en concurrenten",
+            "title": "Marketing contentplanning"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Vindt onboarding-invalshoeken van Slack en interviews",
+            "title": "Onboarding e-mail use cases"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Volg wekelijks zoekwoordrangschikkingen en log naar Sheets",
+            "title": "SerpAPI trefwoordtracker"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Verkeersbenchmarks versus concurrenten opgeslagen in Notion",
+            "title": "SimilarWeb-verkeersvergelijking"
+          },
+          "social-media-content-calendar": {
+            "description": "Zet een Sheets-kalender om in posts voor elk netwerk",
+            "title": "Contentkalender voor sociale media"
+          },
+          "x-brand-monitor": {
+            "description": "Merkvermeldingen op X opgeslagen in Notion met teamwaarschuwingen",
+            "title": "X merkmonitor"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Wanneer een nieuwe YouTube-video wordt gepubliceerd, genereer dan een Notion-samenvatting en een X-thread om deze te promoten.",
+            "title": "YouTube naar X thread-hergebruiker"
+          }
+        },
+        "title": "Marketing"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Maak en beheer inboxen met de AgentMail API",
+            "title": "AgentMail-inbox"
+          },
+          "clickup-slack-standups": {
+            "description": "Dagelijkse ClickUp-taken geplaatst als een stand-up in Slack",
+            "title": "ClickUp → Slack stand-ups"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Docs batches in Notion met behoud van lay-out",
+            "title": "Google Docs → Notion-migrator"
+          },
+          "google-drive-file-organizer": {
+            "description": "Nieuwe bestanden automatisch gesorteerd in mappen",
+            "title": "Google Drive bestandsorganizer"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Formulierantwoorden komen in Notion met Slack-meldingen",
+            "title": "Jotform-invoer naar Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Wekelijkse bordvoortgang van Monday.com in Slack",
+            "title": "Monday.com wekelijks overzicht"
+          },
+          "pdf-contract-processor": {
+            "description": "Contractvelden in Notion met herinneringen vóór de vervaldatum",
+            "title": "PDF contractverwerker"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Abonnementsstatistieken in Sheets met churn-waarschuwingen in Slack",
+            "title": "RevenueCat-abonnementssamenvatting"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist-taken gespiegeld in Notion voor het team",
+            "title": "Todoist → Notion taaksynchronisatie"
+          },
+          "wrike-project-reporter": {
+            "description": "Wekelijkse Wrike-voortgangsoverzichten in Slack",
+            "title": "Wrike projectrapporteur"
+          },
+          "xero-financial-summary": {
+            "description": "Wekelijkse winst en cashflow van Xero in Slack",
+            "title": "Xero financieel overzicht"
+          }
+        },
+        "title": "Ops"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana-mijlpalen en -taken gespiegeld in Notion",
+            "title": "Asana → Notion projectsynchronisatie"
+          },
+          "feedback-router": {
+            "description": "Slack feedback gerouteerd door je regels naar de juiste plaats",
+            "title": "Feedbackrouter"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion-specificaties worden Linear-projecten en -problemen",
+            "title": "Linear PRD-implementeerder"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Dashboard-momentopnamen worden automatisch naar Slack geplaatst",
+            "title": "Metabase dashboardoverzicht"
+          },
+          "pricing-analysis": {
+            "description": "Analyseer prijsstrategieën van concurrenten en vergelijk met vergelijkbare producten",
+            "title": "Prijsanalyse"
+          },
+          "product-copy-naming": {
+            "description": "Vriendelijkere namen voor technische termen in het product",
+            "title": "Producttekst & naamgeving"
+          }
+        },
+        "title": "Product"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Deals synchroniseren met Sheets en Slack wanneer ze worden afgesloten",
+            "title": "Airtable dealtracker"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Nieuwe Bitrix-leads krijgen follow-up taken en Slack-pings",
+            "title": "Bitrix24 lead nurturing"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Wekelijkse HubSpot samenvattingen opgeslagen als gestructureerde rapporten",
+            "title": "HubSpot verkooprapporteur"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Nieuwe leads worden HubSpot-taken met Slack-waarschuwingen",
+            "title": "Lead follow-up pijplijn"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Wekelijkse Salesforce-kansenupdates in Slack",
+            "title": "Salesforce pijplijnoverzicht"
+          },
+          "streak-pipeline-report": {
+            "description": "Wekelijkse CRM-pijplijnstatistieken van Gmail in Slack",
+            "title": "Streak-pijplijnrapport"
+          },
+          "win-loss-reporter": {
+            "description": "Win- en verliestrends uit de pijplijn in Slack",
+            "title": "Win/verlies-reporter"
+          }
+        },
+        "title": "Verkoop"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Klantgesprekken gelogd en gecategoriseerd in Notion",
+            "title": "Chatwoot → Notion ondersteuningslogboek"
+          },
+          "customer-support-bot": {
+            "description": "Antwoorden uit de kennisbank en taken voor hiaten",
+            "title": "Klantenservicebot"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom-chats worden geprioriteerde Notion-taken",
+            "title": "Intercom-gesprekssorteerder"
+          },
+          "support-ticket-router": {
+            "description": "Tickets gaan naar Notion en urgente tickets pingen Slack",
+            "title": "Router voor ondersteuningstickets"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "Extraheer veelgestelde Zendesk-vragen en voeg ze automatisch toe aan een Notion FAQ",
+            "title": "Zendesk → Notion-kennisbank"
+          }
+        },
+        "title": "Ondersteuning"
+      }
+    },
+    "chat": "Chat",
+    "description": "Klik op een kaart om een gesprek te starten. Het kan een on-demand taak, een terugkerende workflow of een subagent worden.",
+    "search": {
+      "accessibilityLabel": "Gebruiksscenario's zoeken",
+      "empty": "Geen use cases komen overeen met uw zoekopdracht.",
+      "placeholder": "Zoeken"
+    },
+    "title": "Ideeën & Gebruiksscenario's"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "Instructie-editor",
+      "footerHint": "Bewerk de instructies direct om het gedrag van uw agent aan te passen.",
+      "placeholder": "Schrijf instructies voor uw agent...",
+      "toolbar": {
+        "blockquote": "Blokcitaat",
+        "bold": "Vet",
+        "bulletList": "Opsommingstekenlijst",
+        "heading1": "Kop 1",
+        "heading2": "Kop 2",
+        "heading3": "Kop 3",
+        "inlineCode": "Inline code",
+        "italic": "Cursief",
+        "orderedList": "Genummerde lijst",
+        "strikethrough": "Doorgehaald"
+      }
+    },
+    "saved": "Instructies opgeslagen"
+  },
+  "list": {
+    "actions": {
+      "new": "Nieuwe agent"
+    },
+    "cards": {
+      "coreDescription": "Uw kernagent",
+      "createdBy": "Gemaakt door {{creator}}",
+      "subagentDescription": "Sub-agent",
+      "unknownCreator": "Onbekend"
+    },
+    "create": {
+      "accessibilityDescription": "Geef de nieuwe agent een naam, kies de zichtbaarheid en pas de avatar aan.",
+      "creating": "Maken…",
+      "description": "Geef uw agent een naam en stel in wie deze mag gebruiken.",
+      "namePlaceholder": "bijv. Onderzoeksassistent",
+      "newAgentAlt": "Nieuwe agent",
+      "success": "{{agentName}} succesvol aangemaakt",
+      "title": "Een nieuwe agent maken",
+      "visibility": {
+        "private": {
+          "description": "(alleen u kunt het zien en gebruiken)",
+          "label": "Privé"
+        },
+        "public": {
+          "description": "(iedereen in deze werkruimte kan het gebruiken)",
+          "label": "Openbaar"
+        }
+      },
+      "visibilityLabel": "Zichtbaarheid"
+    },
+    "description": "{{agentName}} en sub-agents werken samen om op maat gemaakte workflows voor u en uw team uit te voeren.",
+    "documentTitle": "Agents",
+    "privateEmpty": {
+      "description": "Maak een agent die alleen jij kunt zien en gebruiken. Privé-agents zijn onbeperkt.",
+      "title": "Nog geen privé-agenten"
+    },
+    "tabs": {
+      "private": "Privé",
+      "public": "Openbaar"
+    },
+    "title": "Agents"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "Maak uw eigen avatar.",
+        "label": "Avatar"
+      },
+      "description": {
+        "description": "Waar deze agent mee helpt — zichtbaar voor teamgenoten.",
+        "label": "Beschrijving",
+        "placeholder": "Wat doet deze agent?"
+      },
+      "name": {
+        "description": "Weergegeven in de teamlijst en wanneer deze agent spreekt.",
+        "label": "Naam",
+        "placeholder": "Hoe moeten we ze noemen?"
+      },
+      "tone": {
+        "accessibilityLabel": "Hoe {{agentName}} klinkt",
+        "description": "Spraakstijl voor antwoorden. Bekijk updates wanneer u de toon wijzigt.",
+        "groupLabel": "Toon",
+        "label": "Hoe ze klinken"
+      },
+      "visibility": {
+        "defaultDescription": "De standaardagent van de werkruimte moet openbaar blijven voor alle leden van de werkruimte.",
+        "description": "Zichtbaar voor iedereen in deze werkruimte.",
+        "label": "Openbaar maken"
+      }
+    },
+    "makePrivate": {
+      "confirm": "Privé maken",
+      "description": "Zolang deze agent privé is, verliezen andere leden de toegang tot hun chatgeschiedenis eronder. Ze krijgen weer toegang als je hem weer openbaar maakt.",
+      "title": "{{agentName}} privé maken?",
+      "warningDescription": "Andere leden zien {{agentName}} of hun chats eronder niet langer.",
+      "warningTitle": "Leden verliezen toegang"
+    },
+    "saved": "Profiel opgeslagen",
+    "tones": {
+      "direct": {
+        "agentSample": "Vrijdag. Ik stuur donderdag een concept.",
+        "hint": "To the point",
+        "label": "Direct",
+        "userSample": "Ik heb het Q3-rapport voor vrijdag nodig."
+      },
+      "friendly": {
+        "agentSample": "Zeker! Ik stuur u dat Q3-rapport uiterlijk vrijdag – ik stuur donderdag een concept zodat u er een blik op kunt werpen.",
+        "hint": "Warm en benaderbaar",
+        "label": "Vriendelijk",
+        "userSample": "Ik heb het Q3-rapport voor vrijdag nodig."
+      },
+      "professional": {
+        "agentSample": "Ik heb het Q3-rapport vrijdag klaar. Ik stuur donderdag een concept ter beoordeling.",
+        "hint": "Helder en gepolijst",
+        "label": "Professioneel",
+        "userSample": "Ik heb het Q3-rapport voor vrijdag nodig."
+      },
+      "supportive": {
+        "agentSample": "Ik zorg ervoor dat je het Q3-rapport vrijdag hebt. Ik stuur donderdag een concept zodat je tijd hebt om het te beoordelen — laat het me weten als je nog iets anders wilt.",
+        "hint": "In uw hoek",
+        "label": "Ondersteunend",
+        "userSample": "Ik heb het Q3-rapport voor vrijdag nodig."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "Vastzetten",
+    "clearSearch": "Zoeken wissen",
+    "escapeShortcut": "Esc",
+    "filterAll": "Alle",
+    "markAllRead": "Alles als gelezen markeren",
+    "more": "Meer",
+    "noAgentsToPin": "U heeft nog geen andere agents.",
+    "noResults": "Geen resultaten gevonden",
+    "openMenu": "Agentmenu openen",
+    "pin": "Vastmaken aan zijbalk",
+    "pinAgent": "Een agent vastmaken",
+    "pinAgentDescription": "Kies een agent om aan de zijbalk vast te maken.",
+    "pinned": "Vastgezet",
+    "pinnedAgents": "Vastgemaakte agents",
+    "pinSuccess": "{{agentName}} vastgezet",
+    "resultCount_one": "{{count}} resultaat",
+    "resultCount_other": "{{count}} resultaten",
+    "searchAgents": "Agents zoeken...",
+    "searching": "Zoeken...",
+    "searchWorkspace": "Werkruimte zoeken...",
+    "sections": {
+      "agents": "Agents",
+      "artifacts": "Artefacten",
+      "chats": "Chats",
+      "messages": "Berichten",
+      "others": "Anderen",
+      "workflows": "Workflows"
+    },
+    "unpin": "Losmaken",
+    "unpinSuccess": "{{agentName}} losgemaakt"
+  },
+  "status": {
+    "unread": "Ongelezen"
+  },
+  "unsaved": {
+    "message": "Je hebt niet-opgeslagen wijzigingen"
+  }
+}

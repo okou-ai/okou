@@ -55,8 +55,8 @@ function WebsiteTemplatePreviewDialog({
         showCloseButton={false}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
-        <DialogHeader className="relative shrink-0 border-b border-border px-5 py-4 pr-14 text-left sm:pr-16">
-          <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
+        <DialogHeader className="relative shrink-0 border-b border-border px-5 py-4 pe-14 text-start sm:pe-16">
+          <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-start text-base leading-none">
             <button
               type="button"
               className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -79,7 +79,7 @@ function WebsiteTemplatePreviewDialog({
                 variant="ghost"
                 size="icon"
                 iconSize="lg"
-                className="absolute right-4 top-[7px] opacity-70 hover:opacity-100"
+                className="absolute end-4 top-[7px] opacity-70 hover:opacity-100"
                 aria-label={t(($) => {
                   return $.artifacts.actions.close;
                 })}

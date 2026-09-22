@@ -10,7 +10,11 @@ import {
   loadInitialLocaleResources,
 } from "../i18n/index.ts";
 import { resolveInitialLocaleFallbackFromBrowser } from "../i18n/locale-fallback.ts";
-import { DEFAULT_LOCALE, type SupportedLocale } from "../i18n/resources.ts";
+import {
+  DEFAULT_LOCALE,
+  localeDirection,
+  type SupportedLocale,
+} from "../i18n/resources.ts";
 import { clerk$ } from "./auth.ts";
 import { logger } from "./log.ts";
 import {
@@ -62,6 +66,7 @@ export const initLocale$ = command(
     set(cacheClerkLocalization$, initial.locale, clerkLocalization);
     set(internalLocale$, locale);
     document.documentElement.lang = locale;
+    document.documentElement.dir = localeDirection(locale);
   },
 );
 
@@ -77,6 +82,7 @@ const setLocale$ = command(
     set(cacheClerkLocalization$, locale, clerkLocalization);
     set(internalLocale$, locale);
     document.documentElement.lang = locale;
+    document.documentElement.dir = localeDirection(locale);
   },
 );
 

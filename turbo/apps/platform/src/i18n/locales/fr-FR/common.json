@@ -6575,16 +6575,27 @@
         "options": {
           "chineseSimplified": "简体中文",
           "chineseTraditional": "繁體中文",
+          "czech": "Čeština",
+          "danish": "Dansk",
+          "dutch": "Nederlands",
           "english": "English",
+          "finnish": "Suomi",
           "french": "Français",
           "german": "Deutsch",
+          "hebrew": "עברית",
           "hindi": "हिन्दी",
           "indonesian": "Bahasa Indonesia",
           "italian": "Italiano",
           "japanese": "日本語",
           "korean": "한국어",
+          "norwegianBokmal": "Norsk bokmål",
+          "polish": "Polski",
           "portugueseBrazil": "Português (Brasil)",
-          "spanish": "Español"
+          "spanish": "Español",
+          "swedish": "Svenska",
+          "thai": "ไทย",
+          "turkish": "Türkçe",
+          "vietnamese": "Tiếng Việt"
         },
         "title": "Langue"
       },

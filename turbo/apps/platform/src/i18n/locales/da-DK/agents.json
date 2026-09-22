@@ -1,0 +1,639 @@
+{
+  "actions": {
+    "cancel": "Annuller",
+    "close": "Luk",
+    "copying": "Kopierer...",
+    "create": "Opret",
+    "delete": "Slet agent",
+    "deleting": "Sletter...",
+    "discard": "Kassér",
+    "retry": "Prøv igen",
+    "save": "Gem",
+    "saving": "Gemmer..."
+  },
+  "authorization": {
+    "closeSearch": "Luk søgning",
+    "connectorsLink": "Connectors",
+    "connectorsSaved": "Connectors gemt",
+    "customConnectors": {
+      "description": "Brugerdefinerede connectors registreret af din organisation.",
+      "saved": "Brugerdefinerede forbindelser gemt"
+    },
+    "description": "Når agenten kører, kan den sikkert bruge dine tilsluttede tjenester. Du kan administrere eller slå adgang fra når som helst.",
+    "findConnectors": "Find connectors",
+    "noConnectorsAfterLink": " side for at forbinde din første tjeneste.",
+    "noConnectorsAlt": "Ingen connectors",
+    "noConnectorsBeforeLink": "Ingen forbundne tjenester endnu. Gå til ",
+    "noResults": "Ingen resultater for “{{search}}”",
+    "permissionLoadError": "Kunne ikke indlæse tilladelsesbevillinger",
+    "permissionsUpdated": "Tilladelser opdateret",
+    "searchPlaceholder": "Find forbindelser..."
+  },
+  "avatar": {
+    "accessibilityDescription": "Tilpas agentens avatarstil, farve og ansigtsdetaljer.",
+    "actions": {
+      "customize": "Tilpas avatar"
+    },
+    "create": "Opret brugerdefineret avatar",
+    "description": "Vælg en stil, eller tryk på bland for en overraskelse.",
+    "editDescription": "Juster en hvilken som helst del, eller bland for et nyt look.",
+    "editTitle": "Rediger avatar",
+    "nextStep": "Næste trin",
+    "previousStep": "Forrige trin",
+    "randomize": "Tilfældig avatar",
+    "shuffleHint": "Bland – prøv et tilfældigt look!",
+    "steps": {
+      "color": "Color",
+      "face": "Ansigt",
+      "hair": "Hår",
+      "mood": "Stemning",
+      "skin": "Hud",
+      "sweater": "Sweater"
+    },
+    "title": "Giv din agent et ansigt",
+    "use": "Brug denne avatar"
+  },
+  "delete": {
+    "dangerZone": "Farezone",
+    "dangerZoneDescription": "Fjern permanent denne agent og alle dens data. Denne handling kan ikke fortrydes.",
+    "description": "Sletter agenten, dens arbejdsgange, automatiseringer og alles chathistorik.",
+    "irreversible": "Dette kan ikke fortrydes.",
+    "success": "Agent slettet",
+    "title": "Slet {{agentName}}?",
+    "workflows": {
+      "copiedTitle": "Allerede kopieret",
+      "copiedTo": "{{workflowTitle}} kopieret til {{agentName}}",
+      "copyTo": "Kopier til {{agentName}}",
+      "deleteWithAgent": "Slet med agent",
+      "description": "Kopier en arbejdsgang til en anden agent for at beholde den. Alt andet slettes.",
+      "handle": "Håndter arbejdsgang {{workflowTitle}}",
+      "loadFailed": "Kunne ikke indlæse workflows. Prøv igen, før du sletter denne agent.",
+      "loading": "Indlæser arbejdsgange…",
+      "title": "Behold arbejdsgange?",
+      "untitled": "Arbejdsgang"
+    }
+  },
+  "detail": {
+    "chatWith": "Chat med {{agentName}}",
+    "defaultDescription": "Din AI-holdkammerat, tunet til dig",
+    "notFound": {
+      "back": "Tilbage til team",
+      "description": "Agenten “{{agentId}}” eksisterer ikke, eller du har ikke adgang til den.",
+      "title": "Agent ikke fundet"
+    },
+    "tabs": {
+      "authorization": "Autorisation",
+      "instructions": "Instruktioner",
+      "profile": "Profil"
+    },
+    "viewProfile": "Se agentprofil"
+  },
+  "errors": {
+    "unknown": "Ukendt fejl"
+  },
+  "fallbackName": "Agent",
+  "ideation": {
+    "all": "Alle",
+    "catalog": {
+      "creative": {
+        "cases": {
+          "cloudinary-media-optimizer": {
+            "description": "Optimer og transformer billeder i bulk",
+            "title": "Cloudinary medieoptimering"
+          },
+          "elevenlabs-audio-content": {
+            "description": "Stemme-fortælling fra Notion-artikler gemt på Drive",
+            "title": "ElevenLabs lydindhold"
+          },
+          "fal-ai-image-generation": {
+            "description": "Generer produktbilleder fra beskrivelser i Notion",
+            "title": "Fal AI billedgenerering"
+          },
+          "heygen-video-from-script": {
+            "description": "Notion-script bliver til en HeyGen-video med en team-ping",
+            "title": "HeyGen video fra script"
+          },
+          "runway-video-from-brief": {
+            "description": "Generer korte videoer ud fra en kreativ brief",
+            "title": "Runway video fra brief"
+          }
+        },
+        "title": "Kreativ"
+      },
+      "engineering": {
+        "cases": {
+          "batch-create-issues": {
+            "description": "Indsæt en liste, og {{assistantName}} åbner problemerne for dig",
+            "title": "Batch-opret problemer"
+          },
+          "browserbase-web-testing": {
+            "description": "Automatiserede browsertests til din webapp",
+            "title": "Browserbase webtest"
+          },
+          "cloudflare-traffic-security-report": {
+            "description": "Ugentlig Slack-oversigt over trafik- og sikkerhedshændelser",
+            "title": "Cloudflare trafik- og sikkerhedsrapport"
+          },
+          "codebase-investigation": {
+            "description": "Giv en URL, og {{assistantName}} sporer fejlen gennem repoen",
+            "title": "Kodebaseundersøgelse"
+          },
+          "daily-standup-report": {
+            "description": "Morgenmålinger bliver et diasshow opslået til Slack",
+            "title": "Daglig statusrapport"
+          },
+          "deep-research-code-analysis": {
+            "description": "Forklarer, hvordan et undersystem fungerer i din kodebase",
+            "title": "Dybdegående kodeanalyse"
+          },
+          "github-pr-summarizer": {
+            "description": "Flettede pull-anmodningsopsummeringer i Notion med valgfri Slack-indlæg",
+            "title": "GitHub PR-opsummering"
+          },
+          "github-progress-weekly": {
+            "description": "Ugentlig repo-aktivitet opsummeret efter funktion",
+            "title": "GitHub fremskridt ugentligt"
+          },
+          "gitlab-to-github-migration-helper": {
+            "description": "Spejler GitLab-problemer og fletteanmodninger i GitHub",
+            "title": "GitLab til GitHub migrationshjælper"
+          },
+          "jira-github-issue-sync": {
+            "description": "Holder Jira-billetter og GitHub-problemer synkroniseret",
+            "title": "Jira ↔ GitHub problem synkronisering"
+          },
+          "make-scenario-builder": {
+            "description": "Design Make-scenarier i flere trin ud fra en beskrivelse",
+            "title": "Lav scenariebygger"
+          },
+          "security-dependency-alert-digest": {
+            "description": "Ugentlige sikkerheds- og afhængighedsadvarsler fra GitHub",
+            "title": "Sikkerheds- og afhængighedsadvarselsoversigt"
+          },
+          "sentry-issue-digest": {
+            "description": "Morgenresumé af problemer grupperet efter alvorlighedsgrad",
+            "title": "Sentry problemresumé"
+          },
+          "vercel-deploy-digest": {
+            "description": "Den linker hver implementering til dens commit og advarer Slack, når en implementering mislykkes",
+            "title": "Vercel implementeringsresumé"
+          },
+          "zapier-okou-migration": {
+            "description": "Genskab dine Zapier-workflows som {{brandName}}-agenter",
+            "title": "Zapier → {{brandName}}-migration"
+          }
+        },
+        "title": "Ingeniørarbejde"
+      },
+      "everyone": {
+        "cases": {
+          "browser-screenshots": {
+            "description": "Åbner en side i browseren og returnerer et skærmbillede",
+            "title": "Browser-skærmbilleder"
+          },
+          "calendar-optimizer": {
+            "description": "Hjælper med konflikter, overbelastning og fokustid",
+            "title": "Kalenderoptimering"
+          },
+          "calendly-booking-sync": {
+            "description": "Nye bookinger i din kalender med en Slack-ping",
+            "title": "Calendly booking synkronisering"
+          },
+          "email-assistant": {
+            "description": "Morgenindbakkeoversigt med foreslåede næste trin",
+            "title": "E-mailassistent"
+          },
+          "granola-notes-to-notion": {
+            "description": "Granola-mødenotater synkroniseret til en Notion-database",
+            "title": "Granola-noter til Notion"
+          },
+          "lark-slack-message-relay": {
+            "description": "Videresender beskeder mellem Lark og Slack begge veje",
+            "title": "Lark ↔ Slack meddelelsesrelæ"
+          },
+          "line-message-relay": {
+            "description": "Videresend LINE-beskeder til Slack og omvendt",
+            "title": "LINE beskedsrelæ"
+          },
+          "meeting-notes-pipeline": {
+            "description": "Fireflies-noter til Notion med opfølgninger i Slack",
+            "title": "Mødenotat-pipeline"
+          },
+          "morning-brief": {
+            "description": "E-mail, kalender og noter omdannet til en kort daglig plan",
+            "title": "Morgenbriefing"
+          },
+          "perplexity-deep-research": {
+            "description": "AI-drevne forskningsresuméer gemt i Notion",
+            "title": "Perplexity dybdegående forskning"
+          },
+          "personal-weekly-digest": {
+            "description": "Pull requests, e-mail og kalender i én Slack-opdatering",
+            "title": "Personligt ugentligt resumé"
+          },
+          "self-update-instructions": {
+            "description": "Opdater agentinstruktionerne direkte i chatten",
+            "title": "Selvopdateringsinstruktioner"
+          },
+          "send-messages-on-your-behalf": {
+            "description": "Sender teammeddelelser til Slack for dig",
+            "title": "Send beskeder på dine vegne"
+          },
+          "strava-team-fitness-digest": {
+            "description": "Ugentlig teamaktivitetsoversigt postet til Slack",
+            "title": "Strava team fitness oversigt"
+          },
+          "tavily-web-research-pipeline": {
+            "description": "Søg på nettet og saml fund i Notion",
+            "title": "Tavily webforskningspipeline"
+          },
+          "tl-dv-meeting-recap": {
+            "description": "Mødeoptagelser opsummeret i Notion med handlingspunkter",
+            "title": "tl;dv mødeopsummering"
+          }
+        },
+        "title": "Alle"
+      },
+      "marketing": {
+        "cases": {
+          "apify-web-scraper-to-sheets": {
+            "description": "Apify skraber sider til strukturerede Google Sheets-rækker",
+            "title": "Apify web scraper til Sheets"
+          },
+          "brevo-email-nurture-sequence": {
+            "description": "Automatiserede e-mailsekvenser fra CRM-begivenheder",
+            "title": "Brevo e-mail plejesekvens"
+          },
+          "competitive-intel-scraper": {
+            "description": "Firecrawl overvåger konkurrentwebsteder og logger ændringer i Notion",
+            "title": "Konkurrencedygtig intel-scraper"
+          },
+          "competitor-research-to-notion": {
+            "description": "Forskning på X gemt som strukturerede noter i Notion",
+            "title": "Konkurrentforskning til Notion"
+          },
+          "content-planner": {
+            "description": "Brainstorm emner og skitser en redaktionel kalender",
+            "title": "Indholdsplanlægger"
+          },
+          "dev-to-auto-publisher": {
+            "description": "Udgiver Notion-opslag til Dev.to og linker dem på X",
+            "title": "Dev.to auto-udgiver"
+          },
+          "discord-community-insights": {
+            "description": "Discord feedback i Notion med en ugentlig Slack oversigt",
+            "title": "Discord fællesskabsindsigt"
+          },
+          "instagram-engagement-tracker": {
+            "description": "Engagement i Sheets med ugentlige Slack-oversigter",
+            "title": "Instagram engagement tracker"
+          },
+          "loops-email-campaign": {
+            "description": "Udkast og send transaktionelle e-mails via Loops",
+            "title": "Loops e-mailkampagne"
+          },
+          "marketing-automation-system": {
+            "description": "Tre agenter til forskning, ugentlig overvågning og ad hoc-arbejde",
+            "title": "Marketingautomatiseringssystem"
+          },
+          "marketing-content-planning": {
+            "description": "Planlægger lanceringshistorier fra Slack, interviews og konkurrenter",
+            "title": "Planlægning af marketingindhold"
+          },
+          "onboarding-email-use-cases": {
+            "description": "Finder onboarding-vinkler fra Slack og interviews",
+            "title": "Onboarding e-mail use cases"
+          },
+          "serpapi-keyword-tracker": {
+            "description": "Spor søgeordsrangeringer ugentligt og log til Sheets",
+            "title": "SerpAPI søgeordssporing"
+          },
+          "similarweb-traffic-comparison": {
+            "description": "Trafikbenchmarks versus konkurrenter gemt i Notion",
+            "title": "SimilarWeb trafiksammenligning"
+          },
+          "social-media-content-calendar": {
+            "description": "Forvandler en Sheets-kalender til opslag for hvert netværk",
+            "title": "Kalender for indhold til sociale medier"
+          },
+          "x-brand-monitor": {
+            "description": "Brandomtaler på X gemt i Notion med teamadvarsler",
+            "title": "X brandmonitor"
+          },
+          "youtube-to-x-thread-repurposer": {
+            "description": "Når en ny YouTube-video udgives, skal du generere en Notion-oversigt og en X-tråd for at promovere den.",
+            "title": "YouTube til X trådgenbruger"
+          }
+        },
+        "title": "Marketing"
+      },
+      "ops": {
+        "cases": {
+          "agentmail-inbox": {
+            "description": "Opret og administrer indbakker med AgentMail API",
+            "title": "AgentMail indbakke"
+          },
+          "clickup-slack-standups": {
+            "description": "Daglige ClickUp-opgaver opslået som en standup i Slack",
+            "title": "ClickUp → Slack standups"
+          },
+          "google-docs-notion-migrator": {
+            "description": "Google Docs-batcher i Notion med bevaret layout",
+            "title": "Google Docs → Notion-migrator"
+          },
+          "google-drive-file-organizer": {
+            "description": "Nye filer sorteres automatisk i mapper",
+            "title": "Google Drive filorganisator"
+          },
+          "jotform-intake-to-notion": {
+            "description": "Formularsvar lander i Notion med Slack-meddelelser",
+            "title": "Jotform indtag til Notion"
+          },
+          "monday-com-weekly-digest": {
+            "description": "Ugentlig tavlefremgang fra Monday.com i Slack",
+            "title": "Monday.com ugentlig oversigt"
+          },
+          "pdf-contract-processor": {
+            "description": "Kontraktfelter i Notion med påmindelser før udløb",
+            "title": "PDF kontraktbehandler"
+          },
+          "revenuecat-subscription-digest": {
+            "description": "Abonnementsmålinger i Sheets med churn-advarsler i Slack",
+            "title": "RevenueCat abonnementsresumé"
+          },
+          "todoist-notion-task-sync": {
+            "description": "Todoist-opgaver afspejlet i Notion for teamet",
+            "title": "Todoist → Notion opgavesynkronisering"
+          },
+          "wrike-project-reporter": {
+            "description": "Ugentlige Wrike-fremdriftsresuméer i Slack",
+            "title": "Wrike projektrapportør"
+          },
+          "xero-financial-summary": {
+            "description": "Ugentlig fortjeneste og pengestrøm fra Xero i Slack",
+            "title": "Xero finansielt resumé"
+          }
+        },
+        "title": "Ops"
+      },
+      "product": {
+        "cases": {
+          "asana-notion-project-sync": {
+            "description": "Asana-milepæle og opgaver afspejlet i Notion",
+            "title": "Asana → Notion projektsynkronisering"
+          },
+          "feedback-router": {
+            "description": "Slack feedback dirigeret af dine regler til det rette sted",
+            "title": "Feedback-router"
+          },
+          "linear-prd-implementer": {
+            "description": "Notion-specifikationer bliver Linear-projekter og -problemer",
+            "title": "Linear PRD implementer"
+          },
+          "metabase-dashboard-digest": {
+            "description": "Dashboard-øjebliksbilleder opslået til Slack automatisk",
+            "title": "Metabase dashboard oversigt"
+          },
+          "pricing-analysis": {
+            "description": "Analyser konkurrentprissætningsstrategier og sammenlign med lignende produkter",
+            "title": "Prisanalyse"
+          },
+          "product-copy-naming": {
+            "description": "Venligere navne for tekniske termer i produktet",
+            "title": "Produkttekst & navngivning"
+          }
+        },
+        "title": "Produkt"
+      },
+      "sales": {
+        "cases": {
+          "airtable-deal-tracker": {
+            "description": "Aftaler synkroniseres til Sheets og Slack, når de lukkes",
+            "title": "Airtable deal tracker"
+          },
+          "bitrix24-lead-nurture": {
+            "description": "Nye Bitrix-leads får opfølgningsopgaver og Slack-pings",
+            "title": "Bitrix24 lead nurturing"
+          },
+          "hubspot-sales-reporter": {
+            "description": "Ugentlige HubSpot-resuméer gemt som strukturerede rapporter",
+            "title": "HubSpot salgsreporter"
+          },
+          "lead-follow-up-pipeline": {
+            "description": "Nye leads bliver HubSpot-opgaver med Slack-advarsler",
+            "title": "Lead opfølgningspipeline"
+          },
+          "salesforce-pipeline-digest": {
+            "description": "Ugentlige Salesforce-mulighedsopdateringer i Slack",
+            "title": "Salesforce pipeline-oversigt"
+          },
+          "streak-pipeline-report": {
+            "description": "Ugentlige CRM-pipeline-statistikker fra Gmail i Slack",
+            "title": "Streak pipeline-rapport"
+          },
+          "win-loss-reporter": {
+            "description": "Vind- og tabstendenser fra pipelinen i Slack",
+            "title": "Vind/tab-reporter"
+          }
+        },
+        "title": "Salg"
+      },
+      "support": {
+        "cases": {
+          "chatwoot-notion-support-log": {
+            "description": "Kundesamtaler logget og kategoriseret i Notion",
+            "title": "Chatwoot → Notion supportlog"
+          },
+          "customer-support-bot": {
+            "description": "Svar fra vidensbasen og opgaver for mangler",
+            "title": "Kundesupportbot"
+          },
+          "intercom-conversation-triager": {
+            "description": "Intercom-chats bliver prioriterede Notion-opgaver",
+            "title": "Intercom-samtale-sorterer"
+          },
+          "support-ticket-router": {
+            "description": "Billetter går til Notion, og presserende billetter pinger Slack",
+            "title": "Supportbillet-router"
+          },
+          "zendesk-notion-knowledge-base": {
+            "description": "Uddrag ofte stillede Zendesk-spørgsmål og tilføj dem automatisk til en Notion FAQ",
+            "title": "Zendesk → Notion vidensbase"
+          }
+        },
+        "title": "Support"
+      }
+    },
+    "chat": "Chat",
+    "description": "Klik på et hvilket som helst kort for at starte en samtale. Det kan blive en on-demand opgave, en tilbagevendende workflow eller en underagent.",
+    "search": {
+      "accessibilityLabel": "Søg brugsscenarier",
+      "empty": "Ingen brugssager matcher din søgning.",
+      "placeholder": "Søg"
+    },
+    "title": "Idéer og brugsscenarier"
+  },
+  "instructions": {
+    "editor": {
+      "accessibilityLabel": "Instruktionseditor",
+      "footerHint": "Rediger instruktionerne direkte for at tilpasse din agents adfærd.",
+      "placeholder": "Skriv instruktioner til din agent...",
+      "toolbar": {
+        "blockquote": "Citatblok",
+        "bold": "Fed",
+        "bulletList": "Punktliste",
+        "heading1": "Overskrift 1",
+        "heading2": "Overskrift 2",
+        "heading3": "Overskrift 3",
+        "inlineCode": "Inline-kode",
+        "italic": "Kursiv",
+        "orderedList": "Nummereret liste",
+        "strikethrough": "Gennemstreget"
+      }
+    },
+    "saved": "Instruktioner gemt"
+  },
+  "list": {
+    "actions": {
+      "new": "Ny agent"
+    },
+    "cards": {
+      "coreDescription": "Din kerneagent",
+      "createdBy": "Oprettet af {{creator}}",
+      "subagentDescription": "Underagent",
+      "unknownCreator": "Ukendt"
+    },
+    "create": {
+      "accessibilityDescription": "Navngiv den nye agent, vælg dens synlighed, og tilpas dens avatar.",
+      "creating": "Opretter...",
+      "description": "Navngiv din agent, og indstil, hvem der kan bruge den.",
+      "namePlaceholder": "f.eks. Forskningsassistent",
+      "newAgentAlt": "Ny agent",
+      "success": "{{agentName}} oprettet med succes",
+      "title": "Opret en ny agent",
+      "visibility": {
+        "private": {
+          "description": "(kun du kan se og bruge den)",
+          "label": "Privat"
+        },
+        "public": {
+          "description": "(alle i dette arbejdsområde kan bruge det)",
+          "label": "Offentlig"
+        }
+      },
+      "visibilityLabel": "Synlighed"
+    },
+    "description": "{{agentName}} og underagenter arbejder sammen om at køre skræddersyede workflows for dig og dit team.",
+    "documentTitle": "Agenter",
+    "privateEmpty": {
+      "description": "Opret en agent, som kun du kan se og bruge. Private agenter er ubegrænsede.",
+      "title": "Ingen private agenter endnu"
+    },
+    "tabs": {
+      "private": "Privat",
+      "public": "Offentlig"
+    },
+    "title": "Agenter"
+  },
+  "profile": {
+    "fields": {
+      "avatar": {
+        "description": "Opret din egen avatar.",
+        "label": "Avatar"
+      },
+      "description": {
+        "description": "Hvad denne agent hjælper med – synligt for teammedlemmer.",
+        "label": "Beskrivelse",
+        "placeholder": "Hvad gør denne agent?"
+      },
+      "name": {
+        "description": "Vises på teamlisten, og når denne agent taler.",
+        "label": "Navn",
+        "placeholder": "Hvad skal vi kalde dem?"
+      },
+      "tone": {
+        "accessibilityLabel": "Hvordan {{agentName}} lyder",
+        "description": "Stemmetilstand for svar. Forhåndsvis opdateringer, når du ændrer tone.",
+        "groupLabel": "Tone",
+        "label": "Hvordan de lyder"
+      },
+      "visibility": {
+        "defaultDescription": "Arbejdsområdets standardagent skal forblive offentlig for alle arbejdsområdemedlemmer.",
+        "description": "Synlig for alle i dette arbejdsområde.",
+        "label": "Gør offentlig"
+      }
+    },
+    "makePrivate": {
+      "confirm": "Gør privat",
+      "description": "Mens denne agent er privat, mister andre medlemmer adgangen til deres chathistorik under den. De genvinder adgangen, hvis du gør den offentlig igen.",
+      "title": "Gør {{agentName}} privat?",
+      "warningDescription": "Andre medlemmer vil ikke længere se {{agentName}} eller deres chats under den.",
+      "warningTitle": "Medlemmer mister adgang"
+    },
+    "saved": "Profil gemt",
+    "tones": {
+      "direct": {
+        "agentSample": "Fredag. Jeg sender et udkast torsdag.",
+        "hint": "Lige til sagen",
+        "label": "Direkte",
+        "userSample": "Jeg skal have Q3-rapporten inden fredag."
+      },
+      "friendly": {
+        "agentSample": "Jep! Jeg sender dig Q3-rapporten senest fredag – jeg sender et udkast torsdag, så du kan kigge på det.",
+        "hint": "Varm og imødekommende",
+        "label": "Venlig",
+        "userSample": "Jeg skal have Q3-rapporten inden fredag."
+      },
+      "professional": {
+        "agentSample": "Jeg har Q3-rapporten klar senest fredag. Jeg sender et udkast senest torsdag til din gennemgang.",
+        "hint": "Klar og poleret",
+        "label": "Professionel",
+        "userSample": "Jeg skal have Q3-rapporten inden fredag."
+      },
+      "supportive": {
+        "agentSample": "Jeg sørger for, at du har Q3-rapporten inden fredag. Jeg sender et udkast torsdag, så du har tid til at gennemgå – lad mig vide, hvis du ønsker andet.",
+        "hint": "I dit hjørne",
+        "label": "Støttende",
+        "userSample": "Jeg skal have Q3-rapporten inden fredag."
+      }
+    }
+  },
+  "sidebar": {
+    "addPin": "Fastgør",
+    "clearSearch": "Ryd søgning",
+    "escapeShortcut": "Esc",
+    "filterAll": "Alle",
+    "markAllRead": "Marker alle som læst",
+    "more": "Mere",
+    "noAgentsToPin": "Du har ingen andre agenter endnu.",
+    "noResults": "Ingen resultater fundet",
+    "openMenu": "Åbn agentmenu",
+    "pin": "Fastgør til sidebjælke",
+    "pinAgent": "Fastgør en agent",
+    "pinAgentDescription": "Vælg en agent at fastgøre til sidepanelet.",
+    "pinned": "Fastgjort",
+    "pinnedAgents": "Fastgjorte agenter",
+    "pinSuccess": "{{agentName}} fastgjort",
+    "resultCount_one": "{{count}} resultat",
+    "resultCount_other": "{{count}} resultater",
+    "searchAgents": "Søg agenter...",
+    "searching": "Søger...",
+    "searchWorkspace": "Søg arbejdsområde...",
+    "sections": {
+      "agents": "Agenter",
+      "artifacts": "Artefakter",
+      "chats": "Chats",
+      "messages": "Beskeder",
+      "others": "Andre",
+      "workflows": "Arbejdsgange"
+    },
+    "unpin": "Fjern fastgørelse",
+    "unpinSuccess": "{{agentName}} afpindet"
+  },
+  "status": {
+    "unread": "Ulæst"
+  },
+  "unsaved": {
+    "message": "Du har ulagrede ændringer"
+  }
+}

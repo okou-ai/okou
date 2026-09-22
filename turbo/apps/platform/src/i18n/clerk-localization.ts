@@ -12,6 +12,17 @@ import koKRUrl from "./clerk-localizations/ko-KR.json?url";
 import ptBRUrl from "./clerk-localizations/pt-BR.json?url";
 import zhHansUrl from "./clerk-localizations/zh-Hans.json?url";
 import zhHantUrl from "./clerk-localizations/zh-Hant.json?url";
+import trTRUrl from "./clerk-localizations/tr-TR.json?url";
+import viVNUrl from "./clerk-localizations/vi-VN.json?url";
+import thTHUrl from "./clerk-localizations/th-TH.json?url";
+import nlNLUrl from "./clerk-localizations/nl-NL.json?url";
+import svSEUrl from "./clerk-localizations/sv-SE.json?url";
+import daDKUrl from "./clerk-localizations/da-DK.json?url";
+import nbNOUrl from "./clerk-localizations/nb-NO.json?url";
+import fiFIUrl from "./clerk-localizations/fi-FI.json?url";
+import heILUrl from "./clerk-localizations/he-IL.json?url";
+import plPLUrl from "./clerk-localizations/pl-PL.json?url";
+import csCZUrl from "./clerk-localizations/cs-CZ.json?url";
 import { logger } from "../signals/log.ts";
 import { tapError } from "../signals/utils.ts";
 import { DEFAULT_LOCALE, type SupportedLocale } from "./resources.ts";
@@ -29,43 +40,30 @@ export const clerkLocalizations$ = computed((get) => {
   return get(internalClerkLocalizations$);
 });
 
-function clerkLocalizationUrl(locale: NonDefaultLocale): string {
-  switch (locale) {
-    case "pt-BR": {
-      return ptBRUrl;
-    }
-    case "ja-JP": {
-      return jaJPUrl;
-    }
-    case "ko-KR": {
-      return koKRUrl;
-    }
-    case "id-ID": {
-      return idIDUrl;
-    }
-    case "de-DE": {
-      return deDEUrl;
-    }
-    case "es-ES": {
-      return esESUrl;
-    }
-    case "it-IT": {
-      return itITUrl;
-    }
-    case "fr-FR": {
-      return frFRUrl;
-    }
-    case "hi-IN": {
-      return hiINUrl;
-    }
-    case "zh-Hans": {
-      return zhHansUrl;
-    }
-    case "zh-Hant": {
-      return zhHantUrl;
-    }
-  }
-}
+const CLERK_LOCALIZATION_URLS = {
+  "pt-BR": ptBRUrl,
+  "ja-JP": jaJPUrl,
+  "ko-KR": koKRUrl,
+  "id-ID": idIDUrl,
+  "de-DE": deDEUrl,
+  "es-ES": esESUrl,
+  "it-IT": itITUrl,
+  "fr-FR": frFRUrl,
+  "hi-IN": hiINUrl,
+  "zh-Hans": zhHansUrl,
+  "zh-Hant": zhHantUrl,
+  "tr-TR": trTRUrl,
+  "vi-VN": viVNUrl,
+  "th-TH": thTHUrl,
+  "nl-NL": nlNLUrl,
+  "sv-SE": svSEUrl,
+  "da-DK": daDKUrl,
+  "nb-NO": nbNOUrl,
+  "fi-FI": fiFIUrl,
+  "he-IL": heILUrl,
+  "pl-PL": plPLUrl,
+  "cs-CZ": csCZUrl,
+} as const satisfies Record<NonDefaultLocale, string>;
 
 function isClerkLocalizationValue(value: unknown): boolean {
   if (typeof value === "string") {
@@ -96,7 +94,7 @@ async function fetchClerkLocalization(
   signal?: AbortSignal,
 ): Promise<ClerkLocalization> {
   const response = await fetchResource(
-    new URL(clerkLocalizationUrl(locale), location.href),
+    new URL(CLERK_LOCALIZATION_URLS[locale], location.href),
     {},
     signal,
   );

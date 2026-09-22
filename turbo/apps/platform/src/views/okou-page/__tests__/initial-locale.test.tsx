@@ -20,7 +20,7 @@ test.each([
   {
     scenario: "the first supported browser language family is selected",
     cookie: "v1.unsupported",
-    languages: ["sv-SE", "de-AT", "ja-JP"],
+    languages: ["ar-SA", "de-AT", "ja-JP"],
     locale: "de-DE",
     title: "Diese Seite ist nicht hier.",
   },
@@ -53,9 +53,30 @@ test.each([
     title: "Cette page n'est pas ici.",
   },
   {
+    scenario: "Turkish browser language selects the new bundle",
+    cookie: null,
+    languages: ["tr"],
+    locale: "tr-TR",
+    title: "Bu sayfa burada değil.",
+  },
+  {
+    scenario: "Norwegian browser alias selects Bokmål",
+    cookie: null,
+    languages: ["no-NO"],
+    locale: "nb-NO",
+    title: "Denne siden finnes ikke.",
+  },
+  {
+    scenario: "Hebrew browser alias selects a right-to-left bundle",
+    cookie: null,
+    languages: ["iw-IL"],
+    locale: "he-IL",
+    title: "הדף הזה לא נמצא.",
+  },
+  {
     scenario: "English is used when no locale hint is supported",
     cookie: "v0.fr-FR",
-    languages: ["sv-SE", "ar-SA"],
+    languages: ["ar-SA", "ru-RU"],
     locale: "en-US",
     title: "That page isn't here.",
   },
@@ -76,6 +97,10 @@ test.each([
 
   expect(screen.getByRole("heading", { name: scenario.title })).toBeVisible();
   expect(document.documentElement).toHaveAttribute("lang", scenario.locale);
+  expect(document.documentElement).toHaveAttribute(
+    "dir",
+    scenario.locale === "he-IL" ? "rtl" : "ltr",
+  );
 });
 
 test("Use the browser's single language when its language list is empty", async () => {

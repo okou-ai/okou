@@ -2563,9 +2563,9 @@ function TemplatePreviewPage({
     <>
       <DialogHeader
         data-presentation-template-detail-header=""
-        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
+        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pe-14 text-start duration-200 motion-reduce:animate-none"
       >
-        <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
+        <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-start text-base leading-none">
           <button
             type="button"
             className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -3658,8 +3658,8 @@ function TemplatePickerCategoryNav({
         className={cn(
           "shrink-0 sm:hidden",
           selectedCategory === "custom"
-            ? "flex h-[68px] items-center px-5 pr-44 max-[374px]:pr-40"
-            : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
+            ? "flex h-[68px] items-center px-5 pe-44 max-[374px]:pe-40"
+            : "border-b border-border bg-gray-50 px-4 pb-4 pe-14 pt-4",
         )}
       >
         <Select value={selectedCategory} onValueChange={onChange}>
@@ -4810,8 +4810,8 @@ function ImportedPresentationTemplatePreviewHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
-      <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
+    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pe-14 text-start duration-200 motion-reduce:animate-none">
+      <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-start text-base leading-none">
         <button
           type="button"
           className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -5684,7 +5684,7 @@ function TemplatePickerDialog({
       >
         {!isPreviewing ? (
           <div className="min-h-0 flex flex-1 flex-col">
-            <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:hidden">
+            <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pe-14 sm:hidden">
               <DialogTitle>
                 {t(($) => {
                   return $.artifacts.templates.template;
@@ -5703,7 +5703,7 @@ function TemplatePickerDialog({
                 {selectedCategory !== "custom" ? (
                   <div
                     className={cn(
-                      "relative h-[68px] shrink-0 items-center px-6 pr-14",
+                      "relative h-[68px] shrink-0 items-center px-6 pe-14",
                       showTemplatePickerSearch || showAvatarPickerToolbar
                         ? "flex"
                         : "hidden sm:flex",
@@ -8195,7 +8195,7 @@ function ComputerUseDownloadDialog({
             className="h-40 w-40 object-contain"
           />
         </div>
-        <DialogHeader className="space-y-2 px-6 pt-5 text-left">
+        <DialogHeader className="space-y-2 px-6 pt-5 text-start">
           <DialogTitle className="text-xl leading-7">
             {t(
               ($) => {

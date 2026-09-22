@@ -1,0 +1,1256 @@
+{
+  "locale": "da-DK",
+  "apiKeys": {
+    "copySecret": {
+      "formButtonPrimary__copyAndClose": "Kopiér og luk",
+      "formHint": "Af sikkerhedsmæssige årsager kan vi ikke tillade dig at se det igen senere.",
+      "formTitle": "Kopiér din API-nøgle \"{{name}}\" nu"
+    },
+    "revokeConfirmation": {}
+  },
+  "backButton": "Tilbage",
+  "badge__default": "Standard",
+  "badge__otherImpersonatorDevice": "Anden enhed som efterligner",
+  "badge__primary": "Primær",
+  "badge__requiresAction": "Kræver handling",
+  "badge__thisDevice": "Denne enhed",
+  "badge__unverified": "Ikke verificeret",
+  "badge__userDevice": "Brugerenhed",
+  "badge__you": "Dig",
+  "billing": {
+    "checkout": {
+      "emailForm": {},
+      "lineItems": {}
+    },
+    "paymentMethod": {
+      "applePayDescription": {},
+      "dev": {}
+    },
+    "pricingTable": {
+      "seatCost": {
+        "tooltip": {}
+      }
+    },
+    "subscriptionDetails": {}
+  },
+  "configureDirectorySync": {
+    "attributeMappingStep": {
+      "columns": {}
+    },
+    "configureStep": {
+      "error__ssoRequired": {},
+      "instructions": {
+        "custom": {},
+        "entra": {},
+        "okta": {}
+      },
+      "warning__googleUnsupported": {}
+    },
+    "navbar": {},
+    "providers": {},
+    "stepper": {},
+    "testStep": {}
+  },
+  "configureSSO": {
+    "activate": {},
+    "changeProviderDialog": {},
+    "configureStep": {
+      "activeConnectionWarning": {},
+      "attributeMappingTable": {
+        "badges": {}
+      },
+      "oidcCustom": {
+        "credentialsStep": {
+          "clientId": {},
+          "clientSecret": {}
+        },
+        "endpointsStep": {
+          "discoveryUrl": {},
+          "manual": {
+            "authUrl": {},
+            "tokenUrl": {},
+            "userInfoUrl": {}
+          },
+          "modes": {}
+        },
+        "redirectUriStep": {
+          "claims": {
+            "table": {
+              "columns": {},
+              "rows": {
+                "email": {},
+                "firstName": {},
+                "lastName": {},
+                "subject": {}
+              }
+            }
+          },
+          "redirectUri": {}
+        }
+      },
+      "samlCustom": {
+        "assignUsersStep": {},
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "createAppInstructions": {},
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        }
+      },
+      "samlGoogle": {
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "configureUserAccess": {
+          "assignUsersInstructions": {}
+        },
+        "createAppStep": {
+          "createAppInstructions": {}
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataFile": {},
+          "modes": {}
+        },
+        "serviceProviderStep": {
+          "nameIdInstructions": {},
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        }
+      },
+      "samlMicrosoft": {
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "assignUsersInstructions": {},
+          "createAppInstructions": {
+            "step4": {
+              "subSteps": {}
+            }
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        },
+        "serviceProviderStep": {
+          "serviceProviderFields": {
+            "acsUrl": {},
+            "spEntityId": {}
+          }
+        }
+      },
+      "samlOkta": {
+        "assignUsersStep": {
+          "assignUsersInstructions": {}
+        },
+        "attributeMappingStep": {
+          "attributeMappingTable": {
+            "columns": {},
+            "rows": {
+              "email": {},
+              "firstName": {},
+              "lastName": {}
+            }
+          }
+        },
+        "createAppStep": {
+          "completeSamlIntegrationInstructions": {},
+          "createAppInstructions": {},
+          "serviceProviderInstructions": {
+            "serviceProviderFields": {
+              "acsUrl": {},
+              "spEntityId": {}
+            }
+          }
+        },
+        "identityProviderMetadataStep": {
+          "manual": {
+            "issuer": {},
+            "signOnUrl": {},
+            "signingCertificate": {}
+          },
+          "metadataUrl": {},
+          "modes": {}
+        }
+      },
+      "unsupportedProvider": {}
+    },
+    "connectionScopeBanner": {},
+    "missingManageEnterpriseConnectionsPermission": {
+      "subtitle": "Kontakt din organisations administrator for at opgradere dine tilladelser.",
+      "title": "Du har ikke tilladelse til at administrere single sign-on (SSO)"
+    },
+    "navbar": {
+      "title": "Konfigurer single sign-on (SSO)"
+    },
+    "organizationDomainsStep": {
+      "domainCard": {
+        "badge__unverified": "Ikke bekræftet",
+        "badge__verified": "Bekræftet",
+        "txtRecord": {
+          "hostLabel": "Vært / Navn",
+          "instructions": "Tilføj denne TXT-post hos din DNS-udbyder. Vi bekræfter automatisk, så snart posten er aktiv.",
+          "typeLabel": "Type",
+          "valueLabel": "Værdi"
+        },
+        "verifiedAtLabel": "Bekræftet den {{ date | shortDate('da-DK') }}"
+      },
+      "domainSuggestion": {
+        "formButtonPrimary__add": "Tilføj {{domain}}",
+        "messageLabel": "Din e-mail bruger {{domain}}. Vil du tilføje det?"
+      },
+      "formButtonPrimary__add": "Tilføj",
+      "formFieldInputPlaceholder__domain": "Tilføj domæne",
+      "formFieldLabel__domain": "Domæne",
+      "removeDomainDialog": {},
+      "subtitle": "Tilføj og bekræft ejerskabet af de domæner, din organisation bruger til at logge ind.",
+      "title": "Tilføj SSO-domæner"
+    },
+    "resetConnectionDialog": {},
+    "selectProviderStep": {
+      "oidc": {},
+      "saml": {
+        "customSaml": "Brugerdefineret SAML-udbyder",
+        "groupLabel": "SAML",
+        "okta": "Okta Workforce"
+      },
+      "subtitle": "Vælg den udbyder, du vil opsætte SSO for.",
+      "title": "Vælg udbyder",
+      "warning": "Når en udbyder er valgt, kan du ikke ændre den, før konfigurationen er færdig"
+    },
+    "testConfigurationStep": {
+      "testResults": {
+        "empty": {}
+      },
+      "testRunDetails": {
+        "howToFix": {
+          "oauth_access_denied": {},
+          "oauth_fetch_user_error": {},
+          "oauth_token_exchange_error": {},
+          "saml_email_address_domain_mismatch": {},
+          "saml_response_relaystate_missing": {},
+          "saml_user_attribute_missing": {}
+        },
+        "parsedUserInfo": {},
+        "runDetails": {}
+      },
+      "testUrl": {}
+    }
+  },
+  "createOrganization": {
+    "formButtonSubmit": "Opret organisation",
+    "invitePage": {
+      "formButtonReset": "Spring over"
+    },
+    "title": "Opret organisation"
+  },
+  "dates": {
+    "lastDay": "I går: {{ date | timeString('en-US') }}",
+    "next6Days": "{{ date | weekday('en-US','long') }} kl. {{ date | timeString('en-US') }}",
+    "nextDay": "I morgen: {{ date | timeString('en-US') }}",
+    "numeric": "{{ date | numeric('en-US') }}",
+    "previous6Days": "Sidste {{ date | weekday('en-US','long') }} kl. {{ date | timeString('en-US') }}",
+    "sameDay": "I dag: {{ date | timeString('en-US') }}"
+  },
+  "dividerText": "eller",
+  "footerActionLink__useAnotherMethod": "Brug en anden metode",
+  "footerPageLink__help": "Hjælp",
+  "footerPageLink__privacy": "Privatliv",
+  "footerPageLink__terms": "Vilkår",
+  "formButtonPrimary": "Fortsæt",
+  "formButtonPrimary__verify": "Verificer",
+  "formFieldAction__forgotPassword": "Glemt adgangskode?",
+  "formFieldError__matchingPasswords": "Adgangskoderne matcher.",
+  "formFieldError__notMatchingPasswords": "Adgangskoderne matcher ikke.",
+  "formFieldError__verificationLinkExpired": "Bekræftelseslinket er udløbet. Venligst anmod om et nyt link.",
+  "formFieldHintText__optional": "Valgfri",
+  "formFieldHintText__slug": "En slug er en menneskelig læsbar ID, der skal være unik. Det bruges ofte i URL’er.",
+  "formFieldInputPlaceholder__backupCode": "Indtast sikkerhedskode",
+  "formFieldInputPlaceholder__confirmDeletionUserAccount": "Slet konto",
+  "formFieldInputPlaceholder__emailAddress": "Indtast e-mailadresse",
+  "formFieldInputPlaceholder__emailAddress_username": "Indtast e-mailadresse eller brugernavn",
+  "formFieldInputPlaceholder__emailAddresses": "Indtast eller indsæt en eller flere e-mailadresser, adskilt af mellemrum eller kommaer",
+  "formFieldInputPlaceholder__firstName": "Indtast fornavn",
+  "formFieldInputPlaceholder__lastName": "Indtast efternavn",
+  "formFieldInputPlaceholder__organizationDomain": "Indtast domæne",
+  "formFieldInputPlaceholder__organizationDomainEmailAddress": "Indtast e-mailadresse til verifikation",
+  "formFieldInputPlaceholder__organizationName": "Indtast organisationens navn",
+  "formFieldInputPlaceholder__organizationSlug": "Indtast slug URL",
+  "formFieldInputPlaceholder__password": "Indtast adgangskode",
+  "formFieldInputPlaceholder__phoneNumber": "Indtast telefonnummer",
+  "formFieldInputPlaceholder__username": "Indtast brugernavn",
+  "formFieldLabel__apiKey": "API-nøgle",
+  "formFieldLabel__apiKeyDescription": "Beskrivelse",
+  "formFieldLabel__apiKeyExpiration": "Udløb",
+  "formFieldLabel__apiKeyName": "Navn på hemmelig nøgle",
+  "formFieldLabel__automaticInvitations": "Aktiver automatiske invitationer for dette domæne",
+  "formFieldLabel__backupCode": "Sikkerhedskode",
+  "formFieldLabel__confirmDeletion": "Bekræftelse",
+  "formFieldLabel__confirmPassword": "Bekræft adgangskode",
+  "formFieldLabel__currentPassword": "Nuværende adgangskode",
+  "formFieldLabel__emailAddress": "E-mailadresse",
+  "formFieldLabel__emailAddress_username": "E-mailadresse eller brugernavn",
+  "formFieldLabel__emailAddresses": "E-mailadresser",
+  "formFieldLabel__firstName": "Fornavn",
+  "formFieldLabel__lastName": "Efternavn",
+  "formFieldLabel__newPassword": "Ny adgangskode",
+  "formFieldLabel__organizationDomain": "Domæne",
+  "formFieldLabel__organizationDomainDeletePending": "Slet ventende invitationer og forslag",
+  "formFieldLabel__organizationDomainEmailAddress": "Verifikation e-mailadresse",
+  "formFieldLabel__organizationDomainEmailAddressDescription": "Indtast en e-mailadresse under dette domæne for at modtage en kode og verificere dette domæne.",
+  "formFieldLabel__organizationName": "Organisationens navn",
+  "formFieldLabel__organizationSlug": "Slug URL",
+  "formFieldLabel__passkeyName": "Navn på adgangsnøgle",
+  "formFieldLabel__password": "Adgangskode",
+  "formFieldLabel__phoneNumber": "Telefonnummer",
+  "formFieldLabel__role": "Rolle",
+  "formFieldLabel__signOutOfOtherSessions": "Log ud af alle andre enheder",
+  "formFieldLabel__username": "Brugernavn",
+  "impersonationFab": {
+    "action__signOut": "Log ud",
+    "title": "Logget ind som {{identifier}}"
+  },
+  "lastAuthenticationStrategy": "Sidst brugt",
+  "maintenanceMode": "Vedligeholdelsestilstand",
+  "membershipRole__admin": "Administrator",
+  "membershipRole__basicMember": "Medlem",
+  "membershipRole__guestMember": "Gæst",
+  "oauthConsent": {
+    "redirectUriModal": {},
+    "scopeList": {}
+  },
+  "oauthDeviceVerification": {
+    "confirmation": {},
+    "error": {},
+    "start": {},
+    "status": {}
+  },
+  "organizationList": {
+    "action__createOrganization": "Opret organisation",
+    "action__invitationAccept": "Deltag",
+    "action__suggestionsAccept": "Anmod om at deltage",
+    "createOrganization": "Opret Organisation",
+    "invitationAcceptedLabel": "Deltaget",
+    "subtitle": "for at fortsætte til {{applicationName}}",
+    "suggestionsAcceptedLabel": "Afventer godkendelse",
+    "title": "Vælg en konto",
+    "titleWithoutPersonal": "Vælg en organisation"
+  },
+  "organizationProfile": {
+    "apiKeysPage": {},
+    "badge__automaticInvitation": "Automatiske invitationer",
+    "badge__automaticSuggestion": "Automatiske forslag",
+    "badge__manualInvitation": "Ingen automatisk tilmelding",
+    "badge__unverified": "Ikke verificeret",
+    "billingPage": {
+      "accountCreditsSection": {},
+      "creditHistoryPage": {},
+      "paymentHistorySection": {},
+      "paymentMethodsSection": {
+        "removeMethod": {}
+      },
+      "start": {},
+      "statementsSection": {},
+      "subscriptionsListSection": {},
+      "subscriptionsSection": {},
+      "switchPlansSection": {}
+    },
+    "createDomainPage": {
+      "subtitle": "Tilføj domænet for at verificere. Brugere med e-mailadresser under dette domæne kan automatisk deltage i organisationen eller anmode om at deltage.",
+      "title": "Tilføj domæne"
+    },
+    "invitePage": {
+      "detailsTitle__inviteFailed": "Invitationerne kunne ikke sendes. Ret følgende, og prøv igen:",
+      "formButtonPrimary__continue": "Send invitationer",
+      "selectDropdown__role": "Vælg rolle",
+      "subtitle": "Inviter nye medlemmer til denne organisation",
+      "successMessage": "Invitationer blev sendt",
+      "title": "Inviter medlemmer"
+    },
+    "membersPage": {
+      "action__invite": "Inviter",
+      "activeMembersTab": {
+        "menuAction__remove": "Fjern medlem",
+        "tableHeader__actions": "Handlinger",
+        "tableHeader__joined": "Deltaget",
+        "tableHeader__role": "Rolle",
+        "tableHeader__user": "Bruger"
+      },
+      "alerts": {
+        "roleSetMigrationInProgress": {
+          "subtitle": "Vi opdaterer de tilgængelige roller. Når det er gjort, vil du kunne opdatere roller igen.",
+          "title": "Roller er midlertidigt låst"
+        }
+      },
+      "detailsTitle__emptyRow": "Ingen medlemmer at vise",
+      "invitationsTab": {
+        "autoInvitations": {
+          "headerSubtitle": "Inviter brugere ved at forbinde et e-maildomæne med din organisation. Alle, der tilmelder sig med en matchende e-maildomæne, vil kunne deltage i organisationen når som helst.",
+          "headerTitle": "Automatiske invitationer",
+          "primaryButton": "Administrer verificerede domæner"
+        },
+        "table__emptyRow": "Ingen invitationer at vise"
+      },
+      "invitedMembersTab": {
+        "menuAction__revoke": "Tilbagekald invitation",
+        "tableHeader__invited": "Inviteret"
+      },
+      "requestsTab": {
+        "autoSuggestions": {
+          "headerSubtitle": "Brugere, der tilmelder sig med en matchende e-maildomæne, vil kunne se et forslag om at anmode om at deltage i din organisation.",
+          "headerTitle": "Automatiske forslag",
+          "primaryButton": "Administrer verificerede domæner"
+        },
+        "menuAction__approve": "Godkend",
+        "menuAction__reject": "Afvis",
+        "tableHeader__requested": "Anmodet adgang",
+        "table__emptyRow": "Ingen anmodninger at vise"
+      },
+      "start": {
+        "headerTitle__invitations": "Invitationer",
+        "headerTitle__members": "Medlemmer",
+        "headerTitle__requests": "Anmodninger"
+      }
+    },
+    "navbar": {
+      "description": "Administrer din organisation.",
+      "general": "Generelt",
+      "members": "Medlemmer",
+      "title": "Organisation"
+    },
+    "plansPage": {
+      "alerts": {}
+    },
+    "profilePage": {
+      "dangerSection": {
+        "deleteOrganization": {
+          "actionDescription": "Skriv \"{{organizationName}}\" nedenfor for at fortsætte.",
+          "messageLine1": "Er du sikker på, at du vil slette denne organisation?",
+          "messageLine2": "Denne handling er permanent og kan ikke fortrydes.",
+          "successMessage": "Du har slettet organisationen.",
+          "title": "Slet organisation"
+        },
+        "leaveOrganization": {
+          "actionDescription": "Skriv \"{{organizationName}}\" nedenfor for at fortsætte.",
+          "messageLine1": "Er du sikker på, at du vil forlade denne organisation? Du mister adgang til denne organisation og dens applikationer.",
+          "messageLine2": "Denne handling er permanent og kan ikke fortrydes.",
+          "successMessage": "Du har forladt organisationen.",
+          "title": "Forlad organisationen"
+        },
+        "title": "Fare"
+      },
+      "domainSection": {
+        "menuAction__manage": "Administrer",
+        "menuAction__remove": "Slet",
+        "menuAction__verify": "Verificer",
+        "primaryButton": "Tilføj domæne",
+        "subtitle": "Tillad brugere at deltage i organisationen automatisk eller anmode om at deltage baseret på et verificeret e-maildomæne.",
+        "title": "Verificerede domæner"
+      },
+      "successMessage": "Organisationen er blevet opdateret.",
+      "title": "Organisationsprofil"
+    },
+    "removeDomainPage": {
+      "messageLine1": "E-maildomænet {{domain}} vil blive fjernet.",
+      "messageLine2": "Brugere vil ikke længere kunne deltage i organisationen automatisk efter dette.",
+      "successMessage": "{{domain}} er blevet fjernet.",
+      "title": "Fjern domæne"
+    },
+    "securityPage": {
+      "directorySyncSection": {
+        "removeDialog": {}
+      },
+      "removeDialog": {},
+      "ssoSection": {}
+    },
+    "start": {
+      "headerTitle__general": "Generelt",
+      "headerTitle__members": "Medlemmer",
+      "profileSection": {
+        "primaryButton": "Opdater profil",
+        "title": "Organisationsprofil",
+        "uploadAction__title": "Logo"
+      }
+    },
+    "verifiedDomainPage": {
+      "dangerTab": {
+        "calloutInfoLabel": "Fjernelse af dette domæne vil påvirke inviterede brugere.",
+        "removeDomainActionLabel__remove": "Fjern domæne",
+        "removeDomainSubtitle": "Fjern dette domæne fra dine verificerede domæner",
+        "removeDomainTitle": "Fjern domæne"
+      },
+      "enrollmentTab": {
+        "automaticInvitationOption__description": "Brugere bliver automatisk inviteret til at deltage i organisationen, når de tilmelder sig og kan deltage når som helst.",
+        "automaticInvitationOption__label": "Automatiske invitationer",
+        "automaticSuggestionOption__description": "Brugere modtager et forslag om at anmode om at deltage, men skal godkendes af en administrator, før de kan deltage i organisationen.",
+        "automaticSuggestionOption__label": "Automatiske forslag",
+        "calloutInfoLabel": "Ændring af tilmeldingsindstilling vil kun påvirke nye brugere.",
+        "calloutInvitationCountLabel": "Ventende invitationer sendt til brugere: {{count}}",
+        "calloutSuggestionCountLabel": "Ventende forslag sendt til brugere: {{count}}",
+        "manualInvitationOption__description": "Brugere kan kun inviteres manuelt til organisationen.",
+        "manualInvitationOption__label": "Ingen automatisk tilmelding",
+        "subtitle": "Vælg hvordan brugere fra dette domæne kan deltage i organisationen."
+      },
+      "start": {
+        "headerTitle__danger": "Fare",
+        "headerTitle__enrollment": "Tilmeldingsindstillinger"
+      },
+      "subtitle": "Domænet {{domain}} er nu verificeret. Fortsæt ved at vælge tilmeldingsmetode.",
+      "title": "Opdater {{domain}}"
+    },
+    "verifyDomainPage": {
+      "formSubtitle": "Indtast den bekræftelseskode, der blev sendt til din e-mailadresse",
+      "formTitle": "Bekræftelseskode",
+      "resendButton": "Modtog du ikke en kode? Send igen",
+      "subtitle": "Domænet {{domainName}} skal verificeres via e-mail.",
+      "subtitleVerificationCodeScreen": "En bekræftelseskode blev sendt til {{emailAddress}}. Indtast koden for at fortsætte.",
+      "title": "Verificer domæne"
+    }
+  },
+  "organizationSwitcher": {
+    "action__createOrganization": "Opret organisation",
+    "action__invitationAccept": "Deltag",
+    "action__manageOrganization": "Administrer organisation",
+    "action__suggestionsAccept": "Anmod om at deltage",
+    "notSelected": "Ingen organisation valgt",
+    "personalWorkspace": "Personligt arbejdsområde",
+    "suggestionsAcceptedLabel": "Afventer godkendelse"
+  },
+  "paginationButton__next": "Næste",
+  "paginationButton__previous": "Forrige",
+  "paginationRowText__displaying": "Viser",
+  "paginationRowText__of": "af",
+  "reverification": {
+    "alternativeMethods": {
+      "getHelp": {}
+    },
+    "backupCodeMfa": {},
+    "emailCode": {},
+    "noAvailableMethods": {},
+    "passkey": {},
+    "password": {},
+    "phoneCode": {},
+    "phoneCodeMfa": {},
+    "totpMfa": {}
+  },
+  "searchInput": {},
+  "signIn": {
+    "accountSwitcher": {
+      "action__addAccount": "Tilføj konto",
+      "action__signOutAll": "Log ud af alle konti",
+      "subtitle": "Vælg den konto, du ønsker at fortsætte med.",
+      "title": "Vælg en konto"
+    },
+    "alternativeMethods": {
+      "actionLink": "Få hjælp",
+      "actionText": "Har du ingen af disse?",
+      "blockButton__backupCode": "Brug en backup-kode",
+      "blockButton__emailCode": "Send kode til {{identifier}}",
+      "blockButton__emailLink": "Send link til {{identifier}}",
+      "blockButton__passkey": "Brug en adgangsnøgle",
+      "blockButton__password": "Log ind med adgangskode",
+      "blockButton__phoneCode": "Send kode til {{identifier}}",
+      "blockButton__totp": "Brug din godkendelsesapp",
+      "getHelp": {
+        "blockButton__emailSupport": "E-mail support",
+        "content": "Hvis du har problemer med at logge ind på din konto, skal du sende en e-mail til os, og vi vil samarbejde med dig om at genoprette adgang så hurtigt som muligt.",
+        "title": "Få hjælp"
+      },
+      "subtitle": "Oplever du problemer? Du kan bruge en af disse metoder til at logge ind.",
+      "title": "Brug en anden metode"
+    },
+    "alternativePhoneCodeProvider": {},
+    "backupCodeMfa": {
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Indtast en backup-kode"
+    },
+    "emailCode": {
+      "formTitle": "Bekræftelseskode",
+      "resendButton": "Send kode igen",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Tjek din email"
+    },
+    "emailCodeMfa": {
+      "formTitle": "Tjek din email",
+      "resendButton": "Modtog du ikke en kode? Send igen",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Tjek din email"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Klient uoverensstemmelse. Prøv igen.",
+        "title": "Klient fejl"
+      },
+      "expired": {
+        "subtitle": "Vend tilbage til den oprindelige fane for at fortsætte.",
+        "title": "Dette bekræftelseslink er udløbet"
+      },
+      "failed": {
+        "subtitle": "Vend tilbage til den oprindelige fane for at fortsætte.",
+        "title": "Dette bekræftelseslink er ugyldigt"
+      },
+      "formSubtitle": "Brug bekræftelseslinket sendt til din e-mail",
+      "formTitle": "Bekræftelseslink",
+      "loading": {
+        "subtitle": "Du vil snart blive viderestillet",
+        "title": "Logger ind..."
+      },
+      "resendButton": "Send link igen",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Tjek din email",
+      "unusedTab": {
+        "title": "Du kan lukke denne fane"
+      },
+      "verified": {
+        "subtitle": "Du vil snart blive viderestillet",
+        "title": "Vellykket log ind"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Vend tilbage til den oprindelige fane for at fortsætte",
+        "subtitleNewTab": "Vend tilbage til den nyligt åbnede fane for at fortsætte",
+        "titleNewTab": "Logget ind på anden fane"
+      },
+      "verifiedTransferable": {}
+    },
+    "emailLinkMfa": {
+      "formSubtitle": "Brug bekræftelseslinket, der er sendt til din e-mail",
+      "resendButton": "Har du ikke modtaget linket? Send igen",
+      "subtitle": "for at fortsætte til {{applicationName}}",
+      "title": "Tjek din e-mail"
+    },
+    "enterpriseConnections": {},
+    "enterpriseSSO": {},
+    "forgotPassword": {
+      "formTitle": "Nulstil adgangskode",
+      "resendButton": "Modtog du ikke en kode? Send igen",
+      "subtitle": "for at nulstille din adgangskode",
+      "subtitle_email": "Indtast først koden sendt til din e-mailadresse",
+      "subtitle_phone": "Indtast først koden sendt til din telefon",
+      "title": "Nulstil adgangskode"
+    },
+    "forgotPasswordAlternativeMethods": {
+      "blockButton__resetPassword": "Nulstil din adgangskode",
+      "label__alternativeMethods": "Eller, log ind med en anden metode",
+      "title": "Glemt Adgangskode?"
+    },
+    "newDeviceVerificationNotice": "Du logger ind fra en ny enhed. Vi beder om verifikation for at holde din konto sikker.",
+    "noAvailableMethods": {
+      "message": "Kan ikke fortsætte med login. Der er ingen tilgængelige godkendelsesfaktorer.",
+      "subtitle": "En fejl opstod",
+      "title": "Kan ikke logge ind"
+    },
+    "passkey": {
+      "subtitle": "Brug adgangsnøgle til at logge ind.",
+      "title": "Adgangsnøgle"
+    },
+    "password": {
+      "actionLink": "Brug en anden metode",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Indtast din adgangskode"
+    },
+    "passwordCompromised": {},
+    "passwordPwned": {
+      "title": "Sikkerhedsadvarsel"
+    },
+    "passwordUntrusted": {},
+    "phoneCode": {
+      "formTitle": "Bekræftelseskode",
+      "resendButton": "Send kode igen",
+      "subtitle": "gå videre til {{applicationName}}",
+      "title": "Tjek din telefon"
+    },
+    "phoneCodeMfa": {
+      "formTitle": "Bekræftelseskode",
+      "resendButton": "Send kode igen",
+      "title": "Tjek din telefon"
+    },
+    "protectCheck": {},
+    "resetPassword": {
+      "formButtonPrimary": "Nulstil Adgangskode",
+      "requiredMessage": "Af sikkerhedsmæssige årsager er det nødvendigt at nulstille din adgangskode.",
+      "successMessage": "Din adgangskode blev ændret med succes. Logger dig ind, vent venligst et øjeblik.",
+      "title": "Indstil ny adgangskode"
+    },
+    "resetPasswordMfa": {
+      "detailsLabel": "Vi skal bekræfte din identitet, før du nulstiller din adgangskode."
+    },
+    "ssoFallback": {
+      "code": {}
+    },
+    "start": {
+      "actionLink": "Tilmeld dig",
+      "actionLink__use_email": "Brug email",
+      "actionLink__use_email_username": "Brug email eller brugernavn",
+      "actionLink__use_passkey": "Brug adgangsnøgle",
+      "actionLink__use_phone": "Brug telefon",
+      "actionLink__use_username": "Brug brugernavn",
+      "actionText": "Ingen konto?",
+      "alternativePhoneCodeProvider": {},
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Log ind"
+    },
+    "totpMfa": {
+      "formTitle": "Bekræftelseskode",
+      "title": "Totrinsbekræftelse"
+    },
+    "web3Solana": {
+      "subtitle": "Vælg en wallet nedenfor for at logge ind",
+      "title": "Log ind med Solana"
+    }
+  },
+  "signInEnterPasswordTitle": "Indtast din adgangskode",
+  "signUp": {
+    "alternativePhoneCodeProvider": {},
+    "continue": {
+      "actionLink": "Log ind",
+      "actionText": "Har du en konto?",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Udfyld manglende felter"
+    },
+    "emailCode": {
+      "formSubtitle": "Indtast bekræftelseskoden sendt til din e-mailadresse",
+      "formTitle": "Bekræftelseskode",
+      "resendButton": "Send kode igen",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Bekræft din email"
+    },
+    "emailLink": {
+      "clientMismatch": {
+        "subtitle": "Klient uoverensstemmelse. Prøv igen.",
+        "title": "Klient fejl"
+      },
+      "formSubtitle": "Brug bekræftelseslinket sendt til din e-mailadresse",
+      "formTitle": "Bekræftelseslink",
+      "loading": {
+        "title": "Tilmelding..."
+      },
+      "resendButton": "Send link igen",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Bekræft din email",
+      "verified": {
+        "title": "Vellykket tilmelding"
+      },
+      "verifiedSwitchTab": {
+        "subtitle": "Vend tilbage til den nyligt åbnede fane for at fortsætte",
+        "subtitleNewTab": "Vend tilbage til forrige fane for at fortsætte",
+        "title": "E-mail er bekræftet"
+      }
+    },
+    "enterpriseConnections": {},
+    "legalConsent": {
+      "checkbox": {},
+      "continue": {}
+    },
+    "phoneCode": {
+      "formSubtitle": "Indtast bekræftelseskoden sendt til dit telefonnummer",
+      "formTitle": "Bekræftelseskode",
+      "resendButton": "Send kode igen",
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "title": "Bekræft din telefon"
+    },
+    "protectCheck": {},
+    "restrictedAccess": {},
+    "start": {
+      "actionLink": "Log ind",
+      "actionLink__use_email": "Brug email",
+      "actionLink__use_phone": "Brug telefon",
+      "actionText": "Har du en konto?",
+      "alternativePhoneCodeProvider": {},
+      "subtitle": "Fortsæt til {{applicationName}}",
+      "subtitleCombined": "Fortsæt til {{applicationName}}",
+      "title": "Opret din konto",
+      "titleCombined": "Opret din konto"
+    },
+    "web3Solana": {
+      "subtitle": "Vælg en wallet nedenfor for at tilmelde dig",
+      "title": "Tilmeld dig med Solana"
+    }
+  },
+  "socialButtonsBlockButton": "Fortsæt med {{provider|titleize}}",
+  "taskChooseOrganization": {
+    "alerts": {
+      "organizationAlreadyExists": "Der findes allerede en organisation for det registrerede firmanavn ({{organizationName}}) og {{organizationDomain}}. Tilmeld dig via invitation."
+    },
+    "chooseOrganization": {
+      "action__createOrganization": "Opret ny organisation",
+      "action__invitationAccept": "Deltag",
+      "action__suggestionsAccept": "Anmod om at deltage",
+      "subtitle": "Deltag i en eksisterende organisation eller opret en ny",
+      "subtitle__createOrganizationDisabled": "Deltag i en eksisterende organisation",
+      "suggestionsAcceptedLabel": "Afventer godkendelse",
+      "title": "Vælg en organisation"
+    },
+    "createOrganization": {
+      "formButtonReset": "Annuller",
+      "formButtonSubmit": "Fortsæt",
+      "formFieldInputPlaceholder__name": "Min organisation",
+      "formFieldInputPlaceholder__slug": "min-organisation",
+      "formFieldLabel__name": "Navn",
+      "formFieldLabel__slug": "Slug",
+      "subtitle": "Indtast dine organisationsoplysninger for at fortsætte",
+      "title": "Opsæt din organisation"
+    },
+    "organizationCreationDisabled": {
+      "subtitle": "Kontakt din organisationsadministrator for en invitation.",
+      "title": "Du skal tilhøre en organisation"
+    },
+    "signOut": {
+      "actionLink": "Log ud",
+      "actionText": "Logget ind som {{identifier}}"
+    }
+  },
+  "taskResetPassword": {
+    "signOut": {}
+  },
+  "taskSetupMfa": {
+    "signOut": {},
+    "smsCode": {
+      "addPhone": {},
+      "success": {},
+      "verifyPhone": {}
+    },
+    "start": {
+      "methodSelection": {}
+    },
+    "totpCode": {
+      "addAuthenticatorApp": {},
+      "success": {},
+      "verifyTotp": {}
+    }
+  },
+  "unstable__errors": {
+    "avatar_file_size_exceeded": "Filstørrelsen overskrider den maksimale grænse på 10 MB. Vælg venligst en mindre fil.",
+    "avatar_file_type_invalid": "Filtypen understøttes ikke. Upload venligst et JPG-, PNG-, GIF- eller WEBP-billede.",
+    "captcha_invalid": "Tilmelding mislykkedes på grund af fejlede sikkerhedsvalideringer. Opdater siden for at prøve igen, eller kontakt support for yderligere assistance.",
+    "captcha_unavailable": "Tilmelding mislykkedes på grund af fejlet botvalidering. Opdater siden for at prøve igen, eller kontakt support for yderligere assistance.",
+    "form_code_incorrect": "Koden er forkert.",
+    "form_email_address_blocked": "Midlertidige e-mailtjenester understøttes ikke. Brug venligst din almindelige e-mailadresse til at oprette en konto.",
+    "form_identifier_exists__email_address": "E-mailadressen er allerede i brug.",
+    "form_identifier_exists__phone_number": "Telefonnummeret er allerede i brug.",
+    "form_identifier_exists__username": "Brugernavnet er allerede i brug.",
+    "form_identifier_not_found": "Vi kunne ikke finde en konto med disse detaljer.",
+    "form_param_format_invalid": "Formatet er ugyldigt.",
+    "form_param_format_invalid__email_address": "E-mailadressen skal være en gyldig e-mailadresse.",
+    "form_param_format_invalid__phone_number": "Telefonnummeret skal være i et gyldigt internationalt format.",
+    "form_param_max_length_exceeded__first_name": "Fornavnet må ikke overstige 256 tegn.",
+    "form_param_max_length_exceeded__last_name": "Efternavnet må ikke overstige 256 tegn.",
+    "form_param_max_length_exceeded__name": "Navnet må ikke overstige 256 tegn.",
+    "form_param_nil": "Dette felt kan ikke være tomt.",
+    "form_password_incorrect": "Adgangskoden er forkert.",
+    "form_password_length_too_short": "Adgangskoden er for kort.",
+    "form_password_not_strong_enough": "Adgangskoden er ikke stærk nok.",
+    "form_password_or_identifier_incorrect": "Adgangskoden eller e-mailadressen er forkert. Prøv igen eller brug en anden metode.",
+    "form_password_pwned": "Adgangskoden er blevet kompromitteret.",
+    "form_password_pwned__sign_in": "Din adgangskode er blevet kompromitteret, vælg en ny.",
+    "form_password_size_in_bytes_exceeded": "Din adgangskode har overskredet det maksimalt tilladte antal bytes, forkort den eller fjern nogle specialtegn.",
+    "form_password_validation_failed": "Forkert adgangskode.",
+    "form_username_invalid_character": "Brugernavnet indeholder ugyldige tegn.",
+    "form_username_invalid_length": "Brugernavnet har en ugyldig længde.",
+    "form_username_needs_non_number_char": "Dit brugernavn skal indeholde mindst ét ikke-numerisk tegn.",
+    "identification_deletion_failed": "Du kan ikke slette din sidste identifikation.",
+    "not_allowed_access": "E-mailadressen eller telefonnummeret er ikke tilladt at tilmelde sig. Dette kan skyldes brug af '+', '=', '#' eller '.' i din e-mail-adresse, ved at bruge et domæne, der er forbundet med en midlertidig e-mail-tjeneste, eller ved at blive eksplicit blokeret. Hvis du mener, at dette er en fejl, bedes du kontakte support.",
+    "passkey_already_exists": "Adgangsnøgle findes allerede.",
+    "passkey_not_supported": "Adgangsnøgler understøttes ikke på denne enhed.",
+    "passkey_pa_not_supported": "Adgangsnøgler understøttes ikke på dette styresystem.",
+    "passkey_registration_cancelled": "Registrering af adgangsnøgle blev annulleret.",
+    "passkey_retrieval_cancelled": "Hentning af adgangsnøgle blev annulleret.",
+    "passwordComplexity": {
+      "maximumLength": "mindre end {{length}} tegn",
+      "minimumLength": "{{length}} eller flere tegn",
+      "requireLowercase": "et lille bogstav",
+      "requireNumbers": "et tal",
+      "requireSpecialCharacter": "et specialtegn",
+      "requireUppercase": "et stort bogstav",
+      "sentencePrefix": "Din adgangskode skal indeholde"
+    },
+    "phone_number_exists": "Dette telefonnummer er allerede taget. Prøv et andet.",
+    "session_exists": "Du er allerede logget ind.",
+    "web3_signature_request_rejected": "Du har afvist signaturanmodningen. Prøv igen for at fortsætte.",
+    "web3_solana_signature_generation_failed": "Der opstod en fejl under generering af signaturen. Prøv igen for at fortsætte.",
+    "zxcvbn": {
+      "couldBeStronger": "Din adgangskode virker, men kunne være stærkere. Prøv at tilføje flere tegn.",
+      "goodPassword": "Din adgangskode opfylder alle nødvendige krav.",
+      "notEnough": "Din adgangskode er ikke stærk nok.",
+      "suggestions": {
+        "allUppercase": "Brug store bogstaver på nogle, men ikke alle bogstaver.",
+        "anotherWord": "Tilføj flere ord, der er mindre almindelige.",
+        "associatedYears": "Undgå år, der er forbundet med dig.",
+        "capitalization": "Brug store bogstaver på mere end det første bogstav.",
+        "dates": "Undgå datoer og år, der er forbundet med dig.",
+        "l33t": "Undgå forudsigelige bogstavsubstitutioner som '@' for 'a'.",
+        "longerKeyboardPattern": "Brug længere tastaturmønstre og skift retning flere gange.",
+        "noNeed": "Du kan oprette stærke adgangskoder uden at bruge symboler, tal eller store bogstaver.",
+        "pwned": "Hvis du bruger denne adgangskode andre steder, bør du ændre den.",
+        "recentYears": "Undgå nylige årstal.",
+        "repeated": "Undgå gentagne ord og tegn.",
+        "reverseWords": "Undgå omvendte stavemåder af almindelige ord.",
+        "sequences": "Undgå almindelige tegnsekvenser.",
+        "useWords": "Brug flere ord, men undgå almindelige sætninger."
+      },
+      "warnings": {
+        "common": "Dette er en almindeligt brugt adgangskode.",
+        "commonNames": "Almindelige navne og efternavne er nemme at gætte.",
+        "dates": "Datoer er nemme at gætte.",
+        "extendedRepeat": "Gentagne tegnmønstre som \"abcabcabc\" er nemme at gætte.",
+        "keyPattern": "Korte tastaturmønstre er nemme at gætte.",
+        "namesByThemselves": "Enkeltstående navne eller efternavne er nemme at gætte.",
+        "pwned": "Din adgangskode er blevet eksponeret af et databrud på internettet.",
+        "recentYears": "Nylige årstal er nemme at gætte.",
+        "sequences": "Almindelige tegnsekvenser som \"abc\" er nemme at gætte.",
+        "similarToCommon": "Dette ligner en almindeligt brugt adgangskode.",
+        "simpleRepeat": "Gentagne tegn som \"aaa\" er nemme at gætte.",
+        "straightRow": "Lige rækker af taster på dit tastatur er nemme at gætte.",
+        "topHundred": "Dette er en ofte brugt adgangskode.",
+        "topTen": "Dette er en meget brugt adgangskode.",
+        "userInputs": "Der bør ikke være nogen personlige eller sidespecifikke data.",
+        "wordByItself": "Enkeltstående ord er nemme at gætte."
+      }
+    }
+  },
+  "userButton": {
+    "action__addAccount": "Tilføj konto",
+    "action__manageAccount": "Administrer konto",
+    "action__signOut": "Log ud",
+    "action__signOutAll": "Log ud af alle konti",
+    "label__accountActions": "Kontohandlinger",
+    "label__activeSessions": "Aktive sessioner",
+    "label__userButtonPopover": "Kontopanel"
+  },
+  "userProfile": {
+    "apiKeysPage": {},
+    "backupCodePage": {
+      "actionLabel__copied": "Kopieret!",
+      "actionLabel__copy": "Kopier alle",
+      "actionLabel__download": "Download .txt",
+      "actionLabel__print": "Print",
+      "infoText1": "Backup-koder vil blive aktiveret for denne konto.",
+      "infoText2": "Hold backup-koderne hemmelige og gem dem sikkert. Du kan genskabe backup-koder, hvis du har mistanke om, at de er blevet kompromitteret.",
+      "subtitle__codelist": "Opbevar dem sikkert og hold dem hemmelige.",
+      "successMessage": "Backup-koder er nu aktiveret. Du kan bruge en af disse til at logge ind på din konto, hvis du mister adgangen til din totrinsbekræftelse. Hver kode kan kun bruges én gang.",
+      "successSubtitle": "Du kan bruge en af disse til at logge ind på din konto, hvis du mister adgangen til din totrinsbekræftelse.",
+      "title": "Tilføj bekræftelse af backup-kode",
+      "title__codelist": "Backup-koder"
+    },
+    "billingPage": {
+      "accountCreditsSection": {},
+      "creditHistoryPage": {},
+      "paymentHistorySection": {},
+      "paymentMethodsSection": {
+        "removeMethod": {}
+      },
+      "start": {},
+      "statementsSection": {},
+      "subscriptionsListSection": {},
+      "subscriptionsSection": {},
+      "switchPlansSection": {}
+    },
+    "connectedAccountPage": {
+      "formHint": "Vælg en udbyder for at forbinde din konto.",
+      "formHint__noAccounts": "Der er ingen tilgængelige eksterne kontoudbydere.",
+      "removeResource": {
+        "messageLine1": "{{identifier}} vil blive fjernet fra denne konto.",
+        "messageLine2": "Du vil ikke længere være i stand til at bruge denne tilsluttede konto, og eventuelle afhængige funktioner vil ikke længere virke.",
+        "successMessage": "{{connectedAccount}} er blevet fjernet fra din konto.",
+        "title": "Fjern tilsluttet konto"
+      },
+      "socialButtonsBlockButton": "Forbind {{provider|titleize}} konto",
+      "successMessage": "Udbyderen er blevet tilføjet til din konto",
+      "title": "Tilføj tilsluttet konto"
+    },
+    "deletePage": {
+      "actionDescription": "Skriv \"Slet konto\" nedenfor for at fortsætte.",
+      "confirm": "Slet konto",
+      "messageLine1": "Er du sikker på, at du vil slette din konto? Nogle tilknyttede data kan blive bevaret. For at anmode om fuld datasletning skal du kontakte support.",
+      "messageLine2": "Denne handling er permanent og kan ikke fortrydes.",
+      "title": "Slet konto"
+    },
+    "emailAddressPage": {
+      "emailCode": {
+        "formHint": "En e-mail indeholdende en bekræftelseskode vil blive sendt til denne e-mailadresse.",
+        "formSubtitle": "Indtast bekræftelseskoden sendt til {{identifier}}",
+        "formTitle": "Bekræftelseskode",
+        "resendButton": "Send kode igen",
+        "successMessage": "E-mailen {{identifier}} er blevet tilføjet til din konto."
+      },
+      "emailLink": {
+        "formHint": "En e-mail indeholdende et bekræftelseslink vil blive sendt til denne e-mailadresse.",
+        "formSubtitle": "Klik på bekræftelseslinket i e-mailen sendt til {{identifier}}",
+        "formTitle": "Bekræftelseslink",
+        "resendButton": "Send link igen",
+        "successMessage": "E-mailen {{identifier}} er blevet tilføjet til din konto."
+      },
+      "enterpriseSSOLink": {},
+      "removeResource": {
+        "messageLine1": "{{identifier}} vil blive fjernet fra denne konto.",
+        "messageLine2": "Du vil ikke længere kunne logge ind med denne e-mailadresse.",
+        "successMessage": "{{emailAddress}} er blevet fjernet fra din konto.",
+        "title": "Fjern e-mailadresse"
+      },
+      "title": "Tilføj e-mailadresse",
+      "verifyTitle": "Verificer e-mailadresse"
+    },
+    "formButtonPrimary__add": "Tilføj",
+    "formButtonPrimary__continue": "Fortsæt",
+    "formButtonPrimary__finish": "Afslut",
+    "formButtonPrimary__remove": "Fjern",
+    "formButtonPrimary__save": "Gem",
+    "formButtonReset": "Annuller",
+    "mfaPage": {
+      "formHint": "Vælg en metode, der skal tilføjes.",
+      "title": "Tilføj totrinsbekræftelse"
+    },
+    "mfaPhoneCodePage": {
+      "backButton": "Brug eksisterende nummer",
+      "primaryButton__addPhoneNumber": "Tilføj et telefonnummer",
+      "removeResource": {
+        "messageLine1": "{{identifier}} vil ikke længere modtage bekræftelseskoder, når du logger ind.",
+        "messageLine2": "Din konto er muligvis ikke så sikker. Er du sikker på, at du vil fortsætte?",
+        "successMessage": "SMS-bekræftelse er blevet fjernet for {{mfaPhoneCode}}",
+        "title": "Fjern SMS-bekræftelse"
+      },
+      "subtitle__availablePhoneNumbers": "Vælg et telefonnummer for at registrere SMS-bekræftelse til totrinsbekræftelse.",
+      "subtitle__unavailablePhoneNumbers": "Der er ingen tilgængelige telefonnumre til at registrere til SMS-bekræftelse til totrinsbekræftelse.",
+      "successMessage1": "Når du logger ind, skal du indtaste en bekræftelseskode sendt til dette telefonnummer som et ekstra trin.",
+      "successMessage2": "Gem disse backup-koder og opbevar dem et sikkert sted. Hvis du mister adgangen til din godkendelsesenhed, kan du bruge backup-koder til at logge ind.",
+      "successTitle": "SMS-bekræftelse aktiveret",
+      "title": "Tilføj SMS-bekræftelse"
+    },
+    "mfaTOTPPage": {
+      "authenticatorApp": {
+        "buttonAbleToScan__nonPrimary": "Scan QR-koden i stedet",
+        "buttonUnableToScan__nonPrimary": "Kan du ikke scanne QR-koden?",
+        "infoText__ableToScan": "Konfigurer en ny login-metode i din autentificeringsapp, og scan følgende QR-kode for at linke den til din konto.",
+        "infoText__unableToScan": "Konfigurer en ny login-metode i din autentificeringsapp, og indtast nøglen nedenfor.",
+        "inputLabel__unableToScan1": "Sørg for, at tidsbaserede eller engangsadgangskoder er aktiveret, og afslut derefter tilknytningen af din konto.",
+        "inputLabel__unableToScan2": "Alternativt, hvis din autentificeringsapp understøtter TOTP URI'er, kan du også kopiere hele URI'en."
+      },
+      "removeResource": {
+        "messageLine1": "Bekræftelseskoder fra denne autentificeringsapp kræves ikke længere, når du logger ind.",
+        "messageLine2": "Din konto er muligvis ikke så sikker. Er du sikker på, at du vil fortsætte?",
+        "successMessage": "Totrinsbekræftelse via autentificeringsapp er blevet fjernet.",
+        "title": "Fjern totrinsbekræftelse"
+      },
+      "successMessage": "Når du logger ind, skal du indtaste en bekræftelseskode fra denne autentificeringsapp som et ekstra trin.",
+      "title": "Tilføj autentificeringsapp",
+      "verifySubtitle": "Indtast bekræftelseskode, der er genereret af din autentificeringsapp",
+      "verifyTitle": "Bekræftelseskode"
+    },
+    "mobileButton__menu": "Menu",
+    "navbar": {
+      "account": "Profil",
+      "description": "Administrer dine kontooplysninger.",
+      "security": "Sikkerhed",
+      "title": "Konto"
+    },
+    "passkeyScreen": {
+      "removeResource": {
+        "messageLine1": "Adgangsnøglen fjernes fra din konto.",
+        "title": "Fjern adgangsnøgle"
+      },
+      "subtitle__rename": "Omdøb adgangsnøgle",
+      "title__rename": "Omdøb adgangsnøgle"
+    },
+    "passwordPage": {
+      "checkboxInfoText__signOutOfOtherSessions": "Det anbefales at logge ud af alle andre enheder, der kan have brugt din gamle adgangskode.",
+      "readonly": "Din adgangskode kan i øjeblikket ikke redigeres, fordi du kun kan logge ind via virksomhedens forbindelse.",
+      "successMessage__set": "Din adgangskode er blevet indstillet.",
+      "successMessage__signOutOfOtherSessions": "Alle andre enheder er blevet logget ud.",
+      "successMessage__update": "Din adgangskode er blevet opdateret.",
+      "title__set": "Indstil adgangskode",
+      "title__update": "Skift adgangskode"
+    },
+    "phoneNumberPage": {
+      "infoText": "En SMS, der indeholder et bekræftelseslink, sendes til dette telefonnummer.",
+      "removeResource": {
+        "messageLine1": "{{identifier}} vil blive fjernet fra denne konto.",
+        "messageLine2": "Du vil ikke længere kunne logge ind med dette telefonnummer.",
+        "successMessage": "{{phoneNumber}} er blevet fjernet fra din konto.",
+        "title": "Fjern telefonnummer"
+      },
+      "successMessage": "{{identifier}} er blevet tilføjet til din konto.",
+      "title": "Tilføj telefonnummer",
+      "verifySubtitle": "Indtast bekræftelseskoden sendt til {{identifier}}",
+      "verifyTitle": "Verificer telefonnummer"
+    },
+    "plansPage": {},
+    "profilePage": {
+      "fileDropAreaHint": "Upload et JPG, PNG, GIF, eller WEBP-billede mindre end 10 MB",
+      "imageFormDestructiveActionSubtitle": "Fjern billede",
+      "imageFormSubtitle": "Upload billede",
+      "imageFormTitle": "Profilbillede",
+      "readonly": "Dine profiloplysninger er leveret af virksomhedens forbindelse og kan ikke redigeres.",
+      "successMessage": "Din profil er blevet opdateret.",
+      "title": "Profil"
+    },
+    "start": {
+      "activeDevicesSection": {
+        "destructiveAction": "Log ud af enhed",
+        "title": "Aktive enheder"
+      },
+      "connectedAccountsSection": {
+        "actionLabel__connectionFailed": "Prøv igen",
+        "actionLabel__reauthorize": "Godkend nu",
+        "destructiveActionTitle": "Fjern",
+        "primaryButton": "Tilknyt konto",
+        "subtitle__disconnected": "Ingen tilknyttede konti",
+        "subtitle__reauthorize": "De krævede tilladelser er blevet opdateret, og du kan opleve begrænset funktionalitet. Godkend venligst denne applikation igen for at undgå eventuelle problemer",
+        "title": "Tilknyttede konti"
+      },
+      "dangerSection": {
+        "deleteAccountButton": "Slet Konto",
+        "title": "Konto afslutning"
+      },
+      "emailAddressesSection": {
+        "destructiveAction": "Fjern e-mailadresse",
+        "detailsAction__nonPrimary": "Sæt som primær",
+        "detailsAction__primary": "Fuldfør bekræftelse",
+        "detailsAction__unverified": "Fuldfør bekræftelse",
+        "primaryButton": "Tilføj en e-mailadresse",
+        "title": "E-mailadresser"
+      },
+      "enterpriseAccountsSection": {
+        "primaryButton": "Tilknyt konto",
+        "title": "Virksomhedskonti"
+      },
+      "headerTitle__account": "Konto",
+      "headerTitle__security": "Sikkerhed",
+      "mfaSection": {
+        "backupCodes": {
+          "actionLabel__regenerate": "Generer koder",
+          "headerTitle": "Backup-koder",
+          "subtitle__regenerate": "Få et nyt sæt sikre backup-koder. Tidligere backup-koder vil blive slettet og kan ikke bruges.",
+          "title__regenerate": "Generer backup-koder"
+        },
+        "phoneCode": {
+          "actionLabel__setDefault": "Indstil som standard",
+          "destructiveActionLabel": "Fjern telefonnummer"
+        },
+        "primaryButton": "Tilføj totrinsbekræftelse",
+        "title": "Totrinsbekræftelse",
+        "totp": {
+          "destructiveActionTitle": "Fjern",
+          "headerTitle": "Autentificeringsapp"
+        }
+      },
+      "passkeysSection": {
+        "menuAction__destructive": "Fjern adgangsnøgle",
+        "menuAction__rename": "Omdøb adgangsnøgle",
+        "title": "Adgangsnøgler"
+      },
+      "passwordSection": {
+        "primaryButton__setPassword": "Indtast adgangskode",
+        "primaryButton__updatePassword": "Skift adgangskode",
+        "title": "Adgangskode"
+      },
+      "phoneNumbersSection": {
+        "destructiveAction": "Fjern telefonnummer",
+        "detailsAction__nonPrimary": "Sæt som primær",
+        "detailsAction__primary": "Fuldfør bekræftelse",
+        "detailsAction__unverified": "Fuldfør bekræftelse",
+        "primaryButton": "Tilføj et telefonnummer",
+        "title": "Telefonnumre"
+      },
+      "profileSection": {
+        "primaryButton": "Opdater profil",
+        "title": "Profil"
+      },
+      "usernameSection": {
+        "primaryButton__setUsername": "Sæt brugernavn",
+        "primaryButton__updateUsername": "Skift brugernavn",
+        "title": "Brugernavn"
+      },
+      "web3WalletsSection": {
+        "destructiveAction": "Fjern tegnebog",
+        "primaryButton": "Tilføj Web3 tegnebøger",
+        "title": "Web3 tegnebøger",
+        "web3SelectSolanaWalletScreen": {
+          "subtitle": "Vælg en Solana-wallet for at forbinde den til din konto.",
+          "title": "Tilføj en Solana-wallet"
+        }
+      }
+    },
+    "usernamePage": {
+      "successMessage": "Dit brugernavn er blevet opdateret.",
+      "title__set": "Indstil brugernavn",
+      "title__update": "Opdater brugernavn"
+    },
+    "web3WalletPage": {
+      "removeResource": {
+        "messageLine1": "{{identifier}} vil blive fjernet fra denne konto.",
+        "messageLine2": "Du vil ikke længere være i stand til at logge ind med denne web3-tegnebog.",
+        "successMessage": "{{web3Wallet}} er blevet fjernet fra din konto.",
+        "title": "Fjern web3-tegnebog"
+      },
+      "subtitle__availableWallets": "Vælg en web3-tegnebog for at oprette forbindelse til din konto.",
+      "subtitle__unavailableWallets": "Der er ingen tilgængelige web3-tegnebøger.",
+      "successMessage": "Tegnebogen er blevet tilføjet til din konto.",
+      "title": "Tilføj web3-tegnebog"
+    }
+  },
+  "waitlist": {
+    "start": {
+      "actionLink": "Log ind",
+      "actionText": "Har du allerede adgang?",
+      "formButton": "Tilmeld dig ventelisten",
+      "subtitle": "Indtast din e-mailadresse, så giver vi dig besked, når din plads er klar",
+      "title": "Tilmeld dig ventelisten"
+    },
+    "success": {
+      "message": "Du vil blive omdirigeret snart...",
+      "subtitle": "Vi kontakter dig, når din plads er klar",
+      "title": "Tak fordi du tilmeldte dig ventelisten!"
+    }
+  },
+  "web3SolanaWalletButtons": {
+    "connect": "Forbind med {{walletName}}",
+    "continue": "Fortsæt med {{walletName}}",
+    "noneAvailable": "Ingen Solana Web3-wallets fundet. Installer venligst en Web3-understøttet {{ solanaWalletsLink || link(\"wallet extension\") }}."
+  }
+}
