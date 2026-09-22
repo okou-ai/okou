@@ -5868,8 +5868,7 @@
       "availableNow": "Disponible ahora",
       "inUse_one": "{{active}} de {{limit}} cupo en uso",
       "inUse_many": "{{active}} de {{limit}} cupos en uso",
-      "inUse_other": "{{active}} de {{limit}} cupos en uso",
-      "waitingForSandbox": "Esperando Sandbox"
+      "inUse_other": "{{active}} de {{limit}} cupos en uso"
     },
     "tiers": {
       "custom": "Personalizado",

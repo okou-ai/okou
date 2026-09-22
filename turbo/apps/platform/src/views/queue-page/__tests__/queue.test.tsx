@@ -375,14 +375,13 @@ test("The queue shows active slot usage for each member", async () => {
   expect(within(drawer).getByText("63 slots")).toBeVisible();
 });
 
-test("The saturated queue refreshes cancelled demand and its remaining lease transition", async () => {
+test("The queue drawer follows each run queue refresh of slot usage and availability", async () => {
   const fixture = installQueuePageFixture(context, {
     billing: billingStatus({ tier: "team", concurrencyLimit: 4 }),
     queue: queueResponse({
       tier: "team",
       limit: 4,
       active: 2,
-      waiting: 2,
       available: 0,
       memberUsage: [
         { userId: "user-lancy", displayName: "Chenyu Lan", active: 2 },
@@ -394,10 +393,6 @@ test("The saturated queue refreshes cancelled demand and its remaining lease tra
 
   const drawer = await visibleQueueDrawer();
   expect(within(drawer).getByText("2 of 4 slots in use")).toBeVisible();
-  const waitingRow = within(drawer)
-    .getByText("Waiting for Sandbox")
-    .closest("li");
-  expect(waitingRow).toHaveTextContent("2 slots");
   expect(
     within(drawer).getByText("Available now").parentElement,
   ).toHaveTextContent("0 slots");
@@ -407,7 +402,6 @@ test("The saturated queue refreshes cancelled demand and its remaining lease tra
       tier: "team",
       limit: 4,
       active: 2,
-      waiting: 1,
       available: 1,
       memberUsage: [
         { userId: "user-lancy", displayName: "Chenyu Lan", active: 2 },
@@ -417,10 +411,6 @@ test("The saturated queue refreshes cancelled demand and its remaining lease tra
   await announceRunQueueChange();
 
   await waitFor(() => {
-    const cancelledWaitingRow = within(drawer)
-      .getByText("Waiting for Sandbox")
-      .closest("li");
-    expect(cancelledWaitingRow).toHaveTextContent("1 slot");
     expect(
       within(drawer).getByText("Available now").parentElement,
     ).toHaveTextContent("1 slot");
@@ -431,7 +421,6 @@ test("The saturated queue refreshes cancelled demand and its remaining lease tra
       tier: "team",
       limit: 4,
       active: 3,
-      waiting: 0,
       available: 1,
       memberUsage: [
         { userId: "user-lancy", displayName: "Chenyu Lan", active: 3 },
@@ -443,7 +432,6 @@ test("The saturated queue refreshes cancelled demand and its remaining lease tra
   await expect(
     within(drawer).findByText("3 of 4 slots in use"),
   ).resolves.toBeVisible();
-  expect(within(drawer).queryByText("Waiting for Sandbox")).toBeNull();
   expect(
     within(drawer).getByText("Available now").parentElement,
   ).toHaveTextContent("1 slot");

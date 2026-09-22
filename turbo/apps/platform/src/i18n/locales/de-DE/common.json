@@ -5811,8 +5811,7 @@
     "status": {
       "availableNow": "Jetzt verfügbar",
       "inUse_one": "{{active}} von {{limit}} Slot belegt",
-      "inUse_other": "{{active}} von {{limit}} Slots belegt",
-      "waitingForSandbox": "Warten auf Sandbox"
+      "inUse_other": "{{active}} von {{limit}} Slots belegt"
     },
     "tiers": {
       "custom": "Benutzerdefiniert",
