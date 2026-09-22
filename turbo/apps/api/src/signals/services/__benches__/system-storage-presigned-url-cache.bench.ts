@@ -243,6 +243,7 @@ function logicalLookupCount(fixture: BenchFixture): number {
 async function resolveFixture(
   fixture: BenchFixture,
   useMixedLookup: boolean,
+  expectedMissCount = 0,
 ): Promise<void> {
   const db = store.set(writeDb$);
   const prefetchedRows = useMixedLookup
@@ -284,13 +285,14 @@ async function resolveFixture(
   const resolved = results.flatMap((entries) => {
     return [...entries.values()];
   });
+  const missCount = resolved.filter((result) => {
+    return result.status === "miss";
+  }).length;
   if (
     resolved.length !== fixture.pairs.length ||
-    resolved.some((result) => {
-      return result.status !== "hit";
-    })
+    missCount !== expectedMissCount
   ) {
-    throw new Error("Storage cache benchmark fixture did not remain all-hit");
+    throw new Error("Storage cache benchmark fixture status count changed");
   }
 }
 
@@ -315,7 +317,7 @@ async function resolveFixtureWithExpiredRows(
       updatedAt: expiredAt,
     })
     .where(inArray(systemStoragePresignedUrlCache.cacheKey, expiredCacheKeys));
-  await resolveFixture(fixture, useMixedLookup);
+  await resolveFixture(fixture, useMixedLookup, expiredCacheKeys.length);
 }
 
 const ensureSeeded: () => Promise<ReadonlyMap<number, BenchFixture>> = (() => {
