@@ -629,6 +629,12 @@ export default [
       // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
       // sessions exercise first closure, lease recovery, and selector retirement.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // D2's ownership coverage guard reads a schema and returns a verdict. Its
+      // negative cases describe schemas this repository does not have — a new
+      // uncovered table, an account identity appearing on an account-free one —
+      // so no endpoint, and no database, can construct the states that prove
+      // the guard fails closed.
+      "src/signals/services/__tests__/account-erasure-ownership-inventory.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
@@ -667,17 +673,12 @@ export default [
       // cancellation can reach a provider body that is still streaming; every
       // other reader contract stays on the Gmail preview endpoint.
       "src/signals/services/__tests__/morning-brief-connector-reader.service.test.ts",
-      // #34866 joins a valid claimed PostgreSQL lifecycle, signed Runner route,
-      // built Guest environment filter and real CLI continuation. No production
-      // endpoint creates the default-off deferred source state for this boundary.
-      "src/signals/services/__tests__/pi-deferred-handoff.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       // Morning Brief composition reduces five providers to one bounded
       // request. The preview route can only exercise the sources an owner
       // has actually connected, so these exact byte, deadline, identity,
       // retention and language-precedence boundaries have no HTTP ingress.
       "src/signals/services/__tests__/morning-brief-composition.test.ts",
-      "src/signals/services/__tests__/connector-catalog-rejection-authority.test.ts",
       // A physical relation versus a compatibility view cannot be selected
       // through the production API. This focused PostgreSQL test proves the
       // exact Agent Draft writer through both rollout targets.
@@ -858,9 +859,6 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
-      // #34866 must join private lifecycle setup to the public authenticated
-      // route and external Guest/CLI process; the dormant producer has no API.
-      "src/signals/services/__tests__/pi-deferred-handoff.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.

@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
-      "importFile": "Eigene Datei importieren",
-      "importFileHint": "Design Ihrer Datei wiederverwenden",
+      "importFile": "Vorlage importieren",
       "multiAccent": "Multi-Akzent",
       "needPro": "Pro erforderlich",
       "nextSlide": "Vorschau der nächsten Folie",
@@ -1462,11 +1461,9 @@
           },
           "later": "Später",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Zu Slack hinzufügen",
             "description": "Fügen Sie {{assistantName}} zum Slack-Workspace Ihres Teams hinzu.",
             "note": "Ihre Kolleginnen müssen nicht mehr zuerst zu Ihnen. Sie fragen im Channel, und die Arbeit kommt im Thread zurück, wo alle sie sehen.",
-            "sampleChannel": "# growth",
             "title": "Arbeiten Sie mit {{assistantName}} dort, wo Ihr Team schon spricht"
           },
           "workflow": {
@@ -1495,6 +1492,10 @@
         },
         "notEligible": "Nicht berechtigt",
         "pendingState": "{{amount}} ausstehend",
+        "rejected": {
+          "alreadyRedeemed": "Post bereits verwendet",
+          "postMustMention": "Muss {{assistantName}} erwähnen"
+        },
         "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "share": {
           "action": "Teilen",
@@ -2118,6 +2119,7 @@
       "pinned": "Angepinnt",
       "rename": "Chat umbenennen",
       "renameDescription": "Geben Sie einen neuen Namen für diesen Chat-Thread ein.",
+      "showAllChats": "Alle Chats anzeigen",
       "showArchived": "Archivierte anzeigen",
       "showArchivedChats": "Archivierte Chats anzeigen",
       "titlePlaceholder": "Chattitel",
@@ -4103,7 +4105,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Zurück",
-        "cancel": "Abbrechen",
         "continue": "Weiter",
         "finish": "Einrichtung abschließen",
         "notNow": "Jetzt nicht",
@@ -4175,17 +4176,21 @@
         "title": "Welche Arbeit machst du?"
       },
       "skills": {
-        "confirm": "Importieren und weiter",
-        "copy": "Importiere eine SKILL.md und sie wird ein Workflow in Okou, startklar über /.",
-        "import": "Datei auswählen",
+        "copied": "Kopiert",
+        "copy": "Füge diesen Prompt in deine eigene Codex- oder Claude-Code-Sitzung ein, und er holt die Skills von deinem Rechner nach Okou.",
+        "copyError": "Der Prompt konnte nicht kopiert werden.",
+        "copyPrompt": "Prompt kopieren",
         "importedCopy": "Als Okou-Workflow importiert.",
-        "importedTitle": "Dein Workflow ist fertig",
-        "panelCopy": "Aus Codex, Claude Code oder jedem Agenten, der eine schreibt.",
-        "panelTitle": "SKILL.md hier ablegen",
-        "previewCopy": "Wird als Okou-Workflow importiert. Bis du ihn teilst, kannst nur du ihn nutzen.",
-        "previewTitle": "Skill prüfen",
-        "replace": "Andere Datei auswählen",
-        "title": "Bring die Skills mit, die du schon geschrieben hast."
+        "importedLabel": "Importierte Skills",
+        "importedTitle": "Deine Skills sind in Okou",
+        "preparing": "Deine Import-Sitzung wird geöffnet…",
+        "promptCopy": "Er liest die Skills auf deinem Rechner und schreibt sie nach Okou.",
+        "promptLabel": "Prompt für den Skill-Import",
+        "promptTitle": "Führe das in Codex oder Claude Code aus",
+        "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
+        "title": "Bring die Skills mit, die du schon geschrieben hast.",
+        "tryAgain": "Erneut versuchen",
+        "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },
       "slack": {
         "add": "Zu Slack hinzufügen",
@@ -6460,6 +6465,8 @@
         "description": "Wählen Sie Ihre bevorzugte Sprache für die Benutzeroberfläche von {{brandName}}",
         "label": "Sprache",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6867,14 +6874,20 @@
       "preview": "{{title}} in der Vorschau anzeigen",
       "rename": "Vorlage umbenennen"
     },
+    "clearSearch": "Suche löschen",
     "custom": "Eigene",
     "detail": {
       "back": "Eigene Vorlagen",
       "page": "Seite {{number}}"
     },
     "empty": {
-      "description": "Okou macht aus dem Design Ihrer Datei eine Vorlage, die Sie wiederverwenden können."
+      "description": "Importiere ein Dokument, eine Präsentation oder ein Bild, um das Design wiederzuverwenden.",
+      "document": "Noch keine Dokumente",
+      "illustration": "Noch keine Bilder",
+      "presentation": "Noch keine Präsentationen",
+      "title": "Mach es zu deiner Vorlage"
     },
+    "importHint": "Importiere ein Dokument, eine Präsentation oder ein Bild.",
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",

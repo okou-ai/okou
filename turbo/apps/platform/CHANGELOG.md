@@ -11,6 +11,113 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.939.0](https://github.com/okou-ai/okou/compare/app-v0.938.0...app-v0.939.0) (2026-09-22)
+
+
+### Features
+
+* add show all link to unread chat empty state ([#35922](https://github.com/okou-ai/okou/issues/35922)) ([f309328](https://github.com/okou-ai/okou/commit/f3093288df75faebf7e1aa94f41d1d29d88b32cc))
+* **platform:** draw the quest steps with the brand illustrations ([#35907](https://github.com/okou-ai/okou/issues/35907)) ([7f542a8](https://github.com/okou-ai/okou/commit/7f542a8a3754f7ebb5f5a89f46dabbdfd019342e))
+
+
+### Bug Fixes
+
+* **platform:** use filled foreground for subscription tooltip ([#35924](https://github.com/okou-ai/okou/issues/35924)) ([aa117e7](https://github.com/okou-ai/okou/commit/aa117e74ad4e2d3d6f7d988c2e44e42bfe2239f6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.489.0
+    * @okouai/core bumped to 8.697.0
+
+## [0.938.0](https://github.com/okou-ai/okou/compare/app-v0.937.0...app-v0.938.0) (2026-09-22)
+
+
+### Features
+
+* **model-provider:** add feature-gated okou 1.0 models ([#35884](https://github.com/okou-ai/okou/issues/35884)) ([b996e92](https://github.com/okou-ai/okou/commit/b996e92cc31d3038fd0a403decf66736597e5ce0))
+
+
+### Bug Fixes
+
+* **platform:** honor chat filters for the current thread ([#35911](https://github.com/okou-ai/okou/issues/35911)) ([ae9cd83](https://github.com/okou-ai/okou/commit/ae9cd83d86e7924048d76f499e323cd8e045a1ab))
+
+
+### Refactoring
+
+* **platform:** simplify conversation locator rail ([#35918](https://github.com/okou-ai/okou/issues/35918)) ([1bfb6f4](https://github.com/okou-ai/okou/commit/1bfb6f46b5d6e884400ef7209315e7dd2243cc7f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.488.0
+    * @okouai/core bumped to 8.696.0
+
+## [0.937.0](https://github.com/okou-ai/okou/compare/app-v0.936.0...app-v0.937.0) (2026-09-21)
+
+
+### Features
+
+* **platform:** add simplified and traditional chinese ui locales ([#35832](https://github.com/okou-ai/okou/issues/35832)) ([2c227d7](https://github.com/okou-ai/okou/commit/2c227d748b9e82987d2e50ee4d8cbb621314f6a6))
+* **platform:** add unread-only chat shortcut ([#35898](https://github.com/okou-ai/okou/issues/35898)) ([1ee024b](https://github.com/okou-ai/okou/commit/1ee024b30118b50892db99d13fee1b9d0747d63c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.487.0
+    * @okouai/core bumped to 8.695.0
+
+## [0.936.0](https://github.com/okou-ai/okou/compare/app-v0.935.0...app-v0.936.0) (2026-09-21)
+
+
+### Features
+
+* **app:** refine custom template browsing and empty states ([#35788](https://github.com/okou-ai/okou/issues/35788)) ([202ace9](https://github.com/okou-ai/okou/commit/202ace9e31a0b5d18b2070aec841ab6f08e82c3f))
+* **models:** gate new workspace model policies ([#35871](https://github.com/okou-ai/okou/issues/35871)) ([f76ce1d](https://github.com/okou-ai/okou/commit/f76ce1dc9789c75c6c23cf70f1d5378e16721d68))
+* **platform:** give the default agent avatar its own texture ([#35901](https://github.com/okou-ai/okou/issues/35901)) ([b503a49](https://github.com/okou-ai/okou/commit/b503a49b709681dae650d0ca46a08243da39c6a2))
+* **platform:** import real skills from the onboarding skills step ([#35843](https://github.com/okou-ai/okou/issues/35843)) ([974f7b4](https://github.com/okou-ai/okou/commit/974f7b4230bddcd07004ee3d0b74a3f23b00636d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.486.0
+    * @okouai/connectors bumped to 3.15.1
+    * @okouai/core bumped to 8.694.0
+
+## [0.935.0](https://github.com/okou-ai/okou/compare/app-v0.934.0...app-v0.935.0) (2026-09-21)
+
+
+### Features
+
+* expose and verify x509plain vnc access ([#35792](https://github.com/okou-ai/okou/issues/35792)) ([e5dfe16](https://github.com/okou-ai/okou/commit/e5dfe16de48753642c81558877bba57cb1f90dce))
+* **onboarding:** wire the chat-channel step to real slack and teams installs ([#35809](https://github.com/okou-ai/okou/issues/35809)) ([e6e4723](https://github.com/okou-ai/okou/commit/e6e47239e64da9ffc948c43359a0601408f8d789))
+
+
+### Bug Fixes
+
+* **app:** give the artifact share menu the app's own menu row ([#35837](https://github.com/okou-ai/okou/issues/35837)) ([9e7fe98](https://github.com/okou-ai/okou/commit/9e7fe98a2cba69eaadb691472913b7b06adcc15a))
+* **app:** withdraw the color theme nobody chose ([#35830](https://github.com/okou-ai/okou/issues/35830)) ([ebfc60a](https://github.com/okou-ai/okou/commit/ebfc60a9ff22ae2d94e034512dee21c13c015cb5))
+* **platform:** drop the source filename from a custom template's column ([#35842](https://github.com/okou-ai/okou/issues/35842)) ([3938412](https://github.com/okou-ai/okou/commit/393841246e297f11bde46a1497181e8a3ce66759))
+* **platform:** preserve workspace gradients during chat loading ([#35831](https://github.com/okou-ai/okou/issues/35831)) ([f58eceb](https://github.com/okou-ai/okou/commit/f58ecebbcf5497c7b6c718cd2819088e88841fae))
+* **platform:** rework paid tool copy and the composer notice tray ([#35715](https://github.com/okou-ai/okou/issues/35715)) ([ddff5f1](https://github.com/okou-ai/okou/commit/ddff5f11ec2437826f90a553d3254d9282109122))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.485.0
+    * @okouai/core bumped to 8.693.0
+    * @okouai/ui bumped to 1.11.3
+
 ## [0.934.0](https://github.com/okou-ai/okou/compare/app-v0.933.0...app-v0.934.0) (2026-09-21)
 
 

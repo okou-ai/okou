@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mockEnv } from "../../../lib/env";
 
 import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
+import { createStore } from "ccstate";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -26,6 +27,7 @@ import {
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
 } from "./helpers/runtime-state";
 import { encryptSecretForTests } from "./helpers/encrypt-secret";
+import { deleteRun$ } from "./helpers/usage-state";
 import {
   generatedStripeCustomerId,
   postUsageAllowanceInvoicePaid,
@@ -823,6 +825,42 @@ describe("Usage Allowance", () => {
       provider,
       quantity: 80,
     });
+
+    await processOrgUsageEvents(actor);
+
+    await expect(readOrgCredits(actor)).resolves.toBe(20);
+    await expect(readVisibleUsageCredits(actor)).resolves.toBe(80);
+  });
+
+  it("anchors allowance to the original run start after the run row is deleted", async () => {
+    onTestFinished(() => {
+      clearMockNow();
+    });
+    const runCreatedAt = nowDate();
+    mockNow(runCreatedAt);
+    const { actor, orgId, agentId } = await builtInAllowanceActor({
+      credits: 100,
+    });
+    const run = await createBuiltInRun(
+      actor,
+      agentId,
+      "run before entitlement",
+    );
+    mockNow(addHours(runCreatedAt, 1));
+    await seedAllowanceEntitlement(actor, orgId, {
+      shortWindowUnits: 100,
+      weeklyWindowUnits: 200,
+    });
+    const provider = usageProvider();
+    await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider,
+      quantity: 80,
+    });
+    // Settlement now reads the anchor captured with the usage row, so the run
+    // disappearing cannot move this usage into a window it never belonged to.
+    await createStore().set(deleteRun$, run.runId, context.signal);
 
     await processOrgUsageEvents(actor);
 

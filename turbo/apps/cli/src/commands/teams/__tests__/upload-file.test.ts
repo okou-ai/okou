@@ -59,19 +59,6 @@ describe("okou teams upload-file command", () => {
 
   it.each([
     {
-      url: "/artifacts/abcxyz1234.pdf",
-      expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.pdf",
-      appUrl: "https://app.okou.ai",
-      activityId: undefined,
-    },
-    {
-      url: "/artifacts/00000000000040008000000000000001.pdf#page=2",
-      expectedUrl:
-        "https://pr-123-app.omby.ai/artifacts/00000000000040008000000000000001.pdf#page=2",
-      appUrl: "https://pr-123-app.omby.ai",
-      activityId: "teams-activity-1",
-    },
-    {
       url: "https://files.example/report.pdf?download=1#page=2",
       expectedUrl: "https://files.example/report.pdf?download=1#page=2",
       appUrl: "https://app.okou.ai",

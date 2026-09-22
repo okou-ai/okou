@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, normalizeContext } from "@earendil-works/pi-ai";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { retryAssistantCall } from "@earendil-works/pi-ai/utils/retry";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
@@ -84,10 +84,10 @@ function turn() {
   if (!model) throw new Error("Codex model is required");
   return piAgentStreamForConfig(route)(
     model,
-    {
+    normalizeContext({
       messages: [{ role: "user", content: "hello", timestamp: 1 }],
       tools: [],
-    },
+    }),
     { apiKey: route.apiKey },
   );
 }

@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
-      "importFile": "自分のファイルをインポート",
-      "importFileHint": "ファイルのデザインを再利用",
+      "importFile": "テンプレートをインポート",
       "multiAccent": "マルチアクセント",
       "needPro": "Pro が必要",
       "nextSlide": "次のスライドをプレビューする",
@@ -1461,11 +1460,9 @@
           },
           "later": "後で",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Slack に追加",
             "description": "チームの Slack ワークスペースに {{assistantName}} を追加します。",
             "note": "チームが毎回あなたを経由しなくてよくなります。チャンネルで頼めば、結果はそのスレッドに返ってきて、全員が見られます。",
-            "sampleChannel": "# growth",
             "title": "チームがすでに会話している場所で {{assistantName}} を使う"
           },
           "workflow": {
@@ -1494,6 +1491,10 @@
         },
         "notEligible": "対象外",
         "pendingState": "{{amount}} 件承諾待ち",
+        "rejected": {
+          "alreadyRedeemed": "投稿は使用済み",
+          "postMustMention": "{{assistantName}} に触れる必要あり"
+        },
         "rewardsNote": "報酬は付与から7日後に失効します。チェックインは UTC 00:00 にリセットされます。Slack の報酬は組織に、それ以外は個人残高に加算されます。",
         "share": {
           "action": "シェア",
@@ -2110,6 +2111,7 @@
       "pinned": "ピン留め済み",
       "rename": "チャットの名前を変更する",
       "renameDescription": "このチャット スレッドの新しい名前を入力します。",
+      "showAllChats": "すべてのチャットを表示",
       "showArchived": "アーカイブ済みを表示",
       "showArchivedChats": "アーカイブ済みのチャットを表示",
       "titlePlaceholder": "チャットのタイトル",
@@ -4091,7 +4093,6 @@
     "sourcesFirst": {
       "common": {
         "back": "戻る",
-        "cancel": "キャンセル",
         "continue": "次へ",
         "finish": "セットアップを完了",
         "notNow": "後で",
@@ -4163,17 +4164,21 @@
         "title": "どんな仕事をしていますか？"
       },
       "skills": {
-        "confirm": "インポートして次へ",
-        "copy": "SKILL.md をインポートすると Okou のワークフローになり、/ ですぐ実行できます。",
-        "import": "ファイルを選ぶ",
+        "copied": "コピーしました",
+        "copy": "このプロンプトを自分の Codex または Claude Code のセッションに貼り付けると、手元のスキルが Okou に取り込まれます。",
+        "copyError": "プロンプトをコピーできませんでした。",
+        "copyPrompt": "プロンプトをコピー",
         "importedCopy": "Okou のワークフローとしてインポートしました。",
-        "importedTitle": "ワークフローができました",
-        "panelCopy": "Codex、Claude Code、あるいは SKILL.md を書けるエージェントから。",
-        "panelTitle": "SKILL.md をここにドロップ",
-        "previewCopy": "Okou のワークフローとしてインポートします。共有するまでは自分だけが使えます。",
-        "previewTitle": "スキルを確認",
-        "replace": "別のファイルを選ぶ",
-        "title": "すでに書いたスキルを持ち込む。"
+        "importedLabel": "インポートしたスキル",
+        "importedTitle": "スキルが Okou に入りました",
+        "preparing": "インポートセッションを開いています…",
+        "promptCopy": "手元のスキルを読み取り、Okou に書き込みます。",
+        "promptLabel": "スキルインポート用プロンプト",
+        "promptTitle": "Codex または Claude Code で実行してください",
+        "startError": "インポートセッションを開けませんでした。",
+        "title": "すでに書いたスキルを持ち込む。",
+        "tryAgain": "もう一度試す",
+        "waiting": "インポートされたスキルは、届き次第ここに表示されます。"
       },
       "slack": {
         "add": "Slack に追加",
@@ -6447,6 +6452,8 @@
         "description": "{{brandName}}のインターフェースで使用する言語を選択します",
         "label": "言語",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6849,14 +6856,20 @@
       "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
+    "clearSearch": "検索をクリア",
     "custom": "カスタム",
     "detail": {
       "back": "カスタムテンプレート",
       "page": "{{number}} ページ目"
     },
     "empty": {
-      "description": "Okou がファイルのデザインを、繰り返し使えるテンプレートに変換します。"
+      "description": "ドキュメント、プレゼンテーション、画像をインポートしてデザインを再利用できます。",
+      "document": "ドキュメントはまだありません",
+      "illustration": "画像はまだありません",
+      "presentation": "プレゼンテーションはまだありません",
+      "title": "自分だけのテンプレートに"
     },
+    "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",

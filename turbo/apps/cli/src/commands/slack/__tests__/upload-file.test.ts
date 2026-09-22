@@ -206,10 +206,6 @@ describe("okou slack upload-file command", () => {
 
     it.each([
       {
-        url: "/artifacts/abcxyz1234.pdf",
-        expectedUrl: "https://app.okou.ai/artifacts/abcxyz1234.pdf",
-      },
-      {
         url: "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf?download=1",
         expectedUrl:
           "https://cdn.vm7.io/artifacts/user/asset/test-report.pdf?download=1",

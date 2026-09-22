@@ -4561,15 +4561,16 @@ describe("okou social command", () => {
     });
   });
 
-  it.each(["https://artifacts.example/video.mp4", "/artifacts/abcxyz1234.mp4"])(
+  it.each([
+    "https://artifacts.example/video.mp4",
+    "https://app.okou.ai/artifacts/abcxyz1234.mp4",
+  ])(
     "auto-detects downloads and prints a complete artifact URL for %s",
     async (url) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
       const completed = completedDownload();
       completed.artifact.url = url;
-      const expectedUrl = url.startsWith("/artifacts/")
-        ? `https://app.okou.ai${url}`
-        : url;
+      const expectedUrl = url;
       let requestBody: unknown;
       server.use(
         http.post(

@@ -135,17 +135,6 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
         layout.visible && (engaged ? "opacity-100" : "opacity-[0.68]"),
       )}
     >
-      {layout.visible ? (
-        <div
-          data-conversation-locator-band
-          className="pointer-events-none absolute left-[7px] rounded-[5px] bg-primary opacity-[0.05]"
-          style={{
-            top: trackTop(layout.bandStart, layout.ticks.length),
-            height: `calc(${trackLength(layout.ticks.length)} * ${layout.bandSize.toFixed(4)})`,
-            width: layout.bandWidth,
-          }}
-        />
-      ) : null}
       {layout.ticks.map((tick) => {
         return (
           <div
@@ -156,9 +145,7 @@ function ConversationLocatorRail({ thread }: { thread: ChatPanelSignals }) {
               "pointer-events-none absolute left-[14px] h-0.5 -translate-y-1/2 rounded-full transition-colors duration-150",
               preview?.turnIndex === tick.turnIndex
                 ? "bg-foreground"
-                : tick.current
-                  ? "bg-primary/60"
-                  : "bg-divider",
+                : "bg-divider",
             )}
             style={{
               top: trackTop(tick.fraction, layout.ticks.length),

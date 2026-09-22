@@ -144,13 +144,11 @@ describe("okou generate voice command", () => {
     expect(stdout).toContain("Credits charged: 1");
   });
 
-  it.each([VOICE_RESULT.url, "/artifacts/abcxyz1234.wav"])(
+  it.each([VOICE_RESULT.url, "https://app.okou.ai/artifacts/abcxyz1234.wav"])(
     "prints the complete voice result for %s as one JSON object",
     async (url) => {
       vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-      const expectedUrl = url.startsWith("/artifacts/")
-        ? `https://app.okou.ai${url}`
-        : url;
+      const expectedUrl = url;
       server.use(
         http.post(SPEECH_URL, () => {
           return HttpResponse.json({ ...VOICE_RESULT, url });

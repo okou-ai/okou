@@ -86,6 +86,7 @@ with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-') as tempor
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_text('fixture baseline\n')
     run(['git', 'init', '-q', '--initial-branch=main'], repo)
+    run(['git', 'config', 'maintenance.auto', 'false'], repo)
     run(['git', 'config', 'user.name', 'Workflow fixture'], repo)
     run(['git', 'config', 'user.email', 'workflow@example.invalid'], repo)
     run(['git', 'add', '.'], repo)

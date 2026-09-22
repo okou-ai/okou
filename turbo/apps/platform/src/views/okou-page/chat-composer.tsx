@@ -3692,13 +3692,24 @@ function TemplatePickerCategoryNav({
 
   return (
     <>
-      <div className="shrink-0 border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4 sm:hidden">
+      <div
+        className={cn(
+          "shrink-0 sm:hidden",
+          selectedCategory === "custom"
+            ? "flex h-[68px] items-center px-5 pr-44 max-[374px]:pr-40"
+            : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
+        )}
+      >
         <Select value={selectedCategory} onValueChange={onChange}>
           <SelectTrigger
             aria-label={t(($) => {
               return $.artifacts.templates.category;
             })}
-            className="h-9 w-full bg-card"
+            className={
+              selectedCategory === "custom"
+                ? "h-8 w-auto max-w-full border-0 bg-background px-0 max-[374px]:text-xs"
+                : "h-9 w-full bg-card"
+            }
           >
             <SelectValue />
           </SelectTrigger>
@@ -5733,6 +5744,9 @@ function TemplatePickerDialog({
     if (nextCategory !== "avatar") {
       clearAvatarVoiceSelection();
     }
+    if (nextCategory === "custom") {
+      resetCustomTemplatePicker();
+    }
     setCategory(nextCategory);
     if (!isPreviewing) {
       prewarmTemplatePreviewsForCategory(nextCategory);
@@ -5816,24 +5830,26 @@ function TemplatePickerDialog({
               />
               <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
                 <TemplatePaidToolNotice category={selectedCategory} />
-                <div
-                  className={cn(
-                    "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                    showTemplatePickerSearch || showAvatarPickerToolbar
-                      ? "flex"
-                      : "hidden sm:flex",
-                  )}
-                >
-                  {showTemplatePickerSearch ? (
-                    <TemplatePickerWorkflowSearch
-                      search={search}
-                      onSearchChange={handleSearchChange}
-                    />
-                  ) : null}
-                  {showAvatarPickerToolbar ? (
-                    <AvatarTemplatePickerToolbar signals={signals} />
-                  ) : null}
-                </div>
+                {selectedCategory !== "custom" ? (
+                  <div
+                    className={cn(
+                      "relative h-[68px] shrink-0 items-center px-6 pr-14",
+                      showTemplatePickerSearch || showAvatarPickerToolbar
+                        ? "flex"
+                        : "hidden sm:flex",
+                    )}
+                  >
+                    {showTemplatePickerSearch ? (
+                      <TemplatePickerWorkflowSearch
+                        search={search}
+                        onSearchChange={handleSearchChange}
+                      />
+                    ) : null}
+                    {showAvatarPickerToolbar ? (
+                      <AvatarTemplatePickerToolbar signals={signals} />
+                    ) : null}
+                  </div>
+                ) : null}
                 <TemplatePickerCategoryContent
                   signals={signals}
                   selectedCategory={selectedCategory}
@@ -5971,7 +5987,7 @@ function TemplatePickerCategoryContent({
 }) {
   if (selectedCategory === "custom") {
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col px-5 pb-6 sm:px-7">
         <CustomTemplatePickerPane
           signals={signals}
           onSelect={onSelectCustom}
@@ -9310,7 +9326,7 @@ type ComposerResolvedVideoModelPickerState =
 // holding three of them read as the heaviest thing in the composer.
 function composerModelPickerTriggerClassName(): string {
   return cn(
-    "h-8 w-8 max-w-none gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:gap-1 composer-wide:px-2",
+    "h-8 w-8 max-w-none justify-center gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:justify-start composer-wide:gap-1 composer-wide:px-2",
     "[&>[data-slot=select-value]]:flex [&>[data-slot=select-value]]:items-center [&>[data-slot=select-value]]:justify-center composer-wide:[&>[data-slot=select-value]]:justify-start",
     "[&>[data-slot=select-icon]]:hidden composer-wide:[&>[data-slot=select-icon]]:block",
     "hover:bg-state-hover hover:text-foreground data-popup-open:bg-state-hover data-popup-open:text-foreground",

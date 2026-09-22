@@ -23,6 +23,10 @@ import koKRAgentsUrl from "./locales/ko-KR/agents.json?url";
 import koKRCommonUrl from "./locales/ko-KR/common.json?url";
 import ptBRAgentsUrl from "./locales/pt-BR/agents.json?url";
 import ptBRCommonUrl from "./locales/pt-BR/common.json?url";
+import zhHansAgentsUrl from "./locales/zh-Hans/agents.json?url";
+import zhHansCommonUrl from "./locales/zh-Hans/common.json?url";
+import zhHantAgentsUrl from "./locales/zh-Hant/agents.json?url";
+import zhHantCommonUrl from "./locales/zh-Hant/common.json?url";
 
 export const DEFAULT_LOCALE = "en-US";
 export const DEFAULT_NAMESPACE = "common";
@@ -80,6 +84,12 @@ function localeResourceUrls(locale: NonDefaultLocale): LocaleResourceUrls {
     }
     case "hi-IN": {
       return { agents: hiINAgentsUrl, common: hiINCommonUrl };
+    }
+    case "zh-Hans": {
+      return { agents: zhHansAgentsUrl, common: zhHansCommonUrl };
+    }
+    case "zh-Hant": {
+      return { agents: zhHantAgentsUrl, common: zhHantCommonUrl };
     }
   }
 }
@@ -148,4 +158,6 @@ export const CHAT_ATTACHMENT_HEADINGS = {
   "it-IT": "Allegati",
   "fr-FR": "Pièces jointes",
   "hi-IN": "संलग्नक",
+  "zh-Hans": "附件",
+  "zh-Hant": "附件",
 } as const satisfies Record<SupportedLocale, string>;

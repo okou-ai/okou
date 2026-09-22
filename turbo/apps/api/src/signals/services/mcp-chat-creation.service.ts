@@ -7,7 +7,10 @@ import type {
 import type { McpChatMutationResult } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { formatMcpChatTimestamp } from "@okouai/api-contracts/contracts/mcp-chat-time";
 import { PUBLIC_BRAND } from "@okouai/core/public-brand";
-import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
+import {
+  assertErasureSubjectWritable,
+  setErasureFenceDeadlines,
+} from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
@@ -428,8 +431,10 @@ async function createInTransaction(
   input: McpCreateChatThreadInput,
   signal: AbortSignal,
 ): Promise<McpCreateChatThreadOutput> {
-  await tx.execute(sql`SELECT set_config('lock_timeout', '1s', true)`);
-  await tx.execute(sql`SELECT set_config('statement_timeout', '3s', true)`);
+  await setErasureFenceDeadlines(tx, {
+    lockTimeout: "1s",
+    statementTimeout: "3s",
+  });
   // Resolve identity without a row lock, then preserve the global subject ->
   // Agent -> request -> thread lock order. If a concurrent default-based
   // creation chose another Agent, the outer bounded retry re-resolves it.

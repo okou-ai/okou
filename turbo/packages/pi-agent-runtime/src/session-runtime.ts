@@ -292,27 +292,38 @@ async function createPiAgentSession(
               ),
             }
           : {}),
-        resourceLoaderOptions: resourceSnapshot
-          ? measurePiPreparationSync(
-              args.onPreparationTiming,
-              "resource_loader",
-              () => {
-                return {
+        // Both branches are measured so the preheated and sandbox loaders are
+        // comparable under one phase. This observes loader *option* assembly,
+        // which is all either branch does here; upstream discovery and loading
+        // happen inside `session_services` and `session_create`.
+        resourceLoaderOptions: measurePiPreparationSync(
+          args.onPreparationTiming,
+          "resource_loader",
+          () => {
+            return resourceSnapshot
+              ? {
                   ...piPreheatedResourceLoaderOptions({
                     snapshot: resourceSnapshot,
                     appendSystemPrompt,
                     systemPrompt,
                   }),
                   extensionFactories,
-                };
-              },
-              signal,
-            )
-          : { ...sandboxResourceLoaderOptions, extensionFactories },
+                }
+              : { ...sandboxResourceLoaderOptions, extensionFactories };
+          },
+          signal,
+        ),
       });
     },
     signal,
   );
+  // 0.86 resolves an unset `cacheWarming` to `streaming`, so a long tool run
+  // would issue background prompt-cache requests we do not pay for. Pin it off
+  // for every path here, including the no-snapshot fallback that loads settings
+  // from disk. `getCacheWarmingMode()` reads global settings only, which
+  // `applyOverrides()` does not reach, so this setter is the effective one; it
+  // updates the resolved value without persisting the choice to any disk file.
+  services.settingsManager.setCacheWarmingMode("off");
   const created = await measurePiPreparation(
     args.onPreparationTiming,
     "session_create",

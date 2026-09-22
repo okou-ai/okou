@@ -1,6 +1,5 @@
 import {
   connectorCatalogValidationAuthorityIsCurrent,
-  connectorCatalogValidationAuthorityIsCurrentOrNewer,
   createConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidationAuthority,
   type ConnectorCatalogValidatorIdentity,
@@ -16,7 +15,6 @@ const BUILD_COMMIT_SHA_REGEX = /^[a-f0-9]{40}$/u;
 
 export {
   connectorCatalogValidationAuthorityIsCurrent,
-  connectorCatalogValidationAuthorityIsCurrentOrNewer,
   createConnectorCatalogValidatorIdentity,
 };
 export type {

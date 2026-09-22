@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
-      "importFile": "내 파일 가져오기",
-      "importFileHint": "파일의 디자인을 재사용",
+      "importFile": "템플릿 가져오기",
       "multiAccent": "다중 악센트",
       "needPro": "Pro 필요",
       "nextSlide": "다음 슬라이드 미리보기",
@@ -1461,11 +1460,9 @@
           },
           "later": "나중에",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Slack에 추가",
             "description": "팀의 Slack 워크스페이스에 {{assistantName}}를 추가합니다.",
             "note": "팀원들이 매번 나를 거치지 않아도 됩니다. 채널에서 부탁하면 결과가 그 스레드로 돌아오고, 모두가 함께 봅니다.",
-            "sampleChannel": "# growth",
             "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
           },
           "workflow": {
@@ -1494,6 +1491,10 @@
         },
         "notEligible": "대상 아님",
         "pendingState": "{{amount}}명 대기 중",
+        "rejected": {
+          "alreadyRedeemed": "이미 사용된 게시물",
+          "postMustMention": "{{assistantName}} 언급 필요"
+        },
         "rewardsNote": "보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
         "share": {
           "action": "공유",
@@ -2110,6 +2111,7 @@
       "pinned": "고정됨",
       "rename": "채팅 이름 바꾸기",
       "renameDescription": "이 채팅 스레드의 새 이름을 입력하세요.",
+      "showAllChats": "모든 채팅 보기",
       "showArchived": "보관된 채팅 표시",
       "showArchivedChats": "보관된 채팅 표시",
       "titlePlaceholder": "채팅 제목",
@@ -4091,7 +4093,6 @@
     "sourcesFirst": {
       "common": {
         "back": "뒤로",
-        "cancel": "취소",
         "continue": "계속",
         "finish": "설정 완료",
         "notNow": "나중에",
@@ -4163,17 +4164,21 @@
         "title": "어떤 일을 하시나요?"
       },
       "skills": {
-        "confirm": "가져오고 계속",
-        "copy": "SKILL.md를 가져오면 Okou의 워크플로가 되어 /로 바로 실행할 수 있습니다.",
-        "import": "파일 선택",
+        "copied": "복사됨",
+        "copy": "이 프롬프트를 본인의 Codex 또는 Claude Code 세션에 붙여 넣으면 내 컴퓨터의 스킬이 Okou로 들어옵니다.",
+        "copyError": "프롬프트를 복사하지 못했습니다.",
+        "copyPrompt": "프롬프트 복사",
         "importedCopy": "Okou 워크플로로 가져왔습니다.",
-        "importedTitle": "워크플로가 준비됐습니다",
-        "panelCopy": "Codex, Claude Code 또는 SKILL.md를 작성하는 어떤 에이전트에서든.",
-        "panelTitle": "여기에 SKILL.md를 놓으세요",
-        "previewCopy": "Okou 워크플로로 가져옵니다. 공유하기 전까지는 본인만 사용할 수 있습니다.",
-        "previewTitle": "스킬 확인",
-        "replace": "다른 파일 선택",
-        "title": "이미 써 둔 스킬을 그대로 가져오세요."
+        "importedLabel": "가져온 스킬",
+        "importedTitle": "스킬이 Okou에 들어왔습니다",
+        "preparing": "가져오기 세션을 여는 중…",
+        "promptCopy": "내 컴퓨터의 스킬을 읽어 Okou에 씁니다.",
+        "promptLabel": "스킬 가져오기 프롬프트",
+        "promptTitle": "Codex 또는 Claude Code에서 실행하세요",
+        "startError": "가져오기 세션을 열지 못했습니다.",
+        "title": "이미 써 둔 스킬을 그대로 가져오세요.",
+        "tryAgain": "다시 시도",
+        "waiting": "가져온 스킬은 도착하는 대로 여기에 표시됩니다."
       },
       "slack": {
         "add": "Slack에 추가",
@@ -6447,6 +6452,8 @@
         "description": "{{brandName}} 인터페이스에 사용할 기본 언어를 선택하세요",
         "label": "언어",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6849,14 +6856,20 @@
       "preview": "{{title}} 미리보기",
       "rename": "템플릿 이름 바꾸기"
     },
+    "clearSearch": "검색 지우기",
     "custom": "커스텀",
     "detail": {
       "back": "커스텀 템플릿",
       "page": "{{number}}페이지"
     },
     "empty": {
-      "description": "Okou가 파일의 디자인을 재사용할 수 있는 템플릿으로 만들어 줍니다."
+      "description": "문서, 프레젠테이션 또는 이미지를 가져와 디자인을 재사용하세요.",
+      "document": "아직 문서가 없어요",
+      "illustration": "아직 이미지가 없어요",
+      "presentation": "아직 프레젠테이션이 없어요",
+      "title": "나만의 템플릿 만들기"
     },
+    "importHint": "문서, 프레젠테이션 또는 이미지를 가져오세요.",
     "loadFailed": "템플릿을 불러오지 못했습니다.",
     "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
     "retry": "다시 시도",

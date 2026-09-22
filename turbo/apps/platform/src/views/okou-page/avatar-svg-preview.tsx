@@ -14,6 +14,26 @@ import {
   type ResolvedAvatarSvgConfig,
 } from "./avatar-svg-utils.ts";
 
+/**
+ * The brand texture, behind whichever artwork its frame holds.
+ *
+ * Shared by the layered composer avatar and by the drawn files that are not
+ * composed at all, so the two cannot drift on the one value that matters here:
+ * the tile is 328px of artwork and the frame renders it at 56px, so at 100% a
+ * brush mark is 4.4px and reads as noise rather than as a stroke. 180% shows
+ * two or three marks per frame.
+ */
+export function AvatarTextureLayer({ url }: { url: string }) {
+  return (
+    <span
+      {...AVATAR_TEXTURE_SLOT}
+      aria-hidden="true"
+      className="absolute inset-0 bg-[length:180%] bg-center"
+      style={{ backgroundImage: `url(${url})` }}
+    />
+  );
+}
+
 interface AvatarSvgPreviewProps {
   config: ResolvedAvatarSvgConfig;
   size?: number;
@@ -81,17 +101,7 @@ export function AvatarSvgPreview({
       {...(alt ? { role: "img", "aria-label": alt } : undefined)}
       data-testid={testId}
     >
-      {textureUrl ? (
-        <span
-          {...AVATAR_TEXTURE_SLOT}
-          aria-hidden="true"
-          // 180%: the tile is 328px of artwork and the frame is 56px, so at
-          // 100% a brush mark renders 4.4px and reads as noise rather than as
-          // a stroke. This shows two or three marks per frame.
-          className="absolute inset-0 bg-[length:180%] bg-center"
-          style={{ backgroundImage: `url(${textureUrl})` }}
-        />
-      ) : null}
+      {textureUrl ? <AvatarTextureLayer url={textureUrl} /> : null}
       <div
         {...AVATAR_ARTWORK_SLOT}
         className="absolute inset-0"

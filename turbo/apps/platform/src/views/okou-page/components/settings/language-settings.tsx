@@ -94,6 +94,18 @@ function useLanguageSelectItems(
         return $.settings.preferences.language.options.hindi;
       }),
     },
+    {
+      value: "zh-Hans",
+      label: t(($) => {
+        return $.settings.preferences.language.options.chineseSimplified;
+      }),
+    },
+    {
+      value: "zh-Hant",
+      label: t(($) => {
+        return $.settings.preferences.language.options.chineseTraditional;
+      }),
+    },
   ];
   return items.filter((item) => {
     return availableLocales.includes(item.value);

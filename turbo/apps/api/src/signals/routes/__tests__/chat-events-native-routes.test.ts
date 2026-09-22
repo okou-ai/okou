@@ -11,6 +11,7 @@ import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat
 import { getProviderRuntimeModel } from "@okouai/api-contracts/contracts/model-providers";
 import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isPiNativeModel } from "@okouai/core/pi-execution";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -492,7 +493,11 @@ describe("shared native Pi route activation", () => {
     90_000,
   );
 
-  it.each(piNativeCatalogModelSchema.options)(
+  // The frozen Gen4 reader vocabulary is deliberately wider than Pi admission:
+  // `claude-fable-5-1` is still read from persisted native config, but the
+  // Fable frontier line runs on the Claude Code vendor harness, so it has no
+  // native Pi run to assert here. Enumerate from the admission decision.
+  it.each(piNativeCatalogModelSchema.options.filter(isPiNativeModel))(
     "runs built-in %s API-first with native billing and exact session continuation",
     async (model) => {
       const { actor, agentId } = await entitledChatActor();

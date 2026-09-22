@@ -1,5 +1,50 @@
 # Changelog
 
+## [0.48.124](https://github.com/okou-ai/okou/compare/desktop-v0.48.123...desktop-v0.48.124) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.489.0
+
+## [0.48.123](https://github.com/okou-ai/okou/compare/desktop-v0.48.122...desktop-v0.48.123) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.488.0
+
+## [0.48.122](https://github.com/okou-ai/okou/compare/desktop-v0.48.121...desktop-v0.48.122) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.487.0
+
+## [0.48.121](https://github.com/okou-ai/okou/compare/desktop-v0.48.120...desktop-v0.48.121) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.486.0
+
+## [0.48.120](https://github.com/okou-ai/okou/compare/desktop-v0.48.119...desktop-v0.48.120) (2026-09-21)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.485.0
+
 ## [0.48.119](https://github.com/okou-ai/okou/compare/desktop-v0.48.118...desktop-v0.48.119) (2026-09-21)
 
 

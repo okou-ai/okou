@@ -97,6 +97,17 @@ const sharedChannelPageSchema = z.object({
       id: z.string(),
       name: z.string(),
       is_private: z.boolean(),
+      /**
+       * Whether the calling token's own identity is in the conversation.
+       *
+       * Slack renders this against the authed identity rather than the `user`
+       * the enumeration is for, and every conversation a `user` enumeration
+       * lists is one that user belongs to — so an explicit `false` can only
+       * describe the caller. It stays optional because Slack does not document
+       * the field for every conversation shape, and an absent value must not be
+       * read as either membership or its absence.
+       */
+      is_member: z.boolean().optional(),
     }),
   ),
   response_metadata: z

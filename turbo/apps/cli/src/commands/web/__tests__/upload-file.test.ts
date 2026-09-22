@@ -253,10 +253,10 @@ describe("okou web upload-file command", () => {
           "x-amz-meta-filename": "report.pdf",
           "x-amz-meta-user-id": "user-test",
         },
-        url: artifactReferencePath(
+        url: `https://app.okou.ai${artifactReferencePath(
           "00000000-0000-4000-8000-000000000027",
           "report.pdf",
-        ),
+        )}`,
       };
 
       let putReceivedContentType: string | null = null;
@@ -340,13 +340,9 @@ describe("okou web upload-file command", () => {
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain("The artifact upload completed successfully.");
       expect(stdout).toContain("Artifact presentation context:");
-      expect(stdout).toContain(
-        `[report.pdf](<https://app.okou.ai${prepared.url}>)`,
-      );
+      expect(stdout).toContain(`[report.pdf](<${prepared.url}>)`);
       expect(stdout).toContain("This form remains a link in normal prose.");
-      expect(stdout).toContain(
-        `\n\n![report.pdf](<https://app.okou.ai${prepared.url}>)\n\n`,
-      );
+      expect(stdout).toContain(`\n\n![report.pdf](<${prepared.url}>)\n\n`);
       expect(stdout).toContain(
         "occupies its own Markdown paragraph, with a blank line before and after it, and is outside a code fence",
       );

@@ -10,6 +10,7 @@ import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
 import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
+import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { deviceCodes } from "@okouai/db/schema/device-codes";
 import { exportJobs } from "@okouai/db/schema/export-job";
@@ -859,6 +860,9 @@ async function deleteOrgData(
     ),
   );
   await db.delete(artifacts).where(eq(artifacts.orgId, orgId));
+  await db
+    .delete(browserUserActionRequests)
+    .where(eq(browserUserActionRequests.orgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
   await deleteConnectorOwnerState(db, { kind: "organization", orgId }, signal);
   await db.transaction(async (tx) => {
@@ -936,6 +940,9 @@ async function deleteUserData(
       ]),
     );
   await db.delete(sharedThreads).where(eq(sharedThreads.userId, userId));
+  await db
+    .delete(browserUserActionRequests)
+    .where(eq(browserUserActionRequests.userId, userId));
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.userId, userId));

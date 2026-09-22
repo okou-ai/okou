@@ -601,7 +601,6 @@ describe("native pending-tool cancellation", () => {
         return {
           content: [{ type: "text", text: id }],
           details: { original: true },
-          addedToolNames: ["discovered"],
         };
       }, "sequential");
       definition.prepareArguments = (args) => {
@@ -679,9 +678,12 @@ describe("native pending-tool cancellation", () => {
           "after:call-2",
         ]);
         expect(updates).toEqual(["call-1", "call-2"]);
+        // 0.86 removed `ToolResult.addedToolNames`; a tool loadout change is
+        // now declared on the transcript's system message via `toolsAdded`.
+        // No Okou code consumed that field. Hook metadata is the subject here.
         expect(results.slice(1)).toMatchObject([
-          { details: { hooked: true }, addedToolNames: ["discovered"] },
-          { details: { hooked: true }, addedToolNames: ["discovered"] },
+          { details: { hooked: true } },
+          { details: { hooked: true } },
         ]);
         expect(await readFile(effect, "utf8")).toBe("call-2");
       }

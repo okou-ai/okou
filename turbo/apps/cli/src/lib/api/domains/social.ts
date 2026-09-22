@@ -25,7 +25,6 @@ import type {
 } from "@okouai/api-contracts/contracts/social-discovery";
 
 import { ApiRequestError, getClientConfig } from "../core/client-factory";
-import { withAbsoluteArtifactUrl } from "../../artifact-url";
 
 const SOCIALKIT_API_TIMEOUT_MS = 280_000;
 
@@ -92,12 +91,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function publicSocialDownloadResponse<
   T extends SocialKitDownloadResponse,
 >(response: T): Promise<T> {
-  const publicResponse = redactSocialProviderIdentity({
-    ...response,
-    artifact: response.artifact
-      ? await withAbsoluteArtifactUrl(response.artifact)
-      : response.artifact,
-  }) as T;
+  const publicResponse = redactSocialProviderIdentity(response) as T;
   if (!publicResponse.error) {
     return publicResponse;
   }

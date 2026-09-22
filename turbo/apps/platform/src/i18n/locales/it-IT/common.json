@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
-      "importFile": "Importa il tuo file",
-      "importFileHint": "Riutilizza il design del tuo file",
+      "importFile": "Importa modello",
       "multiAccent": "Multiaccento",
       "needPro": "Richiede Pro",
       "nextSlide": "Anteprima della diapositiva successiva",
@@ -1486,11 +1485,9 @@
           },
           "later": "Più tardi",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Aggiungi a Slack",
             "description": "Aggiungi {{assistantName}} allo spazio Slack del tuo team.",
             "note": "I colleghi non devono più passare da te. Lo chiedono nel canale e il lavoro torna nel thread, dove lo vedono tutti.",
-            "sampleChannel": "# growth",
             "title": "Lavora con {{assistantName}} dove il team già parla"
           },
           "workflow": {
@@ -1519,6 +1516,10 @@
         },
         "notEligible": "Non idoneo",
         "pendingState": "{{amount}} in sospeso",
+        "rejected": {
+          "alreadyRedeemed": "Post già utilizzato",
+          "postMustMention": "Deve menzionare {{assistantName}}"
+        },
         "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "share": {
           "action": "Condividi",
@@ -2164,6 +2165,7 @@
       "pinned": "In evidenza",
       "rename": "Rinomina la chat",
       "renameDescription": "Inserisci un nuovo nome per questo thread di chat.",
+      "showAllChats": "Mostra tutte le chat",
       "showArchived": "Mostra archiviate",
       "showArchivedChats": "Mostra chat archiviate",
       "titlePlaceholder": "Titolo della chat",
@@ -4157,7 +4159,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Indietro",
-        "cancel": "Annulla",
         "continue": "Continua",
         "finish": "Completa la configurazione",
         "notNow": "Non ora",
@@ -4229,17 +4230,21 @@
         "title": "Che tipo di lavoro fai?"
       },
       "skills": {
-        "confirm": "Importa e continua",
-        "copy": "Importa un SKILL.md e diventa un workflow in Okou, pronto da lanciare con /.",
-        "import": "Scegli un file",
+        "copied": "Copiato",
+        "copy": "Incolla questo prompt nella tua sessione di Codex o Claude Code e porterà in Okou le skill che hai sul computer.",
+        "copyError": "Non è stato possibile copiare il prompt.",
+        "copyPrompt": "Copia prompt",
         "importedCopy": "Importato come workflow di Okou.",
-        "importedTitle": "Il tuo workflow è pronto",
-        "panelCopy": "Da Codex, Claude Code o qualsiasi agente che ne scriva uno.",
-        "panelTitle": "Trascina qui un SKILL.md",
-        "previewCopy": "Viene importato come workflow di Okou. Finché non lo condividi, puoi usarlo solo tu.",
-        "previewTitle": "Controlla la tua skill",
-        "replace": "Scegli un altro file",
-        "title": "Porta con te le skill che hai già scritto."
+        "importedLabel": "Skill importate",
+        "importedTitle": "Le tue skill sono in Okou",
+        "preparing": "Apertura della sessione di importazione…",
+        "promptCopy": "Legge le skill sul tuo computer e le scrive in Okou.",
+        "promptLabel": "Prompt per l’importazione delle skill",
+        "promptTitle": "Esegui questo in Codex o Claude Code",
+        "startError": "Non è stato possibile aprire la sessione di importazione.",
+        "title": "Porta con te le skill che hai già scritto.",
+        "tryAgain": "Riprova",
+        "waiting": "Le skill importate compaiono qui man mano che arrivano."
       },
       "slack": {
         "add": "Aggiungi a Slack",
@@ -6521,6 +6526,8 @@
         "description": "Scegli la tua lingua preferita per l'interfaccia {{brandName}}",
         "label": "Lingua",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6934,14 +6941,20 @@
       "preview": "Anteprima di {{title}}",
       "rename": "Rinomina modello"
     },
+    "clearSearch": "Cancella ricerca",
     "custom": "Personalizzati",
     "detail": {
       "back": "Modelli personalizzati",
       "page": "Pagina {{number}}"
     },
     "empty": {
-      "description": "Okou trasforma il design del tuo file in un modello che puoi riutilizzare."
+      "description": "Importa un documento, una presentazione o un’immagine per riutilizzarne il design.",
+      "document": "Ancora nessun documento",
+      "illustration": "Ancora nessuna immagine",
+      "presentation": "Ancora nessuna presentazione",
+      "title": "Fallo tuo"
     },
+    "importHint": "Importa un documento, una presentazione o un’immagine.",
     "loadFailed": "Impossibile caricare i modelli.",
     "renameFailed": "Impossibile rinominare il modello.",
     "retry": "Riprova",

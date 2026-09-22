@@ -646,8 +646,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
-      "importFile": "Impor file Anda sendiri",
-      "importFileHint": "Pakai lagi desain file Anda",
+      "importFile": "Impor template",
       "multiAccent": "Multi-aksen",
       "needPro": "Perlu Pro",
       "nextSlide": "Pratinjau slide berikutnya",
@@ -1461,11 +1460,9 @@
           },
           "later": "Nanti saja",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Tambahkan ke Slack",
             "description": "Tambahkan {{assistantName}} ke ruang kerja Slack tim Anda.",
             "note": "Rekan-rekan tidak perlu lewat Anda dulu. Mereka minta di kanal, dan hasilnya kembali di thread itu, di depan semua orang.",
-            "sampleChannel": "# growth",
             "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
           },
           "workflow": {
@@ -1494,6 +1491,10 @@
         },
         "notEligible": "Tidak memenuhi syarat",
         "pendingState": "{{amount}} tertunda",
+        "rejected": {
+          "alreadyRedeemed": "Postingan sudah dipakai",
+          "postMustMention": "Harus menyebut {{assistantName}}"
+        },
         "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
         "share": {
           "action": "Bagikan",
@@ -2110,6 +2111,7 @@
       "pinned": "Disematkan",
       "rename": "Ganti nama chat",
       "renameDescription": "Masukkan nama baru untuk thread chat ini.",
+      "showAllChats": "Tampilkan semua chat",
       "showArchived": "Tampilkan yang diarsipkan",
       "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
@@ -4091,7 +4093,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Kembali",
-        "cancel": "Batal",
         "continue": "Lanjutkan",
         "finish": "Selesaikan penyiapan",
         "notNow": "Nanti saja",
@@ -4163,17 +4164,21 @@
         "title": "Pekerjaan Anda seperti apa?"
       },
       "skills": {
-        "confirm": "Impor dan lanjutkan",
-        "copy": "Impor sebuah SKILL.md dan ia menjadi workflow di Okou, siap dijalankan dengan /.",
-        "import": "Pilih file",
+        "copied": "Tersalin",
+        "copy": "Tempel prompt ini di sesi Codex atau Claude Code Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
+        "copyError": "Prompt tidak dapat disalin.",
+        "copyPrompt": "Salin prompt",
         "importedCopy": "Diimpor sebagai workflow Okou.",
-        "importedTitle": "Workflow Anda siap",
-        "panelCopy": "Dari Codex, Claude Code, atau agent mana pun yang menulisnya.",
-        "panelTitle": "Letakkan SKILL.md di sini",
-        "previewCopy": "Diimpor sebagai workflow Okou. Hanya Anda yang bisa memakainya sampai dibagikan.",
-        "previewTitle": "Tinjau skill Anda",
-        "replace": "Pilih file lain",
-        "title": "Bawa skill yang sudah Anda tulis."
+        "importedLabel": "Skill yang diimpor",
+        "importedTitle": "Skill Anda sudah ada di Okou",
+        "preparing": "Membuka sesi impor Anda…",
+        "promptCopy": "Ia membaca skill di komputer Anda dan menuliskannya ke Okou.",
+        "promptLabel": "Prompt impor skill",
+        "promptTitle": "Jalankan ini di Codex atau Claude Code",
+        "startError": "Sesi impor tidak dapat dibuka.",
+        "title": "Bawa skill yang sudah Anda tulis.",
+        "tryAgain": "Coba lagi",
+        "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },
       "slack": {
         "add": "Tambahkan ke Slack",
@@ -6447,6 +6452,8 @@
         "description": "Pilih bahasa pilihan Anda untuk antarmuka {{brandName}}",
         "label": "Bahasa",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6849,14 +6856,20 @@
       "preview": "Pratinjau {{title}}",
       "rename": "Ganti nama templat"
     },
+    "clearSearch": "Hapus pencarian",
     "custom": "Kustom",
     "detail": {
       "back": "Templat kustom",
       "page": "Halaman {{number}}"
     },
     "empty": {
-      "description": "Okou mengubah desain file Anda menjadi templat yang bisa Anda pakai lagi."
+      "description": "Impor dokumen, presentasi, atau gambar untuk menggunakan kembali desainnya.",
+      "document": "Belum ada dokumen",
+      "illustration": "Belum ada gambar",
+      "presentation": "Belum ada presentasi",
+      "title": "Buat sesuai gaya Anda"
     },
+    "importHint": "Impor dokumen, presentasi, atau gambar.",
     "loadFailed": "Tidak dapat memuat templat.",
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
