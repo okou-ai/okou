@@ -170,8 +170,6 @@ pub struct ProxyRegistryHandle {
     pub(super) registry_path: PathBuf,
     pub(super) lock_path: PathBuf,
     pub(super) control: ControlHandle,
-    #[cfg(test)]
-    pub(super) connector_runtime_update_attempt_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
 }
 
 pub(crate) struct ConnectorRuntimeRegistryTransaction {
@@ -621,17 +619,7 @@ impl ProxyRegistryHandle {
             registry_path,
             lock_path,
             control: ControlHandle::default(),
-            connector_runtime_update_attempt_tx: None,
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_connector_runtime_update_attempt_tx(
-        mut self,
-        tx: tokio::sync::mpsc::UnboundedSender<()>,
-    ) -> Self {
-        self.connector_runtime_update_attempt_tx = Some(tx);
-        self
     }
 
     /// Register a sandbox in the proxy registry.
@@ -737,11 +725,6 @@ impl ProxyRegistryHandle {
     pub(crate) async fn connector_runtime_registry_transaction(
         &self,
     ) -> RunnerResult<ConnectorRuntimeRegistryTransaction> {
-        #[cfg(test)]
-        if let Some(tx) = &self.connector_runtime_update_attempt_tx {
-            tx.send(())
-                .expect("connector runtime update observer should remain available");
-        }
         let guard = lock::acquire(self.lock_path.clone()).await?;
         Ok(ConnectorRuntimeRegistryTransaction {
             registry_path: self.registry_path.clone(),
