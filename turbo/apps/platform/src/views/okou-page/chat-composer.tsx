@@ -3716,7 +3716,16 @@ function TemplatePickerCategoryNav({
                 <TabsTrigger
                   key={value}
                   value={value}
-                  className="group flex h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:shadow-none focus-visible:ring-inset"
+                  // Reopening Custom resets its inner catalog even when the
+                  // category value stays the same; Tabs owns actual changes.
+                  onClick={
+                    selected && value === "custom"
+                      ? () => {
+                          onChange(value);
+                        }
+                      : undefined
+                  }
+                  className="group flex h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:shadow-none! focus-visible:ring-inset"
                 >
                   <Icon
                     className={cn(

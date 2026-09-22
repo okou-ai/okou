@@ -710,39 +710,48 @@ test("Kind filters combine with search without an All option", async () => {
   expect(buttonByName("All", filters)).toBeUndefined();
 });
 
-test("An empty kind hides filters and Custom reopens the available catalog", async () => {
-  mockCustomTemplates([customTemplate()]);
-  const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("group", {
-    name: "Template categories",
-  });
-  click(buttonByName("Image", filters)!);
-  await expect(
-    within(dialog).findByText("No images yet"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText("Search templates"),
-  ).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByRole("group", { name: "Template categories" }),
-  ).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button", dialog).filter((button) => {
-      return button.textContent?.trim() === "Import template";
-    }),
-  ).toHaveLength(1);
-  click(tabByText("Custom"));
-  await expect(
-    within(dialog).findByText("Q3 board review"),
-  ).resolves.toBeInTheDocument();
-  const restoredFilters = within(dialog).getByRole("group", {
-    name: "Template categories",
-  });
-  expect(buttonByName("Presentation", restoredFilters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-});
+test.each(["click", "{Enter}", " "])(
+  "An empty kind hides filters and Custom reopens the available catalog with %s",
+  async (activation) => {
+    mockCustomTemplates([customTemplate()]);
+    const { user, dialog } = await openCustomPanel();
+    const filters = await within(dialog).findByRole("group", {
+      name: "Template categories",
+    });
+    click(buttonByName("Image", filters)!);
+    await expect(
+      within(dialog).findByText("No images yet"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      within(dialog).queryByLabelText("Search templates"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("group", { name: "Template categories" }),
+    ).not.toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("button", dialog).filter((button) => {
+        return button.textContent?.trim() === "Import template";
+      }),
+    ).toHaveLength(1);
+    const custom = tabByText("Custom");
+    if (activation === "click") {
+      click(custom);
+    } else {
+      custom.focus();
+      await user.keyboard(activation);
+    }
+    await expect(
+      within(dialog).findByText("Q3 board review"),
+    ).resolves.toBeInTheDocument();
+    const restoredFilters = within(dialog).getByRole("group", {
+      name: "Template categories",
+    });
+    expect(buttonByName("Presentation", restoredFilters)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  },
+);
 
 test("An empty catalog leads with the upload entry instead of showing no matches", async () => {
   mockCustomTemplates([]);
