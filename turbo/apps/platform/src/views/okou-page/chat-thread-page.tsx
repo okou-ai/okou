@@ -4774,8 +4774,7 @@ const BILLING_NOTICE_DESCRIPTION_CLASS =
 
 /** A personal usage limit can resolve to an account plus two exhausted windows.
  * Reserve those semantic rows while the run source loads; never clamp them. */
-const USAGE_RECOVERY_DESCRIPTION_CLASS =
-  "min-h-20 @[640px]:min-h-10";
+const USAGE_RECOVERY_DESCRIPTION_CLASS = "min-h-20 @[640px]:min-h-10";
 
 /**
  * The billing notice's action is the other row an asynchronous read introduces:
@@ -5026,9 +5025,7 @@ function InsufficientCreditsCard() {
         >
           {headline}
         </p>
-        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
-          {helper}
-        </p>
+        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
       <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
         {!canShowBillingAction ? null : shouldStartProCheckout ? (
@@ -5979,10 +5976,7 @@ function assistantErrorFallbackContent(
     ...(showDetails
       ? {
           details: (
-            <Markdown
-              className="!text-muted-foreground"
-              source={description}
-            />
+            <Markdown className="!text-muted-foreground" source={description} />
           ),
         }
       : {}),
