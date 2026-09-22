@@ -18,8 +18,8 @@ function createRefreshHomeTaskRecommendationsRoute(
     }
     const body = await refreshDueHomeTaskRecommendations(
       set(writeDb$),
-      signal,
       onlyScope,
+      signal,
     );
     signal.throwIfAborted();
     return { status: 200 as const, body };

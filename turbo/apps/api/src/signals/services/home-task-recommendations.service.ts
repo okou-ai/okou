@@ -101,7 +101,8 @@ function writerSystemPrompt(language: string): string {
     "- The values are displayed as plain text, not rendered as Markdown. Do not use Markdown, links, bullet markers, or backticks.",
     "- Return only a JSON array, with no prose and no code fence.",
     `- Return at most ${HOME_TASK_RECOMMENDATION_LIMIT.toString()} items, in the order you received them.`,
-    '- Each item is {"title":"...","prompt":"...","rationale":"..."}',
+    "- Copy each intent's exact `candidateId` into its card. Never invent or reuse an id.",
+    '- Each item is {"candidateId":"c1","title":"...","prompt":"...","rationale":"..."}',
   ].join("\n");
 }
 
@@ -409,7 +410,18 @@ async function extractCandidates(
     },
     signal,
   );
-  return normalizeHomeTaskCandidateDrafts(value, evidence, CANDIDATE_LIMIT);
+  if (!Array.isArray(value)) {
+    throw new Error("Home task candidate extraction returned invalid output");
+  }
+  const candidates = normalizeHomeTaskCandidateDrafts(
+    value,
+    evidence,
+    CANDIDATE_LIMIT,
+  );
+  if (value.length > 0 && candidates.length === 0) {
+    throw new Error("Home task candidate extraction returned no valid items");
+  }
+  return candidates;
 }
 
 const jevScoreAnswerSchema = z.object({
@@ -544,7 +556,7 @@ async function scoreCandidatesWithJev(
   });
   const { answers } = jevResponseSchema.parse(generation.value);
   return candidates
-    .flatMap((candidate): HomeTaskCandidate[] => {
+    .map((candidate): HomeTaskCandidate => {
       const actionability = answers[`${candidate.id}_actionability`];
       const grounded = answers[`${candidate.id}_grounded`];
       const destination = answers[`${candidate.id}_destination`];
@@ -553,7 +565,7 @@ async function scoreCandidatesWithJev(
         grounded?.type !== "noul" ||
         destination?.type !== "noul"
       ) {
-        return [];
+        throw new Error("OpenRouter Decisions omitted a home task answer");
       }
       // Probability on either accepted level is the calibrated confidence that
       // this candidate clears the actionability gate. A 2/3 split should not be
@@ -563,17 +575,15 @@ async function scoreCandidatesWithJev(
         (actionability.probabilities["2"] ?? 0) +
           (actionability.probabilities["3"] ?? 0),
       );
-      return [
-        {
-          ...candidate,
-          actionability: Math.round((actionability.score / 3) * 100),
-          confidence: Math.min(
-            actionableProbability,
-            grounded.noul,
-            destination.noul,
-          ),
-        },
-      ];
+      return {
+        ...candidate,
+        actionability: Math.round((actionability.score / 3) * 100),
+        confidence: Math.min(
+          actionableProbability,
+          grounded.noul,
+          destination.noul,
+        ),
+      };
     })
     .sort((left, right) => {
       return (
@@ -596,6 +606,7 @@ async function writeCards(
       user: JSON.stringify({
         intents: candidates.map((candidate) => {
           return {
+            candidateId: candidate.id,
             intent: candidate.intent,
             reason: candidate.reason,
             destination: candidate.target.kind,
@@ -607,7 +618,14 @@ async function writeCards(
     },
     signal,
   );
-  return normalizeHomeTaskRecommendations(value, candidates);
+  if (!Array.isArray(value)) {
+    throw new Error("Home task card writer returned invalid output");
+  }
+  const entries = normalizeHomeTaskRecommendations(value, candidates);
+  if (entries.length === 0) {
+    throw new Error("Home task card writer returned no valid items");
+  }
+  return entries;
 }
 
 type AuxiliaryGenerationDetail = Parameters<RecordAuxiliaryGenerationDetail>[0];
@@ -774,6 +792,12 @@ async function refreshHomeTaskRecommendationScope(
       }
       const language = await memberLanguage(db, scope);
       const entries = await generateEntries(evidence, language, signal);
+      if (entries === undefined) {
+        // `generateAuxiliary` deliberately converts provider/output failures to
+        // undefined. Preserve the previous cache and let the refresh enter its
+        // retry cooldown instead of committing an empty set with this digest.
+        throw new Error("Home task recommendation generation failed");
+      }
       return { kind: "generated" as const, evidence, entries };
     })(),
   );
@@ -803,10 +827,7 @@ async function refreshHomeTaskRecommendationScope(
     return "unchanged";
   }
   const committed = await commitEntries(db, scope, claimId, {
-    entries:
-      result.kind === "generated" && result.entries !== undefined
-        ? result.entries
-        : [],
+    entries: result.kind === "generated" ? result.entries : [],
     inputDigest: result.evidence.digest,
     generatedAt,
   });
@@ -830,8 +851,8 @@ export interface HomeTaskRecommendationCronResult {
  */
 export async function refreshDueHomeTaskRecommendations(
   db: Db,
+  onlyScope: HomeTaskScope | undefined,
   signal: AbortSignal,
-  onlyScope?: HomeTaskScope,
 ): Promise<HomeTaskRecommendationCronResult> {
   if (!isLlmConfigured()) {
     return {

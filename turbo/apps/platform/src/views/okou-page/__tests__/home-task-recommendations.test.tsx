@@ -8,6 +8,10 @@ import { expect, test } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
+import {
+  createDeferredPromise,
+  type DeferredPromise,
+} from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
@@ -20,10 +24,14 @@ function mockRecommendations(
     | { readonly kind: "existing-thread"; readonly threadId: string },
 ) {
   const requestedAgentIds: string[] = [];
+  let nextRequestGate: DeferredPromise<void> | undefined;
   context.mocks.api(
     homeTaskRecommendationsContract.list,
-    ({ query, respond }) => {
+    async ({ query, respond }) => {
       requestedAgentIds.push(query.agentId);
+      const gate = nextRequestGate;
+      nextRequestGate = undefined;
+      await gate?.promise;
       return respond(200, {
         status: "available",
         generatedAt: "2026-09-21T10:00:00.000Z",
@@ -42,7 +50,18 @@ function mockRecommendations(
       });
     },
   );
-  return requestedAgentIds;
+  return {
+    requestedAgentIds,
+    pauseNextRequest(): () => void {
+      const gate = createDeferredPromise<void>(AbortSignal.timeout(5000));
+      nextRequestGate = gate;
+      return (): void => {
+        if (!gate.settled()) {
+          gate.resolve(undefined);
+        }
+      };
+    },
+  };
 }
 
 function composer(): HTMLElement {
@@ -67,7 +86,9 @@ test("A new-chat recommendation prefills without sending", async () => {
       createdAt: "2026-09-21T10:00:00.000Z",
     });
   });
-  const requestedAgentIds = mockRecommendations({ kind: "new-thread" });
+  const { pauseNextRequest, requestedAgentIds } = mockRecommendations({
+    kind: "new-thread",
+  });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
@@ -93,12 +114,20 @@ test("A new-chat recommendation prefills without sending", async () => {
     ).toBeTruthy();
   });
   const requestsBeforePermissionPush = requestedAgentIds.length;
+  const releasePermissionReload = pauseNextRequest();
   context.mocks.ably.trigger("connectorPermissionUpdated");
   await waitFor(() => {
     expect(requestedAgentIds.length).toBeGreaterThan(
       requestsBeforePermissionPush,
     );
   });
+  // Permission invalidation is a display fence, not just a background refetch:
+  // potentially Gmail-derived stale copy disappears while the server rechecks.
+  expect(
+    screen.queryByText("Prepare the launch follow-up"),
+  ).not.toBeInTheDocument();
+  releasePermissionReload();
+  await screen.findByText("Prepare the launch follow-up");
 
   await user.click(screen.getByText("Prepare the launch follow-up"));
 

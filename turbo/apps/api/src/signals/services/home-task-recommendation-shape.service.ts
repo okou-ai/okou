@@ -168,34 +168,73 @@ export function normalizeHomeTaskRecommendations(
   if (!Array.isArray(value)) {
     return [];
   }
-  const recommendations: HomeTaskRecommendation[] = [];
-  for (const [index, item] of value.entries()) {
+
+  if (candidates === undefined) {
+    const recommendations: HomeTaskRecommendation[] = [];
+    for (const item of value) {
+      if (!isRecord(item)) {
+        continue;
+      }
+      const parsed = homeTaskRecommendationSchema.safeParse({
+        id: item.id,
+        title: boundedText(item.title, 120),
+        prompt: boundedText(item.prompt, 1000),
+        rationale: boundedText(item.rationale, 200) ?? "",
+        actionability: boundedScore(item.actionability),
+        target: item.target,
+        connectors: connectorSlugs(item.connectors),
+      });
+      if (parsed.success) {
+        recommendations.push(parsed.data);
+      }
+      if (recommendations.length >= HOME_TASK_RECOMMENDATION_LIMIT) {
+        break;
+      }
+    }
+    return recommendations;
+  }
+
+  // A prose model may omit, duplicate, invent, or reorder output items. Bind
+  // copy back to the accepted intent by its opaque candidate id, then emit in
+  // Jev's ranking order. Array position is not authority over a destination.
+  const itemsByCandidateId = new Map<string, Record<string, unknown>>();
+  const candidateIds = new Set(
+    candidates.map((candidate) => {
+      return candidate.id;
+    }),
+  );
+  for (const item of value) {
     if (!isRecord(item)) {
       continue;
     }
-    const candidate = candidates?.[index];
-    if (candidates !== undefined && candidate === undefined) {
-      break;
+    const candidateId = boundedText(item.candidateId, 64);
+    if (
+      candidateId !== null &&
+      candidateIds.has(candidateId) &&
+      !itemsByCandidateId.has(candidateId)
+    ) {
+      itemsByCandidateId.set(candidateId, item);
+    }
+  }
+
+  const recommendations: HomeTaskRecommendation[] = [];
+  for (const candidate of candidates) {
+    const item = itemsByCandidateId.get(candidate.id);
+    if (item === undefined) {
+      continue;
     }
     const parsed = homeTaskRecommendationSchema.safeParse({
-      id: candidate === undefined ? item.id : `r${(index + 1).toString()}`,
+      id: `r${(recommendations.length + 1).toString()}`,
       title: boundedText(item.title, 120),
       prompt: boundedText(item.prompt, 1000),
       rationale: boundedText(item.rationale, 200) ?? "",
-      actionability:
-        candidate === undefined
-          ? boundedScore(item.actionability)
-          : candidate.actionability,
-      target: candidate === undefined ? item.target : candidate.target,
-      connectors:
-        candidate === undefined
-          ? connectorSlugs(item.connectors)
-          : [...candidate.connectors],
+      actionability: candidate.actionability,
+      target: candidate.target,
+      connectors: [...candidate.connectors],
     });
-    if (!parsed.success) {
-      continue;
+    if (parsed.success) {
+      recommendations.push(parsed.data);
     }
-    recommendations.push(parsed.data);
     if (recommendations.length >= HOME_TASK_RECOMMENDATION_LIMIT) {
       break;
     }

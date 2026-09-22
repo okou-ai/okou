@@ -281,6 +281,27 @@ async function gmailConnectionIsUsable(
   );
 }
 
+/** Re-derive the whole authority fence around one pinned default account. */
+async function gmailAuthorityIsCurrent(
+  db: Db,
+  scope: HomeTaskGmailScope,
+  connectorId: string,
+  urls: readonly string[],
+  signal: AbortSignal,
+): Promise<boolean> {
+  for (const url of urls) {
+    if (!(await currentlyAuthorized({ db, scope, url }, signal))) {
+      return false;
+    }
+  }
+  const currentConnectorId = await defaultGmailConnectorId(db, scope);
+  signal.throwIfAborted();
+  return (
+    currentConnectorId === connectorId &&
+    (await gmailConnectionIsUsable(db, scope, connectorId, signal))
+  );
+}
+
 /**
  * Revalidate Gmail-derived cached cards without reading provider content.
  * Revoking the Agent connector, either URL permission, the default account, or
@@ -298,24 +319,17 @@ export async function homeTaskGmailCacheAuthorized(
         parentSignal,
         AbortSignal.timeout(GMAIL_COLLECTION_DEADLINE_MS),
       ]);
-      if (
-        !(await currentlyAuthorized({ db, scope, url: gmailListUrl() }, signal))
-      ) {
-        return false;
-      }
-      if (
-        !(await currentlyAuthorized(
-          { db, scope, url: gmailMessageUrl("permission-probe") },
-          signal,
-        ))
-      ) {
-        return false;
-      }
       const connectorId = await defaultGmailConnectorId(db, scope);
       signal.throwIfAborted();
       return connectorId === null
         ? false
-        : await gmailConnectionIsUsable(db, scope, connectorId, signal);
+        : await gmailAuthorityIsCurrent(
+            db,
+            scope,
+            connectorId,
+            [gmailListUrl(), gmailMessageUrl("permission-probe")],
+            signal,
+          );
     })(),
   );
   if (attempt.ok) {
@@ -352,6 +366,13 @@ async function collectAuthorizedGmailEvidence(
   if (accessToken === null) {
     return [];
   }
+  // Credential preparation may refresh remotely. Recheck the account and
+  // endpoint immediately before using the resulting token.
+  if (
+    !(await gmailAuthorityIsCurrent(db, scope, connectorId, [listUrl], signal))
+  ) {
+    return [];
+  }
   const list = await gmailJson(
     {
       accessToken,
@@ -368,12 +389,11 @@ async function collectAuthorizedGmailEvidence(
   }
   const firstDetailUrl = gmailMessageUrl(messageIds[0]!);
   if (
-    !(await currentlyAuthorized(
-      {
-        db,
-        scope,
-        url: firstDetailUrl,
-      },
+    !(await gmailAuthorityIsCurrent(
+      db,
+      scope,
+      connectorId,
+      [listUrl, firstDetailUrl],
       signal,
     ))
   ) {
@@ -393,12 +413,17 @@ async function collectAuthorizedGmailEvidence(
   );
   signal.throwIfAborted();
 
-  const [currentConnectorId, stillAuthorized] = await Promise.all([
-    defaultGmailConnectorId(db, scope),
-    currentlyAuthorized({ db, scope, url: firstDetailUrl }, signal),
-  ]);
-  signal.throwIfAborted();
-  if (currentConnectorId !== connectorId || !stillAuthorized) {
+  // Do not release provider content after either URL grant, the Agent scope,
+  // the selected default account, or the connection changed mid-read.
+  if (
+    !(await gmailAuthorityIsCurrent(
+      db,
+      scope,
+      connectorId,
+      [listUrl, firstDetailUrl],
+      signal,
+    ))
+  ) {
     return [];
   }
 

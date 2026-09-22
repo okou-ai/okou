@@ -20,19 +20,25 @@ import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
 
 const reloadVersion$ = state(0);
 
+/** Synchronous display fence: stale async results never survive invalidation. */
+export const homeTaskRecommendationsRevision$ = computed((get): number => {
+  return get(reloadVersion$);
+});
+
 export const homeTaskRecommendationsEnabled$ = computed((get): boolean => {
   return get(featureSwitch$)[FeatureSwitchKey.HomeTaskRecommendations] ?? false;
 });
 
 export interface HomeTaskRecommendationSet {
   readonly agentId: string;
+  readonly revision: number;
   readonly recommendations: readonly HomeTaskRecommendation[];
 }
 
 /** Cards are requested and identified by the Agent currently owning the page. */
 export const homeTaskRecommendations$ = computed(
   async (get): Promise<HomeTaskRecommendationSet | null> => {
-    get(reloadVersion$);
+    const revision = get(reloadVersion$);
     if (!get(homeTaskRecommendationsEnabled$)) {
       return null;
     }
@@ -53,7 +59,7 @@ export const homeTaskRecommendations$ = computed(
     }
     const data = homeTaskRecommendationsResponseSchema.parse(response.body);
     return data.recommendations.length > 0
-      ? { agentId, recommendations: data.recommendations }
+      ? { agentId, revision, recommendations: data.recommendations }
       : null;
   },
 );
@@ -104,7 +110,10 @@ const reloadHomeTaskRecommendationsAfterConnectorChange$ = command(
  * the read/attach race; there is deliberately no browser timer or polling.
  */
 export const subscribeHomeTaskRecommendations$ = command(
-  ({ set }, signal: AbortSignal): void => {
+  ({ get, set }, signal: AbortSignal): void => {
+    if (!get(homeTaskRecommendationsEnabled$)) {
+      return;
+    }
     set(
       setAblyPayloadLoop$,
       {

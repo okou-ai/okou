@@ -84,7 +84,7 @@ async function recentThreads(
         chatThreadOrganizationCondition(db, args.orgId),
       ),
     )
-    .orderBy(desc(chatThreads.lastMessageAt))
+    .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
     .limit(THREAD_LIMIT);
 }
 
@@ -111,7 +111,10 @@ async function recentMessages(
         visibleChatEventCondition(db),
       ),
     )
-    .orderBy(desc(chatEvents.seqId))
+    // `seqId` is only monotonic inside one thread. Ordering a cross-thread
+    // query by it would let an old, long conversation crowd out a newer
+    // one whose sequence happens to be short.
+    .orderBy(desc(chatEvents.createdAt), desc(chatEvents.id))
     .limit(MESSAGE_LIMIT);
 
   const byThread = new Map<string, HomeTaskEvidenceMessage[]>();

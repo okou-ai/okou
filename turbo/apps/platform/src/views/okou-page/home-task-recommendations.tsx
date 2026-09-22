@@ -12,6 +12,8 @@ import { cn } from "@okouai/ui/lib/utils";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import {
   homeTaskRecommendations$,
+  homeTaskRecommendationsEnabled$,
+  homeTaskRecommendationsRevision$,
   startHomeTaskRecommendation$,
 } from "../../signals/okou-page/home-task-recommendations.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -122,11 +124,15 @@ export function HomeTaskRecommendations({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
+  const enabled = useGet(homeTaskRecommendationsEnabled$);
+  const revision = useGet(homeTaskRecommendationsRevision$);
   const start = useSet(startHomeTaskRecommendation$);
   const set = useLastResolved(homeTaskRecommendations$);
 
   if (
+    !enabled ||
     !set ||
+    set.revision !== revision ||
     set.recommendations.length === 0 ||
     !agentId ||
     set.agentId !== agentId
