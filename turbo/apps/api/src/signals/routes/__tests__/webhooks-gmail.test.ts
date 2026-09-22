@@ -452,6 +452,7 @@ async function configureWorkspaceModelProvider(
       },
     ],
     [200],
+    policies.revision,
   );
   const updated = await miscApi.listModelPolicies(actor);
   expect(

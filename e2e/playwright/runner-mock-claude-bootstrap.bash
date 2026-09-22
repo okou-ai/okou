@@ -22,6 +22,7 @@ jq -e '.provider.type == "claude-code-oauth-token"' \
 policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
 policy_payload=$(jq -c '
     {
+      revision,
       policies: (
         [.policies[] |
           select(.model != "claude-sonnet-4-6") |

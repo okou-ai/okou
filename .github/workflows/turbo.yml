@@ -2723,7 +2723,11 @@ jobs:
 
           # Fresh Clerk organizations bootstrap onto limited-free-1, so the
           # deterministic runner policy must stay within that plan's catalog.
-          payload="$(jq -nc '{
+          # personalSubscriptionPriority makes the write precondition mandatory,
+          # so send the revision this read observed.
+          revision="$(curl -fsS "${headers[@]}" "${E2E_API_URL}/api/model-policies" | jq -er '.revision')"
+          payload="$(jq -nc --arg revision "$revision" '{
+            revision: $revision,
             policies: [
               {model: "deepseek-v4-flash", isDefault: true, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
               {model: "gpt-5.6-luna", isDefault: false, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
@@ -2779,6 +2783,7 @@ jobs:
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
           policy_payload=$(jq -c --arg providerId "$provider_id" '
             {
+              revision,
               policies: [
                 .policies[] |
                   {
@@ -2826,9 +2831,13 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
+          revision=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies" | jq -er '.revision')
+          policy_payload=$(jq -nc --arg revision "$revision" --argjson policies \
+            '[{"model":"gpt-5.6-luna","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
+            '{revision: $revision, policies: $policies}')
           curl -fsS "${headers[@]}" \
             -X PUT \
-            -d '{"policies":[{"model":"gpt-5.6-luna","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]}' \
+            -d "$policy_payload" \
             "${api_url}/api/model-policies" \
             >/dev/null
 
@@ -2858,6 +2867,7 @@ jobs:
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
           policy_payload=$(jq -c --arg model "$claude_model" '
             {
+              revision,
               policies: (
                 [.policies[] |
                   select(.model != $model) |

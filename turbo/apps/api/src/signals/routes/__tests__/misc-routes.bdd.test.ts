@@ -371,6 +371,7 @@ describe("MISC-04: model providers, policies, and logs visible state", () => {
       admin,
       policies.policies,
       [200],
+      policies.revision,
     );
     if (updatedPolicies.status !== 200) {
       throw new Error(
