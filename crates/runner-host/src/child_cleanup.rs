@@ -5,6 +5,7 @@ use tracing::warn;
 pub struct ChildReaper {
     label: &'static str,
     child: Option<tokio::process::Child>,
+    kill_started: bool,
 }
 
 impl ChildReaper {
@@ -12,22 +13,43 @@ impl ChildReaper {
         Self {
             label,
             child: Some(child),
+            kill_started: false,
+        }
+    }
+
+    /// Signal the owned child before awaiting its exit.
+    ///
+    /// This is idempotent so lifecycle owners can separate the signal boundary
+    /// from a later, still-owned reap without exposing a test-only control.
+    pub fn start_kill(&mut self) {
+        if self.kill_started {
+            return;
+        }
+        self.kill_started = true;
+        let Some(child) = self.child.as_mut() else {
+            return;
+        };
+        if let Err(error) = child.start_kill() {
+            warn!(label = self.label, pid = child.id(), %error, "failed to kill child before reaping");
         }
     }
 
     pub async fn reap(mut self) -> std::io::Result<()> {
+        let pid = self
+            .child
+            .as_ref()
+            .ok_or_else(|| std::io::Error::other("child reaper lost its owned child"))?
+            .id();
+        let _progress = crate::cleanup_progress::CleanupProgress::start(
+            self.label,
+            "child_reap",
+            crate::cleanup_progress::CleanupIdentity::Process(pid),
+        );
+        self.start_kill();
         let child = self
             .child
             .as_mut()
             .ok_or_else(|| std::io::Error::other("child reaper lost its owned child"))?;
-        let _progress = crate::cleanup_progress::CleanupProgress::start(
-            self.label,
-            "child_reap",
-            crate::cleanup_progress::CleanupIdentity::Process(child.id()),
-        );
-        if let Err(error) = child.start_kill() {
-            warn!(label = self.label, pid = child.id(), %error, "failed to kill child before reaping");
-        }
         child.wait().await?;
         self.child = None;
         Ok(())
@@ -169,6 +191,24 @@ mod tests {
         kill_and_reap_child_on_drop("test-exited-child", &mut child);
 
         assert!(child.is_none());
+        wait_for_process_exit(pid, starttime).await;
+    }
+
+    #[tokio::test]
+    async fn child_reaper_can_signal_before_awaiting_reap() {
+        let child = tokio::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = child.id().unwrap();
+        let starttime = wait_for_process_starttime(pid).await;
+        let mut reaper = ChildReaper::new("test-signaled-child", child);
+
+        reaper.start_kill();
+        reaper.start_kill();
+
+        wait_for_process_state(pid, starttime, 'Z').await;
+        reaper.reap().await.unwrap();
         wait_for_process_exit(pid, starttime).await;
     }
 }

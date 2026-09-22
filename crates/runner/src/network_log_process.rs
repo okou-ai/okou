@@ -58,11 +58,12 @@ impl NetworkLogProcess {
             return;
         };
         let pid = child.id();
-        let reaper = runner_host::child_cleanup::ChildReaper::new(self.child_label, child);
+        let mut reaper = runner_host::child_cleanup::ChildReaper::new(self.child_label, child);
         #[cfg(test)]
         let gate = self.reap_gate.take();
         self.child_cleanup = Some(tokio::spawn(
             async move {
+                reaper.start_kill();
                 #[cfg(test)]
                 if let Some(gate) = gate {
                     gate.wait().await;
