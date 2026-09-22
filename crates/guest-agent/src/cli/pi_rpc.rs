@@ -624,7 +624,6 @@ pub(super) struct PiRpcProjection {
     assistant_stream: Option<PiAssistantStream>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
-    runtime_progress_at: Option<u64>,
 }
 
 impl PiRpcProjection {
@@ -639,19 +638,12 @@ impl PiRpcProjection {
             assistant_stream: None,
             pending_retry: None,
             terminal_error: false,
-            runtime_progress_at: None,
         }
     }
 
     pub(super) fn with_session_output(mut self, output: PiSessionOutputSender) -> Self {
         self.session_output = Some(output);
         self
-    }
-
-    /// Source timestamp of the latest validated native message. Reading a
-    /// buffered line is not by itself evidence of post-OOM runtime progress.
-    pub(super) fn runtime_progress_at(&self) -> Option<u64> {
-        self.runtime_progress_at
     }
 
     /// Project one official Pi RPC record into the existing public event stream.
@@ -801,14 +793,6 @@ impl PiRpcProjection {
                 "Pi RPC message_end omitted its message".to_string(),
             ));
         };
-        let timestamp = message
-            .get("timestamp")
-            .and_then(Value::as_u64)
-            .filter(|timestamp| {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .is_ok_and(|now| u128::from(*timestamp) <= now.as_millis())
-            });
         let projected = match message.get("role").and_then(Value::as_str) {
             Some("assistant") => {
                 let event_id_prefix = self.assistant_stream.take().map(PiAssistantStream::finish);
@@ -817,7 +801,6 @@ impl PiRpcProjection {
             Some("toolResult") => Some(self.project_tool_result_message(message)?),
             _ => return Ok(None),
         };
-        self.runtime_progress_at = self.runtime_progress_at.max(timestamp);
         Ok(projected)
     }
 
@@ -2424,10 +2407,9 @@ mod tests {
     }
 
     #[test]
-    fn native_progress_preserves_failed_tools_and_independent_quota_failure() {
+    fn failed_tools_and_independent_quota_failure_reach_a_terminal_error() {
         let (responses, _rx) = response_channel();
         let mut projection = PiRpcProjection::new("run", "session");
-        assert_eq!(projection.runtime_progress_at(), None);
         let tool = projection
             .project(
                 json!({
@@ -2442,7 +2424,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(tool["message"]["content"][0]["is_error"], true);
-        assert_eq!(projection.runtime_progress_at(), Some(20));
         assert!(
             projection
                 .project(
@@ -2454,7 +2435,6 @@ mod tests {
                 )
                 .is_err()
         );
-        assert_eq!(projection.runtime_progress_at(), Some(20));
         projection
             .project(
                 json!({
@@ -2467,7 +2447,6 @@ mod tests {
                 0,
             )
             .unwrap();
-        assert_eq!(projection.runtime_progress_at(), Some(40));
         let terminal = projection
             .project(json!({"type": "agent_settled"}), &responses, 0)
             .unwrap()

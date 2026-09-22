@@ -96,7 +96,9 @@ test.each<Kind>(["host", "credential", "access"])(
         .map((result) => {
           return result.status;
         })
-        .sort(),
+        .sort((left, right) => {
+          return left - right;
+        }),
     ).toStrictEqual([201, 204]);
     const before = await resources();
     expect(before.hosts).toHaveLength(kind === "host" ? 1 : 0);
@@ -150,11 +152,18 @@ test.each(["orgId", "userId"] as const)(
     for (const kind of ["host", "credential", "access"] as const) {
       const denied = await accept(create(kind, id), [409]);
       expect(denied.body).toStrictEqual({
-        error: {
-          code: "SSH_RESOURCE_ID_CONFLICT",
-          message:
-            "This resource ID cannot be used for this SSH configuration.",
-        },
+        error:
+          kind === "access"
+            ? {
+                code: "CLOUDFLARE_ACCESS_RESOURCE_ID_CONFLICT",
+                message:
+                  "This resource ID cannot be used for this Cloudflare Access configuration.",
+              }
+            : {
+                code: "SSH_RESOURCE_ID_CONFLICT",
+                message:
+                  "This resource ID cannot be used for this SSH configuration.",
+              },
       });
     }
     await expect(resources()).resolves.toStrictEqual({
@@ -255,7 +264,9 @@ test("host edit retries retain the expected generation and do not repeat inline 
       .map((result) => {
         return result.status;
       })
-      .sort(),
+      .sort((left, right) => {
+        return left - right;
+      }),
   ).toStrictEqual([200, 409]);
   const retry = await accept(
     connections().update({ headers, params, body: edit }),

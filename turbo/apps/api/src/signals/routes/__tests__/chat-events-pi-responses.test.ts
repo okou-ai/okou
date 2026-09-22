@@ -1325,6 +1325,16 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "deepseek-v4-flash",
       providerType: "deepseek",
     },
+    {
+      name: "OpenRouter",
+      model: "gpt-5.6-terra",
+      providerType: "openrouter-codex",
+    },
+    {
+      name: "OpenAI",
+      model: "gpt-5.6-terra",
+      providerType: "openai-api-key",
+    },
   ] as const)(
     "keeps direct $name BYOK on Codex while PiLoop is disabled",
     async ({ model, providerType }) => {
@@ -1359,6 +1369,18 @@ describe("CHAT-02: model-first provider policies", () => {
       const claimed = await claimChatRun(runnerGroup, run.runId);
       expect(claimed.claim.cliAgentType).toBe("codex");
       expect(claimed.claim.piLaunchConfig).toBeUndefined();
+      if (providerType === "openrouter-codex") {
+        expect(claimed.claim.codexRuntimeConfig).toMatchObject({
+          providerId: "openrouter-codex",
+          baseUrl: "https://openrouter.ai/api/v1",
+          wireApi: "responses",
+          supportsWebsockets: false,
+        });
+        expect(claimed.claim.codexRuntimeConfig?.modelCatalog).toBeUndefined();
+      }
+      if (providerType === "openai-api-key") {
+        expect(claimed.claim.codexRuntimeConfig).toBeNull();
+      }
       await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
     },
     30_000,

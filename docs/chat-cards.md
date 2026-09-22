@@ -260,6 +260,12 @@ renders only its card. Raw action destinations are removed from retained prose,
 including invalid actions that render as unavailable. Code spans, fenced and
 indented code, image destinations, and Markdown table rows remain content.
 Every action retains its own origin and chat-context validation.
+Bare action URLs are eligible at the start of content, after whitespace, in an
+explicit Markdown link, or after an unambiguous typographic delimiter. This
+includes language-independent punctuation and symbols such as full-width
+colons, brackets, dashes, arrows, and emoji. URLs joined to identifiers, paths,
+assignments, query fragments, or email-like text stay ordinary content. These
+token-boundary rules do not bypass trusted-origin or chat-context validation.
 Bare action URLs stop before adjacent prose punctuation, and retained labels
 stay literal text or keep their original inline formatting. For indented or
 quoted content, Markdown block tokens distinguish code from nested list prose;

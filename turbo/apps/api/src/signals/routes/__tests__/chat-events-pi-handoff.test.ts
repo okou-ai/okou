@@ -4,10 +4,12 @@ import { gzipSync, zstdCompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   PI_API_FIRST_TURN_SESSION_MAX_BYTES,
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   RESUME_SESSION_HISTORY_MAX_BYTES,
   piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { PI_AGENT_RUNTIME_VERSION } from "@okouai/pi-agent-runtime";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -509,7 +511,13 @@ describe("CHAT-02: model-first provider policies", () => {
           cliAgentType: "pi",
           piSessionId: run.threadId,
           prompt: originalPrompt,
-          piLaunchConfig: { apiFirstTurn: { sandboxEventSequenceStart: 1 } },
+          piLaunchConfig: {
+            apiFirstTurn: {
+              sandboxEventSequenceStart: 1,
+              requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+              minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+            },
+          },
         });
 
         const sandboxUsage = {

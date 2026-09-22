@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
-import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import {
+  cloudflareAccessContract,
+  sshCloudflareAccessContract,
+} from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import {
   sshConnectionsContract,
@@ -55,6 +58,11 @@ type RuntimeBody = Extract<
 >;
 const configs = () => {
   return setupApp({ context, routes: cloudflareAccessRoutes })(
+    sshCloudflareAccessContract,
+  );
+};
+const canonicalConfigs = () => {
+  return setupApp({ context, routes: cloudflareAccessRoutes })(
     cloudflareAccessContract,
   );
 };
@@ -96,13 +104,14 @@ describe("inline SSH resource creation", () => {
   it.each(["create", "update"] as const)(
     "%s supports each reuse/new combination and returns only resolved metadata",
     async (operation) => {
-      owner();
+      const o = owner();
       const existingConfig = await config();
       const existingHost = await host(existingConfig.id);
       let current = existingHost;
       for (const newAccess of [false, true]) {
         for (const newCredential of [false, true]) {
           const before = await resources();
+          context.mocks.ably.publish.mockClear();
           const fields = {
             displayName: "Combined host",
             host: "new.example.com",
@@ -151,6 +160,15 @@ describe("inline SSH resource creation", () => {
               configId: expect.any(String),
             },
           });
+          expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+            "ssh:changed",
+            { orgId: o.orgId },
+          ]);
+          expect(
+            context.mocks.ably.publish.mock.calls.some(([event]) => {
+              return event === "cloudflare-access:changed";
+            }),
+          ).toBe(newAccess);
           const after = await resources();
           expect(after.hosts).toHaveLength(
             before.hosts.length + (operation === "create" ? 1 : 0),
@@ -414,9 +432,11 @@ describe("Cloudflare Access owner configuration", () => {
     await runtime(o, { runnerGroup: "config-only" });
     const assertNotice = () => {
       expect(context.mocks.ably.publish.mock.calls).toStrictEqual([
+        ["cloudflare-access:changed", { orgId: o.orgId }],
         ["ssh:changed", { orgId: o.orgId }],
       ]);
       expect(context.mocks.ably.channelGet.mock.calls).toStrictEqual([
+        [`user:${o.userId}`],
         [`user:${o.userId}`],
       ]);
     };
@@ -450,6 +470,7 @@ describe("Cloudflare Access owner configuration", () => {
 
   it("requires a session and rejects unsafe token headers before encryption", async () => {
     await accept(configs().list({ headers: {} }), [401]);
+    await accept(canonicalConfigs().list({ headers: {} }), [401]);
     const kms = useSecretKmsProbe();
     owner();
     const request = setupRawAppRequest({
@@ -480,17 +501,103 @@ describe("Cloudflare Access owner configuration", () => {
     expect(kms.generateDataKeyCalls).toBe(0);
   });
 
+  it("shares one mutation boundary across canonical and legacy routes", async () => {
+    const o = owner();
+    const id = randomUUID();
+    context.mocks.ably.publish.mockClear();
+    const created = await accept(
+      canonicalConfigs().create({
+        headers,
+        body: { id, name: "Canonical", credentials: token },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      id,
+      name: "Canonical",
+      sshHosts: [],
+    });
+    expect(created.body).not.toHaveProperty("hosts");
+    await accept(
+      configs().create({
+        headers,
+        body: { id, name: "Retry", credentials: token },
+      }),
+      [204],
+    );
+    const legacy = (await accept(configs().list({ headers }), [200])).body
+      .configs[0];
+    expect(legacy).toMatchObject({ id, name: "Canonical", hosts: [] });
+    expect(legacy).not.toHaveProperty("sshHosts");
+    const updated = await accept(
+      canonicalConfigs().update({
+        headers,
+        params: { configId: id },
+        body: { expectedRevision: 1, name: "Renamed" },
+      }),
+      [200],
+    );
+    expect(updated.body).toMatchObject({
+      id,
+      name: "Renamed",
+      revision: 2,
+      sshHosts: [],
+    });
+    expect(updated.body).not.toHaveProperty("hosts");
+    const canonical = (
+      await accept(canonicalConfigs().list({ headers }), [200])
+    ).body.configs[0];
+    expect(canonical).toMatchObject({
+      id,
+      name: "Renamed",
+      revision: 2,
+      sshHosts: [],
+    });
+    await accept(
+      canonicalConfigs().delete({
+        headers,
+        params: { configId: id },
+        body: { expectedRevision: 2 },
+      }),
+      [204],
+    );
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toStrictEqual([]);
+    const ownerEvents = context.mocks.ably.publish.mock.calls.filter(
+      ([event]) => {
+        return event === "cloudflare-access:changed" || event === "ssh:changed";
+      },
+    );
+    expect(ownerEvents).toStrictEqual(
+      ["create", "update", "delete"].flatMap(() => {
+        return [
+          ["cloudflare-access:changed", { orgId: o.orgId }],
+          ["ssh:changed", { orgId: o.orgId }],
+        ];
+      }),
+    );
+  });
+
   it("shares one configuration across hosts without public secret readback and rejects stale/dependent deletion", async () => {
     const f = await fixture();
     const second = await host(f.config.id);
     const listed = (await accept(configs().list({ headers }), [200])).body;
+    const canonicalListed = (
+      await accept(canonicalConfigs().list({ headers }), [200])
+    ).body;
     expect(listed.configs[0]?.hosts).toStrictEqual(
       expect.arrayContaining([
         { id: f.host.id, displayName: f.host.displayName },
         { id: second.id, displayName: second.displayName },
       ]),
     );
-    for (const body of [listed, f.host, f.config]) {
+    expect(listed.configs[0]).not.toHaveProperty("sshHosts");
+    expect(canonicalListed.configs[0]?.sshHosts).toStrictEqual(
+      listed.configs[0]?.hosts,
+    );
+    expect(canonicalListed.configs[0]).not.toHaveProperty("hosts");
+    for (const body of [listed, canonicalListed, f.host, f.config]) {
       const text = JSON.stringify(body);
       for (const secret of [
         token.clientId,
@@ -564,6 +671,30 @@ describe("Cloudflare Access owner configuration", () => {
           ? { orgId: first.orgId }
           : { userId: first.userId },
       );
+      const createBody = {
+        id: c.id,
+        name: "Foreign ID",
+        credentials: token,
+      };
+      expect(
+        (
+          await accept(
+            canonicalConfigs().create({ headers, body: createBody }),
+            [409],
+          )
+        ).body.error,
+      ).toStrictEqual({
+        code: "CLOUDFLARE_ACCESS_RESOURCE_ID_CONFLICT",
+        message:
+          "This resource ID cannot be used for this Cloudflare Access configuration.",
+      });
+      expect(
+        (await accept(configs().create({ headers, body: createBody }), [409]))
+          .body.error,
+      ).toStrictEqual({
+        code: "SSH_RESOURCE_ID_CONFLICT",
+        message: "This resource ID cannot be used for this SSH configuration.",
+      });
       expect(
         (await accept(configs().list({ headers }), [200])).body.configs,
       ).toStrictEqual([]);
@@ -969,7 +1100,9 @@ describe("protected SSH authority", () => {
         .map((result) => {
           return result.status;
         })
-        .sort(),
+        .sort((left, right) => {
+          return left - right;
+        }),
     ).toStrictEqual([200, 409]);
     await expect(resolve(f)).resolves.toMatchObject({
       outcome: "resolved_access",

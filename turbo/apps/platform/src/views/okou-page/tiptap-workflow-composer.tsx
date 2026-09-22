@@ -105,14 +105,20 @@ function composerSuggestionCaretAnchor(
   if (!range || !editor.isInitialized) {
     return undefined;
   }
+  const suggestionStart = () => {
+    return Math.max(editor.state.selection.head - (range.end - range.start), 0);
+  };
+  const { node } = editor.view.domAtPos(suggestionStart(), 1);
+  const contextElement = node instanceof Element ? node : node.parentElement;
+  if (!contextElement) {
+    throw new Error("Expected an element containing the suggestion anchor");
+  }
   return {
-    contextElement: editor.view.dom,
+    // The editor scrolls its own content. Native positioning observes scroll
+    // ancestors of contextElement, so use the token's element inside it.
+    contextElement,
     getBoundingClientRect() {
-      const suggestionStart = Math.max(
-        editor.state.selection.head - (range.end - range.start),
-        0,
-      );
-      const coords = editor.view.coordsAtPos(suggestionStart);
+      const coords = editor.view.coordsAtPos(suggestionStart());
       return new DOMRect(
         coords.left,
         coords.top,
