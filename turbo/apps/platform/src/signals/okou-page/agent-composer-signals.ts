@@ -1,4 +1,4 @@
-import { command, computed, state, type Command } from "ccstate";
+import { command, computed, state, type Command, type State } from "ccstate";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -12,9 +12,13 @@ import {
 } from "../chat-page/optimistic-chat-thread-page.ts";
 import type { ChatForwardContext } from "../chat-page/chat-forward.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
 import {
+  reloadUserModelPreference$,
+  updateOwnedUserModelPreference$,
   updateUserModelPreference$,
   userModelPreference$,
+  userModelPreferenceOwner$,
 } from "../external/user-model-preference.ts";
 import {
   createAgentDraftSignals,
@@ -116,6 +120,10 @@ const setModelSelection$ = command(
   },
 );
 
+interface MediaModelWrite<M> {
+  readonly model: M | null;
+}
+
 function createMediaModelSetter<M extends ImageModel | VideoModel>(
   setSelection$: Command<void, [M | null]>,
   preference: (
@@ -124,12 +132,73 @@ function createMediaModelSetter<M extends ImageModel | VideoModel>(
     | { selectedImageModel: ImageModel | null }
     | { selectedVideoModel: VideoModel | null },
 ) {
+  const pendingWrites$ = computed((get) => {
+    get(authenticatedSessionKey$);
+    return state<MediaModelWrite<M> | null>(null);
+  });
+  const activeWrites$ = computed((get) => {
+    get(pendingWrites$);
+    return state<readonly MediaModelWrite<M>[]>([]);
+  });
+  const persist$ = command(
+    async (
+      { get, set },
+      pending$: State<MediaModelWrite<M> | null>,
+      operation: MediaModelWrite<M>,
+      supersedesPending: boolean,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const { model } = operation;
+      const [userPreference, assertCurrent] = await Promise.all([
+        get(userModelPreference$),
+        get(userModelPreferenceOwner$),
+      ]);
+      signal.throwIfAborted();
+      assertCurrent();
+      if (get(pendingWrites$) !== pending$ || get(pending$) !== operation) {
+        return;
+      }
+      const update = preference(model);
+      const saved =
+        "selectedImageModel" in update
+          ? userPreference.selectedImageModel === update.selectedImageModel
+          : userPreference.selectedVideoModel === update.selectedVideoModel;
+      // A different in-flight target can still replace the saved value. A
+      // later selection of that saved value must therefore reach persistence.
+      if (saved && !supersedesPending) {
+        return;
+      }
+      await set(
+        updateOwnedUserModelPreference$,
+        {
+          selectedModel: userPreference.selectedModel,
+          serviceTier: userPreference.serviceTier,
+          ...update,
+        },
+        assertCurrent,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (get(pendingWrites$) !== pending$) {
+        return;
+      }
+      set(reloadUserModelPreference$);
+      await get(userModelPreference$);
+      signal.throwIfAborted();
+    },
+  );
   return command(
     async (
       { get, set },
       model: M | null,
       signal: AbortSignal,
     ): Promise<void> => {
+      signal.throwIfAborted();
+      const pending$ = get(pendingWrites$);
+      const pending = get(pending$);
+      if (pending?.model === model) {
+        return;
+      }
       set(setSelection$, model);
       const explicitDefaultActionEnabled =
         get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
@@ -138,17 +207,35 @@ function createMediaModelSetter<M extends ImageModel | VideoModel>(
         // so picking a media model only scopes the next new chat.
         return;
       }
-      const userPreference = await get(userModelPreference$);
-      signal.throwIfAborted();
+      const operation = { model };
+      const active$ = get(activeWrites$);
+      const supersedesPending = get(active$).some((write) => {
+        return write.model !== model;
+      });
+      const clearPending = () => {
+        if (get(pending$) === operation) {
+          set(pending$, null);
+        }
+        set(active$, (writes) => {
+          return writes.filter((write) => {
+            return write !== operation;
+          });
+        });
+      };
+      set(pending$, operation);
+      set(active$, [...get(active$), operation]);
+      signal.addEventListener("abort", clearPending, { once: true });
       await set(
-        updateUserModelPreference$,
-        {
-          selectedModel: userPreference.selectedModel,
-          serviceTier: userPreference.serviceTier,
-          ...preference(model),
-        },
+        persist$,
+        pending$,
+        operation,
+        supersedesPending,
         signal,
-      );
+      ).finally(() => {
+        signal.removeEventListener("abort", clearPending);
+        clearPending();
+      });
+      signal.throwIfAborted();
     },
   );
 }

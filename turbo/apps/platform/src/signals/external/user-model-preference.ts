@@ -11,6 +11,7 @@ import {
   userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import { apiClient$ } from "../api-client.ts";
+import { authenticatedSessionKey$, clerk$ } from "../auth.ts";
 import { accept } from "../../lib/accept.ts";
 import { setAblyPayloadLoop$ } from "../realtime.ts";
 
@@ -32,15 +33,45 @@ export const reloadUserModelPreference$ = command(({ set }) => {
   });
 });
 
-export const updateUserModelPreference$ = command(
+/** Bind a model preference operation to the session that initiated it. */
+export const userModelPreferenceOwner$ = computed(async (get) => {
+  const identity = get(authenticatedSessionKey$);
+  const clerk = await get(clerk$);
+  const assertCurrent = () => {
+    if (
+      !identity ||
+      !clerk.user ||
+      !clerk.organization ||
+      !clerk.session ||
+      JSON.stringify([
+        clerk.organization.id,
+        clerk.user.id,
+        clerk.session.id,
+      ]) !== identity
+    ) {
+      throw new DOMException("Model preference owner changed", "AbortError");
+    }
+  };
+  return assertCurrent;
+});
+
+export const updateOwnedUserModelPreference$ = command(
   async (
     { get },
     update: UpdateUserModelPreferenceRequest,
+    assertCurrent: (() => void) | undefined,
     signal: AbortSignal,
   ): Promise<UserModelPreferenceResponse> => {
+    assertCurrent?.();
     const createClient = get(apiClient$);
     const client = createClient(userModelPreferenceContract, {
       apiBase: "api",
+      getTokenGuard: assertCurrent
+        ? () => {
+            assertCurrent();
+            return assertCurrent;
+          }
+        : undefined,
     });
     const result = await accept(
       client.update({
@@ -50,10 +81,17 @@ export const updateUserModelPreference$ = command(
       [200],
     );
     signal.throwIfAborted();
+    assertCurrent?.();
     // Cross-device/default-model writes are reflected via the
     // `userPreferenceChanged` realtime topic; do not reload the local cache
     // here (the initiating session receives the push like any other).
     return result.body;
+  },
+);
+
+export const updateUserModelPreference$ = command(
+  ({ set }, update: UpdateUserModelPreferenceRequest, signal: AbortSignal) => {
+    return set(updateOwnedUserModelPreference$, update, undefined, signal);
   },
 );
 

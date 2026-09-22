@@ -292,6 +292,19 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const configs = useLoadable(sshCloudflareConfigs$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshAccessConfig$);
+  const configItems = [
+    ...(configs.state === "hasData" && configs.data
+      ? configs.data.map((config) => {
+          return { value: config.id, label: config.name };
+        })
+      : []),
+    {
+      value: "new",
+      label: t(($) => {
+        return $.ssh.cloudflare.createNew;
+      }),
+    },
+  ];
   if (configs.state === "hasData" && configs.data === null) {
     return (
       <p role="alert" className="text-sm text-muted-foreground">
@@ -324,9 +337,16 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
             })}
           </label>
           <Select
+            items={configItems}
             disabled={disabled}
             value={editor.configId || null}
-            onValueChange={choose}
+            onValueChange={(value, details) => {
+              if (value === null) {
+                details.cancel();
+                return;
+              }
+              choose(value);
+            }}
           >
             <SelectTrigger id="ssh-access-config">
               <SelectValue
@@ -336,18 +356,13 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
               />
             </SelectTrigger>
             <SelectContent>
-              {configs.data.map((config) => {
+              {configItems.map((item) => {
                 return (
-                  <SelectItem key={config.id} value={config.id}>
-                    {config.name}
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 );
               })}
-              <SelectItem value="new">
-                {t(($) => {
-                  return $.ssh.cloudflare.createNew;
-                })}
-              </SelectItem>
             </SelectContent>
           </Select>
           {editor.configId &&

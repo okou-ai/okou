@@ -2,7 +2,7 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -457,7 +457,12 @@ function modelFirstSelectionFromInteraction(
   raw: string,
   currentSelection: ModelProviderSelection | null,
 ): ModelProviderSelection | null | undefined {
+  // Fast uses a hidden selected-value marker, distinct from its toggle option.
+  // Replaying that value must not parse it as the inherit-default sentinel.
   if (currentSelection?.codexServiceTier === "fast") {
+    if (raw === modelFirstSelectValue(currentSelection)) {
+      return undefined;
+    }
     if (raw === currentSelection.selectedModel) {
       return undefined;
     }
@@ -1096,7 +1101,9 @@ function ModelFirstSelectPicker({
       ) => void)
     | undefined;
   modal: boolean | undefined;
-  onValueChange: (raw: string) => void;
+  onValueChange: NonNullable<
+    ComponentProps<typeof Select<string>>["onValueChange"]
+  >;
 }) {
   return (
     <Select
@@ -1331,7 +1338,13 @@ function EnabledExplicitModelFirstModelPicker(
     placeholder: props.placeholder,
     fastLabel: props.fastLabel,
   });
-  const handleRawValueChange = (raw: string) => {
+  const handleRawValueChange: NonNullable<
+    ComponentProps<typeof Select<string>>["onValueChange"]
+  > = (raw, details) => {
+    if (raw === null) {
+      details.cancel();
+      return;
+    }
     const selection = modelFirstSelectionFromInteraction(raw, state.selection);
     if (selection !== undefined) {
       handleSelectionChange(selection);

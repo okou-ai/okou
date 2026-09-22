@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
@@ -20,6 +20,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { OKOU_LOCALE_COOKIE_NAME } from "../../../i18n/locale-fallback.ts";
+import frFRCommon from "../../../i18n/locales/fr-FR/common.json";
 import frFRCommonUrl from "../../../i18n/locales/fr-FR/common.json?url";
 
 const context = testContext();
@@ -383,6 +384,141 @@ test("Select and persist a supported interface language", async () => {
     );
     expect(document.documentElement.lang).toBe("de-DE");
   });
+});
+
+test("Save a language once while pending and skip an already persisted selection", async () => {
+  const saveStarted = context.mocks.deferred<void>();
+  const releaseSave = context.mocks.deferred<void>();
+  let serverLocale: UserLocale = "en-US";
+  const submittedLocales: UserLocale[] = [];
+  const supportedLocales: UserLocale[] = ["en-US", "de-DE"];
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, createPreferences(serverLocale, supportedLocales));
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      if (body.locale !== undefined) {
+        submittedLocales.push(body.locale);
+        saveStarted.resolve();
+        await withSignal(releaseSave.promise);
+        serverLocale = body.locale;
+      }
+      return respond(200, createPreferences(serverLocale, supportedLocales));
+    },
+  );
+  await openDialog("admin", "preference");
+  expect(screen.getByRole("combobox", { name: "Language" })).toHaveTextContent(
+    "English",
+  );
+  click(screen.getByRole("combobox", { name: "Language" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await saveStarted.promise;
+  expect(screen.getByRole("combobox", { name: "Sprache" })).toBeDisabled();
+  releaseSave.resolve();
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+  });
+  click(screen.getByRole("combobox", { name: "Sprache" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+  });
+  expect(serverLocale).toBe("de-DE");
+  expect(submittedLocales).toStrictEqual(["de-DE"]);
+});
+
+test("Retry saving the same language after the interface changed but the API rejected it", async () => {
+  let serverLocale: UserLocale = "en-US";
+  let failSave = true;
+  const submittedLocales: UserLocale[] = [];
+  const supportedLocales: UserLocale[] = ["en-US", "de-DE"];
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, createPreferences(serverLocale, supportedLocales));
+  });
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+    if (body.locale !== undefined) {
+      submittedLocales.push(body.locale);
+      if (failSave) {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Language could not be saved",
+          },
+        });
+      }
+      serverLocale = body.locale;
+    }
+    return respond(200, createPreferences(serverLocale, supportedLocales));
+  });
+  await openDialog("admin", "preference");
+  click(screen.getByRole("combobox", { name: "Language" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await waitFor(() => {
+    expect(submittedLocales).toStrictEqual(["de-DE"]);
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+  });
+  expect(document.documentElement.lang).toBe("de-DE");
+  expect(serverLocale).toBe("en-US");
+
+  failSave = false;
+  click(screen.getByRole("combobox", { name: "Sprache" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+    expect(serverLocale).toBe("de-DE");
+  });
+  expect(submittedLocales).toStrictEqual(["de-DE", "de-DE"]);
+});
+
+test("Changing Clerk identity while language resources load cancels the previous language selection", async () => {
+  const resourceStarted = context.mocks.deferred<void>();
+  const releaseResource = context.mocks.deferred<void>();
+  const submittedLocales: UserLocale[] = [];
+  const supportedLocales: UserLocale[] = ["en-US", "fr-FR"];
+  context.mocks.http.get(frFRCommonUrl, async ({ withSignal }) => {
+    resourceStarted.resolve();
+    await withSignal(releaseResource.promise);
+    return HttpResponse.json(frFRCommon);
+  });
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, createPreferences("en-US", supportedLocales));
+  });
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+    if (body.locale !== undefined) {
+      submittedLocales.push(body.locale);
+    }
+    return respond(200, createPreferences("en-US", supportedLocales));
+  });
+
+  await openDialog("admin", "preference");
+  click(screen.getByRole("combobox", { name: "Language" }));
+  click(screen.getByRole("option", { name: "Français" }));
+  await resourceStarted.promise;
+  expect(screen.getByRole("combobox", { name: "Language" })).toBeDisabled();
+
+  act(() => {
+    const clerk = context.mocks.clerk();
+    clerk.user(
+      { id: "next-language-user", fullName: "Next language user" },
+      { id: "next-language-session", token: "next-language-token" },
+    );
+    clerk.stateChanged();
+  });
+  releaseResource.resolve();
+
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: "Language" })).toBeEnabled();
+  });
+  expect(screen.getByRole("combobox", { name: "Language" })).toHaveTextContent(
+    "English",
+  );
+  expect(document.documentElement).toHaveAttribute("lang", "en-US");
+  expect(submittedLocales).toStrictEqual([]);
 });
 
 test("Keep the selected language visible during a preference refresh", async () => {
