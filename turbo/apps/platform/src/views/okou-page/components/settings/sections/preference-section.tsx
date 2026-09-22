@@ -117,7 +117,7 @@ export function PreferenceSection() {
           </div>
           <div
             className={surfaceVariants({
-              className: "divide-y divide-border overflow-hidden",
+              className: "overflow-hidden",
             })}
           >
             <EmailSubscriptionSettings />

@@ -246,7 +246,7 @@ export function MorningBriefSettings() {
       ref={cardRef}
       tabIndex={-1}
       data-testid="morning-brief-preference"
-      className="outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      className="border-t border-t-gray-400 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
     >
       <PreferenceCardRow
         icon={Sunrise}
