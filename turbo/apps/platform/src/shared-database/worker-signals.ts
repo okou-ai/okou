@@ -137,9 +137,14 @@ const catchUpChatEventThrottle$ = computed((get) => {
   );
 });
 
-/** Globally serialize ChatEvent catch-up with leading and trailing throttle. */
-const catchUpChatEvent$ = command(({ get, set }): Promise<void> => {
-  return set(get(catchUpChatEventThrottle$), get(rootSignal$));
+/** Start globally serialized ChatEvent warming without blocking its trigger. */
+const startChatEventWarming$ = command(({ get, set }): void => {
+  const signal = get(rootSignal$);
+  detach(
+    set(get(catchUpChatEventThrottle$), signal),
+    Reason.Daemon,
+    "chat event warming",
+  );
 });
 
 /**
@@ -314,8 +319,8 @@ const reloadWorkerChatIndicatorsFromRealtime$ = command(
   async ({ set }, signal: AbortSignal): Promise<boolean> => {
     await set(refreshWorkerChatIndicators$, signal);
     set(reloadComputedForConnections$, "chat-thread-indicators");
-    // Notify tabs before optional warming can delay or fail this refresh.
-    await set(catchUpChatEvent$);
+    // Notify tabs before optional warming starts in the background.
+    set(startChatEventWarming$);
     signal.throwIfAborted();
     return false;
   },
@@ -326,7 +331,7 @@ const reloadWorkerChatIndicatorsFromReadCursor$ = command(
     await set(refreshWorkerChatIndicators$, signal);
     set(forwardChatThreadReadCursorUpdated$, payload);
     set(reloadComputedForConnections$, "chat-thread-indicators");
-    await set(catchUpChatEvent$);
+    set(startChatEventWarming$);
     signal.throwIfAborted();
     return false;
   },

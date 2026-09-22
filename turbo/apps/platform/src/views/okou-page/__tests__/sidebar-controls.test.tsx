@@ -762,6 +762,20 @@ test.each([
       expect(within(indicatorRow()).getByLabelText("Running")).toBeVisible();
     });
     expect(within(indicatorRow()).queryByLabelText("Unread")).toBeNull();
+
+    running = false;
+    if (notification === "thread list") {
+      changeChatThreadList();
+    } else {
+      changeChatThreadReadCursor({
+        threadId: EXISTING_THREAD_ID,
+        lastReadAt: null,
+      });
+    }
+    await waitFor(() => {
+      expect(within(indicatorRow()).queryByLabelText("Running")).toBeNull();
+      expect(within(indicatorRow()).getByLabelText("Unread")).toBeVisible();
+    });
   },
 );
 
