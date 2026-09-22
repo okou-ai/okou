@@ -117,6 +117,38 @@ test("Reconcile live text with the durable assistant event", async () => {
   expect(screen.getAllByText("The complete report")).toHaveLength(1);
 });
 
+test("Catch up durable output when its realtime invalidation is lost", async () => {
+  const events = await setupActiveOutputStream();
+  push(0, "Preparing an incomplete report");
+  await expect(
+    screen.findByText("Preparing an incomplete report"),
+  ).resolves.toBeInTheDocument();
+
+  // Persist the authoritative row without publishing the usual
+  // chatThreadMessageCreated notification. The optimistic preview itself owns
+  // a bounded-frequency catch-up until the same-ID row is visible.
+  events.push(
+    assistantEvent({
+      id: EVENT_ID,
+      runId: RUN_ID,
+      seqId: 2,
+      text: "The complete report after a lost notification",
+    }),
+    completedEvent({
+      id: "lost-notification-completed",
+      runId: RUN_ID,
+      seqId: 3,
+    }),
+  );
+
+  await expect(
+    screen.findByText("The complete report after a lost notification"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByText("Preparing an incomplete report"),
+  ).not.toBeInTheDocument();
+});
+
 test("Unsubscribe from output after the durable run completes", async () => {
   const events = await setupActiveOutputStream();
   publishDurableReport(events);

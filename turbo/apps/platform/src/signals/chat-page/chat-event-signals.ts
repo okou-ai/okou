@@ -407,6 +407,8 @@ export interface ChatEventSignals {
   readonly hasOptimisticUserMessage$: Computed<boolean>;
   readonly setup$: Command<Promise<void>, [AbortSignal]>;
   readonly catchUp$: Command<Promise<void>, [AbortSignal]>;
+  /** Sync a thread whose server-owned run proves the thread already exists. */
+  readonly syncDurableEvents$: Command<Promise<void>, [AbortSignal]>;
   readonly sendEvent$: Command<
     Promise<SendChatEventResult>,
     [SendChatEventInput, AbortSignal]
@@ -430,6 +432,7 @@ export function createChatEventSignals(threadId: string): ChatEventSignals {
     chatEvents$: events.chatEvents$,
     hasOptimisticUserMessage$: events.hasOptimisticUserMessage$,
     ...setup,
+    syncDurableEvents$: events.syncRemoteEvents$,
     sendEvent$,
   };
 }

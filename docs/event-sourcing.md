@@ -70,6 +70,12 @@ durable output. Deltas are never written to the database, IndexedDB, or an
 event log. The API publishes deltas through the shared Ably REST client;
 publication does not depend on frontend subscriptions.
 
+While a visible thread has an optimistic session output, it periodically reads
+its authoritative event tail until the same-ID persistent event arrives. This
+convergence read covers a lost durable invalidation without replaying transient
+deltas or introducing a timeout cleanup path. Authoritative reads stop on
+reconciliation, and the page lifetime owns and cancels the monitor.
+
 ## Review Checklist
 
 - The originating event ID is reused by the server mutation or final output insertion.

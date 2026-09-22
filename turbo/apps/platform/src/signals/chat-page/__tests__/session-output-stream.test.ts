@@ -1,4 +1,4 @@
-import { computed, state } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { waitFor } from "@testing-library/react";
 import { beforeEach, expect, test } from "vitest";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
@@ -27,6 +27,9 @@ const ORG_ID = "test-org-123";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000901";
 const FIRST_RUN_ID = "d0000000-0000-4000-a000-000000000911";
 const SECOND_RUN_ID = "d0000000-0000-4000-a000-000000000912";
+const syncDurableEvents$ = command((): Promise<void> => {
+  return Promise.resolve();
+});
 
 beforeEach(() => {
   context.mocks.clerk();
@@ -110,7 +113,11 @@ test("A run change during channel attachment keeps only the latest run subscribe
   const chatEvents$ = computed((get) => {
     return get(events$);
   });
-  const signals = createSessionOutputStreamSignals(THREAD_ID, chatEvents$);
+  const signals = createSessionOutputStreamSignals(
+    THREAD_ID,
+    chatEvents$,
+    syncDurableEvents$,
+  );
   const resetViewer$ = resetSignal();
   const viewerSignal = context.store.set(resetViewer$, context.signal);
   const attaching = context.mocks.ably.deferSubscribeOnChannel(
@@ -169,7 +176,11 @@ test("Cancelling an obsolete viewer cannot stop its replacement subscription", a
   const chatEvents$ = computed((get) => {
     return get(events$);
   });
-  const signals = createSessionOutputStreamSignals(THREAD_ID, chatEvents$);
+  const signals = createSessionOutputStreamSignals(
+    THREAD_ID,
+    chatEvents$,
+    syncDurableEvents$,
+  );
   const resetPreviousViewer$ = resetSignal();
   const resetCurrentViewer$ = resetSignal();
   const previousSignal = context.store.set(

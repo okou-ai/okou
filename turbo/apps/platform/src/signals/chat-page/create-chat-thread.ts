@@ -4041,6 +4041,7 @@ export function createChatPanelSignals(
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
     chatEvents.chatEvents$,
+    chatEvents.syncDurableEvents$,
   );
   const activity = createThreadActivitySummarySignals(
     threadId,

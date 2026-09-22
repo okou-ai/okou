@@ -130,6 +130,21 @@ export function createOptimisticChatEventsForThread(threadId: string) {
     });
   });
 }
+
+export function createOptimisticSessionOutputEventIdsForThread(
+  threadId: string,
+) {
+  return computed((get): readonly string[] => {
+    return get(internalOptimisticChatEvents$).flatMap((entry) => {
+      return entry.threadId === threadId &&
+        entry.event.eventType === "output.message" &&
+        entry.event.runEventId !== undefined
+        ? [entry.event.id]
+        : [];
+    });
+  });
+}
+
 export const appendOptimisticChatEvent$ = command(
   ({ get, set }, entry: OptimisticChatEventEntry) => {
     set(internalOptimisticChatEvents$, (prev) => {
