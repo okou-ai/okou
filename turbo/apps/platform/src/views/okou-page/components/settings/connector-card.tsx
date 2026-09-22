@@ -95,6 +95,7 @@ type DirectoryConnectorCardProps = {
   readonly variant: "directory";
   readonly connector: PlatformConnectorCatalogStatusItem;
   readonly busy: boolean;
+  readonly blocked: boolean;
   readonly connected: boolean;
   readonly accountCount?: number;
   readonly accountLabel?: string;
@@ -302,6 +303,7 @@ function DirectoryConnectorStatusLine({
 function DirectoryConnectorCard({
   connector,
   busy,
+  blocked,
   connected,
   accountCount = 0,
   accountLabel,
@@ -310,7 +312,7 @@ function DirectoryConnectorCard({
   onOpenDetail,
 }: DirectoryConnectorCardProps) {
   const { t } = useTranslation();
-  const interactive = !busy && !unavailable;
+  const interactive = !busy && !blocked && !unavailable;
   const activate = () => {
     if (!interactive) {
       return;
@@ -319,7 +321,7 @@ function DirectoryConnectorCard({
       onOpenDetail?.();
       return;
     }
-    runConnect(connector, connect, busy);
+    runConnect(connector, connect, busy || blocked);
   };
 
   return (
@@ -327,6 +329,7 @@ function DirectoryConnectorCard({
       type="button"
       disabled={!interactive}
       focusableWhenDisabled={false}
+      aria-busy={busy || undefined}
       data-connector-slug={connector.slug}
       aria-label={
         connected
