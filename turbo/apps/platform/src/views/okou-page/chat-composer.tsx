@@ -130,6 +130,12 @@ import {
   SelectValue,
 } from "@okouai/ui/components/ui/select";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@okouai/ui/components/ui/tabs";
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -3695,82 +3701,45 @@ function TemplatePickerCategoryNav({
       <div className="hidden shrink-0 sm:flex">
         <div className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
           <TemplatePickerHeader />
-          <nav
-            role="tablist"
+          <TabsList
+            render={<nav />}
+            activateOnFocus
             aria-label={t(($) => {
               return $.artifacts.templates.categories;
             })}
-            aria-orientation="vertical"
             data-template-picker-sidebar=""
-            className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
+            className="flex h-auto min-h-0 flex-1 flex-col items-stretch justify-start gap-0.5 overflow-y-auto rounded-none bg-transparent p-0 px-3 pb-3"
           >
-            {categoryOptions.flatMap(
-              ({ value, label, Icon }, categoryIndex) => {
-                const selected = value === selectedCategory;
-                return [
-                  <button
-                    key={value}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    tabIndex={selected ? 0 : -1}
-                    onClick={() => {
-                      onChange(value);
-                    }}
-                    onKeyDown={(event) => {
-                      let nextIndex: number | null = null;
-                      if (event.key === "ArrowDown") {
-                        nextIndex =
-                          (categoryIndex + 1) % categoryOptions.length;
-                      } else if (event.key === "ArrowUp") {
-                        nextIndex =
-                          (categoryIndex - 1 + categoryOptions.length) %
-                          categoryOptions.length;
-                      } else if (event.key === "Home") {
-                        nextIndex = 0;
-                      } else if (event.key === "End") {
-                        nextIndex = categoryOptions.length - 1;
-                      }
-                      if (nextIndex === null) {
-                        return;
-                      }
-                      event.preventDefault();
-                      const nextTab = event.currentTarget.parentElement
-                        ?.querySelectorAll<HTMLElement>("[role=tab]")
-                        .item(nextIndex);
-                      nextTab?.focus();
-                      onChange(categoryOptions[nextIndex]?.value ?? value);
-                    }}
+            {categoryOptions.flatMap(({ value, label, Icon }) => {
+              const selected = value === selectedCategory;
+              return [
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="group flex h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:shadow-none focus-visible:ring-inset"
+                >
+                  <Icon
                     className={cn(
-                      "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      "h-4 w-4 shrink-0 transition-colors",
                       selected
-                        ? "bg-gray-50 font-medium text-foreground"
-                        : "text-gray-800 hover:bg-state-hover hover:text-foreground",
+                        ? "text-foreground"
+                        : "text-gray-700 group-hover:text-gray-800",
                     )}
-                  >
-                    <Icon
-                      className={cn(
-                        "h-4 w-4 shrink-0 transition-colors",
-                        selected
-                          ? "text-foreground"
-                          : "text-gray-700 group-hover:text-gray-800",
-                      )}
-                    />
-                    <span className="truncate">{label}</span>
-                  </button>,
-                  ...(value === "custom"
-                    ? [
-                        <div
-                          key={`${value}-rule`}
-                          role="presentation"
-                          className="my-2 shrink-0 border-t border-t-gray-400"
-                        />,
-                      ]
-                    : []),
-                ];
-              },
-            )}
-          </nav>
+                  />
+                  <span className="truncate">{label}</span>
+                </TabsTrigger>,
+                ...(value === "custom"
+                  ? [
+                      <div
+                        key={`${value}-rule`}
+                        role="presentation"
+                        className="my-2 shrink-0 border-t border-t-gray-400"
+                      />,
+                    ]
+                  : []),
+              ];
+            })}
+          </TabsList>
         </div>
       </div>
     </>
@@ -5691,14 +5660,23 @@ function TemplatePickerDialog({
                 })}
               </DialogTitle>
             </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+            <Tabs
+              value={selectedCategory}
+              onValueChange={handleCategoryChange}
+              orientation="vertical"
+              className="flex min-h-0 flex-1 flex-col sm:flex-row"
+            >
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
                 videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
               />
-              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              <TabsContent
+                key={selectedCategory}
+                value={selectedCategory}
+                className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+              >
                 <TemplatePaidToolNotice category={selectedCategory} />
                 {selectedCategory !== "custom" ? (
                   <div
@@ -5752,8 +5730,8 @@ function TemplatePickerDialog({
                   onSelectWorkflow={handleSelectWorkflow}
                   runtime={runtime}
                 />
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
           </div>
         ) : null}
         {previewItem ? (

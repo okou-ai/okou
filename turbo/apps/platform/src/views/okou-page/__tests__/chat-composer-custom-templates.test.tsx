@@ -346,6 +346,29 @@ test("A named category still wins over the one the nav leads with", async () => 
   expect(tabByText("Custom")).toHaveAttribute("aria-selected", "false");
 });
 
+test("Keyboard navigation includes Custom across its category separator", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { user, dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+  await user.click(tabByText("Custom"));
+  await user.keyboard("{ArrowDown}");
+  expect(tabByText("Presentation")).toHaveFocus();
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  await user.keyboard("{Home}");
+  const custom = tabByText("Custom");
+  expect(custom).toHaveFocus();
+  expect(custom).toHaveAttribute("aria-selected", "true");
+  const panel = await within(dialog).findByRole("tabpanel", {
+    name: "Custom",
+  });
+  expect(custom).toHaveAttribute("aria-controls", panel.id);
+  expect(panel).toHaveAttribute("aria-labelledby", custom.id);
+  await expect(
+    within(panel).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("The switch decides whether the catalog is requested at all", async () => {
   let listed = 0;
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
