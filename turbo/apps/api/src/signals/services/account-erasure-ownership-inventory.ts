@@ -122,6 +122,42 @@ export type AccountOwnershipEntry =
     }
   | { readonly coverage: "not_account_scoped" };
 
+/** Why a vocabulary column on a table is not that table's sweep key.
+ *
+ * `provider_identity` — the value is a Slack, Teams or Telegram identity, not
+ * an Okou account. Its type is `text`, exactly like a Clerk id, so a sweep
+ * comparing the subject against it parses cleanly, matches nothing, and
+ * reports the table clean while every row stays. That is worse than an
+ * uncovered table, which the guard catches loudly.
+ *
+ * `covered_by_parent` — the value does reference an account-owned row, but the
+ * sweep reaches this table through a different parent, so this column is not
+ * the key it deletes by.
+ *
+ * The catalogue cannot tell a Clerk id from a Slack id: both are `text`. So the
+ * distinction can only live in this vocabulary, and it has to be a declaration
+ * the guard can check rather than a remark in a comment.
+ */
+export type NonOwnershipReason = "provider_identity" | "covered_by_parent";
+
+/** Vocabulary columns that are deliberately not their table's sweep key.
+ *
+ * A vocabulary column must appear either in its entry's declared ownership or
+ * here. The author of a new table carrying one has to choose; nothing defaults.
+ */
+export const NON_OWNERSHIP_COLUMNS: Readonly<
+  Record<string, Readonly<Record<string, NonOwnershipReason>>>
+> = {
+  chat_agentphone_context: { user_link_id: "covered_by_parent" },
+  chat_slack_context: { sender_user_id: "provider_identity" },
+  chat_teams_context: { sender_user_id: "provider_identity" },
+  chat_telegram_context: {
+    sender_user_id: "provider_identity",
+    user_link_id: "covered_by_parent",
+  },
+  telegram_messages: { from_user_id: "provider_identity" },
+};
+
 /** Every table in the application schema, with the erasure treatment it is
  * covered by. A table missing from this record fails the coverage guard: the
  * September 12 deletion left data behind because ownership coverage was
@@ -244,8 +280,8 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     parents: ["chat_threads"],
   },
   chat_agentphone_context: {
-    coverage: "user_root",
-    ownership: ["user_link_id"],
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
   },
   chat_automation_context: {
     coverage: "user_descendant",
@@ -274,11 +310,17 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_descendant",
     parents: ["agent_runs"],
   },
-  chat_slack_context: { coverage: "user_root", ownership: ["sender_user_id"] },
-  chat_teams_context: { coverage: "user_root", ownership: ["sender_user_id"] },
+  chat_slack_context: {
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
+  },
+  chat_teams_context: {
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
+  },
   chat_telegram_context: {
-    coverage: "user_root",
-    ownership: ["user_link_id", "sender_user_id"],
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
   },
   chat_thread_connector_selections: {
     coverage: "user_descendant",
@@ -664,7 +706,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   telegram_messages: {
     coverage: "user_root",
-    ownership: ["official_user_link_id", "from_user_id"],
+    ownership: ["official_user_link_id"],
   },
   telegram_official_user_links: {
     coverage: "user_root",
@@ -794,12 +836,62 @@ function declaredColumns(entry: AccountOwnershipEntry): readonly string[] {
   return entry.coverage === "organization_owned" ? entry.association : [];
 }
 
+function nonOwnership(
+  table: string,
+): Readonly<Record<string, NonOwnershipReason>> {
+  return NON_OWNERSHIP_COLUMNS[table] ?? {};
+}
+
 /** Fails when the schema and the inventory disagree in any direction.
  *
  * A new table is uncovered until it is classified, a renamed ownership column
  * stops silently voiding a root's coverage, and an inventory entry cannot
  * outlive the table it describes.
  */
+function assertColumnsDeclared(
+  table: OwnershipTable,
+  entry: AccountOwnershipEntry,
+): void {
+  const columns = new Set(table.columns);
+  const declared = declaredColumns(entry);
+  for (const column of declared) {
+    if (!columns.has(column)) {
+      fail("ownership_column_missing", `${table.name}.${column}`);
+    }
+  }
+  const excluded = nonOwnership(table.name);
+  for (const column of Object.keys(excluded)) {
+    if (!columns.has(column)) {
+      fail("non_ownership_column_missing", `${table.name}.${column}`);
+    }
+    if (declared.includes(column)) {
+      fail("non_ownership_conflict", `${table.name}.${column}`);
+    }
+  }
+  // A vocabulary column is the table's sweep key or it is declared not to be.
+  // Nothing defaults: a provider identity left implicit is a column the sweep
+  // compares cleanly and matches never, reporting the table clean while every
+  // row stays.
+  const carried = ACCOUNT_OWNERSHIP_COLUMNS.filter((column) => {
+    return columns.has(column) && !(column in excluded);
+  });
+  const [first] = carried;
+  if (first === undefined) {
+    return;
+  }
+  if (entry.coverage === "not_account_scoped") {
+    fail("unclassified_ownership", `${table.name}.${first}`);
+  }
+  if (entry.coverage === "user_descendant") {
+    fail("root_declared_as_descendant", `${table.name}.${first}`);
+  }
+  for (const column of carried) {
+    if (!declared.includes(column)) {
+      fail("undeclared_ownership_column", `${table.name}.${column}`);
+    }
+  }
+}
+
 export function assertOwnershipInventoryCoverage(
   tables: readonly OwnershipTable[],
 ): void {
@@ -810,31 +902,14 @@ export function assertOwnershipInventoryCoverage(
       fail("uncovered_table", table.name);
     }
     present.add(table.name);
-    const columns = new Set(table.columns);
-    for (const column of declaredColumns(entry)) {
-      if (!columns.has(column)) {
-        fail("ownership_column_missing", `${table.name}.${column}`);
-      }
-    }
-    const carried = ACCOUNT_OWNERSHIP_COLUMNS.filter((column) => {
-      return columns.has(column);
-    });
-    const [first] = carried;
-    if (first !== undefined) {
-      if (entry.coverage === "not_account_scoped") {
-        fail("unclassified_ownership", `${table.name}.${first}`);
-      }
-      if (entry.coverage === "user_descendant") {
-        fail("root_declared_as_descendant", `${table.name}.${first}`);
-      }
-      for (const column of carried) {
-        if (!declaredColumns(entry).includes(column)) {
-          fail("undeclared_ownership_column", `${table.name}.${column}`);
-        }
-      }
-    }
+    assertColumnsDeclared(table, entry);
     if (entry.coverage === "user_root" && entry.ownership.length === 0) {
       fail("ownership_undeclared", table.name);
+    }
+  }
+  for (const name of Object.keys(NON_OWNERSHIP_COLUMNS)) {
+    if (!(name in ACCOUNT_OWNERSHIP_INVENTORY)) {
+      fail("non_ownership_unknown_table", name);
     }
   }
   for (const [name, entry] of Object.entries(ACCOUNT_OWNERSHIP_INVENTORY)) {

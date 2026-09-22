@@ -206,10 +206,10 @@ describe("relational erasure plan", () => {
         }
       }
     }
-    // A root the sweep cannot reach is reported, never silently skipped.
-    expect(plan.unreachableRoots).toStrictEqual(
-      [...plan.unreachableRoots].sort(),
-    );
+    // Every root is reachable: each one either holds the account id or names
+    // the hop that does. A root the sweep cannot reach would be reported here
+    // rather than silently skipped, and none is.
+    expect(plan.unreachableRoots).toStrictEqual([]);
   });
 
   it("reaches every declared descendant through a declared parent", async () => {
