@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.210.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.0...runner-rs-v0.210.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **guest-contracts:** derive exec log severity from the agent-domain kill ([#36077](https://github.com/okou-ai/okou/issues/36077)) ([0360058](https://github.com/okou-ai/okou/commit/03600589df8d44b36e58b1aefb97235598840a6e)), closes [#36027](https://github.com/okou-ai/okou/issues/36027)
+
+
+### Refactoring
+
+* **runner:** extract the runner-host domain crate ([#36075](https://github.com/okou-ai/okou/issues/36075)) ([2f27ce3](https://github.com/okou-ai/okou/commit/2f27ce3a29bfbd91118eb012ab1f0504a132ba38))
+
 ## [0.210.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.209.2...runner-rs-v0.210.0) (2026-09-22)
 
 

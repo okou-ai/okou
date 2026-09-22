@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.354.0](https://github.com/okou-ai/okou/compare/cli-v9.353.0...cli-v9.354.0) (2026-09-22)
+
+
+### Features
+
+* **cli:** add browser user-action requests ([#36065](https://github.com/okou-ai/okou/issues/36065)) ([fd85154](https://github.com/okou-ai/okou/commit/fd851548eb07acf939c8e15a411f8b894af6c2ad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.492.0
+    * @okouai/core bumped to 8.700.0
+    * @okouai/pi-agent-runtime bumped to 1.36.1
+
 ## [9.353.0](https://github.com/okou-ai/okou/compare/cli-v9.352.8...cli-v9.353.0) (2026-09-22)
 
 

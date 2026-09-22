@@ -8,6 +8,37 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.658.0](https://github.com/okou-ai/okou/compare/api-v1.657.0...api-v1.658.0) (2026-09-22)
+
+
+### Features
+
+* **api:** add standalone cloudflare access management boundary ([#36057](https://github.com/okou-ai/okou/issues/36057)) ([c6df88a](https://github.com/okou-ai/okou/commit/c6df88aeb90ffe3d6f563a1028ffec5a41cc0b45))
+* **api:** write the pi launch-config runtime and cli version requirements ([#36083](https://github.com/okou-ai/okou/issues/36083)) ([34914c1](https://github.com/okou-ai/okou/commit/34914c13958a80b12565432275bb4de74bfdd8bb)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+* **app:** recommend personalized tasks on the agent home page ([#35881](https://github.com/okou-ai/okou/issues/35881)) ([26dfde0](https://github.com/okou-ai/okou/commit/26dfde0a42e1a45d191508ffcde7348f00925303))
+* **platform:** make the share step two steps and give review a screen ([#36076](https://github.com/okou-ai/okou/issues/36076)) ([d7c6996](https://github.com/okou-ai/okou/commit/d7c69963051d28469c38b9cfc011689f39fa6dd2))
+* streamline source-first onboarding ([#36078](https://github.com/okou-ai/okou/issues/36078)) ([3ea7b47](https://github.com/okou-ai/okou/commit/3ea7b472711d7c76f80bbe1d0b48472ad9005c7d))
+
+
+### Bug Fixes
+
+* **api:** disable codex websockets for openrouter ([#36074](https://github.com/okou-ai/okou/issues/36074)) ([662419b](https://github.com/okou-ai/okou/commit/662419b73c90802704d54eaa170c4e41d994b3dc))
+
+
+### Performance Improvements
+
+* **api:** instrument the unattributed pre-provider dispatch interval ([#36095](https://github.com/okou-ai/okou/issues/36095)) ([e6e3286](https://github.com/okou-ai/okou/commit/e6e32869d1b62ab65f7a3cf4a393191cfaf77782))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.492.0
+    * @okouai/core bumped to 8.700.0
+    * @okouai/db bumped to 1.287.0
+    * @okouai/pi-agent-runtime bumped to 1.36.1
+
 ## [1.657.0](https://github.com/okou-ai/okou/compare/api-v1.656.1...api-v1.657.0) (2026-09-22)
 
 
