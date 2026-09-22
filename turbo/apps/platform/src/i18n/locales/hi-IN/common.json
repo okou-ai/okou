@@ -5923,7 +5923,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "रीसेट करें",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
         "usageRemaining": "{{provider}} {{window}} शेष",
@@ -6259,7 +6258,6 @@
       },
       "reset": {
         "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक Codex रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
-        "expiresAt": "निकटतम रीसेट {{date}} को समाप्त होगा",
         "progress": "रीसेट किया जा रहा है...",
         "remaining_one": "{{value}} रीसेट बचे हैं",
         "remaining_other": "{{value}} रीसेट बचे हैं",

@@ -5911,7 +5911,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "重置",
         "resetTimeUnavailable": "重置時間不可用",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩餘用量",
@@ -6247,7 +6246,6 @@
       },
       "reset": {
         "confirmDescription": "消耗一次Codex重置額度，重置當前的用量週期。你還有{{remaining}}。",
-        "expiresAt": "最早的重置額度{{date}}過期",
         "progress": "正在重置…",
         "remaining_one": "還剩{{value}}次重置",
         "remaining_other": "還剩{{value}}次重置",

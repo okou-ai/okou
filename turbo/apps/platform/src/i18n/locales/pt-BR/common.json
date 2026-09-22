@@ -5981,7 +5981,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Redefinir",
         "resetTimeUnavailable": "Horário de redefinição indisponível",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{provider}}: {{window}} restante",
@@ -6317,7 +6316,6 @@
       },
       "reset": {
         "confirmDescription": "Use uma redefinição do Codex para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
-        "expiresAt": "A redefinição mais próxima expira {{date}}",
         "progress": "Redefinindo...",
         "remaining_one": "{{value}} redefinição restante",
         "remaining_many": "{{value}} redefinições restantes",

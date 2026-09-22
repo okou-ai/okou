@@ -5923,7 +5923,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Zurücksetzen",
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",
         "usage": "{{provider}} Nutzung",
         "usageRemaining": "{{provider}} {{window}} übrig",
@@ -6259,7 +6258,6 @@
       },
       "reset": {
         "confirmDescription": "Verwenden Sie einen Codex-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
-        "expiresAt": "Nächster Reset läuft {{date}} ab",
         "progress": "Zurücksetzen...",
         "remaining_one": "{{value}} Reset übrig",
         "remaining_other": "{{value}} Resets übrig",

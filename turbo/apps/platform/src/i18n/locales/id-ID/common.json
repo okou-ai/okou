@@ -5911,7 +5911,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Reset",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
         "usageRemaining": "Sisa {{provider}} {{window}}",
@@ -6247,7 +6246,6 @@
       },
       "reset": {
         "confirmDescription": "Gunakan satu reset Codex untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
-        "expiresAt": "Reset terdekat kedaluwarsa {{date}}",
         "progress": "Mereset...",
         "remaining_one": "{{value}} reset tersisa",
         "remaining_other": "{{value}} reset tersisa",

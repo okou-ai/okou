@@ -5911,7 +5911,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "リセット",
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",
         "usageRemaining": "{{provider}} {{window}} 残り",
@@ -6247,7 +6246,6 @@
       },
       "reset": {
         "confirmDescription": "Codexリセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
-        "expiresAt": "最も早いリセットの有効期限は{{date}}",
         "progress": "リセット中...",
         "remaining_one": "リセット残り{{value}}回",
         "remaining_other": "リセット残り{{value}}回",

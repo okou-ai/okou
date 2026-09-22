@@ -5981,7 +5981,6 @@
           "claudeCode": "Claude Code",
           "codex": "Codex"
         },
-        "reset": "Ripristina",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
         "usageRemaining": "{{provider}} {{window}} rimanente",
@@ -6317,7 +6316,6 @@
       },
       "reset": {
         "confirmDescription": "Usa un ripristino Codex per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",
-        "expiresAt": "Il ripristino più vicino scade {{date}}",
         "progress": "Reimpostazione...",
         "remaining_one": "{{value}} ripristino rimasto",
         "remaining_many": "{{value}} ripristini rimasti",
