@@ -193,8 +193,8 @@ function applyScrollTop(
     runtime.programmaticScrollTop = container.scrollTop;
     return;
   }
-  container.scrollTop = targetScrollTop;
-  // Remember where this module left the container. The browser can round the
+  container.scrollTop = scrollTop;
+  // Remember where this module left the container. The browser clamps the
   // assignment, so read the offset back instead of trusting the requested one.
   runtime.programmaticScrollTop = container.scrollTop;
 }
