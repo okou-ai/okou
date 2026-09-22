@@ -58,7 +58,6 @@ export enum FeatureSwitchKey {
   AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
-  McpServer = "mcpServer",
   VncAccess = "vncAccess",
   RunUsage = "runUsage",
   PiLoop = "piLoop",
