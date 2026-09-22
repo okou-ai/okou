@@ -11,6 +11,46 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.944.0](https://github.com/okou-ai/okou/compare/app-v0.943.0...app-v0.944.0) (2026-09-22)
+
+
+### Features
+
+* **connectors:** add standalone cloudflare access settings ([#36136](https://github.com/okou-ai/okou/issues/36136)) ([4f0c4f5](https://github.com/okou-ai/okou/commit/4f0c4f52bfee15cc5d43dcb1e5911582539eb57b))
+* expose ssh-backed vnc access ([#36116](https://github.com/okou-ai/okou/issues/36116)) ([05910d3](https://github.com/okou-ai/okou/commit/05910d386aebd37b12637adf5dea4a935c9a0198))
+* **platform:** parse pasted cloudflare access headers ([#36122](https://github.com/okou-ai/okou/issues/36122)) ([4446147](https://github.com/okou-ai/okou/commit/4446147d87f92b5e646c51bb8fc05c69956ce8f5))
+
+
+### Bug Fixes
+
+* **app:** preserve explicit actions in template and model controls ([#36102](https://github.com/okou-ai/okou/issues/36102)) ([22d4182](https://github.com/okou-ai/okou/commit/22d4182cc6ab6d81a94b3fb7b9a0b17494ba0ce2))
+* **platform:** clip office preview hover borders ([#36070](https://github.com/okou-ai/okou/issues/36070)) ([c29a185](https://github.com/okou-ai/okou/commit/c29a18588666b3472ee5be77ed77ef45f694da2d))
+* **platform:** expose onboarding make cards as action buttons ([#36103](https://github.com/okou-ai/okou/issues/36103)) ([62ec636](https://github.com/okou-ai/okou/commit/62ec636d2abb36c4790bb49757fe09181ec902ee))
+* **platform:** keep show all chats at filter list end ([#36117](https://github.com/okou-ai/okou/issues/36117)) ([a5889eb](https://github.com/okou-ai/okou/commit/a5889eb5454c37bf49264c0809863d267925fa29))
+* **platform:** let video previews fill the dialog ([#36120](https://github.com/okou-ai/okou/issues/36120)) ([c50c7b0](https://github.com/okou-ai/okou/commit/c50c7b005fdb54de25a9bd6c1bdd05e07fa956b7))
+* **platform:** make chat list title keyboard accessible ([#36105](https://github.com/okou-ai/okou/issues/36105)) ([ca283c9](https://github.com/okou-ai/okou/commit/ca283c9d8b1fa9f333002cb4bddc2be44f6e9feb))
+* **platform:** prevent selection toolbar flicker ([#36090](https://github.com/okou-ai/okou/issues/36090)) ([874a016](https://github.com/okou-ai/okou/commit/874a016ca41efe81f9d29d4c022a327378d578ee))
+* **platform:** render greeting without agent details ([#36130](https://github.com/okou-ai/okou/issues/36130)) ([087c244](https://github.com/okou-ai/okou/commit/087c2447808863c1822c4335222a0d7b4b7462f8))
+* **platform:** resolve optimistic file previews directly ([#36141](https://github.com/okou-ai/okou/issues/36141)) ([f7d300f](https://github.com/okou-ai/okou/commit/f7d300fb8d5a15bd67d5f5b882a92b41e9bdd8b3))
+* **platform:** separate template card primary and secondary actions ([#36073](https://github.com/okou-ai/okou/issues/36073)) ([22eb793](https://github.com/okou-ai/okou/commit/22eb793b3063832bb532a98c1fbf8cbc05b5600a))
+* **platform:** warm chat caches after message notifications ([#36081](https://github.com/okou-ai/okou/issues/36081)) ([2b45125](https://github.com/okou-ai/okou/commit/2b45125803ab54f6934ff7fb1715f32d0fd36f02))
+
+
+### Refactoring
+
+* remove released chat feature switches ([#36144](https://github.com/okou-ai/okou/issues/36144)) ([3d77ae2](https://github.com/okou-ai/okou/commit/3d77ae255476951c7e7bd72dadf0723b74637c36))
+* **ui:** restore native select root contracts ([#36071](https://github.com/okou-ai/okou/issues/36071)) ([967855d](https://github.com/okou-ai/okou/commit/967855db91dd5e7f10573f00f4e5bf3876387ffc))
+* **ui:** use native overlay timing and positioning parameters ([#36064](https://github.com/okou-ai/okou/issues/36064)) ([8888a3a](https://github.com/okou-ai/okou/commit/8888a3a4763a61a8d9371eb7367d8b24137a29b2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.493.0
+    * @okouai/core bumped to 8.700.1
+    * @okouai/ui bumped to 1.11.7
+
 ## [0.943.0](https://github.com/okou-ai/okou/compare/app-v0.942.0...app-v0.943.0) (2026-09-22)
 
 

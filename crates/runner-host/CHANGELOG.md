@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.1.2](https://github.com/okou-ai/okou/compare/runner-host-v0.1.1...runner-host-v0.1.2) (2026-09-22)
+
 ## [0.1.1](https://github.com/okou-ai/okou/compare/runner-host-v0.1.0...runner-host-v0.1.1) (2026-09-22)
 
 
