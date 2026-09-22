@@ -810,21 +810,22 @@ describe("App quit", () => {
     identityHandlers();
     const { session, replies } = createSession();
     // Node drives `AbortSignal.timeout` from an internal timer that no timer
-    // control can advance, so the budgets are scaled instead: a 150ms
-    // validation clock the window phase then spends 250ms outlasting. Only a
-    // clock that starts after the window closes can still have time left.
+    // control can advance, so the budget is scaled instead: a 400ms validation
+    // clock that the window phase then spends 600ms outlasting. A clock armed
+    // when the window opened is spent by then; only one that starts after the
+    // window closes still has its full allowance.
     const realTimeout = AbortSignal.timeout.bind(AbortSignal);
     const deadlines: number[] = [];
     const timeout = vi.spyOn(AbortSignal, "timeout");
     timeout.mockImplementation((milliseconds) => {
       deadlines.push(milliseconds);
-      return realTimeout(milliseconds === 30_000 ? 150 : milliseconds);
+      return realTimeout(milliseconds === 30_000 ? 400 : milliseconds);
     });
     const window = deferred<string | null>();
     replies.push(window.promise);
 
     const pending = session.consumeCode("code");
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => setTimeout(resolve, 600));
     const armedDuringWindow = [...deadlines];
     window.resolve("interactive");
     await pending;
