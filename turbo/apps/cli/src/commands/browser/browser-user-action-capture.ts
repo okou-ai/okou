@@ -230,6 +230,20 @@ function isHttpPage(url: string): boolean {
   }
 }
 
+function closeWebSocket(socket: WebSocket, code?: number): void {
+  if (
+    socket.readyState !== WebSocket.CONNECTING &&
+    socket.readyState !== WebSocket.OPEN
+  ) {
+    return;
+  }
+  try {
+    socket.close(code);
+  } catch {
+    // Closing a failed connection is best-effort; the command still rejects.
+  }
+}
+
 class CdpClient {
   private nextId = 1;
   private readonly pending = new Map<number, PendingCommand>();
@@ -261,7 +275,7 @@ class CdpClient {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         cleanup();
-        socket.close();
+        closeWebSocket(socket);
         reject(
           browserCaptureError("The Browser inspection connection timed out"),
         );
@@ -278,6 +292,7 @@ class CdpClient {
       };
       const onFailure = () => {
         cleanup();
+        closeWebSocket(socket);
         reject(
           browserCaptureError("Could not connect to the attached Browser"),
         );
@@ -376,12 +391,7 @@ class CdpClient {
 
   close(): void {
     this.failAll();
-    if (
-      this.socket.readyState === WebSocket.CONNECTING ||
-      this.socket.readyState === WebSocket.OPEN
-    ) {
-      this.socket.close(1000);
-    }
+    closeWebSocket(this.socket, 1000);
   }
 }
 
@@ -544,6 +554,30 @@ async function cleanupMarker(
   );
 }
 
+async function cleanupObjectMarker(
+  client: CdpClient,
+  page: AttachedPage,
+  objectId: string,
+  marker: Marker,
+): Promise<void> {
+  try {
+    await client.send(
+      "Runtime.callFunctionOn",
+      {
+        objectId,
+        functionDeclaration: "function(key){return delete this[key]}",
+        arguments: [{ value: marker.key }],
+        returnByValue: true,
+      },
+      page.sessionId,
+      CDP_CLEANUP_TIMEOUT_MS,
+    );
+  } catch {
+    // The page-wide cleanup below remains the best-effort fallback when the
+    // captured object is already detached or its document navigated.
+  }
+}
+
 async function detachPages(
   client: CdpClient,
   pages: readonly AttachedPage[],
@@ -582,6 +616,7 @@ async function captureRef(
   deadline: number,
 ): Promise<number> {
   const marker = newMarker("field");
+  let objectId: string | null = null;
   try {
     runAgentBrowser(sessionName, ["focus", normalizeRef(target)], deadline);
     runAgentBrowser(
@@ -589,13 +624,16 @@ async function captureRef(
       ["eval", definePropertyExpression("document.activeElement", marker)],
       deadline,
     );
-    const objectId = await evaluatedObjectId(
+    objectId = await evaluatedObjectId(
       client,
       page,
       markedActiveElementExpression(marker),
     );
     return await describeInputNode(client, page, objectId);
   } finally {
+    if (objectId) {
+      await cleanupObjectMarker(client, page, objectId, marker);
+    }
     await cleanupMarker(client, pages, marker);
   }
 }

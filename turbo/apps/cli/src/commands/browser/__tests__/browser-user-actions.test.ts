@@ -338,7 +338,9 @@ describe("okou browser user-action commands", () => {
   });
 
   it("resolves agent-browser refs in one page before creating the request", async () => {
-    installCdp({ refObjectIds: ["ref-object-1", "ref-object-2"] });
+    const cdpCommands = installCdp({
+      refObjectIds: ["ref-object-1", "ref-object-2"],
+    });
     let requestBody: unknown;
     installCreateRoute((body) => {
       requestBody = body;
@@ -385,6 +387,11 @@ describe("okou browser user-action commands", () => {
       ["--session", "okou-browser", "--json", "focus", "@e2"],
       expect.any(Object),
     );
+    expect(
+      cdpCommands.filter((command) => {
+        return command.method === "Runtime.callFunctionOn";
+      }),
+    ).toHaveLength(2);
   });
 
   it("creates direct interaction without contacting agent-browser or CDP", async () => {
