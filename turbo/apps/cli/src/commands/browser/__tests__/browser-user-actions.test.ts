@@ -135,6 +135,18 @@ function okAgentBrowser(data: Readonly<Record<string, unknown>> = {}) {
   };
 }
 
+function markerResult(script: string): Readonly<Record<string, string>> {
+  const kind = script.includes("_field_")
+    ? "field"
+    : script.includes("_verify_")
+      ? "verify"
+      : "page";
+  return {
+    key: `__okou_browser_user_action_${kind}_${"a".repeat(32)}`,
+    value: "b".repeat(32),
+  };
+}
+
 function installAgentBrowser(): void {
   spawnSyncMock.mockImplementation(
     (_command: string, args: readonly string[]) => {
@@ -142,9 +154,10 @@ function installAgentBrowser(): void {
         return okAgentBrowser({ cdpUrl: CDP_URL });
       }
       if (args.at(-2) === "eval") {
+        const script = String(args.at(-1));
         return okAgentBrowser({
-          result: String(args.at(-1)).includes("Object.defineProperty")
-            ? "marker-value"
+          result: script.includes("Object.defineProperty")
+            ? markerResult(script)
             : true,
         });
       }

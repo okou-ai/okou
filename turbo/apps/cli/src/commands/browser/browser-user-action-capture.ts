@@ -10,18 +10,15 @@ const CDP_COMMAND_TIMEOUT_MS = 5_000;
 const CDP_CLEANUP_TIMEOUT_MS = 1_000;
 const CDP_MAX_RESPONSE_BYTES = 64 * 1024;
 const MAX_PAGE_TARGETS = 50;
-const PAGE_MARKER_KEY = "__okou_browser_user_action_page_marker";
-const FIELD_MARKER_KEY = "__okou_browser_user_action_field_marker";
-const VERIFY_MARKER_KEY = "__okou_browser_user_action_verify_marker";
 
 const SET_PAGE_MARKER_SCRIPT =
-  '(()=>{const value=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");Object.defineProperty(globalThis,"__okou_browser_user_action_page_marker",{value,configurable:true,enumerable:false});return value})()';
+  '(()=>{const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");const key="__okou_browser_user_action_page_"+random();const value=random();Object.defineProperty(globalThis,key,{value,configurable:true,enumerable:false});return {key,value}})()';
 const SET_FIELD_MARKER_SCRIPT =
-  '(()=>{const element=document.activeElement;if(!element||element===document.body||element===document.documentElement)return null;const value=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");Object.defineProperty(element,"__okou_browser_user_action_field_marker",{value,configurable:true,enumerable:false});return value})()';
+  '(()=>{const element=document.activeElement;if(!element||element===document.body||element===document.documentElement)return null;const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");const key="__okou_browser_user_action_field_"+random();const value=random();Object.defineProperty(element,key,{value,configurable:true,enumerable:false});return {key,value}})()';
 const SET_VERIFY_MARKER_SCRIPT =
-  '(()=>{const value=Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");Object.defineProperty(globalThis,"__okou_browser_user_action_verify_marker",{value,configurable:true,enumerable:false});return value})()';
+  '(()=>{const random=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),byte=>byte.toString(16).padStart(2,"0")).join("");const key="__okou_browser_user_action_verify_"+random();const value=random();Object.defineProperty(globalThis,key,{value,configurable:true,enumerable:false});return {key,value}})()';
 const DELETE_PAGE_MARKER_SCRIPT =
-  'delete globalThis["__okou_browser_user_action_page_marker"]';
+  '(()=>{for(const key of Object.getOwnPropertyNames(globalThis)){if(key.startsWith("__okou_browser_user_action_page_"))delete globalThis[key]}return true})()';
 
 const GLOBAL_OBJECT_EXPRESSION = "globalThis";
 const HAS_MARKER_FUNCTION = "function(key,value){return this[key]===value}";
@@ -49,10 +46,23 @@ const agentBrowserCdpResponseSchema = z
   })
   .passthrough();
 
-const agentBrowserEvalStringResponseSchema = z
+const agentBrowserMarkerResponseSchema = z
   .object({
     success: z.literal(true),
-    data: z.object({ result: z.string().min(1) }).passthrough(),
+    data: z
+      .object({
+        result: z
+          .object({
+            key: z
+              .string()
+              .regex(
+                /^__okou_browser_user_action_(?:page|field|verify)_[0-9a-f]{32}$/u,
+              ),
+            value: z.string().regex(/^[0-9a-f]{32}$/u),
+          })
+          .strict(),
+      })
+      .passthrough(),
   })
   .passthrough();
 
@@ -116,10 +126,7 @@ interface AttachedPage {
 }
 
 interface Marker {
-  readonly key:
-    | typeof PAGE_MARKER_KEY
-    | typeof FIELD_MARKER_KEY
-    | typeof VERIFY_MARKER_KEY;
+  readonly key: string;
   readonly value: string;
 }
 
@@ -223,7 +230,7 @@ function createAgentBrowserMarker(
   deadline: number,
 ): Marker {
   const definition = markerDefinition(kind);
-  const response = agentBrowserEvalStringResponseSchema.safeParse(
+  const response = agentBrowserMarkerResponseSchema.safeParse(
     runAgentBrowser(sessionName, ["eval", definition.script], deadline),
   );
   if (!response.success) {
@@ -231,20 +238,19 @@ function createAgentBrowserMarker(
       "agent-browser could not mark the requested Browser target",
     );
   }
-  return { key: definition.key, value: response.data.data.result };
+  return response.data.data.result;
 }
 
 function markerDefinition(kind: MarkerKind): {
-  readonly key: Marker["key"];
   readonly script: string;
 } {
   switch (kind) {
     case "page":
-      return { key: PAGE_MARKER_KEY, script: SET_PAGE_MARKER_SCRIPT };
+      return { script: SET_PAGE_MARKER_SCRIPT };
     case "field":
-      return { key: FIELD_MARKER_KEY, script: SET_FIELD_MARKER_SCRIPT };
+      return { script: SET_FIELD_MARKER_SCRIPT };
     case "verify":
-      return { key: VERIFY_MARKER_KEY, script: SET_VERIFY_MARKER_SCRIPT };
+      return { script: SET_VERIFY_MARKER_SCRIPT };
   }
 }
 
