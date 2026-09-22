@@ -64,7 +64,6 @@ import {
   interpretGenerationOutput,
   morningBriefRejectedContentFacts,
 } from "./morning-brief-generation-result";
-import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
 import {
   acceptMorningBriefGenerationResult,
   holdMorningBriefGenerationSlot,
@@ -269,16 +268,14 @@ function admissionOf(args: {
   return {
     key: generationKeyOf(context),
     executionPurpose: args.purpose,
-    // The Slack compatibility writer has no instruction or retained-source
-    // provenance. Explicit nulls prevent it from claiming all-source proof.
+    // The Slack compatibility writer has no instruction provenance. Explicit
+    // nulls prevent it from claiming a version it never read.
     instructionsVersionId: null,
     instructionsDigest: null,
-    retainedSources: null,
-    retainedUntil: null,
     attemptId: randomUUID(),
     membershipId: context.admission.membershipId,
     agentId: context.admission.agentId,
-    // The Slack-only compatibility writer predates retained all-source proof.
+    // The Slack-only compatibility writer predates the all-source pipeline.
     installationId: null,
     automationId: null,
     chatThreadId: null,
@@ -1227,31 +1224,7 @@ const resolveExistingGeneration$ = command(
       return { kind: "conflict", reason: "binding-changed" };
     }
 
-    // Re-check every source that entered the persisted request, including
-    // supplied-but-uncited material. This is the last external wait before the
-    // owner/result transaction below makes the final no-await release decision.
-    const sourceRefusal = await set(
-      revalidateMorningBriefStoredGenerationSources$,
-      {
-        owner: key.owner,
-        resultAttemptId: row.attemptId,
-        purpose: args.purpose,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (sourceRefusal === "owner-revoked") {
-      return { kind: "conflict", reason: "owner-revoked" };
-    }
-    if (sourceRefusal === "binding-changed") {
-      return { kind: "conflict", reason: "binding-changed" };
-    }
-    if (sourceRefusal !== null) {
-      return { kind: "collection-completed-without-generation", occurrence };
-    }
-
-    // The last wait this request performs, and then the fence that decides
-    // whether what it read may still be released. Nothing awaits after it.
+    // The last wait this request performs. Nothing awaits after it.
     const receipt = await loadReceiptView(db, row.attemptId);
     signal.throwIfAborted();
     const released = await db.transaction(async (tx) => {
@@ -1403,21 +1376,6 @@ interface InvocationArgs {
   readonly occurrence: MorningBriefCollectionOccurrenceView;
   /** The durable record of the authority this invocation acts under. */
   readonly occurrenceRow: MorningBriefCollectionOccurrenceRow;
-  /**
-   * A last deterministic check, run after the reservation COMMIT and before
-   * any provider contact.
-   *
-   * It is where a caller consumes the shared retained-source revalidator: the
-   * sources were read before the reservation, and a revocation in between must
-   * stop the request rather than be discovered after it was sent.
-   */
-  readonly preflight?: (
-    signal: AbortSignal,
-  ) => Promise<MorningBriefGenerationFailureReason | null>;
-  /** Re-run the same retained-source proof after the response, before content. */
-  readonly postflight?: (
-    signal: AbortSignal,
-  ) => Promise<MorningBriefGenerationFailureReason | null>;
 }
 
 /**
@@ -1680,21 +1638,6 @@ export const invokeAndPersist$ = command(
       );
     }
 
-    // The caller's own last deterministic check, after the reservation COMMIT
-    // and still before contact. A source revoked while the reservation was
-    // being committed stops the request here, where nothing has been sent, so
-    // it is a proven pre-contact failure rather than an unknown outcome. The
-    // immutable request is never edited or recollected to get past it.
-    if (args.preflight) {
-      const refused = await args.preflight(
-        AbortSignal.any([signal, AbortSignal.timeout(preflightBudgetMs)]),
-      );
-      signal.throwIfAborted();
-      if (refused !== null) {
-        return await uninvoked(refused);
-      }
-    }
-
     // Resampled after every wait, so a preflight that consumed the allowance
     // cannot still admit the one request this reservation permits. Equality
     // with the deadline is exhausted.
@@ -1734,31 +1677,10 @@ export const invokeAndPersist$ = command(
       signal,
     );
     signal.throwIfAborted();
-    let interpreted =
+    const interpreted =
       stillAdmitted.kind === "current"
         ? observedOutcome
         : lapsedAuthorityOutcome(stillAdmitted);
-
-    if (stillAdmitted.kind === "current" && args.postflight) {
-      const remainingMs = Math.min(
-        5000,
-        admission.reservationExpiresAt.getTime() - nowDate().getTime(),
-      );
-      const refused =
-        remainingMs <= 0
-          ? "reservation_expired"
-          : await args.postflight(
-              AbortSignal.any([signal, AbortSignal.timeout(remainingMs)]),
-            );
-      signal.throwIfAborted();
-      if (refused !== null) {
-        interpreted = lapsedAuthorityOutcome(
-          refused === "binding_changed"
-            ? { kind: "binding-changed" }
-            : { kind: "not-executed", reason: "membership-revoked" },
-        );
-      }
-    }
 
     const persisted = await persistObservation(
       db,

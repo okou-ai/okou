@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 fn profile_segments(profile: &str) -> RunnerResult<(&str, &str)> {
     crate::profile::validate_or_err(profile)?;
@@ -68,10 +68,13 @@ mod tests {
     #[test]
     fn profile_paths_split_validated_profile() {
         let root = Path::new("/queue");
-        let path = job_path(root, "vm0/default", RunId::nil()).unwrap();
+        let path = job_path(root, "vm0/default", RunId::from(uuid::Uuid::nil())).unwrap();
         assert_eq!(
             path,
-            PathBuf::from(format!("/queue/jobs/vm0/default/{}.job", RunId::nil()))
+            PathBuf::from(format!(
+                "/queue/jobs/vm0/default/{}.job",
+                RunId::from(uuid::Uuid::nil())
+            ))
         );
     }
 

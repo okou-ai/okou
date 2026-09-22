@@ -162,11 +162,12 @@ test("A user links GitHub for agent mentions", async () => {
 });
 
 test("A connected Slack workspace shows success and next actions", async () => {
-  context.mocks.api(slackConnectContract.getStatus, ({ respond }) => {
+  context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
     return respond(200, {
       isConnected: true,
       isAdmin: false,
       workspaceName: "Acme Workspace",
+      linkStatus: { kind: "connected" },
     });
   });
   const params = new URLSearchParams({
@@ -191,8 +192,12 @@ test("Slack Connect continues to user OAuth before opening Slack", async () => {
   const authorizationUrl =
     "https://api.okou.ai/api/slack/oauth/connect?connectorState=signed-entry";
   let submitted: unknown;
-  context.mocks.api(slackConnectContract.getStatus, ({ respond }) => {
-    return respond(200, { isConnected: false, isAdmin: false });
+  context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isAdmin: false,
+      linkStatus: { kind: "connect" },
+    });
   });
   context.mocks.api(slackConnectContract.connect, ({ body, respond }) => {
     submitted = body;
@@ -214,6 +219,154 @@ test("Slack Connect continues to user OAuth before opening Slack", async () => {
     slackUserId: "U_MEMBER",
     channelId: "C_ORIGIN",
     threadTs: "42.0",
+    requestUserScopes: true,
+  });
+});
+
+test("Slack Connect fails closed when link status cannot be checked", async () => {
+  context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
+    return respond(401, {
+      error: {
+        message: "Slack link status is unavailable.",
+        code: "UNAUTHORIZED",
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: "/settings/slack?w=T_WORKSPACE&u=U_MEMBER",
+  });
+
+  await expect(
+    screen.findByText("Slack link status is unavailable."),
+  ).resolves.toBeVisible();
+  expect(
+    queryAllByRoleFast("button").some((candidate) => {
+      return candidate.textContent?.trim() === "Connect";
+    }),
+  ).toBeFalsy();
+});
+
+test("Slack Connect renders an API error when OAuth cannot start", async () => {
+  context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isAdmin: false,
+      linkStatus: { kind: "connect" },
+    });
+  });
+  context.mocks.api(slackConnectContract.connect, ({ respond }) => {
+    return respond(403, {
+      error: {
+        message: "Only admins can connect this Slack workspace.",
+        code: "FORBIDDEN",
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: "/settings/slack?w=T_WORKSPACE&u=U_MEMBER",
+  });
+  await expect(screen.findByText("Connect to Slack")).resolves.toBeVisible();
+  click(getAction("button", "Connect"));
+
+  await expect(
+    screen.findByText("Only admins can connect this Slack workspace."),
+  ).resolves.toBeVisible();
+});
+
+test("Slack Connect blocks an account already connected to another Okou user", async () => {
+  context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: false,
+      isAdmin: false,
+      linkStatus: { kind: "slack_account_in_use" },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: "/settings/slack?w=T_WORKSPACE&u=U_OTHER_USER",
+  });
+
+  await expect(
+    screen.findByText("Slack account already connected"),
+  ).resolves.toBeVisible();
+  expect(
+    screen.getByText(/Disconnect it there before trying again/u),
+  ).toBeVisible();
+  expect(getAction("link", "Back to settings")).toBeVisible();
+});
+
+test("Slack Connect explains a workspace mismatch", async () => {
+  context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: true,
+      isAdmin: true,
+      workspaceName: "Acme Workspace",
+      linkStatus: {
+        kind: "workspace_mismatch",
+        currentWorkspaceName: "Acme Workspace",
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: "/settings/slack?w=T_OTHER_WORKSPACE&u=U_MEMBER",
+  });
+
+  await expect(
+    screen.findByText("Slack workspace doesn't match"),
+  ).resolves.toBeVisible();
+  expect(
+    screen.getByText(
+      /current Okou organization is connected to Acme Workspace/u,
+    ),
+  ).toBeVisible();
+  expect(getAction("link", "Back to settings")).toBeVisible();
+});
+
+test("Slack Connect offers an OAuth-verified account switch", async () => {
+  const authorizationUrl =
+    "https://api.okou.ai/api/slack/oauth/connect?connectorState=signed-switch";
+  let submitted: unknown;
+  context.mocks.api(slackConnectContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      isConnected: true,
+      isAdmin: false,
+      workspaceName: "Acme Workspace",
+      linkStatus: {
+        kind: "slack_account_mismatch",
+        currentSlackUserId: "U_CURRENT_ACCOUNT",
+        requestedSlackUserId: "U_NEW_ACCOUNT",
+      },
+    });
+  });
+  context.mocks.api(slackConnectContract.switchAccount, ({ body, respond }) => {
+    submitted = body;
+    return respond(202, { authorizationUrl });
+  });
+
+  await setupPage({
+    context,
+    path: "/settings/slack?w=T_WORKSPACE&u=U_NEW_ACCOUNT",
+  });
+
+  await expect(
+    screen.findByText("Switch Slack account?"),
+  ).resolves.toBeVisible();
+  expect(screen.getByText(/U_CURRENT_ACCOUNT.*U_NEW_ACCOUNT/u)).toBeVisible();
+  expect(getAction("link", "Keep U_CURRENT_ACCOUNT")).toBeVisible();
+  click(getAction("button", "Switch to U_NEW_ACCOUNT"));
+  await waitFor(() => {
+    expect(window.location.href).toBe(authorizationUrl);
+  });
+  expect(submitted).toStrictEqual({
+    workspaceId: "T_WORKSPACE",
+    slackUserId: "U_NEW_ACCOUNT",
     requestUserScopes: true,
   });
 });

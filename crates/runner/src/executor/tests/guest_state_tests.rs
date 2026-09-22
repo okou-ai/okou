@@ -10,8 +10,8 @@ use super::super::guest_state::{
 use super::support::{CapturedEvent, CapturedEvents, minimal_context, sandbox_exec_error};
 use crate::error::RunnerError;
 use crate::guest_timezone::GuestTimezoneIntent;
-use crate::ids::RunId;
-use crate::types::ExecutionContext;
+use runner_types::ids::RunId;
+use runner_types::types::ExecutionContext;
 
 #[tokio::test]
 async fn restore_guest_state_uses_fixed_restore_operation() {
@@ -161,7 +161,7 @@ async fn restore_guest_state_logs_embedded_timezone_failure_without_failing_rest
                     == Some("failed to set guest timezone")
         })
         .unwrap_or_else(|| panic!("missing timezone warning; events={events:#?}"));
-    let run_id = RunId::nil().to_string();
+    let run_id = RunId::from(uuid::Uuid::nil()).to_string();
     assert_eq!(
         event.fields.get("run_id").map(String::as_str),
         Some(run_id.as_str())
@@ -209,7 +209,7 @@ async fn restore_guest_state_logs_unavailable_best_effort_timezone_without_faili
                     == Some("failed to set guest timezone")
         })
         .unwrap_or_else(|| panic!("missing timezone warning; events={events:#?}"));
-    let run_id = RunId::nil().to_string();
+    let run_id = RunId::from(uuid::Uuid::nil()).to_string();
     assert_eq!(
         event.fields.get("run_id").map(String::as_str),
         Some(run_id.as_str())
@@ -371,18 +371,22 @@ async fn try_sync_guest_timezone_preserves_completed_outcomes() {
         sandbox.push_exec_result(Ok(result));
         let intent = GuestTimezoneIntent::Configured("Asia/Shanghai".into());
 
-        let outcome = try_sync_guest_timezone_intent(&sandbox, RunId::nil(), &intent)
-            .await
-            .unwrap();
+        let outcome =
+            try_sync_guest_timezone_intent(&sandbox, RunId::from(uuid::Uuid::nil()), &intent)
+                .await
+                .unwrap();
 
         assert_eq!(outcome, expected);
     }
 
     let sandbox = MockSandbox::new("test");
-    let outcome =
-        try_sync_guest_timezone_intent(&sandbox, RunId::nil(), &GuestTimezoneIntent::Unknown)
-            .await
-            .unwrap();
+    let outcome = try_sync_guest_timezone_intent(
+        &sandbox,
+        RunId::from(uuid::Uuid::nil()),
+        &GuestTimezoneIntent::Unknown,
+    )
+    .await
+    .unwrap();
     assert_eq!(outcome, GuestTimezoneSyncOutcome::NotRequested);
     assert!(sandbox.exec_calls().is_empty());
 }
@@ -463,7 +467,7 @@ async fn sync_guest_timezone_logs_nonzero_exit() {
                     == Some("failed to set guest timezone")
         })
         .unwrap_or_else(|| panic!("missing timezone warning; events={events:#?}"));
-    let run_id = RunId::nil().to_string();
+    let run_id = RunId::from(uuid::Uuid::nil()).to_string();
     assert_eq!(
         event.fields.get("run_id").map(String::as_str),
         Some(run_id.as_str())
@@ -549,7 +553,7 @@ async fn sync_guest_timezone_logs_exec_error() {
                     == Some("failed to set guest timezone")
         })
         .unwrap_or_else(|| panic!("missing timezone warning; events={events:#?}"));
-    let run_id = RunId::nil().to_string();
+    let run_id = RunId::from(uuid::Uuid::nil()).to_string();
     assert_eq!(
         event.fields.get("run_id").map(String::as_str),
         Some(run_id.as_str())

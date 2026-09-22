@@ -47,6 +47,7 @@ import {
   click,
   fill,
   holdElementAnimations,
+  queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
@@ -103,7 +104,7 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
   context.mocks.data.userPreferences({
     pinnedAgentIds: [RESEARCH_AGENT_ID],
   });
-  const openedTargets = context.mocks.browser.open();
+  context.mocks.browser.open();
 
   await setupSidebarPage({
     context,
@@ -121,18 +122,14 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
     expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
   });
 
-  fireEvent.click(pinnedAgentLink(mobileSidebar(), "Research Agent"), {
-    metaKey: true,
-  });
-  await waitFor(() => {
-    expect(openedTargets.calls).toStrictEqual([
-      expect.objectContaining({
-        target: "_blank",
-        url: expect.stringContaining(`/agents/${RESEARCH_AGENT_ID}/chat`),
-      }),
-    ]);
-    expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
-  });
+  const researchLink = pinnedAgentLink(mobileSidebar(), "Research Agent");
+  expect(researchLink).toHaveAttribute(
+    "href",
+    `/agents/${RESEARCH_AGENT_ID}/chat`,
+  );
+  fireEvent.click(researchLink, { metaKey: true });
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
 
   click(pinnedAgentLink(mobileSidebar(), "Nova"));
   await waitFor(() => {
@@ -151,6 +148,41 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
     expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
   });
 });
+
+test.each([
+  { name: "Agents", route: "/agents" },
+  { name: "Works", route: "/works" },
+])(
+  "Mobile $name navigation closes the drawer on primary activation",
+  async ({ name, route }) => {
+    mockMobileLayout();
+    prepareDefaultAgent();
+    context.mocks.browser.open();
+    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    click(screen.getByLabelText("Open menu"));
+    await waitFor(() => {
+      expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
+    });
+    const link = queryAllByRoleFast("link", mobileSidebar()).find(
+      (candidate) => {
+        return candidate.getAttribute("href") === route;
+      },
+    );
+    if (!link) {
+      throw new Error(`Expected the ${name} sidebar link`);
+    }
+
+    fireEvent.click(link, { altKey: true });
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
+
+    click(link);
+    await waitFor(() => {
+      expect(pathname()).toBe(route);
+      expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+    });
+  },
+);
 
 test("Open and use workspace search with the keyboard", async () => {
   prepareAgents();

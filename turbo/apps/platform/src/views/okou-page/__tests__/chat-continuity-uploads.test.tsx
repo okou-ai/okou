@@ -154,7 +154,7 @@ test("Accept supported drops and reject an oversized dropped file", async () => 
     value: 1024 * 1024 * 1024 + 1,
   });
   fireEvent.drop(composerDropTarget(), {
-    dataTransfer: { files: [dropped, oversized] },
+    dataTransfer: { types: ["Files"], files: [dropped, oversized] },
   });
 
   await expect(

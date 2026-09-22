@@ -11,6 +11,26 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.941.2](https://github.com/okou-ai/okou/compare/app-v0.941.1...app-v0.941.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* **api:** map Clerk invitation conflicts ([#35991](https://github.com/okou-ai/okou/issues/35991)) ([b052a84](https://github.com/okou-ai/okou/commit/b052a841d0c194a14174374b84dd8f8ea1550d70))
+* **platform:** align provider connection rows with models ([#36009](https://github.com/okou-ai/okou/issues/36009)) ([800714f](https://github.com/okou-ai/okou/commit/800714f546187cea1308ea2ac650809dc949583b))
+* **platform:** make archived a dedicated chat filter ([#35999](https://github.com/okou-ai/okou/issues/35999)) ([6ff9462](https://github.com/okou-ai/okou/commit/6ff94623c0730df7888dc9c425ce33dfe978061c))
+* **platform:** preserve preview access for oauth starts ([#35965](https://github.com/okou-ai/okou/issues/35965)) ([f2e669a](https://github.com/okou-ai/okou/commit/f2e669a4293eab3fec0ca39a412ecce67c1ae3c5))
+* **platform:** scope template preview keyboard handling ([#35969](https://github.com/okou-ai/okou/issues/35969)) ([02664c7](https://github.com/okou-ai/okou/commit/02664c7788deca8d47b7d78fad5728f2820ecf0f))
+* **slack:** handle connection identity conflicts ([#35994](https://github.com/okou-ai/okou/issues/35994)) ([bcfc8f3](https://github.com/okou-ai/okou/commit/bcfc8f36a5b43b7fd1fe2c6c70de594f7d42160b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.1
+    * @okouai/core bumped to 8.698.0
+
 ## [0.941.1](https://github.com/okou-ai/okou/compare/app-v0.941.0...app-v0.941.1) (2026-09-22)
 
 

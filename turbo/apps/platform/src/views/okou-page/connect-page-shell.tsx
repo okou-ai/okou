@@ -62,14 +62,17 @@ export function ConnectBackLink({
   );
 }
 
-export function SettingsBackLink() {
+export function SettingsBackLink({ label }: { label?: string }) {
   const { t } = useTranslation();
   return (
     <ConnectBackLink
       pathname="/works"
-      label={t(($) => {
-        return $.connectors.providerConnect.common.backToSettings;
-      })}
+      label={
+        label ??
+        t(($) => {
+          return $.connectors.providerConnect.common.backToSettings;
+        })
+      }
     />
   );
 }

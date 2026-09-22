@@ -2,7 +2,6 @@ import type {
   MorningBriefGenerationFailureReason,
   MorningBriefGenerationState,
 } from "@okouai/api-contracts/contracts/morning-brief-generation-preview";
-import type { MorningBriefRetainedSources } from "@okouai/db/jsonb-contracts/morning-brief-generation";
 import {
   MORNING_BRIEF_GENERATION_PROMPT_VERSION,
   MORNING_BRIEF_GENERATION_RESULT_SCHEMA_VERSION,
@@ -131,15 +130,6 @@ export interface MorningBriefGenerationAdmission {
   /** Frozen at reservation. Both present or both absent. */
   readonly instructionsVersionId: string | null;
   readonly instructionsDigest: string | null;
-  /**
-   * The bounded proof that every supplied input was authorized, cited or not.
-   *
-   * Frozen with the reservation because it describes the request that is about
-   * to be sent; a later phase revalidates it rather than recollecting it.
-   */
-  readonly retainedSources: MorningBriefRetainedSources | null;
-  /** Never earlier than `expiresAt`, and never extended by a retry. */
-  readonly retainedUntil: Date | null;
   readonly reservedAt: Date;
   readonly reservationExpiresAt: Date;
   readonly expiresAt: Date;
@@ -171,8 +161,6 @@ function admissionValues(admission: MorningBriefGenerationAdmission) {
     sourceCoverage: admission.sourceCoverage,
     instructionsVersionId: admission.instructionsVersionId,
     instructionsDigest: admission.instructionsDigest,
-    retainedSources: admission.retainedSources,
-    retainedUntil: admission.retainedUntil,
     reservedAt: admission.reservedAt,
     reservationExpiresAt: admission.reservationExpiresAt,
     expiresAt: admission.expiresAt,
@@ -269,31 +257,6 @@ export async function recordMorningBriefGenerationSkip(
     .onConflictDoNothing()
     .returning({ attemptId: morningBriefGenerations.attemptId });
   return created !== undefined;
-}
-
-/** Extend metadata only to the original outbox deadline; never a retry clock. */
-export async function retainMorningBriefGenerationProofUntil(
-  tx: Tx,
-  args: {
-    readonly owner: MorningBriefCollectionOwner;
-    readonly attemptId: string;
-    readonly retainedUntil: Date;
-  },
-): Promise<boolean> {
-  const [updated] = await tx
-    .update(morningBriefGenerations)
-    .set({
-      retainedUntil: sql`GREATEST(${morningBriefGenerations.retainedUntil}, ${args.retainedUntil})`,
-    })
-    .where(
-      and(
-        eq(morningBriefGenerations.orgId, args.owner.orgId),
-        eq(morningBriefGenerations.userId, args.owner.userId),
-        eq(morningBriefGenerations.attemptId, args.attemptId),
-      ),
-    )
-    .returning({ attemptId: morningBriefGenerations.attemptId });
-  return updated !== undefined;
 }
 
 /** Read one occurrence for one purpose; purposes never consume each other. */

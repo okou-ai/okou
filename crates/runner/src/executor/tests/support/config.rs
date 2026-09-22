@@ -11,7 +11,7 @@ use crate::network_log_manager::NetworkLogManager;
 use crate::paths::{HomePaths, LogPaths};
 use crate::proxy;
 use crate::telemetry::JobTelemetry;
-use crate::types::ExecutionContext;
+use runner_types::types::ExecutionContext;
 
 /// Build a real `ExecutorConfig` backed by tempdir files.
 pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> ExecutorConfig {
@@ -106,7 +106,10 @@ pub(in crate::executor::tests) async fn make_reusable_idle_sandbox(
         .build();
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     let entry = pool.take(session_id).expect("idle entry should exist");
-    match entry.try_unpark_for_run(crate::ids::RunId::new_v4()).await {
+    match entry
+        .try_unpark_for_run(runner_types::ids::RunId::new_v4())
+        .await
+    {
         IdleUnparkResult::Reused {
             sandbox,
             budget_lease,

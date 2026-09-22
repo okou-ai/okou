@@ -4,11 +4,11 @@ use super::super::support::{
     status_idle_reuse_keys_and_active_runs, test_profiles, wait_budget_count, wait_cancel_handle,
     wait_cancel_token_removed, wait_idle_pool_reuse_keys,
 };
-use crate::types::SandboxReuseResult;
 use guest_contracts::diagnostics::{
     AgentFramework, CliTerminationDiagnostic, CliTerminationReason, FailureClass,
     FailureDiagnostic, PromptMetadata,
 };
+use runner_types::types::SandboxReuseResult;
 
 #[tokio::test(start_paused = true)]
 async fn active_destroy_panic_still_reports_completion_and_releases_budget() {

@@ -59,7 +59,7 @@ use crate::telemetry::{
     SessionHistoryContentLengthState, SessionHistoryResponseTelemetryMetadata,
     SessionHistoryTelemetryMetadata, SessionHistoryTransferEncodingState,
 };
-use crate::types::{
+use runner_types::types::{
     ResumeSession, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind,
 };
@@ -1144,7 +1144,7 @@ mod tests {
     use crate::http::{HttpClient, HttpClientConfig};
     use crate::restored_session_identity::RestoredSessionHistoryPrefixAttribution;
     use crate::test_fixtures::session_history::OneShotSessionHistoryServer;
-    use crate::types::{
+    use runner_types::types::{
         ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
         ResumeSessionHistoryRefKind,
     };

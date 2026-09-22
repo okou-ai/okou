@@ -4,8 +4,11 @@ import {
   comparePinnedThreads,
   moveChatThreadPinOrder,
 } from "@okouai/core/chat-thread-pin-order";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
 import {
   eventDrivenChatThreads$,
@@ -13,7 +16,10 @@ import {
 } from "./chat-thread-event-sourcing.ts";
 
 export const pinnedThreadReorderEnabled$ = computed((get) => {
-  return !get(chatThreadOnlyUnread$);
+  const archivedOnly =
+    get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true &&
+    get(chatThreadOnlyArchived$);
+  return !get(chatThreadOnlyUnread$) && !archivedOnly;
 });
 
 interface PinMove {

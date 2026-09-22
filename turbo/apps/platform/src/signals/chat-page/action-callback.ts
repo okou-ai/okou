@@ -13,6 +13,11 @@ export interface ChatActionCallback {
   readonly threadId: string | null;
 }
 
+export interface ChatActionCallbackIds {
+  readonly clientEventId: string;
+  readonly chatThreadSortEventId: string;
+}
+
 export function chatActionCallbackFromUrl(
   url: URL,
   context: ChatActionContext,
@@ -51,6 +56,7 @@ export const runChatActionCallback$ = command(
       readonly threadId: string;
       readonly agentId: string;
       readonly callbackPrompt: string;
+      readonly callbackIds?: ChatActionCallbackIds;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -66,8 +72,9 @@ export const runChatActionCallback$ = command(
         prompt: args.callbackPrompt,
         hasTextContent: true,
         userMessage,
-        clientEventId: crypto.randomUUID(),
-        chatThreadSortEventId: crypto.randomUUID(),
+        clientEventId: args.callbackIds?.clientEventId ?? crypto.randomUUID(),
+        chatThreadSortEventId:
+          args.callbackIds?.chatThreadSortEventId ?? crypto.randomUUID(),
       },
       signal,
     );

@@ -19,9 +19,9 @@ use crate::active_input::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
 use crate::local_queue::{self, JobRequest, JobResponse};
 use crate::paths::HomePaths;
+use runner_types::ids::RunId;
 
 /// Poll interval for checking the result file.
 const POLL_INTERVAL: Duration = Duration::from_millis(100);

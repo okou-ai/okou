@@ -285,7 +285,7 @@ async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
         .expect("job should complete");
     assert_eq!(
         completion.reuse_result,
-        Some(crate::types::SandboxReuseResult::Reused)
+        Some(runner_types::types::SandboxReuseResult::Reused)
     );
 
     shutdown(&env, run_handle).await;
@@ -633,7 +633,7 @@ async fn finalizing_handoff_activation_failure_is_not_reported_as_accepted() {
         .expect("fresh fallback should complete");
     assert_eq!(
         completion.reuse_result,
-        Some(crate::types::SandboxReuseResult::UnparkFailed)
+        Some(runner_types::types::SandboxReuseResult::UnparkFailed)
     );
 
     shutdown(&env, run_handle).await;
@@ -731,7 +731,7 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
         .expect("fresh fallback should complete after exact activation fails");
     assert_eq!(
         completion.reuse_result,
-        Some(crate::types::SandboxReuseResult::UnparkFailed)
+        Some(runner_types::types::SandboxReuseResult::UnparkFailed)
     );
 
     drop(predecessor_guard);
@@ -861,7 +861,7 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
     assert_eq!(completion.sandbox_id, None);
     assert_eq!(
         completion.reuse_result,
-        Some(crate::types::SandboxReuseResult::UnparkFailed)
+        Some(runner_types::types::SandboxReuseResult::UnparkFailed)
     );
     assert!(
         completion

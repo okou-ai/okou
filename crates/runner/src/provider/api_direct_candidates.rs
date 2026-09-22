@@ -9,7 +9,7 @@ use tracing::warn;
 #[cfg(test)]
 use super::ActiveRunnerPreference;
 use super::{JobCandidate, JobDiscoverySource, RunnerPreferenceContext};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(super) const DIRECT_CANDIDATE_STALE_AFTER: Duration = Duration::from_secs(60);
 

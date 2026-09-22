@@ -72,7 +72,7 @@ use crate::error::{
     ApiBodyReadError, ApiTransportCause, ApiTransportError, RunnerError, RunnerResult,
 };
 use crate::lock;
-use crate::types::Firewall;
+use runner_types::types::Firewall;
 
 pub(super) const BUILTIN_FIREWALL_CATALOG_REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const BUILTIN_FIREWALL_CATALOG_INITIAL_RETRY_DELAYS: [Duration; 2] =
@@ -676,7 +676,7 @@ mod tests {
     use super::*;
     use crate::http::{HttpClient, HttpClientConfig};
     use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
-    use crate::types::{FirewallApi, FirewallAuth, FirewallPermission};
+    use runner_types::types::{FirewallApi, FirewallAuth, FirewallPermission};
     use tracing::{Level, instrument::WithSubscriber};
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -2175,7 +2175,7 @@ mod tests {
         let before = tokio::fs::read_to_string(&cache_path).await.unwrap();
 
         let mut invalid = catalog("github");
-        let host_policy = crate::types::FirewallBaseHostPolicy::ProviderOwned {
+        let host_policy = runner_types::types::FirewallBaseHostPolicy::ProviderOwned {
             exact_hosts: vec!["127.0.0.1".to_string()],
             suffixes: Vec::new(),
             allow_non_default_port: false,

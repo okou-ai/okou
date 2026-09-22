@@ -96,13 +96,13 @@ const UNICODE_17_ASSIGNMENT_RANGES: [(u32, u32); 47] = [
     (0x323b0, 0x33479),
 ];
 
-pub(crate) fn raw_url_authority(value: &str) -> Option<&str> {
+pub fn raw_url_authority(value: &str) -> Option<&str> {
     let rest = value.split_once("://").map(|(_, rest)| rest)?;
     let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
     Some(&rest[..authority_end])
 }
 
-pub(crate) fn raw_host_from_authority(authority: &str) -> &str {
+pub fn raw_host_from_authority(authority: &str) -> &str {
     let without_userinfo = authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host);
@@ -116,7 +116,7 @@ pub(crate) fn raw_host_from_authority(authority: &str) -> &str {
         .map_or(without_userinfo, |(host, _)| host)
 }
 
-pub(crate) fn validate_raw_url_host(raw_host: &str, subject: &str) -> Result<(), String> {
+pub fn validate_raw_url_host(raw_host: &str, subject: &str) -> Result<(), String> {
     if raw_host.starts_with('[') && raw_host.ends_with(']') {
         return Ok(());
     }
@@ -148,7 +148,7 @@ pub(crate) fn validate_raw_url_host(raw_host: &str, subject: &str) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn is_ipv4_literal_like(host: &str) -> bool {
+pub fn is_ipv4_literal_like(host: &str) -> bool {
     let labels: Vec<&str> = host.split('.').collect();
     !labels.is_empty()
         && labels.len() <= IPV4_OCTET_COUNT
@@ -331,7 +331,7 @@ fn hex_value(byte: u8) -> Option<u8> {
     }
 }
 
-pub(crate) fn is_public_ip_address(address: std::net::IpAddr) -> bool {
+pub fn is_public_ip_address(address: std::net::IpAddr) -> bool {
     use api_contracts::generated::public_destination_policy::*;
     use std::net::IpAddr;
     match address {

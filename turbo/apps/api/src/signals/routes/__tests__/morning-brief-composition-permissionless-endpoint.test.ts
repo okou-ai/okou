@@ -354,15 +354,10 @@ describe("Morning Brief composition over a permissionless endpoint", () => {
       // withdrawn and accounted for as a failed day.
       expect(source?.coverage).not.toBe("failed");
       expect(source?.items).toBeGreaterThan(0);
-
-      const descriptor = composition.descriptors.find((entry) => {
-        return entry.source === "github";
-      });
-      expect(descriptor?.contributed).toBeTruthy();
-      // The permissionless endpoint is still named for the later per-URL
-      // re-check: it has no grant behind it to narrow, so that decision is the
-      // whole question for it.
-      expect(descriptor?.endpoints).toContain(GITHUB_USER);
+      // Its material actually reaches the request rather than being collected
+      // and then dropped.
+      expect(source?.includedInRequest).toBeGreaterThan(0);
+      expect(composition.request).not.toBeNull();
     },
     TEST_TIMEOUT_MS,
   );

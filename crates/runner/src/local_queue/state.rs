@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 use super::types::{ActiveInputEntry, JobRequest, JobResponse};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 #[derive(Clone)]
 pub(crate) struct LocalDiscoveredJob {

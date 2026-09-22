@@ -8,7 +8,6 @@ use sandbox::{
 };
 
 use crate::guest_timezone::GuestTimezoneIntent;
-use crate::ids::RunId;
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
@@ -19,6 +18,7 @@ use crate::workspace_image_cache::{
 use crate::workspace_promotion::{
     abandon_unpublished_workspace_promotion, prepare_workspace_image_from_parked_sandbox,
 };
+use runner_types::ids::RunId;
 
 use super::park_transition::IdleParkCandidate;
 

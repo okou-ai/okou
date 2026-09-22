@@ -14,8 +14,8 @@ use tracing::warn;
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::idle_pool::IdlePoolSnapshot;
-use crate::ids::RunId;
 use crate::lifecycle::RunnerMode;
+use runner_types::ids::RunId;
 
 const STATUS_PERSISTENCE_TIMEOUT: Duration = Duration::from_secs(5);
 

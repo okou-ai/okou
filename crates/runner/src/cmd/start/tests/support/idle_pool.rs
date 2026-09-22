@@ -3,7 +3,6 @@ use super::super::super::*;
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_pool::{ParkResult, test_support::ParkedIdleCandidateBuilder};
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
-use crate::ids::RunId;
 use crate::paths::RunnerPaths;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::workspace_image_cache::{
@@ -11,6 +10,7 @@ use crate::workspace_image_cache::{
     WorkspaceImagePrepareRequest, WorkspaceImagePromotionRequest,
 };
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+use runner_types::ids::RunId;
 use sandbox::SandboxId;
 
 const TEST_LAST_COMPLETED_AT: &str = "2026-05-28T00:00:00.000Z";

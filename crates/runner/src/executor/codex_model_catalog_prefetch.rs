@@ -14,7 +14,7 @@ use tracing::{info, warn};
 use super::cli_framework::EffectiveCliFramework;
 use super::effective_cli_framework;
 use crate::telemetry::JobTelemetry;
-use crate::types::{ExecutionContext, FirewallEntry, SandboxReuseResult};
+use runner_types::types::{ExecutionContext, FirewallEntry, SandboxReuseResult};
 
 const PREFETCH_ACTION: &str = "runner_codex_model_catalog_prefetch";
 const CODEX_OAUTH_FIREWALL: &str = "model-provider:codex-oauth-token";

@@ -7,8 +7,8 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Barrier, Notify, Semaphore};
 use tracing::warn;
 
-use crate::ids::RunId;
 use crate::network_log_drain::{NetworkLogDrainContext, NetworkLogDrainCoordinator};
+use runner_types::ids::RunId;
 
 mod file_append;
 mod state;
@@ -370,8 +370,8 @@ mod tests {
 
     use serde_json::json;
 
-    use crate::ids::RunId;
     use crate::network_log_drain::{NetworkLogDrainCoordinator, NetworkLogDrainProducer};
+    use runner_types::ids::RunId;
 
     use super::*;
 
@@ -1034,7 +1034,10 @@ mod tests {
         release.add_permits(3);
         assert!(third.await);
         let observation = session
-            .close_for_upload(RunId::nil(), &NetworkLogDrainCoordinator::noop())
+            .close_for_upload(
+                RunId::from(uuid::Uuid::nil()),
+                &NetworkLogDrainCoordinator::noop(),
+            )
             .await;
 
         assert!(observation.writer_backpressure_observed());
@@ -1058,7 +1061,10 @@ mod tests {
         );
 
         let observation = session
-            .close_for_upload(RunId::nil(), &NetworkLogDrainCoordinator::noop())
+            .close_for_upload(
+                RunId::from(uuid::Uuid::nil()),
+                &NetworkLogDrainCoordinator::noop(),
+            )
             .await;
 
         assert!(!observation.writer_backpressure_observed());
@@ -1123,7 +1129,10 @@ mod tests {
             .collect();
         assert_eq!(hosts, ["first.test", "second.test"]);
         let observation = new_session
-            .close_for_upload(RunId::nil(), &NetworkLogDrainCoordinator::noop())
+            .close_for_upload(
+                RunId::from(uuid::Uuid::nil()),
+                &NetworkLogDrainCoordinator::noop(),
+            )
             .await;
         assert!(
             !observation.writer_backpressure_observed(),
@@ -1258,7 +1267,9 @@ mod tests {
             request.ack();
         });
 
-        session.close_for_upload(RunId::nil(), &drain).await;
+        session
+            .close_for_upload(RunId::from(uuid::Uuid::nil()), &drain)
+            .await;
         barrier.await.unwrap();
 
         let lines = read_json_lines(&path);
@@ -1286,7 +1297,9 @@ mod tests {
         let drain = NetworkLogDrainCoordinator::noop();
 
         let close = tokio::spawn(async move {
-            session.close_for_upload(RunId::nil(), &drain).await;
+            session
+                .close_for_upload(RunId::from(uuid::Uuid::nil()), &drain)
+                .await;
         });
         // Pause at the upload-flush boundary and verify the mapping is already
         // closed, so no row can be accepted after the final flush begins.
@@ -1324,7 +1337,9 @@ mod tests {
         drop(drain_rx);
         let drain = NetworkLogDrainCoordinator::new(vec![producer]);
 
-        let observation = session.close_for_upload(RunId::nil(), &drain).await;
+        let observation = session
+            .close_for_upload(RunId::from(uuid::Uuid::nil()), &drain)
+            .await;
 
         assert!(!source_ip_registered(&manager, "10.200.0.2").await);
         assert_eq!(observation.drain_status("closed"), "producer_unavailable");
@@ -1351,7 +1366,9 @@ mod tests {
             drop(request);
         });
 
-        let observation = session.close_for_upload(RunId::nil(), &drain).await;
+        let observation = session
+            .close_for_upload(RunId::from(uuid::Uuid::nil()), &drain)
+            .await;
         receiver.await.unwrap();
 
         assert!(!source_ip_registered(&manager, "10.200.0.2").await);
@@ -1383,7 +1400,9 @@ mod tests {
             Duration::from_millis(1),
         );
 
-        let observation = session.close_for_upload(RunId::nil(), &drain).await;
+        let observation = session
+            .close_for_upload(RunId::from(uuid::Uuid::nil()), &drain)
+            .await;
 
         let lines = read_json_lines(&path);
         assert_eq!(lines.len(), 1);

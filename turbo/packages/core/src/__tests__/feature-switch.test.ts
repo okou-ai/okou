@@ -425,6 +425,27 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
+  it("should link user message urls for every reader and accept an opt-out", () => {
+    expect(FeatureSwitchKey.UserMessageLinks).toBe("userMessageLinks");
+    // A share link is read without a session, so the signed-out visitor's
+    // empty context has to carry the feature too.
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, context)).toBe(
+        true,
+      );
+    }
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, {
+        orgId: "org_nonexistent",
+        overrides: { [FeatureSwitchKey.UserMessageLinks]: false },
+      }),
+    ).toBe(false);
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.UserMessageLinks]
+        .rolloutStage,
+    ).toBe("released");
+  });
+
   it("should default Langfuse tracing off for every org and accept user overrides", () => {
     expect(
       isFeatureEnabled(FeatureSwitchKey.LangfuseTrace, {
@@ -589,7 +610,7 @@ describe("getAllFeatureStates", () => {
       orgId: "org_nonexistent",
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);

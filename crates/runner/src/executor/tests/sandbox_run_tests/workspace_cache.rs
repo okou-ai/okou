@@ -7,16 +7,16 @@ use crate::executor::session_history_cpu::{SessionHistoryCpuPool, SessionHistory
 use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
 use crate::executor::{SessionHistoryRestoreFallback, SessionHistoryRestorePlan};
 use crate::telemetry::{JobTelemetry, RunnerStartupPath};
-use crate::types::{
-    ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
-    ResumeSessionHistoryRefKind, WorkspaceReuseResult,
-};
 use crate::workspace_image_cache::{
     WorkspaceImagePrepareLockPolicy, WorkspaceImagePrepareLockTestGate,
     WorkspaceSessionHistorySidecarRepresentation,
 };
+use runner_types::types::{
+    ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
+    ResumeSessionHistoryRefKind, WorkspaceReuseResult,
+};
 
-fn enable_api_start_telemetry(context: &mut crate::types::ExecutionContext) {
+fn enable_api_start_telemetry(context: &mut runner_types::types::ExecutionContext) {
     context.api_start_time = Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
 }
 
@@ -402,7 +402,7 @@ async fn workspace_retry_cancels_sidecar_materialization_before_cache_invalidati
 }
 
 fn set_reuse_and_session_identity(
-    context: &mut crate::types::ExecutionContext,
+    context: &mut runner_types::types::ExecutionContext,
     session_id: &str,
     session_history: &str,
 ) {
@@ -414,7 +414,7 @@ fn set_reuse_and_session_identity(
 }
 
 fn set_reuse_and_session_history_ref(
-    context: &mut crate::types::ExecutionContext,
+    context: &mut runner_types::types::ExecutionContext,
     session_id: &str,
     history: &[u8],
     url: String,
@@ -1956,7 +1956,10 @@ async fn reusable_idle_sandbox_with_workspace_promotion(
     let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     let entry = pool.take(&reuse_key).expect("idle entry should exist");
-    let idle_sandbox = match entry.try_unpark_for_run(crate::ids::RunId::new_v4()).await {
+    let idle_sandbox = match entry
+        .try_unpark_for_run(runner_types::ids::RunId::new_v4())
+        .await
+    {
         IdleUnparkResult::Reused { sandbox, .. } => *sandbox,
         IdleUnparkResult::Failed { error, .. } => {
             panic!("test idle entry should unpark: {error}");
@@ -2066,7 +2069,10 @@ async fn reusable_idle_sandbox_with_fresh_workspace_promotion(
     let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 0 });
     assert!(matches!(pool.park(candidate), ParkResult::Parked));
     let entry = pool.take(&reuse_key).expect("idle entry should exist");
-    let idle_sandbox = match entry.try_unpark_for_run(crate::ids::RunId::new_v4()).await {
+    let idle_sandbox = match entry
+        .try_unpark_for_run(runner_types::ids::RunId::new_v4())
+        .await
+    {
         IdleUnparkResult::Reused { sandbox, .. } => *sandbox,
         IdleUnparkResult::Failed { error, .. } => {
             panic!("test idle entry should unpark: {error}");

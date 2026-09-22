@@ -39,18 +39,18 @@ use crate::http::{HttpClient, HttpClientConfig};
 use crate::idle_pool::{
     IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
 };
-use crate::ids::RunId;
 use crate::provider::ApiClaimTiming;
 use crate::resource_budget::ResourceBudget;
 use crate::run_cancellation::RunCancellationSignals;
-use crate::storage_manifest::{StorageEntry, StorageManifest};
 use crate::telemetry::{
     JobTelemetry, RunnerPreSpawnAttribution, RunnerPreSpawnConcurrencyBucket,
     RunnerResourceBudgetLeaseCountBucket, RunnerResourceBudgetOccupancy,
     RunnerResourceBudgetUtilizationBucket, RunnerStartupPath,
 };
-use crate::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 use crate::workspace_mount::ensure_workspace_drive_mounted;
+use runner_types::ids::RunId;
+use runner_types::storage_manifest::{StorageEntry, StorageManifest};
+use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 
 #[test]
 fn elapsed_since_api_start_ms_returns_elapsed_duration() {
@@ -254,7 +254,12 @@ fn new_telemetry() -> JobTelemetry {
         client_session_id: "runner-session-test".to_string(),
     })
     .unwrap();
-    JobTelemetry::new(http, RunId::nil(), "tok".to_string(), None)
+    JobTelemetry::new(
+        http,
+        RunId::from(uuid::Uuid::nil()),
+        "tok".to_string(),
+        None,
+    )
 }
 
 fn assert_has_action(telemetry: &JobTelemetry, action: &str) {
@@ -2189,7 +2194,7 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
 }
 
 async fn assert_reused_private_write_timeout_telemetry(
-    context: crate::types::ExecutionContext,
+    context: runner_types::types::ExecutionContext,
     stage: SandboxOperationTimeoutStage,
     expected_outcome: &str,
 ) {

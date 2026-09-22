@@ -6,25 +6,21 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 
-/** The live claim consumed before the sole provider POST. */
+/**
+ * The live claim consumed before the sole provider POST.
+ *
+ * It is the only shape a collection runs under. A second, attempt-keyed shape
+ * existed for the retained-source re-check that read a settled occurrence back;
+ * that check is gone (#35949), so the lease is the whole question.
+ */
 export interface MorningBriefNativeActiveAuthority {
   readonly ownerEpoch: number;
   readonly membershipId: string;
   readonly leaseToken: string;
-  readonly generationAttemptId?: never;
-}
-
-/** The durable attempt used by readback and delivery after claim settlement. */
-export interface MorningBriefNativeRetainedAuthority {
-  readonly ownerEpoch: number;
-  readonly membershipId: string;
-  readonly leaseToken?: never;
-  readonly generationAttemptId: string;
 }
 
 export type MorningBriefNativeCollectionAuthority =
-  | MorningBriefNativeActiveAuthority
-  | MorningBriefNativeRetainedAuthority;
+  MorningBriefNativeActiveAuthority;
 
 interface MorningBriefNativeCollectionBinding {
   readonly orgId: string;
@@ -56,17 +52,6 @@ function scheduleMatches(
   );
 }
 
-function authorityCanReadSettledResult(args: {
-  readonly settledAt: Date | null;
-  readonly outcome: string | null;
-  readonly authority: MorningBriefNativeCollectionAuthority;
-}): boolean {
-  if (args.authority.leaseToken !== undefined) {
-    return args.settledAt === null;
-  }
-  return args.settledAt === null || args.outcome === "delivered";
-}
-
 async function occurrenceMatches(
   db: NativeAuthorityReader,
   binding: MorningBriefNativeCollectionBinding,
@@ -77,9 +62,6 @@ async function occurrenceMatches(
       ownerEpoch: morningBriefNativeOccurrences.ownerEpoch,
       membershipId: morningBriefNativeOccurrences.membershipId,
       leaseToken: morningBriefNativeOccurrences.leaseToken,
-      generationAttemptId: morningBriefNativeOccurrences.generationAttemptId,
-      settledAt: morningBriefNativeOccurrences.settledAt,
-      outcome: morningBriefNativeOccurrences.outcome,
     })
     .from(morningBriefNativeOccurrences)
     .where(
@@ -87,12 +69,9 @@ async function occurrenceMatches(
         eq(morningBriefNativeOccurrences.orgId, binding.orgId),
         eq(morningBriefNativeOccurrences.userId, binding.userId),
         eq(morningBriefNativeOccurrences.scheduledFor, binding.scheduledFor),
-        authority.leaseToken === undefined
-          ? eq(
-              morningBriefNativeOccurrences.generationAttemptId,
-              authority.generationAttemptId,
-            )
-          : isNull(morningBriefNativeOccurrences.settledAt),
+        // A settled occurrence has released its claim, so the lease this
+        // collection holds is no longer the current authority for it.
+        isNull(morningBriefNativeOccurrences.settledAt),
       ),
     )
     .limit(1);
@@ -100,58 +79,8 @@ async function occurrenceMatches(
   return (
     occurrence?.ownerEpoch === authority.ownerEpoch &&
     occurrence.membershipId === authority.membershipId &&
-    (authority.leaseToken === undefined
-      ? occurrence.generationAttemptId === authority.generationAttemptId
-      : occurrence.leaseToken === authority.leaseToken) &&
-    authorityCanReadSettledResult({
-      settledAt: occurrence.settledAt,
-      outcome: occurrence.outcome,
-      authority,
-    })
+    occurrence.leaseToken === authority.leaseToken
   );
-}
-
-/** Resolve the epoch and membership frozen with one persisted attempt. */
-export async function loadMorningBriefNativeRetainedAuthority(
-  db: NativeAuthorityReader,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly scheduledFor: Date;
-    readonly generationAttemptId: string;
-  },
-): Promise<MorningBriefNativeRetainedAuthority | undefined> {
-  const [occurrence] = await db
-    .select({
-      ownerEpoch: morningBriefNativeOccurrences.ownerEpoch,
-      membershipId: morningBriefNativeOccurrences.membershipId,
-      settledAt: morningBriefNativeOccurrences.settledAt,
-      outcome: morningBriefNativeOccurrences.outcome,
-    })
-    .from(morningBriefNativeOccurrences)
-    .where(
-      and(
-        eq(morningBriefNativeOccurrences.orgId, args.orgId),
-        eq(morningBriefNativeOccurrences.userId, args.userId),
-        eq(morningBriefNativeOccurrences.scheduledFor, args.scheduledFor),
-        eq(
-          morningBriefNativeOccurrences.generationAttemptId,
-          args.generationAttemptId,
-        ),
-      ),
-    )
-    .limit(1);
-  if (
-    occurrence === undefined ||
-    (occurrence.settledAt !== null && occurrence.outcome !== "delivered")
-  ) {
-    return undefined;
-  }
-  return {
-    ownerEpoch: occurrence.ownerEpoch,
-    membershipId: occurrence.membershipId,
-    generationAttemptId: args.generationAttemptId,
-  };
 }
 
 /** Revalidate native authority without holding locks across provider I/O. */

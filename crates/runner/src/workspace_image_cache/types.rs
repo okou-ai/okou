@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::ids::RunId;
 use crate::storage_fingerprints::StorageFingerprints;
+use runner_types::ids::RunId;
 
 use super::{MAX_ENTRY_BYTES_CAP, MIN_FREE_BYTES_FLOOR};
 

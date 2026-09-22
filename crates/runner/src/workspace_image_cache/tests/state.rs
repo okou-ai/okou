@@ -21,12 +21,12 @@ use super::super::{
 use super::support::{
     TEST_PROFILE_NAME, local_cache, timestamp_for_index, write_current_cache_entry_for_profile,
 };
-use crate::ids::RunId;
 use crate::paths::{
     HomePaths, RunnerPaths, scoped_workspace_image_cache_key, workspace_image_cache_key,
 };
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
-use crate::types::{
+use runner_types::ids::RunId;
+use runner_types::types::{
     HeldWorkspaceState, MAX_HELD_WORKSPACE_STATES, MAX_WORKSPACE_CACHES_PER_HEARTBEAT,
     MAX_WORKSPACE_CACHES_PER_REUSE_KEY, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
 };

@@ -162,7 +162,8 @@ function expectSelected(label: string): void {
 }
 
 /**
- * The compact overview selects a media category before opening its model list.
+ * The compact overview updates the active media category when entering a
+ * category, before a model is selected.
  */
 async function openMenu(
   container: ParentNode = document,
@@ -627,7 +628,8 @@ test("The desktop model notice follows selections and survives browsing other ca
 });
 
 /**
- * The compact overview can revisit each independently selected model.
+ * The compact overview switches the active category while preserving each
+ * category's independent model selection.
  */
 test("Retain independent Chat, Image, and Video selections in a new chat", async () => {
   setMobileViewport();
@@ -764,18 +766,6 @@ test("A temporary image model applies to one new chat and resets for the next", 
   expectSelected("Nano Banana 2");
 });
 
-/** The composer's starting tasks, which also choose the run's media type. */
-function taskChip(name: string): HTMLElement {
-  const group = screen.getByRole("group", { name: "Choose a task" });
-  const chip = queryAllByRoleFast("button", group).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!chip) {
-    throw new Error(`${name} task chip not found`);
-  }
-  return chip;
-}
-
 /**
  * The composer tray holds one row. A blocked paid tool is the row a member has
  * to act on, so it takes the tray from the temporary media-model card — but
@@ -789,10 +779,8 @@ test("A blocked paid tool takes the composer tray from the temporary image model
   });
   await openTemporaryImageModelChat("menu", {
     [FeatureSwitchKey.PaidToolControls]: true,
-    [FeatureSwitchKey.ComposerTaskChips]: true,
   });
   await chooseMenuMediaModel("Image", "GPT Image 2");
-  click(taskChip("Image"));
 
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
@@ -805,6 +793,39 @@ test("A blocked paid tool takes the composer tray from the temporary image model
 
   await screen.findByText("Image generation is off for you");
   expect(scopeCard("Image model for this chat")).toBeNull();
+
+  await openMenuCategory("Chat");
+  await userEvent.setup().keyboard("{Escape}");
+  expect(
+    screen.queryByText("Image generation is off for you"),
+  ).not.toBeInTheDocument();
+});
+
+test("Selecting an image model in the desktop picker shows the disabled tool notice", async () => {
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  setDesktopViewport();
+  await openTemporaryImageModelChat("flyout", {
+    [FeatureSwitchKey.PaidToolControls]: true,
+  });
+
+  await chooseMediaModel("Image", "Nano Banana 2");
+  await screen.findByText("Image generation is off for you");
+  expect(screen.getByText("Open settings")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Remove Image")).not.toBeInTheDocument();
+
+  await openCategory("Chat");
+  const chatModel = await screen.findByRole("option", {
+    name: /Claude Fable 5\.1/u,
+  });
+  click(chatModel);
+  await waitFor(() => {
+    expect(screen.queryByRole("tablist", { name: "Models" })).toBeNull();
+  });
+  expect(
+    screen.queryByText("Image generation is off for you"),
+  ).not.toBeInTheDocument();
 });
 
 test.each(["menu", "flyout"] as const)(

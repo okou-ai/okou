@@ -104,7 +104,7 @@ async fn close_for_upload_keeps_prequeued_row_when_drain_budget_is_exhausted() {
     };
 
     let (observation, outcome) = tokio::join!(
-        session.close_for_upload(RunId::nil(), &coordinator),
+        session.close_for_upload(RunId::from(uuid::Uuid::nil()), &coordinator),
         async {
             let request = drain_rx.recv().await.unwrap();
             // Recreate the budget boundary after receiving the actual close request,

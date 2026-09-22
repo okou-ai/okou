@@ -19,7 +19,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(super) enum ClaimCooldownRecord {
     Recorded { active_count: usize },

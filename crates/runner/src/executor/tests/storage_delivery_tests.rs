@@ -15,8 +15,8 @@ use super::support::{
 use crate::paths::guest;
 use crate::storage_cache::decoded::CachedFiles;
 use crate::storage_cache::{populate_cache_with_fresh_delivery, prepare_fresh_archive_delivery};
-use crate::storage_manifest::StorageManifest;
 use crate::storage_plan::build_storage_plan;
+use runner_types::storage_manifest::StorageManifest;
 
 struct DeliveryFixture {
     root: tempfile::TempDir,
@@ -557,8 +557,8 @@ async fn decoded_batch_failure_prevents_agent_spawn() {
         &fixture.config,
         crate::executor::agent_run::RunStart {
             restore_guest_state: false,
-            reuse_result: crate::types::SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            reuse_result: runner_types::types::SandboxReuseResult::PoolMiss,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,

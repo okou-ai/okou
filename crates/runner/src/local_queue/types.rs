@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 /// Job request written by `runner local submit` as a `{job_id}.job` file.
 #[derive(serde::Deserialize, serde::Serialize)]

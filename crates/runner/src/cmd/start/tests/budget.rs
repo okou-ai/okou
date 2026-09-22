@@ -193,7 +193,7 @@ async fn idle_sandbox_remains_reusable_until_capacity_is_needed() {
         .expect("aged idle sandbox should remain reusable");
     assert_eq!(
         completion.reuse_result,
-        Some(crate::types::SandboxReuseResult::Reused)
+        Some(runner_types::types::SandboxReuseResult::Reused)
     );
 
     shutdown(&env, run_handle).await;
