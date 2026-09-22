@@ -368,7 +368,7 @@ function useCronSyncSkillsFixture(): CronSyncSkillsFixture {
 
 function setupGitRefsHandler(commitSha: string): void {
   server.use(
-    http.get("https://github.com/okou-ai/vm0-skills.git/info/refs", () => {
+    http.get("https://github.com/okou-ai/okou-skills.git/info/refs", () => {
       return new HttpResponse(createGitRefsResponse(commitSha));
     }),
   );
@@ -378,7 +378,7 @@ function setupMswHandlers(commitSha: string, tarball: Buffer): void {
   setupGitRefsHandler(commitSha);
   server.use(
     http.get(
-      "https://codeload.github.com/okou-ai/vm0-skills/tar.gz/refs/heads/main",
+      "https://codeload.github.com/okou-ai/okou-skills/tar.gz/refs/heads/main",
       () => {
         return new HttpResponse(tarball);
       },
@@ -490,6 +490,33 @@ describe("GET /api/cron/sync-skills", () => {
     ).resolves.toMatchObject({ commitSha: sentinelCommitSha });
   });
 
+  it("does not skip when the matching commit is outside the active URL prefix", async () => {
+    const fixture = useCronSyncSkillsFixture();
+    const commitSha = newCommitSha();
+    await setOwnedSkillsCommitSha(fixture, commitSha, [
+      fixture.sentinelSkillName,
+    ]);
+    setupMswHandlers(
+      commitSha,
+      createFullTarball(fixture, [fixture.alphaSkill]),
+    );
+
+    const response = await syncOwnedSkills(fixture);
+
+    expect(response).toStrictEqual({
+      success: true,
+      commitSha,
+      synced: fixture.requiredSeedSkillNames.length + 1,
+      skipped: 0,
+      failed: 0,
+      removed: 0,
+      total: fixture.requiredSeedSkillNames.length + 1,
+    });
+    await expect(
+      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
+    ).resolves.toMatchObject({ commitSha });
+  });
+
   it("syncs new skills from the repository tarball", async () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
@@ -516,7 +543,7 @@ describe("GET /api/cron/sync-skills", () => {
     );
     expect(alphaSkill).toMatchObject({
       name: fixture.alphaSkill.name,
-      fullPath: `okou-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
+      fullPath: `okou-ai/okou-skills/tree/main/${fixture.alphaSkill.name}`,
       commitSha,
       fileCount: 2,
       frontmatter: {
@@ -530,7 +557,7 @@ describe("GET /api/cron/sync-skills", () => {
 
     const alphaStorage = await findSystemStorageByName(
       getSkillStorageName(
-        `okou-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
+        `okou-ai/okou-skills/tree/main/${fixture.alphaSkill.name}`,
       ),
     );
     if (!alphaStorage) {
@@ -646,7 +673,7 @@ describe("GET /api/cron/sync-skills", () => {
     ).resolves.toBeNull();
   });
 
-  it("skips malformed skill frontmatter and syncs other skills", async () => {
+  it("retries the same commit after a partial sync failure", async () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
     const badSkillName = `${fixture.skillNamePrefix}bad-yaml`;
@@ -687,10 +714,42 @@ describe("GET /api/cron/sync-skills", () => {
     });
     await expect(
       findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
-    ).resolves.not.toBeNull();
+    ).resolves.toMatchObject({ commitSha: null });
     await expect(
       findSkillByUrl(testSkillUrl(badSkill.name)),
     ).resolves.toBeNull();
+
+    const repairedSkill = {
+      ...badSkill,
+      files: [
+        {
+          path: "SKILL.md",
+          content: `---\nname: ${badSkillName}\ndescription: Repaired skill\n---\n\n# Repaired Skill`,
+        },
+      ],
+    };
+    setupMswHandlers(
+      commitSha,
+      createFullTarball(fixture, [fixture.alphaSkill, repairedSkill]),
+    );
+
+    const retryResponse = await syncOwnedSkills(fixture);
+
+    expect(retryResponse).toStrictEqual({
+      success: true,
+      commitSha,
+      synced: 1,
+      skipped: fixture.requiredSeedSkillNames.length + 1,
+      failed: 0,
+      removed: 0,
+      total: fixture.requiredSeedSkillNames.length + 2,
+    });
+    await expect(
+      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
+    ).resolves.toMatchObject({ commitSha });
+    await expect(
+      findSkillByUrl(testSkillUrl(badSkill.name)),
+    ).resolves.toMatchObject({ commitSha });
   });
 
   it("retains archive expansion limits when indexing unchanged skill versions", async () => {

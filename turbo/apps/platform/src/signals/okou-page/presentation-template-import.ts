@@ -118,7 +118,7 @@ function customTemplateImportPrompt(): string {
  * Which guide and which catalog, and nothing else.
  *
  * Custom imports explicitly select the four-branch `extract-template`
- * dispatcher in `okou-ai/vm0-skills`. The standing agent-tools prompt points
+ * dispatcher in `okou-ai/okou-skills`. The standing agent-tools prompt points
  * deck imports to the separate presentation-only registry guide.
  *
  * The catalog still has to be said because the presentation branch ends in
@@ -134,7 +134,7 @@ function customTemplateImportPrompt(): string {
  * second answer to disagree with.
  */
 function customTemplateImportGuidance(): string {
-  return "Analyse this file with the `extract-template` dispatcher in `okou-ai/vm0-skills`: read `extract-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
+  return "Analyse this file with the `extract-template` dispatcher in `okou-ai/okou-skills`: read `extract-template/SKILL.md` there, take the branch it routes this file to, and follow that branch. Publish with `okou user-template publish` and the `--kind` that branch produced, so it appears under Custom.";
 }
 
 /** One import's message: what the member reads, and what only the run reads. */

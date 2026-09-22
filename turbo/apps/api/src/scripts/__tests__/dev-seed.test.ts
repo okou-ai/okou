@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import rawDevSeedSkillVolumes from "../dev-seed-skill-volumes.json";
-import { buildBuiltInModelKeys, USAGE_PRICING } from "../dev-seed";
+import {
+  buildBuiltInModelKeys,
+  getMetadataOnlySeedSkillNames,
+  USAGE_PRICING,
+} from "../dev-seed";
 
 function readEnvFrom(
   values: Readonly<Record<string, string | undefined>>,
@@ -23,17 +27,32 @@ function buildVendorKeys(
 }
 
 describe("official skill volume seeds", () => {
-  it("uses the current registry owner without renaming stored objects", () => {
+  it("uses the current registry repository without renaming stored objects", () => {
     for (const volume of rawDevSeedSkillVolumes) {
       expect(volume.url).toMatch(
-        /^https:\/\/github\.com\/okou-ai\/vm0-skills\/tree\/main\//,
+        /^https:\/\/github\.com\/okou-ai\/okou-skills\/tree\/main\//,
       );
-      expect(volume.fullPath).toMatch(/^okou-ai\/vm0-skills\/tree\/main\//);
+      expect(volume.fullPath).toMatch(/^okou-ai\/okou-skills\/tree\/main\//);
       expect(volume.s3Key).toContain("agent-skills@vm0-ai/vm0-skills/");
       expect(volume.s3Prefix).toContain("agent-skills@vm0-ai/vm0-skills/");
       expect(volume.storageName).toContain("agent-skills@vm0-ai/vm0-skills/");
       expect(volume.message).toMatch(/^Synced from vm0-ai\/vm0-skills@/);
     }
+  });
+
+  it("keeps published historical Storage bindings out of metadata fallback", () => {
+    expect(
+      getMetadataOnlySeedSkillNames(
+        [
+          "computer-use",
+          "gen",
+          "office-files",
+          "ppt-avatar-video",
+          "workflow-setup",
+        ],
+        rawDevSeedSkillVolumes,
+      ),
+    ).toStrictEqual(["office-files", "ppt-avatar-video", "workflow-setup"]);
   });
 });
 

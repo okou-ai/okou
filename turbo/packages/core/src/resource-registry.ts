@@ -101,7 +101,7 @@ export interface ResourceCandidateSlice {
 
 const RESOURCE_REGISTRY_REPO = "nexu-io/open-design";
 const RESOURCE_REGISTRY_COMMIT = "3fb620af423534643677c7c6fae76be088fa770a";
-const SKILLS_REPO = "okou-ai/vm0-skills";
+const SKILLS_REPO = "okou-ai/okou-skills";
 const SKILLS_REF = "main";
 const VIDEO_TEMPLATE_REGISTRY_SOURCE = {
   repo: SKILLS_REPO,
