@@ -13,6 +13,10 @@ import { resolveOfficialSkillStorageBindings } from "../official-skill-storage.s
 
 const context = testContext();
 
+// External-behavior exception: production APIs cannot create duplicate official
+// repository aliases or bind them outside system Storage. The cron route suite
+// covers normal sync behavior; this test exercises the resolver's fail-closed
+// handling for infrastructure-created persisted states.
 interface StorageFixture {
   readonly id: string;
   readonly name: string;
