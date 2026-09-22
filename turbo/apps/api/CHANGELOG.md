@@ -8,6 +8,29 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.655.0](https://github.com/okou-ai/okou/compare/api-v1.654.0...api-v1.655.0) (2026-09-22)
+
+
+### Features
+
+* **api:** add the account-erasure ownership coverage guard ([#35906](https://github.com/okou-ai/okou/issues/35906)) ([0d80c64](https://github.com/okou-ai/okou/commit/0d80c64cb11754a5a382decefff834791a93bb15))
+* **vnc:** add typed ssh transport to saved connections ([#35910](https://github.com/okou-ai/okou/issues/35910)) ([79069cb](https://github.com/okou-ai/okou/commit/79069cbbc0f48136df9520306aa06a6990e056c2))
+
+
+### Bug Fixes
+
+* **api:** give image recognition a reasoning setting and a deadline ([#35861](https://github.com/okou-ai/okou/issues/35861)) ([82bd731](https://github.com/okou-ai/okou/commit/82bd7316f7475a5bf8abcc50387089554baa1cec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.0
+    * @okouai/core bumped to 8.697.1
+    * @okouai/db bumped to 1.286.0
+    * @okouai/pi-agent-runtime bumped to 1.35.2
+
 ## [1.654.0](https://github.com/okou-ai/okou/compare/api-v1.653.0...api-v1.654.0) (2026-09-22)
 
 
