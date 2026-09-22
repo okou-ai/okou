@@ -133,16 +133,15 @@ function CatalogConnectorCard({
   };
 
   return (
-    <div
-      role="button"
-      tabIndex={busy ? -1 : 0}
+    <button
+      type="button"
+      disabled={busy}
       aria-label={t(
         ($) => {
           return $.connectors.card.connectAria;
         },
         { connector: connector.label },
       )}
-      aria-disabled={busy}
       data-slot="connector-card"
       className={cn(
         surfaceVariants({ interactive: !busy }),
@@ -150,14 +149,8 @@ function CatalogConnectorCard({
         busy && "cursor-default",
       )}
       onClick={handleConnect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          handleConnect();
-        }
-      }}
     >
-      <div className="flex items-center gap-2.5 px-5 pb-1 pt-4">
+      <span className="flex items-center gap-2.5 px-5 pb-1 pt-4">
         <span className="flex h-5 w-5 shrink-0 items-center justify-center">
           <ConnectorIcon icon={connector.icon} size={20} />
         </span>
@@ -180,16 +173,16 @@ function CatalogConnectorCard({
             <Plus size={14} />
           )}
         </span>
-      </div>
-      <div className="px-5 pb-4 pt-1">
-        <div
+      </span>
+      <span className="block px-5 pb-4 pt-1">
+        <span
           data-testid="connector-help-text"
           className="line-clamp-2 text-xs text-muted-foreground"
         >
           {connector.description}
-        </div>
-      </div>
-    </div>
+        </span>
+      </span>
+    </button>
   );
 }
 
