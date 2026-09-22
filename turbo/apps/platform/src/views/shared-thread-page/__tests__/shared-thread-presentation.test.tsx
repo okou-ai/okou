@@ -133,7 +133,7 @@ test("A public conversation hides owner and agent identity", async () => {
   expect(screen.queryByText("Agent")).not.toBeInTheDocument();
 });
 
-test("A signed-out visitor reads a shared prompt's link as plain text", async () => {
+test("A link inside a public prompt is clickable for a signed-out visitor", async () => {
   const content =
     "Compare https://example.com/report and keep **bold** as is, please.";
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
@@ -145,19 +145,27 @@ test("A signed-out visitor reads a shared prompt's link as plain text", async ()
     );
   });
 
-  await setupSharedThreadPage(context, {
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.UserMessageLinks]: true },
-  });
+  await setupSharedThreadPage(context, { host: "app.okou.ai" });
 
-  // A share link has no workspace, so the staff switch cannot resolve and the
-  // prompt keeps the presentation it has today, overrides included.
-  await expect(screen.findByText(content)).resolves.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("link").filter((candidate) => {
+  // A share link has no workspace to resolve a switch against, so the released
+  // default is what a visitor reads.
+  const link = await waitFor(() => {
+    const found = queryAllByRoleFast("link").find((candidate) => {
       return candidate.getAttribute("href") === "https://example.com/report";
-    }),
-  ).toHaveLength(0);
+    });
+    if (!found) {
+      throw new Error("Prompt link not found");
+    }
+    return found;
+  });
+  expect(link).toHaveTextContent("https://example.com/report");
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  // The prompt is not Markdown, so `**bold**` has to survive linking.
+  expect(screen.getByText("Compare")).toBeInTheDocument();
+  expect(
+    screen.getByText("and keep **bold** as is, please."),
+  ).toBeInTheDocument();
 });
 
 test("A public conversation renders embedded media and diagrams", async () => {
