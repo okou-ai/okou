@@ -32,12 +32,21 @@ import type { MorningBriefDisplayLink } from "./morning-brief-source-item";
 /** The maximum size of the accepted rendered result. */
 const GENERATION_RESULT_MAX_BYTES = 32 * 1024;
 
-const MAX_TITLE_LENGTH = 120;
-const MAX_HEADING_LENGTH = 60;
-const MAX_ITEM_LENGTH = 400;
-const MAX_SECTIONS = 6;
-const MAX_ITEMS_PER_SECTION = 8;
-const MAX_SOURCE_IDS = 4;
+/**
+ * The content bounds, exported because the request has to state them too.
+ *
+ * They are declared once here, beside the validator that enforces them, so the
+ * document the model reads, the schema the provider enforces and the check that
+ * accepts the answer can only ever quote the same numbers.
+ */
+export const MAX_TITLE_LENGTH = 120;
+export const MAX_HEADING_LENGTH = 60;
+export const MAX_ITEM_LENGTH = 400;
+export const MAX_SECTIONS = 6;
+export const MAX_ITEMS_PER_SECTION = 8;
+export const MAX_SOURCE_IDS = 4;
+/** Long enough for any BCP-47 tag this pipeline recognizes, and no longer. */
+export const MAX_LANGUAGE_LENGTH = 35;
 
 /**
  * The model is instructed never to write a link, so a link-shaped string is
@@ -369,7 +378,7 @@ const composedResultSchema = z.discriminatedUnion("decision", [
   z
     .object({
       decision: z.literal("deliver"),
-      language: z.string().trim().min(1).max(35),
+      language: z.string().trim().min(1).max(MAX_LANGUAGE_LENGTH),
       title: proseSchema(MAX_TITLE_LENGTH),
       sections: z
         .array(
@@ -400,11 +409,69 @@ const composedResultSchema = z.discriminatedUnion("decision", [
   z
     .object({
       decision: z.literal("skip"),
-      language: z.string().trim().min(1).max(35),
+      language: z.string().trim().min(1).max(MAX_LANGUAGE_LENGTH),
       reason: z.literal("nothing_actionable"),
     })
     .strict(),
 ]);
+
+/**
+ * The same contract, in the one form the provider can actually enforce.
+ *
+ * It is derived rather than written out, because the two used to be written out
+ * separately and disagreed: the validator carried every length and count while
+ * the provider schema carried none, so a model could satisfy the provider
+ * completely and still be rejected here. Deriving removes the place where that
+ * disagreement can be reintroduced — the numbers below are not restated
+ * anywhere, they are read off the schema that enforces them.
+ *
+ * What the conversion cannot carry, it drops silently: the `trim()` transform
+ * and both refinements have no JSON Schema spelling. That loss only runs in the
+ * safe direction. Every length and count survives, and `maxLength` measures the
+ * raw string where the validator measures the trimmed one, so the provider is
+ * the stricter of the two — it can decline an answer this file would have
+ * accepted, and admit nothing this file would refuse. The no-link rule and the
+ * empty-after-escaping rule stay here, where validation is still strict and
+ * terminal.
+ *
+ * Because that drop is silent, it is asserted rather than assumed: the tests in
+ * `morning-brief-composition.test.ts` read every bound back out of the
+ * serialized request and compare it to the constants above. A conversion that
+ * quietly stopped emitting them would rebuild the exact defect this exists to
+ * close, and would otherwise look like a working schema.
+ */
+function composedResultProviderSchema(): {
+  readonly type: "object";
+  readonly anyOf: readonly z.core.JSONSchema.BaseSchema[];
+} {
+  const derived = z.toJSONSchema(composedResultSchema, {
+    // The provider dialect spells a single permitted value `enum`, not the
+    // `const` a `z.literal` converts to.
+    override: ({ jsonSchema }) => {
+      const literal = jsonSchema.const;
+      if (typeof literal === "string") {
+        delete jsonSchema.const;
+        jsonSchema.enum = [literal];
+      }
+    },
+  });
+  const branches = derived.oneOf;
+  if (branches === undefined) {
+    throw new Error(
+      "the composed result contract no longer converts to a union of branches",
+    );
+  }
+  // `anyOf` rather than the `oneOf` a discriminated union converts to: the
+  // dialect accepts the first and not the second, and the branches disagree on
+  // `decision`, so no answer can ever satisfy both. The type is stated beside
+  // it for a reader — or a provider-side translator — that dispatches on the
+  // type before looking at the branches.
+  return { type: "object", anyOf: branches };
+}
+
+/** The composed contract as `response_format`, derived from the validator. */
+export const MORNING_BRIEF_COMPOSED_RESULT_JSON_SCHEMA =
+  composedResultProviderSchema();
 
 /** An accepted composed result, plus the language the answer claimed. */
 type AcceptedComposedResult = AcceptedGenerationResult & {
