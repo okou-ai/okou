@@ -40,14 +40,12 @@ use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_pool::{ParkingGate, ReusableIdleSandbox};
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_logs;
-use crate::provider::{ClaimedJob, CompletionReportTiming, JobProvider};
 use crate::resource_budget::{BudgetLease, ResourceBudget};
-use crate::run_cancellation::{
-    RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals,
-};
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
+use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
+use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -153,7 +151,7 @@ struct ExecutorInvocation {
     cancellation: RunCancellationSignals,
     sandbox_token: String,
     sandbox_prepared: Option<executor::SandboxPreparedNotifier>,
-    active_input_source: Option<crate::active_input::ActiveInputSource>,
+    active_input_source: Option<runner_provider::ActiveInputSource>,
 }
 
 struct ExecutorPhaseOutcome {
@@ -939,8 +937,8 @@ mod tests {
     use crate::idle_reuse_preparation::mock_sandbox_ready_for_idle_reuse;
     use crate::resource_budget::ResourceBudget;
     use crate::restored_session_identity::RestoredSessionIdentity;
-    use crate::run_cancellation::RunCancellationRegistry;
     use crate::status::StatusTracker;
+    use runner_provider::RunCancellationRegistry;
     use runner_types::ids::RunId;
 
     fn test_http_client() -> HttpClient {
@@ -1773,7 +1771,7 @@ mod tests {
 
         fixture.cleanup(run_id, sandbox_id, cleanup_state).await;
 
-        assert!(!fixture.tokens.contains(run_id).await);
+        assert!(fixture.tokens.handle(run_id).await.is_none());
         let (_idle_reuse_keys, active_runs) =
             status_idle_reuse_keys_and_active_runs(&fixture.status_path).await;
         assert!(active_runs.is_empty());
@@ -1790,7 +1788,7 @@ mod tests {
             .cleanup(run_id, sandbox_id, RunCleanupState::new())
             .await;
 
-        assert!(!fixture.tokens.contains(run_id).await);
+        assert!(fixture.tokens.handle(run_id).await.is_none());
         let (_idle_reuse_keys, active_runs) =
             status_idle_reuse_keys_and_active_runs(&fixture.status_path).await;
         assert_eq!(active_runs, vec![run_id.to_string()]);
@@ -1808,7 +1806,7 @@ mod tests {
 
         fixture.cleanup(run_id, sandbox_id, cleanup_state).await;
 
-        assert!(!fixture.tokens.contains(run_id).await);
+        assert!(fixture.tokens.handle(run_id).await.is_none());
         let (_idle_reuse_keys, active_runs) =
             status_idle_reuse_keys_and_active_runs(&fixture.status_path).await;
         assert!(active_runs.is_empty());
@@ -1847,7 +1845,7 @@ mod tests {
             .await;
 
         assert!(
-            fixture.tokens.contains(run_id).await,
+            fixture.tokens.handle(run_id).await.is_some(),
             "stale panic cleanup must preserve the replacement registration",
         );
         assert_eq!(
@@ -1879,7 +1877,7 @@ mod tests {
 
         fixture.cleanup(run_id, sandbox_id, cleanup_state).await;
 
-        assert!(!fixture.tokens.contains(run_id).await);
+        assert!(fixture.tokens.handle(run_id).await.is_none());
         let (idle_reuse_keys, active_runs) =
             status_idle_reuse_keys_and_active_runs(&fixture.status_path).await;
         assert_eq!(idle_reuse_keys, vec!["sess-idle-owned-cleanup"]);

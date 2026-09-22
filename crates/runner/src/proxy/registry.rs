@@ -19,89 +19,6 @@ use runner_types::types::{
     SecretConnectorMetadata,
 };
 
-#[cfg(test)]
-pub(crate) mod write_test {
-    use std::collections::HashMap;
-    use std::path::{Path, PathBuf};
-    use std::sync::{LazyLock, Mutex};
-    use std::time::Duration;
-
-    use tokio::sync::oneshot;
-
-    static GATES: LazyLock<Mutex<HashMap<PathBuf, WriteOperation>>> =
-        LazyLock::new(|| Mutex::new(HashMap::new()));
-
-    struct WriteOperation {
-        entered: oneshot::Sender<()>,
-        release: oneshot::Receiver<()>,
-        settled: oneshot::Sender<()>,
-    }
-
-    pub(crate) struct RegistryWriteGate {
-        path: PathBuf,
-        entered: oneshot::Receiver<()>,
-        release: Option<oneshot::Sender<()>>,
-        settled: oneshot::Receiver<()>,
-    }
-
-    impl RegistryWriteGate {
-        pub(crate) fn new(path: &Path) -> Self {
-            let (entered_tx, entered) = oneshot::channel();
-            let (release, release_rx) = oneshot::channel();
-            let (settled_tx, settled) = oneshot::channel();
-            let previous = GATES.lock().unwrap().insert(
-                path.to_path_buf(),
-                WriteOperation {
-                    entered: entered_tx,
-                    release: release_rx,
-                    settled: settled_tx,
-                },
-            );
-            assert!(previous.is_none(), "only one write gate may own a path");
-            Self {
-                path: path.to_path_buf(),
-                entered,
-                release: Some(release),
-                settled,
-            }
-        }
-
-        pub(crate) async fn wait_entered(&mut self) {
-            tokio::time::timeout(Duration::from_secs(5), &mut self.entered)
-                .await
-                .expect("registry write should start")
-                .expect("registry write should signal entry");
-        }
-
-        pub(crate) async fn finish(mut self) {
-            drop(self.release.take());
-            tokio::time::timeout(Duration::from_secs(5), &mut self.settled)
-                .await
-                .expect("registry write should settle")
-                .expect("registry write should signal completion");
-        }
-    }
-
-    impl Drop for RegistryWriteGate {
-        fn drop(&mut self) {
-            GATES.lock().unwrap().remove(&self.path);
-        }
-    }
-
-    pub(super) async fn enter(path: &Path) -> Option<oneshot::Sender<()>> {
-        let operation = GATES.lock().unwrap().remove(path)?;
-        let _ = operation.entered.send(());
-        let _ = operation.release.await;
-        Some(operation.settled)
-    }
-
-    pub(super) fn settle(settled: Option<oneshot::Sender<()>>) {
-        if let Some(settled) = settled {
-            let _ = settled.send(());
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProxyRegistry {
@@ -213,11 +130,7 @@ async fn write_registry_with_reserve(
         )));
     }
     let digest = RegistryDigest::of(&content);
-    #[cfg(test)]
-    let settled = write_test::enter(path).await;
     let write_result = runner_host::state_file::write_private_atomic(path, &content).await;
-    #[cfg(test)]
-    write_test::settle(settled);
     write_result?;
     Ok(digest)
 }
@@ -261,9 +174,9 @@ pub struct ProxyRegistryHandle {
     pub(super) connector_runtime_update_attempt_tx: Option<tokio::sync::mpsc::UnboundedSender<()>>,
 }
 
-pub(crate) struct ConnectorRuntimeRegistryTransaction<'a> {
-    registry_path: &'a Path,
-    control: &'a ControlHandle,
+pub(crate) struct ConnectorRuntimeRegistryTransaction {
+    registry_path: PathBuf,
+    control: ControlHandle,
     _guard: Flock<File>,
 }
 
@@ -823,7 +736,7 @@ impl ProxyRegistryHandle {
 
     pub(crate) async fn connector_runtime_registry_transaction(
         &self,
-    ) -> RunnerResult<ConnectorRuntimeRegistryTransaction<'_>> {
+    ) -> RunnerResult<ConnectorRuntimeRegistryTransaction> {
         #[cfg(test)]
         if let Some(tx) = &self.connector_runtime_update_attempt_tx {
             tx.send(())
@@ -831,8 +744,8 @@ impl ProxyRegistryHandle {
         }
         let guard = lock::acquire(self.lock_path.clone()).await?;
         Ok(ConnectorRuntimeRegistryTransaction {
-            registry_path: &self.registry_path,
-            control: &self.control,
+            registry_path: self.registry_path.clone(),
+            control: self.control.clone(),
             _guard: guard,
         })
     }
@@ -897,14 +810,14 @@ impl ProxyRegistryHandle {
     }
 }
 
-impl ConnectorRuntimeRegistryTransaction<'_> {
+impl ConnectorRuntimeRegistryTransaction {
     pub(crate) async fn fail_closed_targets_if_run_matches(
         self,
         source_ip: &str,
         run_id: &str,
         targets: &[ConnectorRuntimeTarget],
     ) -> RunnerResult<Option<ConnectorRuntimePublication<ConnectorRuntimeFailCloseOutcome>>> {
-        let mut registry = read_registry(self.registry_path).await?;
+        let mut registry = read_registry(&self.registry_path).await?;
         let Some(sandbox) = registry.sandboxes.get_mut(source_ip) else {
             return Ok(None);
         };
@@ -943,7 +856,7 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
 
         registry.updated_at = chrono::Utc::now().timestamp_millis();
         let digest =
-            write_registry_consuming_fail_closed_capacity(self.registry_path, &registry).await?;
+            write_registry_consuming_fail_closed_capacity(&self.registry_path, &registry).await?;
         info!(
             source_ip,
             run_id,
@@ -970,7 +883,7 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
         run_id: &str,
         updates: &[ConnectorRuntimeRegistryUpdate],
     ) -> RunnerResult<Option<ConnectorRuntimePublication<bool>>> {
-        let mut registry = read_registry(self.registry_path).await?;
+        let mut registry = read_registry(&self.registry_path).await?;
         let Some(sandbox) = registry.sandboxes.get_mut(source_ip) else {
             return Ok(None);
         };
@@ -1011,7 +924,7 @@ impl ConnectorRuntimeRegistryTransaction<'_> {
             }));
         }
         registry.updated_at = chrono::Utc::now().timestamp_millis();
-        let digest = write_registry(self.registry_path, &registry).await?;
+        let digest = write_registry(&self.registry_path, &registry).await?;
         info!(
             source_ip,
             run_id,
@@ -1109,6 +1022,161 @@ fn firewall_entry_matches(entry: &FirewallEntry, connector_slug: &str) -> bool {
     match entry {
         FirewallEntry::Builtin { name, .. } => name == connector_slug,
         FirewallEntry::Inline { firewall, .. } => firewall.name == connector_slug,
+    }
+}
+
+fn provider_registry_error(error: RunnerError) -> runner_provider::ProviderError {
+    match error {
+        RunnerError::Config(message) => runner_provider::ProviderError::Config(message),
+        RunnerError::Internal(message) => runner_provider::ProviderError::Internal(message),
+        RunnerError::Io(error) => runner_provider::ProviderError::Io(error),
+        other => runner_provider::ProviderError::Internal(other.to_string()),
+    }
+}
+
+fn provider_registry_state_to_internal(
+    state: &runner_provider::CustomConnectorRuntimeRegistryState,
+) -> CustomConnectorRuntimeRegistryState {
+    match state {
+        runner_provider::CustomConnectorRuntimeRegistryState::Available {
+            firewall,
+            network_policy,
+            routing_variables,
+        } => CustomConnectorRuntimeRegistryState::Available {
+            firewall: firewall.clone(),
+            network_policy: network_policy.clone(),
+            routing_variables: routing_variables.clone(),
+        },
+        runner_provider::CustomConnectorRuntimeRegistryState::Absent => {
+            CustomConnectorRuntimeRegistryState::Absent
+        }
+    }
+}
+
+fn provider_registry_update_to_internal(
+    update: &runner_provider::ConnectorRuntimeRegistryUpdate,
+) -> ConnectorRuntimeRegistryUpdate {
+    match update {
+        runner_provider::ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+            connector_slug,
+            network_policy,
+        } => ConnectorRuntimeRegistryUpdate::BuiltinAvailable {
+            connector_slug: connector_slug.clone(),
+            network_policy: network_policy.clone(),
+        },
+        runner_provider::ConnectorRuntimeRegistryUpdate::BuiltinAbsent { connector_slug } => {
+            ConnectorRuntimeRegistryUpdate::BuiltinAbsent {
+                connector_slug: connector_slug.clone(),
+            }
+        }
+        runner_provider::ConnectorRuntimeRegistryUpdate::Custom {
+            custom_connector_id,
+            state,
+        } => ConnectorRuntimeRegistryUpdate::Custom {
+            custom_connector_id: custom_connector_id.clone(),
+            state: provider_registry_state_to_internal(state),
+        },
+    }
+}
+
+fn provider_registry_publication<T>(
+    publication: ConnectorRuntimePublication<T>,
+) -> runner_provider::ConnectorRuntimePublication<T> {
+    runner_provider::ConnectorRuntimePublication {
+        outcomes: publication.outcomes,
+        publication: publication.publication.map(|receipt| {
+            Box::new(receipt) as Box<dyn runner_provider::RegistryPublicationReceipt>
+        }),
+    }
+}
+
+#[async_trait::async_trait]
+impl runner_provider::RegistryPublicationReceipt for RegistryPublication {
+    async fn observe(self: Box<Self>) {
+        RegistryPublication::observe(&self).await;
+    }
+}
+
+#[async_trait::async_trait]
+impl runner_provider::ConnectorRuntimeRegistry for ProxyRegistryHandle {
+    async fn begin_transaction(
+        &self,
+    ) -> runner_provider::ProviderResult<
+        Box<dyn runner_provider::ConnectorRuntimeRegistryTransaction>,
+    > {
+        self.connector_runtime_registry_transaction()
+            .await
+            .map(|transaction| {
+                Box::new(transaction)
+                    as Box<dyn runner_provider::ConnectorRuntimeRegistryTransaction>
+            })
+            .map_err(provider_registry_error)
+    }
+}
+
+#[async_trait::async_trait]
+impl runner_provider::ConnectorRuntimeRegistryTransaction for ConnectorRuntimeRegistryTransaction {
+    async fn apply_updates_if_run_matches(
+        self: Box<Self>,
+        source_ip: &str,
+        run_id: &str,
+        updates: &[runner_provider::ConnectorRuntimeRegistryUpdate],
+    ) -> runner_provider::ProviderResult<Option<runner_provider::ConnectorRuntimePublication<bool>>>
+    {
+        let updates = updates
+            .iter()
+            .map(provider_registry_update_to_internal)
+            .collect::<Vec<_>>();
+        ConnectorRuntimeRegistryTransaction::apply_updates_if_run_matches(
+            *self, source_ip, run_id, &updates,
+        )
+        .await
+        .map(|publication| publication.map(provider_registry_publication))
+        .map_err(provider_registry_error)
+    }
+
+    async fn fail_closed_targets_if_run_matches(
+        self: Box<Self>,
+        source_ip: &str,
+        run_id: &str,
+        targets: &[ConnectorRuntimeTarget],
+    ) -> runner_provider::ProviderResult<
+        Option<
+            runner_provider::ConnectorRuntimePublication<
+                runner_provider::ConnectorRuntimeFailCloseOutcome,
+            >,
+        >,
+    > {
+        ConnectorRuntimeRegistryTransaction::fail_closed_targets_if_run_matches(
+            *self, source_ip, run_id, targets,
+        )
+        .await
+        .map(|publication| {
+            publication.map(|publication| {
+                let publication = ConnectorRuntimePublication {
+                    outcomes: publication
+                        .outcomes
+                        .into_iter()
+                        .map(|outcome| match outcome {
+                            ConnectorRuntimeFailCloseOutcome::Applied => {
+                                runner_provider::ConnectorRuntimeFailCloseOutcome::Applied
+                            }
+                            ConnectorRuntimeFailCloseOutcome::Unchanged => {
+                                runner_provider::ConnectorRuntimeFailCloseOutcome::Unchanged
+                            }
+                            ConnectorRuntimeFailCloseOutcome::Failed(error) => {
+                                runner_provider::ConnectorRuntimeFailCloseOutcome::Failed(
+                                    provider_registry_error(error),
+                                )
+                            }
+                        })
+                        .collect(),
+                    publication: publication.publication,
+                };
+                provider_registry_publication(publication)
+            })
+        })
+        .map_err(provider_registry_error)
     }
 }
 

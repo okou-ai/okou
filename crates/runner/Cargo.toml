@@ -52,6 +52,7 @@ zstd = { workspace = true, features = ["zstdmt"] }
 guest-control-proto = { workspace = true }
 runner-rpc-proto = { workspace = true }
 runner-host.workspace = true
+runner-provider.workspace = true
 runner-types.workspace = true
 rfb-client = { workspace = true }
 russh = { workspace = true, features = ["ring", "rsa"] }
