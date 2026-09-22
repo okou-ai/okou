@@ -235,7 +235,7 @@ mod tests {
             b"tarball-bytes"
         );
         let installed = InstalledOkouCli::parse(artifact.installed_manifest_bytes()).unwrap();
-        assert_eq!(installed, *artifact.installed());
+        assert_eq!(installed, artifact.installed);
         assert_eq!(installed.versions.pi_agent_runtime, "1.36.0");
         assert_eq!(installed.package.sha256, sha256);
         assert_eq!(installed.package.size, 13);

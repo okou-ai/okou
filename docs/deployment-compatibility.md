@@ -740,11 +740,19 @@ commit-addressed path below.
 
 Compatibility is negotiated per run rather than by deployment order:
 
-- The backend records `requiredPiAgentRuntimeVersion` (the runtime it prepared
-  the API-first turn with) and `minCliVersion` (the lowest CLI release that
-  understands the current launch payload) in `piLaunchConfig.apiFirstTurn`.
-  Both fields are optional so contexts captured by earlier backends remain
-  valid.
+- `piLaunchConfig.apiFirstTurn` carries two optional fields:
+  `requiredPiAgentRuntimeVersion` (the runtime the backend prepared the
+  API-first turn with) and `minCliVersion` (the lowest CLI release that
+  understands the current launch payload). They are optional so contexts
+  captured by earlier backends remain valid.
+- **The backend does not write them yet.** This launch config is persisted in
+  the encrypted queue payload and decoded by whichever API instance serves the
+  claim, and `piApiFirstTurnConfigSchema` is strict, so a backend from before
+  these fields existed rejects a payload that carries them. The reader ships
+  first; the writer is enabled in a later release, once this one is deployed
+  across the serving fleet and outside the rollback window. This is the same
+  staging the API-first usage handoff producer (#35413) used. Until then every
+  run takes the `npx` path below. Follow-up: #35967.
 - The guest agent execs the installed CLI only when the installed
   `piAgentRuntime` equals `requiredPiAgentRuntimeVersion` and the installed
   `cli` is at or above `minCliVersion`; otherwise it launches the
@@ -760,12 +768,13 @@ Compatibility is negotiated per run rather than by deployment order:
   settled-session continuation is a complete checkpoint and is never discarded
   for a version difference.
 
-Skew in either direction is therefore safe: a new backend with an old runner
-emits the fields into a launch config the old guest ignores; a new runner with
-an old backend sees no required version and launches through `npx`. Raise
-`PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or handoff
-field becomes required. Retiring `CLI_PKG_URL` and the `npx` path follows the
-drain procedure below and is tracked in #35967.
+Skew in either direction is therefore safe: once the writer is enabled, a new
+backend with an old runner emits the fields into a launch config the old guest
+ignores, because the generated Rust bindings do not deny unknown fields; a new
+runner with an old backend sees no required version and launches through `npx`.
+Raise `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or
+handoff field becomes required. Retiring `CLI_PKG_URL` and the `npx` path
+follows the drain procedure below and is tracked in #35967.
 
 ### Commit-addressed CLI artifacts
 
