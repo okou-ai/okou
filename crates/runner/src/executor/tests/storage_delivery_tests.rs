@@ -337,6 +337,79 @@ async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
 }
 
 #[tokio::test]
+async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
+    let fixture = DeliveryFixture::artifacts(1, 1, 604).await;
+    let sandbox = MockSandbox::new("decoded-mixed-boundary");
+    let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
+    let storage_mount = fixture.root.path().join("guest/storage-boundary");
+    let mut storage = StorageEntry {
+        mount_path: storage_mount.to_str().unwrap().into(),
+        extract_path: None,
+        archive_url: Some("https://archive.invalid/storage?signature=".into()),
+        instructions_target_filename: None,
+        cached: false,
+        vas_storage_name: Some("boundary-storage".into()),
+        vas_version_id: Some("v1".into()),
+    };
+    let decoded_manifest = |storage: StorageEntry| Manifest {
+        storages: vec![storage],
+        artifacts: manifest.artifacts.clone(),
+        cleanup_paths: Vec::new(),
+        instruction_cleanups: Vec::new(),
+    };
+    let base_len = serde_json::to_vec(&decoded_manifest(storage.clone()))
+        .unwrap()
+        .len();
+    storage
+        .archive_url
+        .as_mut()
+        .unwrap()
+        .push_str(&"x".repeat(storage_files::MAX_MANIFEST_BYTES - base_len));
+    assert_eq!(
+        serde_json::to_vec(&decoded_manifest(storage.clone()))
+            .unwrap()
+            .len(),
+        storage_files::MAX_MANIFEST_BYTES
+    );
+    manifest.storages.push(storage);
+    files.push((
+        storage_mount.to_str().unwrap().into(),
+        Arc::clone(&files[0].1),
+    ));
+    manifest.storages.push(StorageEntry {
+        mount_path: fixture
+            .root
+            .path()
+            .join("guest/ordinary")
+            .to_str()
+            .unwrap()
+            .into(),
+        extract_path: None,
+        archive_url: Some(format!("https://archive.invalid/{}", "o".repeat(70_000))),
+        instructions_target_filename: None,
+        cached: false,
+        vas_storage_name: Some("ordinary".into()),
+        vas_version_id: Some("v1".into()),
+    });
+
+    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+    let binary_calls = sandbox
+        .storage_manifest_calls()
+        .into_iter()
+        .filter(|call| call.manifest_json.starts_with(storage_files::INPUT_MAGIC))
+        .collect::<Vec<_>>();
+    assert_eq!(binary_calls.len(), 1);
+    let (json, _) = storage_files::split_input(&binary_calls[0].manifest_json).unwrap();
+    let batch: Manifest = serde_json::from_slice(json).unwrap();
+    assert_eq!(batch.storages.len(), 1);
+    assert_eq!(batch.artifacts.len(), 1);
+    assert_binary_calls(&sandbox, 2);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
 async fn decoded_selection_keeps_the_aggregate_mount_budget_across_batches() {
     let mut fixture = DeliveryFixture::new(2, 2, 604).await;
     let first = fixture.manifest.storages[0].clone();

@@ -154,13 +154,13 @@ fn storage_inputs(
         // Exact canonical array accounting, including escaped field contents.
         // The codec revalidates each final serialized batch against the cap.
         let entry_bytes = single_bytes - empty_bytes;
-        let comma_bytes = usize::from(manifest_entry_count(&batch) > 0);
+        let comma_bytes = entry.comma_bytes(&batch);
         if batch_bytes + comma_bytes + entry_bytes > storage_files::MAX_MANIFEST_BYTES {
             inputs.push(encode_decoded_batch(&batch, &files_by_mount)?);
             batch = empty_storage_manifest();
             batch_bytes = empty_bytes;
         }
-        batch_bytes += usize::from(manifest_entry_count(&batch) > 0) + entry_bytes;
+        batch_bytes += entry.comma_bytes(&batch) + entry_bytes;
         entry.push_into(&mut batch);
     }
     if manifest_entry_count(&batch) > 0 {
@@ -192,6 +192,13 @@ impl DecodedManifestEntry {
         match self {
             Self::Storage(entry) => manifest.storages.push(entry),
             Self::Artifact(entry) => manifest.artifacts.push(entry),
+        }
+    }
+
+    fn comma_bytes(&self, manifest: &Manifest) -> usize {
+        match self {
+            Self::Storage(_) => usize::from(!manifest.storages.is_empty()),
+            Self::Artifact(_) => usize::from(!manifest.artifacts.is_empty()),
         }
     }
 }
