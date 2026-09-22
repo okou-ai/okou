@@ -19,6 +19,7 @@ import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 import {
   isChatRoute,
+  selectPinnedAgent$,
   setSidebarExpanded$,
 } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -230,6 +231,7 @@ function PinnedAgentGridCard({
   readonly dropSide: PinnedDropSide | null;
 }) {
   const pageSignal = useGet(pageSignal$);
+  const selectPinnedAgent = useSet(selectPinnedAgent$);
   const draggingAgentId = useGet(draggingPinnedAgentId$);
   const dropTargetAgentId = useGet(pinnedAgentDropTargetId$);
   const startDrag = useSet(startPinnedAgentDrag$);
@@ -254,6 +256,13 @@ function PinnedAgentGridCard({
       data-testid="pinned-agent-card"
       aria-current={isPrimarySelected ? "page" : undefined}
       draggable={isReorderable}
+      onClick={(e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey) {
+          return;
+        }
+        e.preventDefault();
+        selectPinnedAgent({ agentId: agent.agentId, hasUnread });
+      }}
       onDragStart={(e) => {
         e.dataTransfer.clearData();
         e.dataTransfer.effectAllowed = "move";
@@ -447,6 +456,7 @@ export function PinnedAgentListSection({
   });
 
   const openPinAgentDialog = useSet(openPinAgentDialog$);
+  const selectPinnedAgent = useSet(selectPinnedAgent$);
   const setExpanded = useSet(setSidebarExpanded$);
   const collapsed = useGet(agentCardCollapsed$);
   const setCollapsed = useSet(setAgentCardCollapsed$);
@@ -608,6 +618,8 @@ export function PinnedAgentListSection({
                       if (e.metaKey || e.ctrlKey || e.shiftKey) {
                         return;
                       }
+                      e.preventDefault();
+                      selectPinnedAgent({ agentId: agent.agentId, hasUnread });
                       setExpanded(false);
                     }}
                     className={`flex w-full h-8 shrink-0 items-center gap-2 rounded-lg text-left text-sm leading-5 no-underline transition-colors duration-200 ${

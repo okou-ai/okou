@@ -1,7 +1,8 @@
 import { command, computed, state } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isEditableTarget } from "@okouai/ui";
-import { detachedNavigateTo$ } from "../route.ts";
+import { detachedNavigateTo$, pathParams$ } from "../route.ts";
+import { activeRoute$ } from "../active-route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { setupGlobalShortcut } from "../../lib/setup-global-shortcut.ts";
@@ -15,7 +16,10 @@ import { writeToClipboard } from "./clipboard.ts";
 import { isStandaloneMode } from "./settings/connectors.ts";
 import { setupThreadNumberShortcuts$ } from "./thread-number-shortcuts.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { toggleChatThreadUnreadFilter$ } from "./chat-thread-filter.ts";
+import {
+  setChatThreadUnreadFilter$,
+  toggleChatThreadUnreadFilter$,
+} from "./chat-thread-filter.ts";
 
 type PinnedAgentShortcutDirection = "prev" | "next";
 
@@ -81,6 +85,32 @@ const navigateAdjacentPinnedAgent$ = command(
     }
     set(detachedNavigateTo$, "/agents/:agentId/chat", {
       pathParams: { agentId: targetAgentId },
+    });
+  },
+);
+
+export const selectPinnedAgent$ = command(
+  (
+    { get, set },
+    selection: { readonly agentId: string; readonly hasUnread: boolean },
+  ) => {
+    const routeAgentId = get(pathParams$)?.agentId;
+    if (
+      get(activeRoute$) === "agentChat" &&
+      typeof routeAgentId === "string" &&
+      routeAgentId === selection.agentId
+    ) {
+      if (selection.hasUnread) {
+        set(toggleChatThreadUnreadFilter$);
+      } else {
+        set(setChatThreadUnreadFilter$, false);
+      }
+      return;
+    }
+
+    set(setChatThreadUnreadFilter$, false);
+    set(detachedNavigateTo$, ROUTES.agentChat, {
+      pathParams: { agentId: selection.agentId },
     });
   },
 );
