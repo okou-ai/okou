@@ -178,23 +178,58 @@ class TestStreamDecodeSession:
         assert b"".join(chunks) == plaintext
         assert session.finish_error() is None
 
-    def test_no_encoding_feeds_original_chunks(self, headers):
+    @pytest.mark.parametrize("encoding", [None, "identity"], ids=["missing", "identity"])
+    def test_identity_stream_feeds_bounded_chunks(self, headers, encoding):
         chunks: list[bytes] = []
-        session = create_stream_decode_session(headers(), chunks.append)
-        assert session is not None
-        session.feed(b"hello")
-        session.feed(b" world")
-        assert chunks == [b"hello", b" world"]
-        assert session.finish_error() is None
-
-    def test_identity_feeds_original_chunks(self, headers):
-        chunks: list[bytes] = []
+        response_headers = (
+            headers() if encoding is None else headers(("Content-Encoding", encoding))
+        )
         session = create_stream_decode_session(
-            headers(("Content-Encoding", "identity")), chunks.append
+            response_headers,
+            chunks.append,
+            max_decoded_chunk=8,
         )
         assert session is not None
-        session.feed(b"hello")
-        assert chunks == [b"hello"]
+        session.feed(b"abcdefghijklmnopqrstuvwxy")
+        assert chunks == [b"abcdefgh", b"ijklmnop", b"qrstuvwx", b"y"]
+        assert session.finish_error() is None
+
+    @pytest.mark.parametrize("encoding", [None, "identity"], ids=["missing", "identity"])
+    def test_identity_stream_stops_between_bounded_chunks(self, headers, encoding):
+        chunks: list[bytes] = []
+        continuation_checks = 0
+        response_headers = (
+            headers() if encoding is None else headers(("Content-Encoding", encoding))
+        )
+
+        def should_continue() -> bool:
+            nonlocal continuation_checks
+            continuation_checks += 1
+            return False
+
+        session = create_stream_decode_session(
+            response_headers,
+            chunks.append,
+            max_decoded_chunk=8,
+            should_continue=should_continue,
+        )
+        assert session is not None
+        session.feed(b"abcdefghijklmnopqrstuvwxy")
+        session.feed(b"later")
+        assert chunks == [b"abcdefgh"]
+        assert continuation_checks == 1
+        assert session.finish_error() is None
+
+    @pytest.mark.parametrize("encoding", [None, "identity"], ids=["missing", "identity"])
+    def test_identity_stream_forwards_empty_chunks(self, headers, encoding):
+        chunks: list[bytes] = []
+        response_headers = (
+            headers() if encoding is None else headers(("Content-Encoding", encoding))
+        )
+        session = create_stream_decode_session(response_headers, chunks.append)
+        assert session is not None
+        session.feed(b"")
+        assert chunks == [b""]
         assert session.finish_error() is None
 
     @pytest.mark.parametrize("encoding", ["identity", "gzip", "br"])

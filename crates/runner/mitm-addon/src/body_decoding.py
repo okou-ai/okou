@@ -86,11 +86,6 @@ class StreamDecodeSession(NamedTuple):
     finish_error: _StreamDecodeFinishError
 
 
-def _feed_chunks(feed: _StreamDecodeFeed, data: bytes, max_decoded_chunk: int) -> None:
-    for offset in range(0, len(data), max_decoded_chunk):
-        feed(data[offset : offset + max_decoded_chunk])
-
-
 def _no_stream_decode_error() -> str | None:
     return None
 
@@ -345,19 +340,24 @@ def create_stream_decode_session(
     if _stream_decode_skip_reason(encoding) is not None:
         return None
     if not encoding or encoding == "identity":
-        if should_continue is None:
-            return StreamDecodeSession(feed, _no_stream_decode_error)
         inspection_stopped = False
 
-        def feed_until_stopped(chunk: bytes) -> None:
+        def feed_identity_chunks(chunk: bytes) -> None:
             nonlocal inspection_stopped
             if inspection_stopped:
                 return
-            feed(chunk)
-            if not should_continue():
-                inspection_stopped = True
+            if not chunk:
+                feed(chunk)
+                if should_continue is not None and not should_continue():
+                    inspection_stopped = True
+                return
+            for offset in range(0, len(chunk), max_decoded_chunk):
+                feed(chunk[offset : offset + max_decoded_chunk])
+                if should_continue is not None and not should_continue():
+                    inspection_stopped = True
+                    return
 
-        return StreamDecodeSession(feed_until_stopped, _no_stream_decode_error)
+        return StreamDecodeSession(feed_identity_chunks, _no_stream_decode_error)
     if encoding == "br":
         return _create_brotli_stream_decode_session(
             feed,
