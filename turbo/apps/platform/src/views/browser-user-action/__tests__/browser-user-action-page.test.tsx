@@ -247,7 +247,9 @@ test("A failed callback retries without repeating the Browser mutation", async (
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   click(button("Add to browser"));
 
-  await expect(screen.findByText("Information added")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("The agent wasn't notified. Try Continue again."),
+  ).resolves.toBeVisible();
   expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
   click(button("Continue"));
 

@@ -348,6 +348,21 @@ function PendingFormHeader({
   );
 }
 
+function DraftClearingState({
+  signals,
+  children,
+}: {
+  readonly signals: BrowserUserActionSignals;
+  readonly children: ReactNode;
+}) {
+  const clearDraftRef = useSet(signals.clearDraftRef$);
+  return (
+    <div ref={clearDraftRef} className="contents">
+      {children}
+    </div>
+  );
+}
+
 function BrowserInputFields({
   action,
   draft,
@@ -477,13 +492,14 @@ function PendingForm({
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const draft = useGet(signals.draft$);
+  const sharedBusy = useGet(signals.busy$);
   const updateDraft = useSet(signals.updateDraft$);
   const formRef = useSet(signals.formRef$);
   const [submitLoadable, submit] = useLoadableSet(signals.submit$);
   const [cancelLoadable, cancel] = useLoadableSet(signals.cancel$);
   const submitting = submitLoadable.state === "loading";
   const cancelling = cancelLoadable.state === "loading";
-  const busy = submitting || cancelling;
+  const busy = sharedBusy || submitting || cancelling;
   const failed =
     submitLoadable.state === "hasError" || cancelLoadable.state === "hasError";
   const cancelFailed = cancelLoadable.state === "hasError";
@@ -576,6 +592,8 @@ export function BrowserUserActionCard({
   const requestLoadable = useLoadable(signals.request$);
   const refresh = useSet(signals.refresh$);
   const callbackDelivered = useGet(signals.callbackDelivered$);
+  const callbackFailed = useGet(signals.callbackFailed$);
+  const busy = useGet(signals.busy$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
 
   let content: ReactNode;
@@ -624,16 +642,18 @@ export function BrowserUserActionCard({
       );
   } else {
     content = (
-      <StateFromRequest
-        request={requestLoadable.data}
-        callbackDelivered={callbackDelivered}
-        callbackFailed={continueLoadable.state === "hasError"}
-        continuing={continueLoadable.state === "loading"}
-        onContinue={() => {
-          detach(continueAction(pageSignal), Reason.DomCallback);
-        }}
-        variant={variant}
-      />
+      <DraftClearingState signals={signals}>
+        <StateFromRequest
+          request={requestLoadable.data}
+          callbackDelivered={callbackDelivered}
+          callbackFailed={callbackFailed}
+          continuing={busy || continueLoadable.state === "loading"}
+          onContinue={() => {
+            detach(continueAction(pageSignal), Reason.DomCallback);
+          }}
+          variant={variant}
+        />
+      </DraftClearingState>
     );
   }
 

@@ -17,7 +17,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef } from "../utils.ts";
+import { onRef, onRejection } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -59,9 +59,15 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
   readonly callbackDelivered$: Computed<boolean>;
+  readonly callbackFailed$: Computed<boolean>;
+  readonly busy$: Computed<boolean>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly clearDraft$: Command<void, []>;
+  readonly clearDraftRef$: Command<
+    (() => void) | undefined,
+    [HTMLDivElement | null]
+  >;
   readonly formRef$: Command<
     (() => void) | undefined,
     [HTMLFormElement | null]
@@ -229,7 +235,7 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
 
 function createDraftSignals(): Pick<
   BrowserUserActionSignals,
-  "draft$" | "updateDraft$" | "clearDraft$" | "formRef$"
+  "draft$" | "updateDraft$" | "clearDraft$" | "clearDraftRef$" | "formRef$"
 > {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
   const ownerCount$ = state(0);
@@ -287,10 +293,17 @@ function createDraftSignals(): Pick<
       );
     },
   );
+  const clearDraftOnMount$ = command(
+    ({ set }, _element: HTMLDivElement, signal: AbortSignal): void => {
+      signal.throwIfAborted();
+      set(clearDraft$);
+    },
+  );
   return {
     draft$,
     updateDraft$,
     clearDraft$,
+    clearDraftRef$: onRef(clearDraftOnMount$),
     formRef$: onRef(ownForm$),
   };
 }
@@ -507,9 +520,15 @@ function createMutationSignals(
   clearDraft$: BrowserUserActionSignals["clearDraft$"],
 ): Pick<
   BrowserUserActionSignals,
-  "callbackDelivered$" | "submit$" | "cancel$" | "continue$"
+  | "callbackDelivered$"
+  | "callbackFailed$"
+  | "busy$"
+  | "submit$"
+  | "cancel$"
+  | "continue$"
 > {
   const callbackDeliveredState$ = state(false);
+  const callbackFailedState$ = state(false);
   const activeMutation$ = state(false);
   const deliverCallback$ = command(
     async (
@@ -518,10 +537,16 @@ function createMutationSignals(
       callbackIds: ChatActionCallbackIds,
       signal: AbortSignal,
     ): Promise<void> => {
-      await set(
-        runChatActionCallback$,
-        callbackArgs(descriptor, callbackPrompt, callbackIds),
-        signal,
+      set(callbackFailedState$, false);
+      await onRejection(
+        set(
+          runChatActionCallback$,
+          callbackArgs(descriptor, callbackPrompt, callbackIds),
+          signal,
+        ),
+        () => {
+          set(callbackFailedState$, true);
+        },
       );
       signal.throwIfAborted();
       set(callbackDeliveredState$, true);
@@ -540,6 +565,12 @@ function createMutationSignals(
   return {
     callbackDelivered$: computed((get) => {
       return get(callbackDeliveredState$);
+    }),
+    callbackFailed$: computed((get) => {
+      return get(callbackFailedState$);
+    }),
+    busy$: computed((get) => {
+      return get(activeMutation$);
     }),
     submit$: createSubmitSignal(context),
     cancel$: createCancelSignal(context),
