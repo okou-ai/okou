@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.654.0](https://github.com/okou-ai/okou/compare/api-v1.653.0...api-v1.654.0) (2026-09-22)
+
+
+### Features
+
+* **browser:** add native user-action request api ([#35845](https://github.com/okou-ai/okou/issues/35845)) ([90935db](https://github.com/okou-ai/okou/commit/90935db3145fb010d2055c207a2fd1275eeac2cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.489.0
+    * @okouai/core bumped to 8.697.0
+    * @okouai/db bumped to 1.285.0
+    * @okouai/pi-agent-runtime bumped to 1.35.1
+
 ## [1.653.0](https://github.com/okou-ai/okou/compare/api-v1.652.0...api-v1.653.0) (2026-09-22)
 
 

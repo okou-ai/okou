@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.939.0](https://github.com/okou-ai/okou/compare/app-v0.938.0...app-v0.939.0) (2026-09-22)
+
+
+### Features
+
+* add show all link to unread chat empty state ([#35922](https://github.com/okou-ai/okou/issues/35922)) ([f309328](https://github.com/okou-ai/okou/commit/f3093288df75faebf7e1aa94f41d1d29d88b32cc))
+* **platform:** draw the quest steps with the brand illustrations ([#35907](https://github.com/okou-ai/okou/issues/35907)) ([7f542a8](https://github.com/okou-ai/okou/commit/7f542a8a3754f7ebb5f5a89f46dabbdfd019342e))
+
+
+### Bug Fixes
+
+* **platform:** use filled foreground for subscription tooltip ([#35924](https://github.com/okou-ai/okou/issues/35924)) ([aa117e7](https://github.com/okou-ai/okou/commit/aa117e74ad4e2d3d6f7d988c2e44e42bfe2239f6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.489.0
+    * @okouai/core bumped to 8.697.0
+
 ## [0.938.0](https://github.com/okou-ai/okou/compare/app-v0.937.0...app-v0.938.0) (2026-09-22)
 
 

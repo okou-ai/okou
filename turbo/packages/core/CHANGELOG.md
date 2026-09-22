@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.697.0](https://github.com/okou-ai/okou/compare/core-v8.696.0...core-v8.697.0) (2026-09-22)
+
+
+### Features
+
+* **browser:** add native user-action request api ([#35845](https://github.com/okou-ai/okou/issues/35845)) ([90935db](https://github.com/okou-ai/okou/commit/90935db3145fb010d2055c207a2fd1275eeac2cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.489.0
+
 ## [8.696.0](https://github.com/okou-ai/okou/compare/core-v8.695.0...core-v8.696.0) (2026-09-22)
 
 
