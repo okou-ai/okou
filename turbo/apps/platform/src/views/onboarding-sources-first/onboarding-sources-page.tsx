@@ -2,6 +2,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Lock } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
   captureSourceOnboardingConnected$,
@@ -89,7 +90,9 @@ export function OnboardingSourcesPage() {
           const generation = startRecommendation(
             {
               industry,
-              locale: i18n.resolvedLanguage || i18n.language || "en-US",
+              locale: onboardingRecommendationLocaleSchema.parse(
+                i18n.resolvedLanguage || i18n.language || "en-US",
+              ),
             },
             rootSignal,
           );

@@ -97,6 +97,7 @@ export function OnboardingIndustryPage() {
             startingPromptDraft: "",
             startingPromptKey: "",
             recommendationJobId: null,
+            recommendationStartedAt: null,
             recommendationStatus: "idle",
             recommendation: null,
           });

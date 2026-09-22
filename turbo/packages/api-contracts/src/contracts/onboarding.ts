@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
+import { userLocaleSchema } from "./user-preferences";
 
 const c = initContract();
 
@@ -63,12 +64,7 @@ export type OnboardingSubscriptionProvider = z.infer<
   typeof onboardingSubscriptionProviderSchema
 >;
 
-export const onboardingRecommendationLocaleSchema = z
-  .string()
-  .trim()
-  .min(2)
-  .max(32)
-  .regex(/^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/u);
+export const onboardingRecommendationLocaleSchema = userLocaleSchema;
 
 /**
  * Sources whose account context can shape the source-first onboarding result.
@@ -104,9 +100,9 @@ export type OnboardingRecommendationConnectorSlug = z.infer<
 export const onboardingRecommendationSchema = z
   .object({
     kind: z.enum(["task", "workflow"]),
-    title: z.string().min(1).max(120),
-    outcome: z.string().min(1).max(240),
-    prompt: z.string().min(1).max(1000),
+    title: z.string().trim().min(1).max(120),
+    outcome: z.string().trim().min(1).max(240),
+    prompt: z.string().trim().min(1).max(1000),
   })
   .strict();
 
@@ -217,9 +213,11 @@ export const onboardingRecommendationContract = c.router({
     pathParams: onboardingRecommendationJobSchema,
     responses: {
       200: onboardingRecommendationStatusSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
+      500: apiErrorSchema,
     },
     summary: "Get a context-aware onboarding recommendation",
   },

@@ -131,8 +131,12 @@ function readyPromptView(
     (draft.recommendationStatus === "starting" ||
       draft.recommendationStatus === "pending" ||
       draft.recommendationStatus === "running");
+  const recommendationJobId = draft.recommendationJobId;
+  if (recommendation !== null && recommendationJobId === null) {
+    throw new Error("Completed onboarding recommendation has no job id");
+  }
   const promptKey = recommendation
-    ? `recommendation:${draft.recommendationJobId ?? "unknown"}`
+    ? `recommendation:${recommendationJobId}`
     : fallbackPromptKey;
   return {
     isLoading,

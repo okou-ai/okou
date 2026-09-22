@@ -1,4 +1,6 @@
 import { onboardingRecommendationContract } from "@okouai/api-contracts/contracts/onboarding";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { notFound } from "../../lib/error";
@@ -9,6 +11,7 @@ import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
+import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import {
   executeOnboardingRecommendationWork$,
   onboardingRecommendationStatus,
@@ -17,6 +20,34 @@ import {
 import { settleIncludingAbort } from "../utils";
 
 const L = logger("route:onboarding-recommendations");
+
+function recommendationDisabled() {
+  return {
+    status: 403 as const,
+    body: {
+      error: {
+        message: "Onboarding recommendations are not enabled",
+        code: "FORBIDDEN",
+      },
+    },
+  };
+}
+
+const onboardingRecommendationEnabled$ = command(
+  async (
+    { get },
+    identity: { readonly orgId: string; readonly userId: string },
+  ): Promise<boolean> => {
+    const overrides = await get(
+      userFeatureSwitchOverrides(identity.orgId, identity.userId),
+    );
+    return isFeatureEnabled(FeatureSwitchKey.OnboardingSourcesFirst, {
+      orgId: identity.orgId,
+      userId: identity.userId,
+      overrides,
+    });
+  },
+);
 
 async function observeImmediateWork(
   jobId: string,
@@ -41,6 +72,14 @@ const start$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
+  const enabled = await set(onboardingRecommendationEnabled$, {
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
+  signal.throwIfAborted();
+  if (!enabled) {
+    return recommendationDisabled();
+  }
   const result = await set(
     startOnboardingRecommendation$,
     {
@@ -68,6 +107,14 @@ const start$ = command(async ({ get, set }, signal: AbortSignal) => {
 const get$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
   const auth = get(organizationAuthContext$);
+  const enabled = await set(onboardingRecommendationEnabled$, {
+    orgId: auth.orgId,
+    userId: auth.userId,
+  });
+  signal.throwIfAborted();
+  if (!enabled) {
+    return recommendationDisabled();
+  }
   const status = await get(
     onboardingRecommendationStatus({
       jobId: get(getParams$).jobId,

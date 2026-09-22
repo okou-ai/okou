@@ -1,11 +1,11 @@
 import { command, computed, state } from "ccstate";
-import type { OnboardingRecommendation } from "@okouai/api-contracts/contracts/onboarding";
-import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
   onboardingIndustrySchema,
   onboardingSubscriptionProviderSchema,
+  type OnboardingRecommendation,
   type OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
+import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { z } from "zod";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { jsonParseOr } from "../utils.ts";
@@ -72,6 +72,8 @@ export interface SourcesFirstDraft {
   readonly startingPromptKey: string;
   /** The durable context-generation job started when the source step continues. */
   readonly recommendationJobId: string | null;
+  /** Client wall-clock time when that generation attempt began. */
+  readonly recommendationStartedAt: number | null;
   readonly recommendationStatus: SourcesFirstRecommendationStatus;
   /** Only the final, schema-validated recommendation; raw source data never enters the browser. */
   readonly recommendation: OnboardingRecommendation | null;
@@ -86,6 +88,7 @@ function emptyDraft(): SourcesFirstDraft {
     startingPromptDraft: "",
     startingPromptKey: "",
     recommendationJobId: null,
+    recommendationStartedAt: null,
     recommendationStatus: "idle",
     recommendation: null,
   };
@@ -96,16 +99,70 @@ interface SourcesFirstDraftIdentity {
   readonly userId: string;
 }
 
-const persistedDraftSchema = z.object({
-  version: z.literal(1),
+const persistedDraftIdentitySchema = z.object({
   orgId: z.string().min(1),
   userId: z.string().min(1),
+});
+
+const persistedDraftSchema = persistedDraftIdentitySchema.extend({
+  version: z.literal(2),
   industry: onboardingIndustrySchema.nullable(),
   experienced: z.boolean().nullable(),
   provider: onboardingSubscriptionProviderSchema.nullable(),
   startingPromptDraft: z.string().max(1000),
   startingPromptKey: z.string(),
+  recommendationJobId: z.uuid().nullable(),
+  recommendationStartedAt: z.number().finite().nonnegative().nullable(),
 });
+
+type PersistedSourcesFirstDraft = z.infer<typeof persistedDraftSchema>;
+
+function savedDraftForIdentity(
+  raw: string | null,
+  identity: SourcesFirstDraftIdentity,
+): PersistedSourcesFirstDraft | null {
+  if (raw === null) {
+    return null;
+  }
+  const parsed = persistedDraftSchema.safeParse(
+    jsonParseOr<unknown>(raw, null),
+  );
+  if (!parsed.success) {
+    return null;
+  }
+  if (
+    parsed.data.orgId !== identity.orgId ||
+    parsed.data.userId !== identity.userId
+  ) {
+    return null;
+  }
+  return parsed.data;
+}
+
+function restoredDraft(
+  saved: PersistedSourcesFirstDraft | null,
+): SourcesFirstDraft {
+  if (saved === null) {
+    return emptyDraft();
+  }
+  const recommendationStatus: SourcesFirstRecommendationStatus =
+    saved.recommendationJobId !== null
+      ? "pending"
+      : saved.recommendationStartedAt === null
+        ? "idle"
+        : "starting";
+  return {
+    ...emptyDraft(),
+    industry: saved.industry,
+    experienced: saved.experienced,
+    provider: saved.provider,
+    startingPromptDraft: saved.startingPromptDraft,
+    startingPromptKey: saved.startingPromptKey,
+    recommendationJobId: saved.recommendationJobId,
+    recommendationStartedAt: saved.recommendationStartedAt,
+    recommendationStatus,
+  };
+}
 
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
 const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
@@ -119,25 +176,9 @@ export const restoreSourcesFirstDraft$ = command(
       return;
     }
 
-    const raw = get(draftStorage.get$);
-    const parsed = persistedDraftSchema.safeParse(
-      raw === null ? null : jsonParseOr<unknown>(raw, null),
-    );
-    const saved =
-      parsed.success &&
-      parsed.data.orgId === identity.orgId &&
-      parsed.data.userId === identity.userId
-        ? parsed.data
-        : null;
+    const saved = savedDraftForIdentity(get(draftStorage.get$), identity);
     set(internalDraftIdentity$, identity);
-    set(internalDraft$, {
-      ...emptyDraft(),
-      industry: saved?.industry ?? null,
-      experienced: saved?.experienced ?? null,
-      provider: saved?.provider ?? null,
-      startingPromptDraft: saved?.startingPromptDraft ?? "",
-      startingPromptKey: saved?.startingPromptKey ?? "",
-    });
+    set(internalDraft$, restoredDraft(saved));
   },
 );
 
@@ -148,7 +189,7 @@ export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
     return;
   }
   const raw = get(draftStorage.get$);
-  const parsed = persistedDraftSchema.safeParse(
+  const parsed = persistedDraftIdentitySchema.safeParse(
     raw === null ? null : jsonParseOr<unknown>(raw, null),
   );
   if (
@@ -235,13 +276,15 @@ export const updateSourcesFirstDraft$ = command(
     set(
       draftStorage.set$,
       JSON.stringify({
-        version: 1,
+        version: 2,
         ...identity,
         industry: next.industry,
         experienced: next.experienced,
         provider: next.provider,
         startingPromptDraft: next.startingPromptDraft,
         startingPromptKey: next.startingPromptKey,
+        recommendationJobId: next.recommendationJobId,
+        recommendationStartedAt: next.recommendationStartedAt,
       }),
     );
   },

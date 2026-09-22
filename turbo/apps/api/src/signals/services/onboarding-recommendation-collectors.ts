@@ -15,6 +15,7 @@ export interface OnboardingConnectorContext {
 
 export interface OnboardingCollectorInput {
   readonly now: Date;
+  readonly oauthScopes: readonly string[] | null;
   readonly values: ReadonlyMap<string, string>;
 }
 
@@ -196,6 +197,16 @@ const CONNECTOR_CAPABILITIES = {
   Record<OnboardingRecommendationConnectorSlug, readonly string[]>
 >;
 
+export function onboardingConnectorCapabilityContext(
+  sourceSlug: OnboardingRecommendationConnectorSlug,
+): OnboardingConnectorContext {
+  return {
+    sourceSlug,
+    facts: [],
+    capabilities: CONNECTOR_CAPABILITIES[sourceSlug],
+  };
+}
+
 function context(
   sourceSlug: OnboardingRecommendationConnectorSlug,
   facts: readonly (string | null | undefined)[],
@@ -303,7 +314,7 @@ const collectGmail: OnboardingContextCollector = async (input, signal) => {
                   `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(id)}`,
                   {
                     format: "metadata",
-                    metadataHeaders: ["Subject", "From", "Date"],
+                    metadataHeaders: ["Subject", "From"],
                   },
                 ),
                 token,
@@ -329,6 +340,26 @@ const collectGmail: OnboardingContextCollector = async (input, signal) => {
     ...recent,
   ]);
 };
+
+const GOOGLE_DRIVE_FILE_DISCOVERY_SCOPES = [
+  "https://www.googleapis.com/auth/drive",
+  "https://www.googleapis.com/auth/drive.file",
+  "https://www.googleapis.com/auth/drive.metadata",
+  "https://www.googleapis.com/auth/drive.metadata.readonly",
+  "https://www.googleapis.com/auth/drive.readonly",
+] as const;
+
+function canDiscoverGoogleDriveFiles(
+  oauthScopes: readonly string[] | null,
+): boolean {
+  return (
+    oauthScopes?.some((scope) => {
+      return GOOGLE_DRIVE_FILE_DISCOVERY_SCOPES.some((candidate) => {
+        return candidate === scope;
+      });
+    }) ?? false
+  );
+}
 
 interface DriveFile {
   readonly id: string;
@@ -423,6 +454,9 @@ function documentOpening(body: unknown): string | null {
 
 const collectGoogleDocs: OnboardingContextCollector = async (input, signal) => {
   const token = requiredValue(input.values, "GOOGLE_DOCS_TOKEN");
+  if (!canDiscoverGoogleDriveFiles(input.oauthScopes)) {
+    return onboardingConnectorCapabilityContext("google-docs");
+  }
   const files = await recentDriveFiles(
     input,
     "GOOGLE_DOCS_TOKEN",
@@ -488,6 +522,9 @@ const collectGoogleSheets: OnboardingContextCollector = async (
   signal,
 ) => {
   const token = requiredValue(input.values, "GOOGLE_SHEETS_TOKEN");
+  if (!canDiscoverGoogleDriveFiles(input.oauthScopes)) {
+    return onboardingConnectorCapabilityContext("google-sheets");
+  }
   const files = await recentDriveFiles(
     input,
     "GOOGLE_SHEETS_TOKEN",
@@ -661,9 +698,9 @@ const collectQuickbooks: OnboardingContextCollector = async (input, signal) => {
   const realmId = requiredValue(input.values, "QUICKBOOKS_REALM_ID");
   const base = `https://quickbooks.api.intuit.com/v3/company/${encodeURIComponent(realmId)}`;
   const invoiceQuery =
-    "select * from Invoice where Balance > '0' orderby DueDate maxresults 20";
+    "select * from Invoice where Balance > '0' order by DueDate maxresults 20";
   const billQuery =
-    "select * from Bill where Balance > '0' orderby DueDate maxresults 20";
+    "select * from Bill where Balance > '0' order by DueDate maxresults 20";
   const [companyBody, reportBody, invoicesBody, billsBody] = await Promise.all([
     providerJson(
       {
@@ -789,7 +826,7 @@ const collectHubspot: OnboardingContextCollector = async (input, signal) => {
     );
   });
   return context("hubspot", [
-    `HubSpot returned ${deals.length} recent deals across ${stageNames.size} configured stages; ${openDeals.length} are open, ${stalledDeals.length} have not changed in 14 days, and ${closingSoon.length} close in the next 30 days.`,
+    `HubSpot returned ${deals.length} sampled deals across ${stageNames.size} configured stages; ${openDeals.length} are open, ${stalledDeals.length} have not changed in 14 days, and ${closingSoon.length} close in the next 30 days.`,
     ...deals.slice(0, 12).map((deal) => {
       const properties = record(deal.properties);
       const name = stringValue(properties?.dealname);
@@ -809,9 +846,9 @@ const collectHubspot: OnboardingContextCollector = async (input, signal) => {
 
 const LINEAR_CONTEXT_QUERY = `query OnboardingContext {
   viewer { assignedIssues(first: 20, orderBy: updatedAt) {
-    nodes { title priority dueDate updatedAt state { name type } project { name } team { name } }
+    nodes { title dueDate state { name type } project { name } }
   } }
-  projects(first: 8, orderBy: updatedAt) { nodes { name status { name } progress updatedAt } }
+  projects(first: 8, orderBy: updatedAt) { nodes { name status { name } progress } }
 }`;
 
 const collectLinear: OnboardingContextCollector = async (input, signal) => {
@@ -825,8 +862,18 @@ const collectLinear: OnboardingContextCollector = async (input, signal) => {
     },
     signal,
   );
-  const data = record(record(body)?.data);
-  const viewer = record(data?.viewer);
+  const envelope = record(body);
+  if (
+    envelope === null ||
+    (Array.isArray(envelope.errors) && envelope.errors.length > 0)
+  ) {
+    throw new Error("Linear context query failed");
+  }
+  const data = record(envelope.data);
+  if (data === null) {
+    throw new Error("Linear context query returned no data");
+  }
+  const viewer = record(data.viewer);
   const assigned = records(record(viewer?.assignedIssues)?.nodes);
   const projects = records(record(data?.projects)?.nodes);
   const blocked = assigned.filter((issue) => {
@@ -846,7 +893,7 @@ const collectLinear: OnboardingContextCollector = async (input, signal) => {
     );
   }).length;
   return context("linear", [
-    `Linear returned ${assigned.length} recently updated assigned issues and ${projects.length} active projects; ${blocked} issues are blocked, ${overdue} are overdue, and ${completed} are completed.`,
+    `Linear returned ${assigned.length} recently updated assigned issues and ${projects.length} projects; ${blocked} issues are blocked, ${overdue} are overdue, and ${completed} are completed.`,
     ...assigned.slice(0, 12).map((issue) => {
       const title = stringValue(issue.title);
       if (!title) {
@@ -1012,7 +1059,7 @@ const collectOutlookMail: OnboardingContextCollector = async (
     ),
     providerJson(
       {
-        url: "https://graph.microsoft.com/v1.0/me/messages?$top=8&$select=subject,receivedDateTime,from,isRead,importance&$orderby=receivedDateTime%20desc",
+        url: "https://graph.microsoft.com/v1.0/me/messages?$top=8&$select=subject,from,isRead,importance&$orderby=receivedDateTime%20desc",
         token,
       },
       signal,
@@ -1070,7 +1117,7 @@ const collectGoogleAds: OnboardingContextCollector = async (input, signal) => {
           headers,
           body: {
             query:
-              "SELECT campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.cost_micros DESC LIMIT 10",
+              "SELECT campaign.name, campaign.status, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date DURING LAST_30_DAYS ORDER BY metrics.cost_micros DESC LIMIT 10",
           },
         },
         signal,
@@ -1121,8 +1168,7 @@ const collectMetaAds: OnboardingContextCollector = async (input, signal) => {
                 url: queryUrl(
                   `https://graph.facebook.com/v22.0/${encodeURIComponent(id)}/insights`,
                   {
-                    fields:
-                      "account_name,spend,impressions,clicks,ctr,cpc,actions",
+                    fields: "account_name,spend,impressions,clicks,ctr,cpc",
                     date_preset: "last_30d",
                     level: "account",
                     limit: "1",

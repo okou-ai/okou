@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { BuiltinConnectorListResponse } from "@okouai/api-contracts/contracts/connector-schemas";
+import type { UserLocale } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
   onboardingIndustrySchema,
@@ -11,7 +12,11 @@ import {
   type OnboardingRecommendationConnectorSlug,
   type OnboardingRecommendationStatus,
 } from "@okouai/api-contracts/contracts/onboarding";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { command, computed } from "ccstate";
 import { and, eq, inArray, lt } from "drizzle-orm";
@@ -20,6 +25,7 @@ import { z } from "zod";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
+import { FAST_PATH_MODEL } from "../external/openrouter";
 import { requestPlatformGeneration } from "../external/openrouter-platform-generation";
 import { db$, writeDb$, type Db } from "../external/db";
 import {
@@ -30,6 +36,7 @@ import {
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
 import {
+  checkpointBackgroundJob,
   claimBackgroundJob,
   completeBackgroundJob,
   enqueueBackgroundJob,
@@ -45,6 +52,7 @@ import { builtinConnectorList } from "./connector-data.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   ONBOARDING_CONTEXT_COLLECTORS,
+  onboardingConnectorCapabilityContext,
   type OnboardingConnectorContext,
 } from "./onboarding-recommendation-collectors";
 import { safeJsonParse, settle } from "../utils";
@@ -57,7 +65,7 @@ const JOB_RETRY_DELAY_MS = 3000;
 const MAX_JOB_FAILURES = 2;
 const TERMINAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const GENERATION_TIMEOUT_MS = 20_000;
-const GENERATION_MODEL = "google/gemini-3.8-flash";
+const GENERATION_MODEL = FAST_PATH_MODEL;
 const ACCESS_TOKEN_REFRESH_BUFFER_MS = 60_000;
 const MAX_MODEL_CONTEXT_CHARACTERS = 30_000;
 
@@ -68,9 +76,20 @@ const jobInputSchema = z
   })
   .strict();
 
+const generationAttemptCheckpointSchema = z
+  .object({ phase: z.literal("generation-started") })
+  .strict();
+
 const jobCheckpointSchema = z
   .object({ recommendation: onboardingRecommendationSchema })
   .strict();
+
+class OnboardingGenerationAttemptedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OnboardingGenerationAttemptedError";
+  }
+}
 
 const CONNECTOR_ENVIRONMENT_NAMES = {
   gmail: ["GMAIL_TOKEN"],
@@ -270,6 +289,7 @@ async function collectOneSource(
   const collected = await ONBOARDING_CONTEXT_COLLECTORS[args.source.slug](
     {
       now: args.now,
+      oauthScopes: access.connection.oauthScopes,
       values: access.values,
     },
     signal,
@@ -298,9 +318,21 @@ const RECOMMENDATION_JSON_SCHEMA = {
   },
 } as const;
 
+function serializedModelContext(args: {
+  readonly industry: OnboardingIndustry;
+  readonly contexts: readonly OnboardingConnectorContext[];
+  readonly unavailableSourceSlugs: readonly OnboardingRecommendationConnectorSlug[];
+}): string {
+  return JSON.stringify({
+    industry: args.industry,
+    connectedContext: args.contexts,
+    unavailableSourceSlugs: args.unavailableSourceSlugs,
+  });
+}
+
 function generationBody(args: {
   readonly industry: OnboardingIndustry;
-  readonly locale: string;
+  readonly locale: UserLocale;
   readonly contexts: readonly OnboardingConnectorContext[];
   readonly unavailableSourceSlugs: readonly OnboardingRecommendationConnectorSlug[];
 }): string {
@@ -320,11 +352,7 @@ function generationBody(args: {
       },
       {
         role: "user",
-        content: JSON.stringify({
-          industry: args.industry,
-          connectedContext: args.contexts,
-          unavailableSourceSlugs: args.unavailableSourceSlugs,
-        }),
+        content: serializedModelContext(args),
       },
     ],
     max_tokens: 1400,
@@ -345,7 +373,7 @@ function generationBody(args: {
 async function generateRecommendation(
   args: {
     readonly industry: OnboardingIndustry;
-    readonly locale: string;
+    readonly locale: UserLocale;
     readonly contexts: readonly OnboardingConnectorContext[];
     readonly unavailableSourceSlugs: readonly OnboardingRecommendationConnectorSlug[];
   },
@@ -380,32 +408,43 @@ async function generateRecommendation(
   return parsed.data;
 }
 
-function boundModelContexts(
-  contexts: readonly OnboardingConnectorContext[],
-): readonly OnboardingConnectorContext[] {
-  const perSourceBudget = Math.floor(
-    MAX_MODEL_CONTEXT_CHARACTERS / contexts.length,
+function boundModelContexts(args: {
+  readonly industry: OnboardingIndustry;
+  readonly contexts: readonly OnboardingConnectorContext[];
+  readonly unavailableSourceSlugs: readonly OnboardingRecommendationConnectorSlug[];
+}): readonly OnboardingConnectorContext[] {
+  const contextsWithoutFacts = args.contexts.map((entry) => {
+    return { ...entry, facts: [] };
+  });
+  const baselineLength = serializedModelContext({
+    ...args,
+    contexts: contextsWithoutFacts,
+  }).length;
+  if (baselineLength > MAX_MODEL_CONTEXT_CHARACTERS) {
+    throw new Error("Onboarding recommendation context metadata is too large");
+  }
+  const perSourceFactBudget = Math.floor(
+    (MAX_MODEL_CONTEXT_CHARACTERS - baselineLength) / args.contexts.length,
   );
-  return contexts.map((entry) => {
+  const bounded = args.contexts.map((entry) => {
     const facts: string[] = [];
-    let used =
-      entry.sourceSlug.length +
-      entry.capabilities.reduce((total, capability) => {
-        return total + capability.length;
-      }, 0);
     for (const fact of entry.facts) {
-      if (used + fact.length > perSourceBudget) {
+      const candidate = [...facts, fact];
+      const serializedFactCharacters = JSON.stringify(candidate).length - 2;
+      if (serializedFactCharacters > perSourceFactBudget) {
         break;
       }
       facts.push(fact);
-      used += fact.length;
     }
-    return {
-      sourceSlug: entry.sourceSlug,
-      facts,
-      capabilities: entry.capabilities,
-    };
+    return { ...entry, facts };
   });
+  if (
+    serializedModelContext({ ...args, contexts: bounded }).length >
+    MAX_MODEL_CONTEXT_CHARACTERS
+  ) {
+    throw new Error("Onboarding recommendation context exceeded its bound");
+  }
+  return bounded;
 }
 
 function connectedOnboardingSources(
@@ -426,15 +465,41 @@ async function runJob(
   signal: AbortSignal,
 ): Promise<OnboardingRecommendation> {
   const input = jobInputSchema.parse(job.input);
+  if (generationAttemptCheckpointSchema.safeParse(job.checkpoint).success) {
+    throw new OnboardingGenerationAttemptedError(
+      "Onboarding recommendation generation was already attempted",
+    );
+  }
+  if (
+    typeof job.checkpoint !== "object" ||
+    job.checkpoint === null ||
+    Array.isArray(job.checkpoint) ||
+    Object.keys(job.checkpoint).length > 0
+  ) {
+    throw new OnboardingGenerationAttemptedError(
+      "Onboarding recommendation checkpoint is invalid",
+    );
+  }
+  const featureSwitchContext = await loadUserFeatureSwitchContext(
+    db,
+    job.orgId,
+    job.userId,
+  );
+  signal.throwIfAborted();
+  if (
+    !isFeatureEnabled(
+      FeatureSwitchKey.OnboardingSourcesFirst,
+      featureSwitchContext,
+    )
+  ) {
+    throw new Error("Onboarding recommendations are not enabled");
+  }
   const sources = await loadConnectedSources();
   signal.throwIfAborted();
   if (sources.length === 0) {
     throw new Error("No supported connected source was available");
   }
-  const [snapshot, featureSwitchContext] = await Promise.all([
-    loadConnectorRuntimeSnapshot(db),
-    loadUserFeatureSwitchContext(db, job.orgId, job.userId),
-  ]);
+  const snapshot = await loadConnectorRuntimeSnapshot(db);
   signal.throwIfAborted();
   const collected = await Promise.allSettled(
     sources.map((source) => {
@@ -462,22 +527,51 @@ async function runJob(
     }
     if (result.status === "fulfilled") {
       contexts.push(result.value);
+      if (result.value.facts.length === 0) {
+        unavailableSourceSlugs.push(source.slug);
+      }
     } else {
+      contexts.push(onboardingConnectorCapabilityContext(source.slug));
       unavailableSourceSlugs.push(source.slug);
     }
   }
   if (contexts.length === 0) {
     throw new Error("Connected sources returned no usable onboarding context");
   }
-  return await generateRecommendation(
-    {
-      industry: input.industry,
-      locale: input.locale,
-      contexts: boundModelContexts(contexts),
-      unavailableSourceSlugs,
-    },
+  const reserved = await checkpointBackgroundJob(
+    db,
+    { job, checkpoint: { phase: "generation-started" } },
     signal,
   );
+  signal.throwIfAborted();
+  if (!reserved) {
+    throw new Error(
+      "Onboarding recommendation lease expired before generation",
+    );
+  }
+  const generation = await settle(
+    generateRecommendation(
+      {
+        industry: input.industry,
+        locale: input.locale,
+        contexts: boundModelContexts({
+          industry: input.industry,
+          contexts,
+          unavailableSourceSlugs,
+        }),
+        unavailableSourceSlugs,
+      },
+      signal,
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!generation.ok) {
+    throw new OnboardingGenerationAttemptedError(
+      "Onboarding recommendation generation failed",
+    );
+  }
+  return generation.value;
 }
 
 async function runAndCompleteJobAttempt(
@@ -488,14 +582,20 @@ async function runAndCompleteJobAttempt(
 ): Promise<void> {
   const recommendation = await runJob(db, job, loadConnectedSources, signal);
   signal.throwIfAborted();
-  const completed = await completeBackgroundJob(
-    db,
-    { job, checkpoint: { recommendation } },
+  const completion = await settle(
+    completeBackgroundJob(db, { job, checkpoint: { recommendation } }, signal),
     signal,
   );
   signal.throwIfAborted();
-  if (!completed) {
-    throw new Error("Onboarding recommendation lease expired");
+  if (!completion.ok) {
+    throw new OnboardingGenerationAttemptedError(
+      "Onboarding recommendation completion could not be confirmed",
+    );
+  }
+  if (!completion.value) {
+    throw new OnboardingGenerationAttemptedError(
+      "Onboarding recommendation lease expired after generation",
+    );
   }
 }
 
@@ -518,7 +618,10 @@ async function settleJobAttempt(
       ? attempt.error.message
       : "Onboarding recommendation attempt failed";
   const persistenceSignal = AbortSignal.timeout(5000);
-  if (job.failureCount + 1 >= MAX_JOB_FAILURES) {
+  if (
+    attempt.error instanceof OnboardingGenerationAttemptedError ||
+    job.failureCount + 1 >= MAX_JOB_FAILURES
+  ) {
     await failBackgroundJob(
       db,
       { job, error: errorMessage },
@@ -546,7 +649,7 @@ export const startOnboardingRecommendation$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly industry: OnboardingIndustry;
-      readonly locale: string;
+      readonly locale: UserLocale;
     },
     signal: AbortSignal,
   ): Promise<{ readonly jobId: string; readonly status: "pending" }> => {
@@ -599,13 +702,16 @@ export function onboardingRecommendationStatus(args: {
       }
       if (job.status === "completed") {
         const checkpoint = jobCheckpointSchema.safeParse(job.checkpoint);
-        return checkpoint.success
-          ? {
-              jobId: job.id,
-              status: "completed",
-              recommendation: checkpoint.data.recommendation,
-            }
-          : { jobId: job.id, status: "failed" };
+        if (!checkpoint.success) {
+          throw new Error(
+            "Completed onboarding recommendation is missing its result",
+          );
+        }
+        return {
+          jobId: job.id,
+          status: "completed",
+          recommendation: checkpoint.data.recommendation,
+        };
       }
       if (job.status === "failed") {
         return { jobId: job.id, status: "failed" };
