@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.95.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.94.0...guest-agent-v0.95.0) (2026-09-22)
+
+
+### Features
+
+* **runner:** install the versioned okou cli into the rootfs and gate its use by runtime version ([#36000](https://github.com/okou-ai/okou/issues/36000)) ([8d8f3a3](https://github.com/okou-ai/okou/commit/8d8f3a3e14d23f7471e0773bd9acb988f59217af))
+
 ## [0.94.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.93.1...guest-agent-v0.94.0) (2026-09-21)
 
 

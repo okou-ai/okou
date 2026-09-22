@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.48.127](https://github.com/okou-ai/okou/compare/desktop-v0.48.126...desktop-v0.48.127) (2026-09-22)
+
+
+### Bug Fixes
+
+* **desktop:** split the auth deadline between sign-in and validation ([#36050](https://github.com/okou-ai/okou/issues/36050)) ([758715f](https://github.com/okou-ai/okou/commit/758715f1631345f9ac65f7a51f5595d8d2c4d9d9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.491.0
+
 ## [0.48.126](https://github.com/okou-ai/okou/compare/desktop-v0.48.125...desktop-v0.48.126) (2026-09-22)
 
 
