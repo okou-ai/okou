@@ -1190,6 +1190,8 @@ describe("Pi stable context generation fences", () => {
     const semantic = {
       promptInputs: {
         privateArtifactsEnabled: false,
+        // Historical persisted inputs can carry the retired rollout field even
+        // though no current writer can construct it through the typed API.
         runUsageEnabled: false,
         bankingEnabled: false,
         vncEnabled: false,
@@ -1304,6 +1306,12 @@ describe("Pi stable context generation fences", () => {
       artifactDigest: null,
       input: { storageMounts: [{ storageId, versionId: v2 }] },
     });
+    expect(pending?.input?.semantic?.promptInputs).not.toHaveProperty(
+      "runUsageEnabled",
+    );
+    expect(pending?.input?.prompt.tools).toContain(
+      "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
+    );
 
     await expect(
       executeFixtureWork(fixture.agentId, AbortSignal.timeout(5000)),
@@ -1394,7 +1402,6 @@ describe("Pi stable context generation fences", () => {
     const semantic = {
       promptInputs: {
         privateArtifactsEnabled: false,
-        runUsageEnabled: false,
         bankingEnabled: false,
         vncEnabled: false,
         larkEnabled: false,

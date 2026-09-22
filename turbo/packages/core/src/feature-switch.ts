@@ -63,13 +63,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
     enabled: false,
   },
-  [FeatureSwitchKey.RunUsage]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
     description:

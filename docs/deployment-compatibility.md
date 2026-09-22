@@ -773,6 +773,7 @@ Compatibility is negotiated per run rather than by deployment order:
   `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
   and require `ahead` or `identical`. Retained Runner tags are not constrained:
   the guest ignores unknown launch-config fields.
+
 - `piLaunchConfig.apiFirstTurn` also accepts the optional
   `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
   code-determined session construction (the system prompt template and the
@@ -2721,6 +2722,27 @@ Provider results already known at transfer are included. Pre-provider transfer
 is marked `no-inference`. A transfer made before a late provider result becomes
 known has no snapshot and stays explicitly unavailable in this initial
 handoff-only design. See [API-first run usage handoff](api-run-usage.md).
+
+## Current-run usage general availability
+
+Current-run usage is generally available without a rollout switch. The normal
+release promotes the API before the Runner. During that bounded interval, the
+new API grants the prompt and `run-usage:read` capability, while an old Runner
+that captured the switch as disabled returns `unavailable` with
+`not_dispatched`. The CLI reports that as assignment-unavailable and directs the
+caller to create a new Run after Runner promotion; a Runner predating the method
+returns `unknown_method`, reported as unsupported Runner. Neither response uses
+a fallback or automatic retry.
+
+After Runner promotion, every newly created official Run receives the prompt,
+capability and installed `run.usage` consumer. The reverse skew is also safe: a
+new Runner with the previous API installs the assignment-bound consumer while
+that API continues gating prompt and capability discovery. Already-created Runs
+retain their minted capability, stable prompt snapshot and Runner ownership;
+create a new Run after promotion to obtain the generally available command.
+Stored overrides for the retired switch are ignored by the registered-key
+filter and require no database migration. The source DTOs, guest RPC framing,
+handoff metadata and observational accounting semantics are unchanged.
 
 ## DeepSeek V4.1 Flash Pi coverage
 
