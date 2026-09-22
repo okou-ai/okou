@@ -162,7 +162,7 @@ type DirectAxiomIngestErrorOptions =
       readonly cause: unknown;
     };
 
-class DirectAxiomIngestError extends Error {
+export class DirectAxiomIngestError extends Error {
   readonly reason:
     | "http_status"
     | "invalid_response"

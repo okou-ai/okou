@@ -11,6 +11,7 @@ import {
   type RunnerStartupPath,
   type SandboxReuseResult,
 } from "@okouai/api-contracts/contracts/webhooks";
+import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
@@ -25,7 +26,11 @@ import { authorization$, request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import { getDatasetName, ingestAxiomDirect } from "../external/axiom";
+import {
+  DirectAxiomIngestError,
+  getDatasetName,
+  ingestAxiomDirect,
+} from "../external/axiom";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
@@ -495,6 +500,45 @@ const usageEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
 type TelemetryBody = z.infer<(typeof webhookTelemetryContract.send)["body"]>;
 type TelemetryMetric = NonNullable<TelemetryBody["metrics"]>[number];
 
+interface TelemetryBatch {
+  readonly dataset: string;
+  readonly events: readonly Record<string, unknown>[];
+  readonly includesOomEvidence?: boolean;
+}
+
+async function ingestTelemetryBatch(
+  batch: TelemetryBatch,
+  signal: AbortSignal,
+): Promise<{
+  readonly retryableFailure: boolean;
+  readonly oomEvidenceIngested: boolean;
+}> {
+  const result = await settle(
+    ingestAxiomDirect(
+      batch.dataset,
+      batch.events,
+      TELEMETRY_INGEST_TIMEOUT_MS,
+      signal,
+    ),
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    const { error } = result;
+    if (
+      error instanceof DirectAxiomIngestError &&
+      (error.reason === "timeout" || error.reason === "transport_error")
+    ) {
+      return { retryableFailure: true, oomEvidenceIngested: false };
+    }
+    throw error;
+  }
+  return {
+    retryableFailure: false,
+    oomEvidenceIngested:
+      batch.includesOomEvidence === true && result.value.configured,
+  };
+}
+
 function telemetryMetricEvent(
   metric: TelemetryMetric,
   runId: string,
@@ -611,11 +655,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
     return notFound("Agent run not found");
   }
 
-  const telemetryBatches: {
-    readonly dataset: string;
-    readonly events: readonly Record<string, unknown>[];
-    readonly includesOomEvidence?: boolean;
-  }[] = [];
+  const telemetryBatches: TelemetryBatch[] = [];
 
   if (body.systemLog) {
     telemetryBatches.push({
@@ -670,19 +710,23 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
   let oomEvidenceIngested = false;
   if (telemetryBatches.length > 0) {
     const ingestionResults = await Promise.all(
-      telemetryBatches.map(async (batch) => {
-        const result = await ingestAxiomDirect(
-          batch.dataset,
-          batch.events,
-          TELEMETRY_INGEST_TIMEOUT_MS,
-          signal,
-        );
-        return batch.includesOomEvidence === true && result.configured;
+      telemetryBatches.map((batch) => {
+        return ingestTelemetryBatch(batch, signal);
       }),
     );
     signal.throwIfAborted();
-    oomEvidenceIngested = ingestionResults.some((ingested) => {
-      return ingested;
+    if (
+      ingestionResults.some((result) => {
+        return result.retryableFailure;
+      })
+    ) {
+      return createErrorResponse(
+        "INTERNAL_SERVER_ERROR",
+        "Internal server error",
+      );
+    }
+    oomEvidenceIngested = ingestionResults.some((result) => {
+      return result.oomEvidenceIngested;
     });
   }
 
