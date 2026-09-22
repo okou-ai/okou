@@ -6142,6 +6142,8 @@
       },
       "personal": {
         "accountFallback": "Akun {{number}}",
+        "accountsDescription": "Pilih akun yang digunakan setiap penyedia untuk eksekusi baru.",
+        "accountsSectionTitle": "Akun pribadi",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktif",
         "addAccount": "Tambah akun",

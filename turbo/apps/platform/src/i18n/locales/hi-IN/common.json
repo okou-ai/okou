@@ -6154,6 +6154,8 @@
       },
       "personal": {
         "accountFallback": "खाता {{number}}",
+        "accountsDescription": "नई रन के लिए हर प्रदाता द्वारा उपयोग किया जाने वाला खाता चुनें।",
+        "accountsSectionTitle": "व्यक्तिगत खाते",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "सक्रिय",
         "addAccount": "खाता जोड़ें",

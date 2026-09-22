@@ -6142,6 +6142,8 @@
       },
       "personal": {
         "accountFallback": "帳號{{number}}",
+        "accountsDescription": "選擇每個供應商在新工作中使用的帳號。",
+        "accountsSectionTitle": "個人帳號",
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "新增帳號",

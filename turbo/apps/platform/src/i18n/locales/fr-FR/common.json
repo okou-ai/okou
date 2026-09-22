@@ -6212,6 +6212,8 @@
       },
       "personal": {
         "accountFallback": "Compte {{number}}",
+        "accountsDescription": "Choisissez le compte que chaque fournisseur utilise pour les nouvelles exécutions.",
+        "accountsSectionTitle": "Comptes personnels",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Actif",
         "addAccount": "Ajouter un compte",

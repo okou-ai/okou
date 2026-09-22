@@ -6142,6 +6142,8 @@
       },
       "personal": {
         "accountFallback": "账号{{number}}",
+        "accountsDescription": "选择每个提供商在新任务中使用的账号。",
+        "accountsSectionTitle": "个人账号",
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "添加账号",
