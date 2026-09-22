@@ -58,10 +58,7 @@ async function openPicker({
 }
 
 function tabNamed(dialog: HTMLElement, name: string): HTMLElement {
-  const list = within(dialog).getByRole("tablist", {
-    name: "Template categories",
-  });
-  const tab = queryAllByRoleFast("tab", list).find((item) => {
+  const tab = queryAllByRoleFast("tab", dialog).find((item) => {
     return item.textContent?.trim() === name;
   });
   if (!tab) {
@@ -72,15 +69,23 @@ function tabNamed(dialog: HTMLElement, name: string): HTMLElement {
 
 function selectedPanel(dialog: HTMLElement, name: string): HTMLElement {
   const tab = tabNamed(dialog, name);
-  const panel = within(dialog).getByRole("tabpanel", { name });
+  const panelId = tab.getAttribute("aria-controls");
+  const panel = panelId ? document.getElementById(panelId) : null;
+  if (!panel) {
+    throw new Error(`Expected the panel controlled by ${name}`);
+  }
   expect(tab).toHaveAttribute("aria-selected", "true");
-  expect(tab).toHaveAttribute("aria-controls", panel.id);
+  expect(dialog).toContainElement(panel);
+  expect(panel).toHaveAttribute("role", "tabpanel");
   expect(panel).toHaveAttribute("aria-labelledby", tab.id);
-  expect(within(dialog).getAllByRole("tabpanel")).toHaveLength(1);
+  expect(panel).toHaveAccessibleName(name);
+  expect(panel).not.toHaveAttribute("hidden");
+  expect(panel).not.toHaveAttribute("inert");
+  expect(dialog.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
   return panel;
 }
 
-test("Category arrows, Home and End select the matching panel and Tab enters its controls", async () => {
+test("Category arrows select the matching panel and keep focus on the selected tab", async () => {
   const { user, dialog } = await openPicker();
   const list = within(dialog).getByRole("tablist", {
     name: "Template categories",
@@ -105,6 +110,12 @@ test("Category arrows, Home and End select the matching panel and Tab enters its
   expect(tabNamed(dialog, "Presentation")).toHaveFocus();
   await user.keyboard("{ArrowUp}");
   selectedPanel(dialog, "Custom");
+  expect(tabNamed(dialog, "Custom")).toHaveFocus();
+});
+
+test("Category navigation wraps and Home and End select the first and last panels", async () => {
+  const { user, dialog } = await openPicker();
+  await user.click(tabNamed(dialog, "Custom"));
   await user.keyboard("{ArrowUp}");
   selectedPanel(dialog, "Workflow");
   await user.keyboard("{ArrowDown}");
@@ -115,8 +126,11 @@ test("Category arrows, Home and End select the matching panel and Tab enters its
   await user.keyboard("{Home}");
   selectedPanel(dialog, "Custom");
   expect(tabNamed(dialog, "Custom")).toHaveFocus();
+});
 
-  await user.keyboard("{End}");
+test("Tab enters the selected panel and its search keeps text editing keys", async () => {
+  const { user, dialog } = await openPicker();
+  await user.click(tabNamed(dialog, "Workflow"));
   const panel = selectedPanel(dialog, "Workflow");
   await user.keyboard("{Tab}");
   expect(panel).toHaveFocus();
