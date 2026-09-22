@@ -634,31 +634,38 @@ function createToolbarRef({
   );
 }
 
+interface SelectionListenerSignals {
+  readonly selection$: State<CapturedFeedbackSelection | null>;
+  readonly close$: Command<void, []>;
+  readonly capture$: Command<void, [AbortSignal]>;
+  readonly reconcileAfterScroll$: Command<void, []>;
+  readonly isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>;
+}
+
 function createListenersRef({
   selection$,
   close$,
   capture$,
   reconcileAfterScroll$,
   isProgrammaticScrollEvent$,
-}: {
-  selection$: State<CapturedFeedbackSelection | null>;
-  close$: Command<void, []>;
-  capture$: Command<void, [AbortSignal]>;
-  reconcileAfterScroll$: Command<void, []>;
-  isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>;
-}) {
+}: SelectionListenerSignals) {
   return onRef(
     command(({ get, set }, el: HTMLElement, signal: AbortSignal) => {
       const doc = el.ownerDocument;
       let mouseSelectionInProgress = false;
       let selectionInteractionInProgress = false;
+      let deferMouseSelectionCapture = false;
       let scrollReconciliationScheduled = false;
+      const captureSelectionNextFrame = () => {
+        set(capture$, signal);
+      };
       doc.addEventListener(
         "pointerdown",
         (event) => {
           selectionInteractionInProgress = isSelectionInteractionTarget(
             event.target,
           );
+          deferMouseSelectionCapture = false;
           // A press outside the toolbar dismisses it, and pointerdown is the
           // event that can say so: it opens a gesture, while the toolbar is
           // only ever mounted by one that has ended. A press that lands on a
@@ -666,6 +673,9 @@ function createListenersRef({
           // calls `preventDefault` on mousedown — is dismissed here rather
           // than waiting for a selection change that never arrives.
           if (get(selection$) !== null && !selectionInteractionInProgress) {
+            // A click can collapse its range after mouseup. Defer recapture so
+            // the just-dismissed toolbar cannot reopen for one paint.
+            deferMouseSelectionCapture = true;
             set(close$);
           }
         },
@@ -718,11 +728,17 @@ function createListenersRef({
       doc.addEventListener(
         "mouseup",
         () => {
+          const shouldDeferCapture = deferMouseSelectionCapture;
+          deferMouseSelectionCapture = false;
           if (!mouseSelectionInProgress) {
             return;
           }
           mouseSelectionInProgress = false;
-          set(capture$, signal);
+          if (!shouldDeferCapture) {
+            set(capture$, signal);
+            return;
+          }
+          animationFrame(captureSelectionNextFrame, { signal });
         },
         { signal },
       );
