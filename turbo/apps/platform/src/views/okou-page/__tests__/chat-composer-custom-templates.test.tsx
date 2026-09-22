@@ -687,6 +687,101 @@ test("Kind filters combine with search without an All option", async () => {
   expect(buttonByName("All", filters)).toBeUndefined();
 });
 
+test("Reactivating the current kind keeps it selected when another kind arrives", async () => {
+  const board = customTemplate();
+  const library = mockCustomTemplateStore([board]);
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText(board.title);
+  const filters = within(dialog).getByRole("group", {
+    name: "Template categories",
+  });
+  const presentation = buttonByName("Presentation", filters)!;
+  expect(presentation).toHaveAttribute("aria-pressed", "true");
+
+  click(presentation);
+
+  const updatedTitle = "Q3 board review revised";
+  library.replace([documentTemplate(), { ...board, title: updatedTitle }]);
+  context.mocks.ably.trigger("presentationTemplatesChanged");
+
+  await within(dialog).findByText(updatedTitle);
+  expect(presentation).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
+});
+
+test("Kind filter keyboard navigation waits for activation and retains the current kind", async () => {
+  mockCustomTemplates([
+    customTemplate(),
+    documentTemplate(),
+    illustrationTemplate(),
+  ]);
+
+  const { user, dialog } = await openCustomPanel();
+  await within(dialog).findByText("Brand report");
+  const filters = within(dialog).getByRole("group", {
+    name: "Template categories",
+  });
+  const document = buttonByName("Document", filters)!;
+  const presentation = buttonByName("Presentation", filters)!;
+  const image = buttonByName("Image", filters)!;
+
+  await user.click(document);
+  await user.keyboard("{ArrowRight}");
+
+  expect(presentation).toHaveFocus();
+  expect(within(dialog).getByText("Brand report")).toBeInTheDocument();
+  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+
+  await within(dialog).findByText("Q3 board review");
+  expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+
+  expect(presentation).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByText("Q3 board review")).toBeInTheDocument();
+  expect(within(dialog).queryByText("Brand report")).not.toBeInTheDocument();
+
+  await user.keyboard("{End}");
+
+  expect(image).toHaveFocus();
+  expect(within(dialog).getByText("Q3 board review")).toBeInTheDocument();
+  expect(within(dialog).queryByText("Market day")).not.toBeInTheDocument();
+
+  await user.keyboard(" ");
+
+  await within(dialog).findByText("Market day");
+  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+
+  await user.keyboard(" ");
+
+  expect(image).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByText("Market day")).toBeInTheDocument();
+  expect(within(dialog).queryByText("Q3 board review")).not.toBeInTheDocument();
+
+  await user.keyboard("{Home}");
+
+  expect(document).toHaveFocus();
+  expect(within(dialog).getByText("Market day")).toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+
+  await within(dialog).findByText("Brand report");
+
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+
+  expect(within(dialog).getByLabelText("Search templates")).toHaveFocus();
+
+  await user.keyboard("{Tab}");
+
+  expect(document).toHaveFocus();
+
+  await user.keyboard("{Tab}");
+
+  expect(buttonByName("Import template", dialog)).toHaveFocus();
+});
+
 test("An empty kind hides filters and Custom reopens the available catalog", async () => {
   mockCustomTemplates([customTemplate()]);
   const { dialog } = await openCustomPanel();

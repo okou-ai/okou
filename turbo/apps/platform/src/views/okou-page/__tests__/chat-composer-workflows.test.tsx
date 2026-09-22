@@ -874,6 +874,105 @@ test.each(["find", "send"])(
   },
 );
 
+test("Workflow category filters activate explicitly and preserve the current category and search", async () => {
+  mockAgent();
+  mockThread();
+  installWorkflows(() => {
+    return [];
+  });
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+  await findComposerEditor();
+
+  const user = userEvent.setup({ delay: null });
+  const dialog = await openTemplateCategory("Workflow");
+  const all = namedButton("All");
+  const everyone = namedButton("Everyone");
+  const engineering = namedButton("Engineering");
+  const inboxTemplateLabel = "Select workflow template Auto-inbox label";
+  const engineeringTemplateLabel =
+    "Select workflow template GitHub PR summarizer";
+  await within(dialog).findByLabelText(inboxTemplateLabel);
+  expect(
+    within(dialog).getByLabelText(engineeringTemplateLabel),
+  ).toBeInTheDocument();
+
+  await user.click(all);
+  await user.keyboard("{ArrowRight}");
+
+  expect(everyone).toHaveFocus();
+  expect(
+    within(dialog).getByLabelText(engineeringTemplateLabel),
+  ).toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+
+  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
+  expect(
+    within(dialog).queryByLabelText(engineeringTemplateLabel),
+  ).not.toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+
+  expect(everyone).toHaveAttribute("aria-pressed", "true");
+  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
+  expect(
+    within(dialog).queryByLabelText(engineeringTemplateLabel),
+  ).not.toBeInTheDocument();
+
+  await user.keyboard("{ArrowRight}");
+
+  expect(engineering).toHaveFocus();
+  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toBeInTheDocument();
+
+  await user.keyboard(" ");
+
+  await within(dialog).findByLabelText(engineeringTemplateLabel);
+  expect(
+    within(dialog).queryByLabelText(inboxTemplateLabel),
+  ).not.toBeInTheDocument();
+
+  await user.keyboard("{Home}");
+
+  expect(all).toHaveFocus();
+  expect(
+    within(dialog).queryByLabelText(inboxTemplateLabel),
+  ).not.toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+
+  await within(dialog).findByLabelText(inboxTemplateLabel);
+
+  await user.keyboard("{Tab}");
+
+  expect(within(dialog).getByLabelText(inboxTemplateLabel)).toHaveFocus();
+
+  const search = within(dialog).getByLabelText("Search templates");
+  await fill(search, "merged pull requests");
+
+  expect(
+    within(dialog).getByLabelText(engineeringTemplateLabel),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).queryByLabelText(inboxTemplateLabel),
+  ).not.toBeInTheDocument();
+
+  click(engineering);
+
+  expect(search).toHaveValue("merged pull requests");
+  expect(
+    within(dialog).getByLabelText(engineeringTemplateLabel),
+  ).toBeInTheDocument();
+
+  click(engineering);
+
+  expect(engineering).toHaveAttribute("aria-pressed", "true");
+  expect(search).toHaveValue("merged pull requests");
+  expect(
+    within(dialog).getByLabelText(engineeringTemplateLabel),
+  ).toBeInTheDocument();
+  expect(dialog).toBeInTheDocument();
+});
+
 test("Continue from empty slash suggestions to all workflows", async () => {
   mockAgent();
   mockThread();
