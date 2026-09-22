@@ -7,10 +7,12 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { queryOf } from "../context/request";
+import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { agentExists } from "../services/agent-data.service";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
+import { loadCurrentMembershipId } from "../services/morning-brief-membership.service";
 import {
   homeTaskRecommendationsUnavailable,
   readHomeTaskRecommendations,
@@ -35,6 +37,17 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   ) {
     // Not an error: a member without the feature has no cards, which is the
     // same shape as a member whose evidence supported none.
+    return {
+      status: 200 as const,
+      body: homeTaskRecommendationsUnavailable(),
+    };
+  }
+  const membershipId = await loadCurrentMembershipId(
+    get(clerk$),
+    { orgId: auth.orgId, userId: auth.userId },
+    signal,
+  );
+  if (membershipId === null) {
     return {
       status: 200 as const,
       body: homeTaskRecommendationsUnavailable(),

@@ -40,30 +40,6 @@ function boundedText(value: unknown, cap: number): string | null {
   return text.length <= cap ? text : text.slice(0, cap);
 }
 
-function boundedScore(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return null;
-  }
-  return Math.min(100, Math.max(0, Math.trunc(value)));
-}
-
-function connectorSlugs(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const slugs: string[] = [];
-  for (const item of value) {
-    const slug = boundedText(item, 64);
-    if (slug !== null && !slugs.includes(slug)) {
-      slugs.push(slug);
-    }
-    if (slugs.length >= 4) {
-      break;
-    }
-  }
-  return slugs;
-}
-
 function candidateSourceRefs(
   value: unknown,
   validRefs: ReadonlySet<string>,
@@ -155,43 +131,15 @@ export function normalizeHomeTaskCandidateDrafts(
 }
 
 /**
- * Cards from the writer model, or cards read back from the cache row.
- *
- * When candidates are supplied, score, source connectors and destination stay
- * owned by evidence resolution plus Jev. The prose writer can change none of
- * them and extra writer items are dropped.
+ * Normalize untrusted prose-writer output while preserving every accepted
+ * candidate field owned by evidence resolution plus Jev.
  */
 export function normalizeHomeTaskRecommendations(
   value: unknown,
-  candidates?: readonly HomeTaskCandidate[],
+  candidates: readonly HomeTaskCandidate[],
 ): HomeTaskRecommendation[] {
   if (!Array.isArray(value)) {
     return [];
-  }
-
-  if (candidates === undefined) {
-    const recommendations: HomeTaskRecommendation[] = [];
-    for (const item of value) {
-      if (!isRecord(item)) {
-        continue;
-      }
-      const parsed = homeTaskRecommendationSchema.safeParse({
-        id: item.id,
-        title: boundedText(item.title, 120),
-        prompt: boundedText(item.prompt, 1000),
-        rationale: boundedText(item.rationale, 200) ?? "",
-        actionability: boundedScore(item.actionability),
-        target: item.target,
-        connectors: connectorSlugs(item.connectors),
-      });
-      if (parsed.success) {
-        recommendations.push(parsed.data);
-      }
-      if (recommendations.length >= HOME_TASK_RECOMMENDATION_LIMIT) {
-        break;
-      }
-    }
-    return recommendations;
   }
 
   // A prose model may omit, duplicate, invent, or reorder output items. Bind

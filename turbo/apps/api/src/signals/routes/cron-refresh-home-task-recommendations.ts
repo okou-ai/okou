@@ -1,6 +1,7 @@
 import { cronRefreshHomeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 
+import { clerk$ } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -18,6 +19,7 @@ function createRefreshHomeTaskRecommendationsRoute(
     }
     const body = await refreshDueHomeTaskRecommendations(
       set(writeDb$),
+      get(clerk$),
       onlyScope,
       signal,
     );

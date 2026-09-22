@@ -37,7 +37,10 @@ cards. That is a correct outcome, not a failure.
 
 ## Evidence and authorization
 
-The source allowlist is intentionally narrow:
+The source allowlist is intentionally narrow. Before a cron scope may read it,
+the current Clerk organization membership, feature switch, and Agent visibility
+must all resolve; the same immutable membership is checked again after source
+I/O and before generated cards are committed.
 
 - Up to 40 recent threads for the requested Agent, restricted to the current
   user and organization. Only recent visible `input.prompt` and
@@ -62,8 +65,9 @@ reconnect state, provider failure, or source timeout all fail closed. Gmail is
 optional evidence: its failure removes Gmail from that refresh while the
 Agent's thread evidence can still be used.
 
-Every provider input marks source material as untrusted data. A chat message or
-email snippet cannot become an instruction, request a tool, or add a source.
+Every provider stage marks source material and derived candidate text as
+untrusted quoted data. A chat message, email snippet, extracted intent, or reason
+cannot become an instruction, request a tool, or add a source.
 
 ## Refresh and isolation
 
