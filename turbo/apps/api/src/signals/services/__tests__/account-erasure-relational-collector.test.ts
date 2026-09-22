@@ -9,6 +9,7 @@ import { env } from "../../../lib/env";
 import { ACCOUNT_OWNERSHIP_INVENTORY } from "../account-erasure-ownership-inventory";
 import {
   assertCatalogueInventoryCoverage,
+  assertRelationalSweepComplete,
   catalogueForeignKeys,
   catalogueTables,
   planRelationalErasure,
@@ -45,6 +46,34 @@ describe("relational erasure plan", () => {
     expect(new Set(tables).size).toBe(tables.length);
   });
 
+  it("resolves a composite foreign key as ordered positional pairs", async () => {
+    const keys = await catalogueForeignKeys(db);
+
+    // `account_erasure_work_sink_fk` is a real two-column key, so it pins the
+    // ordinality the aggregates carry. Dropping `ORDER BY ord` inside them
+    // would still parse, and would still hand the sweep a join key whose
+    // halves are paired in an unspecified order.
+    const composite = keys.find((key) => {
+      return (
+        key.child === "account_erasure_work" &&
+        key.parent === "account_erasure_sinks"
+      );
+    });
+    expect(composite?.childColumns).toStrictEqual(["job_id", "sink_id"]);
+    expect(composite?.parentColumns).toStrictEqual(["job_id", "sink_id"]);
+
+    // Every key, not just that one: the lists are pairs or the decode fails.
+    for (const key of keys) {
+      expect(key.childColumns).toHaveLength(key.parentColumns.length);
+      expect(key.childColumns.length).toBeGreaterThan(0);
+    }
+    expect(
+      keys.filter((key) => {
+        return key.childColumns.length > 1;
+      }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("orders every root before the roots it references", async () => {
     const plan = await planRelationalErasure(db);
     const position = new Map(
@@ -79,24 +108,108 @@ describe("relational erasure plan", () => {
     const plan = await planRelationalErasure(db);
     const byTable = new Map(
       plan.order.map((root) => {
-        return [root.table, root.ownership];
+        return [root.table, root.owners];
       }),
     );
 
     // The September 12 deletion kept threads the account created under Agents
     // owned by other members. The plan reaches them through the thread's own
     // owner column, so a surviving Agent cannot shelter them.
-    expect(byTable.get("chat_threads")).toStrictEqual(["user_id"]);
-    expect(byTable.get("agent_runs")).toStrictEqual(["user_id"]);
-    expect(byTable.get("agent_sessions")).toStrictEqual(["user_id"]);
-    expect(byTable.get("agents")).toStrictEqual(["owner"]);
-    // Threads are swept before the Agents they hang under, so a cross-owner
-    // thread is never orphaned behind a still-present parent.
-    const order = plan.order.map((root) => {
-      return root.table;
+    expect(byTable.get("chat_threads")).toStrictEqual([
+      { kind: "direct", column: "user_id" },
+    ]);
+    expect(byTable.get("agent_runs")).toStrictEqual([
+      { kind: "direct", column: "user_id" },
+    ]);
+    expect(byTable.get("agent_sessions")).toStrictEqual([
+      { kind: "direct", column: "user_id" },
+    ]);
+    expect(byTable.get("agents")).toStrictEqual([
+      { kind: "direct", column: "owner" },
+    ]);
+    // Ordering alone cannot save the cross-owner case: `chat_threads`
+    // references `agents`, `agent_runs` and `agent_sessions` and is referenced
+    // back, so no sequence satisfies both directions. The plan says so out
+    // loud rather than implying the order is sufficient.
+    const pairs = plan.cycles.map((pair) => {
+      return pair.join("<->");
     });
-    expect(order.indexOf("chat_threads")).toBeGreaterThan(-1);
-    expect(order.indexOf("agents")).toBeGreaterThan(-1);
+    expect(pairs).toContain("chat_threads<->agents");
+    expect(pairs).toContain("chat_threads<->agent_runs");
+  });
+
+  it("refuses to call the sweep complete while rows are unreachable", () => {
+    // Measured on the real schema: `chat_agentphone_context` is a root whose
+    // uuid `user_link_id` has no foreign key to a link row naming the account,
+    // and fourteen declared descendants have no foreign key to any declared
+    // parent. A completion claim has to fail while that is true.
+    expect(() => {
+      return assertRelationalSweepComplete({
+        order: [],
+        descendants: [],
+        unreachableDescendants: [],
+        unreachableRoots: ["chat_agentphone_context"],
+        cycles: [],
+      });
+    }).toThrow(
+      "account_erasure_relational:root_unreachable:chat_agentphone_context",
+    );
+    expect(() => {
+      return assertRelationalSweepComplete({
+        order: [],
+        descendants: [],
+        unreachableDescendants: ["email_outbox"],
+        unreachableRoots: [],
+        cycles: [],
+      });
+    }).toThrow(
+      "account_erasure_relational:descendant_unreachable:email_outbox",
+    );
+    expect(() => {
+      return assertRelationalSweepComplete({
+        order: [],
+        descendants: [],
+        unreachableDescendants: [],
+        unreachableRoots: [],
+        cycles: [],
+      });
+    }).not.toThrow();
+  });
+
+  it("reaches a link-keyed root through the row that names the account", async () => {
+    const plan = await planRelationalErasure(db);
+    const byTable = new Map(
+      plan.order.map((root) => {
+        return [root.table, root.owners];
+      }),
+    );
+
+    // `agentphone_user_link_id` is a uuid: it cannot hold a Clerk account id,
+    // so comparing the subject against it directly is a type error at best and
+    // a predicate that never matches at worst. The plan resolves the hop.
+    expect(byTable.get("agentphone_chat_thread_routes")).toStrictEqual([
+      {
+        kind: "indirect",
+        column: "agentphone_user_link_id",
+        parent: "agentphone_user_links",
+        parentColumn: "id",
+        parentOwnership: ["user_id"],
+      },
+    ]);
+
+    // Every owner either holds the account id or names the hop that does.
+    for (const root of plan.order) {
+      expect(root.owners.length).toBeGreaterThan(0);
+      for (const owner of root.owners) {
+        if (owner.kind === "indirect") {
+          expect(owner.parentOwnership.length).toBeGreaterThan(0);
+        }
+      }
+    }
+    // A root the sweep cannot reach is reported, never silently skipped.
+    expect(plan.unreachableRoots).toStrictEqual(
+      [...plan.unreachableRoots].sort(),
+    );
   });
 
   it("reaches every declared descendant through a declared parent", async () => {
