@@ -8,7 +8,6 @@ import {
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
-  ComposerCreatePicker,
   ComposerCreateImageModelPicker,
   ComposerCreateVideoModelPicker,
   ComposerTaskControls,
@@ -9015,7 +9014,6 @@ function ComposerInputSlot({
   actions: ComposerActions;
   minimumHeightClassName: string;
 }) {
-  const createPickerOpen = useGet(signals.create.pickerOpen$);
   const sending = useLastResolved(signals.submission.sending$) ?? false;
   const notifyDraftChanged = useComposerDraftChange(signals);
   const restoreAttachments = useSet(signals.draft.restoreAttachments$);
@@ -9122,34 +9120,25 @@ function ComposerInputSlot({
 
   return (
     <div
-      className={cn(
-        "grid flex-1 grid-cols-1 grid-rows-1",
-        minimumHeightClassName,
-      )}
+      className={cn("min-h-0 flex-1", minimumHeightClassName)}
+      data-slot="chat-composer-input"
+      onClick={(event) => {
+        const target = event.target;
+        if (
+          target instanceof Node &&
+          !signals.editor.editor.view.dom.contains(target)
+        ) {
+          focusEditor();
+        }
+      }}
     >
-      <div
-        className="col-start-1 row-start-1 min-h-0"
-        data-slot="chat-composer-input"
-        hidden={createPickerOpen}
-        onClick={(event) => {
-          const target = event.target;
-          if (
-            target instanceof Node &&
-            !signals.editor.editor.view.dom.contains(target)
-          ) {
-            focusEditor();
-          }
-        }}
-      >
-        <TiptapWorkflowComposer
-          signals={signals}
-          onDraftChange={notifyDraftChanged}
-          sending={sending}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-        />
-      </div>
-      <ComposerCreatePicker signals={signals} />
+      <TiptapWorkflowComposer
+        signals={signals}
+        onDraftChange={notifyDraftChanged}
+        sending={sending}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+      />
     </div>
   );
 }

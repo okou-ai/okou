@@ -61,7 +61,10 @@ async function setupComposer(): Promise<HTMLElement> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ComposerSlashTemplatePanel]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+    },
   });
   return await findComposerEditor();
 }
@@ -227,20 +230,27 @@ test("Leaving presentation hides its picker and resets its length", async () => 
   await waitFor(() => {
     expect(picker).toHaveTextContent("Auto");
   });
-  click(screen.getByRole("combobox", { name: "Choose a type" }));
-  click(await screen.findByRole("option", { name: "Image" }));
-  await screen.findByRole("combobox", { name: "Image models" });
+  click(button("Remove Presentation"));
+  await waitFor(() => {
+    expect(screen.queryByLabelText("Remove Presentation")).toBeNull();
+  });
   expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
-  click(screen.getByRole("combobox", { name: "Choose a type" }));
-  click(await screen.findByRole("option", { name: "Presentation" }));
+  // Coming back starts the length over rather than restoring the last one.
+  click(
+    button(
+      "Presentation",
+      await screen.findByRole("group", {
+        name: "Choose a task",
+      }),
+    ),
+  );
   await expect(
     screen.findByRole("combobox", { name: "Slide count" }),
   ).resolves.toHaveTextContent("8–12 slides");
-  click(button("Exit create mode"));
+  click(button("Remove Presentation"));
   await waitFor(() => {
-    expect(screen.queryByTestId("composer-create-mode")).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
   });
-  expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
   click(button("Send"));
   await waitFor(() => {
     expect(submissions).toHaveLength(1);

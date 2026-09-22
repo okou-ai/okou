@@ -1735,21 +1735,12 @@
       "create": {
         "addStyle": "Stil hinzufügen",
         "addTemplate": "Vorlage hinzufügen",
-        "chooseType": "Typ auswählen",
-        "exit": "Erstellungsmodus verlassen",
-        "image": "Bild erstellen",
-        "imageDescription": "Verwandle eine Idee in ein Bild",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
-        "presentation": "Präsentation erstellen",
-        "presentationDescription": "Folien für deine Geschichte",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
         "settingsAdjusted": "Einige Videoeinstellungen wurden an dieses Modell angepasst",
         "slideCount": "Folienanzahl",
         "slideCountAuto": "Automatisch",
-        "slideCountRange": "{{range}} Folien",
-        "video": "Video erstellen",
-        "videoDescription": "Bringe deine Ideen in Bewegung",
-        "videoPlaceholder": "Beschreibe das gewünschte Video…"
+        "slideCountRange": "{{range}} Folien"
       },
       "createWorkflow": "Workflow erstellen",
       "imageModelForThisChat": "Bildmodell für diesen Chat",
@@ -2280,40 +2271,6 @@
             "prompt": "Erstelle ein Schulungsdeck zu einem Thema meiner Wahl. Frag mich, wer geschult wird und was die Teilnehmenden danach können sollen."
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "Aus einem Foto ein Video machen",
-            "prompt": "Animiere ein bereitgestelltes Foto mit natürlichen Bewegungen. Halte das Motiv erkennbar und frage, was sich bewegen soll."
-          },
-          "brandIntro": {
-            "label": "Ein Intro für meine Marke erstellen",
-            "prompt": "Erstelle ein kurzes Markenvideo als Einstieg mit meinem Logo und meinen Markeninformationen. Hilf mir bei der Wahl der Stimmung."
-          },
-          "eventPromo": {
-            "label": "Meine Veranstaltung bewerben",
-            "prompt": "Erstelle ein kurzes Werbevideo für meine Veranstaltung. Frage nach Anlass, Publikum und den gewünschten Informationen."
-          },
-          "loopingBackground": {
-            "label": "Einen Hintergrund in Endlosschleife erstellen",
-            "prompt": "Erstelle einen nahtlos wiederholbaren Videohintergrund mit sanfter Bewegung. Frage nach Szene und Stimmung."
-          },
-          "productDemo": {
-            "label": "Mein Produkt in Bewegung zeigen",
-            "prompt": "Erstelle aus meinem Produktfoto ein kurzes Produktvideo. Bewahre das Aussehen und betone das von mir gewählte Merkmal."
-          },
-          "socialClip": {
-            "label": "Einen Clip für soziale Medien erstellen",
-            "prompt": "Erstelle ein kurzes Video für soziale Medien. Hilf mir, eine klare Botschaft und einen passenden Stil für mein Publikum zu wählen."
-          },
-          "videoGreeting": {
-            "label": "Einen Videogruß erstellen",
-            "prompt": "Erstelle einen kurzen Videogruß für einen Geburtstag, Feiertag oder eine Feier. Frage nach Anlass, Empfänger und Botschaft."
-          },
-          "visualExplainer": {
-            "label": "Eine Idee anschaulich erklären",
-            "prompt": "Erstelle ein kurzes Video, das eine Idee verständlich erklärt. Frage nach der Idee und dem Zielpublikum."
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "Eine Seite zum Buchen meiner Leistungen erstellen",
@@ -2395,13 +2352,11 @@
         "image": "Bildstile",
         "nextPage": "Nächste Seite",
         "previousPage": "Vorherige Seite",
-        "video": "Videovorlagen",
         "website": "Website-Vorlagen"
       },
       "tasks": {
         "image": "Bild",
         "presentation": "Folien",
-        "video": "Video",
         "visualization": "Visualisierung",
         "website": "Website",
         "workflow": "Workflow"

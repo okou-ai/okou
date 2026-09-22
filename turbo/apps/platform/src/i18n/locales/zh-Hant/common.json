@@ -1732,21 +1732,12 @@
       "create": {
         "addStyle": "新增風格",
         "addTemplate": "新增模板",
-        "chooseType": "選擇型別",
-        "exit": "退出創作模式",
-        "image": "生成圖片",
-        "imageDescription": "把想法變成畫面",
         "imagePlaceholder": "描述你想生成的圖片…",
-        "presentation": "生成簡報",
-        "presentationDescription": "把你要講的內容做成投影片",
         "presentationPlaceholder": "你的簡報要講什麼？",
         "settingsAdjusted": "部分影片設定已針對這個模型做了調整",
         "slideCount": "投影片數量",
         "slideCountAuto": "自動",
-        "slideCountRange": "{{range}} 頁",
-        "video": "生成影片",
-        "videoDescription": "讓你的想法動起來",
-        "videoPlaceholder": "描述你想生成的影片…"
+        "slideCountRange": "{{range}} 頁"
       },
       "createWorkflow": "建立工作流",
       "imageModelForThisChat": "本次對話使用的圖片模型",
@@ -2272,40 +2263,6 @@
             "prompt": "圍繞我選的主題搭建一份培訓簡報。向我瞭解培訓物件，以及他們學完後應該會做什麼。"
           }
         },
-        "video": {
-          "animatePhoto": {
-            "label": "把照片變成影片",
-            "prompt": "讓我提供的照片自然地動起來。保持主體可辨認，並問我哪些部分要動。"
-          },
-          "brandIntro": {
-            "label": "做一支品牌片頭",
-            "prompt": "為我的品牌建立一支短片頭。使用我提供的logo和品牌資訊，並幫我確定整體調性。"
-          },
-          "eventPromo": {
-            "label": "為我的活動做宣傳",
-            "prompt": "為我的活動建立一支宣傳短片。向我瞭解活動、受眾和需要包含的資訊。"
-          },
-          "loopingBackground": {
-            "label": "做一段迴圈播放的背景",
-            "prompt": "建立一段可無縫迴圈、動態柔和的影片背景。問我想要什麼場景和氛圍。"
-          },
-          "productDemo": {
-            "label": "讓我的產品動起來",
-            "prompt": "根據我的產品照片建立一支產品展示短片。保持產品外觀一致，並突出我選定的賣點。"
-          },
-          "socialClip": {
-            "label": "做一條社交媒體短片",
-            "prompt": "建立一支用於社交媒體的短影片。幫我確定清晰的資訊點和契合受眾的視覺風格。"
-          },
-          "videoGreeting": {
-            "label": "做一支祝福影片",
-            "prompt": "建立一支用於生日、節日或慶祝場合的祝福短片。問我場合、物件和想說的話。"
-          },
-          "visualExplainer": {
-            "label": "用畫面講清一個概念",
-            "prompt": "建立一支短片，把一個概念講得一看就懂。問我要解釋什麼，以及講給誰聽。"
-          }
-        },
         "website": {
           "bookingPage": {
             "label": "給別人一個預約我的入口",
@@ -2387,13 +2344,11 @@
         "image": "圖片風格",
         "nextPage": "下一頁",
         "previousPage": "上一頁",
-        "video": "影片模板",
         "website": "網站模板"
       },
       "tasks": {
         "image": "圖片",
         "presentation": "簡報",
-        "video": "影片",
         "visualization": "視覺化",
         "website": "網站",
         "workflow": "工作流"
