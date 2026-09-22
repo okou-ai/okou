@@ -43,6 +43,7 @@ interface SlashTemplatePanelProps {
   ) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
+  readonly onClose: () => void;
   readonly workflowOptionId: (workflowId: string) => string;
   readonly categoryOptionId: (category: SlashTemplateCategory) => string;
 }
@@ -248,11 +249,13 @@ function insideSlashPanel(target: EventTarget | null): boolean {
  */
 function SlashTemplateDetailFlyout({
   menuRef,
+  onClose,
   category,
   onSelectTemplate,
   onPreview,
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
+  readonly onClose: () => void;
   readonly category: SlashTemplateCategory;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
@@ -261,7 +264,16 @@ function SlashTemplateDetailFlyout({
   readonly onPreview: (index: number | null) => void;
 }) {
   return (
-    <Popover open>
+    <Popover
+      open
+      onOpenChange={(open, details) => {
+        // Hover/category selection owns this flyout's visibility, while
+        // Escape dismisses the whole suggestion interaction from any surface.
+        if (!open && details.reason === "escape-key") {
+          onClose();
+        }
+      }}
+    >
       <PopoverContent
         ref={menuRef}
         aria-label={slashTemplateCategoryLabel(category)}
@@ -384,6 +396,7 @@ export function SlashTemplatePanel({
   onSelectTemplate,
   onSelectWorkflow,
   onBrowseAll,
+  onClose,
   workflowOptionId,
   categoryOptionId,
 }: SlashTemplatePanelProps) {
@@ -492,6 +505,7 @@ export function SlashTemplatePanel({
       {detailCategory !== null && (
         <SlashTemplateDetailFlyout
           menuRef={menuRef}
+          onClose={onClose}
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}
           onPreview={onPreview}

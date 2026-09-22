@@ -215,7 +215,7 @@ export interface WorkflowComposerSignals {
   /** Null while the pointer is not previewing, so keyboard selection leads. */
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
-  readonly closeSuggestionMenu$: Command<void, []>;
+  readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
   readonly setSuggestionMenuRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -2010,6 +2010,24 @@ function mountLocalizationListener(
   });
 }
 
+function createCloseSuggestionMenuCommand(
+  editor: Editor,
+  interactionActive$: State<boolean>,
+  previewIndex$: State<number | null>,
+  caretIndex$: State<number>,
+) {
+  return command(({ set }, restoreEditorFocus = false) => {
+    if (restoreEditorFocus) {
+      // Focus synchronously before dismissing the token, so the focus event
+      // cannot reopen it on a later animation frame.
+      editor.view.focus();
+    }
+    set(interactionActive$, editor.isFocused);
+    set(previewIndex$, null);
+    set(caretIndex$, -1);
+  });
+}
+
 function createSuggestionMenuBoundary() {
   const elements = new Set<HTMLElement>();
   const ref$ = onRef(
@@ -2927,11 +2945,12 @@ export function createWorkflowComposerSignals<
   const previewSuggestion$ = command(({ set }, index: number | null) => {
     set(previewSuggestionIndexState$, index);
   });
-  const closeSuggestionMenu$ = command(({ set }) => {
-    set(editorInteractionActiveState$, editor.isFocused);
-    set(previewSuggestionIndexState$, null);
-    set(caretIndex$, -1);
-  });
+  const closeSuggestionMenu$ = createCloseSuggestionMenuCommand(
+    editor,
+    editorInteractionActiveState$,
+    previewSuggestionIndexState$,
+    caretIndex$,
+  );
   const focus$ = command(() => {
     editor.commands.focus("end");
   });

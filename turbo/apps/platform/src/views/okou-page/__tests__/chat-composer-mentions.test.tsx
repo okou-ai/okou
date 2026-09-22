@@ -459,8 +459,9 @@ test("Dismiss a focused mention menu without changing the draft", async () => {
     expect(screen.queryByTestId("chat-thread-suggestion-menu")).toBeNull();
   });
   expect(composer).toHaveTextContent("@beta");
+  expect(composer).toHaveFocus();
 
-  await user.click(composer);
+  await user.keyboard("{ArrowLeft}{ArrowRight}");
   await expect(
     screen.findByTestId("chat-thread-suggestion-menu"),
   ).resolves.toBeInTheDocument();

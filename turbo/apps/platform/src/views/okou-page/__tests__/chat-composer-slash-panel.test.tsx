@@ -707,3 +707,27 @@ test("Activate a template cover with Space after a cancelled pointer press", asy
     expect(editor).toHaveFocus();
   });
 });
+
+test("Escape from a focused template cover dismisses the slash menu", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openSlashMenu();
+  const editor = await findComposerEditor();
+  const [template] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!template) {
+    throw new Error("Expected a presentation template");
+  }
+  const cover = slashButton(template.title);
+  await user.pointer({ target: cover, keys: "[MouseLeft>]" });
+  await user.pointer({ target: editor, keys: "[/MouseLeft]" });
+  expect(cover).toHaveFocus();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(flyout()).toBeNull();
+  });
+  expect(editor).toHaveTextContent("Draft /");
+  expect(editor).toHaveFocus();
+  await user.keyboard("next");
+  expect(editor).toHaveTextContent("Draft /next");
+});
