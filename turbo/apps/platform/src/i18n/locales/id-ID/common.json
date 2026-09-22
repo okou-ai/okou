@@ -1460,11 +1460,9 @@
           },
           "later": "Nanti saja",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Tambahkan ke Slack",
             "description": "Tambahkan {{assistantName}} ke ruang kerja Slack tim Anda.",
             "note": "Rekan-rekan tidak perlu lewat Anda dulu. Mereka minta di kanal, dan hasilnya kembali di thread itu, di depan semua orang.",
-            "sampleChannel": "# growth",
             "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
           },
           "workflow": {

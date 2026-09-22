@@ -1460,11 +1460,9 @@
           },
           "later": "後で",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Slack に追加",
             "description": "チームの Slack ワークスペースに {{assistantName}} を追加します。",
             "note": "チームが毎回あなたを経由しなくてよくなります。チャンネルで頼めば、結果はそのスレッドに返ってきて、全員が見られます。",
-            "sampleChannel": "# growth",
             "title": "チームがすでに会話している場所で {{assistantName}} を使う"
           },
           "workflow": {

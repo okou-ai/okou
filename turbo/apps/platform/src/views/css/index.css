@@ -78,6 +78,16 @@
   --color-chart-blue-500: #2a78d6;
   --color-chart-blue-600: #1c5cab;
   --color-chart-orange: #eb6834;
+  /* The paper a brand illustration is printed on.
+
+     Taken from the Brand assets file's own artboard background, which is a
+     bound Figma variable there. It is deliberately the same value in Light and
+     Dark: the band is a sheet the drawing sits on rather than a UI surface, the
+     same argument `--border-width-illustration` already makes for stroke
+     weights. Holding it constant is what lets one exported drawing serve both
+     themes instead of needing a second asset per illustration. */
+  --color-illustration-canvas: #faf5f3;
+
   --color-chart-green: #1baf7a;
   --color-chart-gold: #eda100;
   --color-chart-red: #e34948;

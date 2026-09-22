@@ -248,8 +248,19 @@ export const setCheckinClaimedOpen$ = command(({ set }, open: boolean) => {
   set(internalCheckinClaimedOpen$, open);
 });
 
+/**
+ * Which check-ins are worth a whole screen.
+ *
+ * The first one, and every full week after it. A daily habit that opens a modal
+ * every single day stops being a reward somewhere around the fourth day and
+ * starts being a thing to dismiss, so the ordinary day gets a toast instead.
+ */
+export function isCheckinMilestone(streak: number): boolean {
+  return streak <= 1 || streak % 7 === 0;
+}
+
 export const checkInGetStarted$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal): Promise<number> => {
     await accept(
       get(apiClient$)(getStartedContract).checkin({
         fetchOptions: { signal },
@@ -259,11 +270,14 @@ export const checkInGetStarted$ = command(
     );
     signal.throwIfAborted();
     set(reloadGetStarted$);
-    await Promise.all([
+    const [status] = await Promise.all([
       waitForOperation(get(getStartedStatus$), signal),
       set(reloadAccountMenuCreditBalances$, signal),
     ]);
     signal.throwIfAborted();
+    // The streak the server now holds, so the caller can pick the surface that
+    // fits this particular day rather than the same one every day.
+    return status?.checkinStreak ?? 0;
   },
 );
 

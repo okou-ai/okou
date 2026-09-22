@@ -1460,11 +1460,9 @@
           },
           "later": "나중에",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Slack에 추가",
             "description": "팀의 Slack 워크스페이스에 {{assistantName}}를 추가합니다.",
             "note": "팀원들이 매번 나를 거치지 않아도 됩니다. 채널에서 부탁하면 결과가 그 스레드로 돌아오고, 모두가 함께 봅니다.",
-            "sampleChannel": "# growth",
             "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
           },
           "workflow": {
