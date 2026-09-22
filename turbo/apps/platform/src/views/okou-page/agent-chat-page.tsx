@@ -13,10 +13,7 @@ import {
   TooltipTrigger,
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
-import {
-  currentChatAgentId$,
-  currentChatAgentDisplayName$,
-} from "../../signals/agent-chat.ts";
+import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import {
   setAgentPinned$,
   currentChatAgentPinned$,
@@ -33,7 +30,6 @@ import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-compose
 import { avatarTextureEnabled$ } from "../../signals/external/feature-switch.ts";
 import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
-import { assistantName$ } from "../../signals/branding.ts";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 
@@ -65,7 +61,6 @@ function localizedAnonymousTaglines(t: TFunction<"common">): string[] {
 
 function localizedUserTaglines(
   t: TFunction<"common">,
-  agentName: string,
   userName: string,
 ): string[] {
   return [
@@ -92,15 +87,6 @@ function localizedUserTaglines(
         return $.chat.agentPage.taglines.whatsOnYourMind;
       },
       { userName },
-    ),
-    t(
-      ($) => {
-        return $.chat.agentPage.taglines.letsRoll;
-      },
-      {
-        agentName,
-        userName,
-      },
     ),
     t(
       ($) => {
@@ -183,18 +169,10 @@ function localizedUserTaglines(
   ];
 }
 
-function useTagline(
-  agentName: string | null | undefined,
-  userName: string | null,
-  index: number,
-): string {
+function useTagline(userName: string | null, index: number): string {
   const { t } = useTranslation();
-  const assistantName = useGet(assistantName$);
-  if (agentName === undefined) {
-    return "";
-  }
   const taglines = userName
-    ? localizedUserTaglines(t, agentName ?? assistantName, userName)
+    ? localizedUserTaglines(t, userName)
     : localizedAnonymousTaglines(t);
   return taglines[index % taglines.length];
 }
@@ -403,9 +381,6 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
 
 export function AgentChatPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
-  const currentChatAgentDisplayName = useLastResolved(
-    currentChatAgentDisplayName$,
-  );
 
   const pageSignal = useGet(pageSignal$);
   const userFirstName = useLastResolved(user$)?.firstName ?? null;
@@ -415,11 +390,7 @@ export function AgentChatPage() {
   const setInput = useSet(composerSignals.draft.setDraftInput$);
   const saveDraft = useSet(composerSignals.draft.save$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
-  const tagline = useTagline(
-    currentChatAgentDisplayName,
-    userFirstName,
-    taglineIndex,
-  );
+  const tagline = useTagline(userFirstName, taglineIndex);
 
   const handleInputChange = (value: string) => {
     setInput(value);

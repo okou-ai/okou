@@ -16,10 +16,10 @@ import {
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { createPersonalModelProviderAuthSignals } from "./personal-model-provider-auth.ts";
 
-const internalTaglineIndex$ = state(Math.floor(Math.random() * 18));
+const internalTaglineIndex$ = state(Math.floor(Math.random() * 17));
 
 export const reloadTagline$ = command(({ set }) => {
-  set(internalTaglineIndex$, Math.floor(Math.random() * 18));
+  set(internalTaglineIndex$, Math.floor(Math.random() * 17));
 });
 
 export const chatPageTaglineIndex$ = computed((get) => {

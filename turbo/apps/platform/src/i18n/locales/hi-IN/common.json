@@ -1559,7 +1559,6 @@
         "enteredChat": "{{userName}} ने चैट में प्रवेश किया है।",
         "goodToSeeYou": "आपको देखकर अच्छा लगा, {{userName}}।",
         "knewYouWouldCome": "जानता था तुम वापस आओगे, {{userName}}।",
-        "letsRoll": "{{agentName}} तैयार है, {{userName}}। चलो रोल करें।",
         "makeTodayCount": "आइए आज का दिन गिनें, {{userName}}।",
         "newIdeas": "आज नये विचार, {{userName}}?",
         "readyToBuild": "निर्माण के लिए तैयार, {{userName}}?",
