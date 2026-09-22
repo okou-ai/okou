@@ -8,6 +8,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { reloadAgents$ } from "../agent.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
+import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
@@ -49,22 +50,22 @@ export const completeOnboarding$ = command(
     const onboardingClient = createClient(onboardingCompleteContract);
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    // Only the source-first flow asks for these fields. The make-something flow
-    // leaves the draft empty, and the ready step's display fallback is not an
-    // answer worth storing.
+    // Only the source-first flow asks for these fields. Its industry answer can
+    // be absent after a resumed run, while its model choice still applies.
+    // The make-something flow leaves the draft empty.
     const { industry, provider } = get(sourcesFirstDraft$);
     await accept(
       onboardingClient.complete({
-        query:
-          industry === null || provider === null
-            ? {}
-            : { modelProvider: provider },
+        query: provider === null ? {} : { modelProvider: provider },
         body: industry === null ? { timezone } : { timezone, industry },
         fetchOptions: { signal },
       }),
       [200],
     );
     signal.throwIfAborted();
+    if (provider !== null) {
+      set(invalidateOrgModelPolicies$);
+    }
     if (role) {
       set(capturePaidOnboardingRoleConfirmed$, role);
     }

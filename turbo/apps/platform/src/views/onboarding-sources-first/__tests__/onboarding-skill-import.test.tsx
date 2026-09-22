@@ -364,18 +364,39 @@ test("The skills step names Claude Code when it was selected", async () => {
 });
 
 test.each([
-  { card: "Codex" as const, provider: "codex" },
-  { card: "Claude Code" as const, provider: "claudeCode" },
+  {
+    card: "Codex" as const,
+    provider: "codex",
+    fromStart: true,
+    scenario: "full flow",
+    expectedIndustry: "marketing",
+  },
+  {
+    card: "Claude Code" as const,
+    provider: "claudeCode",
+    fromStart: true,
+    scenario: "full flow",
+    expectedIndustry: "marketing",
+  },
+  {
+    card: "Claude Code" as const,
+    provider: "claudeCode",
+    fromStart: false,
+    scenario: "resumed without an industry answer",
+    expectedIndustry: undefined,
+  },
 ])(
-  "Finishing onboarding sends the selected $card model preference",
-  async ({ card, provider }) => {
+  "Finishing onboarding sends the selected $card model preference after a $scenario",
+  async ({ card, provider, fromStart, expectedIndustry }) => {
     mockAgentWorkflows();
     mockChatLifecycle(context);
     let sentProvider: string | undefined;
+    let sentIndustry: string | undefined;
     context.mocks.api(
       onboardingCompleteContract.complete,
-      ({ query, respond }) => {
+      ({ query, body, respond }) => {
         sentProvider = query?.modelProvider;
+        sentIndustry = body.industry;
         context.mocks.data.onboardingStatus({
           needsOnboarding: false,
           onboardingComplete: true,
@@ -387,7 +408,7 @@ test.each([
       },
     );
 
-    await openSkillsStep(card, true);
+    await openSkillsStep(card, fromStart);
     click(getButtonByName("Continue"));
     await expect(
       screen.findByRole("heading", { name: SLACK_QUESTION }),
@@ -400,6 +421,7 @@ test.each([
     await waitFor(() => {
       expect(sentProvider).toBe(provider);
     });
+    expect(sentIndustry).toBe(expectedIndustry);
   },
 );
 
