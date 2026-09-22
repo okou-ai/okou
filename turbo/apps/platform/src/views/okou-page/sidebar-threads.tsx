@@ -361,39 +361,43 @@ function ChatThreadMenu({
           }
         >
           <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                aria-label={
-                  showPinIndicator
-                    ? t(($) => {
-                        return $.chat.sidebar.pinned;
-                      })
-                    : undefined
-                }
-                data-testid={
-                  showPinIndicator ? "chat-thread-pinned-indicator" : undefined
-                }
-                className="flex items-center justify-center"
-              >
-                {hasRestingIndicator ? (
-                  <>
-                    <span className="flex items-center justify-center md:group-hover:hidden md:group-data-[popup-open]/thread-menu:hidden">
-                      {showStateIndicator ? (
-                        <SessionStateIndicator signals={signals} />
-                      ) : (
-                        <Pin size={17} className="opacity-70" />
-                      )}
-                    </span>
-                    <Ellipsis
-                      size={17}
-                      className="hidden opacity-70 md:group-hover:block md:group-data-[popup-open]/thread-menu:block"
-                    />
-                  </>
-                ) : (
-                  <Ellipsis size={17} className="opacity-70" />
-                )}
-              </span>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <span
+                  aria-label={
+                    showPinIndicator
+                      ? t(($) => {
+                          return $.chat.sidebar.pinned;
+                        })
+                      : undefined
+                  }
+                  data-testid={
+                    showPinIndicator
+                      ? "chat-thread-pinned-indicator"
+                      : undefined
+                  }
+                  className="flex items-center justify-center"
+                >
+                  {hasRestingIndicator ? (
+                    <>
+                      <span className="flex items-center justify-center md:group-hover:hidden md:group-data-[popup-open]/thread-menu:hidden">
+                        {showStateIndicator ? (
+                          <SessionStateIndicator signals={signals} />
+                        ) : (
+                          <Pin size={17} className="opacity-70" />
+                        )}
+                      </span>
+                      <Ellipsis
+                        size={17}
+                        className="hidden opacity-70 md:group-hover:block md:group-data-[popup-open]/thread-menu:block"
+                      />
+                    </>
+                  ) : (
+                    <Ellipsis size={17} className="opacity-70" />
+                  )}
+                </span>
+              }
+            />
             <TooltipContent side="bottom">
               <p className="text-xs">
                 {t(($) => {
@@ -868,11 +872,13 @@ function ChatThreadsListMenuTooltip() {
   const { t } = useTranslation();
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span>
-          <Ellipsis size={18} />
-        </span>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <span>
+            <Ellipsis size={18} />
+          </span>
+        }
+      />
       <TooltipContent side="bottom">
         <p className="text-xs">
           {t(($) => {
@@ -1113,22 +1119,24 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
       <div className="flex items-center gap-0.5">
         <TooltipProvider delayDuration={200}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                onClick={() => {
-                  newChatAction.onSelect("main");
-                }}
-                disabled={newChatAction.disabled}
-                variant="quiet"
-                size="icon-sm"
-                iconSize="md"
-                className="shrink-0"
-                aria-label={newChatLabel}
-              >
-                <Plus size={18} />
-              </Button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  onClick={() => {
+                    newChatAction.onSelect("main");
+                  }}
+                  disabled={newChatAction.disabled}
+                  variant="quiet"
+                  size="icon-sm"
+                  iconSize="md"
+                  className="shrink-0"
+                  aria-label={newChatLabel}
+                >
+                  <Plus size={18} />
+                </Button>
+              }
+            />
             <TooltipContent side="bottom">
               <p className="text-xs">{newChatLabel}</p>
             </TooltipContent>

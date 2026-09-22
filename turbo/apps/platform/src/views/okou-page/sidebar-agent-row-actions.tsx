@@ -173,11 +173,13 @@ export function AgentRowSideActions({
               }
             >
               <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="flex h-full w-full items-center justify-center">
-                    <Ellipsis size={16} />
-                  </span>
-                </TooltipTrigger>
+                <TooltipTrigger
+                  render={
+                    <span className="flex h-full w-full items-center justify-center">
+                      <Ellipsis size={16} />
+                    </span>
+                  }
+                />
                 <TooltipContent
                   side={variant === "sidebar" ? "bottom" : "right"}
                 >

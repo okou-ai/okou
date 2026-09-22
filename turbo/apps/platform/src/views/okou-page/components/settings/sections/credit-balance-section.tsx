@@ -148,17 +148,19 @@ function UsagePackSegmentBar({
             : `${segment.label} — ${formattedCredits}`;
           return (
             <Tooltip key={segment.key}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  data-testid={`${testIdPrefix}-${segment.key}`}
-                  aria-label={accessibleLabel}
-                  className={`h-2 ${segment.color} cursor-default first:rounded-l-full last:rounded-r-full ring-0 outline-none transition-shadow hover:z-10 hover:ring-2 hover:ring-foreground/30 focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-foreground/30`}
-                  style={{
-                    width: `${(segment.credits / totalCredits) * 100}%`,
-                  }}
-                />
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    data-testid={`${testIdPrefix}-${segment.key}`}
+                    aria-label={accessibleLabel}
+                    className={`h-2 ${segment.color} cursor-default first:rounded-l-full last:rounded-r-full ring-0 outline-none transition-shadow hover:z-10 hover:ring-2 hover:ring-foreground/30 focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-foreground/30`}
+                    style={{
+                      width: `${(segment.credits / totalCredits) * 100}%`,
+                    }}
+                  />
+                }
+              />
               <TooltipContent
                 side="top"
                 sideOffset={8}
@@ -476,22 +478,24 @@ function UsagePackMemberBalancesDialog({
     >
       <TooltipProvider delayDuration={100}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground"
-              aria-label={t(($) => {
-                return $.billing.usage.usagePack.viewMembers;
-              })}
-              onClick={() => {
-                openDialog(settingsDialogSignal);
-              }}
-            >
-              <Users size={15} />
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground"
+                aria-label={t(($) => {
+                  return $.billing.usage.usagePack.viewMembers;
+                })}
+                onClick={() => {
+                  openDialog(settingsDialogSignal);
+                }}
+              >
+                <Users size={15} />
+              </Button>
+            }
+          />
           <TooltipContent>
             {t(($) => {
               return $.billing.usage.usagePack.viewMembers;

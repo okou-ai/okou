@@ -1108,20 +1108,22 @@ function PricingBackButton({ onBack }: { readonly onBack: () => void }) {
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            onClick={onBack}
-            variant="quiet"
-            size="icon"
-            iconSize="lg"
-            aria-label={t(($) => {
-              return $.billing.common.back;
-            })}
-          >
-            <ArrowLeft size={20} />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              onClick={onBack}
+              variant="quiet"
+              size="icon"
+              iconSize="lg"
+              aria-label={t(($) => {
+                return $.billing.common.back;
+              })}
+            >
+              <ArrowLeft size={20} />
+            </Button>
+          }
+        />
         <TooltipContent side="bottom">
           <p className="text-sm">
             {t(($) => {

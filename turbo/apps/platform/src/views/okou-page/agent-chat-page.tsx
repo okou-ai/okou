@@ -248,21 +248,23 @@ function PinPill() {
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            onClick={handlePin}
-            disabled={pinSaving}
-            variant="quiet"
-            size="icon-2xs"
-            className="absolute -top-0.5 -right-0.5 rounded-full border border-surface-border bg-background shadow-sm hover:shadow-md disabled:opacity-50"
-            aria-label={t(($) => {
-              return $.sidebar.pin;
-            })}
-          >
-            <Pin size={12} />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              onClick={handlePin}
+              disabled={pinSaving}
+              variant="quiet"
+              size="icon-2xs"
+              className="absolute -top-0.5 -right-0.5 rounded-full border border-surface-border bg-background shadow-sm hover:shadow-md disabled:opacity-50"
+              aria-label={t(($) => {
+                return $.sidebar.pin;
+              })}
+            >
+              <Pin size={12} />
+            </Button>
+          }
+        />
         <TooltipContent side="bottom">
           <p className="text-xs">
             {t(($) => {
@@ -325,44 +327,46 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
       {agentId ? (
         <TooltipProvider delayDuration={200}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Link
-                pathname="/agents/:agentId"
-                options={{
-                  pathParams: { agentId },
-                }}
-                aria-label={t(($) => {
-                  return $.detail.viewProfile;
-                })}
-                className={cn(
-                  AGENT_AVATAR_FRAME,
-                  "cursor-pointer",
-                  textureUrl
-                    ? // The frame's background is behind the texture and the
-                      // border this used to recolour is gone, so hover needs a
-                      // layer of its own above the artwork. Same token and the
-                      // same 150ms, so hover does not change how it feels.
-                      "group relative"
-                    : cn(
-                        AGENT_AVATAR_BORDER,
-                        "transition-colors duration-150 hover:bg-state-hover",
-                      ),
-                )}
-              >
-                <AgentAvatarImg
-                  name={agentId}
-                  alt=""
-                  className={AGENT_AVATAR_IMAGE}
-                  textureUrl={textureUrl ?? undefined}
-                />
-                {textureUrl ? (
-                  <span
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 bg-state-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+            <TooltipTrigger
+              render={
+                <Link
+                  pathname="/agents/:agentId"
+                  options={{
+                    pathParams: { agentId },
+                  }}
+                  aria-label={t(($) => {
+                    return $.detail.viewProfile;
+                  })}
+                  className={cn(
+                    AGENT_AVATAR_FRAME,
+                    "cursor-pointer",
+                    textureUrl
+                      ? // The frame's background is behind the texture and the
+                        // border this used to recolour is gone, so hover needs a
+                        // layer of its own above the artwork. Same token and the
+                        // same 150ms, so hover does not change how it feels.
+                        "group relative"
+                      : cn(
+                          AGENT_AVATAR_BORDER,
+                          "transition-colors duration-150 hover:bg-state-hover",
+                        ),
+                  )}
+                >
+                  <AgentAvatarImg
+                    name={agentId}
+                    alt=""
+                    className={AGENT_AVATAR_IMAGE}
+                    textureUrl={textureUrl ?? undefined}
                   />
-                ) : null}
-              </Link>
-            </TooltipTrigger>
+                  {textureUrl ? (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 bg-state-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                    />
+                  ) : null}
+                </Link>
+              }
+            />
             <TooltipContent side="bottom">
               <p className="text-xs">
                 {t(($) => {

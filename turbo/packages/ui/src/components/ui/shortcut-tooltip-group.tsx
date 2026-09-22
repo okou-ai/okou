@@ -30,7 +30,7 @@ export function ShortcutTooltipGroup({
         {items.map((item) => {
           return (
             <Tooltip key={item.shortcut} disabled={item.trigger.props.disabled}>
-              <TooltipTrigger asChild>{item.trigger}</TooltipTrigger>
+              <TooltipTrigger render={item.trigger} />
               <TooltipContent
                 role="tooltip"
                 side={side}

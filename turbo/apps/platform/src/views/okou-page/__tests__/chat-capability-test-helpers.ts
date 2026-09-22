@@ -216,6 +216,7 @@ export async function selectAcrossPassages(
   startPassage: string,
   endPassage: string,
 ): Promise<void> {
+  const existingQuoteAction = await findButton("Quote");
   const startNode = textNodeContaining(startPassage);
   const endNode = textNodeContaining(endPassage);
   const startOffset = startNode.data.indexOf(startPassage);
@@ -235,11 +236,7 @@ export async function selectAcrossPassages(
   );
   fireEvent.mouseUp(endNode.parentElement ?? target, { button: 0 });
   await waitFor(() => {
-    if (
-      document.querySelector(
-        '[data-radix-popper-content-wrapper] button[aria-keyshortcuts="q"]',
-      )
-    ) {
+    if (existingQuoteAction.isConnected) {
       throw new Error("Ambiguous selection still exposes passage actions");
     }
   });

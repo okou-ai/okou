@@ -264,19 +264,21 @@ function ExpandedHeader() {
         </div>
         <TooltipProvider delayDuration={200}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="quiet"
-                size="icon-sm"
-                iconSize="md"
-                className="shrink-0"
-                onClick={onCollapse}
-                aria-label={collapseLabel}
-              >
-                <PanelLeftClose className="opacity-50" size={18} />
-              </Button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="icon-sm"
+                  iconSize="md"
+                  className="shrink-0"
+                  onClick={onCollapse}
+                  aria-label={collapseLabel}
+                >
+                  <PanelLeftClose className="opacity-50" size={18} />
+                </Button>
+              }
+            />
             <TooltipContent side="bottom">
               <p className="text-xs">{collapseLabel}</p>
             </TooltipContent>

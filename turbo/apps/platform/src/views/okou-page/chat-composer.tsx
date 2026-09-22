@@ -2973,11 +2973,13 @@ function PptCard({
       <div className={TEMPLATE_TILE_CAPTION}>
         <TooltipProvider delayDuration={300}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-                {item.title}
-              </p>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+                  {item.title}
+                </p>
+              }
+            />
             <TooltipContent side="bottom">{item.title}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -4333,11 +4335,13 @@ function ImportedPptCardCaption({
     <div className={TEMPLATE_TILE_CAPTION}>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-              {template.title}
-            </p>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+                {template.title}
+              </p>
+            }
+          />
           <TooltipContent side="bottom">{template.title}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -4539,18 +4543,20 @@ function ImportedPresentationTemplateRenameControl({
       </div>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="submit"
-              variant="quiet"
-              size="icon-sm"
-              disabled={updating}
-              aria-label={label}
-              className="invisible mt-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
-            >
-              {updating ? <Loader2 className="animate-spin" /> : <Check />}
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                type="submit"
+                variant="quiet"
+                size="icon-sm"
+                disabled={updating}
+                aria-label={label}
+                className="invisible mt-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
+              >
+                {updating ? <Loader2 className="animate-spin" /> : <Check />}
+              </Button>
+            }
+          />
           <TooltipContent side="bottom">{label}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -6304,26 +6310,28 @@ function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={label}
-            aria-pressed={false}
-            onPointerEnter={prewarm}
-            onFocus={prewarm}
-            onPointerDown={prewarm}
-            onClick={open}
-          >
-            {/* The label stays in the tooltip and the accessible name; the
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={label}
+              aria-pressed={false}
+              onPointerEnter={prewarm}
+              onFocus={prewarm}
+              onPointerDown={prewarm}
+              onClick={open}
+            >
+              {/* The label stays in the tooltip and the accessible name; the
                 row beside it is all icons, and one worded control in it read
                 as a different kind of thing. */}
-            <SwatchBook size={18} aria-hidden="true" />
-          </Button>
-        </TooltipTrigger>
+              <SwatchBook size={18} aria-hidden="true" />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {label}
         </TooltipContent>
@@ -6404,21 +6412,23 @@ function CreateWorkflowPromptButton({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={t(($) => {
-              return $.chat.composer.createWorkflow;
-            })}
-            onClick={onCreateWorkflowPrompt}
-          >
-            <Route size={18} aria-hidden="true" />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.chat.composer.createWorkflow;
+              })}
+              onClick={onCreateWorkflowPrompt}
+            >
+              <Route size={18} aria-hidden="true" />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
             return $.chat.composer.createWorkflow;
@@ -7223,17 +7233,19 @@ function ComposerConnectorAccountMenu({
     >
       <Tooltip>
         <PopoverTrigger asChild>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-2xs"
-              className="shrink-0"
-              aria-label={accessibleLabel}
-            >
-              {explicit ? <UserCheck size={14} /> : <User size={14} />}
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="quiet"
+                size="icon-2xs"
+                className="shrink-0"
+                aria-label={accessibleLabel}
+              >
+                {explicit ? <UserCheck size={14} /> : <User size={14} />}
+              </Button>
+            }
+          />
         </PopoverTrigger>
         <TooltipContent side="top" className="text-xs">
           {accessibleLabel}
@@ -7936,28 +7948,30 @@ function ConnectorsPopoverButton({
       <TooltipProvider delayDuration={300}>
         <Tooltip>
           <PopoverTrigger asChild>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
-                  COMPOSER_CONTROL_FOCUS_CLASS,
-                )}
-                aria-label={t(($) => {
-                  return $.chat.connectors.title;
-                })}
-              >
-                {!waitingForConnectors && (
-                  <ComposerConnectorTriggerIcons
-                    connectors={agentConnectors}
-                    customConnectors={agentCustomConnectors}
-                    computerUse={computerUse}
-                    sshAccess={sshAccess}
-                    vncAccess={vncAccess}
-                  />
-                )}
-              </button>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
+                    COMPOSER_CONTROL_FOCUS_CLASS,
+                  )}
+                  aria-label={t(($) => {
+                    return $.chat.connectors.title;
+                  })}
+                >
+                  {!waitingForConnectors && (
+                    <ComposerConnectorTriggerIcons
+                      connectors={agentConnectors}
+                      customConnectors={agentCustomConnectors}
+                      computerUse={computerUse}
+                      sshAccess={sshAccess}
+                      vncAccess={vncAccess}
+                    />
+                  )}
+                </button>
+              }
+            />
           </PopoverTrigger>
           <TooltipContent side="top" className="text-xs">
             {t(($) => {
@@ -8444,35 +8458,37 @@ function MicButton({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className={cn("relative shrink-0", {
-              // Background draft checks should not dim the mic on thread switches.
-              "disabled:opacity-100": draftLoading && !actionDisabled,
-              "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
-                starting,
-            })}
-            data-composer-voice-toggle
-            onClick={handleClick}
-            disabled={actionDisabled || draftLoading}
-            aria-label={micButtonAriaLabel(status)}
-            aria-busy={starting}
-            aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
-          >
-            {starting ? (
-              <span
-                className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Mic size={18} />
-            )}
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className={cn("relative shrink-0", {
+                // Background draft checks should not dim the mic on thread switches.
+                "disabled:opacity-100": draftLoading && !actionDisabled,
+                "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
+                  starting,
+              })}
+              data-composer-voice-toggle
+              onClick={handleClick}
+              disabled={actionDisabled || draftLoading}
+              aria-label={micButtonAriaLabel(status)}
+              aria-busy={starting}
+              aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
+            >
+              {starting ? (
+                <span
+                  className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Mic size={18} />
+              )}
+            </Button>
+          }
+        />
         <TooltipContent
           role="tooltip"
           side="top"
@@ -8670,23 +8686,25 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={t(($) => {
-              return $.chat.attachments.attach;
-            })}
-            onClick={() => {
-              fileInput?.click();
-            }}
-          >
-            <Paperclip size={18} />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.chat.attachments.attach;
+              })}
+              onClick={() => {
+                fileInput?.click();
+              }}
+            >
+              <Paperclip size={18} />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
             return $.chat.attachments.attach;
@@ -9250,19 +9268,21 @@ function ModelConfigurationWarning({
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={blocker.onAction}
-            aria-label={`${blocker.actionLabel}: ${blocker.message}`}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-          >
-            <AlertTriangle size={15} />
-            <span className="hidden composer-wide:inline">
-              {blocker.actionLabel}
-            </span>
-          </button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={blocker.onAction}
+              aria-label={`${blocker.actionLabel}: ${blocker.message}`}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+            >
+              <AlertTriangle size={15} />
+              <span className="hidden composer-wide:inline">
+                {blocker.actionLabel}
+              </span>
+            </button>
+          }
+        />
         <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
           {blocker.message}
         </TooltipContent>

@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip";
 
-import { asChildRender } from "../../lib/base-ui-compat";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 import { resolveCollisionPadding } from "../../lib/safe-area";
@@ -39,29 +38,18 @@ function Tooltip(props: TooltipPrimitive.Root.Props) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
-interface TooltipTriggerProps extends Omit<
-  TooltipPrimitive.Trigger.Props,
-  "render"
-> {
-  asChild?: boolean;
-  render?: TooltipPrimitive.Trigger.Props["render"];
-}
-
-const TooltipTrigger = React.forwardRef<HTMLButtonElement, TooltipTriggerProps>(
-  ({ asChild = false, children, render, ...props }, ref) => {
-    const child = asChild ? asChildRender(children) : undefined;
-    return (
-      <TooltipPrimitive.Trigger
-        ref={ref}
-        data-slot="tooltip-trigger"
-        render={child ?? render}
-        {...props}
-      >
-        {asChild ? undefined : children}
-      </TooltipPrimitive.Trigger>
-    );
-  },
-);
+const TooltipTrigger = React.forwardRef<
+  HTMLButtonElement,
+  TooltipPrimitive.Trigger.Props
+>((props, ref) => {
+  return (
+    <TooltipPrimitive.Trigger
+      ref={ref}
+      data-slot="tooltip-trigger"
+      {...props}
+    />
+  );
+});
 TooltipTrigger.displayName = "TooltipTrigger";
 
 type TooltipPositionerProps = Pick<
