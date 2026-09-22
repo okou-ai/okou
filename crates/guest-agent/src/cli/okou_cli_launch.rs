@@ -2,10 +2,12 @@
 //!
 //! The runner rootfs may carry a versioned CLI bundle installed at build time
 //! (see `guest_contracts::okou_cli`). It is used only when the launch config
-//! the API captured names exactly the `pi-agent-runtime` version installed
-//! there and a CLI at or above the API's floor: API-first turns hand a
-//! half-finished session to the sandbox, and prompt and tool-schema parity is
-//! guaranteed only for the same runtime build. Every other case keeps the
+//! the API captured proves parity with the installed bundle and names a CLI
+//! floor the bundle satisfies: API-first turns hand a half-finished session to
+//! the sandbox, and prompt and tool-schema parity is a byte-equality contract.
+//! Parity is the session-construction digest when the launch config carries
+//! one (it moves only when code feeding the constructed session changes), and
+//! the exact `pi-agent-runtime` version otherwise. Every other case keeps the
 //! commit-addressed `npx` launch, which is always built from the API's commit.
 
 use std::path::Path;
@@ -49,12 +51,15 @@ impl PiCliLaunchDecision {
 
 /// Runtime requirements the API captured into `piLaunchConfig.apiFirstTurn`.
 ///
-/// Both fields are absent from launch configs written by APIs that predate
-/// versioned CLI artifacts; such runs always launch through `npx`.
+/// Every field is absent from launch configs written by APIs that predate
+/// versioned CLI artifacts; such runs always launch through `npx`. The
+/// session-construction digest, when present, replaces the runtime version as
+/// the parity key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct PiRuntimeRequirement<'a> {
     pub(super) required_pi_agent_runtime_version: Option<&'a str>,
     pub(super) min_cli_version: Option<&'a str>,
+    pub(super) required_pi_session_construction_digest: Option<&'a str>,
 }
 
 impl<'a> PiRuntimeRequirement<'a> {
@@ -69,6 +74,7 @@ impl<'a> PiRuntimeRequirement<'a> {
         Self {
             required_pi_agent_runtime_version: field("requiredPiAgentRuntimeVersion"),
             min_cli_version: field("minCliVersion"),
+            required_pi_session_construction_digest: field("requiredPiSessionConstructionDigest"),
         }
     }
 }
@@ -111,12 +117,26 @@ pub(super) fn select_pi_cli_launch(
     let Some(installed) = installed else {
         return PiCliLaunchDecision::npx("no_installed_cli");
     };
-    let Some(required_runtime) = requirement.required_pi_agent_runtime_version else {
-        return PiCliLaunchDecision::npx("launch_config_without_runtime_version");
+    let parity = match requirement.required_pi_session_construction_digest {
+        Some(required_digest) => {
+            let Some(session_construction) = installed.session_construction.as_ref() else {
+                return PiCliLaunchDecision::npx("installed_cli_without_session_construction");
+            };
+            if required_digest != session_construction.digest {
+                return PiCliLaunchDecision::npx("session_construction_mismatch");
+            }
+            "session_construction_match"
+        }
+        None => {
+            let Some(required_runtime) = requirement.required_pi_agent_runtime_version else {
+                return PiCliLaunchDecision::npx("launch_config_without_runtime_version");
+            };
+            if required_runtime != installed.versions.pi_agent_runtime {
+                return PiCliLaunchDecision::npx("runtime_version_mismatch");
+            }
+            "runtime_version_match"
+        }
     };
-    if required_runtime != installed.versions.pi_agent_runtime {
-        return PiCliLaunchDecision::npx("runtime_version_mismatch");
-    }
     let Some(min_cli) = requirement.min_cli_version else {
         return PiCliLaunchDecision::npx("launch_config_without_cli_floor");
     };
@@ -126,7 +146,7 @@ pub(super) fn select_pi_cli_launch(
     ) {
         (Some(floor), Some(cli)) if cli >= floor => PiCliLaunchDecision {
             source: PiCliLaunchSource::Installed,
-            reason: "runtime_version_match",
+            reason: parity,
         },
         (Some(_), Some(_)) => PiCliLaunchDecision::npx("cli_below_floor"),
         _ => PiCliLaunchDecision::npx("invalid_version"),
@@ -136,7 +156,9 @@ pub(super) fn select_pi_cli_launch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use guest_contracts::okou_cli::{OkouCliInstalledPackage, OkouCliVersions};
+    use guest_contracts::okou_cli::{
+        OkouCliInstalledPackage, OkouCliSessionConstruction, OkouCliVersions,
+    };
 
     fn installed(cli: &str, runtime: &str) -> InstalledOkouCli {
         InstalledOkouCli {
@@ -151,6 +173,16 @@ mod tests {
                 size: 1,
             },
             entrypoint: InstalledOkouCli::entrypoint_for(cli),
+            session_construction: None,
+        }
+    }
+
+    fn installed_with_digest(cli: &str, runtime: &str, digest: &str) -> InstalledOkouCli {
+        InstalledOkouCli {
+            session_construction: Some(OkouCliSessionConstruction {
+                digest: digest.to_string(),
+            }),
+            ..installed(cli, runtime)
         }
     }
 
@@ -158,9 +190,18 @@ mod tests {
         runtime: Option<&'a str>,
         floor: Option<&'a str>,
     ) -> PiRuntimeRequirement<'a> {
+        requirement_with_digest(runtime, floor, None)
+    }
+
+    fn requirement_with_digest<'a>(
+        runtime: Option<&'a str>,
+        floor: Option<&'a str>,
+        digest: Option<&'a str>,
+    ) -> PiRuntimeRequirement<'a> {
         PiRuntimeRequirement {
             required_pi_agent_runtime_version: runtime,
             min_cli_version: floor,
+            required_pi_session_construction_digest: digest,
         }
     }
 
@@ -177,6 +218,21 @@ mod tests {
         assert_eq!(
             PiRuntimeRequirement::from_launch_config(&launch_config),
             requirement(Some("1.36.0"), Some("9.352.7"))
+        );
+
+        let digest = "d".repeat(64);
+        let with_digest = serde_json::json!({
+            "schemaVersion": 2,
+            "apiFirstTurn": {
+                "sandboxEventSequenceStart": 1,
+                "requiredPiAgentRuntimeVersion": "1.36.0",
+                "minCliVersion": "9.352.7",
+                "requiredPiSessionConstructionDigest": digest
+            }
+        });
+        assert_eq!(
+            PiRuntimeRequirement::from_launch_config(&with_digest),
+            requirement_with_digest(Some("1.36.0"), Some("9.352.7"), Some(&digest))
         );
 
         let legacy = serde_json::json!({
@@ -204,6 +260,49 @@ mod tests {
         let same_floor =
             select_pi_cli_launch(&requirement(Some("1.36.0"), Some("9.353.0")), Some(&cli));
         assert_eq!(same_floor.source, PiCliLaunchSource::Installed);
+    }
+
+    #[test]
+    fn session_construction_digest_replaces_the_runtime_version_as_parity_key() {
+        let digest = "d".repeat(64);
+        let cli = installed_with_digest("9.353.0", "1.36.0", &digest);
+        // A dependency-only runtime bump no longer forces the npx launch.
+        let decision = select_pi_cli_launch(
+            &requirement_with_digest(Some("1.36.1"), Some("9.352.7"), Some(&digest)),
+            Some(&cli),
+        );
+        assert_eq!(decision.source, PiCliLaunchSource::Installed);
+        assert_eq!(decision.reason, "session_construction_match");
+
+        let other = "e".repeat(64);
+        let legacy = installed("9.353.0", "1.36.0");
+        let cases = [
+            (
+                requirement_with_digest(Some("1.36.0"), Some("9.352.7"), Some(&other)),
+                &cli,
+                "session_construction_mismatch",
+            ),
+            (
+                requirement_with_digest(Some("1.36.0"), Some("9.352.7"), Some(&digest)),
+                &legacy,
+                "installed_cli_without_session_construction",
+            ),
+            (
+                requirement_with_digest(Some("1.36.0"), Some("9.353.1"), Some(&digest)),
+                &cli,
+                "cli_below_floor",
+            ),
+            (
+                requirement_with_digest(Some("1.36.0"), None, Some(&digest)),
+                &cli,
+                "launch_config_without_cli_floor",
+            ),
+        ];
+        for (requirement, installed, reason) in cases {
+            let decision = select_pi_cli_launch(&requirement, Some(installed));
+            assert_eq!(decision.source, PiCliLaunchSource::Npx, "{reason}");
+            assert_eq!(decision.reason, reason);
+        }
     }
 
     #[test]

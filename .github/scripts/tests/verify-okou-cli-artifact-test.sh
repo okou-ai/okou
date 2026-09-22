@@ -11,15 +11,18 @@ cli_version="9.353.0"
 versions_json="$(jq -nc \
   --arg cli "$cli_version" \
   '{cli: $cli, piAgentRuntime: "1.36.0", piSdk: "0.86.1+okou.0123456789ab"}')"
+session_construction_json="$(jq -nc '{digest: ("d" * 64)}')"
 
-# create_artifact <dir> <include_worker> <include_wasm> [package_version] [versions]
-# `versions` is the manifest `versions` object; pass `null` to omit it.
+# create_artifact <dir> <include_worker> <include_wasm> [package_version] [versions] [session_construction]
+# `versions` is the manifest `versions` object and `session_construction` the
+# manifest `sessionConstruction` object; pass `null` to omit either.
 create_artifact() {
   local artifact_dir="$1"
   local include_worker="$2"
   local include_wasm="$3"
   local package_version="${4:-$cli_version}"
   local versions="${5:-$versions_json}"
+  local session_construction="${6:-$session_construction_json}"
   local package_root="${artifact_dir}/contents/package"
 
   mkdir -p "$package_root"
@@ -50,6 +53,7 @@ create_artifact() {
     --arg package_sha256 "$package_sha256" \
     --argjson package_size "$package_size" \
     --argjson versions "$versions" \
+    --argjson session_construction "$session_construction" \
     '{
       version: 1,
       commitSha: $commit_sha,
@@ -59,7 +63,9 @@ create_artifact() {
         size: $package_size
       }
     }
-    + (if $versions == null then {} else {versions: $versions} end)' \
+    + (if $versions == null then {} else {versions: $versions} end)
+    + (if $session_construction == null then {}
+       else {sessionConstruction: $session_construction} end)' \
     >"${artifact_dir}/manifest.json"
   local manifest_sha256
   manifest_sha256="$(sha256sum "${artifact_dir}/manifest.json" | cut -d ' ' -f 1)"
@@ -116,5 +122,15 @@ reject_artifact invalid-pi-sdk-version \
   "Verifier accepted a Pi SDK version without the patch-set identity" \
   true true "$cli_version" \
   "$(jq -c '.piSdk = "0.86.1"' <<<"$versions_json")" >/dev/null
+
+# The session-construction digest is the parity key the guest compares, so an
+# artifact must declare a well-formed one.
+reject_artifact missing-session-construction \
+  "Verifier accepted a manifest without the session-construction digest" \
+  true true "$cli_version" "$versions_json" null >/dev/null
+
+reject_artifact invalid-session-construction \
+  "Verifier accepted a session-construction digest that is not 64 lowercase hex" \
+  true true "$cli_version" "$versions_json" '{"digest":"nope"}' >/dev/null
 
 echo "verify-okou-cli-artifact tests passed"

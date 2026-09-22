@@ -154,6 +154,7 @@ function config(
   sandboxEventSequenceStart = 1,
   baseSessionSha256: string | null = H0_HASH,
   requiredPiAgentRuntimeVersion?: string,
+  requiredPiSessionConstructionDigest?: string,
 ): PiApiFirstTurnConfig {
   return {
     schemaVersion: 1,
@@ -166,8 +167,14 @@ function config(
     ...(requiredPiAgentRuntimeVersion === undefined
       ? {}
       : { requiredPiAgentRuntimeVersion, minCliVersion: "9.352.7" }),
+    ...(requiredPiSessionConstructionDigest === undefined
+      ? {}
+      : { requiredPiSessionConstructionDigest }),
   };
 }
+
+const SESSION_DIGEST = "d".repeat(64);
+const OTHER_SESSION_DIGEST = "e".repeat(64);
 
 /** H0 (settled) and the H1 the API appended to it, from one session. */
 function continuedSessionJsonl(): { readonly h0: string; readonly h1: string } {
@@ -459,6 +466,75 @@ describe("Pi API first-turn handoff loader", () => {
       reason: "runtime_parity_mismatch",
       requiredPiAgentRuntimeVersion: "1.36.0",
       installedPiAgentRuntimeVersion: "1.35.9",
+    });
+    expect(restored.apiUsage).toStrictEqual(API_USAGE);
+    expect(await readFile(restored.sessionFile, "utf8")).toBe(h0);
+  });
+
+  it("continues a pending-tool handoff on a matching session construction even when the runtime version differs", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-digest-"));
+    temporaryDirectories.push(sessionDir);
+    const { h0, h1 } = continuedSessionJsonl();
+    const h0Hash = createHash("sha256").update(h0).digest("hex");
+    const pointer = {
+      ...manifest(h1, { apiUsage: API_USAGE }),
+      baseSession: { sessionId: SESSION_ID, sha256: h0Hash },
+    };
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      return String(input).endsWith("manifest.json")
+        ? Response.json(pointer)
+        : new Response(h1, {
+            headers: { "content-length": String(Buffer.byteLength(h1)) },
+          });
+    });
+
+    const restored = await resolvePiApiFirstTurnHandoff({
+      config: config(5_000, 4, h0Hash, "1.36.0", SESSION_DIGEST),
+      sessionDir,
+      sessionId: SESSION_ID,
+      runtime: fixedRuntime(fetchMock as typeof fetch),
+      // A dependency-only runtime bump: the constructed session is identical.
+      installedPiAgentRuntimeVersion: "1.36.1",
+      installedPiSessionConstructionDigest: SESSION_DIGEST,
+    });
+
+    expect(restored.ownershipTransferMode).toBe("pending-tool-continuation");
+    expect(restored.degraded).toBeUndefined();
+    expect(await readFile(restored.sessionFile, "utf8")).toBe(h1);
+  });
+
+  it("restarts a pending-tool handoff from H0 as sandbox-first on a session construction mismatch", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-handoff-digest-"));
+    temporaryDirectories.push(sessionDir);
+    const { h0, h1 } = continuedSessionJsonl();
+    const h0Hash = createHash("sha256").update(h0).digest("hex");
+    const pointer = {
+      ...manifest(h1, { apiUsage: API_USAGE }),
+      baseSession: { sessionId: SESSION_ID, sha256: h0Hash },
+    };
+    const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      return String(input).endsWith("manifest.json")
+        ? Response.json(pointer)
+        : new Response(h1, {
+            headers: { "content-length": String(Buffer.byteLength(h1)) },
+          });
+    });
+
+    const restored = await resolvePiApiFirstTurnHandoff({
+      config: config(5_000, 4, h0Hash, "1.36.0", SESSION_DIGEST),
+      sessionDir,
+      sessionId: SESSION_ID,
+      runtime: fixedRuntime(fetchMock as typeof fetch),
+      // Same runtime version, different constructed session: the digest wins.
+      installedPiAgentRuntimeVersion: "1.36.0",
+      installedPiSessionConstructionDigest: OTHER_SESSION_DIGEST,
+    });
+
+    expect(restored.ownershipTransferMode).toBe("sandbox-first");
+    expect(restored.degraded).toStrictEqual({
+      reason: "session_construction_mismatch",
+      requiredPiSessionConstructionDigest: SESSION_DIGEST,
+      installedPiSessionConstructionDigest: OTHER_SESSION_DIGEST,
     });
     expect(restored.apiUsage).toStrictEqual(API_USAGE);
     expect(await readFile(restored.sessionFile, "utf8")).toBe(h0);
