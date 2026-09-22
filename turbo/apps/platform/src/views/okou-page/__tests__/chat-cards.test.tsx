@@ -234,6 +234,8 @@ test("A bare relative permission beside another link keeps punctuation and prose
 test("Bare actions recognize typographic delimiters without losing their labels", async () => {
   const relativePermissionUrl =
     new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
+  const englandFlag =
+    "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
   await setupChat(
     [
       `Dev：${PERMISSION_URL}`,
@@ -245,13 +247,15 @@ test("Bare actions recognize typographic delimiters without losing their labels"
       `🔐${CONNECTOR_URL}`,
       `❤️${CONNECTOR_URL}`,
       `👍🏽${CONNECTOR_URL}`,
+      `1️⃣${CONNECTOR_URL}`,
+      `${englandFlag}${CONNECTOR_URL}`,
       `Relative：${relativePermissionUrl}`,
     ].join("\n\n"),
   );
 
   await waitFor(() => {
     expect(screen.getAllByTestId("permission-action-card")).toHaveLength(5);
-    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(5);
+    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(7);
   });
   for (const label of [
     "Dev：",
@@ -263,6 +267,8 @@ test("Bare actions recognize typographic delimiters without losing their labels"
     "🔐",
     "❤️",
     "👍🏽",
+    "1️⃣",
+    englandFlag,
     "Relative：",
   ]) {
     expect(screen.getByText(label)).toBeInTheDocument();
@@ -283,6 +289,8 @@ test("Bare actions recognize typographic delimiters without losing their labels"
     "permission-action-card",
     "connector-action-card",
     "permission-action-card",
+    "connector-action-card",
+    "connector-action-card",
     "connector-action-card",
     "connector-action-card",
     "connector-action-card",
