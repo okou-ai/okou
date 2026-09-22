@@ -32,9 +32,11 @@ import {
 } from "../system-storage-presigned-url-cache.service";
 
 /**
- * Narrow internal-boundary exception: storage-manifest timing dimensions are
- * deliberately absent from every HTTP response. Route suites own observable
- * cache/results behavior; this suite pins only the finite collector contract.
+ * Narrow internal-boundary exception: mixed cache query shape, exact scope/key
+ * dispatch, cache-row boundary states, and timing dimensions are deliberately
+ * absent from every HTTP response. Route suites own observable manifest/result
+ * behavior; this suite pins only these finite query-strategy and collector
+ * contracts.
  */
 
 const context = testContext();

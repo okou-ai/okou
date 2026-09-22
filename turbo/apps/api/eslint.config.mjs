@@ -689,9 +689,10 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
-      // Storage-manifest telemetry is intentionally absent from every API
-      // response. This focused contract test records the finite dimensions at
-      // the collector boundary; route suites retain cache/result behavior.
+      // Storage-manifest mixed-query shape, exact pair dispatch, cache-row
+      // boundary states and telemetry are absent from every API response. This
+      // focused suite pins those finite internal contracts; route suites retain
+      // externally visible manifest/result behavior.
       "src/signals/services/__tests__/system-storage-presigned-url-cache.telemetry.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
       // a request input, and shortening it through the preview endpoint would
@@ -886,8 +887,9 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
-      // Storage-manifest timing dimensions have no HTTP observation surface;
-      // route suites separately own externally visible cache behavior.
+      // Storage-manifest mixed-query shape, exact pair dispatch, cache-row
+      // boundary states and timing dimensions have no HTTP observation surface;
+      // route suites separately own externally visible manifest/result behavior.
       "src/signals/services/__tests__/system-storage-presigned-url-cache.telemetry.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
