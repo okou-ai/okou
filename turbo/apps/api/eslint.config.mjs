@@ -689,11 +689,6 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
-      // Storage-manifest mixed-query shape, exact pair dispatch, cache-row
-      // boundary states and telemetry are absent from every API response. This
-      // focused suite pins those finite internal contracts; route suites retain
-      // externally visible manifest/result behavior.
-      "src/signals/services/__tests__/system-storage-presigned-url-cache.telemetry.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
       // a request input, and shortening it through the preview endpoint would
       // ship a debug parameter. This suite drives the route's own admission
@@ -887,10 +882,6 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
-      // Storage-manifest mixed-query shape, exact pair dispatch, cache-row
-      // boundary states and timing dimensions have no HTTP observation surface;
-      // route suites separately own externally visible manifest/result behavior.
-      "src/signals/services/__tests__/system-storage-presigned-url-cache.telemetry.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.
