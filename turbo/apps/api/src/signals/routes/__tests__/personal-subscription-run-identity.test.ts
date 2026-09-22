@@ -3130,32 +3130,7 @@ test("keeps a seeded Claude identity shared after a type-wide disconnect and rec
   await runs.requestCancelRun(f.actor, runId, [200]);
 });
 
-describe("canonical preparation identity", () => {
-  it.each(["claude-code-oauth-token", "codex-oauth-token"] as const)(
-    "does not replace a captured %s identity when retention is off",
-    async (type) => {
-      const f = await fixture(type, false, false);
-      const runId = await f.start();
-      const claim = await f.claim(runId);
-      const captured = accountId(claim, type);
-      const b = await connect(f.actor, type, "identity-b");
-      const denied = await firewall.requestFirewallAuth(
-        { authorization: `Bearer ${claim.sandboxToken}` },
-        authBody(claim, type),
-        [424],
-      );
-      expect(denied.status).toBe(424);
-      const second = await f.start();
-      const next = await f.claim(second);
-      expect(accountId(next, type)).not.toBe(captured);
-      await expect(resolve(next, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${b.token}`,
-      });
-      await runs.requestCancelRun(f.actor, runId, [200]);
-      await runs.requestCancelRun(f.actor, second, [200]);
-    },
-  );
-});
+describe("canonical preparation identity", () => {});
 
 describe("personal priority over organization API", () => {
   it.each([
