@@ -5838,8 +5838,7 @@
     "status": {
       "availableNow": "當前可用",
       "inUse_one": "{{limit}}個名額中已使用{{active}}個",
-      "inUse_other": "{{limit}}個名額中已使用{{active}}個",
-      "waitingForSandbox": "等待沙箱"
+      "inUse_other": "{{limit}}個名額中已使用{{active}}個"
     },
     "tiers": {
       "custom": "自定義",

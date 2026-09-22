@@ -191,11 +191,7 @@ function CurrentPlanStatus({
 }) {
   const { i18n, t } = useTranslation();
   const { memberUsage } = concurrency;
-  // A new App can reach the previous API during independent deployment.
-  // Remove this bridge after #34867's serving/rollback API and client-floor gates.
-  const waiting = concurrency.waiting ?? 0;
-  const reserved = concurrency.active + waiting;
-  const hasUsageDetails = memberUsage.length > 0 || waiting > 0;
+  const hasUsageDetails = memberUsage.length > 0;
   const numberFormat = new Intl.NumberFormat(i18n.resolvedLanguage);
   const slotCountLabel = (count: number): string => {
     return t(
@@ -214,11 +210,10 @@ function CurrentPlanStatus({
       <div className="flex items-center gap-2 mb-2">
         {Array.from({ length: concurrency.limit }, (_, i) => {
           const active = i < concurrency.active;
-          const reservedForWaiting = !active && i < reserved;
           return (
             <div
               key={i}
-              className={`h-1.5 flex-1 rounded-full ${active ? "bg-destructive" : reservedForWaiting ? "bg-muted-foreground/50" : "bg-muted"}`}
+              className={`h-1.5 flex-1 rounded-full ${active ? "bg-destructive" : "bg-muted"}`}
             />
           );
         })}
@@ -259,24 +254,6 @@ function CurrentPlanStatus({
                 </li>
               );
             })}
-            {waiting > 0 && (
-              <li className="flex min-w-0 items-center justify-between gap-4 text-sm">
-                <span className="flex min-w-0 items-center gap-3 text-muted-foreground">
-                  <span
-                    aria-hidden="true"
-                    className="size-1.5 shrink-0 rounded-full bg-muted-foreground/50"
-                  />
-                  <span className="truncate font-light">
-                    {t(($) => {
-                      return $.queue.status.waitingForSandbox;
-                    })}
-                  </span>
-                </span>
-                <span className="shrink-0 font-medium tabular-nums text-foreground">
-                  {slotCountLabel(waiting)}
-                </span>
-              </li>
-            )}
           </ul>
         )}
         <div

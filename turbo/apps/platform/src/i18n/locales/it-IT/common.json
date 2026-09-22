@@ -5907,8 +5907,7 @@
       "availableNow": "Disponibili ora",
       "inUse_one": "{{active}} di {{limit}} slot in uso",
       "inUse_many": "{{active}} di {{limit}} slot in uso",
-      "inUse_other": "{{active}} di {{limit}} slot in uso",
-      "waitingForSandbox": "In attesa di Sandbox"
+      "inUse_other": "{{active}} di {{limit}} slot in uso"
     },
     "tiers": {
       "custom": "Personalizzato",

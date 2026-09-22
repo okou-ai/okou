@@ -5838,8 +5838,7 @@
     "status": {
       "availableNow": "Tersedia sekarang",
       "inUse_one": "{{active}} dari {{limit}} slot digunakan",
-      "inUse_other": "{{active}} dari {{limit}} slot digunakan",
-      "waitingForSandbox": "Menunggu Sandbox"
+      "inUse_other": "{{active}} dari {{limit}} slot digunakan"
     },
     "tiers": {
       "custom": "Kustom",

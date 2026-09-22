@@ -5838,8 +5838,7 @@
     "status": {
       "availableNow": "現在利用可能",
       "inUse_one": "{{limit}} スロットの {{active}} が使用中です",
-      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です",
-      "waitingForSandbox": "Sandbox を待機中"
+      "inUse_other": "{{limit}} スロット中 {{active}} が使用中です"
     },
     "tiers": {
       "custom": "カスタム",

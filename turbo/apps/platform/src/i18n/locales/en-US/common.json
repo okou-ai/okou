@@ -5842,8 +5842,7 @@
     "status": {
       "availableNow": "Available now",
       "inUse_one": "{{active}} of {{limit}} slot in use",
-      "inUse_other": "{{active}} of {{limit}} slots in use",
-      "waitingForSandbox": "Waiting for Sandbox"
+      "inUse_other": "{{active}} of {{limit}} slots in use"
     },
     "tiers": {
       "custom": "Custom",
