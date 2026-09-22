@@ -2167,17 +2167,42 @@ environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
 #34081 owns Access management UI; #34370 records integrated real-Run acceptance
 and the owner-approved evidence boundaries at closure.
-Management stays inside `/connectors/ssh`. Access is a reusable host connection
-setting under the existing SSH Agent grant, not a separately authorized service.
-General availability does not replace the existing Agent permission.
+The existing management UI stays inside `/connectors/ssh` while #36038 adds a
+second standalone entry. Access is reusable owner configuration, not a separately
+authorized Agent service. SSH remains its first consumer under the existing SSH
+Agent grant; general availability does not replace that permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. Unified host forms also accept inline Access
-creation in the host write request. Existing `configId` selections remain valid;
-responses still return only the resolved binding. Deploy API support before the
-App uses inline creation. An older API rejects that write alternative;
+The deployed SSH management UI initially uses the temporary
+`/api/ssh/cloudflare-access/configs` rollout bridge. The standalone owner boundary
+adds `/api/cloudflare-access/configs` over the same rows, revisions and mutation
+service; its response names current references `sshHosts`, while the bridge keeps
+`hosts`. During this phase, configuration mutations publish both
+`cloudflare-access:changed` and `ssh:changed` with `{ orgId }` only so the
+replacement and deployed Apps can refresh. Neither event contains a token,
+configuration ID or host ID.
+
+Deploy #36037's additive API before #36038's App. A new API/old App continues
+using the SSH path and event unchanged. #36038 adds the standalone page and moves
+the retained SSH flow to the canonical API, state and event without removing its
+selector, inline creation, nested management or CRUD behavior. Both phases operate
+on the same encrypted records. There is no feature switch, schema migration, data
+copy or Runner contract change.
+
+After the App build containing #36038 is verified live in production, #36068
+raises the minimum supported App version to that exact build and removes the
+SSH-prefixed route, `hosts` projection, error adapter and Access-only legacy
+event publication. Do not combine that floor increase with the release that first
+publishes the replacement App: production promotes the API before the App, so a
+user could accept a `426` prompt while refresh still serves the previous build.
+Actual SSH host writes continue publishing `ssh:changed`; inline Access creation
+also publishes `cloudflare-access:changed` because it changes both resources.
+
+Unified host forms also accept inline Access creation in the host write request.
+Existing `configId` selections remain valid; responses still return only the
+resolved binding. Deploy API support before the App uses inline creation. An older
+API rejects that write alternative;
 clients should refresh after the current API/App deployment, without a second
 save path or automatic fallback. Existing rows and older App requests remain
 valid, and Runner versions do not need a new decoder for this management change.

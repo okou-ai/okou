@@ -13,7 +13,7 @@ import {
 } from "@okouai/ui";
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
-  type CloudflareAccessConfig,
+  type SshCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
 import {
@@ -173,7 +173,7 @@ function AccessLoadError() {
 export function AccessImpact({
   config,
 }: {
-  readonly config: Pick<CloudflareAccessConfig, "hosts">;
+  readonly config: Pick<SshCloudflareAccessConfig, "hosts">;
 }) {
   const { t } = useTranslation();
   return (
@@ -204,7 +204,7 @@ export function AccessImpact({
 export function AccessFields({
   config,
 }: {
-  readonly config: CloudflareAccessConfig | null;
+  readonly config: SshCloudflareAccessConfig | null;
 }) {
   const { t } = useTranslation();
   const replace = useGet(sshReplaceAccessToken$);
