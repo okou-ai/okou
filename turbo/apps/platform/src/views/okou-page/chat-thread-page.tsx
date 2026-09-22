@@ -7162,18 +7162,11 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
  * message row re-render on every optimistic change.
  */
 function OptimisticSpinner({ eventId }: { eventId: string }) {
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.OptimisticMessageSpinner] === true;
   // Streaming deltas rebuild the optimistic buffer, so compare the ids instead
   // of the set identity: a pending message keeps every other spinner idle.
   const optimisticEventIds = useGet(optimisticEventIds$, {
     equalityFn: equalSets,
   });
-  // Only the presentation is gated: the message still renders and reconciles
-  // exactly as before, so a message keeps its layout while the switch is off.
-  if (!enabled) {
-    return null;
-  }
   // The slot repeats the bubble's own padding and line metrics so the spinner
   // centers on the first line of text however many lines the message wraps to.
   // It stays reserved when the message is confirmed, so the bubble never

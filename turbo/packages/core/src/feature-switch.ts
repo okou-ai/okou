@@ -564,12 +564,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
     enabled: false,
   },
-  [FeatureSwitchKey.OptimisticMessageSpinner]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show a spinner beside a user message the server has not confirmed yet",
-    enabled: true,
-  },
 };
 
 interface ResolvedHashes {
