@@ -255,8 +255,8 @@ function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
           value={editor.sshConnectionId}
           onValueChange={(value, details) => {
             if (
-              !connections.data.some((connection) => {
-                return connection.id === value;
+              !connectionItems.some((item) => {
+                return item.value === value;
               })
             ) {
               details.cancel();
