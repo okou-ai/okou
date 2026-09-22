@@ -6,6 +6,7 @@ import {
   chatThreadUnpinContract,
   type ChatThreadSnapshotProjection,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
@@ -20,6 +21,7 @@ import {
   continuityThread,
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
+import { sidebarThreadLinks } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 
@@ -196,6 +198,74 @@ test("Move to an older chat from the side pane without changing the main pane", 
   expectPaneTitle(newest, "Newest neighboring chat");
   expectPaneTitle(current, "Current keyboard chat");
 });
+
+test.each([
+  {
+    caseId: 74,
+    direction: "previous",
+    shortcut: "{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}",
+    target: "newer",
+  },
+  {
+    caseId: 75,
+    direction: "next",
+    shortcut: "{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}",
+    target: "older",
+  },
+] as const)(
+  "Navigate to the $direction listed chat from a filtered current chat",
+  async ({ caseId, shortcut, target }) => {
+    const older = continuityThread(caseId, 1, "Older listed keyboard chat");
+    const hiddenOlder = continuityThread(
+      caseId,
+      2,
+      "✅ Older archived keyboard chat",
+    );
+    const current = continuityThread(
+      caseId,
+      3,
+      "✅ Current archived keyboard chat",
+    );
+    const hiddenNewer = continuityThread(
+      caseId,
+      4,
+      "✅ Newer archived keyboard chat",
+    );
+    const newer = continuityThread(caseId, 5, "Newer listed keyboard chat");
+    const targetThread = target === "newer" ? newer : older;
+    const workspace = installContinuityWorkspace(context, {
+      caseId,
+      threads: [older, hiddenOlder, current, hiddenNewer, newer],
+    });
+
+    await setupPage({
+      context,
+      path: `/chats/${current.id}`,
+      featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+      ...workspace.pageOptions,
+    });
+
+    await waitFor(() => {
+      expect(composerIn(current.id)).toBeVisible();
+      expect(
+        sidebarThreadLinks().map((link) => {
+          return link.dataset.sidebarChatThreadId;
+        }),
+      ).toStrictEqual([newer.id, older.id]);
+    });
+
+    composerIn(current.id).focus();
+    await userEvent.keyboard(shortcut);
+
+    await waitFor(() => {
+      expect(threadContainer(targetThread.id)).toBeVisible();
+      expect(continuitySidebarLink(targetThread.id)).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    });
+  },
+);
 
 test("Open the emoji picker for the focused chat", async () => {
   const current = continuityThread(17, 1, "Project plan");
