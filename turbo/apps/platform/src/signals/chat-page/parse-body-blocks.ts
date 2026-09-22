@@ -155,7 +155,7 @@ const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
 const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
 const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
   /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
-const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[/\\_=&%+@#?]$/u;
+const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[-./\\_*;~=&%+@#?]$/u;
 const URL_TOKEN_PRECEDING_GRAPHEME_BASE_PATTERN = /([\s\S])[\p{M}\p{Sk}]*$/u;
 const MARKDOWN_LINK_TOKEN_PREFIX_PATTERN = /\[[^\]\n]+\]\($/u;
 
@@ -649,8 +649,8 @@ function hasUrlTokenBoundary(value: string, index: number): boolean {
 
   // Marked splits both `label：https://...` and `prefixhttps://...` into a
   // text token followed by a link token. Accept language-independent
-  // typographic delimiters, but keep path, assignment, query and address
-  // connectors embedded in their original content.
+  // typographic delimiters, but keep identifier, path, glob, assignment,
+  // query and address connectors embedded in their original content.
   return (
     URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN.test(previousCodePoint) &&
     !URL_TOKEN_EMBEDDING_DELIMITER_PATTERN.test(previousCodePoint)

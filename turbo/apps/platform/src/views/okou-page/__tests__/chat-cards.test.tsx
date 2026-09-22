@@ -305,7 +305,12 @@ test("Action-looking URLs embedded in structural text remain content", async () 
     [
       `Word: prefix${PERMISSION_URL}`,
       `Identifier: prefix_${PERMISSION_URL}`,
+      `Hyphenated identifier: prefix-${PERMISSION_URL}`,
       `Path: /docs/${PERMISSION_URL}`,
+      `Dot path: .${relativePermissionUrl}`,
+      `Home path: ~${relativePermissionUrl}`,
+      `Wildcard path: *${relativePermissionUrl}`,
+      `Matrix path: item;${relativePermissionUrl}`,
       `Assignment: next=${PERMISSION_URL}`,
       `Query: ?next=${PERMISSION_URL}`,
       `Address: user@${PERMISSION_URL}`,
@@ -318,7 +323,14 @@ test("Action-looking URLs embedded in structural text remain content", async () 
   await screen.findByText(/Word: prefix/u);
   expect(screen.queryByTestId("permission-action-card")).toBeNull();
   expect(screen.getByText(/Identifier: prefix_/u)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Hyphenated identifier: prefix-/u),
+  ).toBeInTheDocument();
   expect(screen.getByText(/Path: \/docs\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Dot path: \.\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Home path: ~\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Wildcard path: \*\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Matrix path: item;\//u)).toBeInTheDocument();
   expect(screen.getByText(/Assignment: next=/u)).toBeInTheDocument();
   expect(screen.getByText(/Query: \?next=/u)).toBeInTheDocument();
   expect(screen.getByText(/Address: user@/u)).toBeInTheDocument();
