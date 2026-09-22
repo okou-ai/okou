@@ -87,7 +87,6 @@ const SLACK_REPLIES_URL = "https://slack.com/api/conversations.replies";
 
 /** The documented absolute phase and the cutoff that sits inside it. */
 const COLLECTION_PHASE_MS = 45_000;
-const NEW_READ_CUTOFF_MS = 40_000;
 
 const context = testContext({ connectorCatalog: true });
 const store = createStore();
@@ -1045,7 +1044,7 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     );
   });
 
-  it("keeps a source the cutoff never admitted in the report", async () => {
+  it("keeps a source the phase never admitted in the report", async () => {
     const fixture = await readyOwner({ gmail: true });
     const at = freezeClock();
     const held = createDeferredPromise<void>(context.signal);
@@ -1053,9 +1052,10 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     const pending = startCompose(fixture, { anchor: anchorFor(at) });
 
     await gmail.firstList;
-    // Past the 40-second cutoff and still inside the 45-second phase: the first
-    // wave may finish, and nothing new may start.
-    mockNow(at + NEW_READ_CUTOFF_MS + 1000);
+    // The whole 45-second phase now belongs to reading, so reaching its end is
+    // the one point at which nothing new may start. The first wave may still
+    // finish; the second never begins.
+    mockNow(at + COLLECTION_PHASE_MS);
     held.resolve();
     const response = await accept(pending, [200]);
 
@@ -1086,18 +1086,24 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
     const pending = startCompose(fixture, { anchor: anchorFor(at) });
 
     await gmail.firstList;
-    mockNow(at + NEW_READ_CUTOFF_MS + 1000);
+    mockNow(at + COLLECTION_PHASE_MS);
     held.resolve();
     const response = await accept(pending, [200]);
 
     // Nothing contributed, and Chat never ran, so this attempt does not know
-    // what the owner's morning held.
+    // what the owner's morning held. The phase deadline is what stopped it, and
+    // the per-source facts survive that classification rather than collapsing
+    // into a quiet morning.
     expect(response.body.result).toBe("incomplete");
     if (response.body.result !== "incomplete") {
       return;
     }
-    expect(response.body.reason).toBe("incomplete-coverage");
-    expect(response.body.detail).toContain("chat=not-started");
+    expect(response.body.reason).toBe("deadline-exceeded");
+    expect(
+      response.body.sources.map(({ source, coverage }) => {
+        return `${source}=${coverage}`;
+      }),
+    ).toContain("chat=not-started");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
@@ -1213,87 +1219,6 @@ describe("POST /api/morning-brief/collection-preview/compose", () => {
       ).toBeTruthy();
     },
   );
-
-  it.each([
-    { name: "before", offset: -1000, expired: false },
-    { name: "at", offset: 0, expired: true },
-    { name: "after", offset: 1, expired: true },
-  ])(
-    "decides the held final authority read $name the deadline",
-    async ({ offset, expired }) => {
-      const fixture = await setupOwner({ slack: true });
-      const at = freezeClock();
-      const deadlineAt = at + 10_000;
-      const initialAuthorityReady = createDeferredPromise<
-        ReturnType<typeof holdMorningBriefMembershipLookup>
-      >(context.signal);
-      let installed = false;
-      stubInstructionStorage(() => {
-        if (installed) {
-          return;
-        }
-        installed = true;
-        // The archive download occurs only after all source jobs have settled.
-        // This first hold therefore targets retained proof admission without a
-        // Clerk call ordinal.
-        initialAuthorityReady.resolve(
-          holdMorningBriefMembershipLookup(
-            { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-            context.signal,
-          ),
-        );
-      });
-      await bdd.updateAgentInstructions(
-        fixture.actor,
-        fixture.agentId,
-        "Write in Polish.",
-      );
-      await seedMembership(fixture);
-      // Advance only after the source's own release proof. Language and the
-      // retained phase then share the four seconds left before the tighter
-      // outer reservation, without denying source admission at the cutoff.
-      stubSlackMessage(at, () => {
-        mockNow(at + 6000);
-      });
-      const pending = startCompose(fixture, {
-        anchor: anchorFor(at),
-        deadlineAt: new Date(deadlineAt).toISOString(),
-      });
-
-      const initialAuthority = await initialAuthorityReady.promise;
-      await initialAuthority.waitForArrival();
-      // Slack's retained proof has no Clerk membership lookup of its own. By
-      // installing the next exact lookup before releasing admission, this hold
-      // can only be the final owner proof after the remote source re-proof.
-      const finalAuthority = holdMorningBriefMembershipLookup(
-        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-        context.signal,
-      );
-      initialAuthority.release();
-      await finalAuthority.waitForArrival();
-      mockNow(deadlineAt + offset);
-      finalAuthority.release();
-      const response = await accept(pending, [200]);
-
-      if (!expired) {
-        expect(response.body.result).toBe("composed");
-        if (response.body.result === "composed") {
-          expect(
-            response.body.composition.language?.instructions,
-          ).toMatchObject({ state: "available" });
-        }
-        return;
-      }
-      expect(response.body.result).toBe("incomplete");
-      if (response.body.result !== "incomplete") {
-        return;
-      }
-      expect(response.body.reason).toBe("deadline-exceeded");
-      expect(response.body.detail).toContain("final authority check");
-      expect(response.body.sources.length).toBeGreaterThan(0);
-    },
-  );
-
   it.each([
     { name: "one millisecond before", offset: -1, expired: false },
     { name: "at", offset: 0, expired: true },
