@@ -4766,17 +4766,16 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
-/**
- * A notice card's height comes from its own rows, so a card that carries only a
- * headline is one row tall. The supporting line keeps a reserved two-line box
- * instead: billing status and failure-recovery classification both resolve
- * asynchronously and swap this text inside an already mounted frame, and
- * `docs/chat-cards.md` requires that swap to leave the frame's geometry
- * untouched. Clamping alone would let a one-line message resize the transcript
- * once the asynchronous read lands.
- */
-const CHAT_NOTICE_DESCRIPTION_CLASS =
+/** Billing copy changes after role and credit reads, so its existing two-line
+ * reservation stays fixed. Error cards instead render their synchronous copy
+ * invisibly while classification loads, then hug the resolved copy. */
+const BILLING_NOTICE_DESCRIPTION_CLASS =
   "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+
+/** A personal usage limit can resolve to an account plus two exhausted windows.
+ * Reserve those semantic rows while the run source loads; never clamp them. */
+const USAGE_RECOVERY_DESCRIPTION_CLASS =
+  "min-h-20 @[640px]:min-h-10";
 
 /**
  * The billing notice's action is the other row an asynchronous read introduces:
@@ -5027,7 +5026,9 @@ function InsufficientCreditsCard() {
         >
           {headline}
         </p>
-        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
+        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>
+          {helper}
+        </p>
       </div>
       <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
         {!canShowBillingAction ? null : shouldStartProCheckout ? (
@@ -5208,24 +5209,34 @@ function AssistantRecoveryDestinationAction({
   }
   if (recovery.kind === "new-chat-required") {
     return (
-      <Button asChild size="sm" variant="neutral" className="shrink-0">
-        <Link pathname="/">
-          {t(($) => {
-            return $.chat.errors.recovery.newChat;
-          })}
-        </Link>
-      </Button>
+      <Link
+        pathname="/"
+        className={cn(
+          buttonVariants({ size: "sm", variant: "neutral" }),
+          "shrink-0",
+        )}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.newChat;
+        })}
+      </Link>
     );
   }
   if (recovery.kind === "terms-acceptance-required") {
     return (
-      <Button asChild size="sm" variant="neutral" className="shrink-0">
-        <a href="https://claude.ai" target="_blank" rel="noopener noreferrer">
-          {t(($) => {
-            return $.chat.errors.recovery.openClaude;
-          })}
-        </a>
-      </Button>
+      <a
+        href="https://claude.ai"
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          buttonVariants({ size: "sm", variant: "neutral" }),
+          "shrink-0",
+        )}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.openClaude;
+        })}
+      </a>
     );
   }
   return null;
@@ -5315,7 +5326,9 @@ function AssistantRecoveryActions({
 interface AssistantErrorCardContent {
   readonly icon: LucideIcon;
   readonly title: string;
-  readonly description: string;
+  readonly description: ReactNode;
+  readonly descriptionTitle?: string;
+  readonly descriptionClassName?: string;
   readonly details?: ReactNode;
   readonly actions?: ReactNode;
   readonly reserveActions?: boolean;
@@ -5326,14 +5339,18 @@ interface AssistantErrorCardContent {
 /**
  * The classification behind this card resolves over two chained requests, so
  * `pending` is the state before either landed. It keeps the settled card's own
- * frame and reserves only the supporting line and action row that the known
- * failure reason will use. Recovery controls stay inline; raw unknown provider
- * diagnostics alone may still use the details dialog.
+ * frame and renders its synchronous supporting copy invisibly, so short cards
+ * can hug their content without collapsing during classification. Usage limits
+ * reserve the account-and-window rows that load from the provider. Recovery
+ * controls stay inline; only multiline or unusually long raw diagnostics keep
+ * a details dialog.
  */
 function AssistantErrorCard({
   icon: Icon,
   title,
   description,
+  descriptionTitle,
+  descriptionClassName,
   details,
   actions,
   reserveActions = false,
@@ -5345,6 +5362,10 @@ function AssistantErrorCard({
     CHAT_NOTICE_ACTION_SLOT_CLASS,
     wrapActions && "h-[72px] items-start @[640px]:h-8 @[640px]:items-center",
   );
+  const hasDescription = Boolean(description);
+  const accessibleDescription =
+    descriptionTitle ??
+    (typeof description === "string" ? description : undefined);
   return (
     <div
       role="status"
@@ -5364,12 +5385,18 @@ function AssistantErrorCard({
           <div className="h-6 truncate text-[0.9375rem] font-medium leading-6">
             {pending ? null : title}
           </div>
-          {description !== "" && (
+          {hasDescription && (
             <div
-              className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}
-              title={pending ? undefined : description}
+              data-testid="assistant-error-description"
+              className={cn(
+                "mt-0.5 break-words text-sm leading-5 text-muted-foreground",
+                descriptionClassName,
+                pending && "invisible",
+              )}
+              title={pending ? undefined : accessibleDescription}
+              aria-hidden={pending ? true : undefined}
             >
-              {pending ? null : description}
+              {description}
             </div>
           )}
         </div>
@@ -5647,53 +5674,91 @@ function assistantRecoverySourceDescription(
     : null;
 }
 
+interface AssistantRecoveryDescription {
+  readonly content: ReactNode;
+  readonly title: string;
+}
+
+function textAssistantRecoveryDescription(
+  text: string,
+): AssistantRecoveryDescription {
+  return { content: text, title: text };
+}
+
 function assistantRecoveryDescription(
   recovery: AssistantErrorRecovery,
   t: TFunction<"common">,
-): string {
+): AssistantRecoveryDescription {
   if (recovery.kind === "usage-limit") {
-    const details = [
-      assistantRecoverySourceDescription(recovery, t),
-      ...assistantRecoveryResetTexts(recovery),
-    ]
-      .filter((part): part is string => {
+    const sourceDescription = assistantRecoverySourceDescription(recovery, t);
+    const resetTexts = assistantRecoveryResetTexts(recovery);
+    const details = [sourceDescription, ...resetTexts].filter(
+      (part): part is string => {
         return Boolean(part);
-      })
-      .join(" · ");
-    return (
-      details ||
-      t(($) => {
-        return $.chat.errors.recovery.usageDescription;
-      })
+      },
     );
+    if (details.length === 0) {
+      return textAssistantRecoveryDescription(
+        t(($) => {
+          return $.chat.errors.recovery.usageDescription;
+        }),
+      );
+    }
+    return {
+      title: details.join(" · "),
+      content: (
+        <>
+          {sourceDescription && <div>{sourceDescription}</div>}
+          {resetTexts.length > 0 && (
+            <div className="flex flex-col @[640px]:flex-row @[640px]:flex-wrap @[640px]:gap-x-4">
+              {resetTexts.map((resetText) => {
+                return <span key={resetText}>{resetText}</span>;
+              })}
+            </div>
+          )}
+        </>
+      ),
+    };
   }
   if (recovery.kind === "subscription-error") {
-    return localizedRunError(recovery.providerMessage);
+    return textAssistantRecoveryDescription(
+      localizedRunError(recovery.providerMessage),
+    );
   }
   if (recovery.failureReason) {
-    return structuredFailureDescription(recovery.failureReason, t);
+    return textAssistantRecoveryDescription(
+      structuredFailureDescription(recovery.failureReason, t),
+    );
   }
   if (recovery.kind === "execution-timeout") {
-    return t(($) => {
-      return $.chat.errors.recovery.timeoutDescription;
-    });
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.timeoutDescription;
+      }),
+    );
   }
   if (recovery.kind === "autonomy-budget-exhausted") {
-    return t(($) => {
-      return $.chat.errors.recovery.autonomyLimitDescription;
-    });
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.autonomyLimitDescription;
+      }),
+    );
   }
   if (recovery.kind === "model-unavailable") {
-    return t(($) => {
-      return $.chat.errors.recovery.unavailableDescription;
-    });
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.unavailableDescription;
+      }),
+    );
   }
   if (recovery.kind === "model-capacity") {
-    return t(($) => {
-      return $.chat.errors.recovery.capacityDescription;
-    });
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.capacityDescription;
+      }),
+    );
   }
-  return "";
+  return textAssistantRecoveryDescription("");
 }
 
 function assistantRecoveryIcon(recovery: AssistantErrorRecovery): LucideIcon {
@@ -5718,10 +5783,15 @@ function assistantErrorRecoveryContent(
     recovery.kind !== "input-too-large" &&
     (recovery.failureReason === null ||
       structuredFailureHasActions(recovery.failureReason));
+  const description = assistantRecoveryDescription(recovery, t);
   return {
     icon: assistantRecoveryIcon(recovery),
     title: assistantRecoveryTitle(recovery, t),
-    description: assistantRecoveryDescription(recovery, t),
+    description: description.content,
+    descriptionTitle: description.title,
+    ...(recovery.kind === "usage-limit"
+      ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
+      : {}),
     ...(hasActions
       ? {
           actions: (
@@ -5811,6 +5881,9 @@ function assistantErrorFallbackContent(
       icon: structuredFailureIcon(knownReason.data),
       title: structuredFailureTitle(knownReason.data),
       description: structuredFailureDescription(knownReason.data, t),
+      ...(knownReason.data === "usage_limit"
+        ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
+        : {}),
       reserveActions: structuredFailureHasActions(knownReason.data),
       wrapActions: knownReason.data === "usage_limit",
     };
@@ -5852,13 +5925,14 @@ function assistantErrorFallbackContent(
         return $.chat.errors.providerIncompatiblePrefix;
       }),
       actions: (
-        <Button asChild size="sm" variant="neutral">
-          <Link pathname="/">
-            {t(($) => {
-              return $.chat.errors.providerIncompatibleAction;
-            })}
-          </Link>
-        </Button>
+        <Link
+          pathname="/"
+          className={buttonVariants({ size: "sm", variant: "neutral" })}
+        >
+          {t(($) => {
+            return $.chat.errors.providerIncompatibleAction;
+          })}
+        </Link>
       ),
       reserveActions: true,
     };
@@ -5880,32 +5954,40 @@ function assistantErrorFallbackContent(
         return $.chat.errors.providerDeletedPrefix;
       }),
       actions: (
-        <Button asChild size="sm" variant="neutral">
-          <Link pathname="/">
-            {t(($) => {
-              return $.chat.errors.providerDeletedAction;
-            })}
-          </Link>
-        </Button>
+        <Link
+          pathname="/"
+          className={buttonVariants({ size: "sm", variant: "neutral" })}
+        >
+          {t(($) => {
+            return $.chat.errors.providerDeletedAction;
+          })}
+        </Link>
       ),
       reserveActions: true,
     };
   }
 
+  const description = localizedRunError(error);
+  const showDetails = /[\r\n]/u.test(description) || description.length > 240;
+  const legacyUsageLimit = isLegacyUsageLimitError(error, failureReason);
   return {
     icon: AlertCircle,
     title: t(($) => {
       return $.chat.errors.genericTitle;
     }),
-    description: localizedRunError(error),
-    details: (
-      <Markdown
-        className="!text-muted-foreground"
-        source={localizedRunError(error)}
-      />
-    ),
-    reserveActions: true,
-    wrapActions: isLegacyUsageLimitError(error, failureReason),
+    description,
+    ...(showDetails
+      ? {
+          details: (
+            <Markdown
+              className="!text-muted-foreground"
+              source={description}
+            />
+          ),
+        }
+      : {}),
+    reserveActions: showDetails || legacyUsageLimit,
+    wrapActions: legacyUsageLimit,
   };
 }
 

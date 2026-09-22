@@ -314,6 +314,13 @@ test.each(STRUCTURED_FAILURE_CASES)(
     expect(within(card).queryByRole("combobox") !== null).toBe(
       expected.picker === true,
     );
+    const description = within(card).queryByTestId(
+      "assistant-error-description",
+    );
+    expect(
+      description?.classList.contains("line-clamp-2") ?? false,
+    ).toBeFalsy();
+    expect(description?.classList.contains("h-10") ?? false).toBeFalsy();
   },
 );
 
@@ -769,6 +776,7 @@ test("An unstructured terminal failure preserves its original diagnostic", async
   await readyChat();
   expect(screen.getByText(message)).toBeInTheDocument();
   expect(queryButton("Try again")).not.toBeInTheDocument();
+  expect(queryButton("View details")).not.toBeInTheDocument();
 });
 
 test.each([
@@ -823,9 +831,7 @@ test.each([
     expect(
       card.textContent?.includes("Cette exécution n’a pas pu se terminer"),
     ).toBe(failureReason === undefined);
-    expect(queryButton("Voir les détails", card) !== null).toBe(
-      failureReason === undefined,
-    );
+    expect(queryButton("Voir les détails", card)).not.toBeInTheDocument();
     expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
   },
 );
@@ -916,11 +922,10 @@ test.each([
     await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
     const card = await screen.findByRole("status");
     expect(card).toHaveTextContent(expected);
-    click(await findButton("Voir les détails"));
-    const details = await screen.findByRole("dialog");
-    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
+    expect(queryButton("Voir les détails", card)).not.toBeInTheDocument();
+    expect(queryButton("Réessayer", card)).not.toBeInTheDocument();
     expect(
-      queryButton("Réinitialiser et réessayer", details),
+      queryButton("Réinitialiser et réessayer", card),
     ).not.toBeInTheDocument();
   },
 );
@@ -1093,6 +1098,12 @@ test("Recover from a personal model account limit", async () => {
   expect(recovery).toHaveTextContent("Codex limit reached");
   expect(recovery).toHaveTextContent(/5h resets/iu);
   expect(recovery).toHaveTextContent(/Week resets/iu);
+  const description = within(recovery).getByTestId(
+    "assistant-error-description",
+  );
+  expect(description).not.toHaveClass("line-clamp-2", "h-10");
+  expect(within(description).getByText(/5h resets/iu)).toBeVisible();
+  expect(within(description).getByText(/Week resets/iu)).toBeVisible();
   const picker = within(recovery).getByRole("combobox");
   expect(picker).toBeVisible();
   expect(queryButton("Try again", recovery)).toBeNull();
