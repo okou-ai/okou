@@ -716,12 +716,40 @@ export function TiptapWorkflowComposer({
         }
       }}
     >
-      <div className="relative min-h-full">
+      <div className="relative flex min-h-full flex-col">
         <WorkflowComposerPlaceholder composer={composer} sending={sending} />
         <div
           // The composer card owns responsive height allocation so its footer
           // can change modes without changing the surrounding card height.
-          className="min-h-full [&_.ProseMirror]:min-h-full"
+          //
+          // The editable area has to claim all of that height, the way a
+          // textarea does. ProseMirror's own stylesheet only sets `position`
+          // and whitespace handling and never sizes the editor, so filling the
+          // container is entirely the caller's job:
+          // https://github.com/ProseMirror/prosemirror-view/blob/master/style/prosemirror.css
+          //
+          // This used to be a chain of `min-h-full`, and it silently stopped
+          // one level in. A percentage `min-height` only resolves against a
+          // parent whose own `height` is definite, and an element carrying just
+          // `min-height: 100%` still computes `height: auto`, so the next
+          // `min-height: 100%` below it resolved to nothing. On a 900px-wide
+          // composer that left `.ProseMirror` 40px tall inside a 144px input
+          // area: four fifths of the card looked like the editor but was not.
+          // Every click there landed on this wrapper instead, blurring the
+          // editor before the slot's click handler focused it again, and that
+          // focus round trip re-ran the composer card's `focus-within`
+          // border-color and focus-veil transitions, repainting the whole card.
+          //
+          // Both ProseMirror and Tiptap answer "make the editor fill its box"
+          // with flex rather than percentage heights, which is what this does:
+          // the wrapper is the column, this container grows into it, and the
+          // editor grows into this container. `flex-auto` keeps `flex-basis:
+          // auto`, so a long draft still contributes its intrinsic height and
+          // the composer keeps growing until the editor's own max-height takes
+          // over.
+          // https://discuss.prosemirror.net/t/how-can-i-set-a-prosemirror-editor-to-be-100-height/5226
+          // https://github.com/ueberdosis/tiptap/discussions/1546
+          className="flex min-h-0 flex-auto flex-col [&_.ProseMirror]:flex-auto"
           ref={setContainerRef}
           onInput={(event) => {
             // The mount command targets the container for semantic document

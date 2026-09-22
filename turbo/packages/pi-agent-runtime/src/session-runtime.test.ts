@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
@@ -21,6 +21,7 @@ import {
   createPiApiFirstAgentSessionForRuntime,
 } from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
+import type { PiPreparationObservation } from "./preparation-timing";
 import type { PiAgentModelConfig, PiAgentRequestHeaders } from "./types";
 import { materializePiAgentModelConfig } from "./credential";
 import { resumePiApiFirstTurn } from "./rpc";
@@ -1831,7 +1832,8 @@ describe("Okou Harness base system prompt", () => {
       // prompt still surrounds it.
       expect(systemPrompt).toContain(INTERMEDIATE_COMMENTARY_PROMPT);
       expect(systemPrompt).toContain("Caller instructions stay appended.");
-      expect(systemPrompt).toContain(`Current working directory: ${cwd}`);
+      // 0.86 renders the working directory as its own `<cwd>` prompt section.
+      expect(systemPrompt).toContain(`<cwd>\n${cwd}\n</cwd>`);
       expect(systemPrompt.indexOf("Okou Harness")).toBeLessThan(
         systemPrompt.indexOf(INTERMEDIATE_COMMENTARY_PROMPT),
       );
@@ -1865,5 +1867,125 @@ describe("Okou Harness base system prompt", () => {
     } finally {
       created.session.dispose();
     }
+  });
+});
+
+describe("Pi 0.86.1 prompt cache warming", () => {
+  // 0.86 resolves an unset `cacheWarming` to `streaming`, which would issue
+  // background prompt-cache requests during a long tool run. Every session
+  // path must resolve it to "off", including the fallback that has no resource
+  // snapshot and therefore loads its settings from disk.
+  it.each([true, false])(
+    "pins cache warming off with resourceSnapshot=%s",
+    async (withSnapshot) => {
+      const root = await mkdtemp(join(tmpdir(), "pi-cache-warming-"));
+      onTestFinished(async () => {
+        await rm(root, { recursive: true, force: true });
+      });
+      const cwd = join(root, "workspace");
+      await mkdir(cwd, { recursive: true });
+      const created = await createPiAgentSessionForRuntime({
+        cwd,
+        agentDir: root,
+        sessionManager: SessionManager.inMemory(cwd, { id: randomUUID() }),
+        model: TERRA_MODEL,
+        appendSystemPrompt: null,
+        ...(withSnapshot
+          ? { resourceSnapshot: readyMemorySnapshot("# Memory\n") }
+          : {}),
+      });
+      try {
+        expect(created.services.settingsManager.getCacheWarmingMode()).toBe(
+          "off",
+        );
+      } finally {
+        created.session.dispose();
+      }
+    },
+  );
+});
+
+describe("Pi session preparation observability", () => {
+  const SANDBOX_PHASES = [
+    "resources_prompt",
+    "model_runtime",
+    "session_services",
+    "resource_loader",
+    "session_create",
+    "session_finalize",
+  ] as const;
+
+  it.each(["sandbox", "api-first"] as const)(
+    "reports every preparation phase exactly once on the %s path",
+    async (mode) => {
+      const root = await mkdtemp(join(tmpdir(), `pi-preparation-${mode}-`));
+      onTestFinished(async () => {
+        await rm(root, { recursive: true });
+      });
+      const observed: string[] = [];
+      const args = {
+        cwd: join(root, "workspace"),
+        agentDir: join(root, "agent"),
+        sessionManager: SessionManager.inMemory(join(root, "workspace"), {
+          id: randomUUID(),
+        }),
+        model: TERRA_MODEL,
+        appendSystemPrompt: null,
+        onPreparationTiming(observation: PiPreparationObservation) {
+          observed.push(observation.phase);
+        },
+      } as const;
+
+      const created =
+        mode === "api-first"
+          ? await createPiApiFirstAgentSessionForRuntime({
+              ...args,
+              resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
+            })
+          : await createPiAgentSessionForRuntime(args);
+      created.session.dispose();
+
+      // The sandbox path previously skipped `resource_loader` entirely, which
+      // left the two populations non-comparable once both are recorded.
+      expect([...observed].sort()).toEqual([...SANDBOX_PHASES].sort());
+    },
+  );
+
+  it("reports a failing phase without swallowing its error", async () => {
+    const root = await mkdtemp(join(tmpdir(), "pi-preparation-error-"));
+    onTestFinished(async () => {
+      await rm(root, { recursive: true });
+    });
+    const observed: PiPreparationObservation[] = [];
+    const failure = new Error("model runtime unavailable");
+    const refresh = vi
+      .spyOn(ModelRuntime.prototype, "refresh")
+      .mockImplementation(() => {
+        throw failure;
+      });
+    onTestFinished(() => {
+      refresh.mockRestore();
+    });
+
+    await expect(
+      createPiAgentSessionForRuntime({
+        cwd: join(root, "workspace"),
+        agentDir: join(root, "agent"),
+        sessionManager: SessionManager.inMemory(join(root, "workspace"), {
+          id: randomUUID(),
+        }),
+        model: TERRA_MODEL,
+        appendSystemPrompt: null,
+        onPreparationTiming(observation) {
+          observed.push(observation);
+        },
+      }),
+    ).rejects.toThrow(failure);
+
+    expect(
+      observed.filter((observation) => {
+        return observation.outcome === "error";
+      }),
+    ).not.toHaveLength(0);
   });
 });

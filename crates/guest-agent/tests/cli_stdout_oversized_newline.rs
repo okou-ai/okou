@@ -31,12 +31,24 @@ async fn oversized_newline_terminated_stdout_terminates_promptly()
         .expect("stdout framing failure should be a controlled execution error")
         .to_string();
     let expected_error = format!(
-        "CLI stdout line exceeded {} bytes",
+        "CLI stdout line exceeded {} bytes: event_type=assistant item_type=text size_bucket=",
         ORDINARY_CLI_STDOUT_MAX_LINE_BYTES
     );
     assert!(
         error.contains(&expected_error),
         "unexpected stdout limit error: {error}"
+    );
+    // Where the retained prefix stops depends on stdout chunking, so only the
+    // two buckets that span the limit are possible.
+    assert!(
+        ["size_bucket=8-16MiB", "size_bucket=>=16MiB"]
+            .iter()
+            .any(|bucket| error.contains(bucket)),
+        "unexpected oversized record bucket: {error}"
+    );
+    assert!(
+        !error.contains("xxxx") && error.len() < 256,
+        "record content must not reach the failure: {error}"
     );
     assert_eq!(execution.last_event_sequence, None);
     let termination = execution

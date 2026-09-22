@@ -97,6 +97,8 @@ on:
         required: false
       OKOU_SEO_DATAFORSEO_PASSWORD:
         required: false
+      OKOU_SOCIAL_MONID_API_KEY:
+        required: false
       OKOU_SOCIAL_SOCIALKIT_TOKEN:
         required: false
       OKOU_WEATHER_GOOGLE_WEATHER_TOKEN:

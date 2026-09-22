@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -117,7 +117,6 @@ test("folded goal continuations do not create locator markers", async () => {
     within(container).queryByText("Keep checking the deployment regions"),
   ).not.toBeInTheDocument();
 
-  fireEvent.scroll(container);
   const rail = requiredElement("[data-conversation-locator]");
   await waitFor(() => {
     // Seven earlier requests and the real trigger remain visible user turns.

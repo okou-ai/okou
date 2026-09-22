@@ -20,6 +20,7 @@ import type {
   PiMemoryRecallSelection,
   PiMemoryToolSourceUse,
 } from "./api-types";
+import type { PiPreparationObserver } from "./preparation-timing";
 import type { PiAgentModelConfig } from "./types";
 
 export type PiSandboxOwnershipTransferMode =
@@ -142,6 +143,7 @@ function createRuntimeFactory(args: {
   readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
   readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
   readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
+  readonly onPreparationTiming?: PiPreparationObserver;
   readonly enableLangfuseObservability: boolean;
 }): CreateAgentSessionRuntimeFactory {
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent }) => {
@@ -155,6 +157,7 @@ function createRuntimeFactory(args: {
       resourceSnapshot: args.resourceSnapshot,
       onMemoryRecallOutcome: args.onMemoryRecallOutcome,
       onMemoryToolSourceUse: args.onMemoryToolSourceUse,
+      onPreparationTiming: args.onPreparationTiming,
       sessionStartEvent,
       enableLangfuseObservability: args.enableLangfuseObservability,
     });
@@ -205,6 +208,8 @@ export async function runPiOfficialRpcMode(args: {
   readonly resourceSnapshot?: PiPreheatedResourceSnapshot;
   readonly onMemoryRecallOutcome?: (outcome: PiMemoryRecallOutcome) => void;
   readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
+  /** Sandbox-side session preparation phases; the API path has its own observer. */
+  readonly onPreparationTiming?: PiPreparationObserver;
   readonly onFirstTool?: () => void;
   readonly sessionFile: string;
   readonly ownershipTransferMode: PiSandboxOwnershipTransferMode;

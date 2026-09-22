@@ -19,6 +19,7 @@ import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import rateLimitMessage from "./test/fixtures/codex-rate-limit.json";
 import { projectPiApiAssistantMessage } from "./api-turn";
+import { normalizeContext } from "@earendil-works/pi-ai";
 
 const route = {
   provider: "openai-codex",
@@ -46,10 +47,10 @@ function stream(signal?: AbortSignal) {
   if (!model) throw new Error("Codex model is required");
   return piAgentStreamForConfig(route)(
     model,
-    {
+    normalizeContext({
       messages: [{ role: "user", content: "hello", timestamp: 1 }],
       tools: [],
-    },
+    }),
     { apiKey: route.apiKey, signal },
   );
 }

@@ -27,7 +27,9 @@ import {
   holdModelPolicyPreferenceFixture,
   stageUnrepairedOrgModelPolicyFixture,
   readUnrepairedOrgModelPolicyFixture,
+  removeRunModelCatalogEntryFixture,
   setOrgModelPolicyProviderTypeFixture,
+  stagePreAddabilityModelPolicyFixture,
 } from "../../../test-fixtures/org-model-policies";
 import {
   withBuiltInModelRuntimeRouteCandidateUnavailableForTest,
@@ -191,6 +193,217 @@ async function listSeededLimitedFreePolicies(): Promise<{
 }
 
 describe("GET/PUT /api/model-policies", () => {
+  it("filters only the Add Model projection with a personal switch", async () => {
+    const fixture = await seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const existing = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    const model = "okou-1.0";
+    expect(existing.body.modelsAvailableToAdd).not.toContain(model);
+
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouModels]: true,
+    });
+    await seedBuiltInModelCandidateKeys(context, model);
+    const addable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(addable.body.modelsAvailableToAdd).toContain(model);
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.OkouModels]: false,
+    });
+    const addedWithSwitchOff = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(addable.body), makeBuiltInPolicy(model)],
+        },
+      }),
+      [200],
+    );
+    expect(
+      addedWithSwitchOff.body.policies.find((policy) => {
+        return policy.model === model;
+      }),
+    ).toMatchObject({
+      runtimeProviderType: "openrouter-codex",
+      routeStatus: "valid",
+    });
+
+    const listedAfterDisable = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(listedAfterDisable.body.modelsAvailableToAdd).not.toContain(model);
+    expect(
+      listedAfterDisable.body.policies.some((policy) => {
+        return policy.model === model;
+      }),
+    ).toBeTruthy();
+    const preserved = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { policies: toUpdate(listedAfterDisable.body) },
+      }),
+      [200],
+    );
+    expect(
+      preserved.body.policies.some((policy) => {
+        return policy.model === model;
+      }),
+    ).toBeTruthy();
+
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const preference = await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: { selectedModel: model, serviceTier: null },
+      }),
+      [200],
+    );
+    expect(preference.body.selectedModel).toBe(model);
+  });
+
+  it("offers only catalog-enabled models and rejects a staged model addition", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const initial = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+
+    expect(initial.body.modelsAvailableToAdd).toContain("gpt-5.6-sol");
+    expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+    expect(initial.body.modelsAvailableToAdd).not.toContain(
+      DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+    );
+
+    const rejected = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.message).toBe(
+      'Model "gpt-6-sol" is not available to add',
+    );
+
+    const unchanged = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(unchanged.body.revision).toBe(initial.body.revision);
+    expect(toUpdate(unchanged.body)).toStrictEqual(toUpdate(initial.body));
+  });
+
+  it("fails closed when an active model has no catalog row", async () => {
+    const restoreCatalogEntry =
+      await removeRunModelCatalogEntryFixture("gpt-6-sol");
+    onTestFinished(restoreCatalogEntry);
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const initial = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+
+    expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+    const rejected = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
+        },
+      }),
+      [400],
+    );
+    expect(rejected.body.error.message).toBe(
+      'Model "gpt-6-sol" is not available to add',
+    );
+  });
+
+  it("keeps a staged model configurable once added but prevents re-adding it", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    await accept(client.list({ headers: authHeaders() }), [200]);
+    await stagePreAddabilityModelPolicyFixture({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      model: "gpt-6-sol",
+    });
+
+    const existing = await accept(
+      client.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(existing.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+    expect(
+      existing.body.policies.some((policy) => {
+        return policy.model === "gpt-6-sol";
+      }),
+    ).toBeTruthy();
+
+    const promoted = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: toUpdate(existing.body).map((policy) => {
+            return { ...policy, isDefault: policy.model === "gpt-6-sol" };
+          }),
+        },
+      }),
+      [200],
+    );
+    expect(promoted.body.workspaceDefaultModel).toBe("gpt-6-sol");
+
+    const removed = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: toUpdate(promoted.body)
+            .filter((policy) => {
+              return policy.model !== "gpt-6-sol";
+            })
+            .map((policy) => {
+              return {
+                ...policy,
+                isDefault:
+                  policy.model === DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
+              };
+            }),
+        },
+      }),
+      [200],
+    );
+    expect(removed.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+
+    const reAdd = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [...toUpdate(removed.body), makeBuiltInPolicy("gpt-6-sol")],
+        },
+      }),
+      [400],
+    );
+    expect(reAdd.body.error.message).toBe(
+      'Model "gpt-6-sol" is not available to add',
+    );
+  });
+
   it.each([
     ["claude-fable-5", "claude-fable-5-1"],
     ["gpt-5.5", "gpt-5.6-luna"],

@@ -666,8 +666,7 @@
       "importedSlides_one": "{{count}} diapositiva",
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
-      "importFile": "Importa tu propio archivo",
-      "importFileHint": "Reutiliza el diseño de tu archivo",
+      "importFile": "Importar plantilla",
       "multiAccent": "Multiacentos",
       "needPro": "Necesitas Pro",
       "nextSlide": "Vista previa de la diapositiva siguiente",
@@ -1486,11 +1485,9 @@
           },
           "later": "Más tarde",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Añadir a Slack",
             "description": "Añade {{assistantName}} al espacio de Slack de tu equipo.",
             "note": "Tus compañeros dejan de pasar por ti. Lo piden en el canal y el trabajo vuelve al hilo, donde lo ve todo el mundo.",
-            "sampleChannel": "# growth",
             "title": "Trabaja con {{assistantName}} donde tu equipo ya habla"
           },
           "workflow": {
@@ -1519,6 +1516,10 @@
         },
         "notEligible": "No elegible",
         "pendingState": "{{amount}} pendientes",
+        "rejected": {
+          "alreadyRedeemed": "Publicación ya usada",
+          "postMustMention": "Debe mencionar a {{assistantName}}"
+        },
         "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
         "share": {
           "action": "Compartir",
@@ -2173,6 +2174,7 @@
       "pinned": "Fijado",
       "rename": "Renombrar chat",
       "renameDescription": "Introduce un nuevo nombre para este hilo de chat.",
+      "showAllChats": "Mostrar todas las conversaciones",
       "showArchived": "Mostrar archivados",
       "showArchivedChats": "Mostrar chats archivados",
       "titlePlaceholder": "Título del chat",
@@ -4202,7 +4204,6 @@
     "sourcesFirst": {
       "common": {
         "back": "Atrás",
-        "cancel": "Cancelar",
         "continue": "Continuar",
         "finish": "Terminar configuración",
         "notNow": "Ahora no",
@@ -4274,17 +4275,21 @@
         "title": "¿A qué tipo de trabajo te dedicas?"
       },
       "skills": {
-        "confirm": "Importar y continuar",
-        "copy": "Importa un SKILL.md y se convierte en un workflow de Okou, listo para ejecutarse con /.",
-        "import": "Elegir un archivo",
+        "copied": "Copiado",
+        "copy": "Pega este prompt en tu propia sesión de Codex o Claude Code y traerá a Okou las skills de tu ordenador.",
+        "copyError": "No se pudo copiar el prompt.",
+        "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow de Okou.",
-        "importedTitle": "Tu workflow está listo",
-        "panelCopy": "De Codex, Claude Code o cualquier agente que escriba uno.",
-        "panelTitle": "Suelta aquí un SKILL.md",
-        "previewCopy": "Se importa como workflow de Okou. Solo tú puedes usarlo hasta que lo compartas.",
-        "previewTitle": "Revisa tu skill",
-        "replace": "Elegir otro archivo",
-        "title": "Trae las skills que ya escribiste."
+        "importedLabel": "Skills importadas",
+        "importedTitle": "Tus skills ya están en Okou",
+        "preparing": "Abriendo tu sesión de importación…",
+        "promptCopy": "Lee las skills de tu ordenador y las escribe en Okou.",
+        "promptLabel": "Prompt de importación de skills",
+        "promptTitle": "Ejecuta esto en Codex o Claude Code",
+        "startError": "No se pudo abrir la sesión de importación.",
+        "title": "Trae las skills que ya escribiste.",
+        "tryAgain": "Intentar de nuevo",
+        "waiting": "Las skills importadas aparecen aquí a medida que llegan."
       },
       "slack": {
         "add": "Añadir a Slack",
@@ -6566,6 +6571,8 @@
         "description": "Elige tu idioma preferido para la interfaz de {{brandName}}",
         "label": "Idioma",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6979,14 +6986,20 @@
       "preview": "Vista previa de {{title}}",
       "rename": "Cambiar nombre de la plantilla"
     },
+    "clearSearch": "Borrar búsqueda",
     "custom": "Personalizadas",
     "detail": {
       "back": "Plantillas personalizadas",
       "page": "Página {{number}}"
     },
     "empty": {
-      "description": "Okou convierte el diseño de tu archivo en una plantilla que puedes reutilizar."
+      "description": "Importa un documento, una presentación o una imagen para reutilizar su diseño.",
+      "document": "Aún no hay documentos",
+      "illustration": "Aún no hay imágenes",
+      "presentation": "Aún no hay presentaciones",
+      "title": "Hazlo tuyo"
     },
+    "importHint": "Importa un documento, una presentación o una imagen.",
     "loadFailed": "No se pudieron cargar las plantillas.",
     "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",

@@ -112,6 +112,11 @@ export interface MorningBriefRetainedSourceDescriptor {
  *
  * Scopes are sorted and deduplicated first, because the provider's ordering is
  * not stable and an unchanged grant must not look like a changed one.
+ *
+ * The single implementation: the recorded digest and the re-proof's recomputed
+ * digest are compared for equality, so a second copy of this rule would make an
+ * unchanged authority re-prove as revoked the moment the two drifted. Both
+ * sides call this.
  */
 export function morningBriefScopeDigest(scopes: readonly string[]): string {
   const canonical = [...new Set(scopes)].sort().join("\n");
@@ -166,9 +171,9 @@ type MorningBriefDescriptorSetError =
 /**
  * How many endpoints one descriptor names.
  *
- * The reader keeps one representative URL per distinct permission and the
- * accepted catalog gives a source a small, fixed permission set, so this bounds
- * a real quantity rather than an arbitrary one.
+ * The reader keeps one representative URL per distinct retained authorization
+ * and the accepted catalog gives a source a small, fixed permission set, so
+ * this bounds a real quantity rather than an arbitrary one.
  */
 const MORNING_BRIEF_MAX_DESCRIPTOR_ENDPOINTS = 8;
 

@@ -1,4 +1,4 @@
-/** Verified model/API pairs from #33565 and the 2026-09-18 recheck, not the entire US catalog. */
+/** Product-approved model/API pairs, not the entire US catalog. */
 const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
   messages: [
     "anthropic/claude-opus-5",
@@ -7,9 +7,6 @@ const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
     "anthropic/claude-sonnet-4.6",
   ],
   responses: [
-    "deepseek/deepseek-v4.1-flash",
-    "deepseek/deepseek-v4-flash",
-    "deepseek/deepseek-v4-pro",
     "openai/gpt-6-astra",
     "openai/gpt-5.6-sol",
     "openai/gpt-5.6-terra",

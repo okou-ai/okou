@@ -568,7 +568,11 @@ async function createMaintenanceSession(args: {
     customTools,
   });
   const resources = created.session.resourceLoader;
-  const expectedSystemPrompt = `${args.prompt}\nCurrent working directory: ${PI_MEMORY_PHASE2_SESSION_CWD}\n`;
+  // 0.86 builds the system prompt from named sections joined with a blank
+  // line, and renders the working directory as a `<cwd>` section instead of a
+  // trailing `Current working directory:` line. A custom prompt becomes the
+  // unwrapped `preamble`. This stays an exact-equality guard on the real bytes.
+  const expectedSystemPrompt = `${args.prompt}\n\n<cwd>\n${PI_MEMORY_PHASE2_SESSION_CWD}\n</cwd>`;
   if (created.session.systemPrompt !== expectedSystemPrompt) {
     created.session.dispose();
     throw new Error("Phase 2 session system prompt mismatch");

@@ -4,6 +4,7 @@ import type {
   Message,
   ToolCall,
 } from "@earendil-works/pi-ai";
+import { normalizeContext } from "@earendil-works/pi-ai";
 
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
 
@@ -287,7 +288,7 @@ function stage1PayloadInput(
     ) {
       throw new PiMemoryStage1BudgetError("input_payload_unmeasurable");
     }
-    // pi-ai 0.85.1's native adapter omits samplingParams. Upstream Codex
+    // pi-ai 0.86.1's native adapter omits samplingParams. Upstream Codex
     // phase1.rs/common.rs supplies strict text.format, but no output-token cap.
     normalized.text.format = format;
   } else {
@@ -400,7 +401,7 @@ export async function runPiMemoryStage1Extraction(
   ) {
     throw new PiMemoryStage1ProviderError();
   }
-  const context: Context = {
+  const context = normalizeContext({
     systemPrompt: PI_MEMORY_STAGE1_SYSTEM_PROMPT,
     messages: [
       {
@@ -410,7 +411,7 @@ export async function runPiMemoryStage1Extraction(
       },
     ],
     tools: [],
-  };
+  } satisfies Context);
   let budgetError: PiMemoryStage1BudgetError | undefined;
   let preparationError: { readonly error: unknown } | undefined;
   let responseStatus: number | undefined;

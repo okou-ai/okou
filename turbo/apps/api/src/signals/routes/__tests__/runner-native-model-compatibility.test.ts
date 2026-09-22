@@ -2,6 +2,7 @@ import { NATIVE_GPT_6_SOL_HEADER } from "@okouai/api-contracts/contracts/runners
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
 
@@ -13,6 +14,9 @@ describe("native model claim compatibility", () => {
     "keeps %s Sol work pending until a capable Runner claims it",
     async (providerType) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected an org-scoped chat actor");
+      }
       const model = "gpt-6-sol";
       const runtimeModel =
         providerType === "openrouter-codex" ? "openai/gpt-6-sol" : model;
@@ -28,6 +32,11 @@ describe("native model claim compatibility", () => {
         });
         providerId = provider.providerId;
       }
+      await stagePreAddabilityModelPolicyFixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        model,
+      });
       await api.updateOrgModelPolicies(actor, [
         {
           model,
@@ -100,11 +109,21 @@ describe("native model claim compatibility", () => {
       [astra, "gpt-6-astra"],
     ] as const) {
       const { actor, agentId } = fixture;
+      if (!actor.orgId) {
+        throw new Error("Expected an org-scoped chat actor");
+      }
       const { providerId } = await api.createOrgModelProvider(actor, {
         type: "openai-api-key",
         secret: "test-native-model-key",
         selectedModel: model,
       });
+      if (model === "gpt-6-sol") {
+        await stagePreAddabilityModelPolicyFixture({
+          orgId: actor.orgId,
+          userId: actor.userId,
+          model,
+        });
+      }
       await api.updateOrgModelPolicies(actor, [
         {
           model,

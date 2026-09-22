@@ -284,6 +284,8 @@ interface ChannelSpec {
   readonly id: string;
   readonly name: string;
   readonly is_private?: boolean;
+  /** Slack's membership flag for the calling token, when it sends one. */
+  readonly is_member?: boolean;
 }
 
 /** One page of the user/bot intersection, with an optional continuation. */
@@ -312,6 +314,21 @@ function channelPage(
 function noMessages(): SlackReply {
   return () => {
     return { ok: true, messages: [] };
+  };
+}
+
+/**
+ * Fail the enumeration every attempt starts with.
+ *
+ * A provider error on one conversation's own history is contained inside that
+ * conversation, so a test that needs the whole attempt to fail has to fail
+ * something the whole read depends on.
+ */
+function failedEnumeration(): { readonly channels: SlackReply } {
+  return {
+    channels: () => {
+      return { ok: false, error: "internal_error" };
+    },
   };
 }
 
@@ -375,6 +392,31 @@ function scriptHeldRelease(script: {
       return history(query, request);
     },
   });
+}
+
+/**
+ * Two history pages per channel, each carrying its own in-window message.
+ *
+ * One page per channel can no longer reach the read allowance now that the
+ * pre-read proof costs one enumeration for the whole attempt instead of one per
+ * conversation, so a test about that allowance has to buy its requests.
+ */
+function pagedHistory(): SlackReply {
+  return (query) => {
+    const cursor = query.get("cursor");
+    return {
+      ok: true,
+      messages: [
+        {
+          type: "message",
+          ts: cursor === null ? FIRST_IN_WINDOW : THREAD_REPLY,
+          user: "U1",
+          text: "collected",
+        },
+      ],
+      response_metadata: { next_cursor: cursor === null ? "h2" : "h3" },
+    };
+  };
 }
 
 /** `count` distinct in-window timestamps, one second apart. */
@@ -539,9 +581,9 @@ describe("Morning Brief Slack collection preview", () => {
     expect(bundle.counts).toStrictEqual({
       channels: 2,
       threads: 1,
-      // Discovery, a live proof before each of the three protected reads, the
-      // three reads themselves, and one final proof before release.
-      requests: 8,
+      // Discovery, one live proof authorizing every protected read, the three
+      // reads themselves, and one final proof before release.
+      requests: 6,
       messages: 3,
       textBytes: "boundary message".length + "root".length + "reply".length,
     });
@@ -551,9 +593,10 @@ describe("Morning Brief Slack collection preview", () => {
       expect(request.token).toBe(`Bearer ${f.botToken}`);
     }
     // Every authorization lookup asks the same exact intersection question as
-    // discovery, on the fixed set of allowed Slack methods.
+    // discovery, on the fixed set of allowed Slack methods: discovery itself,
+    // the one pre-read proof and the final release proof.
     const enumerations = queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL);
-    expect(enumerations).toHaveLength(5);
+    expect(enumerations).toHaveLength(3);
     for (const query of enumerations) {
       expect(Object.fromEntries(query)).toStrictEqual({
         limit: "200",
@@ -665,9 +708,9 @@ describe("Morning Brief Slack collection preview", () => {
         return channel.id;
       }),
     ).toStrictEqual(["C1", "C2"]);
-    // Two discovery pages, one lookup proving C1 and two proving C2, then the
-    // two-page final proof that authorizes releasing both of them.
-    expect(queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL)).toHaveLength(7);
+    // Two discovery pages, the two-page pre-read proof that names both
+    // channels, then the two-page final proof that authorizes releasing them.
+    expect(queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL)).toHaveLength(6);
   });
 
   it("caps enumeration at the documented channel budget", async () => {
@@ -716,11 +759,14 @@ describe("Morning Brief Slack collection preview", () => {
 
   it.each([
     ["missing_scope", "permission_denied"],
-    ["internal_error", "provider_failed"],
+    ["invalid_auth", "provider_failed"],
   ] as const)(
-    "records a mid-stream %s as a failure rather than healthy empty data",
+    "records a mid-stream %s as a whole-source failure rather than healthy empty data",
     async (code, outcome) => {
       const f = await fixture();
+      // These are losses of the authority every read runs under rather than
+      // one conversation's own failure, so they are not contained: the next
+      // conversation would answer the same way, and the source says so.
       scriptSlack({
         channels: channelPage([
           { id: "C1", name: "general" },
@@ -1004,12 +1050,7 @@ describe("Morning Brief Slack collection preview", () => {
       headers: agentToken(f.userId, f.orgId, ["slack:read"], 48 * 3600),
     };
     mockNow(ANCHOR_MS);
-    scriptSlack({
-      channels: channelPage([{ id: "C1", name: "general" }]),
-      history: () => {
-        return { ok: false, error: "internal_error" };
-      },
-    });
+    scriptSlack(failedEnumeration());
     await accept(collect(aged), [200]);
     return { fixture: f, aged };
   }
@@ -1053,12 +1094,7 @@ describe("Morning Brief Slack collection preview", () => {
 
   it("refuses a retry whose membership generation changed", async () => {
     const f = await fixture({ membershipId: "orgmem_first" });
-    scriptSlack({
-      channels: channelPage([{ id: "C1", name: "general" }]),
-      history: () => {
-        return { ok: false, error: "internal_error" };
-      },
-    });
+    scriptSlack(failedEnumeration());
     await accept(collect(f), [200]);
 
     await store.set(
@@ -1081,12 +1117,7 @@ describe("Morning Brief Slack collection preview", () => {
 
   it("stops an occurrence after its attempt budget", async () => {
     const f = await fixture();
-    scriptSlack({
-      channels: channelPage([{ id: "C1", name: "general" }]),
-      history: () => {
-        return { ok: false, error: "internal_error" };
-      },
-    });
+    scriptSlack(failedEnumeration());
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const failed = await accept(collect(f), [200]);
       if (failed.body.result !== "failed") {
@@ -1986,6 +2017,360 @@ describe("Morning Brief Slack live shared scope", () => {
     expect(response.body.occurrence.outcome).toBe("partial");
     expect(bundle.entries).toStrictEqual([]);
   });
+
+  it("proves the shared scope once however many conversations it reads", async () => {
+    const f = await fixture();
+    const channels = Array.from({ length: 14 }, (_value, index) => {
+      return { id: `C${index}`, name: `channel-${index}` };
+    });
+    const traffic = scriptSlack({
+      channels: channelPage(channels),
+      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "collected" }]),
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    // Discovery, the one pre-read proof and the final release proof. The
+    // intersection each of them lists is the whole answer, so asking it once
+    // per conversation only repeated the same page: in production that spent
+    // fifteen enumerations and 29 of the 37 read requests on it, and at
+    // nineteen conversations it would have exhausted them before a message
+    // was collected.
+    expect(queriesFor(traffic, SLACK_USER_CONVERSATIONS_URL)).toHaveLength(3);
+    expect(queriesFor(traffic, SLACK_HISTORY_URL)).toHaveLength(14);
+    expect(bundle.counts).toMatchObject({
+      channels: 14,
+      messages: 14,
+      requests: 17,
+    });
+    expect(bundle.limits).toStrictEqual([]);
+    expect(bundle.coverage).toBe("complete");
+    expect(response.body.occurrence.outcome).toBe("complete");
+  });
+
+  it("never enumerates a conversation the bot has not joined", async () => {
+    const f = await fixture();
+    const traffic = scriptSlack({
+      // Slack renders `is_member` for the calling bot, so the conversation the
+      // member shares but the bot never joined is knowable before it costs a
+      // request. Every other channel here omits the field, which filters
+      // nothing: an absent value is not a refusal.
+      channels: channelPage([
+        { id: "C1", name: "general" },
+        { id: "C2", name: "compliance", is_member: false },
+        { id: "C3", name: "release" },
+      ]),
+      history: (query, request) => {
+        const channel = query.get("channel") ?? "";
+        return historyPage([
+          { ts: FIRST_IN_WINDOW, text: `message in ${channel}` },
+        ])(query, request);
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(
+      queriesFor(traffic, SLACK_HISTORY_URL).map((query) => {
+        return query.get("channel");
+      }),
+    ).toStrictEqual(["C1", "C3"]);
+    expect(
+      bundle.channels.map((channel) => {
+        return channel.id;
+      }),
+    ).toStrictEqual(["C1", "C3"]);
+    expect(JSON.stringify(bundle)).not.toContain("compliance");
+    // A conversation outside the bot's own membership is not part of this
+    // owner's readable surface, so the morning it covers is still complete.
+    expect(bundle.limits).toStrictEqual([]);
+    expect(bundle.coverage).toBe("complete");
+    expect(response.body.occurrence.outcome).toBe("complete");
+  });
+});
+
+describe("Morning Brief Slack per-conversation containment", () => {
+  /**
+   * Three shared channels whose middle one answers however a test asks.
+   *
+   * The conversations either side of it are ordinary and healthy, which is
+   * what makes a claim about containment observable: whatever the middle one
+   * does, the first was already read and the third is still ahead.
+   */
+  function scriptThreeChannels(middle: SlackReply): SlackTraffic {
+    return scriptSlack({
+      channels: channelPage([
+        { id: "C1", name: "general" },
+        { id: "C2", name: "middle" },
+        { id: "C3", name: "release" },
+      ]),
+      history: (query, request) => {
+        const channel = query.get("channel") ?? "";
+        return channel === "C2"
+          ? middle(query, request)
+          : historyPage([
+              { ts: FIRST_IN_WINDOW, text: `message in ${channel}` },
+            ])(query, request);
+      },
+    });
+  }
+
+  function channelsRead(traffic: SlackTraffic): (string | null)[] {
+    return queriesFor(traffic, SLACK_HISTORY_URL).map((query) => {
+      return query.get("channel");
+    });
+  }
+
+  it.each(["not_in_channel", "channel_not_found", "is_archived"])(
+    "drops a conversation answering %s without reporting an omission",
+    async (code) => {
+      const f = await fixture();
+      const traffic = scriptThreeChannels(() => {
+        return { ok: false, error: code };
+      });
+
+      const response = await accept(collect(f), [200]);
+      if (response.body.result !== "collected") {
+        throw new Error(
+          `Expected a collected bundle, got ${response.body.result}`,
+        );
+      }
+      const { bundle } = response.body;
+      // One conversation the bot had never been invited to used to discard the
+      // whole source: every recorded occurrence for its owner reported slack
+      // coverage failed with zero items while thirteen of fourteen channels
+      // had been read successfully.
+      expect(
+        bundle.entries.map((entry) => {
+          return entry.text;
+        }),
+      ).toStrictEqual(["message in C1", "message in C3"]);
+      expect(
+        bundle.channels.map((channel) => {
+          return channel.id;
+        }),
+      ).toStrictEqual(["C1", "C3"]);
+      expect(JSON.stringify(bundle)).not.toContain("middle");
+      // Not being in a conversation is the workspace's own access decision,
+      // not a gap in this morning, so no limit is recorded and the coverage
+      // over the conversations this owner can read stays complete.
+      expect(bundle.limits).toStrictEqual([]);
+      expect(bundle.coverage).toBe("complete");
+      expect(response.body.occurrence.outcome).toBe("complete");
+      expect(bundle.counts).toMatchObject({ channels: 2, messages: 2 });
+      expect(channelsRead(traffic)).toStrictEqual(["C1", "C2", "C3"]);
+      expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+
+      const [row, ...extra] = await readMorningBriefCollectionOccurrences(f);
+      expect(extra).toHaveLength(0);
+      expect(row).toMatchObject({
+        status: "completed",
+        outcome: "complete",
+        channelCount: 2,
+        messageCount: 2,
+        truncated: false,
+      });
+    },
+  );
+
+  it("names an unread conversation inside the scope and reads the rest", async () => {
+    const f = await fixture();
+    const traffic = scriptThreeChannels(() => {
+      return new HttpResponse(null, { status: 503 });
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["message in C1", "message in C3"]);
+    // This one Okou is entitled to read and did not manage to, so coverage has
+    // to say so rather than describe a morning it did not see.
+    expect(bundle.limits).toStrictEqual(["conversation-failed"]);
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    expect(
+      bundle.channels
+        .filter((channel) => {
+          return channel.truncated;
+        })
+        .map((channel) => {
+          return channel.id;
+        }),
+    ).toStrictEqual(["C2"]);
+    expect(bundle.counts).toMatchObject({ channels: 2, messages: 2 });
+    expect(channelsRead(traffic)).toStrictEqual(["C1", "C2", "C3"]);
+  });
+
+  it("releases what a rate limit interrupted instead of discarding it", async () => {
+    const f = await fixture();
+    const traffic = scriptThreeChannels(() => {
+      return HttpResponse.json(
+        { ok: false, error: "ratelimited" },
+        { status: 429, headers: { "retry-after": "30" } },
+      );
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    // A rate limit on a middle conversation used to throw away every
+    // conversation already read and proved, and carefully report the provider's
+    // Retry-After for content that no longer existed.
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["message in C1"]);
+    expect(bundle.limits).toStrictEqual(["rate-limited"]);
+    expect(bundle.coverage).toBe("partial");
+    expect(response.body.occurrence.outcome).toBe("partial");
+    expect(bundle.counts).toMatchObject({ channels: 1, messages: 1 });
+    // The quota belongs to the credential rather than to one conversation, so
+    // the reads stop asking for what was just refused. The reserved release
+    // proof is the only request that follows, and it is what lets the
+    // conversation already read be published.
+    expect(channelsRead(traffic)).toStrictEqual(["C1", "C2"]);
+    expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
+    expect(
+      bundle.channels
+        .filter((channel) => {
+          return channel.truncated;
+        })
+        .map((channel) => {
+          return channel.id;
+        }),
+    ).toStrictEqual(["C2", "C3"]);
+  });
+
+  it("keeps a channel's history when its thread phase fails", async () => {
+    const f = await fixture();
+    const traffic = scriptSlack({
+      channels: channelPage([{ id: "C1", name: "general" }]),
+      history: historyPage([
+        { ts: FIRST_IN_WINDOW, text: "channel message" },
+        {
+          ts: THREAD_ROOT,
+          text: "root",
+          thread_ts: THREAD_ROOT,
+          reply_count: 2,
+        },
+      ]),
+      replies: () => {
+        return new HttpResponse(null, { status: 503 });
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    // The replies are the last work of the read phase, so a failure there has
+    // nothing it could honestly invalidate about the history already read.
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["channel message", "root"]);
+    expect(bundle.counts).toMatchObject({
+      channels: 1,
+      threads: 0,
+      messages: 2,
+    });
+    expect(bundle.limits).toStrictEqual(["conversation-failed"]);
+    expect(bundle.coverage).toBe("partial");
+    expect(bundle.channels[0]?.truncated).toBeTruthy();
+    expect(response.body.occurrence.outcome).toBe("partial");
+    expect(queriesFor(traffic, SLACK_REPLIES_URL)).toHaveLength(1);
+  });
+
+  it("drops a conversation the bot is removed from mid-attempt", async () => {
+    const f = await fixture();
+    scriptSlack({
+      channels: channelPage([
+        { id: "C1", name: "general" },
+        { id: "C2", name: "removed" },
+      ]),
+      history: (query, request) => {
+        const channel = query.get("channel") ?? "";
+        return historyPage([
+          {
+            ts: THREAD_ROOT,
+            text: `root in ${channel}`,
+            thread_ts: THREAD_ROOT,
+            reply_count: 2,
+          },
+        ])(query, request);
+      },
+      replies: (query) => {
+        // The bot is removed from the second conversation after its history
+        // was read, which is why discovery-time filtering cannot replace this.
+        return query.get("channel") === "C2"
+          ? { ok: false, error: "not_in_channel" }
+          : {
+              ok: true,
+              messages: [
+                {
+                  type: "message",
+                  ts: THREAD_REPLY,
+                  user: "U5",
+                  text: "reply in C1",
+                  thread_ts: THREAD_ROOT,
+                },
+              ],
+            };
+      },
+    });
+
+    const response = await accept(collect(f), [200]);
+    if (response.body.result !== "collected") {
+      throw new Error(
+        `Expected a collected bundle, got ${response.body.result}`,
+      );
+    }
+    const { bundle } = response.body;
+    // What the removed conversation had already produced goes with it: a read
+    // may not be published out of a conversation its reader is no longer in.
+    expect(
+      bundle.entries.map((entry) => {
+        return entry.text;
+      }),
+    ).toStrictEqual(["root in C1", "reply in C1"]);
+    expect(JSON.stringify(bundle)).not.toContain("removed");
+    expect(JSON.stringify(bundle)).not.toContain("root in C2");
+    expect(bundle.counts).toMatchObject({
+      channels: 1,
+      threads: 1,
+      messages: 2,
+    });
+    expect(bundle.limits).toStrictEqual([]);
+    expect(bundle.coverage).toBe("complete");
+    expect(response.body.occurrence.outcome).toBe("complete");
+  });
 });
 
 describe("Morning Brief Slack final release proof", () => {
@@ -2376,12 +2761,12 @@ describe("Morning Brief Slack final release proof", () => {
       expect(bundle.limits).toContain("scope-unproven");
       expect(bundle.coverage).toBe("partial");
       expect(response.body.occurrence.outcome).toBe("partial");
-      // Discovery, a proof and a read for each channel, then the two final
+      // Discovery, one proof, a read for each channel, then the two final
       // pages: the documented caps are untouched, the held answer is not
       // retried, and no protected read follows it.
       expect(held.pages()).toBe(2);
-      expect(bundle.counts.requests).toBe(7);
-      expect(held.traffic.requests).toHaveLength(7);
+      expect(bundle.counts.requests).toBe(6);
+      expect(held.traffic.requests).toHaveLength(6);
       expect(queriesFor(held.traffic, SLACK_HISTORY_URL)).toHaveLength(2);
       expect(held.traffic.requests.at(-1)?.url).toBe(
         SLACK_USER_CONVERSATIONS_URL,
@@ -2437,7 +2822,7 @@ describe("Morning Brief Slack final release proof", () => {
     expect(bundle.counts).toMatchObject({
       channels: 2,
       messages: 2,
-      requests: 7,
+      requests: 6,
     });
   });
 
@@ -2784,7 +3169,7 @@ describe("Morning Brief Slack finite budgets", () => {
     });
     const traffic = scriptSlack({
       channels: channelPage(channels),
-      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "collected" }]),
+      history: pagedHistory(),
     });
 
     const response = await accept(collect(f), [200]);
@@ -2792,24 +3177,27 @@ describe("Morning Brief Slack finite budgets", () => {
       throw new Error("Expected a collected bundle");
     }
     const { bundle } = response.body;
-    // Discovery and nine pairs short of the ceiling: the reads stop at 37 so
-    // the reserved enumeration can still prove what they collected, and the
-    // documented 40-request ceiling is never crossed.
+    // Discovery, one proof, both pages of seventeen channels and the first
+    // page of the eighteenth: exactly the 37-request read allowance. The reads
+    // stop there so the reserved enumeration can still prove what they
+    // collected, and the documented 40-request ceiling is never crossed.
     expect(bundle.counts.requests).toBe(38);
     expect(traffic.requests).toHaveLength(38);
     expect(bundle.limits).toContain("requests");
     expect(response.body.occurrence.outcome).toBe("partial");
     // The single reserved page named every discovered conversation, so the
     // eighteen channels this attempt managed to read are released with their
-    // content and the two it never reached are still named as truncated.
+    // content and the two it never reached are still named.
     expect(bundle.counts.channels).toBe(18);
-    expect(bundle.counts.messages).toBe(18);
+    expect(bundle.counts.messages).toBe(35);
     expect(bundle.channels).toHaveLength(20);
     expect(
-      bundle.channels.filter((channel) => {
-        return channel.truncated;
-      }),
-    ).toHaveLength(2);
+      new Set(
+        bundle.entries.map((entry) => {
+          return entry.channelId;
+        }),
+      ).size,
+    ).toBe(18);
     expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
   });
 
@@ -2821,10 +3209,10 @@ describe("Morning Brief Slack finite budgets", () => {
     let releasePages = 0;
     const traffic = scriptHeldRelease({
       channels,
-      // Discovery plus a proof and a read for eighteen channels is the whole
+      // Discovery, one proof and thirty-five history pages is the whole
       // 37-request read allowance; the nineteenth channel is never reached.
-      historyReads: 18,
-      history: historyPage([{ ts: FIRST_IN_WINDOW, text: "collected" }]),
+      historyReads: 35,
+      history: pagedHistory(),
       release: (page) => {
         releasePages = page;
         if (page === 1) {
@@ -2865,8 +3253,8 @@ describe("Morning Brief Slack finite budgets", () => {
       }),
     );
     expect(JSON.stringify(bundle)).not.toContain("channel-18");
-    expect(bundle.counts).toMatchObject({ channels: 18, messages: 18 });
-    expect(bundle.counts.textBytes).toBe(18 * "collected".length);
+    expect(bundle.counts).toMatchObject({ channels: 18, messages: 35 });
+    expect(bundle.counts.textBytes).toBe(35 * "collected".length);
     expect(traffic.requests.at(-1)?.url).toBe(SLACK_USER_CONVERSATIONS_URL);
   });
 

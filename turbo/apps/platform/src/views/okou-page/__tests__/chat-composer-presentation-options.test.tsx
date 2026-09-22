@@ -92,7 +92,7 @@ function visibleText(message: SubmittedMessage | undefined): string {
   );
 }
 
-test("Presentation offers the documented slide counts and selects Auto", async () => {
+test("Presentation offers the documented slide counts and default", async () => {
   setupModels();
   mockChatLifecycle(context);
   const editor = await setupComposer();
@@ -118,6 +118,15 @@ test("Presentation offers the documented slide counts and selects Auto", async (
   expect(
     within(menu).getByRole("option", { name: "8–12 slides" }),
   ).toHaveAttribute("aria-selected", "true");
+});
+
+test("Presentation selects Auto", async () => {
+  setupModels();
+  mockChatLifecycle(context);
+  const editor = await setupComposer();
+  const picker = await enterPresentation(editor);
+  click(picker);
+  const menu = await screen.findByRole("listbox");
   click(within(menu).getByRole("option", { name: "Auto" }));
   await waitFor(() => {
     return expect(picker).toHaveTextContent("Auto");

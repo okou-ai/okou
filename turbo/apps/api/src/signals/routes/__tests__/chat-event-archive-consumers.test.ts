@@ -201,18 +201,60 @@ function installAgentStorage(): void {
   });
 }
 
+function manifestRecord(zip: AdmZip, path: string): Record<string, unknown> {
+  for (const entry of zip.getEntries()) {
+    if (!entry.entryName.startsWith("manifest/files-")) {
+      continue;
+    }
+    for (const line of readExportJsonLines(zip, entry.entryName)) {
+      const record = line as Record<string, unknown>;
+      if (record.path === path) {
+        return record;
+      }
+    }
+  }
+  throw new Error(`Expected a manifest record for ${path}`);
+}
+
+/**
+ * The bound as of the export's cut, raised to the newest snapshot's coverage. A
+ * snapshot that overtakes the bound mid-export is retained whole, so it carries
+ * the bound with it exactly as `collectMessages` recomputes `upperSeqId`.
+ */
+function exportedUpperSeqId(
+  zip: AdmZip,
+  threadId: string,
+  coverage: number,
+): number {
+  return Math.max(
+    Number(manifestRecord(zip, `chat-threads/${threadId}.json`).upperSeqId),
+    coverage,
+  );
+}
+
+function snapshotCoverage(entryName: string): number {
+  return Number(/\/snapshots\/(\d+)-/u.exec(entryName)?.[1] ?? 0);
+}
+
 function readDurableChatRows(zip: AdmZip, threadId: string) {
-  const index = JSON.parse(
-    readExportText(zip, `chat-messages/${threadId}/index.json`),
-  ) as {
-    snapshotPath: string;
-    snapshotPhysicalCoverage: number;
-    upperSeqId: number;
-  };
-  const snapshot = zip.getEntry(index.snapshotPath);
+  // Snapshot entry names embed their covered sequence bound, so the newest
+  // snapshot is the authoritative one without any per-thread index file.
+  const snapshot = zip
+    .getEntries()
+    .filter((entry) => {
+      return entry.entryName.startsWith(`chat-messages/${threadId}/snapshots/`);
+    })
+    .sort((left, right) => {
+      return (
+        snapshotCoverage(left.entryName) - snapshotCoverage(right.entryName)
+      );
+    })
+    .at(-1);
   if (!snapshot) {
     throw new Error("Expected the authoritative exported chat snapshot");
   }
+  const coverage = snapshotCoverage(snapshot.entryName);
+  const upperSeqId = exportedUpperSeqId(zip, threadId, coverage);
   const archived = gunzipSync(snapshot.getData())
     .toString("utf8")
     .trimEnd()
@@ -231,10 +273,7 @@ function readDurableChatRows(zip: AdmZip, threadId: string) {
       });
     })
     .filter((row) => {
-      return (
-        row.seqId > index.snapshotPhysicalCoverage &&
-        row.seqId <= index.upperSeqId
-      );
+      return row.seqId > coverage && row.seqId <= upperSeqId;
     });
   return [...archived, ...tail].sort((left, right) => {
     return left.seqId - right.seqId;
@@ -715,16 +754,19 @@ describe("archived chat event consumers", () => {
       }
       const archiveBytes = storage.download(downloadUrl);
       const zip = new AdmZip(archiveBytes);
-      const index = JSON.parse(
-        readExportText(zip, `chat-messages/${fixture.threadId}/index.json`),
-      ) as { snapshotPhysicalCoverage: number; upperSeqId: number };
+      const coverage = Math.max(
+        ...zip.getEntries().map((entry) => {
+          return snapshotCoverage(entry.entryName);
+        }),
+      );
+      const exportedUpper = exportedUpperSeqId(zip, fixture.threadId, coverage);
       const expectedUpper = expectedLast.seqId;
-      expect(index.upperSeqId).toBe(expectedUpper);
-      expect(index.snapshotPhysicalCoverage).toBe(
+      expect(exportedUpper).toBe(expectedUpper);
+      expect(coverage).toBe(
         advancement === "within-bound" ? projectedLast.seqId : expectedUpper,
       );
       if (advancement === "overtake-with-revocation") {
-        expect(index.upperSeqId).toBeGreaterThan(originalUpper);
+        expect(exportedUpper).toBeGreaterThan(originalUpper);
       }
       expect(
         zip.getEntries().filter((entry) => {

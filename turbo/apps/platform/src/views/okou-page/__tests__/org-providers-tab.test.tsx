@@ -1,5 +1,6 @@
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import {
+  ACTIVE_RUN_MODELS,
   getCanonicalModelDisplayName,
   type OrgModelPoliciesResponse,
   type UpdateOrgModelPoliciesRequest,
@@ -760,18 +761,19 @@ test("Deleting a gateway removes it from an already routed workspace model", asy
 });
 
 test.each([
-  { model: "GPT 5.6 Sol", active: true },
-  { model: "GPT 5.6 Luna", active: true },
-  { model: "GPT 5.5", active: false },
-  { model: "Claude Sonnet 4.6", active: true },
-  { model: "Claude Opus 4.8", active: true },
-  { model: "DeepSeek V4 Flash", active: true },
-  { model: "DeepSeek V4 Pro", active: true },
-  { model: "Kimi K2.7 Code", active: false },
-  { model: "Claude Opus 4.7", active: false },
+  { model: "GPT 6 Sol", available: false },
+  { model: "GPT 5.6 Sol", available: true },
+  { model: "GPT 5.6 Luna", available: true },
+  { model: "GPT 5.5", available: false },
+  { model: "Claude Sonnet 4.6", available: true },
+  { model: "Claude Opus 4.8", available: true },
+  { model: "DeepSeek V4 Flash", available: true },
+  { model: "DeepSeek V4 Pro", available: true },
+  { model: "Kimi K2.7 Code", available: false },
+  { model: "Claude Opus 4.7", available: false },
 ])(
-  "Offer $model only when active while adding a workspace route",
-  async ({ model, active }) => {
+  "Offer $model only when available to add a workspace route",
+  async ({ model, available }) => {
     mockAdminOrg();
     context.mocks.data.orgModelProviders([]);
     context.mocks.data.orgModelPolicies([]);
@@ -783,10 +785,67 @@ test.each([
 
     await screen.findByRole("option", { name: "GPT 5.6 Sol" });
     expect(screen.queryAllByRole("option", { name: model })).toHaveLength(
-      active ? 1 : 0,
+      available ? 1 : 0,
     );
   },
 );
+
+test("Fails closed when an older API omits the addability projection", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  const defaultPolicy = builtInPolicy(
+    "00000000-0000-4000-a000-000000000220",
+    "gpt-5.6-luna",
+    "GPT 5.6 Luna",
+    true,
+  );
+  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
+    return respond(200, {
+      revision: "pre-addability-api",
+      writePreconditionRequired: false,
+      policies: [defaultPolicy],
+      workspaceDefaultModel: defaultPolicy.model,
+      workspaceDefaultPolicyId: defaultPolicy.id,
+    });
+  });
+  await openProvidersTab();
+
+  await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.textContent?.trim() === "Add model";
+    }),
+  ).toBeFalsy();
+});
+
+test("Keep a configured staged model visible without offering it again", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000221",
+      "gpt-5.6-luna",
+      "GPT 5.6 Luna",
+      true,
+    ),
+    builtInPolicy(
+      "00000000-0000-4000-a000-000000000222",
+      "gpt-6-sol",
+      "GPT 6 Sol",
+      false,
+    ),
+  ]);
+  await openProvidersTab();
+
+  expect(
+    screen.getByTestId("org-model-policy-row-gpt-6-sol"),
+  ).toBeInTheDocument();
+  click(buttonByText("Add model"));
+  const dialog = screen.getByRole("dialog", { name: "Add model" });
+  click(within(dialog).getByRole("combobox"));
+  await screen.findByRole("option", { name: "GPT 5.6 Sol" });
+  expect(screen.queryByRole("option", { name: "GPT 6 Sol" })).toBeNull();
+});
 
 test("Gate free workspaces by route instead of by model", async () => {
   mockAdminOrg();
@@ -1402,6 +1461,13 @@ function enabledPolicySnapshot(): OrgModelPoliciesResponse {
     writePreconditionRequired: true,
     workspaceDefaultModel: "gpt-5.6-luna",
     workspaceDefaultPolicyId: "00000000-0000-4000-a000-000000000211",
+    modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
+      return (
+        model !== "gpt-5.6-luna" &&
+        model !== "gpt-6-astra" &&
+        model !== "gpt-6-sol"
+      );
+    }),
     policies: [
       builtInPolicy(
         "00000000-0000-4000-a000-000000000211",
@@ -1455,6 +1521,14 @@ function mockPriorityPolicyWrites() {
       writePreconditionRequired: true,
       workspaceDefaultModel: defaultPolicy?.model ?? null,
       workspaceDefaultPolicyId: defaultPolicy?.id ?? null,
+      modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
+        return (
+          model !== "gpt-6-sol" &&
+          !policies.some((policy) => {
+            return policy.model === model;
+          })
+        );
+      }),
       policies,
     };
     return respond(200, snapshot);

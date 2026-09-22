@@ -22,6 +22,13 @@ export const billingRunAttribution = pgTable(
     userId: text("user_id").notNull(),
     runStartedAt: timestamp("run_started_at").notNull(),
     source: text("source").notNull(),
+    // Grouping identity only. Deliberately not an FK and never a title, prompt
+    // or other thread content: billing readers resolve the live chat_threads row
+    // for anything displayable, so erasing a thread removes it from the bill
+    // without touching this ledger. `unknown` means "not captured yet" and is
+    // distinct from a run that genuinely had no thread.
+    threadId: uuid("thread_id"),
+    threadContext: text("thread_context").notNull().default("unknown"),
     // Monotone evidence marker; identity fields remain immutable. A raw event's
     // normal compaction or existing teardown cannot make billed work provisional.
     usageObserved: boolean("usage_observed").notNull().default(false),
@@ -37,6 +44,13 @@ export const billingRunAttribution = pgTable(
       check(
         "billing_run_attribution_source_check",
         sql`${table.source} IN ('chat', 'automation', 'slack', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')`,
+      ),
+      check(
+        "billing_run_attribution_thread_context_check",
+        sql`(
+        (${table.threadContext} = 'thread' AND ${table.threadId} IS NOT NULL)
+        OR (${table.threadContext} IN ('threadless', 'unknown') AND ${table.threadId} IS NULL)
+      )`,
       ),
     ];
   },

@@ -177,6 +177,9 @@ export interface DefaultOrgModelPolicySeed {
 }
 
 const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
+  "okou-1.0-max": "Okou 1.0 Max",
+  "okou-1.0-pro": "Okou 1.0 Pro",
+  "okou-1.0": "Okou 1.0",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
   "claude-opus-5": "Claude Opus 5",
@@ -198,7 +201,26 @@ const SUPPORTED_RUN_MODEL_SET: ReadonlySet<string> = new Set(
   SUPPORTED_RUN_MODELS,
 );
 
-type ActiveRunModel = Exclude<SupportedRunModel, "claude-fable-5" | "gpt-5.5">;
+export const OKOU_RUN_MODELS = [
+  "okou-1.0",
+  "okou-1.0-pro",
+  "okou-1.0-max",
+] as const satisfies readonly SupportedRunModel[];
+
+export type OkouRunModel = (typeof OKOU_RUN_MODELS)[number];
+
+const OKOU_RUN_MODEL_SET: ReadonlySet<string> = new Set(OKOU_RUN_MODELS);
+
+export function isOkouRunModel(
+  model: string | null | undefined,
+): model is OkouRunModel {
+  return typeof model === "string" && OKOU_RUN_MODEL_SET.has(model);
+}
+
+export type ActiveRunModel = Exclude<
+  SupportedRunModel,
+  "claude-fable-5" | "gpt-5.5"
+>;
 
 // Historical IDs remain in the wire schemas and billing catalog. Availability
 // is a separate product decision, including for provider-prefixed aliases.
@@ -370,6 +392,21 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
+  "okou-1.0-max": {
+    candidates: [
+      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-max" },
+    ],
+  },
+  "okou-1.0-pro": {
+    candidates: [
+      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0-pro" },
+    ],
+  },
+  "okou-1.0": {
+    candidates: [
+      { concreteType: "openrouter-codex", apiModel: "@preset/okou-1-0" },
+    ],
+  },
   "deepseek-v4.1-flash": {
     candidates: [
       { concreteType: "deepseek", apiModel: "deepseek-flash" },
@@ -507,6 +544,7 @@ const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
   BUILT_IN_MODEL_ALIAS_TO_MODEL;
 
 const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
+  "okou-1.0",
   "gpt-5.6-luna",
   "deepseek-v4.1-flash",
   "deepseek-v4-flash",
@@ -1016,6 +1054,9 @@ export function getModelProviderPresentationLabel(
 }
 
 const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
+  "okou-1.0-max": ["built-in"],
+  "okou-1.0-pro": ["built-in"],
+  "okou-1.0": ["built-in"],
   "claude-fable-5-1": [
     "built-in",
     "claude-code-oauth-token",
@@ -1369,18 +1410,18 @@ export function getModelProviderCodexCatalogForModel(
     (logicalModel === "deepseek-v4.1-flash" ||
       logicalModel === "deepseek-v4-flash" ||
       logicalModel === "deepseek-v4-pro");
-  const canonicalModel = normalizeRunModelId(logicalModel);
+  const catalogModel = normalizeRunModelId(logicalModel);
   // The native V4 alias serves V4.1. Other providers keep the original
   // legacy catalog until their upstream mapping is verified.
   const overrideCatalog =
-    canonicalModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
+    catalogModel === "deepseek-v4-flash" && runtimeProviderType !== "deepseek"
       ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
-      : isActiveRunModel(canonicalModel)
-        ? CODEX_MODEL_CATALOG_OVERRIDES[canonicalModel]
+      : isActiveRunModel(catalogModel)
+        ? CODEX_MODEL_CATALOG_OVERRIDES[catalogModel]
         : undefined;
   const sourceCatalogs = overrideCatalog
     ? [overrideCatalog]
-    : getProvidersForModel(logicalModel).flatMap((type) => {
+    : getProvidersForModel(catalogModel).flatMap((type) => {
         const sourceCatalog =
           MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type]?.modelCatalog;
         return sourceCatalog ? [sourceCatalog] : [];
@@ -1395,7 +1436,7 @@ export function getModelProviderCodexCatalogForModel(
               model !== null &&
               !Array.isArray(model) &&
               "slug" in model &&
-              model.slug === canonicalModel
+              model.slug === catalogModel
             );
           },
         )
@@ -1651,6 +1692,11 @@ export const orgModelPoliciesResponseSchema = z.object({
   revision: z.string(),
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
+  // API-first rollout compatibility: a new App can briefly reach an API from
+  // before this catalog projection existed. Missing data fails closed in the
+  // Add model dialog. Make required after those API builds leave rollback;
+  // follow-up #35900.
+  modelsAvailableToAdd: z.array(supportedRunModelSchema).optional(),
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
 });

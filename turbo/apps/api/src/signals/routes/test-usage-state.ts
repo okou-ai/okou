@@ -8,6 +8,7 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
@@ -134,6 +135,7 @@ type UsageStateEventWriteAction = UsageStateAction<
 
 type UsageStateEventMaterializationAction = UsageStateAction<
   | "delete-run"
+  | "delete-billing-attribution"
   | "seed-usage-overflow-grain"
   | "set-usage-event-created-at"
   | "materialize-hourly-usage"
@@ -703,6 +705,18 @@ async function deleteRun(
   signal.throwIfAborted();
 }
 
+/** Reproduces a run whose usage predates the billing attribution table. */
+async function deleteBillingAttribution(
+  db: Db,
+  runId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  await db
+    .delete(billingRunAttribution)
+    .where(eq(billingRunAttribution.runId, runId));
+  signal.throwIfAborted();
+}
+
 async function seedUsageOverflowGrain(
   db: Db,
   args: {
@@ -1162,6 +1176,10 @@ async function mutateUsageStateEventMaterializationState(
       await deleteRun(db, body.run_id, signal);
       return { status: 200 as const, body: { ok: true as const } };
     }
+    case "delete-billing-attribution": {
+      await deleteBillingAttribution(db, body.run_id, signal);
+      return { status: 200 as const, body: { ok: true as const } };
+    }
     case "seed-usage-overflow-grain": {
       await seedUsageOverflowGrain(db, {
         orgId: body.org_id,
@@ -1250,6 +1268,7 @@ async function mutateUsageState(
       return await mutateUsageStateEventWriteState(db, body, signal);
     }
     case "delete-run":
+    case "delete-billing-attribution":
     case "seed-usage-overflow-grain":
     case "set-usage-event-created-at":
     case "materialize-hourly-usage":

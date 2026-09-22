@@ -15,6 +15,8 @@ surface; the index does not replace their detailed rules.
   semantics.
 - [React effects and ccstate commands](./effect.md): choosing between computed
   values, semantic commands, route setup, DOM lifecycles, and React effects.
+- [ResizeObserver anti-pattern](./resize-observer.md): CSS layout, deterministic
+  command triggers, stable card geometry, and measurement ownership.
 - [React and ccstate cache and lifecycle practices](./cache.md): render purity,
   state ownership, cache retention, refs, and resource teardown.
 - [Testing](./testing.md): testing strategy, patterns, and anti-patterns.

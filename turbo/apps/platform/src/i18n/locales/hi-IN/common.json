@@ -647,8 +647,7 @@
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importedSlides_one": "{{count}} स्लाइड",
       "importedSlides_other": "{{count}} स्लाइड",
-      "importFile": "अपनी फ़ाइल इंपोर्ट करें",
-      "importFileHint": "फ़ाइल के डिज़ाइन का पुन: उपयोग करें",
+      "importFile": "टेम्पलेट आयात करें",
       "multiAccent": "बहु-उच्चारण",
       "needPro": "Pro चाहिए",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
@@ -1462,11 +1461,9 @@
           },
           "later": "बाद में",
           "slack": {
-            "appBadge": "APP",
             "confirm": "Slack में जोड़ें",
             "description": "अपनी टीम के Slack वर्कस्पेस में {{assistantName}} को जोड़िए।",
             "note": "साथियों को हर बार आपके पास आने की ज़रूरत नहीं रहती। वे चैनल में कह देते हैं और काम उसी थ्रेड में लौट आता है, जहाँ सब देख सकते हैं।",
-            "sampleChannel": "# growth",
             "title": "जहाँ आपकी टीम पहले से बात करती है, वहीं {{assistantName}} के साथ काम करें"
           },
           "workflow": {
@@ -1495,6 +1492,10 @@
         },
         "notEligible": "पात्र नहीं",
         "pendingState": "{{amount}} लंबित",
+        "rejected": {
+          "alreadyRedeemed": "पोस्ट पहले इस्तेमाल हो चुकी",
+          "postMustMention": "{{assistantName}} का ज़िक्र ज़रूरी"
+        },
         "rewardsNote": "इनाम मिलने के 7 दिन बाद क्रेडिट समाप्त हो जाते हैं। चेक इन 00:00 UTC पर रीसेट होता है। Slack के इनाम संगठन को और बाकी आपके निजी बैलेंस में जाते हैं।",
         "share": {
           "action": "शेयर करें",
@@ -2127,6 +2128,7 @@
       "pinned": "पिन की गई",
       "rename": "चैट का नाम बदलें",
       "renameDescription": "इस चैट थ्रेड के लिए एक नया नाम दर्ज करें।",
+      "showAllChats": "सभी चैट दिखाएं",
       "showArchived": "आर्काइव की गई चैट दिखाएं",
       "showArchivedChats": "आर्काइव की गई चैट दिखाएं",
       "titlePlaceholder": "चैट शीर्षक",
@@ -4148,7 +4150,6 @@
     "sourcesFirst": {
       "common": {
         "back": "वापस",
-        "cancel": "रद्द करें",
         "continue": "आगे बढ़ें",
         "finish": "सेटअप पूरा करें",
         "notNow": "अभी नहीं",
@@ -4220,17 +4221,21 @@
         "title": "आप किस तरह का काम करते हैं?"
       },
       "skills": {
-        "confirm": "इम्पोर्ट करें और आगे बढ़ें",
-        "copy": "एक SKILL.md इम्पोर्ट करें और वह Okou में workflow बन जाती है, / से चलाने के लिए तैयार।",
-        "import": "फ़ाइल चुनें",
+        "copied": "कॉपी हो गया",
+        "copy": "इस prompt को अपने Codex या Claude Code सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
+        "copyError": "prompt कॉपी नहीं हो सका।",
+        "copyPrompt": "prompt कॉपी करें",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
-        "importedTitle": "आपका workflow तैयार है",
-        "panelCopy": "Codex, Claude Code या इसे लिखने वाले किसी भी एजेंट से।",
-        "panelTitle": "SKILL.md यहाँ छोड़ें",
-        "previewCopy": "Okou workflow के रूप में इम्पोर्ट होगा। साझा करने तक इसे सिर्फ़ आप चला सकते हैं।",
-        "previewTitle": "अपनी skill देखें",
-        "replace": "दूसरी फ़ाइल चुनें",
-        "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।"
+        "importedLabel": "इम्पोर्ट हुई skills",
+        "importedTitle": "आपकी skills Okou में आ गईं",
+        "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",
+        "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
+        "promptLabel": "skill इम्पोर्ट prompt",
+        "promptTitle": "इसे Codex या Claude Code में चलाएँ",
+        "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
+        "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।",
+        "tryAgain": "फिर से कोशिश करें",
+        "waiting": "इम्पोर्ट हुई skills आते ही यहाँ दिखेंगी।"
       },
       "slack": {
         "add": "Slack में जोड़ें",
@@ -6505,6 +6510,8 @@
         "description": "{{brandName}} इंटरफ़ेस के लिए अपनी पसंदीदा भाषा चुनें",
         "label": "भाषा",
         "options": {
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
           "english": "English",
           "french": "Français",
           "german": "Deutsch",
@@ -6912,14 +6919,20 @@
       "preview": "{{title}} का पूर्वावलोकन करें",
       "rename": "टेम्पलेट का नाम बदलें"
     },
+    "clearSearch": "खोज साफ़ करें",
     "custom": "कस्टम",
     "detail": {
       "back": "कस्टम टेम्पलेट",
       "page": "पृष्ठ {{number}}"
     },
     "empty": {
-      "description": "Okou आपकी फ़ाइल के डिज़ाइन को ऐसे टेम्पलेट में बदल देता है जिसे आप दोबारा इस्तेमाल कर सकते हैं।"
+      "description": "किसी दस्तावेज़, प्रेज़ेंटेशन या इमेज का डिज़ाइन दोबारा इस्तेमाल करने के लिए उसे आयात करें।",
+      "document": "अभी कोई दस्तावेज़ नहीं है",
+      "illustration": "अभी कोई इमेज नहीं है",
+      "presentation": "अभी कोई प्रेज़ेंटेशन नहीं है",
+      "title": "अपना बनाएं"
     },
+    "importHint": "दस्तावेज़, प्रेज़ेंटेशन या इमेज आयात करें।",
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
     "renameFailed": "टेम्पलेट का नाम नहीं बदला जा सका।",
     "retry": "फिर से कोशिश करें",
