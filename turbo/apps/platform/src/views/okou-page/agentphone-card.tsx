@@ -97,20 +97,22 @@ function AgentPhoneCardActions({
       ) : null}
       {isConnected ? (
         <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              showTooltip
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              className="shrink-0"
-              aria-label={t(($) => {
-                return $.connectors.providerSettings.agentphone.options;
-              })}
-            >
-              <EllipsisVertical size={16} />
-            </Button>
-          </PopoverTrigger>
+          <PopoverTrigger
+            render={
+              <Button
+                showTooltip
+                type="button"
+                variant="quiet"
+                size="icon-xs"
+                className="shrink-0"
+                aria-label={t(($) => {
+                  return $.connectors.providerSettings.agentphone.options;
+                })}
+              >
+                <EllipsisVertical size={16} />
+              </Button>
+            }
+          />
           <PopoverContent
             align="end"
             className="flex flex-col gap-0.5 w-40 p-2"

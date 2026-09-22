@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   Dialog,
   DialogBody,
@@ -11,8 +11,105 @@ import {
   DialogTrigger,
 } from "../dialog";
 import { IconButton } from "../icon-button";
+import { Button } from "../button";
 
 describe("Dialog", () => {
+  it.each(["pointer", "Enter", "Space"])(
+    "opens and closes a rendered native button once through %s",
+    async (activation) => {
+      const user = userEvent.setup();
+      const triggerAction = vi.fn();
+      const hostAction = vi.fn();
+      const closeAction = vi.fn();
+      const triggerRef = { current: null as HTMLButtonElement | null };
+      const hostRef = { current: null as HTMLElement | null };
+      render(
+        <Dialog>
+          <DialogTrigger
+            ref={triggerRef}
+            onClick={triggerAction}
+            render={
+              <Button ref={hostRef} onClick={hostAction} type="button">
+                Open settings
+              </Button>
+            }
+          />
+          <DialogContent showCloseButton={false}>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogClose
+              render={
+                <Button onClick={closeAction} type="button">
+                  Save settings
+                </Button>
+              }
+            />
+          </DialogContent>
+        </Dialog>,
+      );
+
+      const trigger = screen.getByRole("button", { name: "Open settings" });
+      expect(screen.getAllByRole("button")).toHaveLength(1);
+      expect(trigger).toBeInstanceOf(HTMLButtonElement);
+      expect(trigger).toHaveAttribute("type", "button");
+      expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
+      expect(triggerRef.current).toBe(trigger);
+      expect(hostRef.current).toBe(trigger);
+      if (activation === "pointer") {
+        await user.click(trigger);
+      } else {
+        await user.tab();
+        expect(trigger).toHaveFocus();
+        await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+      }
+
+      expect(
+        screen.getByRole("dialog", { name: "Settings" }),
+      ).toBeInTheDocument();
+      expect(triggerAction).toHaveBeenCalledOnce();
+      expect(hostAction).toHaveBeenCalledOnce();
+      await user.click(screen.getByRole("button", { name: "Save settings" }));
+      expect(closeAction).toHaveBeenCalledOnce();
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
+        expect(trigger).toHaveFocus();
+      });
+    },
+  );
+
+  it("keeps a loading rendered button disabled until its action is available", async () => {
+    const user = userEvent.setup();
+    function Settings({ loading }: { loading: boolean }) {
+      return (
+        <Dialog>
+          <DialogTrigger
+            render={
+              <Button disabled={loading} aria-busy={loading}>
+                Open settings
+              </Button>
+            }
+          />
+          <DialogContent>
+            <DialogTitle>Settings</DialogTitle>
+          </DialogContent>
+        </Dialog>
+      );
+    }
+    const { rerender } = render(<Settings loading />);
+    const trigger = screen.getByRole("button", { name: "Open settings" });
+    expect(trigger).toBeDisabled();
+    expect(trigger).toHaveAttribute("aria-busy", "true");
+    await user.click(trigger);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    rerender(<Settings loading={false} />);
+    expect(trigger).toBeEnabled();
+    expect(trigger).toHaveAttribute("aria-busy", "false");
+    await user.click(trigger);
+    expect(
+      screen.getByRole("dialog", { name: "Settings" }),
+    ).toBeInTheDocument();
+  });
+
   it.each([false, true])(
     "closes and restores trigger focus with a custom icon control: %s",
     async (customClose) => {

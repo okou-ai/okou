@@ -892,30 +892,32 @@ function ChatThreadEmojiMenuButton({
         <Tooltip>
           <TooltipTrigger
             render={
-              <PopoverTrigger asChild>
-                <Button
-                  type="button"
-                  aria-label={t(($) => {
-                    return $.chat.thread.changeIcon;
-                  })}
-                  aria-keyshortcuts="Shift+F2"
-                  variant="quiet"
-                  size="icon-xs"
-                  iconSize="md"
-                  className="shrink-0"
-                >
-                  {emoji ? (
-                    <span
-                      aria-hidden="true"
-                      className="font-family-emoji text-base leading-none"
-                    >
-                      {emoji}
-                    </span>
-                  ) : (
-                    <SmilePlus size={18} aria-hidden="true" />
-                  )}
-                </Button>
-              </PopoverTrigger>
+              <PopoverTrigger
+                render={
+                  <Button
+                    type="button"
+                    aria-label={t(($) => {
+                      return $.chat.thread.changeIcon;
+                    })}
+                    aria-keyshortcuts="Shift+F2"
+                    variant="quiet"
+                    size="icon-xs"
+                    iconSize="md"
+                    className="shrink-0"
+                  >
+                    {emoji ? (
+                      <span
+                        aria-hidden="true"
+                        className="font-family-emoji text-base leading-none"
+                      >
+                        {emoji}
+                      </span>
+                    ) : (
+                      <SmilePlus size={18} aria-hidden="true" />
+                    )}
+                  </Button>
+                }
+              />
             }
           />
           <TooltipContent
@@ -7743,16 +7745,18 @@ function UsageChip({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground/70 hover:bg-state-hover hover:text-foreground transition-colors duration-150"
-          aria-label={`${ariaLabel} ${total}`}
-        >
-          <Coins size={16} />
-          <span>{total}</span>
-        </button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className="inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-muted-foreground/70 hover:bg-state-hover hover:text-foreground transition-colors duration-150"
+            aria-label={`${ariaLabel} ${total}`}
+          >
+            <Coins size={16} />
+            <span>{total}</span>
+          </button>
+        }
+      />
       <PopoverContent side="bottom" align="start" className="w-72 p-3">
         <div className="flex items-center justify-between gap-3 text-sm font-medium">
           <span>{title}</span>
@@ -7909,20 +7913,22 @@ function RelatedArtifactsDialog({
         <Tooltip>
           <TooltipTrigger
             render={
-              <DialogTrigger asChild>
-                <Button
-                  type="button"
-                  variant="quiet"
-                  size="xs"
-                  iconSize="sm"
-                  className="gap-1.5 px-2 text-xs text-muted-foreground/60 tabular-nums"
-                  aria-label={triggerLabel}
-                  data-testid="chat-run-related-artifacts-trigger"
-                >
-                  <Package />
-                  <span>{triggerLabel}</span>
-                </Button>
-              </DialogTrigger>
+              <DialogTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    size="xs"
+                    iconSize="sm"
+                    className="gap-1.5 px-2 text-xs text-muted-foreground/60 tabular-nums"
+                    aria-label={triggerLabel}
+                    data-testid="chat-run-related-artifacts-trigger"
+                  >
+                    <Package />
+                    <span>{triggerLabel}</span>
+                  </Button>
+                }
+              />
             }
           />
           <TooltipContent side="bottom">{title}</TooltipContent>

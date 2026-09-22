@@ -357,34 +357,38 @@ function ConnectorCell({
         <Tooltip>
           <TooltipTrigger
             render={
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    connectorPillClassName({ interactive: true }),
-                    actionRequiredEntry &&
-                      "border-amber-300/80 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50",
-                  )}
-                >
-                  {actionRequiredEntry ? (
-                    <ConnectorPillMarker dotClassName="bg-amber-500" />
-                  ) : lead ? (
-                    <ConnectorPillMarker
-                      dotClassName={automationDotClass(lead)}
-                    />
-                  ) : null}
-                  <span>
-                    {actionRequiredEntry
-                      ? i18n.t(($) => {
-                          return $.workflows.list.actionRequired;
-                        })
-                      : connectorNames(entries)}
-                  </span>
-                  {!actionRequiredEntry && remaining > 0 ? (
-                    <span className="text-muted-foreground">+{remaining}</span>
-                  ) : null}
-                </button>
-              </PopoverTrigger>
+              <PopoverTrigger
+                render={
+                  <button
+                    type="button"
+                    className={cn(
+                      connectorPillClassName({ interactive: true }),
+                      actionRequiredEntry &&
+                        "border-amber-300/80 bg-amber-50 text-amber-700 hover:border-amber-400 hover:bg-amber-100 hover:text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400 dark:hover:bg-amber-950/50",
+                    )}
+                  >
+                    {actionRequiredEntry ? (
+                      <ConnectorPillMarker dotClassName="bg-amber-500" />
+                    ) : lead ? (
+                      <ConnectorPillMarker
+                        dotClassName={automationDotClass(lead)}
+                      />
+                    ) : null}
+                    <span>
+                      {actionRequiredEntry
+                        ? i18n.t(($) => {
+                            return $.workflows.list.actionRequired;
+                          })
+                        : connectorNames(entries)}
+                    </span>
+                    {!actionRequiredEntry && remaining > 0 ? (
+                      <span className="text-muted-foreground">
+                        +{remaining}
+                      </span>
+                    ) : null}
+                  </button>
+                }
+              />
             }
           />
           <TooltipContent side="bottom">

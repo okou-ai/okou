@@ -4539,20 +4539,22 @@ function AutomationCreateMenu({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          type="button"
-          variant="neutral"
-          className="shrink-0 gap-1.5 px-3 hover:bg-control-surface active:bg-control-surface [&_svg]:size-3.5"
-        >
-          <Plus size={14} />
-          <span>
-            {i18n.t(($) => {
-              return $.workflows.automations.common.addAutomation;
-            })}
-          </span>
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button
+            type="button"
+            variant="neutral"
+            className="shrink-0 gap-1.5 px-3 hover:bg-control-surface active:bg-control-surface [&_svg]:size-3.5"
+          >
+            <Plus size={14} />
+            <span>
+              {i18n.t(($) => {
+                return $.workflows.automations.common.addAutomation;
+              })}
+            </span>
+          </Button>
+        }
+      />
       <DialogContent smMaxWidth={880}>
         <DialogHeader>
           <DialogTitle>

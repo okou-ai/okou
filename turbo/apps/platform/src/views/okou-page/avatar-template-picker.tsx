@@ -185,14 +185,16 @@ function CatalogFiltersPopover({
   const { t } = useTranslation();
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="outline">
-          <SlidersHorizontal />
-          {t(($) => {
-            return $.artifacts.templates.filters.title;
-          })}
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button type="button" variant="outline">
+            <SlidersHorizontal />
+            {t(($) => {
+              return $.artifacts.templates.filters.title;
+            })}
+          </Button>
+        }
+      />
       <PopoverContent
         align="end"
         className="w-[min(340px,calc(100vw-2rem))] p-4"

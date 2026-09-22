@@ -1007,14 +1007,16 @@ function AddTelegramBotDialogFrame({
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button type="button" size="sm" disabled={disabled}>
-          <Plus size={16} />
-          {t(($) => {
-            return $.connectors.providerSettings.telegram.addBot;
-          })}
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button type="button" size="sm" disabled={disabled}>
+            <Plus size={16} />
+            {t(($) => {
+              return $.connectors.providerSettings.telegram.addBot;
+            })}
+          </Button>
+        }
+      />
       <DialogContent smMaxWidth={640}>
         <DialogHeader>
           <DialogTitle>
@@ -1600,24 +1602,26 @@ function TelegramMoreActions({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          disabled={disabled}
-          variant="quiet"
-          size="icon-sm"
-          className="shrink-0 disabled:opacity-50"
-          aria-label={t(
-            ($) => {
-              return $.connectors.providerSettings.telegram.moreOptions;
-            },
-            { bot: botLabel },
-          )}
-        >
-          <EllipsisVertical size={16} />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            disabled={disabled}
+            variant="quiet"
+            size="icon-sm"
+            className="shrink-0 disabled:opacity-50"
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings.telegram.moreOptions;
+              },
+              { bot: botLabel },
+            )}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
       <PopoverContent align="end" className="flex w-40 flex-col gap-0.5 p-2">
         {bot.isConnected ? (
           <button

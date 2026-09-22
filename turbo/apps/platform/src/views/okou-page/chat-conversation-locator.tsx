@@ -58,17 +58,21 @@ function LocatorPreviewCard({
 
   return (
     <Popover open modal={false}>
-      <PopoverTrigger asChild nativeButton={false} tabIndex={-1}>
-        {/* The shared positioner owns the tick's geometry and edge avoidance. */}
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute left-[14px] h-0.5 -translate-y-1/2"
-          style={{
-            top: trackTop(preview.tick.fraction, tickCount),
-            width: preview.tick.width,
-          }}
-        />
-      </PopoverTrigger>
+      <PopoverTrigger
+        nativeButton={false}
+        tabIndex={-1}
+        render={
+          /* The shared positioner owns the tick's geometry and edge avoidance. */
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute left-[14px] h-0.5 -translate-y-1/2"
+            style={{
+              top: trackTop(preview.tick.fraction, tickCount),
+              width: preview.tick.width,
+            }}
+          />
+        }
+      />
       <PopoverContent
         data-conversation-locator-preview
         aria-hidden="true"
