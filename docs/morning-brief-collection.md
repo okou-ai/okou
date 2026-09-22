@@ -109,8 +109,8 @@ installation, schedule and Agent, and the Slack workspace and user.
   the row, the update cannot queue again between the check and the write. A
   stale worker therefore cannot overwrite a newer claimant, and an attempt whose
   lease elapsed while it waited has its bundle discarded rather than accepted.
-- **Final local admission.** The pre-transaction authority revalidation, the
-  caller's cancellation check and the lease check all describe the state
+- **Final local admission.** The caller's cancellation check and the lease check
+  both describe the state
   _before_ finalization's own lock waits. Those waits can outlast a Settings
   disable, an Agent move, a Slack rebinding or the caller itself, so the
   completion is admitted once more inside the transaction — after the member and

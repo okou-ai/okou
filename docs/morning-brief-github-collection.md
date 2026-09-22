@@ -47,9 +47,9 @@ exact implementation and adds no second authorization engine:
   cannot release what the previous one collected.
 - `withMorningBriefConnectorReader(args, collect, signal)` takes the shared
   `clerk` client alongside `db` and a separate final `AbortSignal`, and owns one
-  absolute deadline covering admission, credentials, every request and body, and
-  the release fence. It re-derives live authority before the credential is
-  resolved, before every request, and again before the payload is released:
+  absolute deadline covering admission, credentials, and every request and body.
+  It re-derives live authority before the credential is resolved and before
+  every request:
   complete canonical ownership, membership, the pinned connector account, the
   Agent's grants, accepted catalog visibility and effective URL policy. The
   external membership answer precedes the final local erasure/binding/Agent

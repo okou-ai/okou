@@ -34,24 +34,24 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 
 /**
- * A composed brief whose source read an endpoint allowed without a permission.
+ * One source's authority verdict must never settle another source's morning.
  *
- * Connector requests are authorized one URL at a time, and a URL under an
- * allowed base that matches no named catalog route is decided by the
- * connector's unknown-request policy rather than by a named permission. Such an
- * endpoint is allowed and contributes no permission at all.
+ * This is the 2026-09-21T23:00Z production occurrence. Five sources collected
+ * 268 items and every read was authorized; GitHub touched more distinct
+ * endpoints than one retained descriptor was allowed to name, and the resulting
+ * descriptor-set rejection voided the whole occurrence. The model was never
+ * invoked and nothing was delivered, because a bound on how much authority
+ * evidence could be retained about one source was being enforced against the
+ * entire brief.
  *
- * The composition records what each released read was authorized by, and
- * re-asks that authority before the request is assembled. If the two sides
- * disagree about what a permissionless endpoint contributes, a source whose
- * grants never changed is withdrawn on every attempt and reports
- * `coverage: "failed"` with no items despite a fully successful collection.
+ * A read that completed under valid authorization is the brief's evidence. If a
+ * source's authority cannot be re-established *after* its read, that is not a
+ * reason to withhold the owner's other authorized work, and it is never a
+ * reason to settle the occurrence with no request at all.
  *
- * The accepted catalog is what decides whether a route names a permission, and
- * a caller cannot choose it, so these install a GitHub catalog whose `/user`
- * route carries no permission name. Everything else is the deployed path: the
- * registered composition route, the real database, real authorization, and
- * GitHub doubled only at its HTTP boundary.
+ * Everything below is the deployed path: the registered composition route, the
+ * real database, real authorization, and GitHub doubled only at its HTTP
+ * boundary.
  */
 
 const GITHUB_USER = "https://api.github.com/user";
@@ -60,11 +60,24 @@ const GITHUB_SEARCH = "https://api.github.com/search/issues";
 
 const ANCHOR_ISO = "2026-09-17T07:00:00.000Z";
 const ANCHOR_MS = Date.parse(ANCHOR_ISO);
-/** Inside the 24-hour window the collector asks GitHub about. */
+/** Inside the 24-hour window every collector asks about. */
 const IN_WINDOW = new Date(ANCHOR_MS - 60_000).toISOString();
 
 const LOGIN = "brief-owner";
-const REPO = "okou-ai/okou";
+const OWNER = "okou-ai";
+const REPO = "okou";
+
+/**
+ * Two open pull requests, so the collector issues its per-pull reads.
+ *
+ * Each one costs three further distinct URLs — the pull, its check runs and its
+ * combined status — which is how a healthy GitHub morning reaches more retained
+ * endpoints than one descriptor may name.
+ */
+const PULLS = [
+  { number: 11, sha: "a".repeat(40) },
+  { number: 12, sha: "b".repeat(40) },
+] as const;
 
 /** Real OAuth setup plus a five-source composition needs more than 5 seconds. */
 const TEST_TIMEOUT_MS = 60_000;
@@ -137,17 +150,19 @@ function stubObjectStorage(objects: Map<string, Buffer>): void {
 }
 
 /**
- * The accepted catalog, with GitHub's `GET /user` route left unnamed.
+ * The accepted catalog, with every GitHub route left unnamed.
  *
- * The connector already allows unknown requests, so the route stays allowed and
- * the collector still reads it — it simply resolves without a permission, which
- * is the production shape this suite is about. Every other GitHub route keeps
- * its permission, so the source still exercises named grants as well.
+ * The connector still allows unknown requests, so every route stays allowed and
+ * the collector reads exactly what it always reads. What changes is only how
+ * much authority evidence one read produces: an endpoint allowed without a
+ * named permission groups with nothing, so each distinct URL is retained
+ * separately instead of collapsing onto a shared grant. That is the production
+ * shape — 20 distinct URLs over 6 route shapes — reached deterministically.
  */
-function catalogWithUnnamedGithubUserRoute(): ConnectorCatalogArtifact {
+function catalogWithUnnamedGithubRoutes(): ConnectorCatalogArtifact {
   return {
     ...API_TEST_CONNECTOR_CATALOG,
-    catalogVersion: `${API_TEST_CONNECTOR_CATALOG.catalogVersion}-github-unnamed-user`,
+    catalogVersion: `${API_TEST_CONNECTOR_CATALOG.catalogVersion}-github-unnamed`,
     connectors: API_TEST_CONNECTOR_CATALOG.connectors.map((connector) => {
       if (
         connector.slug !== "github" ||
@@ -159,19 +174,11 @@ function catalogWithUnnamedGithubUserRoute(): ConnectorCatalogArtifact {
         ...connector,
         firewall: {
           ...connector.firewall,
-          defaultAllowed:
-            connector.firewall.defaultAllowed?.filter((permission) => {
-              return permission !== "user:read";
-            }) ?? null,
+          defaultAllowed: null,
           config: {
             ...connector.firewall.config,
             apis: connector.firewall.config.apis.map((api) => {
-              return {
-                ...api,
-                permissions: (api.permissions ?? []).filter((permission) => {
-                  return permission.name !== "user:read";
-                }),
-              };
+              return { ...api, permissions: [] };
             }),
           },
         },
@@ -241,46 +248,75 @@ async function setupOwner(
   };
 }
 
-/** GitHub answers every read the collector issues, with one open item. */
-function stubGithub(): { readonly paths: () => readonly string[] } {
-  const paths: string[] = [];
-  const record = (payload: Record<string, unknown> | unknown[]) => {
+/**
+ * A healthy GitHub morning: every read answers, across many distinct URLs.
+ *
+ * Nothing here fails. The point of the fixture is that a fully successful,
+ * fully authorized collection is what produces the large retained endpoint set.
+ */
+function stubGithub(): { readonly urls: () => readonly string[] } {
+  const urls: string[] = [];
+  const record = (payload: Parameters<typeof HttpResponse.json>[0]) => {
     return ({ request }: { request: Request }) => {
-      paths.push(new URL(request.url).pathname);
+      urls.push(request.url);
       return HttpResponse.json(payload);
     };
   };
+  const searchItems = PULLS.map((pull) => {
+    return {
+      number: pull.number,
+      title: `pull ${pull.number.toString()}`,
+      state: "open",
+      updated_at: IN_WINDOW,
+      repository_url: `https://api.github.com/repos/${OWNER}/${REPO}`,
+      body: "body text",
+      draft: false,
+      pull_request: {},
+      user: { login: "someone-else" },
+    };
+  });
   server.use(
     http.get(GITHUB_USER, record({ id: 4242, login: LOGIN })),
     http.get(GITHUB_NOTIFICATIONS, record([])),
     http.get(GITHUB_SEARCH, ({ request }) => {
       const url = new URL(request.url);
-      paths.push(url.pathname);
+      urls.push(request.url);
       const assigned = (url.searchParams.get("q") ?? "").includes(
         `assignee:${LOGIN}`,
       );
       return HttpResponse.json({
-        total_count: assigned ? 1 : 0,
+        total_count: assigned ? searchItems.length : 0,
         incomplete_results: false,
-        items: assigned
-          ? [
-              {
-                number: 1,
-                title: "an open issue",
-                state: "open",
-                updated_at: IN_WINDOW,
-                repository_url: `https://api.github.com/repos/${REPO}`,
-                body: "body text",
-                user: { login: "someone-else" },
-              },
-            ]
-          : [],
+        items: assigned ? searchItems : [],
       });
+    }),
+    ...PULLS.flatMap((pull) => {
+      const base = `https://api.github.com/repos/${OWNER}/${REPO}`;
+      return [
+        http.get(
+          `${base}/pulls/${pull.number.toString()}`,
+          record({
+            number: pull.number,
+            state: "open",
+            draft: false,
+            updated_at: IN_WINDOW,
+            head: { sha: pull.sha },
+          }),
+        ),
+        http.get(
+          `${base}/commits/${pull.sha}/check-runs`,
+          record({ total_count: 0, check_runs: [] }),
+        ),
+        http.get(
+          `${base}/commits/${pull.sha}/status`,
+          record({ state: "success", total_count: 0, statuses: [] }),
+        ),
+      ];
     }),
   );
   return {
-    paths: () => {
-      return paths;
+    urls: () => {
+      return urls;
     },
   };
 }
@@ -313,7 +349,7 @@ async function compose(fixture: Fixture) {
   );
 }
 
-describe("Morning Brief composition over a permissionless endpoint", () => {
+describe("Morning Brief composition containing one source's authority verdict", () => {
   let objectStorage = new Map<string, Buffer>();
 
   beforeEach(async () => {
@@ -321,7 +357,7 @@ describe("Morning Brief composition over a permissionless endpoint", () => {
     objectStorage = new Map();
     stubObjectStorage(objectStorage);
     await installApiTestConnectorCatalog({
-      catalog: catalogWithUnnamedGithubUserRoute(),
+      catalog: catalogWithUnnamedGithubRoutes(),
     });
   });
 
@@ -330,34 +366,47 @@ describe("Morning Brief composition over a permissionless endpoint", () => {
   });
 
   it(
-    "keeps a source whose read touched an endpoint allowed without a named permission",
+    "composes the brief when one source touched more endpoints than a descriptor may name",
     async () => {
       const fixture = await setupOwner(objectStorage);
       const github = stubGithub();
 
       const response = await compose(fixture);
+
+      // The occurrence settles with a request. Before this, the descriptor-set
+      // rejection produced `incomplete: retained-authority-unbounded` here and
+      // the model was never invoked for any source.
       if (response.status !== 200 || response.body.result !== "composed") {
         throw new Error(
           `Expected a composed brief, received ${JSON.stringify(response.body)}`,
         );
       }
       const composition = response.body.composition;
-      const source = composition.sources.find((entry) => {
+      expect(composition.request).not.toBeNull();
+
+      // The collection really did read across more distinct endpoints than one
+      // retained descriptor was allowed to name. Without this the assertion
+      // above would pass for a morning that never reached the bound at all.
+      expect(new Set(github.urls()).size).toBeGreaterThan(8);
+
+      // GitHub's own reads were authorized and complete, so its evidence stays
+      // and actually reaches the request the model is asked to write from.
+      const githubSource = composition.sources.find((entry) => {
         return entry.source === "github";
       });
-      // The collection itself succeeded: GitHub answered every read, including
-      // the one route that now resolves without a permission.
-      expect(github.paths()).toContain("/user");
-      expect(source?.requests).toBeGreaterThan(0);
-      // Nothing about this owner's grants changed between the read and the
-      // re-proof, so the source keeps what it collected instead of being
-      // withdrawn and accounted for as a failed day.
-      expect(source?.coverage).not.toBe("failed");
-      expect(source?.items).toBeGreaterThan(0);
-      // Its material actually reaches the request rather than being collected
-      // and then dropped.
-      expect(source?.includedInRequest).toBeGreaterThan(0);
-      expect(composition.request).not.toBeNull();
+      expect(githubSource?.coverage).toBe("complete");
+      expect(githubSource?.items).toBeGreaterThan(0);
+      expect(githubSource?.includedInRequest).toBeGreaterThan(0);
+
+      // The containment claim. Every other source keeps exactly the outcome it
+      // collected: one source's retained authority evidence settles that
+      // source, never a sibling and never the occurrence.
+      for (const entry of composition.sources) {
+        if (entry.source === "github") {
+          continue;
+        }
+        expect(entry.coverage).not.toBe("failed");
+      }
     },
     TEST_TIMEOUT_MS,
   );

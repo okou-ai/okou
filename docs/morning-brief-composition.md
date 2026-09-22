@@ -75,15 +75,15 @@ nobody connected is silent, a Calendar whose credential broke is not.
 
 ### What the attempt answers
 
-| Outcome                                                                                   | Meaning                                                                             |
-| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `composed`                                                                                | Authorized evidence survived and a single model request was assembled               |
-| `empty`                                                                                   | Every applicable source answered affirmatively and none of them had anything        |
-| `incomplete/all-sources-failed`                                                           | Nothing contributed and every source that could have answered failed                |
-| `incomplete/incomplete-coverage`                                                          | Nothing contributed and some applicable source failed, was partial or never started |
-| `incomplete/deadline-exceeded`                                                            | The one absolute deadline was reached before the attempt could finish               |
-| `incomplete/no-item-fits`, `language-context-unavailable`, `retained-authority-unbounded` | Usable evidence existed and no request could be made                                |
-| `denied`, `authority-changed`                                                             | The owner may not run this attempt, or their authority moved while it was reading   |
+| Outcome                                                   | Meaning                                                                             |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `composed`                                                | Authorized evidence survived and a single model request was assembled               |
+| `empty`                                                   | Every applicable source answered affirmatively and none of them had anything        |
+| `incomplete/all-sources-failed`                           | Nothing contributed and every source that could have answered failed                |
+| `incomplete/incomplete-coverage`                          | Nothing contributed and some applicable source failed, was partial or never started |
+| `incomplete/deadline-exceeded`                            | The one absolute deadline was reached before the attempt could finish               |
+| `incomplete/no-item-fits`, `language-context-unavailable` | Usable evidence existed and no request could be made                                |
+| `denied`, `authority-changed`                             | The owner may not run this attempt, or its instruction context moved while reading  |
 
 Healthy empty requires an affirmative answer from **every** applicable source;
 unconfigured sources stay silent. Every `incomplete` outcome carries the
@@ -99,10 +99,8 @@ no connectors still reaches the engine, and Chat still contributes. Slack is the
 one exception decided before the wave, because its native installation is the
 organization's own bot rather than a per-member connector row.
 
-A source that was never admitted produces **no descriptor**. A descriptor is
-evidence that a specific input was authorized; fabricating one for a source that
-read nothing would give a later permission check something to pass against that
-nothing observed.
+A source that was never admitted contributes nothing and is reported as
+unconfigured or failed, never as a quiet morning.
 
 ## Bounded fan-out
 
@@ -147,13 +145,13 @@ strictly later than the signal that cancels the source — the graceful path was
 unreachable by construction.
 
 So new provider reads stop at the read cutoff and the rest of the budget pays
-for the release proof, the release fence and the bundle projection. The reserve
+for the bundle projection that turns a read into a bundle. The reserve
 is a share of what is actually left rather than a flat subtraction: taking three
 seconds from a one-second budget would put the cutoff at the moment the source
 was asked, and a source that is out of time before its first read would report a
 morning it never looked at. A source that runs out of time now hands back the
-partial evidence it holds; a source that was refused, revoked or could not prove
-its release still hands back nothing.
+partial evidence it holds; a source that was refused or revoked before its read
+still hands back nothing.
 
 ### One deadline, sampled after every wait
 
@@ -310,106 +308,43 @@ attempt would stop being the attempt that was admitted.
 
 Explicit absence is frozen too. A source the owner had not connected at
 admission does not acquire an account mid-attempt; connecting one belongs to the
-next attempt. A different account selected afterwards revokes the source — the
-material the previous account produced is not released, and the read never
-silently continues on the new one.
+next attempt. A different account selected afterwards is not adopted: the read never silently
+continues on the new one, and nothing is read through it.
 
-## Retained source authority
+## Authorization happens before the read
 
-A collection deadline does not make old authority valid forever. Result
-acceptance, persisted-result readback, a new Chat commit and a new email
-admission each happen later than the read, so each asks the single shared
-authorizer whether that exact input is still allowed.
+Every provider request is authorized against live state immediately before it is
+issued: the member's current membership generation, canonical ownership, Agent
+visibility, the frozen account's selection and liveness, the Agent's grants,
+catalog visibility and the effective URL policy for that exact endpoint. That is
+the gate, and it is the only one.
 
-What is retained for those questions is a credential-free descriptor: source,
-the exact selected connection and account reference, a digest of the
-authorization surface actually exercised, **one endpoint per permission whose
-result the input still holds**, the membership generation, the Agent, when it
-was captured, **the containers the evidence actually came from**, and whether it
-entered the model input. At most one per source, at most 24 containers, at most
-8 endpoints, 2 KiB each and 8 KiB for the exact serialized descriptor array,
-including its brackets and commas. The reported byte count is that same retained
-serialization. No raw source body, prompt, credential or unrestricted URL blob
-is persisted or logged.
+A read that completed under a valid authorization is the brief's evidence. It is
+not re-litigated afterwards. In-flight provider work cannot be retracted, so a
+second check after the bytes are already held cannot prevent the access it
+claims to guard — it can only discard evidence the owner was entitled to.
 
-The digest is taken over the **effective permissions the read was admitted
-under**, never over constant method names: a digest of method names hashes
-identically after a grant is withdrawn, so it cannot detect the narrowing it
-exists to detect. The endpoints are the same representative URLs the shared
-reader's release fence already re-evaluates, which is what makes a later check a
-repeat of the same live check rather than a narrower question.
+The pipeline used to re-ask, after collection, whether each completed read had
+been allowed, by retaining a credential-free descriptor per source and re-running
+the authorizer against it before the model request, on result readback, on Chat
+commit and on email admission. It was removed (#35949). Its measured record was
+worse than what it protected against: two separate defects inside the re-check
+destroyed three consecutive briefs while collection itself had none, and because
+one source's verdict could void the whole occurrence, the healthier the morning
+the more it stood to lose. On 2026-09-21T23:00Z five sources collected 268 items
+under valid authorization and all of it was discarded, with the model never
+invoked, because one source's descriptor named more endpoints than a descriptor
+was allowed to name.
 
-A source that supplied material and cannot prove a connection, an account and an
-endpoint is **rejected**, not described. A null account is "not observed", never
-"any account": a descriptor without one would make every later check pass by
-having nothing to ask about.
+A source's fate is now its own. A source that fails, is refused or is revoked
+**before or during** its read contributes nothing and is reported as the failed
+or unconfigured day it was; it never removes another source's material and never
+settles the occurrence.
 
-The containers matter: a digest of constant method names proves which API was
-called, not which channels, threads or mailboxes the owner's evidence came from,
-so on its own it cannot tell a later check what to revalidate. A collection that
-drew from more containers than the bound is **rejected**, never trimmed — a
-descriptor set that quietly lost a source would let every later permission check
-pass by having nothing to check while the evidence went out anyway.
-
-It is evidence about an input, never a bearer capability and never a cached
-allow — every field exists so a later check can be re-run, and none of them can
-stand in for its answer.
-
-Revalidation runs on the composition path itself, after the last network await
-and before any reservation. It re-enters the **existing** authorizers rather
-than a second engine: connector sources re-run the shared reader's identity and
-URL-policy gates for the frozen account and every retained endpoint, native
-Slack re-reads the credential-free canonical installation/member binding,
-re-runs the same shared-conversation enumeration its collector proves against,
-and then re-reads that local binding so a disconnect committed during the
-external wait wins. Chat re-resolves the same ownership, visibility and
-provenance predicates its collector resolved. No credential is decrypted and no
-provider payload is fetched: whether an input may still be used is a permission
-question, not a reason to fetch it again.
-
-The whole phase has one absolute 5-second deadline and is further constrained by
-the attempt's own reservation, whichever is nearer; every finite replan spends
-that same deadline. Shared-channel and permission work is counted inside it
-rather than given a budget of its own. The clock and caller cancellation are
-checked after every wait and before proof is released; equality is expired. A
-check that does not finish inside the phase is not a proof of authority, so its
-source is withheld like a revoked one. Provider HTTP observes the phase signal;
-database and SDK operations that cannot be interrupted are still joined before
-public completion and their late answers are rejected.
-
-Material whose authority was withdrawn is removed and the authorized siblings
-are planned again, with that source's day reported as failed rather than as a
-quiet morning. If replanning introduces a source that was not in the previous
-request, that source is proved before the new plan can be released; the bounded
-loop ends only when every final supplied source has proof or has been removed.
-Whole-owner loss — a lost membership, a disabled or reinstalled brief, an Agent
-the member can no longer act through — yields no plan at all, and losing every
-supplied source is an authority change rather than an empty brief.
-
-Contribution is decided by the material the final request actually carries. An
-item dropped by allocation supplied nothing, and marking its source contributing
-would make a later check defend evidence the model never received.
-
-An external permission check **cannot** atomically prevent a revoke that lands
-after it answers. Network preflight therefore runs outside every transaction,
-and the consumer that finally releases the material re-evaluates its own local
-predicates inside its own fence. What is bounded here is that material whose
-authority is already gone never reaches that consumer.
-
-Everything that entered the model input is revalidated, **including material the
-model never cited**: it may have used a message without citing it, so reducing
-the later checks to the output's citation ids would check the wrong set. A source
-that supplied no content does not veto a brief built from the owner's other
-authorized sources, and an existing committed delivery is a historical fact
-rather than an invitation to send again.
-
-Retention is `max(result expiry, the linked obligation's original outbox
-deadline)`. S5 content lasts 24 hours from reservation and an outbox request has
-15 minutes from its own creation, so a Chat commit made just before expiry can
-require up to **24 h 15 m** of descriptor lifetime from reservation. Neither
-deadline is reset by a retry, and the extension carries metadata only — no result
-body and no source content. Result-content expiry must not destroy the
-content-free occurrence and delivery facts.
+Ownership and destination coherence are separate questions and still apply: the
+owner epoch, the collection lease, the attempt CAS and the occurrence binding
+continue to guarantee one slot, one model request, one Chat receipt and one
+logical email.
 
 ## Language
 
@@ -529,9 +464,12 @@ instruction sizes and language sources have not been censused.
 
 ## Deployment and retention
 
-Composition adds no schema change: the descriptors, normalized items and
-language plan exist in memory for the attempt, and only the bounded descriptor
-set is intended to travel beside the existing accepted-result lifecycle.
+Composition adds no schema change: the normalized items and language plan exist
+in memory for the attempt and nothing about a source's authority outlives it.
+`morning_brief_generations.retained_sources` and `retained_until` are no longer
+written; both are nullable, so ceasing to write them needs no migration, and
+dropping the columns is a separate follow-up (#35950) that may only run once
+this change is in production.
 
 Old result versions keep their explicit handling. No default fabricates healthy
 coverage, byte sizes, source authority or a language. The source set, the model

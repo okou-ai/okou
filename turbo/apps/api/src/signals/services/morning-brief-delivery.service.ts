@@ -37,8 +37,6 @@ import {
   EMAIL_PUBLIC_BRAND,
 } from "./email-common.service";
 import { currentMorningBriefCollectionAuthority$ } from "./morning-brief-collection-executor.service";
-import { revalidateMorningBriefStoredGenerationSources$ } from "./morning-brief-generation-source-revalidation.service";
-import { retainMorningBriefGenerationProofUntil } from "./morning-brief-generation-store.service";
 import {
   lockCollectionOwner,
   type MorningBriefCollectionAdmission,
@@ -65,7 +63,6 @@ import {
   MorningBriefResultEmailRenderError,
   renderMorningBriefResultEmail,
 } from "./morning-brief-result-email-renderer";
-import { morningBriefDescriptorRetainUntil } from "./morning-brief-source-authority";
 import {
   ensureWorkflowUserAutomationThread,
   loadWorkflowUserAutomationThreadId,
@@ -1107,20 +1104,6 @@ async function deliverInTransaction(
     title: result.title,
     markdown: result.markdown,
   });
-  if (intent.outboxCreatedAt !== null) {
-    const retained = await retainMorningBriefGenerationProofUntil(tx, {
-      owner,
-      attemptId: request.resultAttemptId,
-      retainedUntil: morningBriefDescriptorRetainUntil(
-        result.reservedAt,
-        intent.outboxCreatedAt,
-      ),
-    });
-    if (!retained) {
-      throw new DeliveryRejected("result-not-found");
-    }
-  }
-
   await insertDeliveryReceipt(tx, {
     request,
     purpose: args.purpose,
@@ -1185,28 +1168,6 @@ export const deliverMorningBriefResult$ = command(
     signal.throwIfAborted();
     if (!anchor) {
       return { kind: "rejected", reason: "result-not-found" };
-    }
-
-    // Re-run the same source-specific proof S5 used. This is outside the Chat
-    // transaction because connector and Slack checks can reach the network.
-    const sourceRefusal = await set(
-      revalidateMorningBriefStoredGenerationSources$,
-      {
-        owner,
-        resultAttemptId: request.resultAttemptId,
-        purpose,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (sourceRefusal !== null) {
-      return {
-        kind: "rejected",
-        reason:
-          sourceRefusal === "result-not-found"
-            ? "result-not-found"
-            : "owner-revoked",
-      };
     }
 
     // The live canonical authority, resolved through the collection executor's

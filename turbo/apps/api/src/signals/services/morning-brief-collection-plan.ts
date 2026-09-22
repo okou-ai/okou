@@ -20,21 +20,15 @@ import {
   type MorningBriefSourceKind,
 } from "./morning-brief-source-item";
 
-/** The absolute collection phase, from admission to finalization COMMIT. */
-export const MORNING_BRIEF_COLLECTION_PHASE_MS = 45_000;
-
 /**
- * Held back for the final authority checks and the guarded commit.
+ * The absolute collection phase, from admission to finalization COMMIT.
  *
- * It is a reserve, not a grace period: a source read that has not started by
- * the cutoff does not start at all, because a read that finishes after the
- * commit window has nowhere to be finalized.
+ * It is also the point at which no new provider read is admitted. The phase
+ * used to hold five seconds back from collection to fund a final authority
+ * check at the end of it; there is no such check, because every request is
+ * authorized before it is issued, so the whole phase belongs to reading.
  */
-export const MORNING_BRIEF_FINAL_CHECK_RESERVE_MS = 5000;
-
-/** No new provider read is admitted at or after this point in the phase. */
-export const MORNING_BRIEF_NEW_READ_CUTOFF_MS =
-  MORNING_BRIEF_COLLECTION_PHASE_MS - MORNING_BRIEF_FINAL_CHECK_RESERVE_MS;
+export const MORNING_BRIEF_COLLECTION_PHASE_MS = 45_000;
 
 /**
  * Held back inside **one source's** own budget so it can stop by its own clock.
@@ -157,7 +151,7 @@ export function morningBriefSourceBudget(
   at: Date,
   occurrenceDeadlineAt: Date | null = null,
 ): MorningBriefSourceBudget {
-  const cutoffAt = phaseStartedAt.getTime() + MORNING_BRIEF_NEW_READ_CUTOFF_MS;
+  const cutoffAt = phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS;
   const occurrenceLimit =
     occurrenceDeadlineAt === null ? Infinity : occurrenceDeadlineAt.getTime();
   const admitted = at.getTime() < cutoffAt && at.getTime() < occurrenceLimit;
@@ -188,7 +182,7 @@ export function morningBriefMayStartRead(
     return false;
   }
   return (
-    at.getTime() - phaseStartedAt.getTime() < MORNING_BRIEF_NEW_READ_CUTOFF_MS
+    at.getTime() - phaseStartedAt.getTime() < MORNING_BRIEF_COLLECTION_PHASE_MS
   );
 }
 

@@ -308,7 +308,7 @@ export async function clearMorningBriefInstructionsHead(
 /**
  * Pause delivery of one Agent's real canonical instruction-version SELECT.
  *
- * There is no product input that pauses a read after retained-source authority
+ * There is no product input that pauses a read after source authority
  * and before request admission. Arm this infrastructure barrier after the
  * initial language read. The query and its result remain real, but only this
  * Agent's result delivery pauses: a global table lock would block unrelated
