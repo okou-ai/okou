@@ -247,20 +247,18 @@ function createDraftSignals(): Pick<
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
   });
-  const clearDraftKeys$ = command(
-    ({ set }, keys: readonly string[]): void => {
-      if (keys.length === 0) {
-        return;
+  const clearDraftKeys$ = command(({ set }, keys: readonly string[]): void => {
+    if (keys.length === 0) {
+      return;
+    }
+    set(internalDraft$, (current) => {
+      const next = new Map(current);
+      for (const key of keys) {
+        next.delete(key);
       }
-      set(internalDraft$, (current) => {
-        const next = new Map(current);
-        for (const key of keys) {
-          next.delete(key);
-        }
-        return next;
-      });
-    },
-  );
+      return next;
+    });
+  });
   const ownForm$ = command(
     ({ set }, form: HTMLFormElement, signal: AbortSignal): void => {
       signal.throwIfAborted();

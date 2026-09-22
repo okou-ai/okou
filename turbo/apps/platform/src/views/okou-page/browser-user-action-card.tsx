@@ -369,10 +369,7 @@ function BrowserInputFields({
           ? `${inputId}-description`
           : undefined;
         return (
-          <div
-            key={field.key}
-            className="flex flex-col gap-1.5"
-          >
+          <div key={field.key} className="flex flex-col gap-1.5">
             <div className="flex items-baseline gap-1 text-sm text-foreground">
               <label htmlFor={inputId} className="font-medium">
                 {field.label}
