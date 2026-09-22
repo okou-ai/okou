@@ -106,6 +106,8 @@ export const cloudflareAccessContract = c.router({
     responses: { 204: c.noBody(), ...errors },
   },
 });
+// The current SSH settings page remains a supported consumer of this
+// SSH-specific projection while standalone Access uses the neutral contract.
 export const sshCloudflareAccessContract = c.router({
   list: {
     method: "GET",

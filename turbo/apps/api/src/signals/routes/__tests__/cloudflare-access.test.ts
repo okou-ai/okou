@@ -470,6 +470,7 @@ describe("Cloudflare Access owner configuration", () => {
 
   it("requires a session and rejects unsafe token headers before encryption", async () => {
     await accept(configs().list({ headers: {} }), [401]);
+    await accept(canonicalConfigs().list({ headers: {} }), [401]);
     const kms = useSecretKmsProbe();
     owner();
     const request = setupRawAppRequest({
@@ -528,14 +529,21 @@ describe("Cloudflare Access owner configuration", () => {
       .configs[0];
     expect(legacy).toMatchObject({ id, name: "Canonical", hosts: [] });
     expect(legacy).not.toHaveProperty("sshHosts");
-    await accept(
-      configs().update({
+    const updated = await accept(
+      canonicalConfigs().update({
         headers,
         params: { configId: id },
         body: { expectedRevision: 1, name: "Renamed" },
       }),
       [200],
     );
+    expect(updated.body).toMatchObject({
+      id,
+      name: "Renamed",
+      revision: 2,
+      sshHosts: [],
+    });
+    expect(updated.body).not.toHaveProperty("hosts");
     const canonical = (
       await accept(canonicalConfigs().list({ headers }), [200])
     ).body.configs[0];
@@ -663,6 +671,30 @@ describe("Cloudflare Access owner configuration", () => {
           ? { orgId: first.orgId }
           : { userId: first.userId },
       );
+      const createBody = {
+        id: c.id,
+        name: "Foreign ID",
+        credentials: token,
+      };
+      expect(
+        (
+          await accept(
+            canonicalConfigs().create({ headers, body: createBody }),
+            [409],
+          )
+        ).body.error,
+      ).toStrictEqual({
+        code: "CLOUDFLARE_ACCESS_RESOURCE_ID_CONFLICT",
+        message:
+          "This resource ID cannot be used for this Cloudflare Access configuration.",
+      });
+      expect(
+        (await accept(configs().create({ headers, body: createBody }), [409]))
+          .body.error,
+      ).toStrictEqual({
+        code: "SSH_RESOURCE_ID_CONFLICT",
+        message: "This resource ID cannot be used for this SSH configuration.",
+      });
       expect(
         (await accept(configs().list({ headers }), [200])).body.configs,
       ).toStrictEqual([]);

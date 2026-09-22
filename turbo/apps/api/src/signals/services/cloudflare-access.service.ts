@@ -15,7 +15,7 @@ import {
   publishCloudflareAccessClientInvalidation,
   publishCloudflareAccessMutationInvalidation,
 } from "./cloudflare-access-client-invalidation.service";
-import { lockSshOwner, sshCredentialFailure } from "./ssh-credential.service";
+import { lockSshOwner } from "./ssh-credential.service";
 import { checkSshCreationId } from "./ssh-creation.service";
 import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 
@@ -42,6 +42,12 @@ const failures = {
     code: CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND,
     message: "Cloudflare Access not found",
   },
+  resourceIdConflict: {
+    kind: "conflict",
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.RESOURCE_ID_CONFLICT,
+    message:
+      "This resource ID cannot be used for this Cloudflare Access configuration.",
+  },
   conflict: {
     kind: "conflict",
     code: CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT,
@@ -51,6 +57,11 @@ const failures = {
     kind: "conflict",
     code: CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE,
     message: "Cloudflare Access is used by an SSH host",
+  },
+  exhausted: {
+    kind: "conflict",
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_EXHAUSTED,
+    message: "Cloudflare Access revision limit reached",
   },
 } as const;
 export function cloudflareAccessFailure(reason: keyof typeof failures) {
@@ -185,7 +196,7 @@ export async function createCloudflareAccessConfig(args: {
       args.id,
     );
     if (!creation.ok) {
-      return creation;
+      return cloudflareAccessFailure("resourceIdConflict");
     }
     if (!creation.value) {
       return { ok: true as const, value: undefined };
@@ -266,7 +277,7 @@ export async function updateCloudflareAccessConfig(args: {
             return host.generation === 2_147_483_647;
           })))
     ) {
-      return sshCredentialFailure("exhausted");
+      return cloudflareAccessFailure("exhausted");
     }
     const [updated] = await tx
       .update(cloudflareAccessConfigs)
