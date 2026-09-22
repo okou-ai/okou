@@ -98,10 +98,21 @@ interface OpenRouterResponse {
 
 type OpenRouterReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
+/**
+ * Either a graded effort, or the on/off switch for a model that grades
+ * nothing. `GET /api/v1/models` separates the two: a model that omits
+ * `reasoning.supported_efforts` exposes no effort selection, and
+ * `reasoning.mandatory: false` is what makes turning reasoning off valid.
+ * Adding the switch leaves every existing effort caller unchanged.
+ */
+type OpenRouterReasoningOptions =
+  | { readonly effort: OpenRouterReasoningEffort }
+  | { readonly enabled: false };
+
 interface OpenRouterGenerateTextOptions {
   /** Passive observation only; no callbacks, logging, or changes to results. */
   readonly diagnostics?: OpenRouterDiagnostics;
-  readonly reasoning?: { readonly effort: OpenRouterReasoningEffort };
+  readonly reasoning?: OpenRouterReasoningOptions;
   readonly temperature?: number;
   /**
    * Return a non-empty completion that stopped at the token budget instead of
