@@ -5957,6 +5957,7 @@
         "personal": "Personal",
         "workspace": "Workspace"
       },
+      "sectionNavigation": "Settings section",
       "sections": {
         "billing": {
           "description": "Manage your plan and payment method.",
@@ -7678,6 +7679,7 @@
       },
       "notFound": "Workflow not found.",
       "refineWith": "Refine with {{agent}}",
+      "sectionNavigation": "Workflow details section",
       "shadow": {
         "end": "for you. This workflow is shadowed by the same-slug priority rule.",
         "resolvesTo": "currently resolves to"

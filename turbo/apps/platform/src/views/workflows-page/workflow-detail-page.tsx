@@ -1184,7 +1184,12 @@ function WorkflowTabNav({
             onTabChange(tab as WorkflowDetailTab);
           }}
         >
-          <SelectTrigger className="h-9 w-full">
+          <SelectTrigger
+            className="h-9 w-full"
+            aria-label={i18n.t(($) => {
+              return $.workflows.detail.sectionNavigation;
+            })}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

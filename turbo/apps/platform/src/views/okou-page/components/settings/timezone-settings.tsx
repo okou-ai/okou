@@ -1,6 +1,7 @@
 import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { Field } from "@base-ui/react/field";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
   Select,
@@ -121,12 +122,16 @@ export function TimezoneSettings() {
     : [currentTimezone, ...COMMON_TIMEZONES];
 
   return (
-    <div data-slot="timezone-setting" className="flex flex-col gap-3">
+    <Field.Root data-slot="timezone-setting" className="flex flex-col gap-3">
       <PreferenceCardRow
         icon={Clock}
-        title={t(($) => {
-          return $.settings.preferences.timezone.rowTitle;
-        })}
+        title={
+          <Field.Label render={<span />} nativeLabel={false}>
+            {t(($) => {
+              return $.settings.preferences.timezone.rowTitle;
+            })}
+          </Field.Label>
+        }
         description={t(($) => {
           return $.settings.preferences.timezone.rowDescription;
         })}
@@ -160,6 +165,6 @@ export function TimezoneSettings() {
           )}
         </div>
       </PreferenceCardRow>
-    </div>
+    </Field.Root>
   );
 }

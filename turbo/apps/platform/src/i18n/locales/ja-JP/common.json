@@ -5953,6 +5953,7 @@
         "personal": "個人的な",
         "workspace": "ワークスペース"
       },
+      "sectionNavigation": "設定セクション",
       "sections": {
         "billing": {
           "description": "プランと支払い方法を管理します。",
@@ -7667,6 +7668,7 @@
       },
       "notFound": "ワークフローが見つかりません。",
       "refineWith": "{{agent}} で絞り込む",
+      "sectionNavigation": "ワークフロー詳細セクション",
       "shadow": {
         "end": "あなたのために。このワークフローは、同じスラッグの優先順位ルールによってシャドウされます。",
         "resolvesTo": "現在は次のように解決されます"

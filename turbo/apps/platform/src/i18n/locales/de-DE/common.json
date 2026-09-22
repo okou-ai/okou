@@ -5965,6 +5965,7 @@
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich"
       },
+      "sectionNavigation": "Einstellungsbereich",
       "sections": {
         "billing": {
           "description": "Verwalten Sie Ihren Plan und Ihre Zahlungsmethode.",
@@ -7686,6 +7687,7 @@
       },
       "notFound": "Workflow nicht gefunden.",
       "refineWith": "Verfeinern mit {{agent}}",
+      "sectionNavigation": "Bereich der Workflow-Details",
       "shadow": {
         "end": "für Sie. Dieser Workflow wird durch die Prioritätsregel für identische Slugs überschattet.",
         "resolvesTo": "beschließt derzeit,"

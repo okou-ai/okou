@@ -21,6 +21,7 @@ import {
   type ModelProviderConnectionResponse,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -1543,11 +1544,21 @@ test("Enabled priority adds a subscription while preserving the displayed defaul
   await openProvidersTab();
   const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
   expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
-  click(within(screen.getByTestId("default-model-row")).getByRole("combobox"));
-  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
+  const defaultModel = screen.getByRole("combobox", { name: "Default model" });
+  expect(defaultModel).toHaveTextContent("GPT 5.6 Luna");
+  await userEvent.click(screen.getByText("Default model"));
+  expect(defaultModel).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "GPT 6 Astra" });
+  await userEvent.keyboard("{Home}{ArrowDown}{Enter}");
   await expect(
     screen.findByText("Model provider settings updated"),
   ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(defaultModel).toHaveTextContent("GPT 6 Astra");
+    expect(defaultModel).toBeEnabled();
+  });
+  expect(defaultModel).toHaveAccessibleName("Default model");
   expect(submitted()).toMatchObject({
     revision: "administrative-snapshot-one",
     policies: [

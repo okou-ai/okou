@@ -6023,6 +6023,7 @@
         "personal": "Personnel",
         "workspace": "Espace de travail"
       },
+      "sectionNavigation": "Rubrique des paramètres",
       "sections": {
         "billing": {
           "description": "Gérez votre abonnement et votre mode de paiement.",
@@ -7762,6 +7763,7 @@
       },
       "notFound": "Workflow introuvable.",
       "refineWith": "Affiner avec {{agent}}",
+      "sectionNavigation": "Rubrique des détails du workflow",
       "shadow": {
         "end": "pour vous. Ce workflow est masqué par la règle de priorité du même slug.",
         "resolvesTo": "résout actuellement à"

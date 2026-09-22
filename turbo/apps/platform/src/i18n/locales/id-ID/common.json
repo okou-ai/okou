@@ -5953,6 +5953,7 @@
         "personal": "Pribadi",
         "workspace": "Ruang kerja"
       },
+      "sectionNavigation": "Bagian setelan",
       "sections": {
         "billing": {
           "description": "Kelola paket dan metode pembayaran Anda.",
@@ -7667,6 +7668,7 @@
       },
       "notFound": "Alur kerja tidak ditemukan.",
       "refineWith": "Perhalus dengan {{agent}}",
+      "sectionNavigation": "Bagian detail alur kerja",
       "shadow": {
         "end": "untuk Anda. Alur kerja ini dibayangi oleh aturan prioritas slug yang sama.",
         "resolvesTo": "saat ini mengarah ke"

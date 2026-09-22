@@ -6023,6 +6023,7 @@
         "personal": "Personale",
         "workspace": "Area di lavoro"
       },
+      "sectionNavigation": "Sezione delle impostazioni",
       "sections": {
         "billing": {
           "description": "Gestisci il tuo piano e il metodo di pagamento.",
@@ -7762,6 +7763,7 @@
       },
       "notFound": "Flusso di lavoro non trovato.",
       "refineWith": "Perfeziona con {{agent}}",
+      "sectionNavigation": "Sezione dei dettagli del flusso di lavoro",
       "shadow": {
         "end": "per te. Questo flusso di lavoro è oscurato dalla regola di priorità dello stesso slug.",
         "resolvesTo": "attualmente risolve a"

@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
@@ -518,6 +519,45 @@ test("Navigate workspace settings without closing Settings", async () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
   });
+});
+
+test("Navigate workspace settings with the named section select", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openDialog("admin");
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  const section = within(dialog).getByRole("combobox", {
+    name: "Settings section",
+  });
+  expect(section).toHaveTextContent("General");
+
+  section.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "General", selected: true });
+  await user.keyboard("{ArrowDown}{Enter}");
+
+  await expect(
+    screen.findByRole("heading", { name: "People" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  expect(window.location.search).toBe("?settings=people");
+  const peopleSection = within(dialog).getByRole("combobox", {
+    name: "Settings section",
+  });
+  expect(peopleSection).toHaveTextContent("People");
+  await waitFor(() => {
+    expect(peopleSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "People", selected: true });
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(peopleSection).toHaveFocus();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+  expect(peopleSection).toHaveTextContent("People");
+  expect(window.location.search).toBe("?settings=people");
 });
 
 test("Route members away from administrator-only workspace settings", async () => {
