@@ -6,20 +6,23 @@ const appUrl = deriveAppUrl(resolveApiBackendUrl());
 const MOBILE_VIEWPORT = { width: 402, height: 874 } as const;
 
 interface GreetingFrame {
-  readonly prefix: string;
-  readonly avatarLeft: number;
+  readonly text: string;
+  readonly rowLeft: number;
+  readonly rowRight: number;
   readonly avatarWidth: number;
   readonly avatarHeight: number;
-  readonly clipLeft: number;
-  readonly clipRight: number;
-  readonly glyphLeft: number | null;
-  readonly glyphRight: number | null;
+  readonly containerLeft: number;
+  readonly containerRight: number;
   readonly lineCount: number;
 }
 
 interface GreetingCapture {
   readonly text: string;
   readonly frames: GreetingFrame[];
+  /** The CSS animation on each word box, read once when the greeting appears. */
+  readonly animationNames: string[];
+  /** Each word box's animation-delay in milliseconds, in reading order. */
+  readonly delays: number[];
 }
 
 declare global {
@@ -112,7 +115,7 @@ test("chat page displays tagline after onboarding", async ({ page }) => {
   });
 });
 
-test("a mobile greeting unfolds from a centered avatar without clipping its text", async ({
+test("a mobile greeting arrives without moving its row or cutting its text", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 740 });
@@ -142,51 +145,85 @@ test("a mobile greeting unfolds from a centered avatar without clipping its text
   await page.addInitScript(() => {
     const frames: GreetingFrame[] = [];
     let text = "";
+    let startedAt = 0;
+    let animationNames: string[] = [];
+    let delays: number[] = [];
     const sample = () => {
       const heading = document.querySelector('[data-testid="chat-tagline"]');
-      const typed = heading?.querySelector('[data-slot="chat-tagline-text"]');
+      const line = heading?.querySelector('[data-slot="chat-tagline-text"]');
       const row = heading?.closest('[data-slot="chat-greeting"]');
       const avatar = row?.querySelector("a");
-      const clip = row?.parentElement;
+      const container = row?.parentElement;
       const currentText = heading?.getAttribute("aria-label");
       // Setup creates this ordinary first name through Clerk before any
       // feature test starts; the product still chooses its own greeting.
-      if (!currentText?.includes("Christopher") || !typed || !avatar || !clip) {
+      if (
+        !currentText?.includes("Christopher") ||
+        !line ||
+        !row ||
+        !avatar ||
+        !container
+      ) {
         requestAnimationFrame(sample);
         return;
       }
       if (currentText !== text) {
         text = currentText;
         frames.length = 0;
+        startedAt = performance.now();
+        const words = Array.from(
+          row.querySelectorAll('[data-slot="chat-tagline-word"]'),
+        );
+        // Read the resolved animation once, at the start. The sentence itself
+        // is complete in every frame, so this is the evidence that the
+        // entrance is attached at all, and that each word waits longer than
+        // the word before it.
+        animationNames = words.map((word) => {
+          return getComputedStyle(word).animationName;
+        });
+        delays = words.map((word) => {
+          return Number.parseFloat(getComputedStyle(word).animationDelay) || 0;
+        });
       }
-      const prefix = typed.textContent ?? "";
+      // The greeting row carries no animation of its own, so its box is the
+      // layout answer to "did anything move?", unaffected by a word that is
+      // still travelling inside it.
+      const rowRect = row.getBoundingClientRect();
       const avatarRect = avatar.getBoundingClientRect();
-      const clipRect = clip.getBoundingClientRect();
-      const range = document.createRange();
-      range.selectNodeContents(typed);
-      const glyphs = Array.from(range.getClientRects()).filter(
-        (rect) => rect.width > 0 && rect.height > 0,
-      );
+      const containerRect = container.getBoundingClientRect();
+      // Count lines from the per-word wrapper spans, not from a range over
+      // the animated boxes inside them. A wrapper is laid out but never
+      // transformed, while a rect taken over the boxes would carry each
+      // word's own unfinished 14px rise and report a travelling word as an
+      // extra line.
+      const wordLines = Array.from(line.children)
+        .flatMap((word) => {
+          return Array.from(word.getClientRects());
+        })
+        .filter((rect) => rect.width > 0 && rect.height > 0);
       frames.push({
-        prefix,
-        avatarLeft: avatarRect.left,
+        text: line.textContent ?? "",
+        rowLeft: rowRect.left,
+        rowRight: rowRect.right,
         avatarWidth: avatarRect.width,
         avatarHeight: avatarRect.height,
-        clipLeft: clipRect.left,
-        clipRight: clipRect.right,
-        glyphLeft: glyphs.length
-          ? Math.min(...glyphs.map((r) => r.left))
-          : null,
-        glyphRight: glyphs.length
-          ? Math.max(...glyphs.map((r) => r.right))
-          : null,
-        lineCount: new Set(glyphs.map((rect) => Math.round(rect.top))).size,
+        containerLeft: containerRect.left,
+        containerRight: containerRect.right,
+        lineCount: new Set(wordLines.map((rect) => Math.round(rect.top))).size,
       });
-      if (prefix === text) {
+      // The last word starts at wordCount * 70ms and runs for 720ms; sample
+      // past the end of it rather than waiting on a text change that no
+      // longer happens.
+      if (performance.now() - startedAt > 1800) {
         if (!window.recordChatGreeting) {
           throw new Error("The browser greeting recorder is not installed");
         }
-        void window.recordChatGreeting({ text, frames });
+        void window.recordChatGreeting({
+          text,
+          frames,
+          animationNames,
+          delays,
+        });
         return;
       }
       requestAnimationFrame(sample);
@@ -195,7 +232,7 @@ test("a mobile greeting unfolds from a centered avatar without clipping its text
   });
 
   await page.goto(appUrl);
-  await expect.poll(() => observed.capture, { timeout: 20_000 }).toBeDefined();
+  await expect.poll(() => observed.capture, { timeout: 30_000 }).toBeDefined();
   const capture = observed.capture;
   const first = capture?.frames[0];
   const last = capture?.frames.at(-1);
@@ -206,34 +243,36 @@ test("a mobile greeting unfolds from a centered avatar without clipping its text
   await expect(page.getByTestId("chat-tagline")).toHaveAccessibleName(
     capture.text,
   );
-  expect(first.prefix).toBe("");
-  expect(
-    Math.abs(
-      first.avatarLeft +
-        first.avatarWidth / 2 -
-        (first.clipLeft + first.clipRight) / 2,
-    ),
-  ).toBeLessThanOrEqual(1);
-  expect(
-    capture.frames.some((frame) => {
-      return frame.prefix.length > 0 && frame.prefix !== capture.text;
-    }),
-  ).toBe(true);
-  expect(last.prefix).toBe(capture.text);
-  expect(last.lineCount).toBeGreaterThan(1);
-  expect(last.avatarLeft).toBeLessThan(first.avatarLeft);
 
-  let previousLeft = first.avatarLeft;
-  for (const frame of capture.frames) {
-    const label = `Visible greeting prefix: ${JSON.stringify(frame.prefix)}`;
-    expect(frame.avatarLeft, label).toBeLessThanOrEqual(previousLeft + 1);
+  // The entrance really ran, one word box at a time, each later than the last.
+  const words = capture.text.split(" ");
+  expect(capture.delays.length).toBe(words.length);
+  expect(new Set(capture.animationNames)).toEqual(
+    new Set(["chat-greeting-token"]),
+  );
+  for (let index = 1; index < capture.delays.length; index++) {
+    expect(capture.delays[index]).toBeGreaterThan(capture.delays[index - 1]);
+  }
+
+  // What the animation must never do: change the sentence, reflow it, or move
+  // the row it sits in. The avatar snapping sideways while the line grew is
+  // the defect this greeting was rebuilt to remove.
+  expect(last.lineCount).toBeGreaterThan(1);
+  for (const [index, frame] of capture.frames.entries()) {
+    const label = `Greeting frame ${String(index)} of ${String(capture.frames.length)}`;
+    expect(frame.text, label).toBe(capture.text);
+    expect(frame.rowLeft, label).toBeCloseTo(first.rowLeft, 0);
+    expect(frame.rowRight, label).toBeCloseTo(first.rowRight, 0);
     expect(frame.avatarWidth, label).toBeCloseTo(first.avatarWidth, 1);
     expect(frame.avatarHeight, label).toBeCloseTo(first.avatarHeight, 1);
-    if (frame.glyphLeft !== null && frame.glyphRight !== null) {
-      expect(frame.glyphLeft, label).toBeGreaterThanOrEqual(frame.clipLeft - 1);
-      expect(frame.glyphRight, label).toBeLessThanOrEqual(frame.clipRight + 1);
-    }
-    previousLeft = frame.avatarLeft;
+    expect(frame.lineCount, label).toBe(last.lineCount);
+    // The greeting stays inside the scrollport it is centered in. Measured on
+    // the row rather than on glyph rects: a wrapper span's box includes the
+    // trailing space it owns, which can hang past a wrapped line's edge.
+    expect(frame.rowLeft, label).toBeGreaterThanOrEqual(
+      frame.containerLeft - 1,
+    );
+    expect(frame.rowRight, label).toBeLessThanOrEqual(frame.containerRight + 1);
   }
 });
 

@@ -486,6 +486,18 @@ jobs:
           grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
           env-label: dev
 
+      # deploy-cli (turbo.yml) publishes okou-cli/<head sha>/ for the same
+      # commit in a separate workflow; the preview rootfs installs that bundle
+      # so the preview API and the preview sandbox run the same CLI build.
+      - name: Download Okou CLI artifact for this commit
+        id: okou-cli
+        env:
+          ARTIFACT_SHA: ${{ needs.prepare.outputs.head-sha }}
+          OUTPUT_DIR: okou-cli-artifact
+          ARTIFACT_REQUIRED: "false"
+          WAIT_SECONDS: "600"
+        run: .github/scripts/download-okou-cli-artifact.sh
+
       - name: Build runner image on all metal hosts
         env:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
@@ -495,6 +507,7 @@ jobs:
           METAL_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
           EXPECTED_REMOTE_ARCH: ${{ matrix.unameM }}
           MANIFEST_PATH: runner-image-manifest/manifest.json
+          OKOU_CLI_ARTIFACT_DIR: ${{ steps.okou-cli.outputs.found == 'true' && steps.okou-cli.outputs.artifact-dir || '' }}
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

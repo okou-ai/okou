@@ -229,6 +229,8 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
                 sha256: Some("b".repeat(64)),
             },
             sandbox_event_sequence_start: 1,
+            required_pi_agent_runtime_version: Some("1.36.0".to_string()),
+            min_cli_version: Some("9.352.7".to_string()),
         },
         memory_recall: None,
         maintenance: None,
@@ -261,6 +263,8 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
                     "sha256": "b".repeat(64),
                 },
                 "sandboxEventSequenceStart": 1,
+                "requiredPiAgentRuntimeVersion": "1.36.0",
+                "minCliVersion": "9.352.7",
             },
         })
     );

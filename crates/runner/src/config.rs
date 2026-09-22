@@ -48,6 +48,7 @@ use nix::fcntl::Flock;
 use serde::{Deserialize, Serialize};
 
 use api_contracts::generated::constants::runners::RUNNER_HOSTNAME_MAX_LENGTH;
+use guest_contracts::okou_cli::InstalledOkouCli;
 use guest_contracts::process_containment::{
     MIN_PROFILE_MEMORY_MB, MIN_PROFILE_VCPU, WorkloadResourcePolicy,
 };
@@ -441,6 +442,7 @@ impl LockedProfileImageArtifacts {
 pub(crate) struct LockedProfileImageArtifactPaths {
     rootfs_paths: RootfsPaths,
     snapshot_paths: SnapshotPaths,
+    installed_okou_cli: Option<InstalledOkouCli>,
 }
 
 impl LockedProfileImageArtifactPaths {
@@ -450,6 +452,49 @@ impl LockedProfileImageArtifactPaths {
 
     pub(crate) fn snapshot_paths(&self) -> &SnapshotPaths {
         &self.snapshot_paths
+    }
+
+    /// Okou CLI installed into this profile's rootfs, if the build recorded one.
+    pub(crate) fn installed_okou_cli(&self) -> Option<&InstalledOkouCli> {
+        self.installed_okou_cli.as_ref()
+    }
+}
+
+/// Read the sidecar written by `runner build` next to `rootfs.ext4`.
+///
+/// A missing sidecar is the legacy layout (no CLI installed). An unreadable
+/// sidecar is reported and treated the same way: the rootfs itself is still
+/// valid, and a run on it falls back to the commit-addressed CLI, so refusing
+/// to start would trade a slower launch for an outage.
+async fn load_installed_okou_cli(
+    name: &str,
+    rootfs_paths: &RootfsPaths,
+) -> Option<InstalledOkouCli> {
+    let sidecar = rootfs_paths.okou_cli_manifest();
+    let bytes = match tokio::fs::read(&sidecar).await {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => {
+            tracing::warn!(
+                profile = name,
+                path = %sidecar.display(),
+                error = %error,
+                "cannot read installed Okou CLI sidecar; advertising no installed CLI"
+            );
+            return None;
+        }
+    };
+    match InstalledOkouCli::parse(&bytes) {
+        Ok(installed) => Some(installed),
+        Err(error) => {
+            tracing::warn!(
+                profile = name,
+                path = %sidecar.display(),
+                error = %error,
+                "installed Okou CLI sidecar is invalid; advertising no installed CLI"
+            );
+            None
+        }
     }
 }
 
@@ -466,6 +511,19 @@ impl LockedRunnerImageArtifacts {
         self.profile_paths
             .iter()
             .map(|(name, paths)| (name.as_str(), paths))
+    }
+
+    /// The installed Okou CLI this runner can advertise for every profile.
+    ///
+    /// A claim does not name a profile, so the versions are advertised only
+    /// when every configured rootfs installed the same CLI; mixed or partial
+    /// installs advertise nothing and keep the legacy launch path.
+    pub(crate) fn uniform_installed_okou_cli(&self) -> Option<&InstalledOkouCli> {
+        let mut profiles = self.profile_paths.values();
+        let first = profiles.next()?.installed_okou_cli()?;
+        profiles
+            .all(|paths| paths.installed_okou_cli() == Some(first))
+            .then_some(first)
     }
 }
 
@@ -536,11 +594,13 @@ pub(crate) async fn lock_and_validate_runner_image_artifacts(
         })?;
         let snapshot_paths =
             validate_profile_snapshot_artifacts(name, profile, &rootfs_paths).await?;
+        let installed_okou_cli = load_installed_okou_cli(name, &rootfs_paths).await;
         profile_paths.insert(
             name.clone(),
             LockedProfileImageArtifactPaths {
                 rootfs_paths,
                 snapshot_paths,
+                installed_okou_cli,
             },
         );
     }

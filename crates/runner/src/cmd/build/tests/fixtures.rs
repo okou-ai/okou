@@ -38,6 +38,7 @@ pub(super) fn rootfs_input<'a>(
         },
         rootfs_paths: rootfs,
         guests,
+        okou_cli: None,
     }
 }
 
