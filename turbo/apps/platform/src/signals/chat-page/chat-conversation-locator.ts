@@ -6,17 +6,9 @@
  * rather than as a list that runs off the end. Hovering magnifies neighbouring
  * ticks and names the sampled turn under the cursor; clicking jumps to it.
  *
- * Everything the rail draws is derived. The DOM contributes exactly one thing:
- * a viewport reading taken by `measure$`, which reports where the reader is as
- * two ratios plus the id of the turn they are looking at. Layout samples no
- * other DOM geometry, and no element is held in a signal other than the scroll
- * container. A turn's ref only clears its CSS landing hint when it detaches.
- *
- * The reading is taken only when the reader moves the viewport: on scroll and
- * on resize. Content arriving during a run does not take one, because a reader
- * who is not scrolling has not changed where they are; the next scroll settles
- * the band. That keeps one synchronous read per trigger, each under the signal
- * of the scope that asked for it, with nothing queued between lifetimes.
+ * Everything the rail draws is derived from the sampled turns and the pointer.
+ * The DOM contributes only the mounted scroll container when a jump needs its
+ * viewport height. A turn's ref clears its CSS landing hint when it detaches.
  */
 
 import {
@@ -40,33 +32,17 @@ const L = logger("ConversationLocator");
 export const RAIL_PADDING_PX = 24;
 /** Ticks drawn at once. Longer threads are sampled down to this many. */
 const MAX_TICKS = 24;
-/** Appearance floor A: fewer ticks read as stray dashes, not as a scale. */
+/** Fewer ticks read as stray dashes, not as a scale. */
 const SHOW_MIN_TURNS = 8;
-/** Appearance floor B: below this the reader can still scroll back by eye. */
-const SHOW_MIN_SCREENS = 3;
-/** Fraction of the viewport that decides which turn counts as "current". */
-const CURRENT_TURN_VIEWPORT_RATIO = 0.38;
 /** Where a jump parks its target inside the viewport. */
 const JUMP_VIEWPORT_RATIO = 0.28;
 /** Falloff radius, as a multiple of the tick interval, so density feels equal. */
 const MAGNIFY_SIGMA_RATIO = 2.6;
 /** A tick this close to the cursor is the one being named. */
 const HIT_INTERVAL_RATIO = 1.1;
-/** Padding around the viewport band, relative to one tick interval. */
-const BAND_PADDING_INTERVAL_RATIO = 0.8;
 /** Resting length and magnification of a tick. */
 const TICK_BASE_WIDTH_PX = 7;
 const TICK_GROW_RATIO = 3.1;
-
-/**
- * Resting width of the viewport band. The band grows by exactly as much as the
- * widest tick it covers, so a magnified bar never spills out of the frame that
- * is supposed to contain it.
- */
-const BAND_BASE_WIDTH_PX = 32;
-
-const USER_SCROLL_ANCHOR_SELECTOR =
-  '[data-role="user"][data-chat-scroll-anchor-event-id]';
 
 /** One sampled user turn. `turnIndex` indexes the complete turn list. */
 export interface LocatorTurn {
@@ -83,19 +59,12 @@ export interface LocatorTick {
   readonly fraction: number;
   /** Already magnified for the current pointer position, in CSS pixels. */
   readonly width: number;
-  readonly current: boolean;
 }
 
 export interface LocatorLayout {
   /** False until the thread is long enough to be worth an instrument. */
   readonly visible: boolean;
   readonly ticks: readonly LocatorTick[];
-  /** Viewport band on the tick scale, including padding around its ends. */
-  readonly bandStart: number;
-  readonly bandSize: number;
-  /** Band width in CSS pixels, grown to enclose its widest tick. */
-  readonly bandWidth: number;
-  readonly turnCount: number;
 }
 
 export interface LocatorPreview {
@@ -112,44 +81,6 @@ interface LocatorLanding {
   readonly revision: number;
 }
 
-/** What `measure$` reads off the scroll container, and nothing more. */
-interface LocatorViewportReading {
-  /** Top of the viewport within the scrollable range, 0..1. */
-  readonly startRatio: number;
-  /** Fraction of the scrollable content currently visible, 0..1. */
-  readonly visibleRatio: number;
-  /** The turn the reader is looking at, by event id. */
-  readonly currentEventId: string | null;
-  /** False until the thread is physically long enough to instrument. */
-  readonly enoughScroll: boolean;
-}
-
-function emptyReading(): LocatorViewportReading {
-  return {
-    startRatio: 0,
-    visibleRatio: 1,
-    currentEventId: null,
-    enoughScroll: false,
-  };
-}
-
-/**
- * The viewport half of the locator. It owns the scroll container reference and
- * the reading taken from it, and depends on nothing else, so the thread factory
- * can build it before the signals whose commands need to request a reading.
- */
-export interface LocatorViewportSignals {
-  /**
-   * Binds the scroll container the reading is taken from. Unwrapped so the
-   * thread factory gives the element one `onRef` lifetime for both owners.
-   */
-  readonly attachContainer$: Command<void, [HTMLElement, AbortSignal]>;
-  readonly reading$: Computed<LocatorViewportReading>;
-  /** Takes the viewport reading synchronously, under the caller's signal. */
-  readonly measure$: Command<void, [AbortSignal]>;
-  readonly container$: Computed<HTMLElement | null>;
-}
-
 export interface ChatConversationLocatorSignals {
   readonly layout$: Computed<LocatorLayout>;
   readonly preview$: Computed<LocatorPreview | null>;
@@ -162,8 +93,6 @@ export interface ChatConversationLocatorSignals {
   /** Track the pointer's position along the tick scale. */
   readonly trackPointer$: Command<void, [number]>;
   readonly leaveRail$: Command<void, []>;
-  /** Takes the viewport reading synchronously, under the caller's signal. */
-  readonly measure$: Command<void, [AbortSignal]>;
   readonly jumpToPointer$: Command<Promise<void>, [AbortSignal]>;
   readonly jumpToTurn$: Command<Promise<void>, [number, AbortSignal]>;
 }
@@ -277,134 +206,6 @@ function createSampledTurns(
 }
 
 // ---------------------------------------------------------------------------
-// Viewport reading
-// ---------------------------------------------------------------------------
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-/**
- * The user turn owning the reading focus. This is the one place the locator
- * walks the DOM, and it leaves with a single id rather than a table of
- * rectangles: turn geometry belongs to the transcript, not to the rail.
- */
-function currentEventIdAt(
-  container: HTMLElement,
-  focus: number,
-): string | null {
-  const containerTop = container.getBoundingClientRect().top;
-  const scrollTop = container.scrollTop;
-  let current: string | null = null;
-  for (const anchor of container.querySelectorAll<HTMLElement>(
-    USER_SCROLL_ANCHOR_SELECTOR,
-  )) {
-    const eventId = anchor.dataset.chatScrollAnchorEventId;
-    if (!eventId) {
-      continue;
-    }
-    const rect = anchor.getBoundingClientRect();
-    if (rect.height === 0) {
-      continue;
-    }
-    const top = rect.top - containerTop + scrollTop;
-    // An answer belongs to the user turn before it. Selecting the nearest
-    // arbitrary message anchor would produce an assistant id that no sampled
-    // tick represents, or select the next request before the reader reaches it.
-    if (top > focus) {
-      return current;
-    }
-    current = eventId;
-  }
-  return current;
-}
-
-function readViewport(container: HTMLElement): LocatorViewportReading {
-  const { scrollTop, scrollHeight, clientHeight } = container;
-  if (clientHeight === 0) {
-    return emptyReading();
-  }
-  const range = Math.max(scrollHeight - clientHeight, 0);
-  return {
-    startRatio: range === 0 ? 0 : clamp(scrollTop / range, 0, 1),
-    visibleRatio: clamp(clientHeight / Math.max(scrollHeight, 1), 0, 1),
-    currentEventId: currentEventIdAt(
-      container,
-      scrollTop + clientHeight * CURRENT_TURN_VIEWPORT_RATIO,
-    ),
-    enoughScroll: scrollHeight >= clientHeight * SHOW_MIN_SCREENS,
-  };
-}
-
-function sameReading(
-  a: LocatorViewportReading,
-  b: LocatorViewportReading,
-): boolean {
-  return (
-    a.startRatio === b.startRatio &&
-    a.visibleRatio === b.visibleRatio &&
-    a.currentEventId === b.currentEventId &&
-    a.enoughScroll === b.enoughScroll
-  );
-}
-
-export function createLocatorViewportSignals(): LocatorViewportSignals {
-  const internalContainer$ = state<HTMLElement | null>(null);
-  const internalReading$ = state<LocatorViewportReading>(emptyReading());
-  const container$ = computed((get) => {
-    return get(internalContainer$);
-  });
-  const reading$ = computed((get) => {
-    return get(internalReading$);
-  });
-
-  const measure$ = command(({ get, set }, signal: AbortSignal): void => {
-    signal.throwIfAborted();
-    const container = get(internalContainer$);
-    if (!container) {
-      return;
-    }
-    const next = readViewport(container);
-    if (!sameReading(next, get(internalReading$))) {
-      set(internalReading$, next);
-    }
-  });
-
-  const attachContainer$ = command(
-    ({ set }, element: HTMLElement, signal: AbortSignal) => {
-      set(internalContainer$, element);
-      // The reading only exists while the container does, so the window
-      // listener is that element's resource and shares its lifetime.
-      // A window listener owned by this element's lifetime, taking the same
-      // synchronous reading the scroll handler takes.
-      globalThis.addEventListener(
-        "resize",
-        () => {
-          set(measure$, signal);
-        },
-        { signal },
-      );
-      set(measure$, signal);
-      signal.addEventListener(
-        "abort",
-        () => {
-          set(internalContainer$, null);
-          set(internalReading$, emptyReading());
-        },
-        { once: true },
-      );
-    },
-  );
-
-  return {
-    attachContainer$,
-    container$,
-    reading$,
-    measure$,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Layout
 // ---------------------------------------------------------------------------
 
@@ -419,60 +220,30 @@ function magnifiedWidth(distance: number, sigma: number): number {
 
 function createLayout(
   sampledTurns$: Computed<readonly LocatorTurn[]>,
-  reading$: Computed<LocatorViewportReading>,
   pointerFraction$: State<number | null>,
 ): Computed<LocatorLayout> {
   return computed((get): LocatorLayout => {
     const turns = get(sampledTurns$);
-    const reading = get(reading$);
-    if (turns.length < SHOW_MIN_TURNS || !reading.enoughScroll) {
-      return {
-        visible: false,
-        ticks: [],
-        bandStart: 0,
-        bandSize: 0,
-        bandWidth: BAND_BASE_WIDTH_PX,
-        turnCount: turns.length,
-      };
+    if (turns.length < SHOW_MIN_TURNS) {
+      return { visible: false, ticks: [] };
     }
     const pointer = get(pointerFraction$);
     const interval = tickFraction(1, turns.length);
     const sigma = Math.max(interval * MAGNIFY_SIGMA_RATIO, Number.EPSILON);
-    // Pad the visible slice so even a very long thread retains a readable
-    // frame around its ticks instead of collapsing to a hairline.
-    const visibleSize = clamp(reading.visibleRatio, 0, 1);
-    const bandPadding = interval * BAND_PADDING_INTERVAL_RATIO;
-    const bandSize = visibleSize + bandPadding * 2;
-    const bandStart = reading.startRatio * (1 - visibleSize) - bandPadding;
-    const bandEnd = bandStart + bandSize;
-    let bandWidth = BAND_BASE_WIDTH_PX;
-    const ticks = turns.map((turn, index): LocatorTick => {
-      const fraction = tickFraction(index, turns.length);
-      const width =
-        pointer === null
-          ? TICK_BASE_WIDTH_PX
-          : magnifiedWidth(Math.abs(fraction - pointer), sigma);
-      if (fraction >= bandStart && fraction <= bandEnd) {
-        bandWidth = Math.max(
-          bandWidth,
-          BAND_BASE_WIDTH_PX + width - TICK_BASE_WIDTH_PX,
-        );
-      }
-      return {
-        turnIndex: turn.turnIndex,
-        eventId: turn.eventId,
-        fraction,
-        width,
-        current: turn.eventId === reading.currentEventId,
-      };
-    });
     return {
       visible: true,
-      ticks,
-      bandStart,
-      bandSize,
-      bandWidth,
-      turnCount: turns.length,
+      ticks: turns.map((turn, index): LocatorTick => {
+        const fraction = tickFraction(index, turns.length);
+        return {
+          turnIndex: turn.turnIndex,
+          eventId: turn.eventId,
+          fraction,
+          width:
+            pointer === null
+              ? TICK_BASE_WIDTH_PX
+              : magnifiedWidth(Math.abs(fraction - pointer), sigma),
+        };
+      }),
     };
   });
 }
@@ -531,12 +302,12 @@ function createTurnOnRef(landing$: State<LocatorLanding>) {
 
 export function createChatConversationLocatorSignals({
   threadId,
-  viewport,
+  scrollContainer$,
   allChatGroups$,
   scrollToEvent$,
 }: {
   threadId: string;
-  viewport: LocatorViewportSignals;
+  scrollContainer$: Computed<HTMLElement | null>;
   allChatGroups$: Computed<readonly ChatEventGroup[]>;
   scrollToEvent$: Command<
     Promise<void>,
@@ -552,11 +323,7 @@ export function createChatConversationLocatorSignals({
   const resetLandedSignal$ = resetSignal();
 
   const sampledTurns$ = createSampledTurns(allChatGroups$);
-  const layout$ = createLayout(
-    sampledTurns$,
-    viewport.reading$,
-    pointerFraction$,
-  );
+  const layout$ = createLayout(sampledTurns$, pointerFraction$);
   const hitIndex$ = createHitIndex(layout$, pointerFraction$);
 
   const preview$ = computed((get): LocatorPreview | null => {
@@ -602,7 +369,7 @@ export function createChatConversationLocatorSignals({
       const turn = get(sampledTurns$).find((candidate) => {
         return candidate.turnIndex === turnIndex;
       });
-      const container = get(viewport.container$);
+      const container = get(scrollContainer$);
       if (!turn || !container) {
         return;
       }
@@ -659,7 +426,6 @@ export function createChatConversationLocatorSignals({
     sampledTurns$,
     trackPointer$,
     leaveRail$,
-    measure$: viewport.measure$,
     jumpToPointer$,
     jumpToTurn$,
   };

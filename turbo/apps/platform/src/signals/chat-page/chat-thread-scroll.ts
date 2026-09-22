@@ -34,11 +34,10 @@ export interface ReadyScrollAfterRenderRequest {
 }
 
 export interface ChatThreadScrollSignals {
-  /**
-   * Binds the scroll container. Unwrapped so the thread factory can give the
-   * element one `onRef` lifetime shared with the locator's reading.
-   */
-  readonly attachScrollContainer$: Command<void, [HTMLElement, AbortSignal]>;
+  readonly scrollContainerOnRef$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null]
+  >;
   readonly scrollContentOnRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -810,11 +809,8 @@ export function createChatThreadScrollSignals(
     runtime,
     render.pendingScrollAfterRenderRequest$,
   );
-  const attachScrollContainer$ = createAttachScrollContainer(
-    threadId,
-    scroll,
-    navigation,
-    runtime,
+  const scrollContainerOnRef$ = onRef(
+    createAttachScrollContainer(threadId, scroll, navigation, runtime),
   );
   const scrollContentOnRef$ = createScrollContentOnRef(threadId, navigation);
   const isProgrammaticScrollEvent$ = command(
@@ -874,7 +870,7 @@ export function createChatThreadScrollSignals(
   );
 
   return {
-    attachScrollContainer$,
+    scrollContainerOnRef$,
     scrollContentOnRef$,
     scrollCommitOnRef$: render.scrollCommitOnRef$,
     pendingScrollAfterRenderRequest$: render.pendingScrollAfterRenderRequest$,
