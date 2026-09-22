@@ -35,9 +35,9 @@ export function OfficeDocumentPreview({
   // Private documents give the viewer only the expiring resource URL.
   // Historical public documents keep their existing viewer URL.
   // Office Online gives its full-size inner frame a one-pixel hover border.
-  // Its right and bottom edges already overflow the remote viewport, so move
-  // the iframe's top and left edges under this clip to hide the two visible
-  // sides without blocking interaction with the cross-origin viewer.
+  // Its box sizing differs between Word and PowerPoint, so bleed the iframe
+  // one pixel past every edge and clip the viewer-owned border without
+  // blocking interaction with the cross-origin document.
   return (
     <div className="relative h-full min-h-0 w-full overflow-hidden">
       <AutoFocusedArtifactIframe
@@ -53,7 +53,7 @@ export function OfficeDocumentPreview({
         referrerPolicy="no-referrer"
         scrolling="yes"
         allowFullScreen
-        className="absolute -left-px -top-px block h-[calc(100%+1px)] min-h-0 w-[calc(100%+1px)] border-0 bg-background"
+        className="absolute -left-px -top-px block h-[calc(100%+2px)] min-h-0 w-[calc(100%+2px)] border-0 bg-background"
         data-testid={testId}
       />
     </div>

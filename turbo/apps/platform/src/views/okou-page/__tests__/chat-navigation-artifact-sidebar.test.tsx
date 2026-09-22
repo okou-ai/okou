@@ -163,6 +163,16 @@ function expectOfficeViewerUrl(frame: HTMLElement, sourceUrl: string): void {
   expect(parsed.searchParams.get("src")).toBe(sourceUrl);
 }
 
+function expectOfficeViewerHoverBorderClipped(frame: HTMLElement): void {
+  expect(frame.parentElement).toHaveClass("overflow-hidden");
+  expect(frame).toHaveClass(
+    "-left-px",
+    "-top-px",
+    "h-[calc(100%+2px)]",
+    "w-[calc(100%+2px)]",
+  );
+}
+
 warmMermaidParser();
 
 test("Keep attachment cards closed until the user selects one", async () => {
@@ -256,12 +266,14 @@ test("Preview a DOCX attachment in the dialog and split view", async () => {
   const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
   expect(dialogFrame).toBeVisible();
   expectOfficeViewerUrl(dialogFrame, url);
+  expectOfficeViewerHoverBorderClipped(dialogFrame);
   click(buttonNamed("Open in split view", dialog));
 
   const splitView = await screen.findByTestId("artifact-sidebar");
   const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
   expect(splitFrame).toBeVisible();
   expectOfficeViewerUrl(splitFrame, url);
+  expectOfficeViewerHoverBorderClipped(splitFrame);
 });
 
 test("Preview a PPTX attachment in the dialog and split view", async () => {
@@ -277,12 +289,14 @@ test("Preview a PPTX attachment in the dialog and split view", async () => {
   const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
   expect(dialogFrame).toBeVisible();
   expectOfficeViewerUrl(dialogFrame, url);
+  expectOfficeViewerHoverBorderClipped(dialogFrame);
   click(buttonNamed("Open in split view", dialog));
 
   const splitView = await screen.findByTestId("artifact-sidebar");
   const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
   expect(splitFrame).toBeVisible();
   expectOfficeViewerUrl(splitFrame, url);
+  expectOfficeViewerHoverBorderClipped(splitFrame);
 });
 
 test("Preview an XLSX attachment in the dialog and split view", async () => {
