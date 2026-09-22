@@ -745,14 +745,23 @@ Compatibility is negotiated per run rather than by deployment order:
   API-first turn with) and `minCliVersion` (the lowest CLI release that
   understands the current launch payload). They are optional so contexts
   captured by earlier backends remain valid.
-- **The backend does not write them yet.** This launch config is persisted in
-  the encrypted queue payload and decoded by whichever API instance serves the
+- **The backend writes them.** This launch config is persisted in the
+  encrypted queue payload and decoded by whichever API instance serves the
   claim, and `piApiFirstTurnConfigSchema` is strict, so a backend from before
-  these fields existed rejects a payload that carries them. The reader ships
-  first; the writer is enabled in a later release, once this one is deployed
-  across the serving fleet and outside the rollback window. This is the same
-  staging the API-first usage handoff producer (#35413) used. Until then every
-  run takes the `npx` path below. Follow-up: #35967.
+  these fields existed rejects a payload that carries them. The tolerant reader
+  shipped first with the writer off, in `8d8f3a3e14d23f7471e0773bd9acb988f59217af`
+  (#36000, released as api 1.657.0 in `1807fbf7e37dc98e99793a57e7799f6dc804ad53`);
+  the writer followed in its own release after that API was promoted. This is
+  the same staging the API-first usage handoff producer (#35413) used.
+
+  **API rollback floor: `8d8f3a3e14d23f7471e0773bd9acb988f59217af`** (#36000's
+  merge commit). An API artifact that predates it rejects, at claim time, every
+  queued Pi run created after the writer was enabled. The production rollback
+  resolver (`.github/scripts/resolve-production-rollback-target.sh`) enforces
+  the floor for API targets; verify manually with
+  `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
+  and require `ahead` or `identical`. Retained Runner tags are not constrained:
+  the guest ignores unknown launch-config fields.
 - The guest agent execs the installed CLI only when the installed
   `piAgentRuntime` equals `requiredPiAgentRuntimeVersion` and the installed
   `cli` is at or above `minCliVersion`; otherwise it launches the
@@ -768,10 +777,10 @@ Compatibility is negotiated per run rather than by deployment order:
   settled-session continuation is a complete checkpoint and is never discarded
   for a version difference.
 
-Skew in either direction is therefore safe: once the writer is enabled, a new
-backend with an old runner emits the fields into a launch config the old guest
-ignores, because the generated Rust bindings do not deny unknown fields; a new
-runner with an old backend sees no required version and launches through `npx`.
+Skew in either direction is therefore safe: a new backend with an old runner
+emits the fields into a launch config the old guest ignores, because the
+generated Rust bindings do not deny unknown fields; a new runner with an old
+backend sees no required version and launches through `npx`.
 Raise `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or
 handoff field becomes required. Retiring `CLI_PKG_URL` and the `npx` path
 follows the drain procedure below and is tracked in #35967.

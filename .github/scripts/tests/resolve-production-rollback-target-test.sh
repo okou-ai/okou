@@ -61,6 +61,8 @@ case "${1:-}" in
       else
         [ "${MOCK_BALANCE_TARGET_FLOOR_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "8d8f3a3e14d23f7471e0773bd9acb988f59217af" ]; then
+      [ "${MOCK_PI_LAUNCH_VERSIONS_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -161,6 +163,7 @@ assert_failure() {
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor f205ec54fc463f43b1106a3659e5d6a8c979cab8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the hosted publication runtime floor"
+grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi launch-config version reader floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -186,6 +189,15 @@ assert_failure "predates owner-aware provider balance failures" \
 [ ! -s "${tmp_dir}/balance-target.output" ] || fail "incompatible API target must not publish outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "incompatible API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Pi launch-config version reader" \
+  run_resolver "${tmp_dir}/pi-launch-versions-floor.output" MOCK_PI_LAUNCH_VERSIONS_FLOOR_VALID=0
+grep -Fq '8d8f3a3e14d23f7471e0773bd9acb988f59217af' "${tmp_dir}/failure.err" || fail "Pi launch-config version rejection must identify the reader commit"
+[ ! -s "${tmp_dir}/pi-launch-versions-floor.output" ] || fail "pre-reader API target must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-reader API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"
