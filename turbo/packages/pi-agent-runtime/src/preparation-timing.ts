@@ -6,6 +6,7 @@ export type PiPreparationPhase =
   | "launch_manifest_sign"
   | "launch_session_sign"
   | "launch_identity"
+  | "activation_authorize"
   | "h0_metadata_preflight"
   | "resource_snapshot"
   | "credentials_route"
@@ -20,6 +21,7 @@ export type PiPreparationPhase =
   | "session_create"
   | "session_finalize"
   | "compaction_preflight"
+  | "credentials_revalidate"
   | "model_context"
   | "provider_boundary";
 
