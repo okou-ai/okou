@@ -4226,7 +4226,7 @@
       },
       "skills": {
         "copied": "已複製",
-        "copy": "匯入一個SKILL.md，它就會變成Okou裡的工作流，輸入/即可執行。",
+        "copy": "將此提示詞貼到你的{{provider}}會話中，它會把你本機的技能匯入Okou。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
         "importedCopy": "已匯入為Okou工作流。",
@@ -4235,7 +4235,7 @@
         "preparing": "正在開啟匯入會話…",
         "promptCopy": "它會讀取你本機上的技能，並寫入Okou。",
         "promptLabel": "技能匯入提示詞",
-        "promptTitle": "在Codex或Claude Code中執行",
+        "promptTitle": "在{{provider}}中執行",
         "startError": "無法開啟匯入會話。",
         "title": "把你已經寫好的技能帶過來。",
         "tryAgain": "重試",
@@ -4283,11 +4283,6 @@
       "sources": {
         "copy": "它在雲端執行，直接用你團隊已有的工具。產出提升10倍，協作更順，成本更低。先連線一個資料來源開始。",
         "note": "連線哪些帳號，由你決定。",
-        "searchAction": "找到適合你工作的資料來源",
-        "searchCopy": "按任務或應用名稱搜尋完整目錄。",
-        "searchEmpty": "沒有匹配的資料來源",
-        "searchPlaceholder": "按任務或應用名稱搜尋",
-        "searchTitle": "找到適合你工作的資料來源",
         "title": "Okou為你所用，也服務你的整個團隊。"
       },
       "startingPrompt": {
