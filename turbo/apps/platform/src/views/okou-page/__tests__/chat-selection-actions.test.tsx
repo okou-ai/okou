@@ -1,10 +1,4 @@
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -25,34 +19,6 @@ import {
 
 const PASSAGE = "The launch plan has three careful stages.";
 const NEXT_PASSAGE = "Review a different decision.";
-
-interface AnimationFrameController {
-  readonly flush: () => void;
-}
-
-function installQueuedAnimationFrames(): AnimationFrameController {
-  let nextFrameId = 0;
-  let callbacks = new Map<number, FrameRequestCallback>();
-
-  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-    nextFrameId += 1;
-    callbacks.set(nextFrameId, callback);
-    return nextFrameId;
-  });
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((frameId) => {
-    callbacks.delete(frameId);
-  });
-
-  return {
-    flush: () => {
-      const scheduledCallbacks = Array.from(callbacks.values());
-      callbacks = new Map<number, FrameRequestCallback>();
-      for (const callback of scheduledCallbacks) {
-        callback(performance.now());
-      }
-    },
-  };
-}
 
 function queryQuoteButton(): HTMLElement | null {
   return (
@@ -295,27 +261,28 @@ test("Dismiss the passage actions when a press lands outside them", async () => 
 test("Keep the passage actions closed while a click collapses the selection", async () => {
   await openSelection();
   const target = screen.getByText(NEXT_PASSAGE);
-  const animationFrames = installQueuedAnimationFrames();
 
   fireEvent.pointerDown(target, {
     button: 0,
+    isPrimary: true,
     pointerId: 3,
     pointerType: "mouse",
   });
-  fireEvent.mouseDown(target, { button: 0 });
   expect(queryQuoteButton()).not.toBeInTheDocument();
 
-  // Chromium can retain the old range through mouseup, then collapse it before
-  // the next paint. The dismissed toolbar must not recapture that stale range.
-  fireEvent.mouseUp(target, { button: 0 });
+  // Chromium can retain the old range through pointerup. A gesture that did
+  // not change that range must not recapture the just-dismissed toolbar.
+  fireEvent.pointerUp(target, {
+    button: 0,
+    isPrimary: true,
+    pointerId: 3,
+    pointerType: "mouse",
+  });
   expect(queryQuoteButton()).not.toBeInTheDocument();
 
   window.getSelection()?.removeAllRanges();
   fireEvent(document, new Event("selectionchange"));
   fireEvent.click(target, { button: 0 });
-  act(() => {
-    animationFrames.flush();
-  });
 
   expect(queryQuoteButton()).not.toBeInTheDocument();
 });

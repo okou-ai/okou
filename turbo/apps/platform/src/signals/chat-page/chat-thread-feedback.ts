@@ -652,12 +652,13 @@ function createListenersRef({
   return onRef(
     command(({ get, set }, el: HTMLElement, signal: AbortSignal) => {
       const doc = el.ownerDocument;
-      let mouseSelectionInProgress = false;
+      let mouseSelectionPointerId: number | null = null;
+      let mouseSelectionChanged = false;
       let selectionInteractionInProgress = false;
-      let deferMouseSelectionCapture = false;
       let scrollReconciliationScheduled = false;
-      const captureSelectionNextFrame = () => {
-        set(capture$, signal);
+      const resetMouseSelectionGesture = () => {
+        mouseSelectionPointerId = null;
+        mouseSelectionChanged = false;
       };
       doc.addEventListener(
         "pointerdown",
@@ -665,7 +666,24 @@ function createListenersRef({
           selectionInteractionInProgress = isSelectionInteractionTarget(
             event.target,
           );
-          deferMouseSelectionCapture = false;
+          resetMouseSelectionGesture();
+          const mouseSelectionStarted =
+            event.pointerType === "mouse" &&
+            event.button === 0 &&
+            event.target instanceof Node &&
+            (shouldExpandSelectionToAssistantReply()
+              ? closestExpandedFeedbackSource(event.target)
+              : closestFeedbackSource(event.target)) !== null;
+          if (mouseSelectionStarted) {
+            mouseSelectionPointerId = event.pointerId;
+            const activeElement = doc.activeElement;
+            if (
+              activeElement instanceof HTMLElement &&
+              activeElement.closest(CHAT_COMPOSER_SELECTOR) !== null
+            ) {
+              activeElement.blur();
+            }
+          }
           // A press outside the toolbar dismisses it, and pointerdown is the
           // event that can say so: it opens a gesture, while the toolbar is
           // only ever mounted by one that has ended. A press that lands on a
@@ -673,9 +691,6 @@ function createListenersRef({
           // calls `preventDefault` on mousedown — is dismissed here rather
           // than waiting for a selection change that never arrives.
           if (get(selection$) !== null && !selectionInteractionInProgress) {
-            // A click can collapse its range after mouseup. Defer recapture so
-            // the just-dismissed toolbar cannot reopen for one paint.
-            deferMouseSelectionCapture = true;
             set(close$);
           }
         },
@@ -695,10 +710,29 @@ function createListenersRef({
         { signal },
       );
       doc.addEventListener(
+        "pointerup",
+        (event) => {
+          if (event.pointerId !== mouseSelectionPointerId) {
+            return;
+          }
+          // A plain click can retain the old range through pointerup. Only a
+          // gesture that actually changed the native selection may open a new
+          // toolbar, so no render-frame timing is involved here.
+          const selectionChanged = mouseSelectionChanged;
+          resetMouseSelectionGesture();
+          if (selectionChanged) {
+            set(capture$, signal);
+          }
+        },
+        { signal },
+      );
+      doc.addEventListener(
         "pointercancel",
-        () => {
+        (event) => {
           selectionInteractionInProgress = false;
-          mouseSelectionInProgress = false;
+          if (event.pointerId === mouseSelectionPointerId) {
+            resetMouseSelectionGesture();
+          }
           if (get(selection$) !== null) {
             set(capture$, signal);
           }
@@ -706,46 +740,15 @@ function createListenersRef({
         { capture: true, signal },
       );
       doc.addEventListener(
-        "mousedown",
-        (event) => {
-          mouseSelectionInProgress =
-            event.button === 0 &&
-            event.target instanceof Node &&
-            (shouldExpandSelectionToAssistantReply()
-              ? closestExpandedFeedbackSource(event.target)
-              : closestFeedbackSource(event.target)) !== null;
-          const activeElement = doc.activeElement;
-          if (
-            mouseSelectionInProgress &&
-            activeElement instanceof HTMLElement &&
-            activeElement.closest(CHAT_COMPOSER_SELECTOR) !== null
-          ) {
-            activeElement.blur();
-          }
-        },
-        { capture: true, signal },
-      );
-      doc.addEventListener(
-        "mouseup",
-        () => {
-          const shouldDeferCapture = deferMouseSelectionCapture;
-          deferMouseSelectionCapture = false;
-          if (!mouseSelectionInProgress) {
-            return;
-          }
-          mouseSelectionInProgress = false;
-          if (!shouldDeferCapture) {
-            set(capture$, signal);
-            return;
-          }
-          animationFrame(captureSelectionNextFrame, { signal });
-        },
-        { signal },
-      );
-      doc.addEventListener(
         "selectionchange",
         () => {
-          if (mouseSelectionInProgress || selectionInteractionInProgress) {
+          if (mouseSelectionPointerId !== null) {
+            // Keep the toolbar stable while a drag evolves; pointerup commits
+            // the final range once the gesture has changed it at least once.
+            mouseSelectionChanged = true;
+            return;
+          }
+          if (selectionInteractionInProgress) {
             return;
           }
           set(capture$, signal);
