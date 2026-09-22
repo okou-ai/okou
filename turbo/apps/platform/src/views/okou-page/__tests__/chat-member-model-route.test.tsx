@@ -64,7 +64,6 @@ test.each(
 )(
   "Shows $source as BYOK in the $layout picker with personal source help",
   async ({ layout, modelLabel, source }) => {
-    const user = userEvent.setup({ delay: null });
     context.mocks.browser.matchMedia((query) => {
       return query === "(min-width: 640px)" && layout !== "compact";
     });
@@ -130,13 +129,11 @@ test.each(
     expect(option).not.toHaveAttribute("aria-disabled", "true");
     expect(option).not.toBeDisabled();
     expect(option).not.toHaveTextContent("$");
-    expect(option).not.toHaveTextContent(source);
-    const badge = within(option).getByText("BYOK");
-    await user.hover(badge);
-    await expect(
-      screen.findByText("Used only in your runs, with your own credentials."),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByText(`${source}:`)).toBeInTheDocument();
+    const description = `${source}: Used only in your runs, with your own credentials.`;
+    expect(option).toHaveAccessibleName(modelLabel);
+    expect(option).toHaveAccessibleDescription(description);
+    expect(within(option).getByText(description)).toBeVisible();
+    expect(within(option).getByText("BYOK")).toBeVisible();
   },
 );
 

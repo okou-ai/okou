@@ -1036,7 +1036,7 @@ function ModelFirstModelPickerContentLayout({
   showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
   return (
-    <SelectContent className="min-w-[260px] max-h-[var(--available-height)]">
+    <SelectContent className="min-w-[260px] max-w-[calc(100vw-2rem)] max-h-[var(--available-height)]">
       {isHiddenModelFirstSelectValue(selectValue) &&
         !(showInheritOption && selectValue === INHERIT_SENTINEL) && (
           <SelectItem
