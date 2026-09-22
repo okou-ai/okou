@@ -1,5 +1,6 @@
 import type { ArtifactSignals } from "./artifact-card-signals.ts";
 import type { BrowserSessionSignals } from "./browser-session-block.ts";
+import type { BrowserUserActionSignals } from "./browser-user-action-block.ts";
 import type { BankingSignals } from "./banking-action-block.ts";
 import type { ConnectorSignals } from "./connector-action-block.ts";
 import type { ConnectorAccountActionSignals } from "./connector-account-action-block.ts";
@@ -39,6 +40,10 @@ export type MarkdownCardRef =
   | {
       readonly kind: "browser-session";
       readonly signals: BrowserSessionSignals;
+    }
+  | {
+      readonly kind: "browser-user-action";
+      readonly signals: BrowserUserActionSignals;
     };
 
 declare module "hast" {
