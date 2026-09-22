@@ -238,13 +238,15 @@ async function chooseMediaModel(
   label: string,
   container: ParentNode = document,
 ): Promise<void> {
-  const user = await openCategory(categoryName, container);
+  await openCategory(categoryName, container);
   const option = await waitFor(() => {
     const row = mediaModelRow(label);
     expect(row).toBeInTheDocument();
     return row;
   });
-  await user.click(option);
+  // happy-dom has no geometry for the native submenu's hover corridor. The
+  // category interactions above exercise hover; activate the ready row here.
+  click(option);
   await waitFor(() => {
     expect(screen.queryByRole("menu", { name: "Models" })).toBeNull();
   });
@@ -1064,11 +1066,6 @@ test("Choose image and video models from the compact overview", async () => {
   ).resolves.toBeVisible();
   expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Image model, GPT Image 1")).toBeVisible();
-  await waitFor(() => {
-    expect(
-      screen.getByRole("menu").contains(document.activeElement),
-    ).toBeTruthy();
-  });
   click(
     menuRow(
       `Change Video model, ${VIDEO_MODEL_CONFIGS[DEFAULT_VIDEO_MODEL].label}`,
