@@ -4,7 +4,7 @@ import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { now } from "../../../lib/time";
+import { now, withMockNowForTest } from "../../../lib/time";
 import {
   ApiDispatchTimingCollector,
   measureApiDispatchTiming,
@@ -14,23 +14,29 @@ import {
   type ApiDispatchTimingDimensionsInput,
 } from "../api-dispatch-timing.service";
 import {
+  prefetchStorageManifestPresignedUrlCacheRows,
   readOnlyStoragePresignedUrlCacheKey,
   resolveReadOnlyStoragePresignedUrls,
   resolveSystemStoragePresignedUrls,
   resolveWorkflowSkillStoragePresignedUrls,
   systemStoragePresignedUrlCacheKey,
+  STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS,
   workflowSkillStoragePresignedUrlCacheKey,
   type ReadOnlyStoragePresignedUrlRequest,
   type StorageManifestCacheBranch,
   type StorageManifestCacheEntryKind,
+  type StorageManifestPresignedUrlCacheScope,
+  type StorageManifestPresignedUrlCacheSnapshot,
   type SystemStoragePresignedUrlRequest,
   type WorkflowSkillStoragePresignedUrlRequest,
 } from "../system-storage-presigned-url-cache.service";
 
 /**
- * Narrow internal-boundary exception: storage-manifest timing dimensions are
- * deliberately absent from every HTTP response. Route suites own observable
- * cache/results behavior; this suite pins only the finite collector contract.
+ * Narrow internal-boundary exception: mixed cache query shape, exact scope/key
+ * dispatch, cache-row boundary states, and timing dimensions are deliberately
+ * absent from every HTTP response. Route suites own observable manifest/result
+ * behavior; this suite pins only these finite query-strategy and collector
+ * contracts.
  */
 
 const context = testContext();
@@ -57,6 +63,10 @@ interface SelectedCacheRow {
   readonly cacheKey: string;
   readonly presignedUrl: string;
   readonly expiresAt: Date;
+}
+
+interface MixedSelectedCacheRow extends SelectedCacheRow {
+  readonly scope: StorageManifestPresignedUrlCacheScope;
 }
 
 interface TimingRecord {
@@ -143,6 +153,51 @@ function failingLookupDb(error: Error): never {
   } as never;
 }
 
+function fakeMixedCacheDb(
+  rows: readonly MixedSelectedCacheRow[],
+  error?: Error,
+): {
+  readonly db: never;
+  readonly selectCount: () => number;
+  readonly upserted: unknown[][];
+} {
+  let selects = 0;
+  const upserted: unknown[][] = [];
+  const db = {
+    select() {
+      return {
+        from() {
+          return {
+            innerJoin() {
+              selects += 1;
+              return error ? Promise.reject(error) : Promise.resolve(rows);
+            },
+          };
+        },
+      };
+    },
+    insert() {
+      return {
+        values(values: unknown[]) {
+          upserted.push(values);
+          return {
+            onConflictDoUpdate() {
+              return Promise.resolve();
+            },
+          };
+        },
+      };
+    },
+  };
+  return {
+    db: db as never,
+    selectCount: () => {
+      return selects;
+    },
+    upserted,
+  };
+}
+
 function observation(
   timing: ApiDispatchTimingCollector,
   branch: StorageManifestCacheBranch,
@@ -159,6 +214,21 @@ function systemRequest(label: string): SystemStoragePresignedUrlRequest {
     storageVersionId: suffix.padEnd(64, "0"),
     publicEndpoint: true,
   };
+}
+
+function scopedRequests(label: string): {
+  readonly workflow: WorkflowSkillStoragePresignedUrlRequest;
+  readonly readOnly: ReadOnlyStoragePresignedUrlRequest;
+} {
+  const suffix = randomUUID().replaceAll("-", "");
+  const common = {
+    bucket: "manifest-telemetry-test",
+    objectKey: `${label}/${suffix}/archive.tar.gz`,
+    storageVersionId: suffix.padEnd(64, "0"),
+    resolvedOrgId: randomUUID(),
+    publicEndpoint: true,
+  };
+  return { workflow: common, readOnly: common };
 }
 
 function expectSnapshot(
@@ -482,6 +552,381 @@ describe("storage manifest presigned URL cache telemetry", () => {
           storage_manifest_cache_hard_expired_count_bucket: "0",
           storage_manifest_cache_missing_count_bucket: "0",
           storage_manifest_cache_fresh_count_bucket: "0",
+        },
+      },
+    ]);
+  });
+
+  it("uses one mixed lookup without duplicating per-scope lookup telemetry", async () => {
+    const systemRequests = Array.from({ length: 17 }, (_, index) => {
+      return systemRequest(`mixed-hit-system-${index}`);
+    });
+    const scoped = Array.from({ length: 17 }, (_, index) => {
+      return scopedRequests(`mixed-hit-scoped-${index}`);
+    });
+    const workflowSkillRequests = scoped.map((requests) => {
+      return requests.workflow;
+    });
+    const readOnlyRequests = scoped.map((requests) => {
+      return requests.readOnly;
+    });
+    const expiresAt = new Date(now() + 60_000);
+    const mixedDb = fakeMixedCacheDb([
+      ...systemRequests.map((request, index) => {
+        return {
+          scope: "system_storage" as const,
+          cacheKey: systemStoragePresignedUrlCacheKey(request),
+          presignedUrl: `https://r2.example.com/system-cached-${index}`,
+          expiresAt,
+        };
+      }),
+      ...workflowSkillRequests.map((request, index) => {
+        return {
+          scope: "workflow_skill_storage" as const,
+          cacheKey: workflowSkillStoragePresignedUrlCacheKey(request),
+          presignedUrl: `https://r2.example.com/workflow-cached-${index}`,
+          expiresAt,
+        };
+      }),
+      ...readOnlyRequests.map((request, index) => {
+        return {
+          scope: "readonly_storage" as const,
+          cacheKey: readOnlyStoragePresignedUrlCacheKey(request),
+          presignedUrl: `https://r2.example.com/readonly-cached-${index}`,
+          expiresAt,
+        };
+      }),
+    ]);
+    const timing = new RecordingTimingCollector();
+    const store = createStore();
+    const prefetchedRows = await store.get(
+      prefetchStorageManifestPresignedUrlCacheRows({
+        db: mixedDb.db,
+        input: {
+          systemRequests,
+          workflowSkillRequests,
+          readOnlyRequests,
+          logicalLookupCount: 3,
+        },
+        observation: { timing, branch: "requested" },
+      }),
+    );
+    if (!prefetchedRows) {
+      throw new Error("Expected an eligible mixed lookup snapshot");
+    }
+
+    const [systemResults, workflowResults, readOnlyResults] = await Promise.all(
+      [
+        store.get(
+          resolveSystemStoragePresignedUrls({
+            db: mixedDb.db,
+            requests: systemRequests,
+            prefetchedRows,
+            observation: observation(timing, "requested", "compose"),
+          }),
+        ),
+        store.get(
+          resolveWorkflowSkillStoragePresignedUrls({
+            db: mixedDb.db,
+            requests: workflowSkillRequests,
+            prefetchedRows,
+            observation: observation(timing, "requested", "additional"),
+          }),
+        ),
+        store.get(
+          resolveReadOnlyStoragePresignedUrls({
+            db: mixedDb.db,
+            requests: readOnlyRequests,
+            prefetchedRows,
+            observation: observation(timing, "requested", "artifact"),
+          }),
+        ),
+      ],
+    );
+
+    expect(mixedDb.selectCount()).toBe(1);
+    expect(
+      [...systemResults.values()].every((result) => {
+        return result.status === "hit";
+      }),
+    ).toBeTruthy();
+    expect(
+      [...workflowResults.values()].every((result) => {
+        return result.status === "hit";
+      }),
+    ).toBeTruthy();
+    expect(
+      [...readOnlyResults.values()].every((result) => {
+        return result.status === "hit";
+      }),
+    ).toBeTruthy();
+    expect(
+      timing.recorded.filter((record) => {
+        return (
+          record.actionType ===
+          "api_dispatch_prepare_storage_manifest_cache_mixed_lookup"
+        );
+      }),
+    ).toStrictEqual([
+      {
+        actionType: "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+        dimensions: {
+          storage_manifest_branch: "requested",
+          storage_manifest_cache_requested_count_bucket: "17_plus",
+          storage_manifest_cache_unique_key_count_bucket: "17_plus",
+          storage_manifest_cache_logical_lookup_count_bucket: "2_4",
+        },
+      },
+    ]);
+    expect(
+      timing.recorded.some((record) => {
+        return (
+          record.actionType ===
+          "api_dispatch_prepare_storage_manifest_cache_lookup"
+        );
+      }),
+    ).toBeFalsy();
+  });
+
+  it("deduplicates mixed pairs and never rereads an empty snapshot", async () => {
+    const system = systemRequest("mixed-empty");
+    const systemRequests = Array.from({ length: 17 }, () => {
+      return system;
+    });
+    const { workflow } = scopedRequests("mixed-empty");
+    const mixedDb = fakeMixedCacheDb([]);
+    const timing = new RecordingTimingCollector();
+    const store = createStore();
+    const prefetchedRows = await store.get(
+      prefetchStorageManifestPresignedUrlCacheRows({
+        db: mixedDb.db,
+        input: {
+          systemRequests,
+          workflowSkillRequests: [workflow],
+          readOnlyRequests: [],
+          logicalLookupCount: 2,
+        },
+        observation: { timing, branch: "requested" },
+      }),
+    );
+    if (!prefetchedRows) {
+      throw new Error("Expected an empty mixed lookup snapshot");
+    }
+
+    const [systemResults, workflowResults] = await Promise.all([
+      store.get(
+        resolveSystemStoragePresignedUrls({
+          db: mixedDb.db,
+          requests: systemRequests,
+          prefetchedRows,
+        }),
+      ),
+      store.get(
+        resolveWorkflowSkillStoragePresignedUrls({
+          db: mixedDb.db,
+          requests: [workflow],
+          prefetchedRows,
+        }),
+      ),
+    ]);
+
+    expect(mixedDb.selectCount()).toBe(1);
+    expect(timing.recorded).toStrictEqual([
+      {
+        actionType: "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+        dimensions: {
+          storage_manifest_branch: "requested",
+          storage_manifest_cache_requested_count_bucket: "17_plus",
+          storage_manifest_cache_unique_key_count_bucket: "2_4",
+          storage_manifest_cache_logical_lookup_count_bucket: "2_4",
+        },
+      },
+    ]);
+    expect(systemResults.size).toBe(1);
+    expect(workflowResults.size).toBe(1);
+    expect([...systemResults.values()][0]?.status).toBe("miss");
+    expect([...workflowResults.values()][0]?.status).toBe("miss");
+    expect(mixedDb.upserted).toHaveLength(2);
+  });
+
+  it("does not dispatch a prefetched row across ownership scopes", async () => {
+    const request = systemRequest("wrong-scope");
+    const cacheKey = systemStoragePresignedUrlCacheKey(request);
+    const prefetchedRows: StorageManifestPresignedUrlCacheSnapshot = {
+      rowsByScope: new Map([
+        [
+          "workflow_skill_storage",
+          new Map([
+            [
+              cacheKey,
+              {
+                cacheKey,
+                presignedUrl: "https://r2.example.com/wrong-scope",
+                expiresAt: new Date(now() + 60_000),
+              },
+            ],
+          ]),
+        ],
+      ]),
+    };
+    const mixedDb = fakeMixedCacheDb([]);
+
+    const results = await createStore().get(
+      resolveSystemStoragePresignedUrls({
+        db: mixedDb.db,
+        requests: [request],
+        prefetchedRows,
+      }),
+    );
+
+    expect(mixedDb.selectCount()).toBe(0);
+    expect(results.get(cacheKey)?.status).toBe("miss");
+    expect(results.get(cacheKey)?.url).not.toBe(
+      "https://r2.example.com/wrong-scope",
+    );
+    expect(mixedDb.upserted).toHaveLength(1);
+  });
+
+  it("keeps the strict hard-expiry boundary with prefetched rows", async () => {
+    const issuedAt = new Date("2026-09-22T12:00:00.000Z");
+    const request = systemRequest("expiry-boundary");
+    const cacheKey = systemStoragePresignedUrlCacheKey(request);
+    const prefetchedRows: StorageManifestPresignedUrlCacheSnapshot = {
+      rowsByScope: new Map([
+        [
+          "system_storage",
+          new Map([
+            [
+              cacheKey,
+              {
+                cacheKey,
+                presignedUrl: "https://r2.example.com/expires-at-issued-at",
+                expiresAt: issuedAt,
+              },
+            ],
+          ]),
+        ],
+      ]),
+    };
+    const mixedDb = fakeMixedCacheDb([]);
+
+    const results = await withMockNowForTest(issuedAt, async () => {
+      return await createStore().get(
+        resolveSystemStoragePresignedUrls({
+          db: mixedDb.db,
+          requests: [request],
+          prefetchedRows,
+        }),
+      );
+    });
+
+    expect(results.get(cacheKey)?.status).toBe("miss");
+    expect(mixedDb.selectCount()).toBe(0);
+    expect(mixedDb.upserted).toHaveLength(1);
+  });
+
+  it("uses the mixed lookup only inside its hard cardinality bound", async () => {
+    const systemRequests = Array.from(
+      {
+        length: STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS - 1,
+      },
+      (_, index): SystemStoragePresignedUrlRequest => {
+        return {
+          bucket: "manifest-telemetry-test",
+          objectKey: `bounded/${index}/archive.tar.gz`,
+          storageVersionId: index.toString(16).padStart(64, "0"),
+          publicEndpoint: true,
+        };
+      },
+    );
+    const { workflow } = scopedRequests("bounded");
+    const atCapDb = fakeMixedCacheDb([]);
+    const store = createStore();
+
+    await expect(
+      store.get(
+        prefetchStorageManifestPresignedUrlCacheRows({
+          db: atCapDb.db,
+          input: {
+            systemRequests,
+            workflowSkillRequests: [workflow],
+            readOnlyRequests: [],
+            logicalLookupCount: 2,
+          },
+        }),
+      ),
+    ).resolves.toBeDefined();
+    expect(atCapDb.selectCount()).toBe(1);
+
+    const aboveCapDb = fakeMixedCacheDb([]);
+    await expect(
+      store.get(
+        prefetchStorageManifestPresignedUrlCacheRows({
+          db: aboveCapDb.db,
+          input: {
+            systemRequests: [
+              ...systemRequests,
+              systemRequest("bounded-overflow"),
+            ],
+            workflowSkillRequests: [workflow],
+            readOnlyRequests: [],
+            logicalLookupCount: 2,
+          },
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(aboveCapDb.selectCount()).toBe(0);
+
+    const singleGroupDb = fakeMixedCacheDb([]);
+    await expect(
+      store.get(
+        prefetchStorageManifestPresignedUrlCacheRows({
+          db: singleGroupDb.db,
+          input: {
+            systemRequests: [systemRequest("single-group")],
+            workflowSkillRequests: [],
+            readOnlyRequests: [],
+            logicalLookupCount: 1,
+          },
+        }),
+      ),
+    ).resolves.toBeUndefined();
+    expect(singleGroupDb.selectCount()).toBe(0);
+  });
+
+  it("records one failed mixed lookup without starting logical work", async () => {
+    const system = systemRequest("mixed-failure");
+    const { workflow } = scopedRequests("mixed-failure");
+    const failure = new Error("mixed lookup failed");
+    const mixedDb = fakeMixedCacheDb([], failure);
+    const timing = new RecordingTimingCollector();
+
+    await expect(
+      createStore().get(
+        prefetchStorageManifestPresignedUrlCacheRows({
+          db: mixedDb.db,
+          input: {
+            systemRequests: [system],
+            workflowSkillRequests: [workflow],
+            readOnlyRequests: [],
+            logicalLookupCount: 2,
+          },
+          observation: { timing, branch: "session_writeback" },
+        }),
+      ),
+    ).rejects.toThrow("mixed lookup failed");
+
+    expect(mixedDb.selectCount()).toBe(1);
+    expect(mixedDb.upserted).toStrictEqual([]);
+    expect(context.mocks.s3.getSignedUrl).not.toHaveBeenCalled();
+    expect(timing.recorded).toStrictEqual([
+      {
+        actionType: "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+        dimensions: {
+          storage_manifest_branch: "session_writeback",
+          storage_manifest_cache_requested_count_bucket: "2_4",
+          storage_manifest_cache_unique_key_count_bucket: "2_4",
+          storage_manifest_cache_logical_lookup_count_bucket: "2_4",
         },
       },
     ]);
