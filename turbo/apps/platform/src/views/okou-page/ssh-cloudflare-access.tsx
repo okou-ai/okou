@@ -1,3 +1,4 @@
+import type { ClipboardEvent } from "react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Plus } from "lucide-react";
@@ -201,6 +202,105 @@ export function AccessImpact({
   );
 }
 
+interface AccessCredentials {
+  readonly clientId: string;
+  readonly clientSecret: string;
+}
+
+function accessCredentialField(
+  headerName: string,
+): keyof AccessCredentials | null {
+  switch (headerName.toLowerCase()) {
+    case "cf-access-client-id": {
+      return "clientId";
+    }
+    case "cf-access-client-secret": {
+      return "clientSecret";
+    }
+    default: {
+      return null;
+    }
+  }
+}
+
+function validAccessCredential(value: string): boolean {
+  return (
+    value.length <= CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH &&
+    /^[\x21-\x7e]+$/u.test(value)
+  );
+}
+
+function accessCredentialsFromClipboard(
+  clipboard: string,
+): AccessCredentials | null {
+  const lines = clipboard.split(/\r\n|\n/u);
+  if (lines.at(-1) === "") {
+    lines.pop();
+  }
+  if (lines.length !== 2) {
+    return null;
+  }
+  let clientId: string | undefined;
+  let clientSecret: string | undefined;
+  for (const line of lines) {
+    const separator = line.indexOf(":");
+    if (separator === -1) {
+      return null;
+    }
+    const field = accessCredentialField(line.slice(0, separator));
+    const value = line.slice(separator + 1).replace(/^[\t ]*/u, "");
+    if (!field || !validAccessCredential(value)) {
+      return null;
+    }
+    if (field === "clientId") {
+      if (clientId !== undefined) {
+        return null;
+      }
+      clientId = value;
+    } else {
+      if (clientSecret !== undefined) {
+        return null;
+      }
+      clientSecret = value;
+    }
+  }
+  if (clientId === undefined || clientSecret === undefined) {
+    return null;
+  }
+  return {
+    clientId,
+    clientSecret,
+  };
+}
+
+function accessCredentialInput(
+  form: HTMLFormElement,
+  name: keyof AccessCredentials,
+): HTMLInputElement | null {
+  const input = form.elements.namedItem(name);
+  return input instanceof HTMLInputElement && input.type === "password"
+    ? input
+    : null;
+}
+
+function pasteAccessCredentials(event: ClipboardEvent<HTMLInputElement>) {
+  const credentials = accessCredentialsFromClipboard(
+    event.clipboardData.getData("text/plain"),
+  );
+  const form = event.currentTarget.form;
+  if (!credentials || !form) {
+    return;
+  }
+  const clientId = accessCredentialInput(form, "clientId");
+  const clientSecret = accessCredentialInput(form, "clientSecret");
+  if (!clientId || !clientSecret) {
+    return;
+  }
+  event.preventDefault();
+  clientId.value = credentials.clientId;
+  clientSecret.value = credentials.clientSecret;
+}
+
 export function AccessFields({
   config,
 }: {
@@ -262,6 +362,7 @@ export function AccessFields({
               maxLength={CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}
               autoComplete="new-password"
               spellCheck={false}
+              onPaste={pasteAccessCredentials}
             />
           </label>
           <label className="grid gap-2">
@@ -279,6 +380,7 @@ export function AccessFields({
               maxLength={CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}
               autoComplete="new-password"
               spellCheck={false}
+              onPaste={pasteAccessCredentials}
             />
           </label>
         </>

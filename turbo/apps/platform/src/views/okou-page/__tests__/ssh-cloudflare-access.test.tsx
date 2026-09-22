@@ -1,4 +1,5 @@
 import {
+  CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   sshCloudflareAccessContract,
   type SshCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -105,6 +106,15 @@ async function tokenFields(dialog: HTMLElement, name = config.name) {
     within(dialog).getByLabelText("Service Token Client Secret"),
     "test-client-secret",
   );
+}
+async function pasteTokenHeaders(
+  dialog: HTMLElement,
+  label: "Service Token Client ID" | "Service Token Client Secret",
+  clipboard: string,
+) {
+  const user = userEvent.setup();
+  await user.click(within(dialog).getByLabelText(label));
+  await user.paste(clipboard);
 }
 
 test.each(["host", "configuration"])(
@@ -222,6 +232,47 @@ test.each([0, 1, 2])(
   },
 );
 
+test("Raw and invalid token paste stays in the focused Access field", async () => {
+  await page();
+  click(getAction("radio", "Cloudflare Access"));
+  click(
+    await waitFor(() => {
+      return getAction("button", "Add Cloudflare Access");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog");
+  const clientId = within(dialog).getByLabelText("Service Token Client ID");
+  const clientSecret = within(dialog).getByLabelText(
+    "Service Token Client Secret",
+  );
+  await pasteTokenHeaders(dialog, "Service Token Client ID", "raw-client-id");
+  expect(clientId).toHaveValue("raw-client-id");
+  expect(clientSecret).toHaveValue("");
+
+  const incomplete = "CF-Access-Client-Id: incomplete-id";
+  await fill(clientId, "");
+  await fill(clientSecret, "kept-secret");
+  await pasteTokenHeaders(dialog, "Service Token Client ID", incomplete);
+  expect(clientId).toHaveValue(incomplete);
+  expect(clientSecret).toHaveValue("kept-secret");
+
+  const invalidPairs = [
+    "CF-Access-Client-Id: first-id\nCF-Access-Client-Id: duplicate-id",
+    "CF-Access-Client-Id: candidate-id\nX-Access-Client-Secret: unknown-secret",
+    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: candidate-secret\nextra",
+    "CF-Access-Client-Id: candidate-id\n\nCF-Access-Client-Secret: candidate-secret",
+    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: ",
+    "CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: non-ascii-密钥",
+    `CF-Access-Client-Id: candidate-id\nCF-Access-Client-Secret: ${"x".repeat(CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH + 1)}`,
+  ];
+  for (const clipboard of invalidPairs) {
+    await fill(clientId, "");
+    await fill(clientSecret, "kept-secret");
+    await pasteTokenHeaders(dialog, "Service Token Client ID", clipboard);
+    expect(clientSecret).toHaveValue("kept-secret");
+  }
+});
+
 test("Unknown lists are not empty, Direct does not wait for Access, and Retry initializes a failed list", async () => {
   const pendingAccess = context.mocks.deferred<void>();
   let failCredential = true;
@@ -299,10 +350,12 @@ test("Deactivating inline Access fields clears tokens without discarding the SSH
 
 test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into configured SSH", async () => {
   let configs: SshCloudflareAccessConfig[] = [];
+  const createRequests: unknown[] = [];
   context.mocks.api(sshCloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs });
   });
   context.mocks.api(sshCloudflareAccessContract.create, ({ body, respond }) => {
+    createRequests.push(body);
     const created = { ...config, name: body.name };
     configs = [created];
     return respond(201, created);
@@ -320,10 +373,31 @@ test("Cloudflare Access CRUD is inside SSH and never turns zero hosts into confi
   let dialog = await screen.findByRole("dialog", {
     name: "Add Cloudflare Access",
   });
-  await tokenFields(dialog);
+  await fill(within(dialog).getByLabelText("Name"), config.name);
+  await pasteTokenHeaders(
+    dialog,
+    "Service Token Client ID",
+    "cf-access-client-secret:\tcreated-secret\r\nCF-ACCESS-CLIENT-ID: created-id\r\n",
+  );
+  expect(within(dialog).getByLabelText("Service Token Client ID")).toHaveValue(
+    "created-id",
+  );
+  expect(
+    within(dialog).getByLabelText("Service Token Client Secret"),
+  ).toHaveValue("created-secret");
   const secret = within(dialog).getByLabelText("Service Token Client Secret");
   click(getAction("button", "Save", dialog));
   await screen.findByText("1 Cloudflare Access configured");
+  expect(createRequests).toStrictEqual([
+    {
+      id: expect.any(String),
+      name: config.name,
+      credentials: {
+        clientId: "created-id",
+        clientSecret: "created-secret",
+      },
+    },
+  ]);
   expect(secret).toHaveValue("");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   click(getAction("radio", "Hosts"));
@@ -493,6 +567,51 @@ test.each(
     expect(requests).toHaveLength(1);
   },
 );
+
+test("Pasted Access headers submit raw credentials with inline SSH creation", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, host);
+  });
+  await page(true);
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fill(within(dialog).getByLabelText("Display name"), host.displayName);
+  await fill(
+    within(dialog).getByLabelText("Public hostname or IP address"),
+    host.host,
+  );
+  click(getAction("radio", "Cloudflare Access", dialog));
+  await fill(await within(dialog).findByLabelText("Name"), config.name);
+  await pasteTokenHeaders(
+    dialog,
+    "Service Token Client ID",
+    "CF-Access-Client-Id: inline-id\nCF-Access-Client-Secret: inline-secret",
+  );
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: host.displayName,
+      host: host.host,
+      port: 443,
+      transport: {
+        type: "cloudflare_access",
+        create: {
+          name: config.name,
+          credentials: {
+            clientId: "inline-id",
+            clientSecret: "inline-secret",
+          },
+        },
+      },
+      credential: { id: credential.id },
+    },
+  ]);
+});
 
 test("A failed host save retains inline Access input for manual retry without a separate resource save", async () => {
   const hosts: unknown[] = [];
@@ -665,14 +784,17 @@ test("A token replacement conflict preserves input and needs explicit latest-ver
   await userEvent.click(
     within(dialog).getByRole("checkbox", { name: "Replace Service Token" }),
   );
-  await fill(
-    within(dialog).getByLabelText("Service Token Client ID"),
+  await pasteTokenHeaders(
+    dialog,
+    "Service Token Client Secret",
+    "CF-Access-Client-Id: replacement-id\nCF-Access-Client-Secret: replacement-secret",
+  );
+  expect(within(dialog).getByLabelText("Service Token Client ID")).toHaveValue(
     "replacement-id",
   );
-  await fill(
+  expect(
     within(dialog).getByLabelText("Service Token Client Secret"),
-    "replacement-secret",
-  );
+  ).toHaveValue("replacement-secret");
   click(getAction("button", "Save", dialog));
   await within(dialog).findByText("Renamed elsewhere");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
