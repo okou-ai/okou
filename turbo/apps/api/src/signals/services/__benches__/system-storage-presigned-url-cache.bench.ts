@@ -191,9 +191,12 @@ function backgroundRows(label: string): readonly CacheInsert[] {
   });
 }
 
-async function logQueryPlan(fixture: BenchFixture): Promise<void> {
+async function logQueryPlan(
+  fixture: BenchFixture,
+  pairCount: number,
+): Promise<void> {
   const db = store.set(writeDb$);
-  const pairs = fixture.pairs.slice(0, 17);
+  const pairs = fixture.pairs.slice(0, pairCount);
   const scopes = pairs.map((pair) => {
     return pair.scope;
   });
@@ -222,7 +225,9 @@ async function logQueryPlan(fixture: BenchFixture): Promise<void> {
     queryPlanRowSchema,
   );
   process.stdout.write(
-    `\n[bench-explain] storage cache mixed lookup, 17 exact pairs\n${plan
+    `\n[bench-explain] storage cache mixed lookup, ${String(
+      pairCount,
+    )} exact pairs\n${plan
       .map((row) => {
         return row["QUERY PLAN"];
       })
@@ -338,11 +343,15 @@ const ensureSeeded: () => Promise<ReadonlyMap<number, BenchFixture>> = (() => {
       ]);
       const db = store.set(writeDb$);
       await db.execute(sql`ANALYZE ${systemStoragePresignedUrlCache}`);
-      const planFixture = fixtures.get(17);
-      if (!planFixture) {
-        throw new Error("Missing 17-pair storage cache benchmark fixture");
+      for (const pairCount of [17, 500] as const) {
+        const planFixture = fixtures.get(pairCount);
+        if (!planFixture) {
+          throw new Error(
+            `Missing ${String(pairCount)}-pair storage cache benchmark fixture`,
+          );
+        }
+        await logQueryPlan(planFixture, pairCount);
       }
-      await logQueryPlan(planFixture);
       return fixtures;
     })();
     return cached;
