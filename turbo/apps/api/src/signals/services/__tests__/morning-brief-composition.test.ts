@@ -7,6 +7,8 @@ import {
   morningBriefSourceBudget,
   morningBriefSourceWaves,
   MORNING_BRIEF_COLLECTION_PHASE_MS,
+  MORNING_BRIEF_COMMIT_RESERVE_MS,
+  MORNING_BRIEF_NEW_READ_CUTOFF_MS,
   MORNING_BRIEF_MAX_CONCURRENT_SOURCES,
   MORNING_BRIEF_SOURCE_READ_RESERVE_MS,
   morningBriefSourceReadCutoff,
@@ -404,33 +406,40 @@ describe("source-fair request allocation", () => {
 describe("collection phase bounds", () => {
   const phaseStartedAt = new Date("2026-09-17T06:00:00.000Z");
 
-  it("admits reads through the whole phase and none at its deadline", () => {
+  it("stops admitting reads at the cutoff, not at the phase deadline", () => {
     const atCutoff = new Date(
-      phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS,
+      phaseStartedAt.getTime() + MORNING_BRIEF_NEW_READ_CUTOFF_MS,
     );
 
-    // The cutoff is the phase deadline itself: nothing is held back from
-    // collection, because there is no later phase to fund.
     expect(
       morningBriefMayStartRead(
         phaseStartedAt,
         new Date(atCutoff.getTime() - 1),
       ),
     ).toBeTruthy();
-    // Equality is expiry: a read starting exactly at the deadline has no time.
     expect(morningBriefMayStartRead(phaseStartedAt, atCutoff)).toBeFalsy();
+    // The commit reserve is what keeps these two instants apart: the attempt
+    // is still alive here, and that is where it finalizes.
+    expect(
+      morningBriefMayStartRead(
+        phaseStartedAt,
+        new Date(
+          phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS - 1,
+        ),
+      ),
+    ).toBeFalsy();
   });
 
   it("gives a source zero budget once the cutoff has passed", () => {
     const budget = morningBriefSourceBudget(
       "slack",
       phaseStartedAt,
-      new Date(phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS),
+      new Date(phaseStartedAt.getTime() + MORNING_BRIEF_NEW_READ_CUTOFF_MS),
     );
 
     expect(budget.maxRequests).toBe(0);
     expect(budget.deadlineAt.getTime()).toBe(
-      phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS,
+      phaseStartedAt.getTime() + MORNING_BRIEF_NEW_READ_CUTOFF_MS,
     );
   });
 
@@ -438,9 +447,9 @@ describe("collection phase bounds", () => {
     const at = new Date(phaseStartedAt.getTime() + 20_000);
     const budget = morningBriefSourceBudget("slack", phaseStartedAt, at);
 
-    // Slack's own ceiling is 30s, but only 20s of the phase remain.
+    // Slack's own ceiling is 30s, but only 23s of readable phase remain.
     expect(budget.deadlineAt.getTime()).toBe(
-      phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS,
+      phaseStartedAt.getTime() + MORNING_BRIEF_NEW_READ_CUTOFF_MS,
     );
   });
 
@@ -775,9 +784,13 @@ describe("truncation provenance", () => {
 });
 describe("declared bounds", () => {
   it("pins the documented collection and request ceilings", () => {
-    // The whole phase reads. The 5,000 ms once held back to fund a final
-    // authority check went back to collection when that check was removed.
     expect(MORNING_BRIEF_COLLECTION_PHASE_MS).toBe(45_000);
+    // The reserve funds the commit, not an authority check. It is the smallest
+    // value that keeps a read finishing one second past the cutoff inside the
+    // phase, which is what lets the attempt report its per-source facts
+    // instead of settling as deadline-exceeded.
+    expect(MORNING_BRIEF_COMMIT_RESERVE_MS).toBe(2000);
+    expect(MORNING_BRIEF_NEW_READ_CUTOFF_MS).toBe(43_000);
     expect(MORNING_BRIEF_MAX_CONCURRENT_SOURCES).toBe(3);
     expect(MORNING_BRIEF_REQUEST_MAX_BYTES).toBe(128 * 1024);
     expect(MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES).toBe(1024 * 1024);

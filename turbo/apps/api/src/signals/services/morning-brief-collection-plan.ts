@@ -20,15 +20,29 @@ import {
   type MorningBriefSourceKind,
 } from "./morning-brief-source-item";
 
-/**
- * The absolute collection phase, from admission to finalization COMMIT.
- *
- * It is also the point at which no new provider read is admitted. The phase
- * used to hold five seconds back from collection to fund a final authority
- * check at the end of it; there is no such check, because every request is
- * authorized before it is issued, so the whole phase belongs to reading.
- */
+/** The absolute collection phase, from admission to finalization COMMIT. */
 export const MORNING_BRIEF_COLLECTION_PHASE_MS = 45_000;
+
+/**
+ * Held back from reading so a started read can still be finalized.
+ *
+ * It funds the work between the last source answering and the COMMIT that
+ * makes the occurrence durable: the language-context read, the member locale
+ * read, request assembly and the instruction-version fence. It does **not**
+ * fund an authority check — every provider request is authorized before it is
+ * issued, and nothing re-asks afterwards.
+ *
+ * It is a reserve, not a grace period: a source read that has not started by
+ * the cutoff does not start at all, because a read that finishes after the
+ * commit window has nowhere to be finalized. Collapsing it to zero is what
+ * makes a read admitted at 44.9 s settle the attempt as `deadline-exceeded`
+ * instead of reporting the per-source facts it actually established.
+ */
+export const MORNING_BRIEF_COMMIT_RESERVE_MS = 2000;
+
+/** No new provider read is admitted at or after this point in the phase. */
+export const MORNING_BRIEF_NEW_READ_CUTOFF_MS =
+  MORNING_BRIEF_COLLECTION_PHASE_MS - MORNING_BRIEF_COMMIT_RESERVE_MS;
 
 /**
  * Held back inside **one source's** own budget so it can stop by its own clock.
@@ -42,8 +56,8 @@ export const MORNING_BRIEF_COLLECTION_PHASE_MS = 45_000;
  * already returned successfully.
  *
  * So the last stretch of every source budget belongs to finishing, not to
- * reading. New provider reads stop here; the release proof, the release fence
- * and the bundle projection spend what is left, and the source hands back the
+ * reading. New provider reads stop here; the bundle projection that turns a
+ * read into a collection spends what is left, and the source hands back the
  * partial evidence it really holds.
  */
 export const MORNING_BRIEF_SOURCE_READ_RESERVE_MS = 3000;
@@ -151,7 +165,7 @@ export function morningBriefSourceBudget(
   at: Date,
   occurrenceDeadlineAt: Date | null = null,
 ): MorningBriefSourceBudget {
-  const cutoffAt = phaseStartedAt.getTime() + MORNING_BRIEF_COLLECTION_PHASE_MS;
+  const cutoffAt = phaseStartedAt.getTime() + MORNING_BRIEF_NEW_READ_CUTOFF_MS;
   const occurrenceLimit =
     occurrenceDeadlineAt === null ? Infinity : occurrenceDeadlineAt.getTime();
   const admitted = at.getTime() < cutoffAt && at.getTime() < occurrenceLimit;
@@ -182,7 +196,7 @@ export function morningBriefMayStartRead(
     return false;
   }
   return (
-    at.getTime() - phaseStartedAt.getTime() < MORNING_BRIEF_COLLECTION_PHASE_MS
+    at.getTime() - phaseStartedAt.getTime() < MORNING_BRIEF_NEW_READ_CUTOFF_MS
   );
 }
 

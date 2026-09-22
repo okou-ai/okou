@@ -107,9 +107,9 @@ unconfigured or failed, never as a quiet morning.
 | Bound                                        | Value                                                                                                                              |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Collection phase, admission to COMMIT        | 45 s                                                                                                                               |
-| Final checks and guarded commit reserve      | 5 s                                                                                                                                |
+| Guarded commit reserve                       | 2 s                                                                                                                                |
 | Per-source read reserve                      | the smaller of 3 s and a quarter of that source's remaining budget                                                                 |
-| New provider read cutoff                     | 40 s into the phase                                                                                                                |
+| New provider read cutoff                     | 43 s into the phase                                                                                                                |
 | Concurrent source jobs                       | 3, in the fixed order below                                                                                                        |
 | Fixed source order                           | calendar, gmail, github, slack, chat                                                                                               |
 | Per-source ceilings                          | gmail 20 s/44 reads, calendar 20 s/18 reads, github 20 s/24 reads, slack 30 s/40 reads, chat 15 s plus its own SQL/row/text bounds |
@@ -119,10 +119,15 @@ unconfigured or failed, never as a quiet morning.
 | Accepted rendered result                     | 32 KiB                                                                                                                             |
 
 The phase, the attempt's lease and each source's own ceiling are three upper
-bounds on the same read, and the tightest one wins. The 5-second reserve is not
-a grace period: a source that has not started by the 40-second cutoff does not
+bounds on the same read, and the tightest one wins. The 2-second reserve is not
+a grace period: a source that has not started by the 43-second cutoff does not
 start at all, because a read finishing after the commit window has nowhere to be
-finalized. Cancellation stops new admissions and joins work already owned —
+finalized. It funds the language-context read, the member locale read, request
+assembly and the instruction-version fence — the work between the last source
+answering and the COMMIT. It has never funded an authority check since #35949,
+and collapsing it to zero is what makes a read admitted at 44.9 s settle the
+attempt as `deadline-exceeded` instead of reporting the per-source facts it
+established. Cancellation stops new admissions and joins work already owned —
 there are no detached readers, no sleeping retries and no unbounded queue.
 
 Each source holds a second reserve inside its own budget, and it protects the
@@ -145,7 +150,7 @@ strictly later than the signal that cancels the source — the graceful path was
 unreachable by construction.
 
 So new provider reads stop at the read cutoff and the rest of the budget pays
-for the bundle projection that turns a read into a bundle. The reserve
+for the bundle projection that turns a read into a collection. The reserve
 is a share of what is actually left rather than a flat subtraction: taking three
 seconds from a one-second budget would put the cutoff at the moment the source
 was asked, and a source that is out of time before its first read would report a
@@ -470,6 +475,11 @@ in memory for the attempt and nothing about a source's authority outlives it.
 written; both are nullable, so ceasing to write them needs no migration, and
 dropping the columns is a separate follow-up (#35950) that may only run once
 this change is in production.
+
+The phase reserve that once funded the post-read authority check survives at a
+smaller size as the commit reserve, because it also protected finalization: a
+read admitted in the last instant of the phase has to have somewhere to be
+finalized.
 
 Old result versions keep their explicit handling. No default fabricates healthy
 coverage, byte sizes, source authority or a language. The source set, the model
