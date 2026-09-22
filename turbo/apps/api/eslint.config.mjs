@@ -697,6 +697,10 @@ export default [
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
+      // Duplicate official repository aliases and non-system bindings are
+      // infrastructure-created persisted states with no production API. The
+      // cron route suite owns normal storage-resolution behavior.
+      "src/signals/services/__tests__/official-skill-storage.service.test.ts",
       // Pending guard coexistence, repair and row-lock races require private
       // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
@@ -891,6 +895,10 @@ export default [
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
+      // Duplicate official repository aliases and non-system bindings are
+      // infrastructure-created persisted states with no production API. The
+      // cron route suite owns normal storage-resolution behavior.
+      "src/signals/services/__tests__/official-skill-storage.service.test.ts",
       // Pending guard coexistence, repair and row-lock races require private
       // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
