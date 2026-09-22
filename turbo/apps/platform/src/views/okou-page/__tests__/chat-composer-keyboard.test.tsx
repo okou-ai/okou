@@ -321,39 +321,45 @@ test("Use the appropriate Enter behavior on touch devices", async () => {
   await expectSentPrompt("Send with the hardware shortcut");
 });
 
-test("Chrome Android accepts a hardware send shortcut without sending IME Enter", async () => {
-  const user = userEvent.setup({ delay: null });
-  const sentPrompts: string[] = [];
-  context.mocks.browser.userAgent(
-    "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36",
-  );
-  context.mocks.browser.matchMedia((query) => {
-    return query === "(pointer: coarse)";
-  });
-  installTouchViewport();
-  installComposerChat(sentPrompts, "enter");
-  await setupPage({
-    context,
-    path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
-  });
+test.each(["{Control>}{Enter}{/Control}", "{Enter}"])(
+  "Chrome Android accepts hardware %s without sending IME Enter",
+  async (shortcut) => {
+    const user = userEvent.setup({ delay: null });
+    const sentPrompts: string[] = [];
+    context.mocks.browser.userAgent(
+      "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36",
+    );
+    context.mocks.browser.matchMedia((query) => {
+      return query === "(pointer: coarse)";
+    });
+    const viewport = installTouchViewport();
+    installComposerChat(sentPrompts, "enter");
+    await setupPage({
+      context,
+      path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
+    });
 
-  const editor = await loadNewChatComposer();
-  await fill(editor, "Hardware keyboard draft");
-  fireEvent.keyDown(editor, {
-    code: "Enter",
-    ctrlKey: true,
-    isComposing: true,
-    key: "Enter",
-    keyCode: 229,
-  });
-  expect(editor).toHaveTextContent("Hardware keyboard draft");
-  await user.keyboard("{Control>}{Enter}{/Control}");
-  await waitFor(() => {
-    expect(sentPrompts).toStrictEqual(["Hardware keyboard draft"]);
-  });
-  await expectSentPrompt("Hardware keyboard draft");
-  await expectAgentWorking();
-});
+    const editor = await loadNewChatComposer();
+    await fill(editor, "Hardware keyboard draft");
+    fireEvent.keyDown(editor, {
+      code: "Enter",
+      ctrlKey: true,
+      isComposing: true,
+      key: "Enter",
+      keyCode: 229,
+    });
+    expect(editor).toHaveTextContent("Hardware keyboard draft");
+    if (shortcut === "{Enter}") {
+      viewport.closeSoftwareKeyboard();
+    }
+    await user.keyboard(shortcut);
+    await waitFor(() => {
+      expect(sentPrompts).toStrictEqual(["Hardware keyboard draft"]);
+    });
+    await expectSentPrompt("Hardware keyboard draft");
+    await expectAgentWorking();
+  },
+);
 
 test("Treat whitespace as an empty message", async () => {
   const sentPrompts: string[] = [];

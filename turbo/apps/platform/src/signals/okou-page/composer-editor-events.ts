@@ -28,13 +28,12 @@ export function createComposerEditorEvents(editor: Editor) {
             ...handleDOMEvents,
             keydown: (view, event) => {
               // ProseMirror skips handleKeyDown for every Chrome Android Enter
-              // (including hardware Ctrl-Enter). Its native DOM hook still runs
+              // (including hardware send shortcuts). Its native DOM hook runs
               // after NodeView stopEvent and requires explicit cancellation.
               if (
                 /Android \d/.test(navigator.userAgent) &&
                 /Chrome\/\d/.test(navigator.userAgent) &&
                 event.key === "Enter" &&
-                (event.ctrlKey || event.metaKey) &&
                 !view.composing &&
                 handlers.keyDown(event)
               ) {
