@@ -345,6 +345,52 @@ test("Replace an inline template after sending a message", async () => {
   expect(structuredTemplateReferences()[0]).toHaveTextContent(first.title);
 });
 
+test.each(["{Enter}", " "])(
+  "An inline template owns paste and %s without submitting the draft",
+  async (activationKey) => {
+    const first = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+    const replacement = PRESENTATION_TEMPLATE_PICKER_ITEMS[2];
+    if (!first || !replacement) {
+      throw new Error("Expected presentation templates to insert and replace");
+    }
+    mockAgent();
+    mockThread();
+    installWorkflows(() => {
+      return [];
+    });
+    await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+    const user = userEvent.setup({ delay: null });
+    const editor = await findComposerEditor();
+    await fill(editor, "Review this draft");
+    await selectTemplate(first);
+    const inlineTemplate = composerInlineTemplates()[0];
+    if (!inlineTemplate) {
+      throw new Error("Expected an inline template to replace");
+    }
+    const button = queryAllByRoleFast("button", inlineTemplate)[0];
+    if (!button) {
+      throw new Error("Expected the inline template button");
+    }
+    button.focus();
+    expect(button).toHaveFocus();
+    await user.paste("Unrelated clipboard content");
+    await user.keyboard(activationKey);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(editor).toHaveTextContent("Review this draft");
+    expect(editor).not.toHaveTextContent("Unrelated clipboard content");
+    click(
+      within(dialog).getByLabelText(`Select template ${replacement.title}`),
+    );
+    await waitFor(() => {
+      expect(composerInlineTemplates()[0]).toHaveTextContent(replacement.title);
+    });
+    expect(structuredTemplateReferences()).toHaveLength(0);
+    expect(editor).toHaveTextContent("Review this draft");
+  },
+);
+
 test("Dismiss workflow suggestions without losing the query", async () => {
   mockAgent();
   mockThread();

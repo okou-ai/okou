@@ -40,6 +40,7 @@ import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
 import { onRef, resetSignal } from "../utils.ts";
+import { createComposerEditorEvents } from "./composer-editor-events.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
   createComposerFeedbackModel,
@@ -193,6 +194,7 @@ export interface WorkflowComposerSubmissionSnapshot {
 
 export interface WorkflowComposerSignals {
   readonly editor: Editor;
+  readonly events: ReturnType<typeof createComposerEditorEvents>;
   readonly templatePreview: TemplatePreviewRuntime;
   readonly setContainerRef$: Command<
     (() => void) | undefined,
@@ -2975,7 +2977,6 @@ export function createWorkflowComposerSignals<
     activeChatThreadSuggestionRange$,
   );
   const textCommands = createInsertTextCommands(editor);
-  const insertUserMessage$ = createInsertUserMessageCommand(editor);
   const readInputForSubmission$ = createReadInputForSubmissionCommand(
     editor,
     compositionGate,
@@ -2984,6 +2985,7 @@ export function createWorkflowComposerSignals<
     editor,
     templatePreview,
     setContainerRef$,
+    events: createComposerEditorEvents(editor),
     focus$,
     hasInput$: computed((get) => {
       return get(draft.hasInput$) || get(feedback.active$);
@@ -3007,7 +3009,7 @@ export function createWorkflowComposerSignals<
     ...suggestionInsertionCommands,
     ...textCommands,
     ...templates.commands,
-    insertUserMessage$,
+    insertUserMessage$: createInsertUserMessageCommand(editor),
     readInputForSubmission$,
     feedback: feedback.signals,
   };

@@ -269,7 +269,11 @@ export function ChatForwardDialog({
   return (
     <Dialog
       open
-      onOpenChange={(open) => {
+      onOpenChange={(open, details) => {
+        if (details.reason === "escape-key" && details.event.defaultPrevented) {
+          details.cancel();
+          return;
+        }
         if (!open) {
           onDismiss();
         }

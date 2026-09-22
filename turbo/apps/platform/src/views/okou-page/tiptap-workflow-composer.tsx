@@ -7,7 +7,7 @@ import {
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
-import { Popover, type KeyboardEventLike } from "@okouai/ui";
+import { Popover } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { i18n } from "../../i18n/index.ts";
@@ -37,8 +37,6 @@ import {
   type SlashTemplateCategory,
   type SlashTemplatePreview,
 } from "./composer-template-catalog.ts";
-import type { ComposerPasteEvent } from "./composer-input-types.ts";
-
 import { composerCreatePlaceholder } from "../../signals/okou-page/composer-create.ts";
 
 function isMacKeyboard(): boolean {
@@ -194,8 +192,8 @@ interface TiptapWorkflowComposerProps {
   readonly signals: ComposerSignals;
   readonly onDraftChange: (() => void) | undefined;
   readonly sending: boolean | undefined;
-  readonly onKeyDown: (event: KeyboardEventLike) => void;
-  readonly onPaste: (event: ComposerPasteEvent) => void;
+  readonly onKeyDown: (event: KeyboardEvent) => boolean;
+  readonly onPaste: (clipboardData: DataTransfer | null) => boolean;
 }
 
 interface ComposerKeyDownContext {
@@ -209,14 +207,7 @@ interface ComposerKeyDownContext {
   readonly closeSuggestionMenu: () => void;
   readonly selectSuggestion: (index: number) => void;
   readonly scrollSuggestionIntoView: (index: number) => void;
-  readonly onKeyDown: (event: KeyboardEventLike) => void;
-}
-
-function eventTargetsNonEditableNodeView(event: Event): boolean {
-  return (
-    event.target instanceof Element &&
-    event.target.closest('[contenteditable="false"]') !== null
-  );
+  readonly onKeyDown: (event: KeyboardEvent) => boolean;
 }
 
 function shouldRemoveSelectedTask(
@@ -231,21 +222,14 @@ function shouldRemoveSelectedTask(
   );
 }
 
-function handleComposerKeyDownCapture(
+function handleComposerKeyDown(
   event: KeyboardEvent,
   context: ComposerKeyDownContext,
 ): boolean {
-  // ProseMirror normally gives node views first ownership through stopEvent.
-  // React capture runs earlier, so preserve that boundary for their controls.
-  if (eventTargetsNonEditableNodeView(event)) {
+  if (event.isComposing || event.keyCode === 229) {
     return false;
   }
-  if (event.isComposing || event.keyCode === 229) {
-    context.onKeyDown(event);
-    return event.defaultPrevented;
-  }
   if (shouldRemoveSelectedTask(event, context)) {
-    event.preventDefault();
     context.selectTask(null);
     return true;
   }
@@ -256,25 +240,21 @@ function handleComposerKeyDownCapture(
     !event.ctrlKey &&
     !event.altKey
   ) {
-    event.preventDefault();
-    context.composer.editor.editor.commands.splitBlock();
-    return true;
+    return context.composer.editor.editor.commands.splitBlock();
   }
   const lineNavigationPos = resolveMacControlLineNavigation(
     context.composer.editor.editor,
     event,
   );
   if (lineNavigationPos !== null) {
-    event.preventDefault();
-    context.composer.editor.editor.commands.setTextSelection(lineNavigationPos);
-    return true;
+    return context.composer.editor.editor.commands.setTextSelection(
+      lineNavigationPos,
+    );
   }
   if (!context.showSuggestionMenu) {
-    context.onKeyDown(event);
-    return event.defaultPrevented;
+    return context.onKeyDown(event);
   }
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-    event.preventDefault();
     const delta = event.key === "ArrowDown" ? 1 : -1;
     const next = Math.max(
       0,
@@ -291,19 +271,16 @@ function handleComposerKeyDownCapture(
     (event.key === "Enter" || event.key === "Tab") &&
     context.suggestionCount > 0
   ) {
-    event.preventDefault();
     context.selectSuggestion(
       Math.min(context.selectedSuggestionIndex, context.suggestionCount - 1),
     );
     return true;
   }
   if (event.key === "Escape") {
-    event.preventDefault();
     context.closeSuggestionMenu();
     return true;
   }
-  context.onKeyDown(event);
-  return event.defaultPrevented;
+  return context.onKeyDown(event);
 }
 
 interface ComposerSuggestionMenuState {
@@ -554,7 +531,7 @@ function useComposerSuggestionMenu({
   onKeyDown,
 }: {
   readonly composer: ComposerSignals;
-  readonly onKeyDown: (event: KeyboardEventLike) => void;
+  readonly onKeyDown: (event: KeyboardEvent) => boolean;
 }): ComposerSuggestionMenuState {
   const slashRange = useGet(composer.suggestion.activeSlashRange$);
   const selectedTask = useGet(composer.taskChips.task$);
@@ -620,7 +597,7 @@ function useComposerSuggestionMenu({
   }
 
   function handleKeyDown(event: KeyboardEvent): boolean {
-    return handleComposerKeyDownCapture(event, {
+    return handleComposerKeyDown(event, {
       composer,
       selectedTask,
       selectTask,
@@ -668,33 +645,21 @@ function useComposerSuggestionMenu({
 function useComposerPasteHandler(
   composer: ComposerSignals,
   onPaste: TiptapWorkflowComposerProps["onPaste"],
-): (event: ClipboardEvent, currentTarget: HTMLElement) => boolean {
+): (event: ClipboardEvent) => boolean {
   const insertPromptMarkdown = useSet(composer.editor.insertPromptMarkdown$);
 
-  return function handlePaste(event, currentTarget) {
-    if (eventTargetsNonEditableNodeView(event)) {
-      return false;
-    }
+  return function handlePaste(event) {
     const clipboardData = event.clipboardData;
-    const preventedBeforeHandler = event.defaultPrevented;
-    onPaste({
-      clipboardData,
-      currentTarget,
-      preventDefault: () => {
-        event.preventDefault();
-      },
-    });
-    if (!preventedBeforeHandler && event.defaultPrevented) {
+    if (onPaste(clipboardData)) {
       return true;
     }
     const plainText =
       clipboardData?.getData("text/plain") || clipboardData?.getData("text");
     if (plainText) {
-      event.preventDefault();
       insertPromptMarkdown(plainText);
       return true;
     }
-    return event.defaultPrevented;
+    return false;
   };
 }
 
@@ -711,6 +676,8 @@ export function TiptapWorkflowComposer({
     onKeyDown,
   });
   const handlePaste = useComposerPasteHandler(composer, onPaste);
+  const commitHandlers = useSet(composer.editor.events.commit$);
+  const mountHandlersRef = useSet(composer.editor.events.mountRef$);
   const setContainerRef = useSet(composer.editor.setContainerRef$);
   const setSuggestionMenuRef = useSet(
     composer.suggestion.setSuggestionMenuRef$,
@@ -725,7 +692,21 @@ export function TiptapWorkflowComposer({
         }
       }}
     >
-      <div className="relative flex min-h-full flex-col">
+      <div
+        className="relative flex min-h-full flex-col"
+        // A fresh ref commits the latest callbacks to ProseMirror. Its onRef
+        // cleanup releases only these bindings; the editor's own ref is stable.
+        ref={(element) => {
+          if (!element) {
+            return;
+          }
+          commitHandlers({
+            keyDown: suggestionMenu.handleKeyDown,
+            paste: handlePaste,
+          });
+          return mountHandlersRef(element);
+        }}
+      >
         <WorkflowComposerPlaceholder composer={composer} sending={sending} />
         <div
           // The composer card owns responsive height allocation so its footer
@@ -765,22 +746,6 @@ export function TiptapWorkflowComposer({
             // changes; native contenteditable input targets ProseMirror.
             if (event.target === event.currentTarget) {
               onDraftChange?.();
-            }
-          }}
-          onKeyDownCapture={(event) => {
-            const nativeEvent = event.nativeEvent;
-            const handled = suggestionMenu.handleKeyDown(nativeEvent);
-            if (handled || nativeEvent.defaultPrevented) {
-              event.stopPropagation();
-            }
-          }}
-          onPasteCapture={(event) => {
-            const handled = handlePaste(
-              event.nativeEvent,
-              composer.editor.editor.view.dom,
-            );
-            if (handled) {
-              event.stopPropagation();
             }
           }}
         />

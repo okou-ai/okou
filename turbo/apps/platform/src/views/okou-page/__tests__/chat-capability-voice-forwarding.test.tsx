@@ -2,6 +2,7 @@ import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft"
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { openDB, type DBSchema } from "idb";
 import { HttpResponse } from "msw";
 import { expect, test, vi, describe, beforeEach, it } from "vitest";
@@ -76,6 +77,51 @@ async function openForwardComposer(name: string) {
   ).resolves.toBeInTheDocument();
   return dialog;
 }
+
+test.each(targets)(
+  "Escape dismisses a forwarded $target suggestion before the dialog and replacement editor keeps native handlers",
+  async ({ name }) => {
+    const user = userEvent.setup({ delay: null });
+    installVoiceBoundaries();
+    await setupPage({ context, path: RUN_PATH });
+    await findEnabledButton("Voice input");
+    const dialog = await openForwardComposer(name);
+    const editor = within(dialog).getByRole("textbox", {
+      name: "Add a message",
+    });
+    await user.click(editor);
+    await user.keyboard("/");
+    await expect(
+      screen.findByTestId("slash-workflow-menu"),
+    ).resolves.toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    });
+    expect(dialog).toBeInTheDocument();
+    expect(editor).toHaveTextContent("/");
+
+    click(await findEnabledButton("Back", dialog));
+    click(await within(dialog).findByRole("option", { name }));
+    const replacement = await within(dialog).findByRole("textbox", {
+      name: "Add a message",
+    });
+    await user.click(replacement);
+    await user.paste("Replacement draft");
+    await user.keyboard("{Shift>}{Enter}{/Shift}Second line");
+    expect(replacement).toHaveTextContent("Replacement draft");
+    expect(replacement).toHaveTextContent("Second line");
+    expect(replacement.querySelectorAll("p")).toHaveLength(2);
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeInTheDocument();
+    expect(replacement).not.toHaveFocus();
+
+    click(await findEnabledButton("Close", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  },
+);
 
 async function uploadedAudio(request: Request) {
   const form = await request.formData();
