@@ -231,6 +231,97 @@ test("A bare relative permission beside another link keeps punctuation and prose
   expectNodeBefore(reference!, card);
 });
 
+test("Bare actions recognize typographic delimiters without losing their labels", async () => {
+  const relativePermissionUrl =
+    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
+  await setupChat(
+    [
+      `Dev：${PERMISSION_URL}`,
+      `Prod:${PERMISSION_URL}`,
+      `Docs(${CONNECTOR_URL})`,
+      `说明【${PERMISSION_URL}】`,
+      `Status—${CONNECTOR_URL}`,
+      `Next→${PERMISSION_URL}`,
+      `🔐${CONNECTOR_URL}`,
+      `Relative：${relativePermissionUrl}`,
+    ].join("\n\n"),
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByTestId("permission-action-card")).toHaveLength(5);
+    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(3);
+  });
+  for (const label of [
+    "Dev：",
+    "Prod:",
+    "Docs()",
+    "说明【】",
+    "Status—",
+    "Next→",
+    "🔐",
+    "Relative：",
+  ]) {
+    expect(screen.getByText(label)).toBeInTheDocument();
+  }
+  expect(
+    Array.from(
+      document.querySelectorAll(
+        '[data-testid="permission-action-card"], [data-testid="connector-action-card"]',
+      ),
+      (card) => {
+        return (card as HTMLElement).dataset.testid;
+      },
+    ),
+  ).toStrictEqual([
+    "permission-action-card",
+    "permission-action-card",
+    "connector-action-card",
+    "permission-action-card",
+    "connector-action-card",
+    "permission-action-card",
+    "connector-action-card",
+    "permission-action-card",
+  ]);
+  expect(
+    queryAllByRoleFast("link").some((link) => {
+      return [PERMISSION_URL, CONNECTOR_URL, relativePermissionUrl].includes(
+        link.getAttribute("href") ?? "",
+      );
+    }),
+  ).toBeFalsy();
+});
+
+test("Action-looking URLs embedded in structural text remain content", async () => {
+  const relativePermissionUrl =
+    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
+  const externalUrl = `https://example.com/redirect?next=${PERMISSION_URL}`;
+  await setupChat(
+    [
+      `Word: prefix${PERMISSION_URL}`,
+      `Identifier: prefix_${PERMISSION_URL}`,
+      `Path: /docs/${PERMISSION_URL}`,
+      `Assignment: next=${PERMISSION_URL}`,
+      `Query: ?next=${PERMISSION_URL}`,
+      `Address: user@${PERMISSION_URL}`,
+      `Relative path: docs/${relativePermissionUrl}`,
+      `[Outer URL](${externalUrl})`,
+    ].join("\n\n"),
+  );
+
+  await screen.findByText(/Word: prefix/u);
+  expect(screen.queryByTestId("permission-action-card")).toBeNull();
+  expect(screen.getByText(/Identifier: prefix_/u)).toBeInTheDocument();
+  expect(screen.getByText(/Path: \/docs\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Assignment: next=/u)).toBeInTheDocument();
+  expect(screen.getByText(/Query: \?next=/u)).toBeInTheDocument();
+  expect(screen.getByText(/Address: user@/u)).toBeInTheDocument();
+  expect(screen.getByText(/Relative path: docs\//u)).toBeInTheDocument();
+  const outerLink = queryAllByRoleFast("link").find((link) => {
+    return link.textContent === "Outer URL";
+  });
+  expect(outerLink).toHaveAttribute("href", externalUrl);
+});
+
 test("A bare action stops before adjacent Chinese punctuation and prose", async () => {
   await setupChat(`Please connect ${CONNECTOR_URL}。然后继续查看说明。`);
 

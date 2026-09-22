@@ -153,7 +153,9 @@ const PLATFORM_FILE_CDN_HOSTS = [
 ] as const;
 const HOSTED_SITE_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
 const URL_TOKEN_PATTERN = String.raw`(?:https?:\/\/|\/(?:agents|f|artifacts|browsers)\/|\/browser\/actions\/|\/mail\/drafts\/|\/\?settings=billing&billingView=)[^\s<>"'()（）【】《》「」『』“”‘’，。；：！？、]+`;
-const URL_TOKEN_OPENING_PREFIX_PATTERN = /^[({<"'“‘（【《「『[]*$/u;
+const URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN =
+  /^[\p{Pd}\p{Pe}\p{Pf}\p{Pi}\p{Po}\p{Ps}\p{Sm}\p{So}]$/u;
+const URL_TOKEN_EMBEDDING_DELIMITER_PATTERN = /^[/\\_=&%+@#?]$/u;
 const MARKDOWN_LINK_TOKEN_PREFIX_PATTERN = /\[[^\]\n]+\]\($/u;
 
 // URL.canParse is unavailable on iOS Safari < 17. Instead of relying on it (or
@@ -635,8 +637,19 @@ function hasUrlTokenBoundary(value: string, index: number): boolean {
     return true;
   }
 
-  const tokenPrefix = /\S*$/u.exec(prefix)?.[0] ?? "";
-  return URL_TOKEN_OPENING_PREFIX_PATTERN.test(tokenPrefix);
+  const previousCodePoint = /[\s\S]$/u.exec(prefix)?.[0] ?? "";
+  if (!previousCodePoint || /\s/u.test(previousCodePoint)) {
+    return true;
+  }
+
+  // Marked splits both `label：https://...` and `prefixhttps://...` into a
+  // text token followed by a link token. Accept language-independent
+  // typographic delimiters, but keep path, assignment, query and address
+  // connectors embedded in their original content.
+  return (
+    URL_TOKEN_TYPOGRAPHIC_DELIMITER_PATTERN.test(previousCodePoint) &&
+    !URL_TOKEN_EMBEDDING_DELIMITER_PATTERN.test(previousCodePoint)
+  );
 }
 
 function createBrowserUserActionBlock(
