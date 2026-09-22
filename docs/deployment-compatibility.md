@@ -1271,14 +1271,23 @@ Only post-spawn background work reads these records; foreground lookup probes po
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
 
-For an ordinary archive hit, optional decoded warming is omitted when this
+For an eligible archive hit, optional decoded warming is omitted when this
 plan's existing foreground lookup already validated positive decoded contents,
-even if mount or payload admission did not select them for delivery. This
-observation belongs only to that prepared plan and adds no lookup or retained
-file contents. A missing compressed archive still selects its required fill;
-later plans perform their own positive lookup, so GC eviction cannot become a
-permanent warming exclusion. Unobserved positive entries retain the existing
-background checks.
+even if mount or payload admission did not select them for delivery. Eligible
+consumers are ordinary storage downloads and fresh, non-empty artifact downloads
+with complete storage name, storage ID and version identity plus an archive
+source. Instructions, reused paths, empty entries and artifacts without that
+complete identity retain archive delivery. This observation belongs only to that
+prepared plan and adds no lookup or retained file contents. A missing compressed
+archive still selects its required fill; later plans perform their own positive
+lookup, so GC eviction cannot become a permanent warming exclusion. Unobserved
+positive entries retain the existing background checks.
+
+Artifact decoded selection has the same fail-closed boundary as storage:
+missing, busy, rejected, conflicting or capacity-ineligible optional cache work
+keeps the original archive path, while malformed present data, cache I/O,
+cancellation or direct-write failure is explicit failure. Once Guest mutation
+starts, the retained archive URL is metadata and is not replayed as recovery.
 
 After Agent spawn, ordinary warm-source candidates can pass through one
 runner-owned classification batch of at most 16 keys before queue admission.
@@ -1309,13 +1318,16 @@ still share the 15 MiB payload and 1,024-mount limits across the entire run.
 
 After source resolution, a combined manifest that fits uses one Guest operation.
 An oversized combined manifest is composed into bounded existing-format
-requests: ordinary storage, artifacts, reused paths and all cleanup run first;
-decoded-only batches follow without repeating cleanup. The Runner validates
-decoded bindings against the complete manifest before partitioning, and the
-Guest validates each binary request. Every batch retains the existing 64 KiB
-manifest and 15 MiB payload limits, real source URLs and file/path validation.
-All batches are encoded before the first storage-apply operation, and a failure stops
-later batches and prevents Agent spawn. The existing non-transactional partial
+requests: ordinary storage, unselected artifacts, reused paths and all cleanup
+run first; decoded storage and artifact batches follow without repeating cleanup.
+The Runner validates decoded bindings against the complete manifest before
+partitioning, and the Guest validates each binary request. Decoded artifact
+batches preserve the canonical artifact storage ID, archive source, writeback,
+fingerprints and missing-root policy fields; only their bytes arrive through the
+private decoded-files input. Every batch retains the existing 64 KiB manifest
+and 15 MiB payload limits, real source URLs and file/path validation. All batches
+are encoded before the first storage-apply operation, and a failure stops later
+batches and prevents Agent spawn. The existing non-transactional partial
 filesystem-change semantics remain; multiple requests do not imply rollback.
 Oversized ordinary JSON retains its existing manifest-file transport. No API,
 wire shape, persisted cache format, archive eligibility or generic stdin limit
@@ -1369,10 +1381,11 @@ files. GC can independently evict either format after those locks are released.
 
 Conversion alone does not delete an archive: a never-used converted entry may
 retain both formats until direct use or GC. Old Runners, rollback, instructions,
-artifacts and other archive-required consumers keep their original delivery and
-may refill a compressed cache miss. Queued archive-fill demand takes precedence
-over queued retirement for the same identity. This is use-driven best-effort
-cleanup, not a guarantee of exactly one representation across mixed consumers.
+ineligible artifacts and other archive-required consumers keep their original
+delivery and may refill a compressed cache miss. Queued archive-fill demand takes
+precedence over queued retirement for the same identity. This is use-driven
+best-effort cleanup, not a guarantee of exactly one representation across mixed
+consumers.
 
 Positive lookup includes a metadata-only archive-existence hint for maintenance
 admission. Already retired entries do not consume the background queue again,
