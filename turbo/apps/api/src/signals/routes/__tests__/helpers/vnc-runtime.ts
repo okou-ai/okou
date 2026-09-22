@@ -3,6 +3,7 @@ import {
   runnerVncContract,
   type RunnerVncResolveRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
+import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
@@ -16,6 +17,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
 import { runnerVncRoutes } from "../../runner-vnc";
+import { sshAccessRoutes } from "../../ssh-access";
 import { testSshConnectionStateRoutes } from "../../test-ssh-connection-state";
 import { testVncAuthorityStateRoutes } from "../../test-vnc-authority-state";
 import { vncAccessRoutes } from "../../vnc-access";
@@ -103,14 +105,14 @@ export function createVncRuntimeApi(context: TestContext) {
       agentVncAccessContract,
     );
   };
+  const sshAccess = () => {
+    return setupApp({ context, routes: sshAccessRoutes })(
+      agentSshAccessContract,
+    );
+  };
   const state = () => {
     return setupApp({ context, routes: testVncAuthorityStateRoutes })(
       testVncAuthorityStateContract,
-    );
-  };
-  const sshState = () => {
-    return setupApp({ context, routes: testSshConnectionStateRoutes })(
-      testSshConnectionStateContract,
     );
   };
   function authenticate(owner: Owner) {
@@ -196,15 +198,12 @@ export function createVncRuntimeApi(context: TestContext) {
     owner: Owner & { readonly agentId: string },
     enabled: boolean,
   ) {
+    authenticate(owner);
     return await accept(
-      sshState().action({
-        body: {
-          action: "set-agent-access",
-          orgId: owner.orgId,
-          userId: owner.userId,
-          agentId: owner.agentId,
-          enabled,
-        },
+      sshAccess().update({
+        headers: vncSessionHeaders,
+        params: { agentId: owner.agentId },
+        body: { enabled },
       }),
       [200],
     );
@@ -278,7 +277,6 @@ export function createVncRuntimeApi(context: TestContext) {
     credentials,
     access,
     state,
-    sshState,
     authenticate,
     runtime,
     grant,

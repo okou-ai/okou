@@ -350,6 +350,7 @@ describe("private Runner VNC authority", () => {
       }),
       [200],
     );
+    await api.grantSsh(f, false);
     const kms = useSecretKmsProbe();
     await expect(api.resolve(f)).resolves.toStrictEqual({
       outcome: "unsupported_profile",
@@ -395,6 +396,7 @@ describe("private Runner VNC authority", () => {
       }),
       [200],
     );
+    await api.grantSsh(f, false);
     const kms = useSecretKmsProbe();
     await expect(
       api.resolve(f, { supportedProfiles: [...vncTransportProfiles] }),
@@ -460,14 +462,14 @@ describe("private Runner VNC authority", () => {
     });
     await entered.promise;
     const rotated = await accept(
-      api.sshState().action({
+      setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      ).update({
+        headers: vncSessionHeaders,
+        params: { connectionId: ssh.body.id },
         body: {
-          action: "set-learned-host-key",
-          orgId: f.orgId,
-          userId: f.userId,
-          connectionId: ssh.body.id,
-          algorithm: "ssh-ed25519",
-          fingerprint: "SHA256:rotated",
+          expectedGeneration: 1,
+          displayName: "Rotated VNC gateway",
         },
       }),
       [200],

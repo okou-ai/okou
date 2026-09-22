@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
-use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tokio::{io::AsyncWriteExt, net::TcpStream, task::JoinHandle};
 
 use super::{
     harness::{CONNECTION, Harness, PASSWORD, Reply, TOKEN},
@@ -13,6 +13,8 @@ use crate::{
         tests::peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
     },
 };
+
+struct BridgeTask(JoinHandle<()>);
 
 fn password_credential(harness: &Harness) -> serde_json::Value {
     let mut credential = harness.credential(true);
@@ -148,13 +150,13 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
         let bridge = async {
             let mut forwarded = harness.accept_forwarded().await;
             let mut target = TcpStream::connect(peer.address).await.unwrap();
-            tokio::spawn(async move {
+            BridgeTask(tokio::spawn(async move {
                 let _ = tokio::io::copy_bidirectional(&mut forwarded, &mut target).await;
                 let _ = forwarded.shutdown().await;
                 let _ = target.shutdown().await;
-            })
+            }))
         };
-        let (frames, bridge) = tokio::join!(start, bridge);
+        let (frames, BridgeTask(bridge)) = tokio::join!(start, bridge);
         if !succeeds {
             assert_eq!(terminal(&frames)["outcome"], "failed");
             assert_eq!(terminal(&frames)["reason"], "authentication_failed");
