@@ -169,6 +169,11 @@ export function LanguageSettings() {
     if (!isSupportedLocale(value) || !availableLocales.includes(value)) {
       throw new Error(`Unsupported locale: ${value}`);
     }
+    // A replay of the displayed locale is not a new preference. Explicit
+    // item presses still reach the command, including failed-save retries.
+    if (value === locale && details.reason === "none") {
+      return;
+    }
     detach(updateLocale(value, pageSignal), Reason.DomCallback);
   };
 

@@ -17,7 +17,7 @@ import {
   updateUserPreference$,
   userPreferences$,
 } from "./okou-page/settings/user-preferences.ts";
-import { resetSignal, settle } from "./utils.ts";
+import { settle } from "./utils.ts";
 
 const internalLocale$ = state<SupportedLocale>(DEFAULT_LOCALE);
 const L = logger("Locale");
@@ -128,41 +128,6 @@ export const syncLocalePreference$ = command(
   },
 );
 
-const pendingLocalePreference$ = state<{
-  readonly locale: SupportedLocale;
-  readonly owner: string;
-} | null>(null);
-const resetLocalePreference$ = resetSignal();
-
-const persistLocalePreference$ = command(
-  async (
-    { get, set },
-    locale: SupportedLocale,
-    assertCurrent: () => void,
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted();
-    assertCurrent();
-    const preferences = await get(userPreferences$);
-    signal.throwIfAborted();
-    assertCurrent();
-    if (!preferences.supportedLocales.includes(locale)) {
-      throw new Error(`Unsupported locale: ${locale}`);
-    }
-
-    await set(applyLocalePreference$, locale, signal);
-    signal.throwIfAborted();
-    assertCurrent();
-    // The applied UI locale can precede a failed save. Only confirmed
-    // preferences can make persistence redundant, including on a retry.
-    if (preferences.locale !== locale) {
-      await set(updateUserPreference$, { locale }, signal);
-      signal.throwIfAborted();
-      assertCurrent();
-    }
-  },
-);
-
 export const updateLocalePreference$ = command(
   async ({ get, set }, locale: SupportedLocale, signal: AbortSignal) => {
     const clerk = await get(clerk$);
@@ -171,70 +136,18 @@ export const updateLocalePreference$ = command(
       throw new Error("Language preferences require an active workspace");
     }
 
-    const owner = JSON.stringify([
-      clerk.user.id,
-      clerk.organization.id,
-      clerk.session?.id,
-    ]);
-    const pending = get(pendingLocalePreference$);
-    if (pending?.owner === owner && pending.locale === locale) {
-      return;
+    const preferences = await get(userPreferences$);
+    signal.throwIfAborted();
+    if (!preferences.supportedLocales.includes(locale)) {
+      throw new Error(`Unsupported locale: ${locale}`);
     }
 
-    const operationSignal = set(resetLocalePreference$, signal);
-    operationSignal.throwIfAborted();
-    const attempt = { locale, owner };
-    const assertCurrent = () => {
-      operationSignal.throwIfAborted();
-      if (
-        JSON.stringify([
-          clerk.user?.id,
-          clerk.organization?.id,
-          clerk.session?.id,
-        ]) !== owner
-      ) {
-        throw new DOMException(
-          "Language preference owner changed",
-          "AbortError",
-        );
-      }
-    };
-    set(pendingLocalePreference$, attempt);
-    const clearPending = () => {
-      if (get(pendingLocalePreference$) === attempt) {
-        set(pendingLocalePreference$, null);
-      }
-    };
-    operationSignal.addEventListener("abort", clearPending, { once: true });
-    // Auth can change while resources or a request token are loading. Abort
-    // before either can apply this owner's choice to a different workspace.
-    const unsubscribe = clerk.addListener(() => {
-      if (
-        JSON.stringify([
-          clerk.user?.id,
-          clerk.organization?.id,
-          clerk.session?.id,
-        ]) !== owner &&
-        get(pendingLocalePreference$) === attempt
-      ) {
-        set(resetLocalePreference$);
-      }
-    });
-    if (operationSignal.aborted) {
-      unsubscribe();
-    } else {
-      operationSignal.addEventListener("abort", unsubscribe, { once: true });
+    await set(applyLocalePreference$, locale, signal);
+    signal.throwIfAborted();
+    // Applying a language can precede a failed save. Compare the confirmed
+    // preference so explicitly selecting that language again can retry it.
+    if (preferences.locale !== locale) {
+      await set(updateUserPreference$, { locale }, signal);
     }
-    return set(
-      persistLocalePreference$,
-      locale,
-      assertCurrent,
-      operationSignal,
-    ).finally(() => {
-      unsubscribe();
-      operationSignal.removeEventListener("abort", unsubscribe);
-      operationSignal.removeEventListener("abort", clearPending);
-      clearPending();
-    });
   },
 );
