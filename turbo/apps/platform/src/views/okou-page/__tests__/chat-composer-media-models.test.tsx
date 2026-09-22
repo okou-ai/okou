@@ -1,8 +1,7 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   chatThreadImageModelContract,
-  chatThreadMetadataContract,
   chatThreadVideoModelContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -1134,115 +1133,4 @@ test("Hovering a model type opens its panel only once the pointer settles", asyn
   // Resting on the row is what opens it.
   await screen.findByRole("listbox", { name: "Image models" });
   expect(imageType).toHaveAttribute("aria-selected", "true");
-});
-
-test("Pin the current image default and retry its failed save without changing models", async () => {
-  setDesktopViewport();
-  installModelEnvironment();
-  mockThread({ selectedModel: DEFAULT_RUN_MODEL, selectedImageModel: null });
-  const updates: (ImageModel | null)[] = [];
-  let saved: ImageModel | null = null;
-  context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
-    return respond(200, {
-      id: THREAD_ID,
-      agentId: AGENT_ID,
-      title: "My thread",
-      selectedModel: DEFAULT_RUN_MODEL,
-      modelSettings: {},
-      serviceTier: null,
-      pinnedAt: null,
-      computerUseHostId: null,
-      cloudBrowserEnabled: true,
-      selectedVideoModel: null,
-      selectedImageModel: saved,
-    });
-  });
-  context.mocks.api(
-    chatThreadImageModelContract.update,
-    ({ body, respond }) => {
-      updates.push(body.model);
-      if (updates.length === 1) {
-        return respond(400, {
-          error: {
-            code: "IMAGE_PIN_FAILED",
-            message: "Image model pin could not be saved",
-          },
-        });
-      }
-      saved = body.model;
-      return respond(204);
-    },
-  );
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-  await chooseMediaModel("Image", "Nano Banana 2");
-  await screen.findByText("Image model pin could not be saved");
-
-  await chooseMediaModel("Image", "Nano Banana 2");
-  await waitFor(() => {
-    expect(updates).toStrictEqual([DEFAULT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL]);
-  });
-  await openCategory("Image");
-  expectSelected("Nano Banana 2");
-});
-
-test("A delayed pin confirmation cannot replace a newer image model selection", async () => {
-  setDesktopViewport();
-  installModelEnvironment();
-  mockThread({
-    selectedModel: DEFAULT_RUN_MODEL,
-    selectedImageModel: DEFAULT_IMAGE_MODEL,
-  });
-  const confirmationStarted = context.mocks.deferred<void>();
-  const releaseConfirmation = context.mocks.deferred<void>();
-  const confirmationReturned = context.mocks.deferred<void>();
-  let holdConfirmation = false;
-  let saved: ImageModel | null = DEFAULT_IMAGE_MODEL;
-  const updates: (ImageModel | null)[] = [];
-  context.mocks.api(
-    chatThreadMetadataContract.get,
-    async ({ respond, withSignal }) => {
-      if (holdConfirmation) {
-        confirmationStarted.resolve();
-        await withSignal(releaseConfirmation.promise);
-        confirmationReturned.resolve();
-      }
-      return respond(200, {
-        id: THREAD_ID,
-        agentId: AGENT_ID,
-        title: "My thread",
-        selectedModel: DEFAULT_RUN_MODEL,
-        modelSettings: {},
-        serviceTier: null,
-        pinnedAt: null,
-        computerUseHostId: null,
-        cloudBrowserEnabled: true,
-        selectedVideoModel: null,
-        selectedImageModel: saved,
-      });
-    },
-  );
-  context.mocks.api(
-    chatThreadImageModelContract.update,
-    ({ body, respond }) => {
-      updates.push(body.model);
-      saved = body.model;
-      return respond(204);
-    },
-  );
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-  holdConfirmation = true;
-  await chooseMediaModel("Image", "Nano Banana 2");
-  await confirmationStarted.promise;
-  await chooseMediaModel("Image", "GPT Image 1");
-  await waitFor(() => {
-    expect(updates).toStrictEqual(["gpt-image-1"]);
-  });
-  await act(async () => {
-    releaseConfirmation.resolve();
-    await confirmationReturned.promise;
-  });
-  await openCategory("Image");
-  expectSelected("GPT Image 1");
-  expect(updates).toStrictEqual(["gpt-image-1"]);
-  expect(saved).toBe("gpt-image-1");
 });

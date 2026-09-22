@@ -62,7 +62,6 @@ import {
 } from "./chat-event-debug.ts";
 import {
   chatThreadArtifactsContract,
-  chatThreadMetadataContract,
   resolveChatEventRecommendedFollowups,
   type ChatRunOptionsRequest,
   type ChatRunVideoOptionsRequest,
@@ -562,62 +561,13 @@ function createVideoModelSelection(
     );
   });
 
-  const pendingModelWrites$ = state<{
-    readonly value: VideoModel | null;
-  } | null>(null);
-  const persistModelSelection$ = command(
-    async (
-      { get, set },
-      operation: { readonly value: VideoModel | null },
-      signal: AbortSignal,
-    ) => {
-      const { value } = operation;
-      if (get(selectedVideoModel$) === value) {
-        // The visible pin can be optimistic after a failed save. Confirm the
-        // stored field before treating a same-value selection as a no-op.
-        const client = get(apiClient$)(chatThreadMetadataContract);
-        const result = await accept(
-          client.get({
-            params: { id: threadId },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-        if (get(pendingModelWrites$) !== operation) {
-          return;
-        }
-        if (result.body.selectedVideoModel === value) {
-          return;
-        }
-      }
+  const setVideoModelSelection$ = command(
+    async ({ set }, value: VideoModel | null, signal: AbortSignal) => {
       await set(
         patchChatThreadVideoModel$,
         { threadId, videoModel: value },
         signal,
       );
-      signal.throwIfAborted();
-    },
-  );
-  const setVideoModelSelection$ = command(
-    async ({ get, set }, value: VideoModel | null, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const pending = get(pendingModelWrites$);
-      if (pending?.value === value) {
-        return;
-      }
-      const operation = { value };
-      const clearPending = () => {
-        if (get(pendingModelWrites$) === operation) {
-          set(pendingModelWrites$, null);
-        }
-      };
-      set(pendingModelWrites$, operation);
-      signal.addEventListener("abort", clearPending, { once: true });
-      await set(persistModelSelection$, operation, signal).finally(() => {
-        signal.removeEventListener("abort", clearPending);
-        clearPending();
-      });
       signal.throwIfAborted();
     },
   );
@@ -654,62 +604,13 @@ function createImageModelSelection(
     );
   });
 
-  const pendingModelWrites$ = state<{
-    readonly value: ImageModel | null;
-  } | null>(null);
-  const persistModelSelection$ = command(
-    async (
-      { get, set },
-      operation: { readonly value: ImageModel | null },
-      signal: AbortSignal,
-    ) => {
-      const { value } = operation;
-      if (get(selectedImageModel$) === value) {
-        // The visible pin can be optimistic after a failed save. Confirm the
-        // stored field before treating a same-value selection as a no-op.
-        const client = get(apiClient$)(chatThreadMetadataContract);
-        const result = await accept(
-          client.get({
-            params: { id: threadId },
-            fetchOptions: { signal },
-          }),
-          [200],
-        );
-        signal.throwIfAborted();
-        if (get(pendingModelWrites$) !== operation) {
-          return;
-        }
-        if (result.body.selectedImageModel === value) {
-          return;
-        }
-      }
+  const setImageModelSelection$ = command(
+    async ({ set }, value: ImageModel | null, signal: AbortSignal) => {
       await set(
         patchChatThreadImageModel$,
         { threadId, imageModel: value },
         signal,
       );
-      signal.throwIfAborted();
-    },
-  );
-  const setImageModelSelection$ = command(
-    async ({ get, set }, value: ImageModel | null, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      const pending = get(pendingModelWrites$);
-      if (pending?.value === value) {
-        return;
-      }
-      const operation = { value };
-      const clearPending = () => {
-        if (get(pendingModelWrites$) === operation) {
-          set(pendingModelWrites$, null);
-        }
-      };
-      set(pendingModelWrites$, operation);
-      signal.addEventListener("abort", clearPending, { once: true });
-      await set(persistModelSelection$, operation, signal).finally(() => {
-        signal.removeEventListener("abort", clearPending);
-        clearPending();
-      });
       signal.throwIfAborted();
     },
   );

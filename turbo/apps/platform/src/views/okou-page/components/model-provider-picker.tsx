@@ -1345,6 +1345,11 @@ function EnabledExplicitModelFirstModelPicker(
       details.cancel();
       return;
     }
+    // Replaying the displayed selection must not save a model preference.
+    // Explicit item presses still reach the command, including failed saves.
+    if (raw === state.selectValue && details.reason === "none") {
+      return;
+    }
     const selection = modelFirstSelectionFromInteraction(raw, state.selection);
     if (selection !== undefined) {
       handleSelectionChange(selection);
