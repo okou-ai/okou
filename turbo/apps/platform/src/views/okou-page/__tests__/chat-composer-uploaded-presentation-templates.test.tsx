@@ -898,9 +898,12 @@ test("Uploaded presentation names retain caret navigation while the preview owns
     "aria-pressed",
     "true",
   );
-  await user.keyboard("{Shift>}{ArrowLeft}{/Shift}");
-  expect(title.selectionStart).toBe(uploaded.title.length - 2);
-  expect(title.selectionEnd).toBe(uploaded.title.length - 1);
+  await user.keyboard("{Control>}a{/Control}");
+  expect(title.selectionStart).toBe(0);
+  expect(title.selectionEnd).toBe(uploaded.title.length);
+  await user.keyboard("{ArrowRight}");
+  expect(title.selectionStart).toBe(uploaded.title.length);
+  expect(title.selectionEnd).toBe(uploaded.title.length);
   expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
     "aria-pressed",
     "true",

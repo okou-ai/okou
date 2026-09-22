@@ -343,7 +343,7 @@ test("Presentation preview keeps keyboard navigation inside its focused controls
   await user.click(pickerTrigger);
   const picker = await screen.findByRole("dialog");
   await waitFor(() => {
-    expect(picker.contains(document.activeElement)).toBe(true);
+    expect(picker.contains(document.activeElement)).toBeTruthy();
   });
   await user.click(tabByText("Presentation"));
   const previewLabel = `Preview ${template.title} at current slide`;
