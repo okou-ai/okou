@@ -1975,10 +1975,10 @@ mod tests {
         assert!(first.incidents.is_empty());
         assert_eq!(error.incidents.len(), 1);
         assert!(error.incidents[0].kernel_events.is_empty());
-        // Guest Agent and this root owner ship in the same guest image, so the
-        // request alphabet is exactly `1` and `2`. Anything else ends the
-        // exchange rather than reading a payload the peer did not promise.
-        client.write_all(&[3]).unwrap();
+        // The request alphabet is exactly `1` and `2`. An unrecognized byte
+        // ends the exchange rather than reading a payload the peer never
+        // promised, so a desynchronized request cannot consume the next frame.
+        client.write_all(&[9]).unwrap();
         assert!(guest_contracts::oom_evidence::read_evidence(&client).is_err());
         drop(cancel_writer);
         done_rx.recv_timeout(Duration::from_secs(2)).unwrap();

@@ -387,16 +387,18 @@ mod tests {
         );
     }
 
-    /// A real pre-removal payload: identical to `contained-tool-oom.json` except
-    /// that it still carries the retired `runtime_progress_at` field.
+    /// A byte copy of `contained-tool-oom.json` as it stood before
+    /// `runtime_progress_at` was removed, so the retired field below is a real
+    /// recorded payload rather than a hand-written one.
     const LEGACY_RUNTIME_PROGRESS_FIXTURE: &str =
         include_str!("../tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json");
 
     #[test]
-    fn evidence_written_by_an_older_guest_image_still_decodes() {
-        // Guest Control Server ships in the guest image and Guest Control Client
-        // in the Runner host, so a long-lived sandbox can pair an old producer
-        // with a new consumer. `runtime_progress_at` is now simply unknown here.
+    fn a_retired_runtime_progress_field_decodes_as_an_unknown_key() {
+        // Runner and Guest binaries ship together and a draining artifact keeps
+        // its own sandbox, so no live producer still emits this field. This
+        // pins the decoder's treatment of the retired key, not a rollout
+        // window: `OomEvidence` has no `deny_unknown_fields`, so it is ignored.
         assert!(
             LEGACY_RUNTIME_PROGRESS_FIXTURE.contains(r#""runtime_progress_at": 1789527602000"#)
         );
@@ -407,8 +409,7 @@ mod tests {
                 .unwrap();
 
         assert_eq!(legacy, current);
-        // A new producer omits the field; an older consumer declared it
-        // `#[serde(default)]`, so the omission decodes there as `None`.
+        // The re-encoded payload carries no trace of the retired key.
         assert!(
             !serde_json::to_string(&legacy)
                 .unwrap()

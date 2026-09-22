@@ -3059,42 +3059,46 @@ heartbeat owns Browser access and lease renewal.
 
 ## OOM containment proof chain removal (#36027)
 
-`OomEvidence.runtime_progress_at` is removed. Guest Control Server produces the
-evidence inside the guest image and Guest Control Client consumes it on the
-Runner host, so a long-lived sandbox can pair an old producer with a new
-consumer while a Runner rolls forward. Both directions are already tolerant and
-neither needs a staged removal.
+`OomEvidence.runtime_progress_at` is removed, together with the containment
+proof chain that consumed it. No deployment boundary observes the removal.
 
-Old producer, new consumer: the field is an unknown key. `OomEvidence` and every
-nested type (`MemorySnapshot`, `MemoryEvents`, `KernelOomEvent`, `OomIncident`)
-carry no `deny_unknown_fields`, so Serde ignores it.
-`evidence_written_by_an_older_guest_image_still_decodes` pins this against
-`crates/guest-contracts/tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json`,
-a byte copy of the pre-removal `contained-tool-oom.json`.
+Guest Control Server produces the evidence inside the guest image and Guest
+Control Client consumes it on the Runner host, but those are not independently
+deployed surfaces. Runner and Guest binaries ship together, and a draining
+Runner keeps executing its already-claimed runs on its own sandboxes rather
+than handing them to the new artifact, as described under
+[Runner process drain](#runner-process-drain) and in
+[guest memory policy](runner-memory-policy.md). Sandbox reuse is decided inside
+a single Runner process. The producer and the consumer are therefore always the
+same artifact, so no mixed-version pair exists for this field.
 
-New producer, old consumer: the field was `#[serde(default,
-skip_serializing_if = "Option::is_none")]`, so an omitted value decodes as
-`None` there. `None` was already the production value for every `ClaudeCode` and
-`Codex` run, where nothing was ever wired to populate it; the old consumer then
-classifies `runtime_progress_absent` and logs `warn`, exactly as it does today
-for 281 of the 294 records observed over
-`[2026-09-15T00:00:00Z, 2026-09-22T08:00:00Z)`. No old consumer observes a
-behaviour change.
+The persisted copies are write-only in production. Runner writes
+`oom_evidence_log` and Guest Agent writes `<metrics_log>.oom-evidence.json`;
+neither is read back by production code, so no reader can encounter a payload
+written by an older artifact.
 
-The v1 telemetry payload is unaffected in both directions. `telemetry_evidence()`
-existed only to force the field to `None` before upload, and
-`skip_serializing_if` then omitted the key, so `runtime_progress_at` never
-appeared in a v1 payload and still does not.
-`oom_evidence_upload_payload_is_unchanged_by_the_removed_progress_field` uploads
-the legacy fixture through `JobTelemetry::upload_oom_evidence` and asserts the
-serialized `oomEvidence` bytes.
+`evidence_written_by_an_older_guest_image_still_decodes` is retained as
+`a_retired_runtime_progress_field_decodes_as_an_unknown_key`, reading
+`crates/guest-contracts/tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json`
+— a byte copy of the pre-removal `contained-tool-oom.json`. It pins the
+decoder's treatment of the retired key, not a rollout window: `OomEvidence` and
+every nested type (`MemorySnapshot`, `MemoryEvents`, `KernelOomEvent`,
+`OomIncident`) carry no `deny_unknown_fields`, so the key is ignored. It carries
+no removal gate and is not a bounded rollout fallback.
+
+The v1 telemetry payload is unchanged. `telemetry_evidence()` existed only to
+force the field to `None` before upload, and `skip_serializing_if` then omitted
+the key, so `runtime_progress_at` never appeared in a v1 payload and still does
+not. `oom_evidence_upload_payload_is_unchanged_by_the_removed_progress_field`
+uploads the legacy fixture through `JobTelemetry::upload_oom_evidence` and
+asserts the serialized `oomEvidence` bytes.
 
 The Guest Agent to Guest Control Server evidence request bytes `3` and `4` are
 removed outright. That socket is intra-guest: `guest-control-server` is linked
 into `guest-init`, and `guest-agent` and `guest-init` are pinned together by
 `guestSha256` in one runner image manifest, so both ends always ship in the same
-rootfs. An unknown request byte ends the exchange rather than reading a payload
-the peer did not promise.
+rootfs. An unrecognized request byte ends the exchange rather than reading a
+payload the peer never promised.
 
 `oom_classification` changes meaning at the same time. It previously reported
 whether the containment proof succeeded; it now reports which cgroup the kernel

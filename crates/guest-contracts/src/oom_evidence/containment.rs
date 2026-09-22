@@ -4,19 +4,6 @@ use super::{EvidenceStatus, OomEvidence};
 use crate::diagnostics::WorkloadResourceLimitDiagnostic;
 
 impl OomEvidence {
-    /// Sequence of the operation-owned cgroup, for correlation with its exec route.
-    pub fn operation_sequence(&self) -> Option<u32> {
-        let name = self.groups[0]
-            .cgroup
-            .strip_prefix("/vm0-exec/exec-")?
-            .strip_suffix("/workload")?;
-        let mut parts = name.split('-');
-        parts.next()?.parse::<u32>().ok().filter(|pid| *pid > 0)?;
-        let sequence = parts.next()?.parse().ok()?;
-        parts.next()?.parse::<u64>().ok()?;
-        parts.next().is_none().then_some(sequence)
-    }
-
     /// Whether retained guest kernel records name a victim in the agent's own
     /// containment domain.
     ///
@@ -67,7 +54,9 @@ mod tests {
         serde_json::from_str(include_str!("../../tests/fixtures/contained-tool-oom.json")).unwrap()
     }
 
-    /// The same payload as [`fixture`] before `runtime_progress_at` was removed.
+    /// A byte copy of [`fixture`] as it stood before `runtime_progress_at` was
+    /// removed, so the retired field is a real recorded payload rather than a
+    /// hand-written one.
     fn legacy_fixture() -> OomEvidence {
         serde_json::from_str(include_str!(
             "../../tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json"
@@ -114,7 +103,6 @@ mod tests {
     #[test]
     fn a_tool_only_kill_is_not_an_agent_domain_kill() {
         let contained = fixture();
-        assert_eq!(contained.operation_sequence(), Some(7));
         assert_eq!(
             contained.incidents[0].kernel_events[0].task_cgroup,
             "/vm0-exec/exec-281-7-3/workload/tools/tool-1"
@@ -148,6 +136,9 @@ mod tests {
         assert!(!without_records.agent_domain_oom_kill());
     }
 
+    /// One counter mutation and the limit field it changes.
+    type LimitMutation = (&'static str, fn(&mut WorkloadResourceLimitDiagnostic));
+
     #[test]
     fn resource_limit_containment_requires_every_counter_to_match() {
         let evidence = fixture();
@@ -160,7 +151,7 @@ mod tests {
         };
         assert!(evidence.proves_contained_resource_limit(&matching));
 
-        let mutations: &[(&str, fn(&mut WorkloadResourceLimitDiagnostic))] = &[
+        let mutations: &[LimitMutation] = &[
             ("pids_max_events", |limit| limit.pids_max_events = 1),
             ("memory_max_events", |limit| limit.memory_max_events = 3),
             ("memory_oom_events", |limit| limit.memory_oom_events = 2),
