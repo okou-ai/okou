@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   logsByIdContract,
   logsListContract,
@@ -141,6 +143,33 @@ function asyncIterableOf(buffer: Buffer): AsyncIterable<Uint8Array> {
   };
 }
 
+function objectEtag(body: Buffer): string {
+  return `"${createHash("sha256").update(body).digest("hex")}"`;
+}
+
+function rangedBody(
+  body: Buffer,
+  range: unknown,
+): {
+  readonly body: Buffer;
+  readonly contentRange?: string;
+} {
+  if (typeof range !== "string") {
+    return { body };
+  }
+  const match = /^bytes=(\d+)-(\d*)$/u.exec(range);
+  if (!match?.[1]) {
+    throw new Error(`Unsupported S3 byte range: ${range}`);
+  }
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : body.length - 1;
+  const selected = body.subarray(start, end + 1);
+  return {
+    body: selected,
+    contentRange: `bytes ${start}-${start + selected.length - 1}/${body.length}`,
+  };
+}
+
 async function requestLogsList<TStatus extends 200 | 400 | 401 | 403>(
   context: TestContext,
   actor: ApiTestUser | null,
@@ -163,17 +192,32 @@ export function createMiscRoutesApi(context: TestContext) {
     const key = typeof input.Key === "string" ? input.Key : "";
     const name = commandName(command);
     if (name === "PutObjectCommand") {
-      s3Objects.set(key, bodyBuffer(input.Body));
-      return Promise.resolve({});
+      const body = bodyBuffer(input.Body);
+      s3Objects.set(key, body);
+      return Promise.resolve({ ETag: objectEtag(body) });
     }
     if (name === "GetObjectCommand") {
-      const body = s3Objects.get(key);
-      return Promise.resolve(
-        body ? { Body: asyncIterableOf(body) } : { Body: undefined },
-      );
+      const stored = s3Objects.get(key);
+      if (!stored) {
+        return Promise.resolve({ Body: undefined });
+      }
+      const etag = objectEtag(stored);
+      if (typeof input.IfMatch === "string" && input.IfMatch !== etag) {
+        throw new Error("S3 object changed before its range read");
+      }
+      const selected = rangedBody(stored, input.Range);
+      return Promise.resolve({
+        Body: asyncIterableOf(selected.body),
+        ContentLength: selected.body.length,
+        ContentRange: selected.contentRange,
+        ETag: etag,
+      });
     }
     if (name === "HeadObjectCommand") {
-      return Promise.resolve({});
+      const body = s3Objects.get(key);
+      return Promise.resolve(
+        body ? { ContentLength: body.length, ETag: objectEtag(body) } : {},
+      );
     }
     return Promise.resolve({});
   });

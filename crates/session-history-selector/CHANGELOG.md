@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.3.113](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.112...session-history-selector-v0.3.113) (2026-09-22)
+
 ## [0.3.112](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.111...session-history-selector-v0.3.112) (2026-09-21)
 
 ## [0.3.111](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.110...session-history-selector-v0.3.111) (2026-09-21)

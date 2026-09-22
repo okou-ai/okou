@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.210.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.209.2...runner-rs-v0.210.0) (2026-09-22)
+
+
+### Features
+
+* **runner:** install the versioned okou cli into the rootfs and gate its use by runtime version ([#36000](https://github.com/okou-ai/okou/issues/36000)) ([8d8f3a3](https://github.com/okou-ai/okou/commit/8d8f3a3e14d23f7471e0773bd9acb988f59217af))
+* **vnc:** execute sessions through ssh transport ([#36004](https://github.com/okou-ai/okou/issues/36004)) ([1c4fc60](https://github.com/okou-ai/okou/commit/1c4fc606c58ee8b9e721ea776a1b3f122ee5b6ed))
+
+
+### Bug Fixes
+
+* **runner:** accept aws-aware firewall catalog rules ([#36026](https://github.com/okou-ai/okou/issues/36026)) ([e9fb108](https://github.com/okou-ai/okou/commit/e9fb108269c25722d84fb7b2ddca71ee940a94c2))
+
+## [0.209.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.209.1...runner-rs-v0.209.2) (2026-09-22)
+
+
+### Refactoring
+
+* **runner:** extract shared runner types ([#35988](https://github.com/okou-ai/okou/issues/35988)) ([91eeb09](https://github.com/okou-ai/okou/commit/91eeb0904bbbbcebcd05b0b31c8b42f71d12f5e0))
+
 ## [0.209.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.209.0...runner-rs-v0.209.1) (2026-09-22)
 
 

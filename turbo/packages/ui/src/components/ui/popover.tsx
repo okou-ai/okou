@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
-import { asChildRender } from "../../lib/base-ui-compat";
 import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 import { resolveCollisionPadding } from "../../lib/safe-area";
@@ -12,54 +11,28 @@ function Popover(props: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
-interface PopoverTriggerProps extends Omit<
-  PopoverPrimitive.Trigger.Props,
-  "render"
-> {
-  asChild?: boolean;
-  render?: PopoverPrimitive.Trigger.Props["render"];
-}
-
-const PopoverTrigger = React.forwardRef<HTMLButtonElement, PopoverTriggerProps>(
-  ({ asChild = false, children, render, ...props }, ref) => {
-    const child = asChild ? asChildRender(children) : undefined;
-    return (
-      <PopoverPrimitive.Trigger
-        ref={ref}
-        data-slot="popover-trigger"
-        render={child ?? render}
-        {...props}
-      >
-        {asChild ? undefined : children}
-      </PopoverPrimitive.Trigger>
-    );
-  },
-);
+const PopoverTrigger = React.forwardRef<
+  HTMLButtonElement,
+  PopoverPrimitive.Trigger.Props
+>((props, ref) => {
+  return (
+    <PopoverPrimitive.Trigger
+      ref={ref}
+      data-slot="popover-trigger"
+      {...props}
+    />
+  );
+});
 PopoverTrigger.displayName = "PopoverTrigger";
 
-interface PopoverCloseProps extends Omit<
-  PopoverPrimitive.Close.Props,
-  "render"
-> {
-  asChild?: boolean;
-  render?: PopoverPrimitive.Close.Props["render"];
-}
-
-const PopoverClose = React.forwardRef<HTMLButtonElement, PopoverCloseProps>(
-  ({ asChild = false, children, render, ...props }, ref) => {
-    const child = asChild ? asChildRender(children) : undefined;
-    return (
-      <PopoverPrimitive.Close
-        ref={ref}
-        data-slot="popover-close"
-        render={child ?? render}
-        {...props}
-      >
-        {asChild ? undefined : children}
-      </PopoverPrimitive.Close>
-    );
-  },
-);
+const PopoverClose = React.forwardRef<
+  HTMLButtonElement,
+  PopoverPrimitive.Close.Props
+>((props, ref) => {
+  return (
+    <PopoverPrimitive.Close ref={ref} data-slot="popover-close" {...props} />
+  );
+});
 PopoverClose.displayName = "PopoverClose";
 
 type PopoverPositionerProps = Pick<
@@ -82,7 +55,6 @@ type PopoverContentProps = PopoverPrimitive.Popup.Props &
     avoidCollisions?: boolean;
     hideWhenDetached?: boolean;
     positionerClassName?: string;
-    updatePositionStrategy?: "always" | "optimized";
   };
 
 const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
@@ -105,7 +77,6 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
       sideOffset = 4,
       sticky,
       style,
-      updatePositionStrategy,
       ...props
     },
     ref,
@@ -133,9 +104,7 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
           collisionAvoidance={resolvedCollisionAvoidance}
           collisionBoundary={collisionBoundary}
           collisionPadding={resolveCollisionPadding(collisionPadding)}
-          disableAnchorTracking={
-            disableAnchorTracking ?? updatePositionStrategy === "optimized"
-          }
+          disableAnchorTracking={disableAnchorTracking}
           positionMethod={positionMethod}
           side={side}
           sideOffset={sideOffset}

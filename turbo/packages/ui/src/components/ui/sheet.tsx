@@ -4,7 +4,6 @@ import * as React from "react";
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
 
-import { asChildRender } from "../../lib/base-ui-compat";
 import {
   modalBackdropTransitionClassName,
   sheetPopupTransitionClassName,
@@ -16,51 +15,22 @@ function Sheet(props: SheetPrimitive.Root.Props) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />;
 }
 
-interface SheetTriggerProps extends Omit<
-  SheetPrimitive.Trigger.Props,
-  "render"
-> {
-  asChild?: boolean;
-  render?: SheetPrimitive.Trigger.Props["render"];
-}
-
-const SheetTrigger = React.forwardRef<HTMLButtonElement, SheetTriggerProps>(
-  ({ asChild = false, children, render, ...props }, ref) => {
-    const child = asChild ? asChildRender(children) : undefined;
-    return (
-      <SheetPrimitive.Trigger
-        ref={ref}
-        data-slot="sheet-trigger"
-        render={child ?? render}
-        {...props}
-      >
-        {asChild ? undefined : children}
-      </SheetPrimitive.Trigger>
-    );
-  },
-);
+const SheetTrigger = React.forwardRef<
+  HTMLButtonElement,
+  SheetPrimitive.Trigger.Props
+>((props, ref) => {
+  return (
+    <SheetPrimitive.Trigger ref={ref} data-slot="sheet-trigger" {...props} />
+  );
+});
 SheetTrigger.displayName = "SheetTrigger";
 
-interface SheetCloseProps extends Omit<SheetPrimitive.Close.Props, "render"> {
-  asChild?: boolean;
-  render?: SheetPrimitive.Close.Props["render"];
-}
-
-const SheetClose = React.forwardRef<HTMLButtonElement, SheetCloseProps>(
-  ({ asChild = false, children, render, ...props }, ref) => {
-    const child = asChild ? asChildRender(children) : undefined;
-    return (
-      <SheetPrimitive.Close
-        ref={ref}
-        data-slot="sheet-close"
-        render={child ?? render}
-        {...props}
-      >
-        {asChild ? undefined : children}
-      </SheetPrimitive.Close>
-    );
-  },
-);
+const SheetClose = React.forwardRef<
+  HTMLButtonElement,
+  SheetPrimitive.Close.Props
+>((props, ref) => {
+  return <SheetPrimitive.Close ref={ref} data-slot="sheet-close" {...props} />;
+});
 SheetClose.displayName = "SheetClose";
 
 function SheetPortal(props: SheetPrimitive.Portal.Props) {

@@ -1722,6 +1722,45 @@
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
+    "browserInput": {
+      "applyFailed": "정보를 추가하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도하세요.",
+      "applying": "정보 추가 중",
+      "applyingDescription": "브라우저에서 이 요청을 완료하고 있습니다.",
+      "callbackFailed": "에이전트에게 알리지 못했습니다. 계속을 다시 시도하세요.",
+      "cancel": "취소",
+      "cancelFailed": "요청을 취소하지 못했습니다. 다시 시도하세요.",
+      "cancelled": "요청이 취소됨",
+      "cancelledDescription": "추가된 정보가 없습니다. 계속하여 에이전트에게 알리세요.",
+      "cancelling": "취소 중…",
+      "completed": "정보가 추가됨",
+      "completedDescription": "브라우저에 정보가 추가되었습니다. 계속하여 에이전트에게 알리세요.",
+      "continue": "계속",
+      "continuing": "계속하는 중…",
+      "delivered": "에이전트에게 알림",
+      "deliveredDescription": "이제 에이전트가 계속할 수 있습니다.",
+      "description": "이 사이트에서 요청한 정보를 입력하세요.",
+      "documentTitle": "브라우저 입력",
+      "expired": "요청이 만료됨",
+      "expiredDescription": "브라우저가 닫혔거나 이 요청이 더 이상 활성 상태가 아닙니다.",
+      "loadFailed": "이 요청을 불러오지 못했습니다",
+      "loadFailedDescription": "잠시 후 다시 시도하세요.",
+      "loading": "브라우저 입력 불러오는 중",
+      "loadingDescription": "요청을 확인하고 있습니다…",
+      "open": "정보 입력",
+      "optional": "(선택)",
+      "required": "(필수)",
+      "retry": "다시 시도",
+      "site": "사이트",
+      "stale": "필드가 변경됨",
+      "staleDescription": "에이전트에게 새 요청을 만들도록 요청하세요.",
+      "submit": "브라우저에 추가",
+      "submitting": "추가 중…",
+      "title": "브라우저에 정보 입력",
+      "unavailable": "요청을 사용할 수 없음",
+      "unavailableDescription": "이 브라우저 입력 요청은 유효하지 않거나 더 이상 사용할 수 없습니다.",
+      "uncertain": "브라우저를 확인하세요",
+      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
+    },
     "cards": {
       "viewDetails": "세부 정보 보기"
     },
@@ -2335,7 +2374,6 @@
       },
       "ideasLabel": "시작 아이디어",
       "label": "시작할 작업",
-      "moreIdeas": "다른 아이디어",
       "moreTemplates": "더 많은 템플릿",
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
@@ -2345,7 +2383,8 @@
         "image": "이미지 스타일",
         "nextPage": "다음 페이지",
         "previousPage": "이전 페이지",
-        "website": "웹사이트 템플릿"
+        "website": "웹사이트 템플릿",
+        "workflows": "워크플로"
       },
       "tasks": {
         "image": "이미지",
@@ -2479,7 +2518,6 @@
         "browse": "워크플로 둘러보기",
         "close": "닫기",
         "contextPrefix": "중요한 사항: {{context}}",
-        "heading": "어떤 일을 맡기고 싶으세요?",
         "items": {
           "competitors": {
             "cadence": "매일 또는 매주",
@@ -3371,13 +3409,24 @@
         "connectTitle": "Lark 연결"
       },
       "slack": {
+        "accountInUseDescription": "이 Slack 계정은 다른 Okou 계정에 연결되어 있습니다. 다시 시도하기 전에 해당 계정에서 연결을 해제하세요.",
+        "accountInUseTitle": "Slack 계정이 이미 연결됨",
+        "accountMismatchDescription": "현재 Okou 계정은 여기에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
+        "accountMismatchDescriptionWorkspace": "현재 Okou 계정은 {{workspace}}에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
+        "accountMismatchTitle": "Slack 계정을 전환할까요?",
         "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
         "connectTitle": "Slack에 연결하기",
+        "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다. 다시 시도하세요.",
         "invalidDescription": "이 페이지는 Slack 연결 링크에서 열어야 합니다.",
+        "keepAccount": "{{account}} 유지",
         "open": "Slack 열기",
         "successDescription": "어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
         "successDescriptionWorkspace": "{{workspace}}에 연결되었습니다. 어느 채널에서든 설치된 봇을 언급하거나 DM을 보내 대화를 시작하세요.",
-        "successTitle": "Slack에 연결되었습니다!"
+        "successTitle": "Slack에 연결되었습니다!",
+        "switchAccount": "{{account}}(으)로 전환",
+        "workspaceMismatchDescription": "이 Slack 워크스페이스는 현재 Okou 조직에서 사용할 수 없습니다. 조직을 전환하거나 관리자에게 도움을 요청하세요.",
+        "workspaceMismatchDescriptionNamed": "현재 Okou 조직은 {{workspace}}에 연결되어 있습니다. 조직을 전환하거나 관리자에게 제거를 요청한 후 이 Slack 워크스페이스를 연결하세요.",
+        "workspaceMismatchTitle": "Slack 워크스페이스가 일치하지 않음"
       },
       "teams": {
         "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
@@ -5788,8 +5837,7 @@
     "status": {
       "availableNow": "현재 사용 가능",
       "inUse_one": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
-      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯",
-      "waitingForSandbox": "Sandbox 대기 중"
+      "inUse_other": "{{active}}개 사용 중, 총 {{limit}}개 슬롯"
     },
     "tiers": {
       "custom": "맞춤형",
@@ -6436,16 +6484,15 @@
         }
       },
       "emailSubscription": {
-        "description": "모든 워크스페이스의 브리핑과 알림 등 선택적 이메일을 관리합니다.",
+        "description": "브리핑, 알림 및 기타 워크스페이스 업데이트를 이메일로 받습니다.",
+        "descriptionWithEmail": "{{email}}로 브리핑, 알림 및 기타 워크스페이스 업데이트를 받습니다.",
         "loading": "이메일 구독 확인 중…",
         "retryMessage": "이메일 구독을 저장하거나 불러오지 못했습니다. 다시 시도하세요.",
         "saving": "저장 중…",
         "sectionTitle": "이메일 구독",
-        "subscribed": "구독 중",
-        "title": "Okou 이메일 받기",
+        "title": "이메일 업데이트",
         "unavailable": "이메일 사용 불가",
-        "unavailableDescription": "계정 및 보안에서 이메일을 확인하거나, 전송이 차단된 경우 지원팀에 문의하세요.",
-        "unsubscribed": "구독 해지됨"
+        "unavailableDescription": "계정 및 보안에서 이메일을 확인하거나, 전송이 차단된 경우 지원팀에 문의하세요."
       },
       "language": {
         "description": "{{brandName}} 인터페이스에 사용할 기본 언어를 선택하세요",
@@ -6471,13 +6518,11 @@
         "chatOnly": "채팅만",
         "checkEmailSubscription": "위의 이메일 구독에서 전송 상태를 확인하세요.",
         "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다. 조정이 완료되면 다시 시도하세요.",
-        "description": "이 워크스페이스의 일일 우선순위를 내 시간대의 오전 7시에 받아보세요.",
-        "emailOff": "이메일이 꺼져 있습니다. 브리핑은 계속 채팅에 표시됩니다.",
-        "emailWhenReady": "브리핑이 준비되면 이메일을 받게 됩니다.",
+        "description": "내 시간대의 오전 7:00에 일일 우선순위를 받습니다.",
         "loading": "Morning Brief 설정을 불러오는 중...",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",
-        "nextBrief": "다음 브리핑 {{date}} ({{timezone}})",
+        "nextBrief": "다음 브리핑 {{date}}",
         "paused": "일시 중지됨",
         "preparationFailed": "설정을 자동으로 다시 시도합니다. 지금 다시 시도할 수도 있습니다.",
         "preparing": "첫 모닝 브리프를 준비하고 있습니다. 언제든지 끌 수 있습니다.",

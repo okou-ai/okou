@@ -85,29 +85,31 @@ export function CodexResetCreditsButton({
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="quiet"
-          size="xs"
-          aria-label={label}
-          aria-disabled={resetDisabled || undefined}
-          className={cn(
-            "h-7 min-w-0 gap-1.5 rounded-md px-1 text-xs tabular-nums",
-            className,
-            resetDisabled &&
-              "cursor-default opacity-50 hover:bg-transparent active:bg-transparent",
-          )}
-          onClick={() => {
-            if (!resetDisabled) {
-              onReset?.();
-            }
-          }}
-        >
-          <RotateCcw size={14} className="shrink-0" aria-hidden />
-          <span className="truncate">{displayLabel}</span>
-        </Button>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="quiet"
+            size="xs"
+            aria-label={label}
+            aria-disabled={resetDisabled || undefined}
+            className={cn(
+              "h-7 min-w-0 gap-1.5 rounded-md px-1 text-xs tabular-nums",
+              className,
+              resetDisabled &&
+                "cursor-default opacity-50 hover:bg-transparent active:bg-transparent",
+            )}
+            onClick={() => {
+              if (!resetDisabled) {
+                onReset?.();
+              }
+            }}
+          >
+            <RotateCcw size={14} className="shrink-0" aria-hidden />
+            <span className="truncate">{displayLabel}</span>
+          </Button>
+        }
+      />
       <TooltipContent
         side="bottom"
         align="end"
@@ -144,27 +146,29 @@ export function CodexResetCreditsMenuItem({
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <DropdownMenuItem
-          aria-label={label}
-          aria-disabled={resetDisabled || undefined}
-          className={cn(
-            "shrink-0 gap-1.5 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
-            className,
-            resetDisabled &&
-              "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
-          )}
-          closeOnClick={!resetDisabled}
-          onClick={() => {
-            if (!resetDisabled) {
-              onReset?.();
-            }
-          }}
-        >
-          <RotateCcw size={14} className="shrink-0" aria-hidden />
-          <span className="truncate">{displayLabel}</span>
-        </DropdownMenuItem>
-      </TooltipTrigger>
+      <TooltipTrigger
+        render={
+          <DropdownMenuItem
+            aria-label={label}
+            aria-disabled={resetDisabled || undefined}
+            className={cn(
+              "shrink-0 gap-1.5 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
+              className,
+              resetDisabled &&
+                "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
+            )}
+            closeOnClick={!resetDisabled}
+            onClick={() => {
+              if (!resetDisabled) {
+                onReset?.();
+              }
+            }}
+          >
+            <RotateCcw size={14} className="shrink-0" aria-hidden />
+            <span className="truncate">{displayLabel}</span>
+          </DropdownMenuItem>
+        }
+      />
       <TooltipContent
         side="bottom"
         align="end"

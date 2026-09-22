@@ -25,14 +25,9 @@ function EmailSubscriptionStatus({
   readonly failed: boolean;
 }) {
   const { t } = useTranslation();
-  const unavailable = preference && preference.deliveryStatus !== "available";
-  let status = preference?.subscribed
-    ? t(($) => {
-        return $.settings.preferences.emailSubscription.subscribed;
-      })
-    : t(($) => {
-        return $.settings.preferences.emailSubscription.unsubscribed;
-      });
+  const unavailable =
+    preference !== undefined && preference.deliveryStatus !== "available";
+  let status: string | null = null;
   if (pending) {
     status =
       pending === "loading"
@@ -51,14 +46,14 @@ function EmailSubscriptionStatus({
       return $.settings.preferences.emailSubscription.unavailable;
     });
   }
+  if (status === null) {
+    return null;
+  }
   return (
     <div
       className="flex flex-col gap-1 text-xs text-muted-foreground"
       aria-live="polite"
     >
-      {preference?.email && (
-        <span className="break-all">{preference.email}</span>
-      )}
       <div className="flex items-center gap-1.5">
         {pending && <Loader2 className="size-3.5 animate-spin" />}
         {(failed || unavailable) && (
@@ -100,15 +95,26 @@ export function EmailSubscriptionSettings() {
     }
   };
 
+  const description = preference?.email
+    ? t(
+        ($) => {
+          return $.settings.preferences.emailSubscription.descriptionWithEmail;
+        },
+        { email: preference.email },
+      )
+    : t(($) => {
+        return $.settings.preferences.emailSubscription.description;
+      });
+
   return (
     <PreferenceCardRow
       icon={Mail}
+      grouped
+      iconContainerClassName="h-10 w-10 rounded-xl bg-gray-50"
       title={t(($) => {
         return $.settings.preferences.emailSubscription.title;
       })}
-      description={t(($) => {
-        return $.settings.preferences.emailSubscription.description;
-      })}
+      description={description}
       status={
         <EmailSubscriptionStatus
           preference={preference}

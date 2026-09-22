@@ -52,7 +52,6 @@ import {
   type MorningBriefNativeCollectionAuthority,
 } from "./morning-brief-native-generation-admission.service";
 import { readMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
-import { morningBriefScopeDigest } from "./morning-brief-source-authority";
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
@@ -386,6 +385,17 @@ export interface MorningBriefConnectorReader {
    * `null` until the first authorized request resolves the credential.
    */
   readonly accountEmail: string | null;
+  /**
+   * The provider account identity this source actually read, never a
+   * credential.
+   *
+   * It names the mailbox or calendar owner an item belongs to, so a normalized
+   * item's identity is the account it came from rather than the member's own
+   * user id. It falls back to the account's external id when the provider
+   * exposes no address, and is `null` until the first authorized request
+   * resolves the credential.
+   */
+  readonly accountRef: string | null;
 }
 
 /**
@@ -403,41 +413,13 @@ export type MorningBriefFrozenSelection =
   | { readonly kind: "absent" };
 
 /**
- * What one source's released material was actually authorized by.
+ * One source's frozen account choice for the whole attempt.
  *
- * `permissions` and `endpoints` are the real effective permissions this read
- * was admitted under and one representative URL per retained authorization —
- * the same inputs the release fence already re-evaluates. A digest of constant
- * method names names an API rather than an authority, so it cannot tell a later
- * check what to re-ask; these can, because they are exactly what the live check
- * consumes.
- *
- * Only *named* permissions appear in `permissions`. An endpoint allowed without
- * one still appears in `endpoints` and is still re-checked individually, which
- * is the complete question for it: there is no grant behind it to narrow, so
- * the per-URL decision is the whole answer.
- */
-export interface MorningBriefSourceAuthorityProof {
-  readonly connectionId: string;
-  /** The provider account identity actually read, never a credential. */
-  readonly accountRef: string | null;
-  readonly permissions: readonly string[];
-  readonly endpoints: readonly string[];
-}
-
-/**
- * One source's frozen choice, and the proof its reads produced.
- *
- * The collectors return provider-shaped contract envelopes that must not grow
- * an authorization field, so the composition creates this before the read and
- * reads the proof back out afterwards. `proof` stays null unless an authorized
- * read actually happened and its payload was released: a source that was never
- * admitted has no authorized input, and inventing one would give a later
- * permission check something to pass against that nothing observed.
+ * Authorization happens before every provider request, against live state, so
+ * nothing about a completed read is retained here to be re-asked later.
  */
 export interface MorningBriefSourceAuthorityLedger {
   readonly selection: MorningBriefFrozenSelection;
-  proof: MorningBriefSourceAuthorityProof | null;
 }
 
 /** Every gate that answers "is this still the same member, owner and account?". */
@@ -702,7 +684,6 @@ export async function freezeMorningBriefSourceSelection(
       connectorId === null
         ? { kind: "absent" }
         : { kind: "selected", connectorId },
-    proof: null,
   };
 }
 
@@ -966,8 +947,7 @@ interface MorningBriefOwnerObservation {
  * Separating the observation from the fence is the point. The *generation* —
  * which is the only thing that can tell a removal apart from a removal
  * followed by a rejoin under a new id — is a live Clerk read, and it is taken
- * once per phase: at a source's admission, again at its release fence, and
- * again at the retained-source re-proof. The *removal* is a durable local fact
+ * once per phase, at a source's admission. The *removal* is a durable local fact
  * this member's own cleanup writes, and it is re-read on every request, so a
  * membership withdrawn mid-read still admits no further provider request.
  *
@@ -1382,28 +1362,6 @@ interface ReaderState {
   reservedBytes: number;
   revoked: MorningBriefSourceUnavailable | null;
   truncatedTotalBytes: boolean;
-  /**
-   * The named permissions whose results this source still holds.
-   *
-   * This is the authorization surface the proof digests, so a later narrowing
-   * of the owner's grants is detectable. Only a named permission belongs here:
-   * an endpoint allowed without one names no grant that could be narrowed, and
-   * digesting its URL instead would make the proof track catalog routing rather
-   * than this owner's authority.
-   */
-  readonly retainedPermissions: Set<string>;
-  /**
-   * One representative URL per distinct retained authorization.
-   *
-   * The release fence and the later re-proof re-evaluate every one of them, so
-   * losing a permission used earlier withholds the payload that permission
-   * produced even when a different permission admitted the final request. A
-   * second URL under the same named permission asks the same question, so it is
-   * represented once; a permissionless allow groups with nothing and stands for
-   * itself. Keyed separately from {@link ReaderState.retainedPermissions}
-   * because these two answer different questions and need different keys.
-   */
-  readonly retainedEndpoints: Map<string, string>;
   /** Resolved lazily, behind the first endpoint a live policy allowed. */
   credential: ResolvedCredential | null;
 }
@@ -1557,6 +1515,12 @@ function createConnectorReader(
     get accountEmail() {
       return state.credential?.pinned.externalEmail ?? null;
     },
+    get accountRef() {
+      const pinned = state.credential?.pinned;
+      return pinned === undefined
+        ? null
+        : (pinned.externalEmail ?? pinned.externalId);
+    },
     async getJson({ pathname, query, schema }) {
       if (state.revoked !== null) {
         return { kind: "revoked" };
@@ -1640,71 +1604,13 @@ function createConnectorReader(
         }
       }
 
-      const outcome = await performRead(
+      return await performRead(
         context,
         { url, credential: state.credential, schema },
         signal,
       );
-      if (outcome.kind === "ok") {
-        // Remember what this retained result was read under, so the release
-        // fence can re-check every one of them. The permission is recorded only
-        // when the decision actually named one; the endpoint is recorded either
-        // way, because a permissionless allow is still an endpoint whose result
-        // is held and still has to be re-asked one URL at a time.
-        if (decision.permission !== null) {
-          state.retainedPermissions.add(decision.permission);
-        }
-        state.retainedEndpoints.set(decision.permission ?? url, url);
-      }
-      return outcome;
     },
   };
-}
-
-/** `null` means the collected payload may be released. */
-async function releaseIsAuthorized(
-  request: MorningBriefReaderRequest,
-  state: ReaderState,
-  bounded: AbortSignal,
-): Promise<MorningBriefSourceUnavailable | null> {
-  const pinned = state.credential?.pinned ?? null;
-  // The fence is the point the material is actually released, so it observes
-  // the owner again rather than reusing what admitted the read. One observation
-  // covers the whole fence: every retained permission below is re-evaluated
-  // against the same instant, which is the question the fence asks.
-  const fenced: MorningBriefReaderRequest = {
-    ...request,
-    owner: startMorningBriefOwnerAuthority(
-      {
-        db: request.db,
-        clerk: request.clerk,
-        scope: request.scope,
-        deadline: request.deadline,
-      },
-      bounded,
-    ),
-  };
-  const identity = await authorizeIdentity(fenced, pinned, "release", bounded);
-  if (identity.kind !== "allow") {
-    return identity.reason;
-  }
-  for (const url of state.retainedEndpoints.values()) {
-    const decision = await authorizeUrl(
-      fenced,
-      pinned,
-      url,
-      "release",
-      bounded,
-    );
-    if (decision.kind === "revoked") {
-      return decision.reason;
-    }
-    if (decision.kind !== "allow") {
-      // A permission that produced retained content is no longer effective.
-      return "source-revoked";
-    }
-  }
-  return null;
 }
 
 /**
@@ -1713,12 +1619,14 @@ async function releaseIsAuthorized(
  * The caller supplies the source's single absolute deadline, already started
  * before the real source admission, and this reader spends what is left of it
  * rather than starting a second one. It covers the reader's own identity
- * admission, the membership and credential reads, every provider request and
- * body, and the release fence. The final payload is fenced against every
- * permission it was actually read under, not only the last one, so losing an
- * earlier permission withholds the data that permission produced. In-flight
- * provider work cannot be retracted; this promises admission and release
- * fencing, not instantaneous revocation.
+ * admission, the membership and credential reads, and every provider request
+ * and body.
+ *
+ * Every request is authorized against live state immediately before it is
+ * issued, which is the gate. A read that completed under a valid authorization
+ * is not re-litigated afterwards: in-flight provider work cannot be retracted,
+ * so a second check after the bytes are already held withholds the owner's own
+ * authorized evidence without preventing the access it claims to guard.
  */
 export async function withMorningBriefConnectorReader<T>(
   args: {
@@ -1743,7 +1651,7 @@ export async function withMorningBriefConnectorReader<T>(
     ...args,
     selection: args.authority.selection,
     // Admission and every request this source authorizes spend one observation
-    // of the owner. The release fence below starts its own.
+    // of the owner.
     owner: startMorningBriefOwnerAuthority(
       {
         db: args.db,
@@ -1759,8 +1667,6 @@ export async function withMorningBriefConnectorReader<T>(
     reservedBytes: 0,
     revoked: null,
     truncatedTotalBytes: false,
-    retainedPermissions: new Set(),
-    retainedEndpoints: new Map(),
     credential: null,
   };
   const context: ReaderContext = {
@@ -1812,45 +1718,10 @@ export async function withMorningBriefConnectorReader<T>(
   if (state.revoked !== null) {
     return unavailable(state.revoked);
   }
+  // A payload handed back after the source's absolute deadline is late
+  // content, so acceptance is the last thing the clock guards.
   if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
     return unavailable("deadline-exceeded");
-  }
-
-  const release = await settle(
-    releaseIsAuthorized(request, state, bounded),
-    signal,
-  );
-  if (!release.ok) {
-    return unavailable(
-      deadlineHasPassed(deadlineAt, deadline) ||
-        isMorningBriefDatabaseDeadlineExceeded(release.error)
-        ? "deadline-exceeded"
-        : "provider-failed",
-    );
-  }
-  if (release.value !== null) {
-    return unavailable(release.value);
-  }
-  // The release fence re-derives identity and every retained permission, which
-  // takes real time and can outlast the budget. A payload handed back after the
-  // source's absolute deadline is late content, so acceptance is the last thing
-  // the clock guards rather than the one step it is trusted to have covered.
-  if (deadlineHasPassed(args.deadline.at, args.deadline.signal)) {
-    return unavailable("deadline-exceeded");
-  }
-  // Released, so this source now holds material a later phase has to be able to
-  // re-ask about. The proof records the exact account and the real permissions
-  // and endpoints the release fence just re-evaluated, which is what makes the
-  // same check repeatable rather than a remembered allow.
-  if (state.credential !== null) {
-    args.authority.proof = {
-      connectionId: state.credential.pinned.connectorId,
-      accountRef:
-        state.credential.pinned.externalEmail ??
-        state.credential.pinned.externalId,
-      permissions: [...state.retainedPermissions].sort(),
-      endpoints: [...state.retainedEndpoints.values()],
-    };
   }
   return {
     kind: "ok",
@@ -1858,90 +1729,6 @@ export async function withMorningBriefConnectorReader<T>(
     requests: state.requests,
     truncatedTotalBytes: state.truncatedTotalBytes,
   };
-}
-
-/**
- * Re-run this source's existing live checks against a retained descriptor.
- *
- * It is the same authorizer the read went through — the member's current
- * membership generation, canonical ownership, Agent visibility, the frozen
- * account's selection and liveness, the Agent's grants, catalog visibility and
- * the effective URL policy for every endpoint whose result is still held. No
- * credential is decrypted and no provider request is issued: asking whether an
- * input may still be used is a permission question, not a reason to fetch it
- * again.
- *
- * `null` means the retained material may still be used.
- */
-export async function revalidateMorningBriefRetainedRead(
-  args: {
-    readonly db: Db;
-    readonly clerk: ClerkClient;
-    readonly scope: MorningBriefCollectionScope;
-    readonly connectorSlug: ConnectorSlug;
-    /** The connection the retained material was read through. */
-    readonly connectionId: string;
-    /** The provider identity the retained material was read from. */
-    readonly accountRef: string;
-    /** Digest of the effective permissions the original read exercised. */
-    readonly scopeDigest: string;
-    /** Every endpoint whose result is still held. */
-    readonly endpoints: readonly string[];
-    /** The composing attempt's absolute bound, never a fresh phase budget. */
-    readonly deadline: MorningBriefSourceDeadline;
-    /**
-     * This re-proof's own owner observation.
-     *
-     * The caller owns it because one re-proof covers every retained source at
-     * once: re-deriving the same member, binding and Agent per descriptor would
-     * ask one question per source and answer it identically.
-     */
-    readonly owner: MorningBriefOwnerAuthority;
-  },
-  signal: AbortSignal,
-): Promise<MorningBriefSourceUnavailable | null> {
-  const request: MorningBriefAuthorizationRequest = {
-    db: args.db,
-    clerk: args.clerk,
-    scope: args.scope,
-    connectorSlug: args.connectorSlug,
-    selection: { kind: "selected", connectorId: args.connectionId },
-    deadline: args.deadline,
-    owner: args.owner,
-  };
-  const pinned: PinnedAccount = {
-    connectorId: args.connectionId,
-    externalEmail: args.accountRef,
-    externalId: null,
-  };
-  const identity = await authorizeIdentity(request, pinned, "release", signal);
-  if (identity.kind !== "allow") {
-    return identity.reason;
-  }
-  const permissions = new Set<string>();
-  for (const url of args.endpoints) {
-    const decision = await authorizeUrl(
-      request,
-      pinned,
-      url,
-      "release",
-      signal,
-    );
-    if (decision.kind === "revoked") {
-      return decision.reason;
-    }
-    if (decision.kind !== "allow") {
-      // A permission that produced retained material is no longer effective.
-      return "source-revoked";
-    }
-    if (decision.permission !== null) {
-      permissions.add(decision.permission);
-    }
-  }
-  // The same function the recorded digest came from, so the two cannot answer
-  // differently about ordering, duplicates, or what counts as a permission.
-  const currentScopeDigest = morningBriefScopeDigest([...permissions]);
-  return currentScopeDigest === args.scopeDigest ? null : "source-revoked";
 }
 
 /**

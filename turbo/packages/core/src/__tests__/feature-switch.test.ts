@@ -406,21 +406,39 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
-  it("should admit durable exports for every owner and accept an opt-out", () => {
-    expect(FeatureSwitchKey.DurableUserExport).toBe("durableUserExport");
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+  it("should release chat unread shortcuts and optimistic message spinners", () => {
+    for (const key of [
+      FeatureSwitchKey.ChatUnreadOnlyShortcut,
+      FeatureSwitchKey.OptimisticMessageSpinner,
+    ]) {
+      expect(isFeatureEnabled(key, {})).toBe(true);
+      expect(isFeatureEnabled(key, { orgId: "org_nonexistent" })).toBe(true);
       expect(
-        isFeatureEnabled(FeatureSwitchKey.DurableUserExport, context),
-      ).toBe(true);
+        isFeatureEnabled(key, {
+          overrides: { [key]: false },
+        }),
+      ).toBe(false);
+      expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
+    }
+  });
+
+  it("should link user message urls for every reader and accept an opt-out", () => {
+    expect(FeatureSwitchKey.UserMessageLinks).toBe("userMessageLinks");
+    // A share link is read without a session, so the signed-out visitor's
+    // empty context has to carry the feature too.
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, context)).toBe(
+        true,
+      );
     }
     expect(
-      isFeatureEnabled(FeatureSwitchKey.DurableUserExport, {
+      isFeatureEnabled(FeatureSwitchKey.UserMessageLinks, {
         orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.DurableUserExport]: false },
+        overrides: { [FeatureSwitchKey.UserMessageLinks]: false },
       }),
     ).toBe(false);
     expect(
-      getFeatureSwitchMetadata()[FeatureSwitchKey.DurableUserExport]
+      getFeatureSwitchMetadata()[FeatureSwitchKey.UserMessageLinks]
         .rolloutStage,
     ).toBe("released");
   });
@@ -589,7 +607,7 @@ describe("getAllFeatureStates", () => {
       orgId: "org_nonexistent",
     });
     expect(otherOrgStates[FeatureSwitchKey.Lab]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
@@ -606,9 +624,9 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
     );
-    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
-      false,
+      true,
     );
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });

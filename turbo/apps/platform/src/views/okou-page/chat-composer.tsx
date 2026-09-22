@@ -112,7 +112,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import { Input } from "@okouai/ui/components/ui/input";
 import {
@@ -550,19 +550,21 @@ function ComposerStripRow({
       className="group flex items-center gap-2 rounded-md pl-2 pr-1 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-state-hover"
     >
       <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="shrink-0 rounded-md p-1 text-emerald-800 transition-colors hover:bg-state-selected-hover focus-visible:bg-state-selected-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={aboutAriaLabel}
-          >
-            {isAutomationEvent ? (
-              <Bolt size={16} aria-hidden="true" />
-            ) : (
-              <ComposerQueueGlyph />
-            )}
-          </button>
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              className="shrink-0 rounded-md p-1 text-emerald-800 transition-colors hover:bg-state-selected-hover focus-visible:bg-state-selected-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={aboutAriaLabel}
+            >
+              {isAutomationEvent ? (
+                <Bolt size={16} aria-hidden="true" />
+              ) : (
+                <ComposerQueueGlyph />
+              )}
+            </button>
+          }
+        />
         <PopoverContent
           side="top"
           align="start"
@@ -2931,11 +2933,13 @@ function PptCard({
       <div className={TEMPLATE_TILE_CAPTION}>
         <TooltipProvider delayDuration={300}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-                {item.title}
-              </p>
-            </TooltipTrigger>
+            <TooltipTrigger
+              render={
+                <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+                  {item.title}
+                </p>
+              }
+            />
             <TooltipContent side="bottom">{item.title}</TooltipContent>
           </Tooltip>
         </TooltipProvider>
@@ -4298,11 +4302,13 @@ function ImportedPptCardCaption({
     <div className={TEMPLATE_TILE_CAPTION}>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-              {template.title}
-            </p>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+                {template.title}
+              </p>
+            }
+          />
           <TooltipContent side="bottom">{template.title}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -4508,18 +4514,20 @@ function ImportedPresentationTemplateRenameControl({
       </div>
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="submit"
-              variant="quiet"
-              size="icon-sm"
-              disabled={updating}
-              aria-label={label}
-              className="invisible mt-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
-            >
-              {updating ? <Loader2 className="animate-spin" /> : <Check />}
-            </Button>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <Button
+                type="submit"
+                variant="quiet"
+                size="icon-sm"
+                disabled={updating}
+                aria-label={label}
+                className="invisible mt-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
+              >
+                {updating ? <Loader2 className="animate-spin" /> : <Check />}
+              </Button>
+            }
+          />
           <TooltipContent side="bottom">{label}</TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -4601,49 +4609,52 @@ function ImportedPresentationTemplateVisibilityControl({
           {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
             const selected = value === visibility;
             return (
-              <PopoverClose asChild key={value}>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  className={cn(
-                    "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-                    selected && "bg-state-selected",
-                  )}
-                  onClick={() => {
-                    if (!selected) {
-                      onChange(value);
-                    }
-                  }}
-                >
-                  <Icon
-                    size={16}
-                    className="mt-0.5 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-foreground">
-                      {optionLabel(value)}
+              <PopoverClose
+                key={value}
+                render={
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    className={cn(
+                      "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
+                      selected && "bg-state-selected",
+                    )}
+                    onClick={() => {
+                      if (!selected) {
+                        onChange(value);
+                      }
+                    }}
+                  >
+                    <Icon
+                      size={16}
+                      className="mt-0.5 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm text-foreground">
+                        {optionLabel(value)}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {optionState(value)}
+                      </span>
                     </span>
-                    <span className="block text-xs text-muted-foreground">
-                      {optionState(value)}
-                    </span>
-                  </span>
-                  {/* The check column is reserved on both rows: letting it
+                    {/* The check column is reserved on both rows: letting it
                       appear only on the selected one narrows that row's text
                       box, so the description reflows every time the selection
                       moves. */}
-                  <span className="mt-0.5 w-4 shrink-0">
-                    {selected ? (
-                      <Check
-                        size={16}
-                        className="text-foreground"
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                  </span>
-                </button>
-              </PopoverClose>
+                    <span className="mt-0.5 w-4 shrink-0">
+                      {selected ? (
+                        <Check
+                          size={16}
+                          className="text-foreground"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </span>
+                  </button>
+                }
+              />
             );
           })}
         </div>
@@ -5188,7 +5199,7 @@ function ComposerPresentationSuggestion({
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "block aspect-video rounded-lg group-hover/tile:opacity-90",
+          "block aspect-video group-hover/tile:opacity-90",
         )}
       >
         {children}
@@ -6161,26 +6172,28 @@ function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={label}
-            aria-pressed={false}
-            onPointerEnter={prewarm}
-            onFocus={prewarm}
-            onPointerDown={prewarm}
-            onClick={open}
-          >
-            {/* The label stays in the tooltip and the accessible name; the
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={label}
+              aria-pressed={false}
+              onPointerEnter={prewarm}
+              onFocus={prewarm}
+              onPointerDown={prewarm}
+              onClick={open}
+            >
+              {/* The label stays in the tooltip and the accessible name; the
                 row beside it is all icons, and one worded control in it read
                 as a different kind of thing. */}
-            <SwatchBook size={18} aria-hidden="true" />
-          </Button>
-        </TooltipTrigger>
+              <SwatchBook size={18} aria-hidden="true" />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {label}
         </TooltipContent>
@@ -6261,21 +6274,23 @@ function CreateWorkflowPromptButton({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={t(($) => {
-              return $.chat.composer.createWorkflow;
-            })}
-            onClick={onCreateWorkflowPrompt}
-          >
-            <Route size={18} aria-hidden="true" />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.chat.composer.createWorkflow;
+              })}
+              onClick={onCreateWorkflowPrompt}
+            >
+              <Route size={18} aria-hidden="true" />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
             return $.chat.composer.createWorkflow;
@@ -6837,18 +6852,20 @@ function ComputerUseConnectorMenuSection({
           })}
         </div>
       )}
-      <PopoverClose asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-state-hover"
-          onClick={onOpenDownloadDialog}
-        >
-          <Plug size={16} className="shrink-0" />
-          {t(($) => {
-            return $.chat.computerUse.connectMyComputer;
-          })}
-        </button>
-      </PopoverClose>
+      <PopoverClose
+        render={
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-foreground transition-colors hover:bg-state-hover"
+            onClick={onOpenDownloadDialog}
+          >
+            <Plug size={16} className="shrink-0" />
+            {t(($) => {
+              return $.chat.computerUse.connectMyComputer;
+            })}
+          </button>
+        }
+      />
     </div>
   );
 }
@@ -7079,19 +7096,23 @@ function ComposerConnectorAccountMenu({
       }}
     >
       <Tooltip>
-        <PopoverTrigger asChild>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-2xs"
-              className="shrink-0"
-              aria-label={accessibleLabel}
-            >
-              {explicit ? <UserCheck size={14} /> : <User size={14} />}
-            </Button>
-          </TooltipTrigger>
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="quiet"
+                  size="icon-2xs"
+                  className="shrink-0"
+                  aria-label={accessibleLabel}
+                >
+                  {explicit ? <UserCheck size={14} /> : <User size={14} />}
+                </Button>
+              }
+            />
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {accessibleLabel}
         </TooltipContent>
@@ -7792,30 +7813,34 @@ function ConnectorsPopoverButton({
     >
       <TooltipProvider delayDuration={300}>
         <Tooltip>
-          <PopoverTrigger asChild>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
-                  COMPOSER_CONTROL_FOCUS_CLASS,
-                )}
-                aria-label={t(($) => {
-                  return $.chat.connectors.title;
-                })}
-              >
-                {!waitingForConnectors && (
-                  <ComposerConnectorTriggerIcons
-                    connectors={agentConnectors}
-                    customConnectors={agentCustomConnectors}
-                    computerUse={computerUse}
-                    sshAccess={sshAccess}
-                    vncAccess={vncAccess}
-                  />
-                )}
-              </button>
-            </TooltipTrigger>
-          </PopoverTrigger>
+          <PopoverTrigger
+            render={
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    className={cn(
+                      "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
+                      COMPOSER_CONTROL_FOCUS_CLASS,
+                    )}
+                    aria-label={t(($) => {
+                      return $.chat.connectors.title;
+                    })}
+                  >
+                    {!waitingForConnectors && (
+                      <ComposerConnectorTriggerIcons
+                        connectors={agentConnectors}
+                        customConnectors={agentCustomConnectors}
+                        computerUse={computerUse}
+                        sshAccess={sshAccess}
+                        vncAccess={vncAccess}
+                      />
+                    )}
+                  </button>
+                }
+              />
+            }
+          />
           <TooltipContent side="top" className="text-xs">
             {t(($) => {
               return $.chat.connectors.title;
@@ -8019,29 +8044,31 @@ function ConnectorsPopoverButton({
                           <>
                             {accountAction}
                             {showPermissionAction ? (
-                              <PopoverClose asChild>
-                                <Button
-                                  showTooltip
-                                  type="button"
-                                  onClick={() => {
-                                    updateConnectorUi({
-                                      permissionConnectorSlug: connector.slug,
-                                    });
-                                  }}
-                                  aria-label={t(
-                                    ($) => {
-                                      return $.chat.connectors
-                                        .configurePermissions;
-                                    },
-                                    { connectorName: connector.label },
-                                  )}
-                                  variant="quiet"
-                                  size="icon-2xs"
-                                  className="shrink-0"
-                                >
-                                  <SlidersHorizontal size={15} />
-                                </Button>
-                              </PopoverClose>
+                              <PopoverClose
+                                render={
+                                  <Button
+                                    showTooltip
+                                    type="button"
+                                    onClick={() => {
+                                      updateConnectorUi({
+                                        permissionConnectorSlug: connector.slug,
+                                      });
+                                    }}
+                                    aria-label={t(
+                                      ($) => {
+                                        return $.chat.connectors
+                                          .configurePermissions;
+                                      },
+                                      { connectorName: connector.label },
+                                    )}
+                                    variant="quiet"
+                                    size="icon-2xs"
+                                    className="shrink-0"
+                                  >
+                                    <SlidersHorizontal size={15} />
+                                  </Button>
+                                }
+                              />
                             ) : null}
                           </>
                         ) : null
@@ -8091,22 +8118,24 @@ function ConnectorsPopoverButton({
           {(connectorItems.length > 0 || connectorsLoading) && (
             <div className="mx-2 mb-1 border-t border-border/50" />
           )}
-          <PopoverClose asChild>
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-state-hover transition-colors"
-              onClick={() => {
-                return onOpenAddDialog();
-              }}
-            >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
-                <Plus size={13} />
-              </span>
-              {t(($) => {
-                return $.chat.connectors.addConnectors;
-              })}
-            </button>
-          </PopoverClose>
+          <PopoverClose
+            render={
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-2 py-1.5 rounded-md text-sm text-foreground hover:bg-state-hover transition-colors"
+                onClick={() => {
+                  return onOpenAddDialog();
+                }}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground">
+                  <Plus size={13} />
+                </span>
+                {t(($) => {
+                  return $.chat.connectors.addConnectors;
+                })}
+              </button>
+            }
+          />
         </div>
         {computerUse && (
           <ComputerUseConnectorMenuSection
@@ -8204,21 +8233,20 @@ function ComputerUseDownloadDialog({
               })}
             </Button>
           ) : (
-            <Button asChild size="lg" className="w-full">
-              <a
-                href={downloadUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => {
-                  onOpenChange(false);
-                }}
-              >
-                <Download size={16} />
-                {t(($) => {
-                  return $.chat.computerUse.downloadMacos;
-                })}
-              </a>
-            </Button>
+            <a
+              href={downloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => {
+                onOpenChange(false);
+              }}
+              className={cn(buttonVariants({ size: "lg" }), "w-full")}
+            >
+              <Download size={16} />
+              {t(($) => {
+                return $.chat.computerUse.downloadMacos;
+              })}
+            </a>
           )}
         </div>
       </DialogContent>
@@ -8301,35 +8329,37 @@ function MicButton({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className={cn("relative shrink-0", {
-              // Background draft checks should not dim the mic on thread switches.
-              "disabled:opacity-100": draftLoading && !actionDisabled,
-              "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
-                starting,
-            })}
-            data-composer-voice-toggle
-            onClick={handleClick}
-            disabled={actionDisabled || draftLoading}
-            aria-label={micButtonAriaLabel(status)}
-            aria-busy={starting}
-            aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
-          >
-            {starting ? (
-              <span
-                className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
-                aria-hidden="true"
-              />
-            ) : (
-              <Mic size={18} />
-            )}
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className={cn("relative shrink-0", {
+                // Background draft checks should not dim the mic on thread switches.
+                "disabled:opacity-100": draftLoading && !actionDisabled,
+                "bg-[#2E9E9F] text-white hover:bg-[#279394] hover:text-white":
+                  starting,
+              })}
+              data-composer-voice-toggle
+              onClick={handleClick}
+              disabled={actionDisabled || draftLoading}
+              aria-label={micButtonAriaLabel(status)}
+              aria-busy={starting}
+              aria-keyshortcuts={COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS}
+            >
+              {starting ? (
+                <span
+                  className="block size-[17px] rounded-full border-2 border-[rgb(255_255_255_/_0.35)] border-t-[#ffffff] pointer-events-none [transform:rotate(0deg)_translateZ(0)] origin-center [backface-visibility:hidden] [will-change:transform] animate-mic-starting-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Mic size={18} />
+              )}
+            </Button>
+          }
+        />
         <TooltipContent
           role="tooltip"
           side="top"
@@ -8527,23 +8557,25 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="shrink-0"
-            aria-label={t(($) => {
-              return $.chat.attachments.attach;
-            })}
-            onClick={() => {
-              fileInput?.click();
-            }}
-          >
-            <Paperclip size={18} />
-          </Button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={t(($) => {
+                return $.chat.attachments.attach;
+              })}
+              onClick={() => {
+                fileInput?.click();
+              }}
+            >
+              <Paperclip size={18} />
+            </Button>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {t(($) => {
             return $.chat.attachments.attach;
@@ -9107,19 +9139,21 @@ function ModelConfigurationWarning({
   return (
     <TooltipProvider delayDuration={200}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={blocker.onAction}
-            aria-label={`${blocker.actionLabel}: ${blocker.message}`}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
-          >
-            <AlertTriangle size={15} />
-            <span className="hidden composer-wide:inline">
-              {blocker.actionLabel}
-            </span>
-          </button>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={blocker.onAction}
+              aria-label={`${blocker.actionLabel}: ${blocker.message}`}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300"
+            >
+              <AlertTriangle size={15} />
+              <span className="hidden composer-wide:inline">
+                {blocker.actionLabel}
+              </span>
+            </button>
+          }
+        />
         <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
           {blocker.message}
         </TooltipContent>
@@ -9207,6 +9241,8 @@ function ComposerRunModelPickerControl({
   const { t } = useTranslation();
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
+  const flyoutCategory = useGet(signals.model.menu.flyoutCategory$);
+  const setMediaModelCategory = useSet(signals.model.setMediaModelCategory$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
   return (
     <div
@@ -9228,6 +9264,9 @@ function ComposerRunModelPickerControl({
         // the menu's pages until the sheet layout lands.
         flyoutLayout={desktopLayout}
         onSelected={() => {
+          setMediaModelCategory(
+            flyoutCategory === "chat" ? null : flyoutCategory,
+          );
           setModelPickerOpen(false);
         }}
         compactTrigger
@@ -10454,6 +10493,15 @@ function ComposerFooter({
   );
 }
 
+function containsFiles(dataTransfer: DataTransfer): boolean {
+  return (
+    dataTransfer.types.includes("Files") ||
+    Array.from(dataTransfer.items).some((item) => {
+      return item.kind === "file";
+    })
+  );
+}
+
 function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
@@ -10477,6 +10525,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
         dragOver && "outline outline-2 outline-blue-400/60",
       )}
       onDrop={(event) => {
+        if (!containsFiles(event.dataTransfer)) {
+          return;
+        }
         event.preventDefault();
         setDragOver(false);
         let uploaded = false;
@@ -10488,6 +10539,9 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
         }
       }}
       onDragOver={(event) => {
+        if (!containsFiles(event.dataTransfer)) {
+          return;
+        }
         event.preventDefault();
         setDragOver(true);
       }}

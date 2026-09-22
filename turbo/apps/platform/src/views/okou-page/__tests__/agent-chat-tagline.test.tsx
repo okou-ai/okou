@@ -10,14 +10,12 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 
 const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000002";
-const NOW = Date.parse("2026-09-20T12:00:00.000Z");
 
 function mountedAgent(agentIds: string[]): void {
   const agents = agentIds.map((agentId): AgentResponse => {
@@ -50,38 +48,57 @@ function mountedAgent(agentIds: string[]): void {
 async function greeting() {
   const tagline = await screen.findByTestId("chat-tagline");
   const fullLine = tagline.getAttribute("aria-label");
-  const typed = tagline.querySelector('[data-slot="chat-tagline-text"]');
-  if (!fullLine || !typed) {
+  const text = tagline.querySelector('[data-slot="chat-tagline-text"]');
+  if (!fullLine || !text) {
     throw new Error("Expected the greeting and its displayed text");
   }
-  return { tagline, fullLine, typed };
+  return { tagline, fullLine, text };
 }
 
-test("The greeting pauses before revealing its text and keeps its accessible name", async () => {
+/** Every word box that carries the entrance, in reading order. */
+function tokens(text: Element): HTMLElement[] {
+  return Array.from(
+    text.querySelectorAll<HTMLElement>('[data-slot="chat-tagline-word"]'),
+  );
+}
+
+test("The greeting shows its complete sentence, one box per word", async () => {
   mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
-  mockNow(NOW, context.signal);
 
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
-  const { tagline, fullLine, typed } = await greeting();
-  expect(typed).toBeEmptyDOMElement();
+  const { tagline, fullLine, text } = await greeting();
+  // The sentence is complete from the first frame. Each word arrives on its
+  // own, so a reader never sees a partial line and the row it sits in never
+  // has to move; how a word arrives is a stylesheet decision, and the deployed
+  // greeting test owns it.
+  expect(text.textContent).toBe(fullLine);
   expect(tagline).toHaveAccessibleName(fullLine);
+  expect(
+    tokens(text).map((box) => {
+      return box.textContent;
+    }),
+  ).toStrictEqual(fullLine.split(" "));
+});
 
-  mockNow(NOW + 745, context.signal);
-  await waitFor(() => {
-    const prefix = typed.textContent ?? "";
-    expect(prefix.length).toBeGreaterThan(0);
-    expect(prefix.length).toBeLessThan(fullLine.length);
-    expect(fullLine.startsWith(prefix)).toBeTruthy();
-  });
-  expect(tagline).toHaveAccessibleName(fullLine);
+test("The avatar leads the sentence", async () => {
+  mountedAgent([AGENT_ID]);
+  context.mocks.browser.matchMedia(false);
 
-  mockNow(NOW + 1270, context.signal);
-  await waitFor(() => {
-    expect(typed.textContent).toBe(fullLine);
-  });
-  expect(tagline).toHaveAccessibleName(fullLine);
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+
+  const row = await screen.findByTestId("chat-greeting");
+  const avatarBox = row.querySelector('[data-slot="chat-greeting-avatar"]');
+  const tagline = await screen.findByTestId("chat-tagline");
+  if (!avatarBox) {
+    throw new Error("Expected the avatar to lead the greeting row");
+  }
+  expect(row.firstElementChild).toBe(avatarBox);
+  expect(
+    avatarBox.compareDocumentPosition(tagline) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 test("Reduced motion shows the complete greeting immediately", async () => {
@@ -89,31 +106,27 @@ test("Reduced motion shows the complete greeting immediately", async () => {
   context.mocks.browser.matchMedia((query) => {
     return query === "(prefers-reduced-motion: reduce)";
   });
-  mockNow(NOW, context.signal);
 
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
-  const { tagline, fullLine, typed } = await greeting();
-  expect(typed.textContent).toBe(fullLine);
+  const { tagline, fullLine, text } = await greeting();
+  expect(text.textContent).toBe(fullLine);
   expect(tagline).toHaveAccessibleName(fullLine);
 });
 
-test("Switching agents starts a fresh greeting after the previous one finished", async () => {
+test("Switching agents starts a fresh greeting", async () => {
   const otherAgentId = "c0000000-0000-4000-a000-000000000003";
   mountedAgent([AGENT_ID, otherAgentId]);
   context.mocks.data.userPreferences({ pinnedAgentIds: [otherAgentId] });
   context.mocks.browser.matchMedia((query) => {
     return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
   });
-  mockNow(NOW, context.signal);
 
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   const previous = await greeting();
-  mockNow(NOW + 1270, context.signal);
-  await waitFor(() => {
-    expect(previous.typed.textContent).toBe(previous.fullLine);
-  });
+  expect(previous.text.textContent).toBe(previous.fullLine);
+
   const pinnedAgents = await screen.findByTestId("pinned-agents-grid");
   const otherAgent = queryAllByRoleFast("link", pinnedAgents).find((link) => {
     return link.textContent?.trim() === "Orion";
@@ -130,19 +143,9 @@ test("Switching agents starts a fresh greeting after the previous one finished",
       `/agents/${otherAgentId}`,
     );
   });
-  const current = await greeting();
-  expect(current.typed).toBeEmptyDOMElement();
 
-  mockNow(NOW + 2015, context.signal);
-  await waitFor(() => {
-    const prefix = current.typed.textContent ?? "";
-    expect(prefix.length).toBeGreaterThan(0);
-    expect(prefix.length).toBeLessThan(current.fullLine.length);
-    expect(current.fullLine.startsWith(prefix)).toBeTruthy();
-  });
-  mockNow(NOW + 2540, context.signal);
-  await waitFor(() => {
-    expect(current.typed.textContent).toBe(current.fullLine);
-  });
+  const current = await greeting();
+  expect(current.text.textContent).toBe(current.fullLine);
   expect(current.tagline).toHaveAccessibleName(current.fullLine);
+  expect(tokens(current.text)).toHaveLength(current.fullLine.split(" ").length);
 });

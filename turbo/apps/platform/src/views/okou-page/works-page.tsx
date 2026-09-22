@@ -8,7 +8,7 @@ import {
   Download,
   Settings,
 } from "lucide-react";
-import { surfaceVariants, Button } from "@okouai/ui";
+import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,
@@ -165,18 +165,20 @@ function ProviderCardActions({
       )}
       {isInstalled && (isConnected || isAdmin) && (
         <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              showTooltip
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              className="shrink-0"
-              aria-label={moreOptionsLabel}
-            >
-              <EllipsisVertical size={16} />
-            </Button>
-          </PopoverTrigger>
+          <PopoverTrigger
+            render={
+              <Button
+                showTooltip
+                type="button"
+                variant="quiet"
+                size="icon-xs"
+                className="shrink-0"
+                aria-label={moreOptionsLabel}
+              >
+                <EllipsisVertical size={16} />
+              </Button>
+            }
+          />
           <PopoverContent
             align="end"
             className="flex flex-col gap-0.5 w-40 p-2"
@@ -610,25 +612,21 @@ function GithubCard() {
           />
         ) : null}
         {githubData && !githubData.isInstalled && githubData.installUrl ? (
-          <Button
-            asChild
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 rounded-lg"
+          <a
+            data-testid="github-install-button"
+            href={githubData.installUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "h-8 shrink-0 gap-1.5 rounded-lg",
+            )}
           >
-            <a
-              data-testid="github-install-button"
-              href={githubData.installUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Download size={14} />
-              {t(($) => {
-                return $.works.github.install;
-              })}
-            </a>
-          </Button>
+            <Download size={14} />
+            {t(($) => {
+              return $.works.github.install;
+            })}
+          </a>
         ) : null}
         {githubData?.isInstalled && !githubData.isConnected ? (
           <Button

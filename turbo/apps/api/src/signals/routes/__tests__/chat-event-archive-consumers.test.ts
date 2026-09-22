@@ -27,7 +27,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
 import { semanticChatEventsFromChatEvents } from "@okouai/api-contracts/contracts/chat-event-semantics";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
@@ -61,16 +60,12 @@ import {
 import { createOpsLogsApi } from "./helpers/api-bdd-ops-logs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
-  installUserExportStorage,
-  readExportChatRows,
   readExportJsonLines,
   readExportText,
-  readUserExportZip,
 } from "./helpers/user-export-storage";
 import { createRouteMocks } from "./helpers/route-test";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import AdmZip from "adm-zip";
 
 const context = testContext();
@@ -305,14 +300,6 @@ async function createAdvancingExportFixture(
   advancement: "within-bound" | "overtake-with-revocation",
 ) {
   const fixture = await createArchiveFixture("export-advancement");
-  if (!fixture.actor.orgId) {
-    throw new Error("Expected an organization for the export fixture");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...fixture.actor, orgId: fixture.actor.orgId },
-    { [FeatureSwitchKey.DurableUserExport]: true },
-  );
   // Historical timestamps and retention are infrastructure states that
   // cannot be constructed through the ordinary message-send API. The
   // existing native archive fixture owns those rows; expected payloads are
@@ -462,129 +449,93 @@ describe("archived chat event consumers", () => {
     installAgentStorage();
   });
 
-  it.each([false, true])(
-    "exports snapshot history plus the PostgreSQL tail after archived source rows are gone (durable=%s)",
-    async (durable) => {
-      const fixture = await createArchiveFixture("export");
-      if (!fixture.actor.orgId) {
-        throw new Error("Expected an organization for the export fixture");
-      }
-      // Durable admission is the registry default, so the legacy arm states
-      // the owner opt-out that keeps its export on the streaming exporter.
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...fixture.actor, orgId: fixture.actor.orgId },
-        {
-          [FeatureSwitchKey.DurableUserExport]: durable,
-        },
+  it("exports snapshot history plus the PostgreSQL tail after archived source rows are gone", async () => {
+    const fixture = await createArchiveFixture("export");
+    const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
+    // Each message stays within PostgreSQL's indexed document limit while
+    // their combined compressed snapshot crosses the export range boundary.
+    const archivedTexts = Array.from({ length: 24 }, () => {
+      return (
+        withHiddenCitation(archivedVisible) +
+        randomBytes(256 * 1024).toString("base64")
       );
-      const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
-      // Each message stays within PostgreSQL's indexed document limit while
-      // their combined compressed snapshot crosses the export range boundary.
-      const archivedTexts = durable
-        ? Array.from({ length: 24 }, () => {
-            return (
-              withHiddenCitation(archivedVisible) +
-              randomBytes(256 * 1024).toString("base64")
-            );
-          })
-        : [withHiddenCitation(archivedVisible)];
-      const archivedEventIds: string[] = [];
-      for (const content of archivedTexts) {
-        archivedEventIds.push(
-          await store.set(
-            seedRetentionOutputEvent$,
-            { chatThreadId: fixture.threadId, content, offsetMs: -60_000 },
-            context.signal,
-          ),
-        );
-      }
-      await archiveAndRetain(fixture.threadId, archivedEventIds);
-      const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
-      const tailTexts = durable
-        ? Array.from({ length: 100 }, (_, index) => {
-            return `${withHiddenCitation(tailVisible)} ${index} ${"x".repeat(64 * 1024)}`;
-          })
-        : [withHiddenCitation(tailVisible)];
-      const tailEventIds: string[] = [];
-      for (const content of tailTexts) {
-        tailEventIds.push(
-          await store.set(
-            seedRetentionOutputEvent$,
-            { chatThreadId: fixture.threadId, content },
-            context.signal,
-          ),
-        );
-      }
+    });
+    const archivedEventIds: string[] = [];
+    for (const content of archivedTexts) {
+      archivedEventIds.push(
+        await store.set(
+          seedRetentionOutputEvent$,
+          { chatThreadId: fixture.threadId, content, offsetMs: -60_000 },
+          context.signal,
+        ),
+      );
+    }
+    await archiveAndRetain(fixture.threadId, archivedEventIds);
+    const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
+    const tailTexts = Array.from({ length: 100 }, (_, index) => {
+      return `${withHiddenCitation(tailVisible)} ${index} ${"x".repeat(64 * 1024)}`;
+    });
+    const tailEventIds: string[] = [];
+    for (const content of tailTexts) {
+      tailEventIds.push(
+        await store.set(
+          seedRetentionOutputEvent$,
+          { chatThreadId: fixture.threadId, content },
+          context.signal,
+        ),
+      );
+    }
 
-      const exportApi = createOpsLogsApi(context);
-      const storage = durable
-        ? installDurableUserExportStorage(context)
-        : undefined;
-      if (!durable) {
-        installUserExportStorage(context);
-      }
-      const started = await exportApi.requestPostUserExport(
-        fixture.actor,
-        [202],
-      );
-      await flushWaitUntilForTest();
-      if (durable) {
-        await accept(
-          setupApp({ context, routes: testUserExportWorkRoutes })(
-            testUserExportWorkContract,
-          ).action({
-            body: {
-              action: "run",
-              userId: fixture.actor.userId,
-              jobId: started.body.jobId,
-              maxSteps: 200,
-            },
-          }),
-          [200],
+    const exportApi = createOpsLogsApi(context);
+    const storage = installDurableUserExportStorage(context);
+    const started = await exportApi.requestPostUserExport(fixture.actor, [202]);
+    await flushWaitUntilForTest();
+    await accept(
+      setupApp({ context, routes: testUserExportWorkRoutes })(
+        testUserExportWorkContract,
+      ).action({
+        body: {
+          action: "run",
+          userId: fixture.actor.userId,
+          jobId: started.body.jobId,
+          maxSteps: 200,
+        },
+      }),
+      [200],
+    );
+    const status = await exportApi.requestGetUserExport(fixture.actor, [200]);
+    expect(status.body.job).toMatchObject({
+      id: started.body.jobId,
+      status: "completed",
+    });
+    const downloadUrl = status.body.job?.downloadUrl;
+    if (!downloadUrl) {
+      throw new Error("Expected a downloadable user export");
+    }
+    const zip = new AdmZip(storage.download(downloadUrl));
+    const messages = readDurableChatRows(zip, fixture.threadId);
+    expectExportMessageBytes(messages, {
+      ids: archivedEventIds,
+      texts: archivedTexts,
+      threadId: fixture.threadId,
+      offset: 0,
+    });
+    expectExportMessageBytes(messages, {
+      ids: tailEventIds,
+      texts: tailTexts,
+      threadId: fixture.threadId,
+      offset: archivedTexts.length,
+    });
+    expect(
+      zip.getEntries().filter((entry) => {
+        return entry.entryName.startsWith(
+          `chat-messages/${fixture.threadId}/tail/`,
         );
-      }
-      const status = await exportApi.requestGetUserExport(fixture.actor, [200]);
-      expect(status.body.job).toMatchObject({
-        id: started.body.jobId,
-        status: "completed",
-      });
-      const zip =
-        storage && status.body.job?.downloadUrl
-          ? new AdmZip(storage.download(status.body.job.downloadUrl))
-          : readUserExportZip(
-              context,
-              `exports/${fixture.actor.userId}/${started.body.jobId}.zip`,
-            );
-      const messages = durable
-        ? readDurableChatRows(zip, fixture.threadId)
-        : readExportChatRows(zip, fixture.threadId);
-      expectExportMessageBytes(messages, {
-        ids: archivedEventIds,
-        texts: archivedTexts,
-        threadId: fixture.threadId,
-        offset: 0,
-      });
-      expectExportMessageBytes(messages, {
-        ids: tailEventIds,
-        texts: tailTexts,
-        threadId: fixture.threadId,
-        offset: archivedTexts.length,
-      });
-      if (durable) {
-        expect(
-          zip.getEntries().filter((entry) => {
-            return entry.entryName.startsWith(
-              `chat-messages/${fixture.threadId}/tail/`,
-            );
-          }).length,
-        ).toBeGreaterThan(1);
-      }
-      expect(messages).toHaveLength(archivedTexts.length + tailTexts.length);
-      expect(messages[0]?.seqId).toBeLessThan(messages.at(-1)?.seqId ?? 0);
-    },
-    60_000,
-  );
+      }).length,
+    ).toBeGreaterThan(1);
+    expect(messages).toHaveLength(archivedTexts.length + tailTexts.length);
+    expect(messages[0]?.seqId).toBeLessThan(messages.at(-1)?.seqId ?? 0);
+  }, 60_000);
 
   it.each(["within-bound", "overtake-with-revocation"] as const)(
     "restores a durable export when archival advances between source pages (%s)",

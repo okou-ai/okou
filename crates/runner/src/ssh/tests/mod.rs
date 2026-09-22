@@ -16,6 +16,7 @@ mod proof;
 mod reading;
 mod sessions;
 mod telemetry;
+mod vnc_forwarding;
 
 use base64::Engine;
 use harness::{Harness, Reply, params};

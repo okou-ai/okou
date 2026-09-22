@@ -12,6 +12,7 @@ import {
   type PiApiFirstTurnOwnershipTransferMode,
 } from "@okouai/api-contracts/contracts/runners";
 import type { PiApiHandoffUsage } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
+import { PI_AGENT_RUNTIME_VERSION } from "@okouai/pi-agent-runtime";
 import {
   inspectPiSessionJsonl,
   type PiSessionInspection,
@@ -55,12 +56,25 @@ export interface PiApiFirstTurnBoundaryControl {
   readonly ownershipTransferMode: PiApiFirstTurnOwnershipTransferMode;
 }
 
+/**
+ * The sandbox restarted the turn from H0 instead of continuing the API's H1.
+ *
+ * Recorded so the discarded API-side attempt stays explainable; `apiUsage`
+ * still carries what the API consumed.
+ */
+interface PiApiFirstTurnHandoffDegrade {
+  readonly reason: "runtime_parity_mismatch";
+  readonly requiredPiAgentRuntimeVersion: string;
+  readonly installedPiAgentRuntimeVersion: string;
+}
+
 interface PiApiFirstTurnHandoff {
   readonly sessionFile: string;
   readonly boundaryControl: PiApiFirstTurnBoundaryControl;
   readonly ownershipTransferMode: PiApiFirstTurnOwnershipTransferMode;
   readonly langfuseParent?: PiApiFirstTurnManifest["langfuseParent"];
   readonly apiUsage?: PiApiHandoffUsage;
+  readonly degraded?: PiApiFirstTurnHandoffDegrade;
 }
 
 export interface HandoffRuntime {
@@ -298,6 +312,88 @@ function validateSessionMode(args: {
   }
 }
 
+/**
+ * Truncate an API-produced H1 back to the authoritative H0 it extends.
+ *
+ * H0 is a line-aligned prefix of H1 whose SHA-256 equals the configured base
+ * checkpoint; a fresh session (null base) reduces to the session header line.
+ */
+export function deriveBaseSessionBytes(
+  h1: Buffer,
+  baseSessionSha256: string | null,
+): Buffer {
+  const firstLineEnd = h1.indexOf(0x0a);
+  if (firstLineEnd === -1) {
+    throw new PiApiFirstTurnHandoffError(
+      "PI_HANDOFF_H1_INVALID",
+      "Pi API first-turn H1 has no session header line",
+    );
+  }
+  if (baseSessionSha256 === null) {
+    return h1.subarray(0, firstLineEnd + 1);
+  }
+  const hash = createHash("sha256");
+  let lineStart = 0;
+  while (lineStart < h1.length) {
+    const lineEnd = h1.indexOf(0x0a, lineStart);
+    const prefixEnd = lineEnd === -1 ? h1.length : lineEnd + 1;
+    hash.update(h1.subarray(lineStart, prefixEnd));
+    if (hash.copy().digest("hex") === baseSessionSha256) {
+      return h1.subarray(0, prefixEnd);
+    }
+    lineStart = prefixEnd;
+  }
+  throw new PiApiFirstTurnHandoffError(
+    "PI_HANDOFF_BASE_SESSION_MISMATCH",
+    "Pi API first-turn H1 does not extend the configured H0",
+  );
+}
+
+/**
+ * Whether a pending-tool handoff must restart from H0 because the API prepared
+ * it with a different `pi-agent-runtime` build than the one running here.
+ *
+ * Only a pending-tool continuation depends on byte-level prompt and tool-schema
+ * parity with the API. A settled H1 is a complete checkpoint, and resuming one
+ * with a newer or older runtime is the ordinary cross-release resume path, so
+ * it is never discarded.
+ */
+function runtimeParityDegrade(args: {
+  readonly config: PiApiFirstTurnConfig;
+  readonly manifest: PiApiFirstTurnManifest;
+  readonly installedPiAgentRuntimeVersion: string;
+}): PiApiFirstTurnHandoffDegrade | undefined {
+  const required = args.config.requiredPiAgentRuntimeVersion;
+  if (
+    required === undefined ||
+    args.manifest.mode !== "pending-tool-continuation" ||
+    required === args.installedPiAgentRuntimeVersion
+  ) {
+    return undefined;
+  }
+  return {
+    reason: "runtime_parity_mismatch",
+    requiredPiAgentRuntimeVersion: required,
+    installedPiAgentRuntimeVersion: args.installedPiAgentRuntimeVersion,
+  };
+}
+
+function validateDegradedBaseSession(args: {
+  readonly inspection: PiSessionInspection;
+  readonly baseSessionSha256: string | null;
+}): void {
+  const isAuthoritativeH0 =
+    args.baseSessionSha256 === null
+      ? args.inspection.messageCount === 0
+      : args.inspection.isSettledCheckpoint;
+  if (!isAuthoritativeH0) {
+    throw new PiApiFirstTurnHandoffError(
+      "PI_HANDOFF_H1_INVALID",
+      "Pi runtime-parity degrade could not recover the authoritative H0",
+    );
+  }
+}
+
 async function restoreSession(args: {
   readonly config: PiApiFirstTurnConfig;
   readonly manifest: PiApiFirstTurnManifest;
@@ -305,6 +401,7 @@ async function restoreSession(args: {
   readonly sessionDir: string;
   readonly sessionId: string;
   readonly mode: PiApiFirstTurnOwnershipTransferMode;
+  readonly degradeToBaseSession: boolean;
 }): Promise<string> {
   validateManifestIdentity(args);
   let response: Response;
@@ -396,6 +493,9 @@ async function restoreSession(args: {
       "Pi API first-turn H1 hash does not match the manifest",
     );
   }
+  if (args.degradeToBaseSession) {
+    bytes = deriveBaseSessionBytes(bytes, args.manifest.baseSession.sha256);
+  }
 
   let session: PiSessionInspection;
   try {
@@ -414,11 +514,18 @@ async function restoreSession(args: {
       "Pi API first-turn H1 session id does not match the launch",
     );
   }
-  validateSessionMode({
-    inspection: session,
-    manifest: args.manifest,
-    mode: args.mode,
-  });
+  if (args.degradeToBaseSession) {
+    validateDegradedBaseSession({
+      inspection: session,
+      baseSessionSha256: args.manifest.baseSession.sha256,
+    });
+  } else {
+    validateSessionMode({
+      inspection: session,
+      manifest: args.manifest,
+      mode: args.mode,
+    });
+  }
 
   const sessionFile = join(
     args.sessionDir,
@@ -439,34 +546,55 @@ async function restoreSession(args: {
   return sessionFile;
 }
 
-/** Poll the wire coordination deadline and restore the validated checkpoint. */
+/**
+ * Poll the wire coordination deadline and restore the validated checkpoint.
+ *
+ * A pending-tool handoff prepared by a different `pi-agent-runtime` build is
+ * not continued: the sandbox restores H0 and reports `sandbox-first`, so the
+ * guest delivers the prompt again and this runtime owns the whole turn. The
+ * API's attempt is discarded, never executed on a mismatched runtime, and the
+ * event sequence the API already consumed is preserved.
+ */
 export async function resolvePiApiFirstTurnHandoff(args: {
   readonly config: PiApiFirstTurnConfig;
   readonly sessionDir: string;
   readonly sessionId: string;
   readonly runtime?: HandoffRuntime;
+  /** Defaults to the runtime bundled into this CLI; tests inject a mismatch. */
+  readonly installedPiAgentRuntimeVersion?: string;
 }): Promise<PiApiFirstTurnHandoff> {
   const runtime = args.runtime ?? defaultRuntime;
   const manifest = await pollManifest(args.config, runtime);
+  const degraded = runtimeParityDegrade({
+    config: args.config,
+    manifest,
+    installedPiAgentRuntimeVersion:
+      args.installedPiAgentRuntimeVersion ?? PI_AGENT_RUNTIME_VERSION,
+  });
+  const mode: PiApiFirstTurnOwnershipTransferMode = degraded
+    ? "sandbox-first"
+    : manifest.mode;
   const boundaryControl: PiApiFirstTurnBoundaryControl = {
     schemaVersion: 2,
     sandboxEventSequenceStart: manifest.sandboxEventSequenceStart,
-    ownershipTransferMode: manifest.mode,
+    ownershipTransferMode: mode,
   };
   return {
     boundaryControl,
-    ownershipTransferMode: manifest.mode,
+    ownershipTransferMode: mode,
     ...(manifest.langfuseParent
       ? { langfuseParent: manifest.langfuseParent }
       : {}),
     ...(manifest.apiUsage ? { apiUsage: manifest.apiUsage } : {}),
+    ...(degraded ? { degraded } : {}),
     sessionFile: await restoreSession({
       config: args.config,
       manifest,
       runtime,
       sessionDir: args.sessionDir,
       sessionId: args.sessionId,
-      mode: manifest.mode,
+      mode,
+      degradeToBaseSession: degraded !== undefined,
     }),
   };
 }

@@ -1,8 +1,12 @@
 use std::{
     collections::HashMap,
+    io,
+    pin::Pin,
     sync::{Arc, Mutex},
+    task::{Context, Poll},
 };
 use tokio::{
+    io::{AsyncRead, AsyncWrite, ReadBuf},
     net::TcpStream,
     sync::{OwnedSemaphorePermit, Semaphore},
     time::Instant,
@@ -11,12 +15,60 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 use uuid::Uuid;
 
 use super::{
-    Failure, Scope, VncRuntime, network,
+    Failure, Scope, VncRuntime,
+    authority::Transport,
+    network,
     protocol::{Info, Start},
 };
+use crate::ssh::DirectTcpIpStream;
 use runner_types::ids::RunId;
 
-pub(super) type Engine = rfb_client::Session<TcpStream>;
+pub(super) enum DirectOrSshStream {
+    Direct(TcpStream),
+    Ssh(Box<DirectTcpIpStream>),
+}
+
+impl AsyncRead for DirectOrSshStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Self::Direct(stream) => Pin::new(stream).poll_read(cx, buffer),
+            Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_read(cx, buffer),
+        }
+    }
+}
+
+impl AsyncWrite for DirectOrSshStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        match self.get_mut() {
+            Self::Direct(stream) => Pin::new(stream).poll_write(cx, bytes),
+            Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_write(cx, bytes),
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Self::Direct(stream) => Pin::new(stream).poll_flush(cx),
+            Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match self.get_mut() {
+            Self::Direct(stream) => Pin::new(stream).poll_shutdown(cx),
+            Self::Ssh(stream) => Pin::new(stream.as_mut()).poll_shutdown(cx),
+        }
+    }
+}
+
+pub(super) type Engine = rfb_client::Session<DirectOrSshStream>;
 type Registry = Arc<Mutex<HashMap<Uuid, Arc<Session>>>>;
 
 /// Kept by lifecycle cleanup and pending DNS, independently of guest streams.
@@ -28,6 +80,7 @@ struct Capacity {
 pub(super) struct Session {
     pub(super) info: Info,
     pub(super) generation: i64,
+    pub(super) transport: Transport,
     pub(super) cancel: CancellationToken,
     pub(super) closed: CancellationToken,
     pub(super) engine: tokio::sync::Mutex<Engine>,
@@ -37,17 +90,24 @@ pub(crate) struct Run {
     pub(super) runtime: Arc<VncRuntime>,
     pub(super) id: RunId,
     cancel: CancellationToken,
+    ssh: Option<Arc<crate::ssh::Run>>,
     capacity: Arc<Semaphore>,
     sessions: Registry,
     tasks: TaskTracker,
 }
 
 impl Run {
-    pub(super) fn new(runtime: Arc<VncRuntime>, id: RunId, cancel: CancellationToken) -> Self {
+    pub(super) fn new(
+        runtime: Arc<VncRuntime>,
+        id: RunId,
+        cancel: CancellationToken,
+        ssh: Option<Arc<crate::ssh::Run>>,
+    ) -> Self {
         Self {
             runtime,
             id,
             cancel,
+            ssh,
             capacity: Arc::new(Semaphore::new(2)),
             sessions: Arc::new(Mutex::new(HashMap::new())),
             tasks: TaskTracker::new(),
@@ -104,32 +164,56 @@ impl Run {
                 .map_err(|_| Failure::ResourceExhausted)?,
         });
         let credential = scope
-            .wait(
-                self.runtime
-                    .authority
-                    .resolve(self.id, request.connection_id),
-            )
+            .wait(self.runtime.authority.resolve(
+                self.id,
+                request.connection_id,
+                self.ssh.is_some(),
+            ))
             .await??;
-        let resolver_capacity = Arc::clone(&capacity);
-        let network = Arc::clone(&self.runtime.network);
-        let host = credential.host.clone();
-        let port = credential.port;
-        // OS DNS may keep running after its waiter is cancelled. Own its permits
-        // in a tracked task until the actual resolver returns.
-        let resolve = self.tasks.spawn(async move {
-            let _capacity = resolver_capacity;
-            let _operation = operation;
-            network::destination(network, &host, port).await
-        });
-        let address = scope.wait(resolve).await?.map_err(|_| Failure::Network)??;
-        let socket = scope
-            .wait(self.runtime.network.connect(address))
-            .await?
-            .map_err(|_| Failure::Network)?;
+        let session_cancel = self.cancel.child_token();
+        let stream = match credential.transport {
+            Transport::Direct => {
+                let resolver_capacity = Arc::clone(&capacity);
+                let network = Arc::clone(&self.runtime.network);
+                let host = credential.host.clone();
+                let port = credential.port;
+                // OS DNS may keep running after its waiter is cancelled. Own its permits
+                // in a tracked task until the actual resolver returns.
+                let resolve = self.tasks.spawn(async move {
+                    let _capacity = resolver_capacity;
+                    let _operation = operation;
+                    network::destination(network, &host, port).await
+                });
+                let address = scope.wait(resolve).await?.map_err(|_| Failure::Network)??;
+                let socket = scope
+                    .wait(self.runtime.network.connect(address))
+                    .await?
+                    .map_err(|_| Failure::Network)?;
+                DirectOrSshStream::Direct(socket)
+            }
+            Transport::Ssh {
+                connection,
+                generation,
+            } => {
+                let ssh = self.ssh.as_ref().ok_or(Failure::UnsupportedProfile)?;
+                let stream = scope
+                    .wait(ssh.open_direct_tcpip(
+                        connection,
+                        generation,
+                        &credential.host,
+                        credential.port,
+                        session_cancel.clone(),
+                        scope.deadline,
+                    ))
+                    .await?
+                    .map_err(Failure::from)?;
+                DirectOrSshStream::Ssh(Box::new(stream))
+            }
+        };
         let authenticated = scope
             .wait_deadline_aware(rfb_client::authenticate(
-                socket,
-                &credential.host,
+                stream,
+                &credential.server_name,
                 credential.authentication,
                 credential.roots,
                 scope.deadline,
@@ -155,6 +239,7 @@ impl Run {
                 self.id,
                 request.connection_id,
                 credential.generation,
+                credential.transport,
             ))
             .await??;
         scope.check()?;
@@ -168,7 +253,8 @@ impl Run {
                 mode: request.mode,
             },
             generation: credential.generation,
-            cancel: self.cancel.child_token(),
+            transport: credential.transport,
+            cancel: session_cancel,
             closed: CancellationToken::new(),
             engine: tokio::sync::Mutex::new(engine),
         });
@@ -192,6 +278,7 @@ impl Run {
                 self.id,
                 session.info.connection_id,
                 session.generation,
+                session.transport,
             ))
             .await
             .and_then(|r| r);

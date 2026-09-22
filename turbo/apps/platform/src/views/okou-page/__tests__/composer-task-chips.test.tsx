@@ -256,6 +256,8 @@ test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
       await screen.findByRole("group", { name: "Presentation templates" });
     } else if (task === "Visualization") {
       await screen.findByRole("region", { name: "Visualization options" });
+    } else if (task === "Workflow") {
+      await screen.findByRole("group", { name: "Workflows" });
     } else {
       await screen.findByRole("group", { name: "Ideas to get started" });
     }
@@ -265,6 +267,7 @@ test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
     expect(
       screen.queryByRole("group", { name: "Ideas to get started" }),
     ).toBeNull();
+    expect(screen.queryByRole("group", { name: "Workflows" })).toBeNull();
     expect(
       screen.queryByRole("group", { name: "Presentation templates" }),
     ).toBeNull();
@@ -316,7 +319,7 @@ test("The original start cards remain when task chips are disabled", async () =>
   await setupChips(false);
   expect(screen.getByTestId("start-cards")).toBeInTheDocument();
   expect(
-    document.querySelector('[data-slot="workflow-recommendation-card"]'),
+    document.querySelector('[data-slot="workflow-recommendation-tile"]'),
   ).toBeNull();
   expect(screen.queryByText("Browse workflows")).toBeNull();
   expect(
@@ -1142,9 +1145,9 @@ test("Starting ideas use the active app language", async () => {
   });
 });
 
-function workflowCards(container: ParentNode): HTMLElement[] {
+function workflowTiles(container: ParentNode): HTMLElement[] {
   return queryAllByRoleFast("button", container).filter((item) => {
-    return item.dataset.slot === "workflow-recommendation-card";
+    return item.dataset.slot === "workflow-recommendation-tile";
   });
 }
 
@@ -1153,29 +1156,36 @@ async function selectWorkflow(): Promise<HTMLElement> {
   click(
     button("Workflow", screen.getByRole("group", { name: "Choose a task" })),
   );
-  await screen.findByRole("group", { name: "Ideas to get started" });
+  await screen.findByRole("group", { name: "Workflows" });
   return editor;
 }
 
-test("Workflow result cards rotate three at a time without changing the draft", async () => {
+// The Workflow tab is a shelf like every other type's: one titled rail that
+// carries all nine covers, each captioned by its title and nothing else, so
+// there is no page to turn and nothing on the shelf edits the draft.
+test("The Workflow shelf carries every recommendation on one rail without changing the draft", async () => {
   const capture = mockTemplateChat();
   const editor = await selectWorkflow();
   await fill(editor, "Keep this context");
-  const ideas = screen.getByRole("group", { name: "Ideas to get started" });
-  const pages = [
+  const shelf = screen.getByRole("group", { name: "Workflows" });
+  const tiles = workflowTiles(shelf);
+  expect(tiles).toHaveLength(9);
+  expect(
+    tiles.map((tile) => {
+      return tile.textContent;
+    }),
+  ).toStrictEqual([
     "Start your day with a clear plan",
+    "Walk into meetings prepared",
+    "Keep important emails moving",
     "Wrap up your week clearly",
+    "Turn meetings into next steps",
+    "Keep your invoices organized",
     "Know when competitors change",
-    "Start your day with a clear plan",
-  ];
-  for (const [index, title] of pages.entries()) {
-    if (index > 0) {
-      click(button("More ideas", ideas));
-    }
-    expect(workflowCards(ideas)).toHaveLength(3);
-    expect(button(title, ideas)).toBeVisible();
-    expect(editor).toHaveTextContent("Keep this context");
-  }
+    "See how your business is doing",
+    "Catch the reply you’re waiting for",
+  ]);
+  expect(editor).toHaveTextContent("Keep this context");
   expect(capture.sentMessages).toHaveLength(0);
 });
 
@@ -1202,21 +1212,18 @@ test("Browse workflows opens the existing template picker in Workflow and preser
 });
 
 test.each([
-  ["Start your day with a clear plan", 0],
-  ["Walk into meetings prepared", 0],
-  ["Keep important emails moving", 0],
-  ["Wrap up your week clearly", 1],
-  ["Turn meetings into next steps", 1],
-  ["Keep your invoices organized", 1],
-  ["Know when competitors change", 2],
-  ["See how your business is doing", 2],
-  ["Catch the reply you’re waiting for", 2],
-] as const)("%s opens its result preview", async (title, page) => {
+  "Start your day with a clear plan",
+  "Walk into meetings prepared",
+  "Keep important emails moving",
+  "Wrap up your week clearly",
+  "Turn meetings into next steps",
+  "Keep your invoices organized",
+  "Know when competitors change",
+  "See how your business is doing",
+  "Catch the reply you’re waiting for",
+] as const)("%s opens its result preview", async (title) => {
   mockTemplateChat();
   await selectWorkflow();
-  for (let index = 0; index < page; index++) {
-    click(button("More ideas"));
-  }
   click(button(title));
   const dialog = await screen.findByRole("dialog");
   expect(within(dialog).getByRole("img", { name: /^Sample:/ })).toBeVisible();
@@ -1326,11 +1333,11 @@ test("Create workflow writes its prompt and opens the workflow task", async () =
   });
   expect(selectedTask(editor, "Workflow")).toBeVisible();
   await expect(
-    screen.findByRole("group", { name: "Ideas to get started" }),
+    screen.findByRole("group", { name: "Workflows" }),
   ).resolves.toBeVisible();
 
-  // Choosing the row again restates the task it already opened, so the ideas
-  // have to survive it rather than close as a second chip press would.
+  // Choosing the row again restates the task it already opened, so the shelf
+  // has to survive it rather than close as a second chip press would.
   click(await addMenuRow(editor, "Create workflow"));
   const dialog = await screen.findByRole("dialog", {
     name: "Replace composer draft?",
@@ -1340,9 +1347,7 @@ test("Create workflow writes its prompt and opens the workflow task", async () =
     expect(screen.queryByRole("dialog")).toBeNull();
   });
   expect(selectedTask(editor, "Workflow")).toBeVisible();
-  expect(
-    screen.getByRole("group", { name: "Ideas to get started" }),
-  ).toBeVisible();
+  expect(screen.getByRole("group", { name: "Workflows" })).toBeVisible();
 });
 
 // With the chips off there is no task to open, and the row is still the prompt.
@@ -1364,8 +1369,6 @@ test("Create workflow selects no task while the chips are off", async () => {
 test("Reply tracking prepares a custom workflow request without an unrelated template", async () => {
   const capture = mockTemplateChat();
   const editor = await selectWorkflow();
-  click(button("More ideas"));
-  click(button("More ideas"));
   click(button("Catch the reply you’re waiting for"));
   const dialog = await screen.findByRole("dialog");
   click(button("Use this workflow", dialog));

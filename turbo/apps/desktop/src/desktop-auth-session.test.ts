@@ -30,7 +30,9 @@ const server = setupServer();
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 afterEach(() => {
   server.resetHandlers();
-  vi.clearAllMocks();
+  // A substituted deadline that outlives its own test would silently rewrite
+  // every deadline after it, so restoring is teardown rather than a courtesy.
+  vi.restoreAllMocks();
 });
 afterAll(() => server.close());
 
@@ -763,7 +765,7 @@ describe("App quit", () => {
     expect(deadlines).toEqual([30_000]);
     windows[0]?.signal.addEventListener(
       "abort",
-      () => failWindow(new Error("Desktop auth operation cancelled")),
+      () => failWindow(new Error("Desktop auth session restore timed out")),
       { once: true },
     );
     deadline.abort(
@@ -781,6 +783,88 @@ describe("App quit", () => {
       phase: "failed",
       classification: "unavailable",
     });
+  });
+
+  it("gives an interactive sign-in a human-scale window budget", async () => {
+    identityHandlers();
+    const { session, replies, windows } = createSession();
+    const deadlines: number[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    timeout.mockImplementation((milliseconds) => {
+      deadlines.push(milliseconds);
+      return new AbortController().signal;
+    });
+    replies.push(Promise.resolve("interactive"));
+
+    await session.consumeCode("code");
+    timeout.mockRestore();
+
+    // Thirty seconds is no budget for a person: the window phase gets minutes,
+    // and validation opens a separate network-shaped one behind it.
+    expect(deadlines).toEqual([600_000, 30_000]);
+    expect(windows[0]?.signal.aborted).toBe(false);
+    expect(session.getCachedToken()).toBe("interactive");
+  });
+
+  it("starts the validation budget when validation starts", async () => {
+    identityHandlers();
+    const { session, replies } = createSession();
+    // Node drives `AbortSignal.timeout` from an internal timer that no timer
+    // control can advance, so the budget is scaled instead: a 400ms validation
+    // clock that the window phase then spends 600ms outlasting. A clock armed
+    // when the window opened is spent by then; only one that starts after the
+    // window closes still has its full allowance.
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const deadlines: number[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    timeout.mockImplementation((milliseconds) => {
+      deadlines.push(milliseconds);
+      return realTimeout(milliseconds === 30_000 ? 400 : milliseconds);
+    });
+    const window = deferred<string | null>();
+    replies.push(window.promise);
+
+    const pending = session.consumeCode("code");
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const armedDuringWindow = [...deadlines];
+    window.resolve("interactive");
+    await pending;
+    timeout.mockRestore();
+
+    expect(armedDuringWindow).toEqual([600_000]);
+    expect(deadlines).toEqual([600_000, 30_000]);
+    expect(session.getCachedToken()).toBe("interactive");
+  });
+
+  it("names the validation phase when its own budget runs out", async () => {
+    const { session, replies } = createSession();
+    // An already-elapsed substitute reaches the state a real budget only
+    // reaches after its full wait.
+    const elapsed = new AbortController();
+    elapsed.abort(
+      new DOMException(
+        "The operation was aborted due to timeout",
+        "TimeoutError",
+      ),
+    );
+    const deadlines: number[] = [];
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    timeout.mockImplementation((milliseconds) => {
+      deadlines.push(milliseconds);
+      return milliseconds === 30_000
+        ? elapsed.signal
+        : new AbortController().signal;
+    });
+    replies.push(Promise.resolve("interactive"));
+
+    const pending = session.consumeCode("code");
+
+    // Nothing cancelled this attempt, and it is not the window that ran out.
+    await expect(pending).rejects.toThrow(
+      "Desktop auth identity validation timed out",
+    );
+    timeout.mockRestore();
+    expect(deadlines).toEqual([600_000, 30_000]);
   });
 
   it("keeps the restored session that sign-out would discard", async () => {

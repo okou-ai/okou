@@ -15,7 +15,13 @@
 #     --ca-dir /path/to/ca \
 #     --dns-nameserver 8.8.8.8 \
 #     --guest /path/to/guest-agent /usr/local/bin/guest-agent \
-#     [--guest SOURCE DESTINATION ...]
+#     [--guest SOURCE DESTINATION ...] \
+#     [--okou-cli /path/to/package.tgz 9.353.0 /path/to/installed.json]
+#
+# `--okou-cli` installs one versioned Okou CLI bundle (the published npm pack
+# tarball) under /usr/local/lib/okou-cli/<version>, records the installed
+# manifest, and writes the /usr/local/bin/okou launcher. Without it the rootfs
+# carries no CLI and the guest keeps launching the commit-addressed package.
 
 set -euo pipefail
 
@@ -37,6 +43,9 @@ CA_DIR=""
 DNS_NAMESERVER=""
 GUEST_SOURCES=()
 GUEST_DESTINATIONS=()
+OKOU_CLI_PACKAGE=""
+OKOU_CLI_VERSION=""
+OKOU_CLI_INSTALLED_MANIFEST=""
 MOUNT_DIR=""
 CHROOT_TMP=""
 CHROOT_TMP_HOST=""
@@ -97,6 +106,16 @@ while [[ $# -gt 0 ]]; do
       GUEST_DESTINATIONS+=("$3")
       shift 3
       ;;
+    --okou-cli)
+      if [[ -n "$OKOU_CLI_PACKAGE" ]]; then
+        echo "error: --okou-cli may be given only once" >&2
+        exit 1
+      fi
+      OKOU_CLI_PACKAGE="$2"
+      OKOU_CLI_VERSION="$3"
+      OKOU_CLI_INSTALLED_MANIFEST="$4"
+      shift 4
+      ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -113,7 +132,7 @@ if [[ ${#GUEST_SOURCES[@]} -eq 0 ]]; then
 fi
 
 missing=()
-for cmd in sudo unshare mount umount mountpoint chroot mktemp sed grep; do
+for cmd in sudo unshare mount umount mountpoint chroot mktemp sed grep tar gzip; do
   if ! command -v "$cmd" &>/dev/null; then
     missing+=("$cmd")
   fi
@@ -125,6 +144,14 @@ fi
 
 [[ -f "$ROOTFS" ]] || { echo "error: rootfs not found: $ROOTFS" >&2; exit 1; }
 [[ -d "$CA_DIR" ]] || { echo "error: ca-dir not found: $CA_DIR" >&2; exit 1; }
+if [[ -n "$OKOU_CLI_PACKAGE" ]]; then
+  [[ -f "$OKOU_CLI_PACKAGE" ]] || { echo "error: Okou CLI package not found: $OKOU_CLI_PACKAGE" >&2; exit 1; }
+  [[ -f "$OKOU_CLI_INSTALLED_MANIFEST" ]] || { echo "error: Okou CLI installed manifest not found: $OKOU_CLI_INSTALLED_MANIFEST" >&2; exit 1; }
+  if [[ ! "$OKOU_CLI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "error: Okou CLI version must be MAJOR.MINOR.PATCH: $OKOU_CLI_VERSION" >&2
+    exit 1
+  fi
+fi
 
 # [sync:ca-constants] Keep in sync with: crates/runner/scripts/verify-rootfs.sh.
 # Enforced by the `ca_constants_in_sync_across_scripts` test in cmd/build.rs.
@@ -133,6 +160,13 @@ CA_ROOTFS_DEST="usr/local/share/ca-certificates/vm0-proxy-ca.crt"
 TOOL_EXEC_DEST="/usr/local/bin/guest-tool-exec"
 CLAUDE_TOOL_HOOK_DEST="/etc/claude-code/managed-settings.d/90-tool-containment.json"
 CODEX_TOOL_HOOK_DEST="/etc/codex/requirements.toml"
+# [sync:okou-cli-constants] Keep in sync with: crates/runner/scripts/verify-rootfs.sh
+# and crates/guest-contracts/src/okou_cli.rs. Enforced by
+# `okou_cli_constants_in_sync_across_scripts` in cmd/build/scripts.rs.
+OKOU_CLI_LIB_ROOT="/usr/local/lib/okou-cli"
+OKOU_CLI_INSTALLED_MANIFEST_DEST="/usr/local/lib/okou-cli/installed.json"
+OKOU_CLI_LAUNCHER_DEST="/usr/local/bin/okou"
+OKOU_CLI_NODE="/usr/bin/node"
 
 ca_cert="${CA_DIR}/${CA_CERT_FILE}"
 [[ -f "$ca_cert" ]] || { echo "error: CA cert not found: $ca_cert" >&2; exit 1; }
@@ -237,6 +271,64 @@ install_inline_file() {
   install_chroot_file "$tmp_path" "$dest" "$mode"
 }
 
+# Install one versioned Okou CLI bundle from its npm pack tarball.
+#
+# The tarball is the artifact published for the release commit; nothing is
+# fetched from a registry and no install scripts run. Members are validated
+# before extraction so a malformed tarball cannot write outside the versioned
+# install directory.
+install_okou_cli() {
+  local package="$1"
+  local version="$2"
+  local installed_manifest="$3"
+  local install_dir="${OKOU_CLI_LIB_ROOT}/${version}"
+  local member
+  while IFS= read -r member; do
+    # Directory entries may carry a trailing slash; validate the path itself.
+    member="${member%/}"
+    case "$member" in
+      package/*) ;;
+      *)
+        echo "error: Okou CLI package member outside package/: $member" >&2
+        exit 1
+        ;;
+    esac
+    case "/$member/" in
+      */../*|*/./*|*//*)
+        echo "error: unsafe Okou CLI package member: $member" >&2
+        exit 1
+        ;;
+    esac
+  done < <(tar -tzf "$package")
+
+  local safe_install_dir
+  safe_install_dir="$(resolve_chroot_dest "$install_dir")"
+  sudo chroot "$MOUNT_DIR" rm -rf -- "$safe_install_dir"
+  sudo chroot "$MOUNT_DIR" mkdir -p -- "$safe_install_dir"
+  sudo tar -xzf "$package" \
+    -C "${MOUNT_DIR}${safe_install_dir}" \
+    --strip-components=1 \
+    --no-same-owner \
+    --no-same-permissions
+  sudo chown -R 0:0 "${MOUNT_DIR}${safe_install_dir}"
+  sudo chmod -R u=rwX,go=rX "${MOUNT_DIR}${safe_install_dir}"
+  if ! sudo chroot "$MOUNT_DIR" test -f "${safe_install_dir}/okou.js"; then
+    echo "error: Okou CLI package does not contain okou.js" >&2
+    exit 1
+  fi
+  if ! sudo chroot "$MOUNT_DIR" test -x "$OKOU_CLI_NODE"; then
+    echo "error: Okou CLI launcher requires ${OKOU_CLI_NODE} in the template" >&2
+    exit 1
+  fi
+
+  install_host_file "$installed_manifest" "$OKOU_CLI_INSTALLED_MANIFEST_DEST" 644
+  printf '%s\n' \
+    '#!/bin/sh' \
+    "# Installed by customize-rootfs.sh for Okou CLI ${version}." \
+    "exec ${OKOU_CLI_NODE} \"${install_dir}/okou.js\" \"\$@\"" \
+    | install_inline_file "$OKOU_CLI_LAUNCHER_DEST" 755
+}
+
 MOUNT_DIR="$(mktemp -d)"
 sudo mount -o loop "$ROOTFS" "$MOUNT_DIR"
 
@@ -257,6 +349,10 @@ printf '%s\n' \
 for index in "${!GUEST_SOURCES[@]}"; do
   install_host_file "${GUEST_SOURCES[$index]}" "${GUEST_DESTINATIONS[$index]}" 755
 done
+
+if [[ -n "$OKOU_CLI_PACKAGE" ]]; then
+  install_okou_cli "$OKOU_CLI_PACKAGE" "$OKOU_CLI_VERSION" "$OKOU_CLI_INSTALLED_MANIFEST"
+fi
 
 if ! sudo chroot "$MOUNT_DIR" test -x "$(resolve_chroot_dest "$TOOL_EXEC_DEST")"; then
   echo "error: tool executor guest destination is required: ${TOOL_EXEC_DEST}" >&2

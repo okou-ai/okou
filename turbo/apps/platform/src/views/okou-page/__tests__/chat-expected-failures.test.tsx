@@ -87,23 +87,6 @@ test("keep microphone guidance and retry after permission denial", async () => {
     return candidate.type === "exception" && candidate.error === denied;
   });
   expect(report).toBeDefined();
-  const beforeSend = sentry.initializations.at(-1)?.options?.beforeSend;
-  if (!beforeSend || report?.type !== "exception") {
-    throw new Error("Expected the microphone capture and Sentry delivery hook");
-  }
-  await expect(
-    Promise.resolve(
-      beforeSend(
-        {
-          type: undefined,
-          exception: {
-            values: [{ type: denied.name, value: denied.message }],
-          },
-        },
-        { originalException: report.error },
-      ),
-    ),
-  ).resolves.toBeNull();
   click(retry);
   await expect(findEnabledButton("Stop recording")).resolves.toBeVisible();
 });

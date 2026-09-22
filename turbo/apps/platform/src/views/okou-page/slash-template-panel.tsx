@@ -281,7 +281,6 @@ function SlashTemplateDetailFlyout({
         side="right"
         align="start"
         sideOffset={0}
-        updatePositionStrategy="always"
         // The menu's keyboard navigation stays in the editor, and the row that
         // opened this flyout keeps its focus.
         initialFocus={false}

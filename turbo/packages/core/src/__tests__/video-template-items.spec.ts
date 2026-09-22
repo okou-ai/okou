@@ -31,7 +31,7 @@ describe("video template items", () => {
 
       expect(template, item.id).toBeDefined();
       expect(template?.kind).toBe("video-template");
-      expect(template?.source.repo).toBe("okou-ai/vm0-skills");
+      expect(template?.source.repo).toBe("okou-ai/okou-skills");
       expect(template?.source.ref).toBe("main");
       expect(template?.source.path).toBe(item.sourcePath);
       expect(item.previewImage).toMatch(

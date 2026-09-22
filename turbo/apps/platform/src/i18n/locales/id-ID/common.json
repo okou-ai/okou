@@ -1722,6 +1722,45 @@
       "upgradeToRun": "Upgrade ke Pro untuk menjalankan {{assistantName}}",
       "upgradeWorkspace": "Upgrade workspace Anda"
     },
+    "browserInput": {
+      "applyFailed": "Informasi tidak dapat ditambahkan. Isian Anda masih tersedia. Coba lagi.",
+      "applying": "Menambahkan informasi",
+      "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
+      "callbackFailed": "Agen belum diberi tahu. Coba Lanjutkan lagi.",
+      "cancel": "Batal",
+      "cancelFailed": "Permintaan tidak dapat dibatalkan. Coba lagi.",
+      "cancelled": "Permintaan dibatalkan",
+      "cancelledDescription": "Tidak ada informasi yang ditambahkan. Lanjutkan untuk memberi tahu agen.",
+      "cancelling": "Membatalkan…",
+      "completed": "Informasi ditambahkan",
+      "completedDescription": "Informasi telah ditambahkan ke browser. Lanjutkan untuk memberi tahu agen.",
+      "continue": "Lanjutkan",
+      "continuing": "Melanjutkan…",
+      "delivered": "Agen diberi tahu",
+      "deliveredDescription": "Agen sekarang dapat melanjutkan.",
+      "description": "Masukkan informasi yang diminta untuk situs ini.",
+      "documentTitle": "Input browser",
+      "expired": "Permintaan kedaluwarsa",
+      "expiredDescription": "Browser ditutup atau permintaan ini sudah tidak aktif.",
+      "loadFailed": "Permintaan ini tidak dapat dimuat",
+      "loadFailedDescription": "Coba lagi sebentar lagi.",
+      "loading": "Memuat input browser",
+      "loadingDescription": "Memeriksa permintaan ini…",
+      "open": "Masukkan informasi",
+      "optional": "(Opsional)",
+      "required": "(Wajib)",
+      "retry": "Coba lagi",
+      "site": "Situs",
+      "stale": "Kolom telah berubah",
+      "staleDescription": "Minta agen membuat permintaan baru.",
+      "submit": "Tambahkan ke browser",
+      "submitting": "Menambahkan…",
+      "title": "Masukkan informasi di browser",
+      "unavailable": "Permintaan tidak tersedia",
+      "unavailableDescription": "Permintaan input browser ini tidak valid atau sudah tidak tersedia.",
+      "uncertain": "Periksa browser",
+      "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen memeriksanya sebelum mencoba lagi."
+    },
     "cards": {
       "viewDetails": "Lihat detail"
     },
@@ -2335,7 +2374,6 @@
       },
       "ideasLabel": "Ide untuk memulai",
       "label": "Mulai tugas",
-      "moreIdeas": "Ide lainnya",
       "moreTemplates": "Template lainnya",
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
@@ -2345,7 +2383,8 @@
         "image": "Gaya gambar",
         "nextPage": "Halaman berikutnya",
         "previousPage": "Halaman sebelumnya",
-        "website": "Templat situs web"
+        "website": "Templat situs web",
+        "workflows": "Alur kerja"
       },
       "tasks": {
         "image": "Gambar",
@@ -2479,7 +2518,6 @@
         "browse": "Jelajahi workflow",
         "close": "Tutup",
         "contextPrefix": "Yang penting bagi saya: {{context}}",
-        "heading": "Pekerjaan apa yang ingin Anda delegasikan?",
         "items": {
           "competitors": {
             "cadence": "Harian atau mingguan",
@@ -3371,13 +3409,24 @@
         "connectTitle": "Hubungkan ke Lark"
       },
       "slack": {
+        "accountInUseDescription": "Akun Slack ini terhubung ke akun Okou lain. Putuskan koneksinya di akun tersebut sebelum mencoba lagi.",
+        "accountInUseTitle": "Akun Slack sudah terhubung",
+        "accountMismatchDescription": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di sini. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
+        "accountMismatchDescriptionWorkspace": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di {{workspace}}. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
+        "accountMismatchTitle": "Beralih akun Slack?",
         "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
         "connectTitle": "Hubungkan ke Slack",
+        "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack. Coba lagi.",
         "invalidDescription": "Halaman ini dimaksudkan untuk dibuka dari tautan koneksi Slack.",
+        "keepAccount": "Pertahankan {{account}}",
         "open": "Buka Slack",
         "successDescription": "Sebut bot yang terinstal di channel mana pun atau kirim DM untuk mulai mengobrol.",
         "successDescriptionWorkspace": "Anda tersambung ke {{workspace}}. Sebut bot yang terinstal di channel mana pun atau kirim DM untuk mulai mengobrol.",
-        "successTitle": "Berhasil tersambung ke Slack!"
+        "successTitle": "Berhasil tersambung ke Slack!",
+        "switchAccount": "Beralih ke {{account}}",
+        "workspaceMismatchDescription": "Ruang kerja Slack ini tidak tersedia untuk organisasi Okou Anda saat ini. Beralih organisasi atau minta bantuan admin.",
+        "workspaceMismatchDescriptionNamed": "Organisasi Okou Anda saat ini terhubung ke {{workspace}}. Beralih organisasi atau minta admin menghapus instalasinya sebelum menghubungkan ruang kerja Slack ini.",
+        "workspaceMismatchTitle": "Ruang kerja Slack tidak cocok"
       },
       "teams": {
         "connectDescription": "Tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",
@@ -5788,8 +5837,7 @@
     "status": {
       "availableNow": "Tersedia sekarang",
       "inUse_one": "{{active}} dari {{limit}} slot digunakan",
-      "inUse_other": "{{active}} dari {{limit}} slot digunakan",
-      "waitingForSandbox": "Menunggu Sandbox"
+      "inUse_other": "{{active}} dari {{limit}} slot digunakan"
     },
     "tiers": {
       "custom": "Kustom",
@@ -6436,16 +6484,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Email opsional, termasuk ringkasan dan pengingat, di seluruh ruang kerja Anda.",
+        "description": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya melalui email.",
+        "descriptionWithEmail": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya di {{email}}.",
         "loading": "Memeriksa langganan email…",
         "retryMessage": "Tidak dapat menyimpan atau memuat langganan email. Coba lagi.",
         "saving": "Menyimpan…",
         "sectionTitle": "Langganan email",
-        "subscribed": "Berlangganan",
-        "title": "Terima email dari Okou",
+        "title": "Pembaruan email",
         "unavailable": "Email tidak tersedia",
-        "unavailableDescription": "Periksa email di Akun & keamanan, atau hubungi dukungan jika pengiriman diblokir.",
-        "unsubscribed": "Berhenti berlangganan"
+        "unavailableDescription": "Periksa email di Akun & keamanan, atau hubungi dukungan jika pengiriman diblokir."
       },
       "language": {
         "description": "Pilih bahasa pilihan Anda untuk antarmuka {{brandName}}",
@@ -6471,13 +6518,11 @@
         "chatOnly": "Hanya Chat",
         "checkEmailSubscription": "Periksa langganan email di atas untuk status pengiriman.",
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten. Coba lagi setelah rekonsiliasi selesai.",
-        "description": "Dapatkan prioritas harian pukul 07.00 sesuai zona waktu Anda untuk ruang kerja ini.",
-        "emailOff": "Email nonaktif. Ringkasan tetap muncul di Chat.",
-        "emailWhenReady": "Anda akan menerima email saat ringkasan siap.",
+        "description": "Prioritas harian pukul 07.00 sesuai zona waktu Anda.",
         "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "nextBrief": "Ringkasan berikutnya {{date}} ({{timezone}})",
+        "nextBrief": "Ringkasan berikutnya {{date}}",
         "paused": "Dijeda",
         "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",

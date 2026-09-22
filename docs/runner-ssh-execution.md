@@ -225,6 +225,12 @@ The authenticated SSH server resolves the target, so private and loopback target
 are intentionally supported; the Runner does not locally resolve the forwarded
 name or apply the public-destination rule used for its own outbound SSH socket.
 
+The caller must supply the SSH generation selected by its authority snapshot.
+The direct-tcpip operation compares that value with the current cached/resolved
+credential before opening the channel; mismatch is `configuration_changed`.
+VNC uses this boundary with the shared Run-owned SSH identity and receives no
+SSH credential material through its own authority.
+
 The returned stream exclusively owns its russh channel, pool lease, current
 authority access, caller/Run cancellation and forwarding permit. EOF, channel
 refusal, setup timeout, cancellation, invalidation, I/O failure, shutdown or drop

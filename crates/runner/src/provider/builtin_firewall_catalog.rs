@@ -715,10 +715,11 @@ mod tests {
     }
 
     fn catalog_response() -> Vec<u8> {
-        json_response(
-            "200 OK",
-            &serde_json::to_string(&catalog("github")).unwrap(),
-        )
+        catalog_response_for(&catalog("github"))
+    }
+
+    fn catalog_response_for(catalog: &BuiltinFirewallCatalog) -> Vec<u8> {
+        json_response("200 OK", &serde_json::to_string(catalog).unwrap())
     }
 
     fn truncated_response(content_type: &str) -> Vec<u8> {
@@ -1186,6 +1187,54 @@ mod tests {
         catalog.firewalls.get_mut("auth-strategy").unwrap().apis[0].auth =
             serde_json::from_value(auth).unwrap();
         catalog
+    }
+
+    #[tokio::test]
+    async fn initial_refresh_accepts_aws_aware_permission_rule() {
+        let mut catalog = catalog("aws");
+        let api_entry = &mut catalog.firewalls.get_mut("aws").unwrap().apis[0];
+        api_entry.base = "https://ec2.us-east-1.amazonaws.com".to_string();
+        api_entry.auth = serde_json::from_value(serde_json::json!({
+            "awsSigv4": {
+                "accessKeyId": "${{ secrets.AWS_ACCESS_KEY_ID }}",
+                "secretAccessKey": "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+            }
+        }))
+        .unwrap();
+        api_entry.permissions.as_mut().unwrap()[0] = FirewallPermission {
+            name: "ec2:AcceptAddressTransfer".to_string(),
+            description: None,
+            rules: vec!["GET / AWS sigv4=ec2 action=AcceptAddressTransfer".to_string()],
+        };
+
+        let server =
+            RawHttpTestServer::spawn(vec![RawHttpAction::Respond(catalog_response_for(&catalog))])
+                .await;
+        let dir = tempfile::tempdir().unwrap();
+        let cache_path = dir.path().join("builtin-firewall-catalog-cache.json");
+        let lock_path = dir.path().join("builtin-firewall-catalog-cache.json.lock");
+        let api = ApiClient::new(
+            HttpClient::new(HttpClientConfig {
+                api_url: server.url(),
+                vercel_bypass: None,
+                client_session_id: "aws-catalog-refresh-test".to_string(),
+            })
+            .unwrap(),
+            "private-runner-token".to_string(),
+        );
+
+        run_initial_refresh(&api, &cache_path, &lock_path, &CancellationToken::new())
+            .await
+            .unwrap();
+
+        server.assert_finished().await;
+        let cached = read_catalog_cache(&cache_path).await.unwrap().unwrap();
+        let cached_api = &cached.firewalls["aws"].apis[0];
+        assert!(cached_api.auth.aws_sigv4.is_some());
+        assert_eq!(
+            cached_api.permissions.as_ref().unwrap()[0].rules,
+            ["GET / AWS sigv4=ec2 action=AcceptAddressTransfer"]
+        );
     }
 
     #[test]

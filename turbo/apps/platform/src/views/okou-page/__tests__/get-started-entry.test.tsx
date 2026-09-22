@@ -21,6 +21,7 @@ import { expect, test, vi } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -124,6 +125,7 @@ function mockQuestCatalog(): void {
     return respond(200, {
       connectors: [
         catalogItem("gmail", "Gmail", "auth-code"),
+        catalogItem("notion", "Notion", "auth-code"),
         catalogItem("openai", "OpenAI", "manual"),
       ],
     });
@@ -716,6 +718,47 @@ test("Daily rewards are claimed by selecting check in and menu reopening refresh
   expect(within(nextDayPanel).queryByText("Check in")).not.toBeInTheDocument();
 });
 
+test("The daily step leads the list on the same grammar as every other step", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  data.checkinStreak = 6;
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
+  });
+  const panel = await openQuestPanel();
+
+  // The totals describe the whole list, so they are stated once above it
+  // rather than inside the first step.
+  await expect(
+    within(panel).findByText("300 earned"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
+
+  // The daily step leads, and what is finished sinks below what still pays.
+  const rows = within(panel).getAllByTestId(/^get-started-quest-/u);
+  expect(
+    rows.map((row) => {
+      return row.dataset.testid;
+    }),
+  ).toStrictEqual([
+    "get-started-quest-checkin",
+    "get-started-quest-connector",
+    "get-started-quest-workflow",
+    "get-started-quest-share",
+  ]);
+
+  // It says what it is, what it pays, how far the streak has run and what
+  // pressing it does -- the four parts every other row carries.
+  const checkin = within(screen.getByTestId("get-started-quest-checkin"));
+  expect(checkin.getByText("Check in daily")).toBeInTheDocument();
+  expect(checkin.getByText("+100")).toBeInTheDocument();
+  expect(
+    checkin.getByText("6-day streak", { exact: false }),
+  ).toBeInTheDocument();
+  expect(checkin.getByText("Check in")).toBeInTheDocument();
+});
+
 test("A pending check-in disables the action and a failed request leaves it available", async () => {
   configureQuestPage(context, "member", { claimedToday: false });
   const responseReady = createDeferredPromise<void>(context.signal);
@@ -791,6 +834,85 @@ test("The connector step says what it costs the user before it hands them off", 
   await waitFor(() => {
     expect(pathname()).toBe("/connectors");
   });
+});
+
+test("Searching the connector step narrows the catalog and says when nothing matches", async () => {
+  configureQuestPage(context, "admin");
+  mockQuestCatalog();
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const dialog = await screen.findByRole("dialog");
+  const picker = await within(dialog).findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(within(picker).getByText("Notion")).toBeInTheDocument();
+
+  const search = within(picker).getByTestId("quest-connector-search");
+  await fill(search, "not");
+  await waitFor(() => {
+    expect(within(picker).queryByText("Gmail")).not.toBeInTheDocument();
+  });
+  // The one that matches is still pressable, not merely still rendered.
+  expect(within(picker).getByTestId("quest-connector-notion")).toBeEnabled();
+
+  await fill(search, "zzz");
+  const empty = await within(picker).findByTestId("quest-connector-empty");
+  expect(empty).toHaveTextContent('No connectors matching "zzz"');
+  // Nothing matched, but the way back is still on screen.
+  expect(within(picker).getByTestId("quest-connector-search")).toHaveValue(
+    "zzz",
+  );
+
+  await fill(search, "");
+  await waitFor(() => {
+    expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  });
+  expect(within(picker).getByText("Notion")).toBeInTheDocument();
+});
+
+test("Reopening the connector step starts from the whole catalog", async () => {
+  configureQuestPage(context, "admin");
+  mockQuestCatalog();
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const dialog = await screen.findByRole("dialog");
+  const picker = await within(dialog).findByTestId("quest-connector-picker");
+  await fill(within(picker).getByTestId("quest-connector-search"), "not");
+  await waitFor(() => {
+    expect(within(picker).queryByText("Gmail")).not.toBeInTheDocument();
+  });
+
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const reopened = await within(await screen.findByRole("dialog")).findByTestId(
+    "quest-connector-picker",
+  );
+  expect(within(reopened).getByTestId("quest-connector-search")).toHaveValue(
+    "",
+  );
+  expect(within(reopened).getByText("Gmail")).toBeInTheDocument();
 });
 
 test("Picking a connector in the dialog starts its authorization", async () => {

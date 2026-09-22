@@ -86,6 +86,7 @@ import { setupConnectorsPage$ } from "./connectors-page/connectors-page-setup.ts
 import { setupComputerUseAuthorizationPage$ } from "./computer-use-authorization/computer-use-authorization-page-setup.ts";
 import { setupBrowserAuthorizationPage$ } from "./browser-authorization/browser-authorization-page-setup.ts";
 import { setupBrowserSessionPage$ } from "./browser-session/browser-session-page-setup.ts";
+import { setupBrowserUserActionPage$ } from "./browser-user-action/browser-user-action-page-setup.ts";
 import { setupDirectedConnectPage$ } from "./connectors-page/directed-connect-page-setup.ts";
 import { setupDirectedAuthorizePage$ } from "./connectors-page/directed-authorize-page-setup.ts";
 import { setupConnectorRedirectingPage$ } from "./connectors-page/connector-redirecting-page-setup.ts";
@@ -250,6 +251,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.browser,
     setup: setupAuthPageWrapper(setupBrowserSessionPage$),
+  },
+  {
+    path: ROUTES.browserUserAction,
+    setup: setupAuthPageWrapper(setupBrowserUserActionPage$),
   },
   {
     path: ROUTES.prompt,

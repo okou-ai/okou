@@ -199,11 +199,13 @@ function ByokBadge({
   return (
     <TooltipProvider delayDuration={300}>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
-            BYOK
-          </span>
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
+              BYOK
+            </span>
+          }
+        />
         <TooltipContent side="top" className="text-xs">
           {subscriptionProvider && (
             <span>
@@ -568,31 +570,33 @@ function ModelFirstPolicyRow({
         </SelectItem>
         <TooltipProvider delayDuration={800} skipDelayDuration={0}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              <SelectItem
-                value={codexFastOptionValue(policy.model)}
-                aria-label={`${modelLabel} ${fastLabel}`}
-                className={cn(
-                  // `right-8` parks the toggle in its own column beside the
-                  // checkmark's rather than on top of it, so it keeps a full
-                  // 32x32 hit area without ever displacing the check.
-                  "group/fast-option absolute inset-y-0 right-8 w-8 justify-center rounded-lg px-0 text-muted-foreground hover:bg-transparent data-highlighted:bg-transparent",
-                  fastSelected &&
-                    "text-amber-600 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200",
-                )}
-              >
-                <Zap
-                  size={18}
-                  fill={fastSelected ? "currentColor" : "none"}
+            <TooltipTrigger
+              render={
+                <SelectItem
+                  value={codexFastOptionValue(policy.model)}
+                  aria-label={`${modelLabel} ${fastLabel}`}
                   className={cn(
-                    fastSelected
-                      ? "group-hover/fast-option:fill-none group-data-[highlighted]/fast-option:fill-none"
-                      : "group-hover/fast-option:fill-current group-data-[highlighted]/fast-option:fill-current",
+                    // `right-8` parks the toggle in its own column beside the
+                    // checkmark's rather than on top of it, so it keeps a full
+                    // 32x32 hit area without ever displacing the check.
+                    "group/fast-option absolute inset-y-0 right-8 w-8 justify-center rounded-lg px-0 text-muted-foreground hover:bg-transparent data-highlighted:bg-transparent",
+                    fastSelected &&
+                      "text-amber-600 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200",
                   )}
-                  aria-hidden="true"
-                />
-              </SelectItem>
-            </TooltipTrigger>
+                >
+                  <Zap
+                    size={18}
+                    fill={fastSelected ? "currentColor" : "none"}
+                    className={cn(
+                      fastSelected
+                        ? "group-hover/fast-option:fill-none group-data-[highlighted]/fast-option:fill-none"
+                        : "group-hover/fast-option:fill-current group-data-[highlighted]/fast-option:fill-current",
+                    )}
+                    aria-hidden="true"
+                  />
+                </SelectItem>
+              }
+            />
             <TooltipContent side="top" className="text-xs">
               {fastLabel} · <ModelFastImpact policy={policy} />
             </TooltipContent>
@@ -1354,33 +1358,35 @@ function EnabledExplicitModelFirstModelPicker(
         onOpenChange={props.onOpenChange}
         modal={props.modal}
       >
-        <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            aria-label={state.triggerAriaLabel}
-            className={cn(
-              "h-9 w-full justify-start gap-2 rounded-lg text-sm font-normal",
-              props.triggerClassName,
-            )}
-          >
-            <span data-slot="select-value" className="min-w-0">
-              <ModelFirstTriggerLabel
-                selection={state.selection}
-                placeholder={props.placeholder}
-                mobileIcon={props.mobileIconTrigger}
-                fastLabel={props.fastLabel}
-                fastShownByCaller={props.fastShownByCaller ?? false}
-              />
-            </span>
-            <span data-slot="select-icon">
-              <ChevronDown
-                size={16}
-                className="shrink-0 opacity-50"
-                aria-hidden="true"
-              />
-            </span>
-          </Button>
-        </PopoverTrigger>
+        <PopoverTrigger
+          render={
+            <Button
+              variant="ghost"
+              aria-label={state.triggerAriaLabel}
+              className={cn(
+                "h-9 w-full justify-start gap-2 rounded-lg text-sm font-normal",
+                props.triggerClassName,
+              )}
+            >
+              <span data-slot="select-value" className="min-w-0">
+                <ModelFirstTriggerLabel
+                  selection={state.selection}
+                  placeholder={props.placeholder}
+                  mobileIcon={props.mobileIconTrigger}
+                  fastLabel={props.fastLabel}
+                  fastShownByCaller={props.fastShownByCaller ?? false}
+                />
+              </span>
+              <span data-slot="select-icon">
+                <ChevronDown
+                  size={16}
+                  className="shrink-0 opacity-50"
+                  aria-hidden="true"
+                />
+              </span>
+            </Button>
+          }
+        />
         <PopoverContent
           side="top"
           align="end"

@@ -167,15 +167,18 @@ export class DesktopAuthWindow {
       };
       // Cancelling and closing abandon the attempt, so they are teardown rather
       // than a failed restore. A deadline is the one abort nobody asked for and
-      // stays an ordinary error: the wording is identical either way, leaving
-      // the type as the only thing a caller can classify on.
+      // stays an ordinary error: nothing was cancelled, so it reports the phase
+      // whose budget ran out instead of borrowing the cancellation wording.
       const cancel = () => {
-        const message = "Desktop auth operation cancelled";
         finish(
           null,
           isDeadlineAbort(request.signal)
-            ? new Error(message)
-            : new DesktopAuthTeardownError(message),
+            ? new Error(
+                request.allowInteractiveFallbacks
+                  ? "Desktop auth sign-in timed out"
+                  : "Desktop auth session restore timed out",
+              )
+            : new DesktopAuthTeardownError("Desktop auth operation cancelled"),
         );
       };
       const closed = () =>
@@ -214,9 +217,16 @@ export class DesktopAuthWindow {
           finish(null, new Error(`Desktop auth page failed: ${code}`));
         }
       };
-      const timeout = setTimeout(() => {
-        finish(null, new Error("Desktop auth window timed out"));
-      }, this.options.timeoutMs ?? 30_000);
+      // A hidden restore has nobody to wait for, so a page that never reaches a
+      // decision is a stall this bounds. An attempt that can hand control to a
+      // person outlives any machine-scale timer, and the caller already gives
+      // that phase a human-scale bound, so arming this one would only decide
+      // the same failure under a different name.
+      const timeout = request.allowInteractiveFallbacks
+        ? undefined
+        : setTimeout(() => {
+            finish(null, new Error("Desktop auth window timed out"));
+          }, this.options.timeoutMs ?? 30_000);
       this.active = {
         window,
         signal: request.signal,

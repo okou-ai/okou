@@ -115,10 +115,13 @@ async function settleManifestLoad<T>(
 /**
  * Answer a poll whose manifest could not be read.
  *
- * This is a classified outcome, not an unhandled error: it is logged at `warn`
+ * This is a classified outcome, not an unhandled error: it is logged at `info`
  * with the upstream status and attempt count and never reaches Sentry, because
  * a single one needs no intervention. A sustained rate is the real signal, and
- * it stays visible both here and as `503` in the request log.
+ * this record is what carries it: `info` keeps it queryable in Axiom while
+ * leaving it out of the production error review. The `503` in the request log
+ * cannot stand in for it — that dataset retains only a few days, too short to
+ * separate a sustained problem from scattered events.
  */
 const desktopUpdateUnavailable$ = command(
   (
@@ -129,7 +132,7 @@ const desktopUpdateUnavailable$ = command(
       readonly unavailable: DesktopUpdateManifestUnavailable;
     },
   ) => {
-    L.warn("Desktop update manifest upstream unavailable", {
+    L.info("Desktop update manifest upstream unavailable", {
       type: DESKTOP_UPDATE_MANIFEST_LOG_TYPE,
       outcome: "unavailable",
       provider: DESKTOP_UPDATE_MANIFEST_PROVIDER,

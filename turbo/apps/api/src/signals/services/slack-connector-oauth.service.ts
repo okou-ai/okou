@@ -103,7 +103,8 @@ export const startSlackConnectorOAuth$ = command(
     signal: AbortSignal,
   ): Promise<Response> => {
     const context = verifySlackConnectorOAuthStart(args.connectorState);
-    if (!context || context.flow !== args.flow) {
+    const routeFlow = context?.flow === "switch" ? "connect" : context?.flow;
+    if (!context || routeFlow !== args.flow) {
       return failed(
         "This Slack connection link is invalid or expired. Please start again.",
       );
@@ -343,7 +344,7 @@ const validateSlackWorkspace$ = command(
     signal.throwIfAborted();
     if (
       (installation?.orgId && installation.orgId !== context.orgId) ||
-      (context.flow === "connect" &&
+      (context.flow !== "install" &&
         (!installation ||
           (installation.orgId === null && args.role !== "admin")))
     ) {
@@ -375,6 +376,26 @@ const validateSlackWorkspace$ = command(
     signal.throwIfAborted();
     if (connection && connection.userId !== context.userId) {
       return failed("This Slack account is already connected to another user.");
+    }
+    const [currentConnection] = await db
+      .select({ slackUserId: slackOrgConnections.slackUserId })
+      .from(slackOrgConnections)
+      .where(
+        and(
+          eq(slackOrgConnections.slackWorkspaceId, args.workspaceId),
+          eq(slackOrgConnections.userId, context.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      currentConnection &&
+      currentConnection.slackUserId !== args.slackUserId &&
+      context.flow !== "switch"
+    ) {
+      return failed(
+        "Your Okou account is connected to a different Slack account in this workspace.",
+      );
     }
     return null;
   },
@@ -452,6 +473,7 @@ const finishSlackConnectorOAuth$ = command(
         channelId: context.channelId,
         threadTs: context.threadTs,
         pendingPrompt: context.prompt,
+        connectionIntent: context.flow === "switch" ? "switch" : "connect",
       },
       signal,
     );
@@ -475,6 +497,7 @@ const finishSlackConnectorOAuth$ = command(
             channelId: context.channelId,
             threadTs: context.threadTs,
             pendingPrompt: context.prompt,
+            replacedSlackUserIds: connection.replacedSlackUserIds,
           },
           signal,
         ),

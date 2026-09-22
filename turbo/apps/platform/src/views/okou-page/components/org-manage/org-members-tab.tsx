@@ -749,14 +749,16 @@ function InviteDialog() {
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button size="sm" className="gap-1.5 rounded-lg">
-          <Plus size={14} />
-          {t(($) => {
-            return $.settings.workspace.members.addMember;
-          })}
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button size="sm" className="gap-1.5 rounded-lg">
+            <Plus size={14} />
+            {t(($) => {
+              return $.settings.workspace.members.addMember;
+            })}
+          </Button>
+        }
+      />
       <DialogContent
         closeLabel={t(($) => {
           return $.settings.shared.close;

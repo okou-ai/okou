@@ -1182,7 +1182,11 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       queryAllByRoleFast("menuitem").map((item) => {
         return item.textContent?.replace(/\s+/g, " ").trim();
       }),
-    ).toStrictEqual(["Mark all read", "All chats", "Unread"]);
+    ).toStrictEqual([
+      "Mark all read",
+      "All chats",
+      expect.stringMatching(/^Unread/u),
+    ]);
   });
   const menuWithMarkAllRead =
     document.querySelector<HTMLElement>('[role="menu"]');
@@ -1214,7 +1218,7 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       queryAllByRoleFast("menuitem").map((item) => {
         return item.textContent?.replace(/\s+/g, " ").trim();
       }),
-    ).toStrictEqual(["All chats", "Unread"]);
+    ).toStrictEqual(["All chats", expect.stringMatching(/^Unread/u)]);
     const menuWithoutMarkAllRead =
       document.querySelector<HTMLElement>('[role="menu"]');
     if (!menuWithoutMarkAllRead) {

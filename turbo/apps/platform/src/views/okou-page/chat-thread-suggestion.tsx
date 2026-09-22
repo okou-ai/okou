@@ -45,7 +45,6 @@ export function ComposerMentionSuggestionMenu({
       side="top"
       align="start"
       sideOffset={8}
-      updatePositionStrategy="always"
       initialFocus={false}
       finalFocus={false}
       className="flex h-[min(16rem,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0 md:h-[min(20rem,var(--available-height))]"

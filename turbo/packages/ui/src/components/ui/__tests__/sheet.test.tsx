@@ -1,10 +1,44 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { Button } from "../button";
 import { Dialog, DialogContent, DialogTitle } from "../dialog";
-import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "../sheet";
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "../sheet";
 
 describe("Sheet", () => {
+  it("opens with a rendered button and closes with a rendered custom control", async () => {
+    const user = userEvent.setup();
+    render(
+      <Sheet>
+        <SheetTrigger render={<Button>Open permissions</Button>} />
+        <SheetContent>
+          <SheetTitle>Permissions</SheetTitle>
+          <SheetClose render={<Button>Save permissions</Button>} />
+        </SheetContent>
+      </Sheet>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Open permissions" });
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    expect(trigger).toBeInstanceOf(HTMLButtonElement);
+    await user.tab();
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByRole("dialog", { name: "Permissions" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save permissions" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Permissions" })).toBeNull();
+      expect(trigger).toHaveFocus();
+    });
+  });
+
   it("closes the nested sheet and returns focus to its parent dialog", async () => {
     const user = userEvent.setup();
     render(

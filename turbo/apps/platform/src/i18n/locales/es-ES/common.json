@@ -1754,6 +1754,45 @@
       "upgradeToRun": "Actualizar a Pro para ejecutar {{assistantName}}",
       "upgradeWorkspace": "Actualizar el espacio de trabajo"
     },
+    "browserInput": {
+      "applyFailed": "No se pudo añadir la información. Tus datos siguen aquí. Inténtalo de nuevo.",
+      "applying": "Añadiendo información",
+      "applyingDescription": "El navegador está finalizando esta solicitud.",
+      "callbackFailed": "No se notificó al agente. Vuelve a pulsar Continuar.",
+      "cancel": "Cancelar",
+      "cancelFailed": "No se pudo cancelar la solicitud. Inténtalo de nuevo.",
+      "cancelled": "Solicitud cancelada",
+      "cancelledDescription": "No se añadió ninguna información. Continúa para avisar al agente.",
+      "cancelling": "Cancelando…",
+      "completed": "Información añadida",
+      "completedDescription": "La información se añadió al navegador. Continúa para avisar al agente.",
+      "continue": "Continuar",
+      "continuing": "Continuando…",
+      "delivered": "Agente notificado",
+      "deliveredDescription": "El agente ya puede continuar.",
+      "description": "Introduce la información solicitada para este sitio.",
+      "documentTitle": "Entrada del navegador",
+      "expired": "Solicitud caducada",
+      "expiredDescription": "El navegador se cerró o esta solicitud ya no está activa.",
+      "loadFailed": "No se pudo cargar esta solicitud",
+      "loadFailedDescription": "Inténtalo de nuevo en un momento.",
+      "loading": "Cargando entrada del navegador",
+      "loadingDescription": "Comprobando esta solicitud…",
+      "open": "Introducir información",
+      "optional": "(Opcional)",
+      "required": "(Obligatorio)",
+      "retry": "Reintentar",
+      "site": "Sitio",
+      "stale": "Los campos cambiaron",
+      "staleDescription": "Pide al agente que cree una nueva solicitud.",
+      "submit": "Añadir al navegador",
+      "submitting": "Añadiendo…",
+      "title": "Introducir información en el navegador",
+      "unavailable": "Solicitud no disponible",
+      "unavailableDescription": "Esta solicitud de entrada del navegador no es válida o ya no está disponible.",
+      "uncertain": "Comprueba el navegador",
+      "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que lo compruebe antes de volver a intentarlo."
+    },
     "cards": {
       "viewDetails": "Ver detalles"
     },
@@ -2389,7 +2428,6 @@
       },
       "ideasLabel": "Ideas para empezar",
       "label": "Tareas para empezar",
-      "moreIdeas": "Más ideas",
       "moreTemplates": "Más plantillas",
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",
@@ -2399,7 +2437,8 @@
         "image": "Estilos de imagen",
         "nextPage": "Página siguiente",
         "previousPage": "Página anterior",
-        "website": "Plantillas de sitio web"
+        "website": "Plantillas de sitio web",
+        "workflows": "Flujos de trabajo"
       },
       "tasks": {
         "image": "Imagen",
@@ -2533,7 +2572,6 @@
         "browse": "Explorar workflows",
         "close": "Cerrar",
         "contextPrefix": "Lo importante para mí: {{context}}",
-        "heading": "¿Qué tarea te gustaría delegar?",
         "items": {
           "competitors": {
             "cadence": "A diario o semanalmente",
@@ -3437,13 +3475,24 @@
         "connectTitle": "Conectar con Lark"
       },
       "slack": {
+        "accountInUseDescription": "Esta cuenta de Slack está conectada a otra cuenta de Okou. Desconéctala allí antes de volver a intentarlo.",
+        "accountInUseTitle": "Cuenta de Slack ya conectada",
+        "accountMismatchDescription": "Tu cuenta de Okou usa actualmente la cuenta de Slack {{currentAccount}} aquí. ¿Quieres cambiar a {{requestedAccount}}, la cuenta que abrió este enlace?",
+        "accountMismatchDescriptionWorkspace": "Tu cuenta de Okou usa actualmente la cuenta de Slack {{currentAccount}} en {{workspace}}. ¿Quieres cambiar a {{requestedAccount}}, la cuenta que abrió este enlace?",
+        "accountMismatchTitle": "¿Cambiar de cuenta de Slack?",
         "connectDescription": "Vincula tu cuenta a este espacio de trabajo de Slack para interactuar directamente con tu agente desde Slack.",
         "connectTitle": "Conectar con Slack",
+        "errorFallback": "No se pudo comprobar ni iniciar la conexión con Slack. Inténtalo de nuevo.",
         "invalidDescription": "Esta página debe abrirse desde un enlace de conexión de Slack.",
+        "keepAccount": "Mantener {{account}}",
         "open": "Abrir Slack",
         "successDescription": "Menciona al bot instalado en cualquier canal o envía un mensaje directo para empezar a chatear.",
         "successDescriptionWorkspace": "Tienes conexión con {{workspace}}. Menciona al bot instalado en cualquier canal o envía un mensaje directo para empezar a chatear.",
-        "successTitle": "¡Conectado a Slack!"
+        "successTitle": "¡Conectado a Slack!",
+        "switchAccount": "Cambiar a {{account}}",
+        "workspaceMismatchDescription": "Este espacio de trabajo de Slack no está disponible para tu organización actual de Okou. Cambia de organización o pide ayuda a un administrador.",
+        "workspaceMismatchDescriptionNamed": "Tu organización actual de Okou está conectada a {{workspace}}. Cambia de organización o pide a un administrador que lo desinstale antes de conectar este espacio de trabajo de Slack.",
+        "workspaceMismatchTitle": "El espacio de trabajo de Slack no coincide"
       },
       "teams": {
         "connectDescription": "Vincula tu cuenta de Teams para interactuar directamente con tu agente desde Microsoft Teams.",
@@ -5857,8 +5906,7 @@
       "availableNow": "Disponible ahora",
       "inUse_one": "{{active}} de {{limit}} cupo en uso",
       "inUse_many": "{{active}} de {{limit}} cupos en uso",
-      "inUse_other": "{{active}} de {{limit}} cupos en uso",
-      "waitingForSandbox": "Esperando Sandbox"
+      "inUse_other": "{{active}} de {{limit}} cupos en uso"
     },
     "tiers": {
       "custom": "Personalizado",
@@ -6510,16 +6558,15 @@
         }
       },
       "emailSubscription": {
-        "description": "Correos opcionales, incluidos resúmenes y recordatorios, en todos tus espacios de trabajo.",
+        "description": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo por correo.",
+        "descriptionWithEmail": "Recibe resúmenes, recordatorios y otras actualizaciones del espacio de trabajo en {{email}}.",
         "loading": "Comprobando la suscripción por correo…",
         "retryMessage": "No se pudo guardar o cargar tu suscripción por correo. Inténtalo de nuevo.",
         "saving": "Guardando…",
         "sectionTitle": "Suscripciones por correo",
-        "subscribed": "Suscrito",
-        "title": "Recibir correos de Okou",
+        "title": "Actualizaciones por correo",
         "unavailable": "Correo no disponible",
-        "unavailableDescription": "Revisa tu correo en Cuenta y seguridad o contacta con soporte si la entrega está bloqueada.",
-        "unsubscribed": "Suscripción cancelada"
+        "unavailableDescription": "Revisa tu correo en Cuenta y seguridad o contacta con soporte si la entrega está bloqueada."
       },
       "language": {
         "description": "Elige tu idioma preferido para la interfaz de {{brandName}}",
@@ -6545,13 +6592,11 @@
         "chatOnly": "Solo Chat",
         "checkEmailSubscription": "Consulta la suscripción por correo de arriba para ver el estado de entrega.",
         "conflict": "Morning Brief no está disponible temporalmente porque el estado de su instalación no es coherente. Vuelve a intentarlo cuando finalice la conciliación.",
-        "description": "Recibe las prioridades diarias de este espacio de trabajo a las 7:00 en tu zona horaria.",
-        "emailOff": "El correo está desactivado. Tu resumen seguirá apareciendo en Chat.",
-        "emailWhenReady": "Recibirás un correo cuando tu resumen esté listo.",
+        "description": "Prioridades diarias a las 7:00 en tu zona horaria.",
         "loading": "Cargando la configuración de Morning Brief...",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",
-        "nextBrief": "Próximo resumen {{date}} ({{timezone}})",
+        "nextBrief": "Próximo resumen {{date}}",
         "paused": "En pausa",
         "preparationFailed": "La configuración se reintentará automáticamente. También puedes reintentar ahora.",
         "preparing": "Preparando tu primer resumen matutino. Puedes desactivarlo cuando quieras.",

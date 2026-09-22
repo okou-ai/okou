@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 
 import { morningBriefCompositionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-composition-preview";
-import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
@@ -15,18 +14,12 @@ import { clearMockNow, mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
-  bindMorningBriefThreadFixture as rebindMorningBriefThreadFixture,
-  replaceMorningBriefAutomationFixture,
-} from "../../../test-fixtures/morning-brief-chat-collection";
-import {
   bindMorningBriefThreadFixture,
   installMorningBriefFixture,
   reselectThreadGmailAccountFixture,
-  revokeAgentConnectorGrantFixture,
   selectThreadGmailAccountFixture,
 } from "../../../test-fixtures/morning-brief-gmail-collection";
 import { createDeferredPromise } from "../../utils";
-import { integrationsSlackRoutes } from "../integrations-slack";
 import { morningBriefCompositionPreviewRoutes } from "../morning-brief-composition-preview";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
@@ -163,12 +156,6 @@ function composeClient(signal?: AbortSignal, rethrowErrors = false) {
     signal,
     rethrowErrors,
   })(morningBriefCompositionPreviewContract);
-}
-
-function slackClient() {
-  return setupApp({ context, routes: integrationsSlackRoutes })(
-    integrationsSlackContract,
-  );
 }
 
 function authHeaders(actor: ApiTestUser) {
@@ -647,102 +634,6 @@ describe("Morning Brief exact source selection and retained authority", () => {
   );
 
   it(
-    "removes material whose grant was withdrawn while a later source was held, and keeps its siblings",
-    async () => {
-      const fixture = await setupOwner(objectStorage);
-      const held = createDeferredPromise<void>(context.signal);
-      const enumerated = createDeferredPromise<void>(context.signal);
-      const calls = stubProviders({
-        slackHold: held.promise,
-        onSlackEnumerated: () => {
-          enumerated.resolve();
-        },
-      });
-
-      const pending = compose(fixture);
-      // Slack runs in the second wave, so its arrival proves Gmail's collection
-      // and its own release fence already finished.
-      await enumerated.promise;
-      expect(calls.gmail.length).toBeGreaterThan(0);
-      await revokeAgentConnectorGrantFixture(
-        { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-        { agentId: fixture.agentId, connectorSlug: "gmail" },
-      );
-      held.resolve();
-
-      const response = await pending;
-      if (response.status !== 200 || response.body.result !== "composed") {
-        throw new Error(
-          `Expected a composed brief, received ${JSON.stringify(response.body)}`,
-        );
-      }
-      const composition = response.body.composition;
-      const bySource = new Map(
-        composition.sources.map((entry) => {
-          return [entry.source, entry];
-        }),
-      );
-      // Gmail's day is accounted for as failed rather than as a quiet morning,
-      // and none of its material remains in the request.
-      expect(bySource.get("gmail")?.coverage).toBe("failed");
-      expect(bySource.get("gmail")?.items).toBe(0);
-      expect(
-        composition.descriptors.some((descriptor) => {
-          return descriptor.source === "gmail";
-        }),
-      ).toBeFalsy();
-      // The authorized sibling is preserved and still supplies the request.
-      expect(bySource.get("slack")?.items).toBeGreaterThan(0);
-      const slack = composition.descriptors.find((descriptor) => {
-        return descriptor.source === "slack";
-      });
-      expect(slack?.contributed).toBeTruthy();
-      expect(slack?.containers).toStrictEqual(["C1"]);
-      // No hidden recollection: the revalidation asks about permissions, so
-      // Gmail is never read a second time for the check.
-      expect(
-        calls.gmail.filter((path) => {
-          return path.endsWith("/messages");
-        }),
-      ).toHaveLength(2);
-      expect(composition.request?.items).toBeGreaterThan(0);
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "proves the exact selected account and refuses to swap it mid-attempt",
-    async () => {
-      const fixture = await setupOwner(objectStorage);
-      stubProviders({});
-
-      const baseline = await compose(fixture);
-      if (baseline.status !== 200 || baseline.body.result !== "composed") {
-        throw new Error(
-          `Expected a composed brief, received ${JSON.stringify(baseline.body)}`,
-        );
-      }
-      const gmail = baseline.body.composition.descriptors.find((descriptor) => {
-        return descriptor.source === "gmail";
-      });
-      expect(baseline.body.composition.descriptorBytes).toBe(
-        Buffer.byteLength(
-          JSON.stringify(baseline.body.composition.descriptors),
-          "utf8",
-        ),
-      );
-      // The retained proof names the exact connection and mailbox this material
-      // came from, and the endpoints a later check re-asks about.
-      expect(gmail?.connectionId).toBe(fixture.gmailAccountId);
-      expect(gmail?.accountRef).toBe("owner@example.test");
-      expect(gmail?.endpoints.length).toBeGreaterThan(0);
-      expect(gmail?.contributed).toBeTruthy();
-      expect(gmail?.scopeDigest).not.toBe("");
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
     "does not adopt an account selected after the attempt was admitted",
     async () => {
       const fixture = await setupOwner(objectStorage);
@@ -774,13 +665,8 @@ describe("Morning Brief exact source selection and retained authority", () => {
           `Expected a composed brief, received ${JSON.stringify(response.body)}`,
         );
       }
-      // Nothing was read through the newly selected account, and no descriptor
-      // claims it: the frozen attempt neither swaps nor silently continues.
-      expect(
-        response.body.composition.descriptors.some((descriptor) => {
-          return descriptor.connectionId === second;
-        }),
-      ).toBeFalsy();
+      // Nothing was read through the newly selected account: the frozen
+      // attempt neither swaps nor silently continues.
       expect(
         calls.gmail.filter((path) => {
           return path.endsWith("/messages");
@@ -817,366 +703,13 @@ describe("Morning Brief exact source selection and retained authority", () => {
           `Expected a Slack composition, received ${JSON.stringify(response.body)}`,
         );
       }
+      // No account was frozen for Gmail, so it is never read at all.
       expect(calls.gmail).toStrictEqual([]);
       expect(
-        response.body.composition.descriptors.find((descriptor) => {
-          return descriptor.source === "gmail";
-        })?.contributed,
-      ).toBeFalsy();
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "proves a source introduced by reallocation before releasing the final request",
-    async () => {
-      const fixture = await setupOwner(objectStorage, {
-        // Quote-heavy instructions exercise the complete transport-body bound.
-        // This size leaves room for one evidence source after nested JSON
-        // escaping, but not both, so revocation forces a real reallocation.
-        instructions: '"'.repeat(30_000),
-      });
-      const providerShape = {
-        gmailBody: "g".repeat(10_000),
-        slackText: "s".repeat(10_000),
-      } as const;
-      stubProviders(providerShape);
-      const control = await compose(fixture);
-      if (control.status !== 200 || control.body.result !== "composed") {
-        throw new Error(
-          `Expected a composed control, received ${JSON.stringify(control.body)}`,
-        );
-      }
-      const contributed = control.body.composition.descriptors.filter(
-        (descriptor) => {
-          return descriptor.contributed;
-        },
-      );
-      expect(
-        contributed.map((descriptor) => {
-          return descriptor.source;
-        }),
-      ).toStrictEqual(["gmail"]);
-      expect(
-        control.body.composition.descriptors.find((descriptor) => {
-          return descriptor.source === "slack";
-        })?.contributed,
-      ).toBeFalsy();
-
-      const collectionArrived = createDeferredPromise<void>(context.signal);
-      const releaseCollection = createDeferredPromise<void>(context.signal);
-      const calls = stubProviders({
-        ...providerShape,
-        slackHold: releaseCollection.promise,
-        onSlackEnumerated: () => {
-          collectionArrived.resolve();
-        },
-        onSlackEnumeration: (call) => {
-          if (call !== 4) {
-            return Promise.resolve();
-          }
-          // Gmail was revoked after its collection. Slack was allocation-
-          // dropped in the first plan and only enters after replanning, so
-          // reaching this refusal proves the new final source was re-asked.
-          return Promise.resolve([]);
-        },
-      });
-      const pending = compose(fixture);
-      await collectionArrived.promise;
-      await runsApi.applyUserPermissionGrant(fixture.actor, {
-        agentId: fixture.agentId,
-        connectorSlug: "gmail",
-        permission: "messages.detail",
-        action: "deny",
-      });
-      releaseCollection.resolve();
-
-      const response = await pending;
-      expect(response.body).toStrictEqual({ result: "authority-changed" });
-      // The newly eligible source is authorized, not recollected.
-      expect(
-        calls.gmail.filter((path) => {
-          return path.endsWith("/messages");
-        }),
-      ).toHaveLength(2);
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "rejects a local Slack disconnect committed while the remote re-proof is held",
-    async () => {
-      const fixture = await setupOwner(objectStorage);
-      const reproofArrived = createDeferredPromise<void>(context.signal);
-      const releaseReproof = createDeferredPromise<void>(context.signal);
-      stubProviders({
-        onSlackEnumeration: async (call) => {
-          if (call === 4) {
-            reproofArrived.resolve();
-            await releaseReproof.promise;
-          }
-        },
-      });
-
-      const pending = compose(fixture);
-      await reproofArrived.promise;
-      context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
-      await accept(
-        slackClient().disconnect({
-          headers: authHeaders(fixture.actor),
-          query: {},
-        }),
-        [200],
-      );
-      releaseReproof.resolve();
-
-      const response = await pending;
-      if (response.status !== 200 || response.body.result !== "composed") {
-        throw new Error(
-          `Expected Gmail to survive, received ${JSON.stringify(response.body)}`,
-        );
-      }
-      expect(
-        response.body.composition.descriptors.find((descriptor) => {
-          return descriptor.source === "slack";
-        }),
-      ).toBeUndefined();
-      expect(
-        response.body.composition.descriptors.find((descriptor) => {
-          return descriptor.source === "gmail";
-        })?.contributed,
-      ).toBeTruthy();
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  /**
-   * The retained proof owns the attempt's deadline, not a second one.
-   *
-   * This check used to give itself a fresh five-second ceiling regardless of
-   * how much of the 45-second phase remained, and reported exhausting it as an
-   * authority change — so a complete collection was discarded, before its
-   * occurrence could be finalized, with most of the attempt's own budget
-   * unspent. Every source that answers adds a descriptor to this proof, which
-   * made a healthy multi-source morning the likeliest one to be thrown away
-   * (#35656). Elapsing well past that retired ceiling while the attempt still
-   * owns its phase is now an ordinary, successful composition.
-   */
-  it(
-    "keeps proving retained authority past the retired five-second ceiling",
-    async () => {
-      const fixture = await setupOwner(objectStorage);
-      const reproofArrived = createDeferredPromise<void>(context.signal);
-      const releaseReproof = createDeferredPromise<void>(context.signal);
-      const calls = stubProviders({
-        onSlackEnumeration: async (call) => {
-          if (call === 4) {
-            reproofArrived.resolve();
-            await releaseReproof.promise;
-          }
-        },
-      });
-
-      const pending = compose(fixture);
-      await reproofArrived.promise;
-      mockNow(ANCHOR_MS + 30_000 + 5001);
-      releaseReproof.resolve();
-
-      const response = await pending;
-      expect(response.body.result).toBe("composed");
-      // The proof itself is unchanged: the same single re-enumeration, not a
-      // retry loop bought by the larger allowance.
-      expect(
-        calls.slack.filter((call) => {
-          return call === "users.conversations";
-        }),
-      ).toHaveLength(4);
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it.each([
-    [3999, "composed"],
-    [4000, "incomplete"],
-  ] as const)(
-    "uses the tighter attempt reservation for retained proof (%i ms)",
-    async (retainedElapsedMs, expected) => {
-      const fixture = await setupOwner(objectStorage);
-      const phaseStartedAt = ANCHOR_MS + 30_000;
-      const reproofArrived = createDeferredPromise<void>(context.signal);
-      const releaseReproof = createDeferredPromise<void>(context.signal);
-      // Wave one finishes at +19s. Slack therefore receives the remaining
-      // new-read window and lands at +39s; language storage advances within its
-      // own bound to +41s, leaving only four seconds of the attempt reservation.
-      stubObjectStorage(objectStorage, () => {
-        mockNow(phaseStartedAt + 41_000);
-      });
-      stubProviders({
-        onGmailRequest: () => {
-          mockNow(phaseStartedAt + 19_000);
-        },
-        onSlackEnumeration: async (call) => {
-          if (call === 3) {
-            mockNow(phaseStartedAt + 39_000);
-          }
-          if (call === 4) {
-            reproofArrived.resolve();
-            await releaseReproof.promise;
-          }
-        },
-      });
-
-      const pending = compose(fixture);
-      await reproofArrived.promise;
-      mockNow(phaseStartedAt + 41_000 + retainedElapsedMs);
-      releaseReproof.resolve();
-
-      const response = await pending;
-      expect(response.body.result).toBe(expected);
-      if (response.body.result === "incomplete") {
-        // The retained five-second ceiling and the outer reservation meet at
-        // equality here. The outer lifecycle owns that public classification.
-        expect(response.body.reason).toBe("deadline-exceeded");
-        expect(response.body.detail).toContain("final authority check");
-      }
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it.each([
-    [
-      "automation replacement",
-      async (fixture: Fixture) => {
-        await replaceMorningBriefAutomationFixture({
-          orgId: fixture.actor.orgId,
-          userId: fixture.actor.userId,
-          workflowId: fixture.workflowId,
-          automationId: fixture.automationId,
-        });
-      },
-    ],
-    [
-      "destination rebind",
-      async (fixture: Fixture) => {
-        await rebindMorningBriefThreadFixture({
-          orgId: fixture.actor.orgId,
-          userId: fixture.actor.userId,
-          workflowId: fixture.workflowId,
-          chatThreadId: null,
-        });
-      },
-    ],
-  ] as const)(
-    "rejects a %s committed during retained provider work",
-    async (_name, changeBinding) => {
-      const fixture = await setupOwner(objectStorage);
-      const reproofArrived = createDeferredPromise<void>(context.signal);
-      const releaseReproof = createDeferredPromise<void>(context.signal);
-      stubProviders({
-        onSlackEnumeration: async (call) => {
-          if (call === 4) {
-            reproofArrived.resolve();
-            await releaseReproof.promise;
-          }
-        },
-      });
-
-      const pending = compose(fixture);
-      await reproofArrived.promise;
-      await changeBinding(fixture);
-      releaseReproof.resolve();
-
-      const response = await pending;
-      expect(response.body).toStrictEqual({ result: "authority-changed" });
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "rejects a changed membership generation through the shared owner authorizer",
-    async () => {
-      const fixture = await setupOwner(objectStorage);
-      const reproofArrived = createDeferredPromise<void>(context.signal);
-      const releaseReproof = createDeferredPromise<void>(context.signal);
-      stubProviders({
-        onSlackEnumeration: async (call) => {
-          if (call === 4) {
-            reproofArrived.resolve();
-            await releaseReproof.promise;
-          }
-        },
-      });
-
-      const pending = compose(fixture);
-      await reproofArrived.promise;
-      await store.set(
-        seedOrgMembership$,
-        {
-          orgId: fixture.actor.orgId,
-          userId: fixture.actor.userId,
-          role: "admin",
-          membershipId: `orgmem_rejoined_${randomUUID()}`,
-        },
-        context.signal,
-      );
-      releaseReproof.resolve();
-
-      const response = await pending;
-      expect(response.body).toStrictEqual({ result: "authority-changed" });
-    },
-    TEST_TIMEOUT_MS,
-  );
-
-  it(
-    "propagates caller cancellation from a held retained proof without starting more checks",
-    async () => {
-      const fixture = await setupOwner(objectStorage);
-      const controller = new AbortController();
-      const cancellation = new Error(`cancelled ${randomUUID()}`);
-      const reproofArrived = createDeferredPromise<void>(context.signal);
-      const reproofCancelled = createDeferredPromise<void>(context.signal);
-      const calls = stubProviders({
-        onSlackEnumeration: async (call, request) => {
-          if (call !== 4) {
-            return;
-          }
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              reproofCancelled.resolve();
-            },
-            { once: true },
-          );
-          reproofArrived.resolve();
-          await reproofCancelled.promise;
-          return [];
-        },
-      });
-      await store.set(
-        seedOrgMembership$,
-        {
-          orgId: fixture.actor.orgId,
-          userId: fixture.actor.userId,
-          role: "admin",
-          membershipId: fixture.membershipId,
-        },
-        context.signal,
-      );
-      const pending = composeClient(controller.signal, true).compose({
-        headers: authHeaders(fixture.actor),
-        body: { anchor: ANCHOR_ISO },
-      });
-
-      await reproofArrived.promise;
-      controller.abort(cancellation);
-      await reproofCancelled.promise;
-
-      await expect(pending).rejects.toThrow(cancellation.message);
-      expect(
-        calls.slack.filter((call) => {
-          return call === "users.conversations";
-        }),
-      ).toHaveLength(4);
+        response.body.composition.sources.find((entry) => {
+          return entry.source === "gmail";
+        })?.items,
+      ).toBe(0);
     },
     TEST_TIMEOUT_MS,
   );

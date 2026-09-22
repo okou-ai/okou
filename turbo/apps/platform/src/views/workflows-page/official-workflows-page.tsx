@@ -24,6 +24,8 @@ import {
   DialogHeader,
   DialogTitle,
   Input,
+  buttonVariants,
+  cn,
 } from "@okouai/ui";
 import {
   Alert,
@@ -183,16 +185,15 @@ function OfficialWorkflowCard({
               })}
             </Button>
           ) : (
-            <Button asChild type="button" size="sm" className="h-9 rounded-lg">
-              <Link
-                pathname={ROUTES.officialWorkflowDetail}
-                options={{ pathParams: { definitionName: workflow.name } }}
-              >
-                {i18n.t(($) => {
-                  return $.workflows.official.viewAndInstall;
-                })}
-              </Link>
-            </Button>
+            <Link
+              pathname={ROUTES.officialWorkflowDetail}
+              options={{ pathParams: { definitionName: workflow.name } }}
+              className={cn(buttonVariants({ size: "sm" }), "h-9 rounded-lg")}
+            >
+              {i18n.t(($) => {
+                return $.workflows.official.viewAndInstall;
+              })}
+            </Link>
           )}
         </div>
       </div>

@@ -68,8 +68,9 @@ scenarios = [
     ('fixture-and-rust', [corpus, 'crates/runner-types/src/types.rs'], 'coverage', True, True),
     ('fixture-and-ci', [corpus, '.github/workflows/crates.yml'], 'coverage', True, True),
     ('unrelated', ['README.md'], None, False, False),
-    ('other-shared-fixture', ['turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json'],
-     None, False, True),
+    ('firewall-semantics-fixture',
+     ['turbo/packages/connectors/src/__tests__/firewall-semantics-contract.json'],
+     standalone, False, True),
 ]
 
 with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-') as temporary:

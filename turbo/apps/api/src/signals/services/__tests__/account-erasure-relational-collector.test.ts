@@ -26,8 +26,22 @@ import {
   createRelationalErasureCollector,
   planRelationalErasure,
   relationalErasureResidual,
+  type RelationalDescendantPath,
   type RelationalErasurePlan,
 } from "../account-erasure-relational-collector";
+
+/** A plan with nothing in it, so a gate case states only what it changes. */
+function emptyPlan(): RelationalErasurePlan {
+  return {
+    order: [],
+    descendants: [],
+    unreachableDescendants: [],
+    unattributableDescendants: [],
+    unreachableRoots: [],
+    rewritingEdges: [],
+    cycles: [],
+  };
+}
 
 // Explicit external-behavior exception, matching the dormant B1 persistence
 // suite. The relational sweep plan is derived from `pg_class`, `pg_constraint`
@@ -173,42 +187,36 @@ describe("relational erasure plan", () => {
 
   it("refuses to call the sweep complete while rows are unreachable", () => {
     // Measured on the real schema: `chat_agentphone_context` is a root whose
-    // uuid `user_link_id` has no foreign key to a link row naming the account,
-    // and fourteen declared descendants have no foreign key to any declared
-    // parent. A completion claim has to fail while that is true.
+    // uuid `user_link_id` has no foreign key to a link row naming the account.
+    // A completion claim has to fail while that is true.
     expect(() => {
       return assertRelationalSweepComplete({
-        order: [],
-        descendants: [],
-        unreachableDescendants: [],
+        ...emptyPlan(),
         unreachableRoots: ["chat_agentphone_context"],
-        rewritingEdges: [],
-        cycles: [],
       });
     }).toThrow(
       "account_erasure_relational:root_unreachable:chat_agentphone_context",
     );
     expect(() => {
       return assertRelationalSweepComplete({
-        order: [],
-        descendants: [],
-        unreachableDescendants: ["email_outbox"],
-        unreachableRoots: [],
-        rewritingEdges: [],
-        cycles: [],
+        ...emptyPlan(),
+        unreachableDescendants: ["browser_session_screenshots"],
       });
     }).toThrow(
-      "account_erasure_relational:descendant_unreachable:email_outbox",
+      "account_erasure_relational:descendant_unreachable:browser_session_screenshots",
     );
+    // A descendant whose account attribution does not exist in the schema is
+    // refused under its own code rather than quietly counted as reached.
     expect(() => {
       return assertRelationalSweepComplete({
-        order: [],
-        descendants: [],
-        unreachableDescendants: [],
-        unreachableRoots: [],
-        rewritingEdges: [],
-        cycles: [],
+        ...emptyPlan(),
+        unattributableDescendants: ["email_outbox"],
       });
+    }).toThrow(
+      "account_erasure_relational:descendant_unattributable:email_outbox",
+    );
+    expect(() => {
+      return assertRelationalSweepComplete(emptyPlan());
     }).not.toThrow();
   });
 
@@ -256,23 +264,147 @@ describe("relational erasure plan", () => {
       }),
     );
 
-    for (const edge of plan.descendants) {
-      expect([...declared]).toContain(edge.child);
-      const entry = ACCOUNT_OWNERSHIP_INVENTORY[edge.child];
+    for (const path of plan.descendants) {
+      expect([...declared]).toContain(path.child);
+      const entry = ACCOUNT_OWNERSHIP_INVENTORY[path.child];
       expect(entry?.coverage).toBe("user_descendant");
       if (entry?.coverage === "user_descendant") {
-        expect(entry.parents).toContain(edge.parent);
+        expect(entry.parents).toContain(path.root);
       }
-      expect(edge.childColumns).toHaveLength(edge.parentColumns.length);
+      expect(path.hops.length).toBeGreaterThan(0);
+      expect(path.hops[path.hops.length - 1]?.parent).toBe(path.root);
+      for (const hop of path.hops) {
+        expect(hop.childColumns).toHaveLength(hop.parentColumns.length);
+        expect(hop.childColumns.length).toBeGreaterThan(0);
+      }
+      // A declared reach states why the schema has no key; a catalogue path
+      // is the key itself and needs none.
+      expect(path.basis === null).toBe(path.source === "catalogue");
     }
-    // A descendant with no foreign key to any declared parent cannot be swept
-    // through that parent, so it is reported rather than assumed deleted.
-    for (const table of plan.unreachableDescendants) {
+    // Every declared reach is anchored on a root the plan can actually sweep.
+    const planned = new Set(
+      plan.order.map((root) => {
+        return root.table;
+      }),
+    );
+    for (const path of plan.descendants) {
+      expect([...planned]).toContain(path.root);
+    }
+    // The order is derived, not a hop count: every path runs before each
+    // table it joins through loses its rows, or the join would match nothing.
+    // A path's terminal root is excluded because roots go in a later phase.
+    const firstIndex = new Map<string, number>();
+    for (const [index, path] of plan.descendants.entries()) {
+      if (!firstIndex.has(path.child)) {
+        firstIndex.set(path.child, index);
+      }
+    }
+    let traversedDescendants = 0;
+    for (const [index, path] of plan.descendants.entries()) {
+      for (const hop of path.hops.slice(0, -1)) {
+        const intermediate = firstIndex.get(hop.parent);
+        if (intermediate === undefined) {
+          continue;
+        }
+        traversedDescendants += 1;
+        expect(index).toBeLessThan(intermediate);
+      }
+    }
+    // The live schema really does exercise that ordering, so a future change
+    // that stopped producing multi-hop paths would not silently pass this.
+    expect(traversedDescendants).toBeGreaterThan(0);
+
+    // A descendant with neither a foreign key to a declared parent nor a
+    // declared reach cannot be swept, so it is reported rather than assumed
+    // deleted. On the live schema there are none left.
+    expect(plan.unreachableDescendants).toStrictEqual([]);
+    // Two remain unattributable: no column and no join names the account.
+    expect(plan.unattributableDescendants).toStrictEqual([
+      "email_outbox",
+      "feishu_chat_ingress",
+    ]);
+    for (const table of plan.unattributableDescendants) {
       expect([...declared]).toContain(table);
     }
-    expect(plan.unreachableDescendants).toStrictEqual(
-      [...plan.unreachableDescendants].sort(),
-    );
+  });
+
+  it("reaches the descendants a foreign key cannot, through declared keys", async () => {
+    const plan = await planRelationalErasure(db);
+    const byChild = new Map<string, RelationalDescendantPath[]>();
+    for (const path of plan.descendants) {
+      byChild.set(path.child, [...(byChild.get(path.child) ?? []), path]);
+    }
+
+    // The twelve of the fourteen previously unreachable descendants this
+    // sink can now reach. Each is measured against the live catalogue, not
+    // asserted from the declaration alone.
+    for (const table of [
+      "active_input_delivery_items",
+      "browser_session_resize_states",
+      "browser_session_screenshot_deletions",
+      "browser_session_screenshots",
+      "chat_agent_run_context",
+      "chat_event_search_message_watermarks",
+      "official_automation_result_email_claims",
+      "pi_resource_version_indexes",
+      "stripe_workflow_deliveries",
+    ]) {
+      const paths = byChild.get(table) ?? [];
+      expect(paths.length).toBeGreaterThan(0);
+    }
+
+    // `pi_resource_version_indexes` needed no declared key at all: its real
+    // foreign key lands on `storage_versions`, and the inventory had named
+    // the grandparent.
+    expect(byChild.get("pi_resource_version_indexes")).toStrictEqual([
+      {
+        child: "pi_resource_version_indexes",
+        root: "storage_versions",
+        hops: [
+          {
+            childColumns: ["storage_version_id"],
+            parent: "storage_versions",
+            parentColumns: ["id"],
+          },
+        ],
+        source: "catalogue",
+        basis: null,
+      },
+    ]);
+
+    // A two-hop reach: the only key lands on a descendant, so the join has to
+    // continue to the root that names the account.
+    const items = byChild.get("active_input_delivery_items") ?? [];
+    expect(items).toHaveLength(1);
+    expect(items[0]?.root).toBe("chat_threads");
+    expect(items[0]?.source).toBe("declared");
+    expect(items[0]?.hops).toStrictEqual([
+      {
+        childColumns: ["delivery_id"],
+        parent: "active_input_deliveries",
+        parentColumns: ["id"],
+      },
+      {
+        childColumns: ["chat_thread_id"],
+        parent: "chat_threads",
+        parentColumns: ["id"],
+      },
+    ]);
+
+    // The three tables the schema itself says are not the account's: a shared
+    // X read cache, an installation-scoped provider retry receipt, and a
+    // platform provider-cost fact with no owner linkage left once the
+    // owner-scoped row is gone. None of them appears as a descendant.
+    for (const table of [
+      "x_resource_reads",
+      "feishu_org_events",
+      "morning_brief_platform_generation_receipts",
+    ]) {
+      expect(byChild.has(table)).toBeFalsy();
+      expect(ACCOUNT_OWNERSHIP_INVENTORY[table]?.coverage).not.toBe(
+        "user_descendant",
+      );
+    }
   });
 
   it("reports relational residual for a subject that still has rows", async () => {
@@ -445,10 +577,10 @@ describe("dormant relational sweep", () => {
     const plan = await planRelationalErasure(db);
     await drive(mine, {
       ...plan,
-      // The state segment 5 produces once the fourteen unreachable descendants
-      // have explicit selectors. Narrowed here so the proof path runs before
+      // The state P1 produces once `email_outbox` and `feishu_chat_ingress`
+      // carry an account column. Narrowed here so the proof path runs before
       // its gate opens; the gate itself is asserted in the next case.
-      unreachableDescendants: [],
+      unattributableDescendants: [],
     });
 
     const residual = await relationalErasureResidual(
@@ -469,17 +601,48 @@ describe("dormant relational sweep", () => {
     expect(theirThreads.rows).toStrictEqual([{ rows: 1 }]);
   });
 
-  it("refuses to verify while rows remain unreachable", async () => {
+  it("refuses to verify while rows remain unattributable", async () => {
     const subjectId = account("gated");
     const plan = await planRelationalErasure(db);
-    // The real plan: fourteen declared descendants have no foreign key to any
-    // declared parent, so no completion claim may be made today.
-    expect(plan.unreachableDescendants.length).toBeGreaterThan(0);
+    // The real plan: `email_outbox` and `feishu_chat_ingress` hold account
+    // data no column or join attributes, so no completion claim may be made.
+    expect(plan.unattributableDescendants.length).toBeGreaterThan(0);
     expect(() => {
       return assertRelationalSweepComplete(plan);
-    }).toThrow("account_erasure_relational:descendant_unreachable");
+    }).toThrow("account_erasure_relational:descendant_unattributable");
 
     const { job, sealed } = await drive(subjectId, plan);
+    await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
+      "account_erasure:work_unresolved",
+    );
+  });
+
+  // The gate is the point, so it is proved against a plan that is complete in
+  // every other respect: one descendant is put back out of reach and nothing
+  // else changes. If a future change were to soften the gate, this is the
+  // case that goes red rather than a completion claim quietly turning true.
+  it("still refuses a complete plan with one descendant put out of reach", async () => {
+    const subjectId = account("negative");
+    const plan = await planRelationalErasure(db);
+    const reachable = { ...plan, unattributableDescendants: [] };
+    expect(() => {
+      return assertRelationalSweepComplete(reachable);
+    }).not.toThrow();
+
+    const withdrawn = {
+      ...reachable,
+      descendants: reachable.descendants.filter((path) => {
+        return path.child !== "browser_session_screenshots";
+      }),
+      unreachableDescendants: ["browser_session_screenshots"],
+    };
+    expect(() => {
+      return assertRelationalSweepComplete(withdrawn);
+    }).toThrow(
+      "account_erasure_relational:descendant_unreachable:browser_session_screenshots",
+    );
+
+    const { job, sealed } = await drive(subjectId, withdrawn);
     await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
       "account_erasure:work_unresolved",
     );
@@ -490,7 +653,7 @@ describe("dormant relational sweep", () => {
     const plan = await planRelationalErasure(db);
     const { job, sealed } = await drive(subjectId, {
       ...plan,
-      unreachableDescendants: [],
+      unattributableDescendants: [],
     });
 
     const finished = await finalizeErasureJob(db, job.id, sealed);

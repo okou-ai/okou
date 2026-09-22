@@ -28,7 +28,7 @@ function CheckLine({ children }: { readonly children: ReactNode }) {
   );
 }
 
-function MorningPreview({ large }: { readonly large: boolean }) {
+function MorningPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -38,9 +38,7 @@ function MorningPreview({ large }: { readonly large: boolean }) {
   );
   return (
     <>
-      {large && (
-        <span className="block text-lg font-medium">{copy.heading}</span>
-      )}
+      <span className="block text-lg font-medium">{copy.heading}</span>
       <span className="flex flex-col gap-1 rounded-md bg-violet-50 p-2 dark:bg-violet-950/40">
         <span className="font-medium">{copy.priority}</span>
         <span>{copy.task}</span>
@@ -51,17 +49,15 @@ function MorningPreview({ large }: { readonly large: boolean }) {
         <span className="text-muted-foreground">14:30</span>
         <span>{copy.meetingTwo}</span>
       </span>
-      {large && (
-        <span className="flex items-center gap-1.5 text-muted-foreground">
-          <Mail className="size-3" aria-hidden />
-          {copy.footer}
-        </span>
-      )}
+      <span className="flex items-center gap-1.5 text-muted-foreground">
+        <Mail className="size-3" aria-hidden />
+        {copy.footer}
+      </span>
     </>
   );
 }
 
-function MeetingsPreview({ large }: { readonly large: boolean }) {
+function MeetingsPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -71,9 +67,7 @@ function MeetingsPreview({ large }: { readonly large: boolean }) {
   );
   return (
     <>
-      {large && (
-        <span className="block text-lg font-medium">{copy.heading}</span>
-      )}
+      <span className="block text-lg font-medium">{copy.heading}</span>
       <span className="flex items-center gap-2">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
           {copy.initials}
@@ -87,18 +81,16 @@ function MeetingsPreview({ large }: { readonly large: boolean }) {
         <span className="font-medium">{copy.note}</span>
         <span>{copy.question}</span>
       </span>
-      {large && (
-        <span className="flex flex-wrap gap-2 text-muted-foreground">
-          <span>{copy.tagOne}</span>
-          <span>·</span>
-          <span>{copy.tagTwo}</span>
-        </span>
-      )}
+      <span className="flex flex-wrap gap-2 text-muted-foreground">
+        <span>{copy.tagOne}</span>
+        <span>·</span>
+        <span>{copy.tagTwo}</span>
+      </span>
     </>
   );
 }
 
-function InboxPreview({ large }: { readonly large: boolean }) {
+function InboxPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -114,27 +106,23 @@ function InboxPreview({ large }: { readonly large: boolean }) {
           {copy.needsReply}
         </span>
       </span>
-      {large && (
-        <span className="flex justify-between gap-2 border-b border-border pb-2">
-          <span>{copy.later}</span>
-          <span className="text-muted-foreground">{copy.readLater}</span>
-        </span>
-      )}
+      <span className="flex justify-between gap-2 border-b border-border pb-2">
+        <span>{copy.later}</span>
+        <span className="text-muted-foreground">{copy.readLater}</span>
+      </span>
       <span className="flex min-w-0 flex-col gap-1 rounded-md border border-orange-200/70 p-1.5 dark:border-orange-800">
         <span className="flex items-center gap-1 text-muted-foreground">
           <Pencil className="size-2.5" aria-hidden />
           {copy.draft}
         </span>
-        <span className={cn("font-serif", !large && "line-clamp-2")}>
-          {copy.text}
-        </span>
-        {large && <span className="text-muted-foreground">{copy.review}</span>}
+        <span className="font-serif">{copy.text}</span>
+        <span className="text-muted-foreground">{copy.review}</span>
       </span>
     </>
   );
 }
 
-function WeeklyPreview({ large }: { readonly large: boolean }) {
+function WeeklyPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -144,22 +132,18 @@ function WeeklyPreview({ large }: { readonly large: boolean }) {
   );
   return (
     <>
-      {large && (
-        <span className="block text-lg font-medium">{copy.heading}</span>
-      )}
+      <span className="block text-lg font-medium">{copy.heading}</span>
       <CheckLine>{copy.one}</CheckLine>
       <CheckLine>{copy.two}</CheckLine>
-      {large && (
-        <span className="flex flex-col gap-1 border-t border-border pt-3">
-          <span className="text-muted-foreground">{copy.next}</span>
-          <span>{copy.task}</span>
-        </span>
-      )}
+      <span className="flex flex-col gap-1 border-t border-border pt-3">
+        <span className="text-muted-foreground">{copy.next}</span>
+        <span>{copy.task}</span>
+      </span>
     </>
   );
 }
 
-function RecapPreview({ large }: { readonly large: boolean }) {
+function RecapPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -180,19 +164,17 @@ function RecapPreview({ large }: { readonly large: boolean }) {
         <span>{copy.two}</span>
         <span>{copy.team}</span>
         <span>{copy.monday}</span>
-        {large && (
-          <>
-            <span>{copy.three}</span>
-            <span>{copy.assign}</span>
-            <span>—</span>
-          </>
-        )}
+        <>
+          <span>{copy.three}</span>
+          <span>{copy.assign}</span>
+          <span>—</span>
+        </>
       </span>
     </>
   );
 }
 
-function InvoicesPreview({ large }: { readonly large: boolean }) {
+function InvoicesPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -223,20 +205,18 @@ function InvoicesPreview({ large }: { readonly large: boolean }) {
         <span>{copy.example}</span>
         <span>$1,240</span>
         <span>{copy.filed}</span>
-        {large && (
-          <>
-            <span>{copy.second}</span>
-            <span>$380</span>
-            <span>{copy.filed}</span>
-          </>
-        )}
+        <>
+          <span>{copy.second}</span>
+          <span>$380</span>
+          <span>{copy.filed}</span>
+        </>
       </span>
-      {large && <span className="text-muted-foreground">{copy.footer}</span>}
+      <span className="text-muted-foreground">{copy.footer}</span>
     </>
   );
 }
 
-function CompetitorsPreview({ large }: { readonly large: boolean }) {
+function CompetitorsPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -246,47 +226,33 @@ function CompetitorsPreview({ large }: { readonly large: boolean }) {
   );
   return (
     <>
-      {large && (
-        <span className="block text-lg font-medium">{copy.heading}</span>
-      )}
+      <span className="block text-lg font-medium">{copy.heading}</span>
       <span className="flex items-center gap-2">
         <span className="min-w-0 flex-1 rounded-md border border-rose-200 p-2 dark:border-rose-800">
           <span className="block text-muted-foreground">{copy.previous}</span>
-          <span
-            className={cn(
-              "mt-1 block font-medium text-rose-800 dark:text-rose-200",
-              large ? "text-3xl" : "text-lg",
-            )}
-          >
+          <span className="mt-1 block text-3xl font-medium text-rose-800 dark:text-rose-200">
             $29 <span className="text-[0.4em]">{copy.unit}</span>
           </span>
         </span>
         <ChevronRight className="hidden size-3 shrink-0 sm:block" aria-hidden />
         <span className="min-w-0 flex-1 rounded-md border border-rose-200 bg-rose-50 p-2 dark:border-rose-800 dark:bg-rose-950/40">
           <span className="block text-muted-foreground">{copy.now}</span>
-          <span
-            className={cn(
-              "mt-1 block font-medium text-rose-800 dark:text-rose-200",
-              large ? "text-3xl" : "text-lg",
-            )}
-          >
+          <span className="mt-1 block text-3xl font-medium text-rose-800 dark:text-rose-200">
             $39 <span className="text-[0.4em]">{copy.unit}</span>
           </span>
         </span>
       </span>
-      {large && (
-        <>
-          <span>
-            {copy.changed}: {copy.plan}
-          </span>
-          <span className="text-muted-foreground">{copy.footer}</span>
-        </>
-      )}
+      <>
+        <span>
+          {copy.changed}: {copy.plan}
+        </span>
+        <span className="text-muted-foreground">{copy.footer}</span>
+      </>
     </>
   );
 }
 
-function MetricsPreview({ large }: { readonly large: boolean }) {
+function MetricsPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -296,40 +262,25 @@ function MetricsPreview({ large }: { readonly large: boolean }) {
   );
   return (
     <>
-      {large && <span className="text-muted-foreground">{copy.period}</span>}
+      <span className="text-muted-foreground">{copy.period}</span>
       <span className="grid grid-cols-3 gap-1">
         <span>
           <span className="block text-muted-foreground">{copy.visitors}</span>
-          <span
-            className={cn(
-              "block font-medium text-emerald-800 dark:text-emerald-200",
-              large ? "text-3xl" : "text-base sm:text-xl",
-            )}
-          >
+          <span className="block text-3xl font-medium text-emerald-800 dark:text-emerald-200">
             1,840
           </span>
           <span>↑ 12%</span>
         </span>
         <span>
           <span className="block text-muted-foreground">{copy.signups}</span>
-          <span
-            className={cn(
-              "block font-medium text-emerald-800 dark:text-emerald-200",
-              large ? "text-3xl" : "text-base sm:text-xl",
-            )}
-          >
+          <span className="block text-3xl font-medium text-emerald-800 dark:text-emerald-200">
             64
           </span>
           <span>↑ 8%</span>
         </span>
         <span>
           <span className="block text-muted-foreground">{copy.activated}</span>
-          <span
-            className={cn(
-              "block font-medium text-emerald-800 dark:text-emerald-200",
-              large ? "text-3xl" : "text-base sm:text-xl",
-            )}
-          >
+          <span className="block text-3xl font-medium text-emerald-800 dark:text-emerald-200">
             42
           </span>
           <span>↑ 5%</span>
@@ -337,10 +288,7 @@ function MetricsPreview({ large }: { readonly large: boolean }) {
       </span>
       <svg
         viewBox="0 0 300 50"
-        className={cn(
-          "w-full text-emerald-600 dark:text-emerald-400",
-          large ? "h-14" : "h-6",
-        )}
+        className="h-14 w-full text-emerald-600 dark:text-emerald-400"
         aria-hidden
       >
         <path
@@ -354,12 +302,12 @@ function MetricsPreview({ large }: { readonly large: boolean }) {
           strokeWidth="2"
         />
       </svg>
-      {large && <span className="text-muted-foreground">{copy.footer}</span>}
+      <span className="text-muted-foreground">{copy.footer}</span>
     </>
   );
 }
 
-function ReplyPreview({ large }: { readonly large: boolean }) {
+function ReplyPreview() {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -376,20 +324,16 @@ function ReplyPreview({ large }: { readonly large: boolean }) {
         />
         <span>
           <span className="block font-medium">{copy.heading}</span>
-          {large && (
-            <span className="block text-muted-foreground">{copy.subject}</span>
-          )}
+          <span className="block text-muted-foreground">{copy.subject}</span>
         </span>
       </span>
       <span className="block border-l-2 border-sky-200 bg-sky-50 p-1.5 font-serif dark:border-sky-800 dark:bg-sky-950/40">
         {copy.quote}
       </span>
-      {large && (
-        <span className="flex flex-col gap-1">
-          <span className="text-muted-foreground">{copy.next}</span>
-          <span>{copy.task}</span>
-        </span>
-      )}
+      <span className="flex flex-col gap-1">
+        <span className="text-muted-foreground">{copy.next}</span>
+        <span>{copy.task}</span>
+      </span>
     </>
   );
 }
@@ -403,17 +347,13 @@ const PREVIEW_CONTENT = {
   competitors: CompetitorsPreview,
   metrics: MetricsPreview,
   reply: ReplyPreview,
-} satisfies Record<
-  WorkflowRecommendationId,
-  (props: { readonly large: boolean }) => ReactNode
->;
+} satisfies Record<WorkflowRecommendationId, () => ReactNode>;
 
+/** The sample result a workflow dialog shows: a full-size mock of the thing. */
 export function WorkflowResultPreview({
   id,
-  large = false,
 }: {
   readonly id: WorkflowRecommendationId;
-  readonly large?: boolean;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -432,31 +372,17 @@ export function WorkflowResultPreview({
   return (
     <span
       data-slot="workflow-result-preview"
-      role={large ? "img" : undefined}
-      aria-label={large ? `${sample}: ${copy[id].label}` : undefined}
-      aria-hidden={!large}
+      role="img"
+      aria-label={`${sample}: ${copy[id].label}`}
       className={cn(
-        "relative block min-w-0 p-2.5",
+        "relative block min-w-0 rounded-2xl p-5",
         PREVIEW_COLORS[id],
-        large ? "rounded-2xl p-5" : "h-36 sm:w-full",
       )}
     >
-      <span
-        className={cn(
-          "flex min-w-0 flex-col rounded-lg bg-card text-foreground",
-          large
-            ? "min-h-60 gap-4 p-4 text-xs leading-relaxed"
-            : "h-full gap-2 overflow-hidden px-2 py-2 text-[7px] leading-snug sm:text-[8px]",
-        )}
-      >
+      <span className="flex min-h-60 min-w-0 flex-col gap-4 rounded-lg bg-card p-4 text-xs leading-relaxed text-foreground">
         <span className="block text-muted-foreground">{copy[id].label}</span>
-        <Preview large={large} />
-        <span
-          className={cn(
-            "mt-auto self-end text-muted-foreground",
-            large ? "text-[10px]" : "text-[6px]",
-          )}
-        >
+        <Preview />
+        <span className="mt-auto self-end text-[10px] text-muted-foreground">
           {sample}
         </span>
       </span>

@@ -19,6 +19,8 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  buttonVariants,
+  cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
@@ -279,17 +281,17 @@ function ActivityNotFound() {
             return $.activity.detail.notFound.description;
           })}
         </p>
-        <Button
-          asChild
-          variant="neutral"
-          className="mt-2 h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface"
+        <Link
+          pathname="/"
+          className={cn(
+            buttonVariants({ variant: "neutral" }),
+            "mt-2 h-auto rounded-md px-3 py-1.5 no-underline text-inherit hover:bg-control-surface active:bg-control-surface",
+          )}
         >
-          <Link pathname="/">
-            {t(($) => {
-              return $.activity.detail.notFound.back;
-            })}
-          </Link>
-        </Button>
+          {t(($) => {
+            return $.activity.detail.notFound.back;
+          })}
+        </Link>
       </div>
     </div>
   );
@@ -378,11 +380,13 @@ export function ActivityHeaderCard({
                 {showModelDetail && detail.selectedModel ? (
                   <TooltipProvider>
                     <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="text-foreground whitespace-nowrap cursor-default">
-                          {detail.selectedModel}
-                        </span>
-                      </TooltipTrigger>
+                      <TooltipTrigger
+                        render={
+                          <span className="text-foreground whitespace-nowrap cursor-default">
+                            {detail.selectedModel}
+                          </span>
+                        }
+                      />
                       <TooltipContent>
                         {t(
                           ($) => {
@@ -442,25 +446,27 @@ export function ActivityHeaderCard({
             {(logDetail || onDownload) && (
               <TooltipProvider delayDuration={200}>
                 <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      aria-label={t(($) => {
-                        return $.activity.detail.downloadRawData;
-                      })}
-                      className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground p-0"
-                      onClick={() => {
-                        if (onDownload) {
-                          onDownload();
-                        } else if (logDetail) {
-                          downloadJson(events, detail.id, logDetail);
-                        }
-                      }}
-                    >
-                      <Download size={14} />
-                    </Button>
-                  </TooltipTrigger>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        aria-label={t(($) => {
+                          return $.activity.detail.downloadRawData;
+                        })}
+                        className="h-7 w-7 shrink-0 rounded-lg text-muted-foreground hover:text-foreground p-0"
+                        onClick={() => {
+                          if (onDownload) {
+                            onDownload();
+                          } else if (logDetail) {
+                            downloadJson(events, detail.id, logDetail);
+                          }
+                        }}
+                      >
+                        <Download size={14} />
+                      </Button>
+                    }
+                  />
                   <TooltipContent side="left">
                     <p className="text-xs">
                       {t(($) => {

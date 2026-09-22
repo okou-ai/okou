@@ -172,13 +172,15 @@ function AgentDeleteReconcileView({
             className="w-full"
           />
           {deleting || copying ? null : (
-            <DialogClose asChild>
-              <Button variant="outline" size="sm" className="w-full">
-                {t(($) => {
-                  return $.actions.cancel;
-                })}
-              </Button>
-            </DialogClose>
+            <DialogClose
+              render={
+                <Button variant="outline" size="sm" className="w-full">
+                  {t(($) => {
+                    return $.actions.cancel;
+                  })}
+                </Button>
+              }
+            />
           )}
         </div>
       </div>
@@ -219,7 +221,7 @@ function AgentDeleteReconcileView({
                   }}
                 >
                   <SelectTrigger
-                    className="w-full"
+                    className="w-full focus-visible:ring-inset focus-visible:-outline-offset-2"
                     aria-label={t(
                       ($) => {
                         return $.delete.workflows.handle;
@@ -280,13 +282,15 @@ function AgentDeleteSimpleView({
       <DeleteDangerHeader agentName={agentName} />
       <DialogFooter className="mt-6">
         {deleting || copying ? null : (
-          <DialogClose asChild>
-            <Button variant="outline" size="sm">
-              {t(($) => {
-                return $.actions.cancel;
-              })}
-            </Button>
-          </DialogClose>
+          <DialogClose
+            render={
+              <Button variant="outline" size="sm">
+                {t(($) => {
+                  return $.actions.cancel;
+                })}
+              </Button>
+            }
+          />
         )}
         <DeleteConfirmButton
           deleting={deleting}
@@ -502,18 +506,20 @@ export function AgentDeleteDialog({
                 }
               }}
             >
-              <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 gap-2 rounded-lg border-destructive/40 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                >
-                  <Trash size={14} />
-                  {t(($) => {
-                    return $.actions.delete;
-                  })}
-                </Button>
-              </DialogTrigger>
+              <DialogTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 gap-2 rounded-lg border-destructive/40 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  >
+                    <Trash size={14} />
+                    {t(($) => {
+                      return $.actions.delete;
+                    })}
+                  </Button>
+                }
+              />
               <DialogContent
                 showCloseButton={!deleting && !copying}
                 closeLabel={t(($) => {

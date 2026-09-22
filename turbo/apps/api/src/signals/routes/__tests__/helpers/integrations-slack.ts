@@ -8,7 +8,7 @@ import type {
 } from "@okouai/api-contracts/contracts/test-slack-state";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import { testSlackStateRoutes } from "../../test-slack-state";
+import { testSlackStateRoutes } from "../../slack-state-preview";
 
 const SLACK_STATE_ROUTE = "/api/test/slack-state";
 

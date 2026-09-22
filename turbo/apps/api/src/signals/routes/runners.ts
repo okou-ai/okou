@@ -21,6 +21,7 @@ import {
   type RunnerPreference,
   type RunnerPreferenceClaimState,
   type RunnerClaimCapabilities,
+  type RunnerInstalledVersions,
   type SessionHistoryDownloadSource,
   type StoredConnectorPermissionBaseline,
   type StoredExecutionContext,
@@ -155,6 +156,8 @@ interface RunnerClaimAttribution {
   readonly runnerIdentity: RunnerClaimIdentity;
   readonly runnerHostname: string | null;
   readonly runnerVersion: string | null;
+  /** Okou CLI installed in the claimant's rootfs; null for legacy runners. */
+  readonly installedVersions: RunnerInstalledVersions | null;
 }
 
 function runnerClaimAttributionDimensions(
@@ -174,6 +177,13 @@ function runnerClaimAttributionDimensions(
       : {}),
     ...(attribution.runnerVersion
       ? { runner_version: attribution.runnerVersion }
+      : {}),
+    ...(attribution.installedVersions
+      ? {
+          runner_installed_cli_version: attribution.installedVersions.cli,
+          runner_installed_pi_agent_runtime_version:
+            attribution.installedVersions.piAgentRuntime,
+        }
       : {}),
   };
 }
@@ -2922,6 +2932,7 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           runnerIdentity: body.data.runnerIdentity,
           runnerHostname: body.data.runnerHostname ?? null,
           runnerVersion: runnerVersionResult.data ?? null,
+          installedVersions: body.data.installedVersions ?? null,
         }
       : undefined;
 

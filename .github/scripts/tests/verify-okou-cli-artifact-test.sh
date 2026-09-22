@@ -7,17 +7,30 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 commit_sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+cli_version="9.353.0"
+versions_json="$(jq -nc \
+  --arg cli "$cli_version" \
+  '{cli: $cli, piAgentRuntime: "1.36.0", piSdk: "0.86.1+okou.0123456789ab"}')"
 
+# create_artifact <dir> <include_worker> <include_wasm> [package_version] [versions]
+# `versions` is the manifest `versions` object; pass `null` to omit it.
 create_artifact() {
   local artifact_dir="$1"
   local include_worker="$2"
   local include_wasm="$3"
+  local package_version="${4:-$cli_version}"
+  local versions="${5:-$versions_json}"
   local package_root="${artifact_dir}/contents/package"
 
   mkdir -p "$package_root"
-  printf '%s\n' \
-    '{"name":"@okouai/cli","private":true,"bin":{"okou":"okou.js"}}' \
-    >"${package_root}/package.json"
+  jq -n \
+    --arg version "$package_version" \
+    '{
+      name: "@okouai/cli",
+      version: $version,
+      private: true,
+      bin: {okou: "okou.js"}
+    }' >"${package_root}/package.json"
   printf 'okou\n' >"${package_root}/okou.js"
   if [[ "$include_worker" == "true" ]]; then
     printf 'worker\n' >"${package_root}/image-resize-worker.js"
@@ -36,6 +49,7 @@ create_artifact() {
     --arg commit_sha "$commit_sha" \
     --arg package_sha256 "$package_sha256" \
     --argjson package_size "$package_size" \
+    --argjson versions "$versions" \
     '{
       version: 1,
       commitSha: $commit_sha,
@@ -44,7 +58,9 @@ create_artifact() {
         sha256: $package_sha256,
         size: $package_size
       }
-    }' >"${artifact_dir}/manifest.json"
+    }
+    + (if $versions == null then {} else {versions: $versions} end)' \
+    >"${artifact_dir}/manifest.json"
   local manifest_sha256
   manifest_sha256="$(sha256sum "${artifact_dir}/manifest.json" | cut -d ' ' -f 1)"
   jq -n \
@@ -54,32 +70,51 @@ create_artifact() {
     >"${artifact_dir}/ready.json"
 }
 
+# reject_artifact <name> <message> <create_artifact args...>
+reject_artifact() {
+  local name="$1"
+  local message="$2"
+  shift 2
+  local artifact_dir="${tmp_dir}/${name}"
+  mkdir -p "$artifact_dir"
+  create_artifact "$artifact_dir" "$@"
+  if bash "$verify_script" "$artifact_dir" "$commit_sha" \
+    >"${tmp_dir}/${name}.txt" 2>&1; then
+    echo "$message" >&2
+    exit 1
+  fi
+  printf '%s\n' "${tmp_dir}/${name}.txt"
+}
+
 complete_artifact="${tmp_dir}/complete"
 mkdir -p "$complete_artifact"
 create_artifact "$complete_artifact" true true
 bash "$verify_script" "$complete_artifact" "$commit_sha" >/dev/null
 
-missing_worker_artifact="${tmp_dir}/missing-worker"
-mkdir -p "$missing_worker_artifact"
-create_artifact "$missing_worker_artifact" false true
-missing_worker_output="${tmp_dir}/missing-worker.txt"
-if bash "$verify_script" "$missing_worker_artifact" "$commit_sha" \
-  >"$missing_worker_output" 2>&1; then
-  echo "Verifier accepted an artifact without the image resize worker" >&2
-  exit 1
-fi
+missing_worker_output="$(reject_artifact missing-worker \
+  "Verifier accepted an artifact without the image resize worker" \
+  false true)"
 grep -Fq "CLI package is missing image-resize-worker.js" \
   "$missing_worker_output"
 
-missing_wasm_artifact="${tmp_dir}/missing-wasm"
-mkdir -p "$missing_wasm_artifact"
-create_artifact "$missing_wasm_artifact" true false
-missing_wasm_output="${tmp_dir}/missing-wasm.txt"
-if bash "$verify_script" "$missing_wasm_artifact" "$commit_sha" \
-  >"$missing_wasm_output" 2>&1; then
-  echo "Verifier accepted an artifact without the Photon WASM" >&2
-  exit 1
-fi
+missing_wasm_output="$(reject_artifact missing-wasm \
+  "Verifier accepted an artifact without the Photon WASM" \
+  true false)"
 grep -Fq "CLI package is missing photon_rs_bg.wasm" "$missing_wasm_output"
+
+# The rootfs installs the bundle by version, so an artifact that does not
+# declare its versions, or whose packed CLI disagrees with them, is unusable.
+reject_artifact missing-versions \
+  "Verifier accepted a manifest without versions" \
+  true true "$cli_version" null >/dev/null
+
+reject_artifact mismatched-cli-version \
+  "Verifier accepted a package.json version that differs from the manifest" \
+  true true "9.353.1" >/dev/null
+
+reject_artifact invalid-pi-sdk-version \
+  "Verifier accepted a Pi SDK version without the patch-set identity" \
+  true true "$cli_version" \
+  "$(jq -c '.piSdk = "0.86.1"' <<<"$versions_json")" >/dev/null
 
 echo "verify-okou-cli-artifact tests passed"

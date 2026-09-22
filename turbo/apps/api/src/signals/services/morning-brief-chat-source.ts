@@ -22,29 +22,12 @@ import type {
 } from "@okouai/api-contracts/contracts/morning-brief-chat-collection-preview";
 
 import {
-  morningBriefScopeDigest,
-  type MorningBriefRetainedSourceDescriptor,
-} from "./morning-brief-source-authority";
-import {
   morningBriefItemFacts,
   type MorningBriefSourceCollection,
   type MorningBriefSourceCoverage,
   type MorningBriefSourceItem,
   type MorningBriefSourceProvenance,
 } from "./morning-brief-source-item";
-
-/**
- * Chat's authorization surface.
- *
- * There is no external grant to digest: eligibility is the reader's own
- * ownership, visibility and provenance rules. Digesting their names keeps the
- * descriptor shape uniform and still makes a change to that rule set visible.
- */
-const MORNING_BRIEF_CHAT_READ_SURFACE: readonly string[] = [
-  "chat:thread-owner",
-  "chat:unread-snapshot",
-  "chat:ordinary-provenance",
-];
 
 function chatCoverage(
   collection: MorningBriefChatCollection,
@@ -184,38 +167,5 @@ export function normalizeMorningBriefChat(
       }).length,
       unknownRemaining: collection.truncations.length > 0,
     },
-  };
-}
-
-/**
- * The credential-free descriptor a later phase revalidates Chat against.
- *
- * `containers` names the threads that actually contributed. That is what an
- * erasure, ownership change or visibility change is checked against, and it is
- * the reason a thread deleted between collection and delivery cannot have its
- * content released.
- */
-export function morningBriefChatDescriptor(args: {
-  readonly userId: string;
-  readonly membershipId: string;
-  readonly agentId: string;
-  readonly capturedAt: Date;
-  readonly contributed: boolean;
-  readonly containers: readonly string[];
-}): MorningBriefRetainedSourceDescriptor {
-  return {
-    source: "chat",
-    // First-party: there is no connector row and no provider account.
-    connectionId: null,
-    accountRef: args.userId,
-    scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_CHAT_READ_SURFACE),
-    // Chat authorizes against its own threads rather than an HTTP policy, so
-    // the containers below are the whole endpoint surface a later check re-asks.
-    endpoints: [],
-    membershipId: args.membershipId,
-    agentId: args.agentId,
-    capturedAt: args.capturedAt.toISOString(),
-    contributed: args.contributed,
-    containers: args.containers,
   };
 }

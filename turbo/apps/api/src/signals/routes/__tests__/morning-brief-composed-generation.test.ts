@@ -26,7 +26,6 @@ import {
 } from "../../../test-fixtures/morning-brief-chat-collection";
 import {
   expireAndSweepMorningBriefGeneration,
-  holdMorningBriefGenerationReservation,
   readMorningBriefGenerations,
   readOwnerBillingFootprint,
   readPlatformGenerationReceipts,
@@ -624,14 +623,12 @@ describe("composed Morning Brief generation", () => {
     expect(row?.collectionKind).toBe("sources");
     // Provenance, not proof: the tag the answer reported for itself.
     expect(row?.reportedLanguage).toBe("zh-Hans");
-    // Retained proof exists and outlives the body it was collected for.
-    expect(row?.retainedSources).not.toBeNull();
     expect(row?.installationId).toBe(fixture.workflowId);
     expect(row?.automationId).toBe(fixture.automationId);
-    expect(row?.retainedUntil).not.toBeNull();
-    expect(row?.retainedUntil?.getTime() ?? 0).toBeGreaterThanOrEqual(
-      row?.expiresAt.getTime() ?? 0,
-    );
+    // Nothing retains authority evidence about the sources any more, and the
+    // columns that used to hold it are left alone for #35950 to drop.
+    expect(row?.retainedSources).toBeNull();
+    expect(row?.retainedUntil).toBeNull();
     // Links are resolved by program code from the collected input.
     expect(row?.resultMarkdown ?? "").toContain("https://");
 
@@ -692,63 +689,6 @@ describe("composed Morning Brief generation", () => {
     ).resolves.toHaveLength(1);
   });
 
-  it("withholds stored readback and new Chat delivery after source revocation", async () => {
-    const fixture = await seedOwnerWithoutConnectors();
-    await withSlack(fixture);
-    slackWithMessages(["ship the release"]);
-    const provider = scriptProvider(
-      JSON.stringify({
-        decision: "deliver",
-        language: "en-US",
-        title: "Today",
-        sections: [
-          {
-            heading: "Decisions",
-            items: [{ text: "Release is going out", citations: ["c1"] }],
-          },
-        ],
-      }),
-    );
-    const generated = await accept(
-      client().generate({
-        headers: fixture.headers,
-        body: { anchor: ANCHOR },
-      }),
-      [200],
-    );
-    if (generated.body.result !== "generated") {
-      throw new Error("expected a generated brief");
-    }
-
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
-        return HttpResponse.json({
-          ok: true,
-          channels: [],
-          response_metadata: { next_cursor: "" },
-        });
-      }),
-    );
-    const readback = await accept(
-      client().generate({
-        headers: fixture.headers,
-        body: { anchor: ANCHOR },
-      }),
-      [200],
-    );
-    expect(readback.body.result).toBe("authority-changed");
-    expect(provider.bodies).toHaveLength(1);
-
-    const delivery = await accept(
-      deliveryClient().preview({
-        headers: fixture.headers,
-        body: { resultAttemptId: generated.body.generation.attemptId },
-      }),
-      [409],
-    );
-    expect(delivery.body.error.code).toBe("MORNING_BRIEF_OWNER_REVOKED");
-  });
-
   it("withholds persisted content after the canonical automation is replaced", async () => {
     const fixture = await seedOwnerWithoutConnectors();
     await withSlack(fixture);
@@ -804,118 +744,7 @@ describe("composed Morning Brief generation", () => {
     expect(delivery.body.error.code).toBe("MORNING_BRIEF_OWNER_REVOKED");
   });
 
-  it("refuses the first email send when retained source authority is revoked", async () => {
-    const fixture = await seedOwnerWithoutConnectors();
-    await withSlack(fixture);
-    await seedMemberEmailAddress(fixture.userId, "owner@example.test");
-    mockEnv("RESEND_API_KEY", "platform-resend-key");
-    mockEnv("RESEND_FROM_DOMAIN", "mail.okou.test");
-    mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.test");
-    mockEnv("APP_URL", "https://app.okou.test");
-    context.mocks.resend.send.mockReset();
-    slackWithMessages(["ship the release"]);
-    scriptProvider(
-      JSON.stringify({
-        decision: "deliver",
-        language: "en-US",
-        title: "Today",
-        sections: [
-          {
-            heading: "Decisions",
-            items: [{ text: "Release is going out", citations: ["c1"] }],
-          },
-        ],
-      }),
-    );
-
-    const generated = await accept(
-      client().generate({
-        headers: fixture.headers,
-        body: { anchor: ANCHOR },
-      }),
-      [200],
-    );
-    if (generated.body.result !== "generated") {
-      throw new Error("expected a generated brief");
-    }
-    await accept(
-      deliveryClient().preview({
-        headers: fixture.headers,
-        body: { resultAttemptId: generated.body.generation.attemptId },
-      }),
-      [200],
-    );
-    const [queued] = await readMorningBriefDeliveryOutbox({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-    });
-    expect(queued?.status).toBe("pending");
-
-    // The retained request included C100 even though the answer only cites an
-    // opaque id. Losing access before the first shared-outbox drain withholds
-    // the whole accepted body; no send is attempted.
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
-        return HttpResponse.json({
-          ok: true,
-          channels: [],
-          response_metadata: { next_cursor: "" },
-        });
-      }),
-    );
-    await drainEmailOutbox([queued?.id ?? "missing"], context.signal);
-    expect(context.mocks.resend.send).not.toHaveBeenCalled();
-    const [failed] = await readMorningBriefDeliveryOutbox({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-    });
-    expect(failed?.status).toBe("failed");
-    expect(failed?.lastError).toContain("retained source");
-  });
-
-  it("makes no POST when source authority moves after reservation", async () => {
-    const fixture = await seedOwnerWithoutConnectors();
-    await withSlack(fixture);
-    slackWithMessages(["ship the release"]);
-    const provider = countProviderRequests();
-    const barrier = await holdMorningBriefGenerationReservation(
-      { orgId: fixture.orgId, userId: fixture.userId },
-      context.signal,
-    );
-
-    const pending = client().generate({
-      headers: fixture.headers,
-      body: { anchor: ANCHOR },
-    });
-    await barrier.waitForArrival();
-    // The INSERT exists only in the held reservation transaction. No provider
-    // contact can precede its COMMIT.
-    expect(provider.total()).toBe(0);
-    server.use(
-      http.get(SLACK_USER_CONVERSATIONS_URL, () => {
-        return HttpResponse.json({
-          ok: true,
-          channels: [],
-          response_metadata: { next_cursor: "" },
-        });
-      }),
-    );
-    await barrier.release();
-    await accept(pending, [200]);
-
-    expect(provider.total()).toBe(0);
-    const [uninvoked] = await readMorningBriefGenerations({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-    });
-    expect(uninvoked?.state).toBe("not_invoked");
-    expect(uninvoked?.failureReason).toBe("binding_changed");
-    await expect(
-      readPlatformGenerationReceipts([uninvoked?.attemptId ?? ""]),
-    ).resolves.toHaveLength(0);
-  });
-
-  it("keeps retained proof through content purge and a committed-request email replay", async () => {
+  it("purges result content and still replays a committed-request email", async () => {
     const fixture = await seedOwnerWithoutConnectors();
     await withSlack(fixture);
     await seedMemberEmailAddress(fixture.userId, "owner@example.test");
@@ -975,9 +804,11 @@ describe("composed Morning Brief generation", () => {
       orgId: fixture.orgId,
       userId: fixture.userId,
     });
+    // The result body's own retention bound is untouched by the authority
+    // removal: source-derived content still expires and is still cleared.
     expect(purged?.resultMarkdown).toBeNull();
-    expect(purged?.retainedSources).not.toBeNull();
-    expect(purged?.retainedUntil?.getTime() ?? 0).toBeGreaterThan(now());
+    expect(purged?.resultTitle).toBeNull();
+    expect(purged?.contentPurgedAt).not.toBeNull();
 
     const restore = await rejectEmailOutboxCompletion(
       queued.id,
@@ -1016,68 +847,6 @@ describe("composed Morning Brief generation", () => {
       userId: fixture.userId,
     });
     expect(sent?.status).toBe("sent");
-  });
-
-  it("discards a response when supplied source authority moves after POST", async () => {
-    const fixture = await seedOwnerWithoutConnectors();
-    await withSlack(fixture);
-    slackWithMessages(["ship the release"]);
-    const provider = scriptProvider(
-      JSON.stringify({
-        decision: "deliver",
-        language: "en-US",
-        title: "Today",
-        sections: [
-          {
-            heading: "Decisions",
-            items: [{ text: "Release is going out", citations: ["c1"] }],
-          },
-        ],
-      }),
-      () => {
-        // The response is already on its way — this barrier proves the only
-        // platform POST happened before the shared post-response fence.
-        server.use(
-          http.get(SLACK_USER_CONVERSATIONS_URL, () => {
-            return HttpResponse.json({
-              ok: true,
-              channels: [],
-              response_metadata: { next_cursor: "" },
-            });
-          }),
-        );
-      },
-    );
-
-    await accept(
-      client().generate({
-        headers: fixture.headers,
-        body: { anchor: ANCHOR },
-      }),
-      [200],
-    );
-    expect(provider.bodies).toHaveLength(1);
-    const [discarded] = await readMorningBriefGenerations({
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-    });
-    expect(discarded?.state).toBe("result_discarded");
-    expect(discarded?.failureReason).toBe("binding_changed");
-    expect(discarded?.resultMarkdown).toBeNull();
-    await expect(
-      readPlatformGenerationReceipts([discarded?.attemptId ?? ""]),
-    ).resolves.toHaveLength(1);
-
-    // The durable reservation/receipt remains the invocation fact. A retry may
-    // report it but may never contact the provider again.
-    await accept(
-      client().generate({
-        headers: fixture.headers,
-        body: { anchor: ANCHOR },
-      }),
-      [200],
-    );
-    expect(provider.bodies).toHaveLength(1);
   });
 
   it("hands a composed result to the real delivery consumer", async () => {
@@ -1141,8 +910,10 @@ describe("composed Morning Brief generation", () => {
     );
 
     // S6's receipt is the only valid null → destination transition. Rebinding
-    // the same installation and automation to another real thread withholds
-    // the persisted source content without making another provider request.
+    // the same installation and automation to another real thread reads the
+    // settled result back without making another provider request: the brief
+    // was collected and generated under a valid authority, and a later
+    // destination change is not a reason to discard it.
     const replacementThreadId = await store.set(
       seedOrdinaryChatThreadFixture$,
       {
@@ -1168,7 +939,7 @@ describe("composed Morning Brief generation", () => {
       }),
       [200],
     );
-    expect(rebound.body.result).toBe("authority-changed");
+    expect(rebound.body.result).toBe("already-generated");
     expect(provider.bodies).toHaveLength(1);
   });
 });

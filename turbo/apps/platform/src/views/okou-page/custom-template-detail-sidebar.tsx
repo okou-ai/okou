@@ -109,56 +109,59 @@ function VisibilityOptionList({
         const selected = value === visibility;
         const Icon = value === "private" ? Lock : Users;
         return (
-          <PopoverClose asChild key={value}>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              className={cn(
-                "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-                selected && "bg-state-selected",
-              )}
-              onClick={() => {
-                if (!selected) {
-                  onChange(value);
-                }
-              }}
-            >
-              <Icon
-                size={16}
-                className="mt-0.5 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm text-foreground">
-                  {value === "private"
-                    ? t(($) => {
-                        return $.templates.visibility.private;
-                      })
-                    : t(($) => {
-                        return $.templates.visibility.organization;
-                      })}
+          <PopoverClose
+            key={value}
+            render={
+              <button
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                className={cn(
+                  "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
+                  selected && "bg-state-selected",
+                )}
+                onClick={() => {
+                  if (!selected) {
+                    onChange(value);
+                  }
+                }}
+              >
+                <Icon
+                  size={16}
+                  className="mt-0.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm text-foreground">
+                    {value === "private"
+                      ? t(($) => {
+                          return $.templates.visibility.private;
+                        })
+                      : t(($) => {
+                          return $.templates.visibility.organization;
+                        })}
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    {value === "private"
+                      ? t(($) => {
+                          return $.templates.visibility.privateState;
+                        })
+                      : t(($) => {
+                          return $.templates.visibility.organizationState;
+                        })}
+                  </span>
                 </span>
-                <span className="block text-xs text-muted-foreground">
-                  {value === "private"
-                    ? t(($) => {
-                        return $.templates.visibility.privateState;
-                      })
-                    : t(($) => {
-                        return $.templates.visibility.organizationState;
-                      })}
-                </span>
-              </span>
-              {/* The check column is reserved on both rows: letting it appear
+                {/* The check column is reserved on both rows: letting it appear
                   only on the selected one narrows that row's text box, so the
                   description reflows every time the selection moves. */}
-              <span className="mt-0.5 w-4 shrink-0">
-                {selected ? (
-                  <Check size={16} className="text-foreground" aria-hidden />
-                ) : null}
-              </span>
-            </button>
-          </PopoverClose>
+                <span className="mt-0.5 w-4 shrink-0">
+                  {selected ? (
+                    <Check size={16} className="text-foreground" aria-hidden />
+                  ) : null}
+                </span>
+              </button>
+            }
+          />
         );
       })}
     </div>

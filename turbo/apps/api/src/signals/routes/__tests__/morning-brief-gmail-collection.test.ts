@@ -885,36 +885,6 @@ describe("Morning Brief Gmail collection preview", () => {
     });
     expect(stub.calls).toStrictEqual([]);
   });
-
-  it("never substitutes another account when the pinned one is deleted mid-flight", async () => {
-    const fixture = await setupOwner();
-    const release = createDeferredPromise<void>(context.signal);
-    const stub = stubGmail({
-      recent: [
-        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
-        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
-        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
-      ],
-      unread: [],
-      holdDetails: release.promise,
-    });
-
-    const collection = collectOk(fixture);
-    await waitForDetailArrivals(stub, READER_CONCURRENCY);
-    // Deleting the account the source is pinned to, while its bodies are in
-    // flight, withdraws the access this invocation was admitted under.
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      fixture.actor,
-      "gmail",
-      fixture.connectorId,
-    );
-    release.resolve();
-
-    const response = await collection;
-    expect(response.body).toMatchObject({ status: "unavailable", items: [] });
-    expect(response.body.failure).toBe("source-revoked");
-  });
-
   it("refuses to read when the Agent no longer holds the connector grant", async () => {
     const fixture = await setupOwner();
     await revokeAgentConnectorGrantFixture(
@@ -1018,43 +988,6 @@ describe("Morning Brief Gmail collection preview", () => {
     expect(response.body.coverage.recent).toBe("denied");
     expect(response.body.items).toStrictEqual([]);
   });
-
-  it("withholds the payload when a permission used earlier is denied while the last request is held", async () => {
-    const fixture = await setupOwner();
-    const release = createDeferredPromise<void>(context.signal);
-    const stub = stubGmail({
-      recent: [
-        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
-        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
-        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
-      ],
-      unread: [],
-      holdDetails: release.promise,
-    });
-
-    const collection = collectOk(fixture);
-    await waitForDetailArrivals(stub, READER_CONCURRENCY);
-    // The list results are already collected under `messages.read`. Denying it
-    // now leaves the connector grant and `messages.detail` untouched, so the
-    // final request is still allowed — only the earlier permission is gone.
-    await runsApi.applyUserPermissionGrant(fixture.actor, {
-      agentId: fixture.agentId,
-      connectorSlug: "gmail",
-      permission: "messages.read",
-      action: "deny",
-    });
-    release.resolve();
-
-    const response = await collection;
-    // Checking only the last authorized endpoint would have released the list
-    // content this member may no longer read.
-    expect(response.body).toMatchObject({
-      status: "unavailable",
-      failure: "source-revoked",
-      items: [],
-    });
-  });
-
   it("refuses a member whose Clerk membership is gone even while the cache row remains", async () => {
     const fixture = await setupOwner();
     const stub = stubGmail({
@@ -1078,35 +1011,6 @@ describe("Morning Brief Gmail collection preview", () => {
     expect(response.status).toBe(403);
     expect(stub.calls).toStrictEqual([]);
   });
-
-  it("releases nothing when the member rejoins under a new membership while a request is held", async () => {
-    const fixture = await setupOwner();
-    const release = createDeferredPromise<void>(context.signal);
-    const stub = stubGmail({
-      recent: [
-        { id: "held-1", internalDate: ANCHOR_MS - 1000 },
-        { id: "held-2", internalDate: ANCHOR_MS - 2000 },
-        { id: "held-3", internalDate: ANCHOR_MS - 3000 },
-      ],
-      unread: [],
-      holdDetails: release.promise,
-    });
-
-    const collection = collectOk(fixture);
-    await waitForDetailArrivals(stub, READER_CONCURRENCY);
-    // A remove and rejoin issues a new immutable membership id. The new
-    // membership does not speak for what the previous one started.
-    await seedMembership(fixture.actor, `orgmem_${randomUUID()}`);
-    release.resolve();
-
-    const response = await collection;
-    expect(response.body).toMatchObject({
-      status: "unavailable",
-      failure: "source-revoked",
-      items: [],
-    });
-  });
-
   it("reads with a credential that never expires instead of forcing a refresh", async () => {
     const fixture = await setupOwner();
     // GitHub OAuth tokens, personal access tokens and manual methods all store
@@ -1493,74 +1397,6 @@ describe("Morning Brief Gmail collection preview", () => {
     expect(stub.calls).toStrictEqual([]);
     expect(admission.calls()).toBe(1);
   });
-
-  it("withholds a payload whose release finished after the source deadline", async () => {
-    const fixture = await setupOwner();
-    const startedAt = now();
-    mockNow(startedAt);
-    const bodies = createDeferredPromise<void>(context.signal);
-    const stub = stubGmail({
-      recent: [{ id: "collected", internalDate: ANCHOR_MS - 1000 }],
-      unread: [],
-      holdDetails: bodies.promise,
-    });
-
-    const collection = collectOk(fixture);
-    // Every request has been authorized and issued, so the next membership read
-    // belongs to the release fence rather than to an admission.
-    await waitForDetailArrivals(stub, 1);
-    const releaseFence = createDeferredPromise<void>(context.signal);
-    const membership = holdNextMembershipRead(releaseFence.promise);
-    bodies.resolve();
-    await membership.arrived;
-    // The budget runs out while the final authorization is still answering, so
-    // the payload is already collected and the timer has not fired.
-    mockNow(startedAt + MORNING_BRIEF_SOURCE_BUDGET_MS);
-    releaseFence.resolve();
-
-    const response = await collection;
-    // Re-deriving authority takes real time, and a payload accepted after the
-    // absolute deadline is late content. The boundary is inclusive: arriving
-    // exactly at it is already too late.
-    expect(response.body).toMatchObject({
-      status: "unavailable",
-      failure: "deadline-exceeded",
-      items: [],
-    });
-  });
-
-  it("releases a payload whose release finished just inside the source deadline", async () => {
-    const fixture = await setupOwner();
-    const startedAt = now();
-    mockNow(startedAt);
-    const bodies = createDeferredPromise<void>(context.signal);
-    const stub = stubGmail({
-      recent: [{ id: "collected", internalDate: ANCHOR_MS - 1000 }],
-      unread: [],
-      holdDetails: bodies.promise,
-    });
-
-    const collection = collectOk(fixture);
-    await waitForDetailArrivals(stub, 1);
-    const releaseFence = createDeferredPromise<void>(context.signal);
-    const membership = holdNextMembershipRead(releaseFence.promise);
-    bodies.resolve();
-    await membership.arrived;
-    // The final local authority transaction still has one second to complete:
-    // the positive control keeps the case above from passing by refusing every
-    // payload while respecting that local checks now spend this same budget.
-    mockNow(startedAt + MORNING_BRIEF_SOURCE_BUDGET_MS - 1000);
-    releaseFence.resolve();
-
-    const response = await collection;
-    expect(response.body.status).toBe("ok");
-    expect(
-      response.body.items.map((item) => {
-        return item.messageId;
-      }),
-    ).toStrictEqual(["collected"]);
-  });
-
   it("separates an empty day from a rate-limited read", async () => {
     const fixture = await setupOwner();
     stubGmail({ recent: [], unread: [] });

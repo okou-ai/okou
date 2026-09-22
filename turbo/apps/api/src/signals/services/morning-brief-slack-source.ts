@@ -15,10 +15,6 @@
 import type { MorningBriefSlackBundle } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
 
 import {
-  morningBriefScopeDigest,
-  type MorningBriefRetainedSourceDescriptor,
-} from "./morning-brief-source-authority";
-import {
   morningBriefItemFacts,
   type MorningBriefSourceCollection,
   type MorningBriefSourceCoverage,
@@ -154,56 +150,5 @@ export function normalizeMorningBriefSlack(
           return channel.truncated;
         }),
     },
-  };
-}
-
-/**
- * The Slack authorization surface this collector actually exercises.
- *
- * These are the exact methods `lib/slack-client` calls for a Morning Brief, so
- * the digest describes what was authorized rather than a scope list nobody
- * observed. `main`'s native reader does not surface the workspace's granted
- * scope set; live scope and coverage are #34861's, and when that lands the same
- * digest can be taken over the granted scopes without changing what a narrowed
- * grant means here — a revalidation that no longer covers these methods fails
- * either way.
- */
-export const MORNING_BRIEF_SLACK_READ_SURFACE: readonly string[] = [
-  "users.conversations",
-  "conversations.history",
-  "conversations.replies",
-];
-
-/**
- * The credential-free descriptor a later phase revalidates Slack against.
- *
- * Slack's native installation is the organization's own bot intersected with
- * this member's connected account, so there is no per-user connector row to
- * name: the workspace and member identity are the authorization evidence, and
- * the bot token that made the read deliberately never reaches this record.
- */
-export function morningBriefSlackDescriptor(args: {
-  readonly workspaceId: string;
-  readonly slackUserId: string;
-  readonly membershipId: string;
-  readonly agentId: string;
-  readonly capturedAt: Date;
-  readonly contributed: boolean;
-  /** The shared channels this attempt actually read from. */
-  readonly containers: readonly string[];
-}): MorningBriefRetainedSourceDescriptor {
-  return {
-    source: "slack",
-    connectionId: null,
-    accountRef: `${args.workspaceId}:${args.slackUserId}`,
-    scopeDigest: morningBriefScopeDigest(MORNING_BRIEF_SLACK_READ_SURFACE),
-    // The native installation authorizes against the shared conversations
-    // below rather than a per-request URL policy.
-    endpoints: [],
-    membershipId: args.membershipId,
-    agentId: args.agentId,
-    capturedAt: args.capturedAt.toISOString(),
-    contributed: args.contributed,
-    containers: args.containers,
   };
 }

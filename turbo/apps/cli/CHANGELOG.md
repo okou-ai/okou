@@ -1,5 +1,32 @@
 # Changelog
 
+## [9.353.0](https://github.com/okou-ai/okou/compare/cli-v9.352.8...cli-v9.353.0) (2026-09-22)
+
+
+### Features
+
+* **runner:** install the versioned okou cli into the rootfs and gate its use by runtime version ([#36000](https://github.com/okou-ai/okou/issues/36000)) ([8d8f3a3](https://github.com/okou-ai/okou/commit/8d8f3a3e14d23f7471e0773bd9acb988f59217af))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.491.0
+    * @okouai/core bumped to 8.699.0
+    * @okouai/pi-agent-runtime bumped to 1.36.0
+
+## [9.352.8](https://github.com/okou-ai/okou/compare/cli-v9.352.7...cli-v9.352.8) (2026-09-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.490.1
+    * @okouai/core bumped to 8.698.0
+    * @okouai/pi-agent-runtime bumped to 1.35.4
+
 ## [9.352.7](https://github.com/okou-ai/okou/compare/cli-v9.352.6...cli-v9.352.7) (2026-09-22)
 
 

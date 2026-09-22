@@ -1,3 +1,4 @@
+import { cn } from "@okouai/ui/lib/utils";
 import { CopyButton, surfaceVariants } from "@okouai/ui";
 import {
   useGet,
@@ -27,7 +28,7 @@ import {
   OFFICIAL_TELEGRAM_BOT_ID,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -1007,14 +1008,16 @@ function AddTelegramBotDialogFrame({
         }
       }}
     >
-      <DialogTrigger asChild>
-        <Button type="button" size="sm" disabled={disabled}>
-          <Plus size={16} />
-          {t(($) => {
-            return $.connectors.providerSettings.telegram.addBot;
-          })}
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger
+        render={
+          <Button type="button" size="sm" disabled={disabled}>
+            <Plus size={16} />
+            {t(($) => {
+              return $.connectors.providerSettings.telegram.addBot;
+            })}
+          </Button>
+        }
+      />
       <DialogContent smMaxWidth={640}>
         <DialogHeader>
           <DialogTitle>
@@ -1035,6 +1038,13 @@ function AddTelegramBotDialogFrame({
           })}
           onSubmit={(event) => {
             event.preventDefault();
+            if (flow.step === "create") {
+              if (canSubmit) {
+                onAddBot();
+              }
+            } else if (flow.canGoNext && !flow.checkingTarget && !adding) {
+              flow.goNext();
+            }
           }}
         >
           <AddTelegramBotProgress step={flow.step} />
@@ -1058,8 +1068,6 @@ function AddTelegramBotDialogFrame({
             canSubmit={canSubmit}
             onCancel={onCancel}
             onBack={flow.goBack}
-            onNext={flow.goNext}
-            onAddBot={onAddBot}
           />
         </form>
       </DialogContent>
@@ -1278,8 +1286,6 @@ function AddTelegramBotDialogFooter({
   canSubmit,
   onCancel,
   onBack,
-  onNext,
-  onAddBot,
 }: {
   step: AddTelegramStep;
   adding: boolean;
@@ -1288,8 +1294,6 @@ function AddTelegramBotDialogFooter({
   canSubmit: boolean;
   onCancel: () => void;
   onBack: () => void;
-  onNext: () => void;
-  onAddBot: () => void;
 }) {
   const { t } = useTranslation();
   const isTokenStep = step === "token";
@@ -1317,12 +1321,7 @@ function AddTelegramBotDialogFooter({
         )}
       </Button>
       {isCreateStep ? (
-        <Button
-          type="button"
-          disabled={!canSubmit}
-          className="gap-2"
-          onClick={onAddBot}
-        >
+        <Button type="submit" disabled={!canSubmit} className="gap-2">
           {adding ? (
             <Loader2 size={16} className="animate-spin" />
           ) : (
@@ -1338,10 +1337,9 @@ function AddTelegramBotDialogFooter({
         </Button>
       ) : (
         <Button
-          type="button"
+          type="submit"
           disabled={!canGoNext || !!checkingTarget || adding}
           className="gap-2"
-          onClick={onNext}
         >
           {checkingTarget ? (
             <>
@@ -1561,18 +1559,20 @@ function TelegramConnectAction({
   }
 
   return (
-    <Button asChild variant="outline" size="sm" className="h-9 justify-center">
-      <Link
-        pathname={ROUTES.telegramConnect}
-        options={{
-          searchParams: new URLSearchParams({ bot: bot.id }),
-        }}
-      >
-        {t(($) => {
-          return $.connectors.actions.connect;
-        })}
-      </Link>
-    </Button>
+    <Link
+      pathname={ROUTES.telegramConnect}
+      options={{
+        searchParams: new URLSearchParams({ bot: bot.id }),
+      }}
+      className={cn(
+        buttonVariants({ variant: "outline", size: "sm" }),
+        "h-9 justify-center",
+      )}
+    >
+      {t(($) => {
+        return $.connectors.actions.connect;
+      })}
+    </Link>
   );
 }
 
@@ -1605,24 +1605,26 @@ function TelegramMoreActions({
 
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          showTooltip
-          type="button"
-          disabled={disabled}
-          variant="quiet"
-          size="icon-sm"
-          className="shrink-0 disabled:opacity-50"
-          aria-label={t(
-            ($) => {
-              return $.connectors.providerSettings.telegram.moreOptions;
-            },
-            { bot: botLabel },
-          )}
-        >
-          <EllipsisVertical size={16} />
-        </Button>
-      </PopoverTrigger>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            disabled={disabled}
+            variant="quiet"
+            size="icon-sm"
+            className="shrink-0 disabled:opacity-50"
+            aria-label={t(
+              ($) => {
+                return $.connectors.providerSettings.telegram.moreOptions;
+              },
+              { bot: botLabel },
+            )}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
       <PopoverContent align="end" className="flex w-40 flex-col gap-0.5 p-2">
         {bot.isConnected ? (
           <button
@@ -2221,27 +2223,23 @@ export function TelegramSettingsPage() {
       <header className="shrink-0 bg-transparent px-4 pt-10 pb-3 sm:px-6">
         <div className="mx-auto max-w-[900px]">
           <div className="mb-4">
-            <Button
-              asChild
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-2 px-2 text-muted-foreground hover:text-foreground"
+            <Link
+              pathname={ROUTES.works}
+              title={t(($) => {
+                return $.connectors.providerSettings.telegram
+                  .backToIntegrations;
+              })}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "sm" }),
+                "h-8 gap-2 px-2 text-muted-foreground hover:text-foreground",
+              )}
             >
-              <Link
-                pathname={ROUTES.works}
-                title={t(($) => {
-                  return $.connectors.providerSettings.telegram
-                    .backToIntegrations;
-                })}
-              >
-                <ArrowLeft size={17} />
-                {t(($) => {
-                  return $.connectors.providerSettings.telegram
-                    .backToIntegrations;
-                })}
-              </Link>
-            </Button>
+              <ArrowLeft size={17} />
+              {t(($) => {
+                return $.connectors.providerSettings.telegram
+                  .backToIntegrations;
+              })}
+            </Link>
           </div>
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">

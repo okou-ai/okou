@@ -1,5 +1,38 @@
 # Changelog
 
+## [8.699.0](https://github.com/okou-ai/okou/compare/core-v8.698.0...core-v8.699.0) (2026-09-22)
+
+
+### Features
+
+* **core:** release user message links to every reader ([#36021](https://github.com/okou-ai/okou/issues/36021)) ([a0adec6](https://github.com/okou-ai/okou/commit/a0adec6432eff599d2e7da0740a1216416e2deb1))
+
+
+### Refactoring
+
+* finalize chat and export feature switches ([#35987](https://github.com/okou-ai/okou/issues/35987)) ([4ff8c3b](https://github.com/okou-ai/okou/commit/4ff8c3b5351dab21891e633ee7ed51aaf7abe32f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.491.0
+
+## [8.698.0](https://github.com/okou-ai/okou/compare/core-v8.697.2...core-v8.698.0) (2026-09-22)
+
+
+### Features
+
+* **core:** enable okou models for staff ([#35986](https://github.com/okou-ai/okou/issues/35986)) ([aadef7c](https://github.com/okou-ai/okou/commit/aadef7cf19b0227dcd7e5d0b642fcf6697bcd457))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.490.1
+
 ## [8.697.2](https://github.com/okou-ai/okou/compare/core-v8.697.1...core-v8.697.2) (2026-09-22)
 
 

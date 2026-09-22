@@ -10,6 +10,23 @@ import { singleFlight } from "./desktop-async-control";
 
 const AUTH_ME_PATH = "/api/auth/me";
 const ORG_PATH = "/api/org";
+/**
+ * A hidden restore runs with nobody watching, so a window that never reaches a
+ * decision is a genuine stall and keeps a machine-scale bound.
+ */
+const RESTORE_WINDOW_TIMEOUT_MS = 30_000;
+/**
+ * An interactive attempt waits on a person signing in, so its bound is human
+ * scale: it exists only to stop a window nobody can act on — a hidden consume
+ * that the auth app routed back to sign-in — from stranding the session in
+ * `signing_in` for the rest of the process.
+ */
+const INTERACTIVE_WINDOW_TIMEOUT_MS = 10 * 60_000;
+/**
+ * Validation is a network round trip that only starts once the window is done,
+ * so it owns a network-shaped budget instead of whatever the window left over.
+ */
+const IDENTITY_VALIDATION_TIMEOUT_MS = 30_000;
 
 type RunAuthWindow = (
   request: DesktopAuthWindowRequest,
@@ -317,27 +334,31 @@ export class DesktopAuthSession {
     this.setSigningIn(interactive);
     // Even a hidden token restoration replaces session execution authority.
     this.onChange();
-    // The lifetime also owns validation requests after the window closes.
-    const signal = AbortSignal.any([
+    // This budget covers the window phase alone. Credentials, a second factor
+    // or an SSO redirect are paced by a person, so an attempt that can wait on
+    // one gets a human-scale bound; the window closing and an explicit
+    // cancellation are what normally end it.
+    const windowSignal = AbortSignal.any([
       lifetime.signal,
-      AbortSignal.timeout(30_000),
+      AbortSignal.timeout(
+        interactive ? INTERACTIVE_WINDOW_TIMEOUT_MS : RESTORE_WINDOW_TIMEOUT_MS,
+      ),
     ]);
     try {
       const token = await this.runAuthWindow({
         url,
         visible,
         allowInteractiveFallbacks: interactive,
-        signal,
+        signal: windowSignal,
       });
-      signal.throwIfAborted();
+      windowSignal.throwIfAborted();
       if (!token) {
         // A hidden restore resolves without a token only when the auth app
         // sent it back to sign-in or workspace selection: the session is gone.
         deniedBySession = true;
         return null;
       }
-      const state = await this.readAppIdentity(token, signal);
-      signal.throwIfAborted();
+      const state = await this.validateAppIdentity(token, lifetime.signal);
       if (state.status !== "signed_in") {
         deniedBySession = true;
         return null;
@@ -373,7 +394,7 @@ export class DesktopAuthSession {
         this.appState = signedOutDesktopAuthState();
         this.authority = null;
       }
-      if (!interactive && signal.aborted) return null;
+      if (!interactive && windowSignal.aborted) return null;
       throw error;
     } finally {
       if (this.lifetime === lifetime) {
@@ -426,6 +447,29 @@ export class DesktopAuthSession {
     });
     signal.throwIfAborted();
     return response;
+  }
+
+  /**
+   * Validation only starts once the window is gone, so it opens its budget
+   * here rather than spending what the window phase left. An elapsed budget is
+   * a timeout rather than a cancellation and says which phase ran out, while
+   * the lifetime ending still surfaces as the teardown it is.
+   */
+  private async validateAppIdentity(
+    token: string,
+    lifetime: AbortSignal,
+  ): Promise<DesktopAuthState> {
+    const deadline = AbortSignal.timeout(IDENTITY_VALIDATION_TIMEOUT_MS);
+    const signal = AbortSignal.any([lifetime, deadline]);
+    try {
+      const state = await this.readAppIdentity(token, signal);
+      signal.throwIfAborted();
+      return state;
+    } catch (error) {
+      if (!lifetime.aborted && deadline.aborted)
+        throw new Error("Desktop auth identity validation timed out");
+      throw error;
+    }
   }
 
   private async readAppIdentity(

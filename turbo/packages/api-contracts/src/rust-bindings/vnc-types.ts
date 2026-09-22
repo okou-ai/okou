@@ -27,7 +27,7 @@ export const vncTypeBindings = [
           connectionId: ["Exact saved VNC connection UUID."],
           runnerIdentity: ["Winning process identity."],
           supportedProfiles: [
-            "Exact supported pairs; empty means no supported policy.",
+            "Exact supported tuples; empty means no supported policy.",
           ],
         },
       },
@@ -35,11 +35,14 @@ export const vncTypeBindings = [
       {
         rustTypeName: "ResolveRequestSupportedProfile",
         rustDoc: [
-          "One supported authentication and security pair, never a cross-product.",
+          "One supported authentication, security and transport tuple, never a cross-product.",
         ],
         fields: {
           authMethod: ["Supported authentication method."],
           securityType: ["Supported security policy."],
+          transportType: [
+            "Supported transport; omission is the legacy direct-only capability.",
+          ],
         },
       },
       {
@@ -56,6 +59,14 @@ export const vncTypeBindings = [
         variants: {
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
+        },
+      },
+      {
+        rustTypeName: "ResolveRequestSupportedProfileTransportType",
+        rustDoc: ["Transport supported for this exact profile tuple."],
+        variants: {
+          direct: ["Connect directly under the VNC public-network policy."],
+          ssh: ["Connect through the verified Run-owned SSH transport."],
         },
       },
     ],
@@ -79,6 +90,12 @@ export const vncTypeBindings = [
           host: ["Current private destination."],
           port: ["Current destination port."],
           generation: ["Current saved configuration generation."],
+          serverName: [
+            "Explicit certificate identity for a transport-capable handoff.",
+          ],
+          transport: [
+            "Explicit direct or generation-bound SSH transport snapshot.",
+          ],
           authentication: ["Credential for the explicitly saved method."],
           security: [
             "Explicit saved transport and trust policy; never downgrade.",
@@ -92,8 +109,25 @@ export const vncTypeBindings = [
             "Runner does not support the exact saved profile.",
           ],
           resolved: [
-            "Current credential and policy; the VNC server controls connection admission.",
+            "Legacy direct credential and policy; the VNC server controls connection admission.",
           ],
+          resolved_transport: [
+            "Current credential, policy and explicit generation-bound transport.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "ResolveResponseResolvedTransportTransport",
+        rustDoc: [
+          "Secret-free transport snapshot selected by an exact capability tuple.",
+        ],
+        fields: {
+          connectionId: ["Exact saved SSH connection UUID."],
+          generation: ["Current saved SSH configuration generation."],
+        },
+        variants: {
+          direct: ["Connect directly under the VNC public-network policy."],
+          ssh: ["Connect through this exact SSH authority snapshot."],
         },
       },
       {
@@ -153,9 +187,24 @@ export const vncTypeBindings = [
           expectedGeneration: [
             "Configuration generation returned by credential resolution.",
           ],
+          expectedTransport: [
+            "Expected explicit transport snapshot; omission preserves legacy direct-only checks.",
+          ],
         },
       },
       identityDocs("CheckRequestRunnerIdentity"),
+      {
+        rustTypeName: "CheckRequestExpectedTransport",
+        rustDoc: ["Expected secret-free SSH authority snapshot."],
+        fields: {
+          connectionId: ["Exact saved SSH connection UUID."],
+          generation: ["Expected saved SSH configuration generation."],
+        },
+        variants: {
+          direct: ["Expect the saved direct transport."],
+          ssh: ["Expect this exact saved SSH connection and generation."],
+        },
+      },
     ],
   },
   {

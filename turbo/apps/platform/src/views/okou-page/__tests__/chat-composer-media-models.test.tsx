@@ -162,8 +162,8 @@ function expectSelected(label: string): void {
 }
 
 /**
- * The menu's overview page. Its rows are what drive the composer's active media
- * category, so the temporary-model card is a narrow viewport's behaviour.
+ * The compact overview updates the active media category when entering a
+ * category, before a model is selected.
  */
 async function openMenu(
   container: ParentNode = document,
@@ -579,8 +579,8 @@ test("Browse Chat, Image, and Video catalogs in a desktop new chat", async () =>
 });
 
 /**
- * The menu's overview is what points the composer at a media category, so the
- * per-chat cards that follow a selection are a narrow viewport's behaviour.
+ * The compact overview switches the active category while preserving each
+ * category's independent model selection.
  */
 test("Retain independent Chat, Image, and Video selections in a new chat", async () => {
   setMobileViewport();
@@ -638,9 +638,7 @@ test("Switch Chat, Image, and Video from one model picker in a desktop existing 
 });
 
 /**
- * The card that names a temporary media model follows the composer's active
- * category, and only the menu's overview sets one, so the two cases differ by
- * viewport rather than by assertion.
+ * Both picker layouts can select a temporary image model for the next chat.
  */
 async function openTemporaryImageModelChat(
   layout: "menu" | "flyout",
@@ -717,18 +715,6 @@ test("A temporary image model applies to one new chat and resets for the next", 
   expectSelected("Nano Banana 2");
 });
 
-/** The composer's starting tasks, which also choose the run's media type. */
-function taskChip(name: string): HTMLElement {
-  const group = screen.getByRole("group", { name: "Choose a task" });
-  const chip = queryAllByRoleFast("button", group).find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!chip) {
-    throw new Error(`${name} task chip not found`);
-  }
-  return chip;
-}
-
 /**
  * The composer tray holds one row. A blocked paid tool is the row a member has
  * to act on, so it takes the tray from the temporary media-model card — but
@@ -742,10 +728,8 @@ test("A blocked paid tool takes the composer tray from the temporary image model
   });
   await openTemporaryImageModelChat("menu", {
     [FeatureSwitchKey.PaidToolControls]: true,
-    [FeatureSwitchKey.ComposerTaskChips]: true,
   });
   await chooseMenuMediaModel("Image", "GPT Image 2");
-  click(taskChip("Image"));
 
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).not.toBeNull();
@@ -758,6 +742,39 @@ test("A blocked paid tool takes the composer tray from the temporary image model
 
   await screen.findByText("Image generation is off for you");
   expect(scopeCard("Image model for this chat")).toBeNull();
+
+  await openMenuCategory("Chat");
+  await userEvent.setup().keyboard("{Escape}");
+  expect(
+    screen.queryByText("Image generation is off for you"),
+  ).not.toBeInTheDocument();
+});
+
+test("Selecting an image model in the desktop picker shows the disabled tool notice", async () => {
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  setDesktopViewport();
+  await openTemporaryImageModelChat("flyout", {
+    [FeatureSwitchKey.PaidToolControls]: true,
+  });
+
+  await chooseMediaModel("Image", "Nano Banana 2");
+  await screen.findByText("Image generation is off for you");
+  expect(screen.getByText("Open settings")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Remove Image")).not.toBeInTheDocument();
+
+  await openCategory("Chat");
+  const chatModel = await screen.findByRole("option", {
+    name: /Claude Fable 5\.1/u,
+  });
+  click(chatModel);
+  await waitFor(() => {
+    expect(screen.queryByRole("tablist", { name: "Models" })).toBeNull();
+  });
+  expect(
+    screen.queryByText("Image generation is off for you"),
+  ).not.toBeInTheDocument();
 });
 
 test("Save a temporary image model as the default for future chats", async () => {
