@@ -14,6 +14,7 @@ import {
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
@@ -37,6 +38,8 @@ import {
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
   claimSourcesFirstStartEvent$,
+  clearSourcesFirstDraft$,
+  restoreSourcesFirstDraft$,
   setSourcesFirstFlow$,
   sourcesFirstDraft$,
   sourcesFirstSteps,
@@ -113,7 +116,13 @@ function createSourcesFirstPageSetup(
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
+    if (status.hasOrg) {
+      const { orgId, userId } = await get(authenticatedIdentity$);
+      signal.throwIfAborted();
+      set(restoreSourcesFirstDraft$, { orgId, userId });
+    }
     if (!status.needsOnboarding) {
+      set(clearSourcesFirstDraft$);
       set(forwardOnboardedVisitor$);
       return;
     }

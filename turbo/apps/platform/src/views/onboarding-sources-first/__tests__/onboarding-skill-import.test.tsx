@@ -24,6 +24,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { now } from "../../../lib/time.ts";
 import { pathname } from "../../../signals/location.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
@@ -34,6 +35,10 @@ vi.hoisted(() => {
 });
 
 const context = testContext();
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const completedDraftStorage = localStorageSignals(
+  "onboarding:sources-first-draft",
+);
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -311,6 +316,78 @@ test("The skills step requires a selected tool", async () => {
   expect(pathname()).toBe(ROUTES.onboardingExperience);
 });
 
+test("Refreshing the skills step restores the chosen tool", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: true,
+  });
+  mockConnectedSource();
+  mockAgentWorkflows();
+  // A fresh browser app starts with storage from the previous app lifetime.
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 1,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: true,
+      provider: "claudeCode",
+      startingPromptDraft: "Draft my launch plan",
+      startingPromptKey: "marketing:gmail",
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingSkills,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: SKILLS_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingSkills);
+  expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
+});
+
+test("A saved draft from another user cannot select the current user's tool", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: true,
+  });
+  mockConnectedSource();
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 1,
+      orgId: "org_default",
+      userId: "another-user",
+      industry: "marketing",
+      experienced: true,
+      provider: "claudeCode",
+      startingPromptDraft: "",
+      startingPromptKey: "",
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingExperience,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(getButtonByName("Continue")).toBeDisabled();
+  expect(answerRadio("Claude Code")).not.toBeChecked();
+});
+
 test("The step hands over the prompt its session produced, and copies it whole", async () => {
   const posthog = context.mocks.posthog();
   const clipboard = context.mocks.browser.clipboardWriteText();
@@ -417,11 +494,15 @@ test.each([
     await expect(
       screen.findByRole("heading", { name: "Okou is ready for you" }),
     ).resolves.toBeInTheDocument();
+    expect(context.store.get(draftStorage.get$)).not.toBeNull();
     click(getButtonByName("Start with Okou"));
     await waitFor(() => {
       expect(sentProvider).toBe(provider);
     });
     expect(sentIndustry).toBe(expectedIndustry);
+    await waitFor(() => {
+      expect(context.store.get(completedDraftStorage.get$)).toBeNull();
+    });
   },
 );
 

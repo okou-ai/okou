@@ -13,11 +13,16 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const completedDraftStorage = localStorageSignals(
+  "onboarding:sources-first-draft",
+);
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -162,6 +167,14 @@ test("The switch opens the field question on /onboarding and continues to the so
   expect(getButtonByName("Continue")).toBeDisabled();
 
   click(fieldRadio(MARKETING_FIELD));
+
+  expect(
+    JSON.parse(context.store.get(draftStorage.get$) ?? "null"),
+  ).toMatchObject({
+    orgId: "org_default",
+    userId: "test-user-123",
+    industry: "marketing",
+  });
 
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
@@ -339,6 +352,70 @@ test("The ready step completes onboarding once, before it runs the first request
     expect(runPrompt).toBeTruthy();
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
+});
+
+test("A refreshed ready step keeps the industry, model choice, and edited request", async () => {
+  mockOnboardingNeeded();
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  let sentIndustry: string | undefined;
+  let sentProvider: string | undefined;
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    ({ body, query, respond }) => {
+      sentIndustry = body.industry;
+      sentProvider = query?.modelProvider;
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    },
+  );
+  // A fresh browser app starts with storage from the previous app lifetime.
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 1,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: true,
+      provider: "claudeCode",
+      startingPromptDraft: "Draft my launch plan",
+      startingPromptKey: "marketing:gmail",
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: READY_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+    "Draft my launch plan",
+  );
+
+  click(getButtonByName(START_ACTION));
+  await waitFor(() => {
+    expect(runPrompt).toBe("Draft my launch plan");
+  });
+  expect(sentIndustry).toBe("marketing");
+  expect(sentProvider).toBe("claudeCode");
+  expect(context.store.get(completedDraftStorage.get$)).toBeNull();
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {

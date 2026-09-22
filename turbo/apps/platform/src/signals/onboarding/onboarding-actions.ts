@@ -18,7 +18,10 @@ import {
   resetOnboardingDraft$,
   storeOnboardingCheckoutDraft$,
 } from "./onboarding-state.ts";
-import { sourcesFirstDraft$ } from "./onboarding-sources-first-state.ts";
+import {
+  clearSourcesFirstDraft$,
+  sourcesFirstDraft$,
+} from "./onboarding-sources-first-state.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
@@ -66,6 +69,7 @@ export const completeOnboarding$ = command(
     if (provider !== null) {
       set(invalidateOrgModelPolicies$);
     }
+    set(clearSourcesFirstDraft$);
     if (role) {
       set(capturePaidOnboardingRoleConfirmed$, role);
     }
