@@ -2,7 +2,7 @@
 // oxlint-disable max-lines-per-function
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type { ComponentProps } from "react";
+import { useId, type ComponentProps } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Search,
@@ -422,6 +422,7 @@ function InviteDialogFields({
   readonly usagePackUsd: MemberUsageSelection;
 }) {
   const { t } = useTranslation();
+  const roleId = useId();
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
@@ -449,7 +450,7 @@ function InviteDialogFields({
         )}
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-sm font-medium">
+        <label htmlFor={roleId} className="text-sm font-medium">
           {t(($) => {
             return $.settings.workspace.members.invite.roleLabel;
           })}
@@ -461,7 +462,7 @@ function InviteDialogFields({
           }}
           disabled={sending}
         >
-          <SelectTrigger>
+          <SelectTrigger id={roleId}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

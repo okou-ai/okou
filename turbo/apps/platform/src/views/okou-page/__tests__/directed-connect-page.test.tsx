@@ -26,6 +26,7 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -1245,6 +1246,7 @@ test("Reconnect the expired public OAuth account shown on the page", async () =>
 });
 
 test("Connect a manual grant and continue the originating chat", async () => {
+  const user = userEvent.setup({ delay: null });
   mockPublicConnectorStatus(
     publicManualTokenConnectorStatus({
       slug: "axiom",
@@ -1253,6 +1255,7 @@ test("Connect a manual grant and continue the originating chat", async () => {
     }),
   );
   let submittedValues: Record<string, string> | null = null;
+  let submits = 0;
   const threadId = "00000000-0000-4000-a000-000000000103";
   const callbackPrompt = "Re-check Axiom, then continue";
   let continuationPrompt: string | null = null;
@@ -1261,6 +1264,7 @@ test("Connect a manual grant and continue the originating chat", async () => {
     ({ body, params, respond }) => {
       expect(params.connectorSlug).toBe("axiom");
       expect(body.agentId).toBe(AGENT_ID);
+      submits += 1;
       submittedValues = body.values;
       return respond(200, {
         id: crypto.randomUUID(),
@@ -1300,10 +1304,12 @@ test("Connect a manual grant and continue the originating chat", async () => {
   const axiomDialog = await screen.findByRole("dialog", {
     name: "Public Axiom",
   });
-  await fill(
-    within(axiomDialog).getByPlaceholderText("public-xaat"),
-    "xaat-directed-connect",
-  );
+  const token = within(axiomDialog).getByLabelText("Public API token");
+  expect(token).toHaveAccessibleName("Public API token");
+  await user.click(within(axiomDialog).getByText("Public API token"));
+  expect(token).toHaveFocus();
+  await fill(token, "xaat-directed-connect");
+  expect(submits).toBe(0);
   click(getButtonByText("Save"));
 
   await waitFor(() => {
@@ -1311,6 +1317,7 @@ test("Connect a manual grant and continue the originating chat", async () => {
       apiToken: "xaat-directed-connect",
     });
     expect(continuationPrompt).toBe(callbackPrompt);
+    expect(submits).toBe(1);
     expect(
       screen.queryByRole("dialog", { name: "Public Axiom" }),
     ).not.toBeInTheDocument();

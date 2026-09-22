@@ -22,7 +22,7 @@ import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { FormEvent, ReactElement } from "react";
+import { useId, type FormEvent, type ReactElement } from "react";
 import type {
   PublicConnectorCatalogAuthMethodDetail,
   PublicConnectorCatalogStartOption,
@@ -298,6 +298,7 @@ function ManualGrantForm({
   submitting: boolean;
 }) {
   const { t } = useTranslation();
+  const formId = useId();
   const setFormValue = useSet(setBuiltinManualGrantFormValue$);
   const pageSignal = useGet(pageSignal$);
   const manualGrantFormValuesFor = useGet(builtinManualGrantFormValuesFor$);
@@ -336,12 +337,17 @@ function ManualGrantForm({
     <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
       {method.description && <ConnectorHelpText text={method.description} />}
       {method.manualFields.map((fieldConfig) => {
+        const fieldId = `${formId}-${fieldConfig.id}`;
         return (
           <div key={fieldConfig.id} className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-foreground">
+            <label
+              htmlFor={fieldId}
+              className="text-sm font-medium text-foreground"
+            >
               {fieldConfig.label}
             </label>
             <Input
+              id={fieldId}
               type={fieldConfig.inputType}
               placeholder={fieldConfig.placeholder ?? undefined}
               value={fieldValues[fieldConfig.id] ?? ""}

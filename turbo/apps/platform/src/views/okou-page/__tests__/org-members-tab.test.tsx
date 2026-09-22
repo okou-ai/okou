@@ -12,6 +12,7 @@ import {
   type UsagePackManagementResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -512,7 +513,11 @@ test("Keep People package controls restricted to administrators", async () => {
 test.each(["free", "limited-free-1", "pro", "team"])(
   "Invite members on active %s plans",
   async (tier) => {
-    mockMembersStory();
+    const user = userEvent.setup({ delay: null });
+    const invitations: { email: string; role: string }[] = [];
+    mockMembersStory((invitation) => {
+      invitations.push(invitation);
+    });
     mockMemberInviteEntitlement(
       false,
       { tier, status: "active" },
@@ -546,6 +551,12 @@ test.each(["free", "limited-free-1", "pro", "team"])(
       within(inviteDialog).queryByText("Member packages"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Usage pack")).not.toBeInTheDocument();
+    const role = within(inviteDialog).getByRole("combobox", { name: "Role" });
+    await user.click(within(inviteDialog).getByText("Role"));
+    expect(role).toHaveAttribute("aria-expanded", "true");
+    click(await screen.findByRole("option", { name: "Admin" }));
+    expect(role).toHaveTextContent("Admin");
+    expect(invitations).toStrictEqual([]);
     click(send);
 
     await waitFor(() => {
@@ -553,6 +564,9 @@ test.each(["free", "limited-free-1", "pro", "team"])(
         screen.getByText("legacy.invitee@example.com"),
       ).toBeInTheDocument();
     });
+    expect(invitations).toStrictEqual([
+      { email: "legacy.invitee@example.com", role: "admin" },
+    ]);
   },
 );
 

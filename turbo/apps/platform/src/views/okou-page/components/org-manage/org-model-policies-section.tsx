@@ -9,6 +9,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { useId } from "react";
 import {
   AlertTriangle,
   EllipsisVertical,
@@ -760,11 +761,13 @@ function RouteChoiceButton({
 }
 
 function ProviderTypeSelect({
+  id,
   value,
   types,
   placeholder,
   onChange,
 }: {
+  id: string;
   value: ModelProviderType | null;
   types: ModelProviderType[];
   placeholder: string;
@@ -781,7 +784,7 @@ function ProviderTypeSelect({
         onChange(next as ModelProviderType);
       }}
     >
-      <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
+      <SelectTrigger id={id} className="h-10 rounded-lg" style={ZERO_BORDER}>
         <SelectValue placeholder={placeholder}>
           {value && (
             <div className="flex min-w-0 items-center gap-2">
@@ -837,6 +840,9 @@ function ApiKeyProviderSection({
   onApiKeyFocus: () => void;
 }) {
   const { t } = useTranslation();
+  const providerId = useId();
+  const apiKeyId = useId();
+  const apiKeyDescriptionId = `${apiKeyId}-description`;
   const secretSignupUrl = selectedProviderType
     ? getProviderSignupUrl(selectedProviderType)
     : null;
@@ -845,12 +851,16 @@ function ApiKeyProviderSection({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-foreground">
+        <label
+          htmlFor={providerId}
+          className="text-sm font-medium text-foreground"
+        >
           {t(($) => {
             return $.settings.models.policies.provider;
           })}
         </label>
         <ProviderTypeSelect
+          id={providerId}
           value={selectedProviderType}
           types={apiTypes}
           placeholder={t(($) => {
@@ -861,7 +871,10 @@ function ApiKeyProviderSection({
       </div>
       {selectedProviderType && (
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-foreground">
+          <label
+            htmlFor={apiKeyId}
+            className="text-sm font-medium text-foreground"
+          >
             {t(
               ($) => {
                 return $.settings.models.policies.providerApiKey;
@@ -872,6 +885,9 @@ function ApiKeyProviderSection({
             )}
           </label>
           <Input
+            id={apiKeyId}
+            aria-describedby={apiKeyDescriptionId}
+            aria-invalid={Boolean(apiKeyError)}
             type="password"
             autoComplete="off"
             value={displayedKey}
@@ -889,9 +905,14 @@ function ApiKeyProviderSection({
             className={apiKeyError ? "h-10 border-destructive" : "h-10"}
           />
           {apiKeyError ? (
-            <p className="text-xs text-destructive">{apiKeyError}</p>
+            <p id={apiKeyDescriptionId} className="text-xs text-destructive">
+              {apiKeyError}
+            </p>
           ) : (
-            <p className="text-xs text-muted-foreground">
+            <p
+              id={apiKeyDescriptionId}
+              className="text-xs text-muted-foreground"
+            >
               {t(($) => {
                 return $.settings.models.policies.secretStored;
               })}{" "}
@@ -927,10 +948,15 @@ function GatewayProviderSection({
   onChange: (surfaceId: string, providerType: ModelProviderType) => void;
 }) {
   const { t } = useTranslation();
+  const gatewayId = useId();
+  const descriptionId = `${gatewayId}-description`;
   const options = gatewaySurfacesForModel(connections, model);
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-foreground">
+      <label
+        htmlFor={gatewayId}
+        className="text-sm font-medium text-foreground"
+      >
         {t(($) => {
           return $.settings.models.policies.gatewayProvider;
         })}
@@ -949,7 +975,12 @@ function GatewayProviderSection({
           }
         }}
       >
-        <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
+        <SelectTrigger
+          id={gatewayId}
+          aria-describedby={options.length === 0 ? descriptionId : undefined}
+          className="h-10 rounded-lg"
+          style={ZERO_BORDER}
+        >
           <SelectValue
             placeholder={t(($) => {
               return $.settings.models.policies.selectGateway;
@@ -973,7 +1004,7 @@ function GatewayProviderSection({
         </SelectContent>
       </Select>
       {options.length === 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p id={descriptionId} className="text-xs text-muted-foreground">
           {t(($) => {
             return $.settings.models.policies.noMappedGateway;
           })}
@@ -1170,12 +1201,13 @@ function ModelSelectionField({
   onChange: (model: SupportedRunModel) => void;
 }) {
   const { t } = useTranslation();
+  const modelId = useId();
   const selectedModelIcon = selectedModel
     ? getModelIconType(selectedModel)
     : null;
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-sm font-medium text-foreground">
+      <label htmlFor={modelId} className="text-sm font-medium text-foreground">
         {t(($) => {
           return $.settings.models.policies.model;
         })}
@@ -1187,7 +1219,11 @@ function ModelSelectionField({
         }}
         disabled={disabled}
       >
-        <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
+        <SelectTrigger
+          id={modelId}
+          className="h-10 rounded-lg"
+          style={ZERO_BORDER}
+        >
           <SelectValue
             placeholder={t(($) => {
               return $.settings.models.policies.selectModel;

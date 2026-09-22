@@ -13,6 +13,7 @@ import {
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -604,7 +605,9 @@ test("Authorize visible agents only for the first manual account", async () => {
     }),
   );
   const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
-  await fill(within(dialog).getByPlaceholderText("public-xaat"), "xaat-test");
+  const token = within(dialog).getByLabelText("Public API token");
+  expect(token).toHaveAccessibleName("Public API token");
+  await fill(token, "xaat-test");
 
   click(getConnectorAction("button", "Save", dialog));
 
@@ -1468,6 +1471,72 @@ test("Submit credentials only for the chosen manual method", async () => {
       within(getConnectorCard("Public Axiom")).getByText("API key"),
     ).toBeInTheDocument();
   });
+});
+
+test("Manual method labels target their own controls when field keys repeat", async () => {
+  const user = userEvent.setup({ delay: null });
+  mockConnectors(context, []);
+  mockPublicConnectorStatus(context, [
+    publicStatusItem({
+      connectorSlug: "axiom",
+      label: "Public Axiom",
+      authMethods: [
+        {
+          ...manualMethod({
+            id: "api-token",
+            label: "Workspace credentials",
+            fieldId: "token",
+            fieldLabel: "Workspace token",
+            placeholder: "",
+          }),
+          manualFields: [
+            {
+              id: "token",
+              label: "Workspace token",
+              required: true,
+              placeholder: null,
+              inputType: "password",
+            },
+            {
+              id: "workspace",
+              label: "Workspace name",
+              required: false,
+              placeholder: null,
+              inputType: "text",
+            },
+          ],
+        },
+        manualMethod({
+          id: "api",
+          label: "Personal credentials",
+          fieldId: "token",
+          fieldLabel: "Personal token",
+          placeholder: "",
+        }),
+      ],
+    }),
+  ]);
+  await setupPage({ context, path: "/connectors" });
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Connect Public Axiom");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", { name: "Public Axiom" });
+  for (const label of ["Workspace token", "Personal token", "Workspace name"]) {
+    const input = within(dialog).getByLabelText(label);
+    expect(input).toHaveAccessibleName(label);
+    await user.click(within(dialog).getByText(label));
+    expect(input).toHaveFocus();
+  }
+  await fill(within(dialog).getByLabelText("Workspace name"), "Test workspace");
+  await user.click(within(dialog).getByText("Personal token"));
+  expect(within(dialog).getByLabelText("Personal token")).toHaveFocus();
+  for (const save of queryAllByRoleFast("button", dialog).filter((button) => {
+    return button.textContent?.trim() === "Save";
+  })) {
+    expect(save).toBeDisabled();
+  }
 });
 
 test("Keep OAuth startup safe across repeated actions and navigation", async () => {

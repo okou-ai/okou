@@ -71,7 +71,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Check, Loader2 } from "lucide-react";
 import { DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
-import type { FormEvent, ReactNode } from "react";
+import { useId, type FormEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { assistantName$ } from "../../signals/branding.ts";
 import { ConnectorHelpText } from "./components/settings/connector-help-text.tsx";
@@ -231,6 +231,7 @@ function ManualGrantForm({
   onSuccess: ConnectorConnectSuccess;
 }) {
   const { t } = useTranslation();
+  const formId = useId();
   const submit = useSet(submitBuiltinManualGrant$);
   const setFormValue = useSet(setBuiltinManualGrantFormValue$);
   const pageSignal = useGet(pageSignal$);
@@ -292,12 +293,17 @@ function ManualGrantForm({
         <ConnectorHelpText text={manualGrantMethod.description} />
       )}
       {manualGrantMethod.manualFields.map((fieldConfig) => {
+        const fieldId = `${formId}-${fieldConfig.id}`;
         return (
           <div key={fieldConfig.id} className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-foreground">
+            <label
+              htmlFor={fieldId}
+              className="text-sm font-medium text-foreground"
+            >
               {fieldConfig.label}
             </label>
             <Input
+              id={fieldId}
               type={fieldConfig.inputType}
               placeholder={fieldConfig.placeholder ?? undefined}
               value={fieldValues[fieldConfig.id] ?? ""}

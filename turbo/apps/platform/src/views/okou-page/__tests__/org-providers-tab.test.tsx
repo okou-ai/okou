@@ -21,6 +21,7 @@ import {
   type ModelProviderConnectionResponse,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -415,7 +416,7 @@ async function openAddApiKeyModelDialog(): Promise<void> {
 
 async function selectDialogModel(modelName: string): Promise<void> {
   const dialog = screen.getByRole("dialog", { name: /Add model|Edit model/u });
-  click(within(dialog).getByRole("combobox"));
+  click(within(dialog).getByRole("combobox", { name: "Model" }));
   click(await screen.findByRole("option", { name: modelName }));
 }
 
@@ -711,6 +712,7 @@ test("Rename a workspace gateway and rotate its private API key", async () => {
 });
 
 test("Route a workspace model through an existing custom gateway", async () => {
+  const user = userEvent.setup({ delay: null });
   await openExistingGateway("Vercel Edge Gateway");
   click(buttonByText("Add model"));
   await selectDialogModel("Claude Sonnet 5");
@@ -719,6 +721,13 @@ test("Route a workspace model through an existing custom gateway", async () => {
   expect(
     within(policyDialog).getByText("Vercel Edge Gateway"),
   ).toBeInTheDocument();
+  const gateway = within(policyDialog).getByRole("combobox", {
+    name: "Provider connection",
+  });
+  await user.click(within(policyDialog).getByText("Provider connection"));
+  expect(gateway).toHaveAttribute("aria-expanded", "true");
+  click(await screen.findByRole("option", { name: "Vercel Edge Gateway" }));
+  expect(gateway).toHaveTextContent("Vercel Edge Gateway");
   click(buttonByText("Add model", policyDialog));
 
   const policyRow = await screen.findByTestId(
@@ -912,19 +921,33 @@ test("Keep cloud onboarding hidden while native routes are supported", async () 
 });
 
 test("Connect a workspace API key to a model route", async () => {
+  const user = userEvent.setup({ delay: null });
   await openAddApiKeyModelDialog();
   const dialog = screen.getByRole("dialog", { name: "Add model" });
+  const provider = within(dialog).getByRole("combobox", { name: "Provider" });
+  await user.click(within(dialog).getByText("Provider"));
+  expect(provider).toHaveAttribute("aria-expanded", "true");
+  await user.keyboard("{Escape}");
+  expect(provider).toHaveFocus();
+  const apiKey = within(dialog).getByLabelText("Anthropic API key");
+  expect(apiKey).toHaveAccessibleName("Anthropic API key");
+  expect(apiKey).toHaveAccessibleDescription(/Stored in workspace secrets/u);
+  await user.click(within(dialog).getByText("Anthropic API key"));
+  expect(apiKey).toHaveFocus();
+  await user.click(within(dialog).getByRole("heading", { name: "Add model" }));
+  expect(apiKey).not.toBeInvalid();
+  expect(screen.queryByText("API key is required")).not.toBeInTheDocument();
 
   click(buttonByText("Add model", dialog));
   expect(screen.getByText("API key is required")).toBeInTheDocument();
+  expect(apiKey).toBeInvalid();
+  expect(apiKey).toHaveAccessibleDescription("API key is required");
   expect(
     screen.queryByTestId("org-model-policy-row-claude-opus-4-8"),
   ).not.toBeInTheDocument();
 
-  await fill(
-    screen.getByPlaceholderText("Enter your API key"),
-    "  sk-ant-test  ",
-  );
+  await fill(apiKey, "  sk-ant-test  ");
+  expect(apiKey).not.toBeInvalid();
   click(buttonByText("Add model", dialog));
 
   const row = await screen.findByTestId("org-model-policy-row-claude-opus-4-8");
@@ -955,6 +978,7 @@ test("Reject an empty workspace model API key without replacing its provider", a
 });
 
 test("Rotate a workspace model API key without exposing the new secret", async () => {
+  const user = userEvent.setup({ delay: null });
   mockApiKeyModelRouteStory();
   await openProvidersTab();
 
@@ -970,10 +994,13 @@ test("Rotate a workspace model API key without exposing the new secret", async (
       screen.getByRole("dialog", { name: "Edit model" }),
     ).toBeInTheDocument();
   });
-  await fill(
-    screen.getByPlaceholderText("Enter your API key"),
-    "  sk-ant-rotated  ",
-  );
+  const apiKey = screen.getByLabelText("Anthropic API key");
+  expect(apiKey).toHaveAttribute("type", "password");
+  expect(apiKey).toHaveValue("••••••••••••••••");
+  await user.click(screen.getByText("Anthropic API key"));
+  expect(apiKey).toHaveFocus();
+  expect(apiKey).toHaveValue("");
+  await fill(apiKey, "  sk-ant-rotated  ");
   click(buttonByText("Save changes"));
 
   await waitFor(() => {
