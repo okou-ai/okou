@@ -1,8 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
+import {
+  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+  piApiFirstTurnManifestSchema,
+} from "@okouai/api-contracts/contracts/runners";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { PI_AGENT_RUNTIME_VERSION } from "@okouai/pi-agent-runtime";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HTTPException } from "hono/http-exception";
 import { http, HttpResponse } from "msw";
@@ -1101,6 +1105,10 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(claimed.claim.piLaunchConfig?.apiFirstTurn.deadlineAt).toBe(
       apiStartedAt + API_FIRST_TURN_COORDINATION_BUDGET_MS,
     );
+    expect(claimed.claim.piLaunchConfig?.apiFirstTurn).toMatchObject({
+      requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
+      minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+    });
     await expect(
       api.reserveRunnerActiveInputs(claimed.claim.sandboxToken, run.runId),
     ).resolves.toStrictEqual(reserved);
