@@ -22,9 +22,9 @@ export interface ConnectorDirectoryModel {
   /** Connected connectors whose connection or permissions need a fix. */
   readonly attention: readonly PlatformConnectorCatalogStatusItem[];
   /**
-   * Connected connectors matching the current search. Discovery only offers
-   * what can be added, so without these a search for something already
-   * connected would answer "no match".
+   * Connected connectors matching the current search, or the connector still
+   * finishing its authorization. Keep that card visible after its account
+   * refreshes so progress does not disappear before the flow settles.
    */
   readonly matchedConnected: readonly PlatformConnectorCatalogStatusItem[];
   readonly discover: readonly PlatformConnectorCatalogStatusItem[];
@@ -80,6 +80,7 @@ export function buildConnectorDirectoryModel({
   chipCatalog,
   connectedCustom,
   unconnectedCustom,
+  connectingSlug,
   search,
   category,
   categoryMetadata,
@@ -93,6 +94,7 @@ export function buildConnectorDirectoryModel({
   readonly chipCatalog: readonly PlatformConnectorCatalogStatusItem[];
   readonly connectedCustom: readonly CustomConnectorResponse[];
   readonly unconnectedCustom: readonly CustomConnectorResponse[];
+  readonly connectingSlug: ConnectorSlug | null;
   readonly search: string;
   readonly category: string | null;
   readonly categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined;
@@ -147,7 +149,11 @@ export function buildConnectorDirectoryModel({
 
   return {
     attention,
-    matchedConnected: search.trim() ? searchedConnected : [],
+    matchedConnected: search.trim()
+      ? searchedConnected
+      : searchedConnected.filter((connector) => {
+          return connector.slug === connectingSlug;
+        }),
     discover,
     custom,
     categorySections,

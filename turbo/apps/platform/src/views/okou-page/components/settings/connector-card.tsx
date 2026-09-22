@@ -95,6 +95,7 @@ type DirectoryConnectorCardProps = {
   readonly variant: "directory";
   readonly connector: PlatformConnectorCatalogStatusItem;
   readonly busy: boolean;
+  readonly disabled: boolean;
   readonly connected: boolean;
   readonly accountCount?: number;
   readonly accountLabel?: string;
@@ -302,6 +303,7 @@ function DirectoryConnectorStatusLine({
 function DirectoryConnectorCard({
   connector,
   busy,
+  disabled,
   connected,
   accountCount = 0,
   accountLabel,
@@ -310,7 +312,7 @@ function DirectoryConnectorCard({
   onOpenDetail,
 }: DirectoryConnectorCardProps) {
   const { t } = useTranslation();
-  const interactive = !busy && !unavailable;
+  const interactive = !disabled && !busy && !unavailable;
   const activate = () => {
     if (!interactive) {
       return;
@@ -328,6 +330,7 @@ function DirectoryConnectorCard({
       disabled={!interactive}
       focusableWhenDisabled={false}
       data-connector-slug={connector.slug}
+      aria-busy={busy}
       aria-label={
         connected
           ? t(
@@ -366,7 +369,15 @@ function DirectoryConnectorCard({
             "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground",
             !busy && !connected && !unavailable && "border border-border/60",
           )}
-          aria-hidden="true"
+          role={busy ? "status" : undefined}
+          aria-label={
+            busy
+              ? t(($) => {
+                  return $.connectors.actions.connecting;
+                })
+              : undefined
+          }
+          aria-hidden={busy ? undefined : true}
         >
           {busy ? (
             <Loader2 size={16} className="animate-spin" />

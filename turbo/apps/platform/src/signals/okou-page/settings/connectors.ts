@@ -1216,7 +1216,13 @@ export const connectBuiltinConnectorNoAuthAndSettle$ = command(
     const connected = await set(connectBuiltinConnectorNoAuth$, args, signal);
     if (connected) {
       signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId, signal);
+      await set(
+        runBuiltinConnectorConnectSuccess$,
+        args.connectorSlug,
+        args.onSuccess,
+        connected.connectionId,
+        signal,
+      );
     }
   },
 );
@@ -2820,7 +2826,13 @@ const connectConnectorOAuthAuthCodeAndSettleCommand$ = command(
     );
     if (connected) {
       signal.throwIfAborted();
-      await args.onSuccess(connected.connectionId, signal);
+      await set(
+        runBuiltinConnectorConnectSuccess$,
+        args.connectorSlug,
+        args.onSuccess,
+        connected.connectionId,
+        signal,
+      );
     }
   },
 );

@@ -1,5 +1,8 @@
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -13,6 +16,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
+  connectorAccount,
   noAuthMethod,
   httpConnector,
   ACME_CONNECTOR_ID,
@@ -121,6 +125,316 @@ async function openDirectory(
   const dialog = await screen.findByRole("dialog", { name: "Connectors" });
   return dialog;
 }
+
+function createAuthWindow() {
+  const authWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authWindow, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  return authWindow;
+}
+
+test("Keep connection progress on the active card and allow another connector after cancellation", async () => {
+  const user = userEvent.setup({ delay: null });
+  installComposerConnectorFixture({ catalog: directoryCatalog() });
+  const gmailWindow = createAuthWindow();
+  const gmailOpen = context.mocks.browser.open(gmailWindow);
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  const dialog = await openDirectory(user);
+  await expect(
+    within(dialog).findByText("Notion"),
+  ).resolves.toBeInTheDocument();
+  const gmail = dialogButton(dialog, "Connect Gmail");
+  const notion = dialogButton(dialog, "Connect Notion");
+  click(gmail);
+  await waitFor(() => {
+    expect(gmailWindow.location.href).toBe(
+      "https://accounts.example.test/gmail",
+    );
+  });
+  expect(
+    within(gmail).getByRole("status", { name: "Connecting..." }),
+  ).toBeInTheDocument();
+  expect(gmail).toHaveAttribute("aria-busy", "true");
+  expect(notion).not.toHaveAttribute("aria-busy", "true");
+  expect(within(notion).queryByRole("status")).not.toBeInTheDocument();
+  expect(notion).toBeDisabled();
+
+  click(gmail);
+  click(notion);
+  expect(gmailOpen.calls).toHaveLength(1);
+
+  await fill(within(dialog).getByRole("textbox"), "g");
+  await expect(
+    within(dialog).findByText("GitHub"),
+  ).resolves.toBeInTheDocument();
+  const github = dialogButton(dialog, "Open GitHub details");
+  expect(github).not.toHaveAttribute("aria-busy", "true");
+  expect(within(github).queryByRole("status")).not.toBeInTheDocument();
+  expect(
+    within(dialog).getAllByRole("status", { name: "Connecting..." }),
+  ).toHaveLength(1);
+
+  gmailWindow.close();
+  await waitFor(() => {
+    expect(dialogButton(dialog, "Connect Gmail")).toBeEnabled();
+  });
+  expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
+  expect(dialogButton(dialog, "Connect Gmail")).not.toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+
+  await fill(within(dialog).getByRole("textbox"), "");
+  await expect(
+    within(dialog).findByText("Notion"),
+  ).resolves.toBeInTheDocument();
+  const notionWindow = createAuthWindow();
+  const notionOpen = context.mocks.browser.open(notionWindow);
+  click(dialogButton(dialog, "Connect Notion"));
+  await waitFor(() => {
+    expect(notionWindow.location.href).toBe(
+      "https://accounts.example.test/notion",
+    );
+  });
+  expect(
+    within(dialogButton(dialog, "Connect Notion")).getByRole("status", {
+      name: "Connecting...",
+    }),
+  ).toBeInTheDocument();
+  expect(dialogButton(dialog, "Connect Notion")).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  expect(dialogButton(dialog, "Connect Gmail")).not.toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  expect(
+    within(dialogButton(dialog, "Connect Gmail")).queryByRole("status"),
+  ).not.toBeInTheDocument();
+  expect(notionOpen.calls).toHaveLength(1);
+
+  notionWindow.close();
+  await waitFor(() => {
+    expect(dialogButton(dialog, "Connect Notion")).toBeEnabled();
+  });
+  expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
+});
+
+test("Clear the active card after OAuth startup fails and allow retry", async () => {
+  const user = userEvent.setup({ delay: null });
+  installComposerConnectorFixture({ catalog: directoryCatalog() });
+  const startup = context.mocks.deferred<void>();
+  let startupAvailable = false;
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    async ({ params, respond }) => {
+      await startup.promise;
+      return startupAvailable
+        ? respond(200, {
+            authorizationUrl: `https://accounts.example.test/${params.connectorSlug}`,
+            oauthAttemptId: "e0000000-0000-4000-a000-000000000095",
+            connectionId: "f0000000-0000-4000-a000-000000000095",
+          })
+        : respond(500, {
+            error: {
+              code: "UNAVAILABLE",
+              message: "OAuth authorization is unavailable",
+            },
+          });
+    },
+  );
+  const failedWindow = createAuthWindow();
+  context.mocks.browser.open(failedWindow);
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  const dialog = await openDirectory(user);
+  await expect(within(dialog).findByText("Gmail")).resolves.toBeInTheDocument();
+  click(dialogButton(dialog, "Connect Gmail"));
+  await expect(
+    within(dialogButton(dialog, "Connect Gmail")).findByRole("status", {
+      name: "Connecting...",
+    }),
+  ).resolves.toBeInTheDocument();
+  startup.resolve();
+  await expect(
+    screen.findByText("OAuth authorization is unavailable"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(dialogButton(dialog, "Connect Gmail")).toBeEnabled();
+  });
+  expect(within(dialog).queryByRole("status")).not.toBeInTheDocument();
+  expect(dialogButton(dialog, "Connect Gmail")).not.toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
+  expect(dialogButton(dialog, "Connect Notion")).toBeEnabled();
+  expect(failedWindow.location.href).toContain("status=error");
+
+  startupAvailable = true;
+  const retryWindow = createAuthWindow();
+  const browserOpen = context.mocks.browser.open(retryWindow);
+  click(dialogButton(dialog, "Connect Gmail"));
+  await waitFor(() => {
+    expect(retryWindow.location.href).toBe(
+      "https://accounts.example.test/gmail",
+    );
+  });
+  expect(
+    within(dialogButton(dialog, "Connect Gmail")).getByRole("status", {
+      name: "Connecting...",
+    }),
+  ).toBeInTheDocument();
+  expect(browserOpen.calls).toHaveLength(1);
+  retryWindow.close();
+  await waitFor(() => {
+    expect(dialogButton(dialog, "Connect Gmail")).toBeEnabled();
+  });
+});
+
+test.each(["oauth", "no-auth"] as const)(
+  "Keep only the connected card busy until current-agent authorization finishes (%s)",
+  async (grant) => {
+    const user = userEvent.setup({ delay: null });
+    const catalog = [
+      ...directoryCatalog(),
+      ...["Dropbox", "Lark", "Telegram"].map((label, index) => {
+        return builtinConnector({
+          slug: label.toLowerCase() as ConnectorSlug,
+          label,
+          connected: false,
+          popularityRank: index + 3,
+        });
+      }),
+    ].map((connector) => {
+      return connector.slug === GMAIL_SLUG && grant === "no-auth"
+        ? builtinConnector({ ...connector, authMethods: [noAuthMethod()] })
+        : connector;
+    });
+    const fixture = installComposerConnectorFixture({ catalog });
+    const account = connectorAccount({
+      id: "f0000000-0000-4000-a000-000000000064",
+      target: { kind: "builtin", connectorSlug: GMAIL_SLUG },
+      displayName: "Work",
+      isDefault: true,
+    });
+    let oauthCompleted = false;
+    if (grant === "oauth") {
+      context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
+        return respond(200, {
+          connectors: catalog.map((connector) => {
+            return oauthCompleted && connector.slug === GMAIL_SLUG
+              ? {
+                  ...connector,
+                  connected: true,
+                  connectionStatus: "connected" as const,
+                  connection: {
+                    id: account.id,
+                    authMethod: account.authMethod,
+                    externalUsername: null,
+                    externalEmail: null,
+                    reconnectReason: null,
+                  },
+                }
+              : connector;
+          }),
+          totalConnectorCount: catalog.length,
+        });
+      });
+    }
+    const authorizationStarted = context.mocks.deferred<void>();
+    const authorization = context.mocks.deferred<void>();
+    let authorized = false;
+    context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+      return respond(200, {
+        enabledConnectorSlugs: authorized ? [GMAIL_SLUG] : [],
+      });
+    });
+    context.mocks.api(
+      userBuiltinConnectorsContract.update,
+      async ({ body, respond }) => {
+        authorizationStarted.resolve();
+        await authorization.promise;
+        authorized = true;
+        return respond(200, {
+          enabledConnectorSlugs: body.enabledConnectorSlugs,
+        });
+      },
+    );
+    const authWindow = createAuthWindow();
+    const browserOpen = context.mocks.browser.open(authWindow);
+    await setupPage({
+      context,
+      path: `/agents/${SCOUT_AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+    });
+
+    const dialog = await openDirectory(user);
+    await expect(
+      within(dialog).findByTestId("connector-shelf-productivity"),
+    ).resolves.toBeInTheDocument();
+    click(dialogButton(dialog, "Connect Gmail"));
+    await waitFor(() => {
+      expect(authWindow.location.href).toBe(
+        grant === "oauth" ? "https://accounts.example.test/gmail" : "",
+      );
+    });
+    if (grant === "oauth") {
+      oauthCompleted = true;
+      context.mocks.data.connectors([{ ...account, slug: GMAIL_SLUG }]);
+      fixture.completeOAuth(account.id);
+      authWindow.close();
+    }
+    await authorizationStarted.promise;
+
+    // A refreshed catalog now reports Gmail as connected. Keep its progress
+    // visible in the default browse while authorizing the current agent.
+    const gmail = await waitFor(() => {
+      const card = dialogButton(dialog, "Open Gmail details");
+      expect(card).toHaveAttribute("aria-busy", "true");
+      return card;
+    });
+    expect(
+      within(dialog).getByTestId("connector-shelf-productivity"),
+    ).toBeInTheDocument();
+    expect(
+      within(gmail).getByRole("status", { name: "Connecting..." }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).getAllByRole("status", { name: "Connecting..." }),
+    ).toHaveLength(1);
+    expect(dialogButton(dialog, "Connect Notion")).not.toHaveAttribute(
+      "aria-busy",
+      "true",
+    );
+    expect(dialogButton(dialog, "Connect Notion")).toBeDisabled();
+    expect(
+      screen.queryByText("Gmail connected and authorized for Scout"),
+    ).not.toBeInTheDocument();
+
+    authorization.resolve();
+    await expect(
+      screen.findByText("Gmail connected and authorized for Scout"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "Connectors" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(browserOpen.calls).toHaveLength(grant === "oauth" ? 1 : 0);
+  },
+);
 
 test("Offer the catalog for adding, and find a connected connector by name", async () => {
   const user = userEvent.setup({ delay: null });

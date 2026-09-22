@@ -22,6 +22,7 @@ import { Button, cn } from "@okouai/ui";
 import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectorAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
+import { builtinConnectFlowSlug$ } from "../../signals/okou-page/settings/connectors.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
@@ -542,6 +543,22 @@ function DirectoryDiscoverPanel({
   const attention = (
     <DirectoryAttention connectors={model.attention} renderCard={renderCard} />
   );
+  const connected = model.matchedConnected.length > 0 && (
+    <DirectorySection
+      connectorGroupKey={model.matchedConnected
+        .map((connector) => {
+          return connector.slug;
+        })
+        .join(",")}
+      title={t(($) => {
+        return $.chat.connectors.directory.connected;
+      })}
+    >
+      {model.matchedConnected.map((item) => {
+        return renderCard(item, true);
+      })}
+    </DirectorySection>
+  );
   if (
     model.discover.length === 0 &&
     model.matchedConnected.length === 0 &&
@@ -579,22 +596,7 @@ function DirectoryDiscoverPanel({
       <>
         <DirectoryRemoteStatuses ssh={sshStatus} vnc={vncStatus} />
         {attention}
-        {model.matchedConnected.length > 0 && (
-          <DirectorySection
-            connectorGroupKey={model.matchedConnected
-              .map((connector) => {
-                return connector.slug;
-              })
-              .join(",")}
-            title={t(($) => {
-              return $.chat.connectors.directory.connected;
-            })}
-          >
-            {model.matchedConnected.map((item) => {
-              return renderCard(item, true);
-            })}
-          </DirectorySection>
-        )}
+        {connected}
         {model.discover.length > 0 && (
           <DirectorySection
             connectorGroupKey={model.discover
@@ -624,6 +626,7 @@ function DirectoryDiscoverPanel({
     <>
       <DirectoryRemoteStatuses ssh={sshStatus} vnc={vncStatus} />
       {attention}
+      {connected}
       {model.shelfLayout.shelves.map((shelf) => {
         return (
           <ConnectorShelfSection
@@ -981,6 +984,7 @@ function DirectoryConnectorCardSlot({
   connector,
   connected,
   busy,
+  disabled,
   summary,
   accountLabelOf,
   connect,
@@ -989,6 +993,7 @@ function DirectoryConnectorCardSlot({
   readonly connector: PlatformConnectorCatalogStatusItem;
   readonly connected: boolean;
   readonly busy: boolean;
+  readonly disabled: boolean;
   readonly summary: ConnectorAccountSummary | undefined;
   readonly accountLabelOf: (
     account: NonNullable<ConnectorAccountSummary["defaultConnection"]>,
@@ -1001,6 +1006,7 @@ function DirectoryConnectorCardSlot({
       variant="directory"
       connector={connector}
       busy={busy}
+      disabled={disabled}
       connected={connected}
       accountCount={summary?.accountCount ?? (connected ? 1 : 0)}
       accountLabel={
@@ -1097,6 +1103,7 @@ export function ConnectorDirectoryDialog({
 }: ConnectorDirectoryDialogProps) {
   const { t } = useTranslation();
   const accountLabelOf = useConnectorAccountLabel();
+  const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const accountsLoadable = useLastLoadable(connectorAccountSummaryByTarget$);
   const accountSummaries: ReadonlyMap<string, ConnectorAccountSummary> =
     accountsLoadable.state === "hasData"
@@ -1112,6 +1119,7 @@ export function ConnectorDirectoryDialog({
     chipCatalog,
     connectedCustom,
     unconnectedCustom,
+    connectingSlug: connecting ? connectFlowSlug : null,
     search,
     category,
     categoryMetadata,
@@ -1133,7 +1141,8 @@ export function ConnectorDirectoryDialog({
         key={connector.slug}
         connector={connector}
         connected={isConnected}
-        busy={connecting}
+        busy={connecting && connectFlowSlug === connector.slug}
+        disabled={connecting}
         summary={accountSummaries.get(`builtin:${connector.slug}`)}
         accountLabelOf={accountLabelOf}
         connect={connectHandlers(connector)}
