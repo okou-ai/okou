@@ -23,15 +23,12 @@ describe("okou host versions command", () => {
     vi.unstubAllEnvs();
   });
 
+  // A hosted publication's artifact URL is its own public address, and #35915
+  // removed CLI URL qualification, so the command shows what the API returns.
   it.each([
     "https://dpl-00000000-0000-4000-8000-000000000003.sites.example.com",
-    "/artifacts/abcxyz1234.html",
     null,
   ])("lists deployment version URLs for %s", async (artifactUrl) => {
-    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-    const expectedUrl = artifactUrl?.startsWith("/artifacts/")
-      ? `https://app.okou.ai${artifactUrl}`
-      : artifactUrl;
     server.use(
       http.get(DEPLOYMENTS_URL, ({ params, request }) => {
         expect(params.site).toBe("demo-site");
@@ -86,7 +83,7 @@ describe("okou host versions command", () => {
         expect.objectContaining({
           deploymentVersion: 2,
           isActive: true,
-          artifactUrl: expectedUrl,
+          artifactUrl,
         }),
         expect.objectContaining({ deploymentVersion: 1, isActive: false }),
       ],

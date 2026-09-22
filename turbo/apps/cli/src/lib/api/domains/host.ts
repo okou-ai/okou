@@ -151,19 +151,6 @@ export async function getHostedSiteDeployments(
     );
     throw new ApiRequestError(message, code, response.status);
   }
-  const result = (await response.json()) as HostedSiteDeploymentsResponse;
-  return {
-    ...result,
-    deployments: await Promise.all(
-      result.deployments.map(async (deployment) => {
-        return {
-          ...deployment,
-          artifactUrl:
-            deployment.artifactUrl === null
-              ? null
-              : await absoluteArtifactUrl(deployment.artifactUrl),
-        };
-      }),
-    ),
-  };
+  // #35915: every serving API returns complete artifact URLs already.
+  return (await response.json()) as HostedSiteDeploymentsResponse;
 }
