@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use nix::fcntl::{Flock, FlockArg};
 
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{HostError, HostResult};
 use crate::host_file::{self, DirMode, PRIVATE_FILE_MODE};
 
 const LOCK_BUSY_ERROR: &str = "lock is already held by another process";
@@ -15,10 +15,10 @@ const LOCK_RETRY_INITIAL_DELAY: Duration = Duration::from_millis(5);
 const LOCK_RETRY_MAX_DELAY: Duration = Duration::from_millis(50);
 
 /// Open (or create) the lock file, creating parent directories as needed.
-pub(crate) fn open_lock_file(path: &Path) -> RunnerResult<File> {
+pub fn open_lock_file(path: &Path) -> HostResult<File> {
     let parent = host_file::file_parent(path);
     host_file::ensure_dir(parent, DirMode::TrustedParent, "lock directory")
-        .map_err(|e| RunnerError::Internal(format!("create lock dir {}: {e}", parent.display())))?;
+        .map_err(|e| HostError::Internal(format!("create lock dir {}: {e}", parent.display())))?;
 
     let file = File::options()
         .create(true)
@@ -28,18 +28,18 @@ pub(crate) fn open_lock_file(path: &Path) -> RunnerResult<File> {
         .mode(PRIVATE_FILE_MODE)
         .custom_flags(host_file::private_file_open_flags())
         .open(path)
-        .map_err(|e| RunnerError::Internal(format!("open lock {}: {e}", path.display())))?;
+        .map_err(|e| HostError::Internal(format!("open lock {}: {e}", path.display())))?;
     host_file::secure_regular_private_file(&file, path, "lock file")
-        .map_err(|e| RunnerError::Internal(format!("validate lock {}: {e}", path.display())))?;
+        .map_err(|e| HostError::Internal(format!("validate lock {}: {e}", path.display())))?;
     Ok(file)
 }
 
-fn metadata_is_current_inode(lock_meta: std::fs::Metadata, path: &Path) -> RunnerResult<bool> {
+fn metadata_is_current_inode(lock_meta: std::fs::Metadata, path: &Path) -> HostResult<bool> {
     let path_meta = match std::fs::symlink_metadata(path) {
         Ok(path_meta) => path_meta,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "lstat lock {}: {e}",
                 path.display()
             )));
@@ -49,17 +49,17 @@ fn metadata_is_current_inode(lock_meta: std::fs::Metadata, path: &Path) -> Runne
 }
 
 /// Check whether an acquired lock still refers to the file currently at `path`.
-pub(crate) fn lock_matches_path(lock: &Flock<File>, path: &Path) -> RunnerResult<bool> {
-    let lock_meta = lock.metadata().map_err(|e| {
-        RunnerError::Internal(format!("stat locked fd for {}: {e}", path.display()))
-    })?;
+pub fn lock_matches_path(lock: &Flock<File>, path: &Path) -> HostResult<bool> {
+    let lock_meta = lock
+        .metadata()
+        .map_err(|e| HostError::Internal(format!("stat locked fd for {}: {e}", path.display())))?;
     metadata_is_current_inode(lock_meta, path)
 }
 
-fn file_matches_path(file: &File, path: &Path) -> RunnerResult<bool> {
+fn file_matches_path(file: &File, path: &Path) -> HostResult<bool> {
     let lock_meta = file
         .metadata()
-        .map_err(|e| RunnerError::Internal(format!("stat lock fd for {}: {e}", path.display())))?;
+        .map_err(|e| HostError::Internal(format!("stat lock fd for {}: {e}", path.display())))?;
     metadata_is_current_inode(lock_meta, path)
 }
 
@@ -83,8 +83,8 @@ impl LockMode {
         matches!(self, Self::Exclusive | Self::Shared)
     }
 
-    fn map_error(self, path: &Path, e: nix::errno::Errno) -> RunnerError {
-        RunnerError::Internal(format!("flock {}: {e}", path.display()))
+    fn map_error(self, path: &Path, e: nix::errno::Errno) -> HostError {
+        HostError::Internal(format!("flock {}: {e}", path.display()))
     }
 }
 
@@ -95,9 +95,9 @@ impl LockMode {
 /// Dropping that guard releases the lock. The guard's exclusive or shared mode
 /// is determined by the helper that returned it. `Busy` means that the helper
 /// did not obtain the lock because another lock holder had the current path;
-/// filesystem, validation, and task failures are returned as `RunnerError`
+/// filesystem, validation, and task failures are returned as `HostError`
 /// values instead.
-pub(crate) enum TryLock {
+pub enum TryLock {
     /// The requested flock was acquired and remains held by this guard.
     Acquired(Flock<File>),
     /// The requested flock could not be acquired because it was busy.
@@ -111,8 +111,8 @@ pub(crate) enum TryLock {
 /// is determined by the helper that returned it. `Busy` reports contention on
 /// an existing path. `Missing` is reserved for an absent parent directory or
 /// lock file; other filesystem, validation, and task failures are returned as
-/// `RunnerError` values.
-pub(crate) enum ExistingTryLock {
+/// `HostError` values.
+pub enum ExistingTryLock {
     /// The requested flock was acquired and remains held by this guard.
     Acquired(Flock<File>),
     /// The existing lock path is currently held by another lock holder.
@@ -126,14 +126,14 @@ enum LockAcquire {
     Busy,
 }
 
-async fn acquire_result_once(path: &Path, mode: LockMode) -> RunnerResult<LockAcquire> {
+async fn acquire_result_once(path: &Path, mode: LockMode) -> HostResult<LockAcquire> {
     let attempt_path = path.to_path_buf();
     tokio::task::spawn_blocking(move || acquire_result_blocking(&attempt_path, mode))
         .await
-        .map_err(|e| RunnerError::Internal(format!("lock task: {e}")))?
+        .map_err(|e| HostError::Internal(format!("lock task: {e}")))?
 }
 
-async fn acquire_after_busy(path: &Path, mode: LockMode) -> RunnerResult<Flock<File>> {
+async fn acquire_after_busy(path: &Path, mode: LockMode) -> HostResult<Flock<File>> {
     debug_assert!(mode.waits());
     let mut retry_delay = LOCK_RETRY_INITIAL_DELAY;
     loop {
@@ -146,7 +146,7 @@ async fn acquire_after_busy(path: &Path, mode: LockMode) -> RunnerResult<Flock<F
     }
 }
 
-async fn acquire_result_with(path: PathBuf, mode: LockMode) -> RunnerResult<LockAcquire> {
+async fn acquire_result_with(path: PathBuf, mode: LockMode) -> HostResult<LockAcquire> {
     match acquire_result_once(&path, mode).await? {
         LockAcquire::Busy if mode.waits() => acquire_after_busy(&path, mode)
             .await
@@ -155,17 +155,17 @@ async fn acquire_result_with(path: PathBuf, mode: LockMode) -> RunnerResult<Lock
     }
 }
 
-fn acquire_result_blocking(path: &Path, mode: LockMode) -> RunnerResult<LockAcquire> {
+fn acquire_result_blocking(path: &Path, mode: LockMode) -> HostResult<LockAcquire> {
     acquire_result_blocking_with_open(path, mode, |path| open_lock_file(path).map(Some))?
         .ok_or_else(|| {
-            RunnerError::Internal(format!("create lock {} returned missing", path.display()))
+            HostError::Internal(format!("create lock {} returned missing", path.display()))
         })
 }
 
 fn acquire_existing_result_blocking(
     path: &Path,
     mode: LockMode,
-) -> RunnerResult<Option<LockAcquire>> {
+) -> HostResult<Option<LockAcquire>> {
     debug_assert!(matches!(mode, LockMode::TryExclusive | LockMode::TryShared));
     acquire_result_blocking_with_open(path, mode, open_existing_lock_file)
 }
@@ -173,8 +173,8 @@ fn acquire_existing_result_blocking(
 fn acquire_result_blocking_with_open(
     path: &Path,
     mode: LockMode,
-    mut open: impl FnMut(&Path) -> RunnerResult<Option<File>>,
-) -> RunnerResult<Option<LockAcquire>> {
+    mut open: impl FnMut(&Path) -> HostResult<Option<File>>,
+) -> HostResult<Option<LockAcquire>> {
     for _ in 0..LOCK_REPLACED_MAX_RETRIES {
         let file = match open(path)? {
             Some(file) => file,
@@ -194,19 +194,19 @@ fn acquire_result_blocking_with_open(
             return Ok(Some(LockAcquire::Acquired(lock)));
         }
     }
-    Err(RunnerError::Internal(format!(
+    Err(HostError::Internal(format!(
         "lock {} was repeatedly replaced while acquiring",
         path.display()
     )))
 }
 
-fn open_existing_lock_file(path: &Path) -> RunnerResult<Option<File>> {
+fn open_existing_lock_file(path: &Path) -> HostResult<Option<File>> {
     let parent = host_file::file_parent(path);
     match std::fs::symlink_metadata(parent) {
         Ok(_) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "stat lock parent {}: {e}",
                 parent.display()
             )));
@@ -216,7 +216,7 @@ fn open_existing_lock_file(path: &Path) -> RunnerResult<Option<File>> {
         Ok(()) => {}
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "validate lock parent {}: {e}",
                 path.display()
             )));
@@ -232,21 +232,21 @@ fn open_existing_lock_file(path: &Path) -> RunnerResult<Option<File>> {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "open lock {}: {e}",
                 path.display()
             )));
         }
     };
     host_file::secure_regular_private_file(&file, path, "lock file")
-        .map_err(|e| RunnerError::Internal(format!("validate lock {}: {e}", path.display())))?;
+        .map_err(|e| HostError::Internal(format!("validate lock {}: {e}", path.display())))?;
     Ok(Some(file))
 }
 
-async fn acquire_with(path: PathBuf, mode: LockMode) -> RunnerResult<Flock<File>> {
+async fn acquire_with(path: PathBuf, mode: LockMode) -> HostResult<Flock<File>> {
     match acquire_result_with(path, mode).await? {
         LockAcquire::Acquired(lock) => Ok(lock),
-        LockAcquire::Busy => Err(RunnerError::Config(LOCK_BUSY_ERROR.into())),
+        LockAcquire::Busy => Err(HostError::Config(LOCK_BUSY_ERROR.into())),
     }
 }
 
@@ -254,11 +254,11 @@ async fn acquire_with(path: PathBuf, mode: LockMode) -> RunnerResult<Flock<File>
 ///
 /// Missing parent directories and the lock file are created as needed. The
 /// path is checked for a trusted parent and a runner-owned, regular, private
-/// lock file; invalid or insecure paths return a `RunnerError`.
+/// lock file; invalid or insecure paths return a `HostError`.
 ///
 /// Waiting is cancellation-safe: dropping the returned future stops future attempts.
 /// The returned guard holds the lock until dropped.
-pub async fn acquire(path: PathBuf) -> RunnerResult<Flock<File>> {
+pub async fn acquire(path: PathBuf) -> HostResult<Flock<File>> {
     acquire_with(path, LockMode::Exclusive).await
 }
 
@@ -267,11 +267,11 @@ pub async fn acquire(path: PathBuf) -> RunnerResult<Flock<File>> {
 /// Multiple shared locks can coexist; only exclusive locks conflict.
 /// Missing parent directories and the lock file are created as needed. The
 /// path is checked for a trusted parent and a runner-owned, regular, private
-/// lock file; invalid or insecure paths return a `RunnerError`.
+/// lock file; invalid or insecure paths return a `HostError`.
 ///
 /// Waiting is cancellation-safe: dropping the returned future stops future attempts.
 /// The returned guard holds the lock until dropped.
-pub async fn acquire_shared(path: PathBuf) -> RunnerResult<Flock<File>> {
+pub async fn acquire_shared(path: PathBuf) -> HostResult<Flock<File>> {
     acquire_with(path, LockMode::Shared).await
 }
 
@@ -279,11 +279,11 @@ pub async fn acquire_shared(path: PathBuf) -> RunnerResult<Flock<File>> {
 ///
 /// This helper does not wait for contention. It creates missing parent
 /// directories and the lock file as needed, validates the path as a trusted
-/// private lock path, and maps contention to `RunnerError::Config`. Other path,
-/// validation, flock, and task failures are returned as `RunnerError` values.
+/// private lock path, and maps contention to `HostError::Config`. Other path,
+/// validation, flock, and task failures are returned as `HostError` values.
 ///
 /// The returned guard holds the lock until dropped.
-pub async fn try_acquire(path: PathBuf) -> RunnerResult<Flock<File>> {
+pub async fn try_acquire(path: PathBuf) -> HostResult<Flock<File>> {
     acquire_with(path, LockMode::TryExclusive).await
 }
 
@@ -298,7 +298,7 @@ pub async fn try_acquire(path: PathBuf) -> RunnerResult<Flock<File>> {
 pub async fn acquire_with_contention_timeout(
     path: PathBuf,
     contention_timeout: Duration,
-) -> RunnerResult<TryLock> {
+) -> HostResult<TryLock> {
     acquire_with_contention_timeout_after_busy(path, contention_timeout, std::future::ready(()))
         .await
 }
@@ -307,7 +307,7 @@ async fn acquire_with_contention_timeout_after_busy(
     path: PathBuf,
     contention_timeout: Duration,
     after_busy: impl std::future::Future<Output = ()>,
-) -> RunnerResult<TryLock> {
+) -> HostResult<TryLock> {
     match acquire_result_once(&path, LockMode::Exclusive).await? {
         LockAcquire::Acquired(lock) => Ok(TryLock::Acquired(lock)),
         LockAcquire::Busy => {
@@ -325,29 +325,20 @@ async fn acquire_with_contention_timeout_after_busy(
     }
 }
 
-#[cfg(test)]
-pub(crate) async fn acquire_with_contention_timeout_after_busy_for_test(
-    path: PathBuf,
-    contention_timeout: Duration,
-    after_busy: impl std::future::Future<Output = ()>,
-) -> RunnerResult<TryLock> {
-    acquire_with_contention_timeout_after_busy(path, contention_timeout, after_busy).await
-}
-
 /// Try to acquire an exclusive flock without waiting for contention.
 ///
 /// This helper creates missing parent directories and the lock file as needed
 /// and validates the path as a trusted, runner-owned, regular, private lock
 /// file. Contention is returned as `TryLock::Busy`; path, validation, flock,
-/// and task failures are returned as `RunnerError` values. On success, the
+/// and task failures are returned as `HostError` values. On success, the
 /// `TryLock::Acquired` guard holds the lock until dropped.
-pub async fn try_acquire_or_busy(path: PathBuf) -> RunnerResult<TryLock> {
+pub async fn try_acquire_or_busy(path: PathBuf) -> HostResult<TryLock> {
     tokio::task::spawn_blocking(move || try_acquire_or_busy_blocking(&path))
         .await
-        .map_err(|e| RunnerError::Internal(format!("lock task: {e}")))?
+        .map_err(|e| HostError::Internal(format!("lock task: {e}")))?
 }
 
-pub(crate) fn try_acquire_or_busy_blocking(path: &Path) -> RunnerResult<TryLock> {
+pub fn try_acquire_or_busy_blocking(path: &Path) -> HostResult<TryLock> {
     match acquire_result_blocking(path, LockMode::TryExclusive)? {
         LockAcquire::Acquired(lock) => Ok(TryLock::Acquired(lock)),
         LockAcquire::Busy => Ok(TryLock::Busy),
@@ -359,9 +350,9 @@ pub(crate) fn try_acquire_or_busy_blocking(path: &Path) -> RunnerResult<TryLock>
 /// This helper creates missing parent directories and the lock file as needed
 /// and validates the path as a trusted, runner-owned, regular, private lock
 /// file. Contention is returned as `TryLock::Busy`; path, validation, flock,
-/// and task failures are returned as `RunnerError` values. On success, the
+/// and task failures are returned as `HostError` values. On success, the
 /// `TryLock::Acquired` guard holds the shared lock until dropped.
-pub async fn try_acquire_shared_or_busy(path: PathBuf) -> RunnerResult<TryLock> {
+pub async fn try_acquire_shared_or_busy(path: PathBuf) -> HostResult<TryLock> {
     match acquire_result_with(path, LockMode::TryShared).await? {
         LockAcquire::Acquired(lock) => Ok(TryLock::Acquired(lock)),
         LockAcquire::Busy => Ok(TryLock::Busy),
@@ -375,17 +366,15 @@ pub async fn try_acquire_shared_or_busy(path: PathBuf) -> RunnerResult<TryLock> 
 /// either is absent, while contention is returned as
 /// `ExistingTryLock::Busy`. An existing path is still required to be a
 /// trusted, runner-owned, regular, private lock file; invalid or insecure
-/// paths return a `RunnerError` rather than `Missing`. A successful
+/// paths return a `HostError` rather than `Missing`. A successful
 /// `ExistingTryLock::Acquired` guard holds the lock until dropped.
-pub async fn try_acquire_existing_or_missing(path: PathBuf) -> RunnerResult<ExistingTryLock> {
+pub async fn try_acquire_existing_or_missing(path: PathBuf) -> HostResult<ExistingTryLock> {
     tokio::task::spawn_blocking(move || try_acquire_existing_or_missing_blocking(&path))
         .await
-        .map_err(|e| RunnerError::Internal(format!("lock task: {e}")))?
+        .map_err(|e| HostError::Internal(format!("lock task: {e}")))?
 }
 
-pub(crate) fn try_acquire_existing_or_missing_blocking(
-    path: &Path,
-) -> RunnerResult<ExistingTryLock> {
+pub fn try_acquire_existing_or_missing_blocking(path: &Path) -> HostResult<ExistingTryLock> {
     match acquire_existing_result_blocking(path, LockMode::TryExclusive)? {
         Some(LockAcquire::Acquired(lock)) => Ok(ExistingTryLock::Acquired(lock)),
         Some(LockAcquire::Busy) => Ok(ExistingTryLock::Busy),
@@ -401,19 +390,15 @@ pub(crate) fn try_acquire_existing_or_missing_blocking(
 /// either is absent, while contention is returned as
 /// `ExistingTryLock::Busy`. An existing path is still required to be a
 /// trusted, runner-owned, regular, private lock file; invalid or insecure
-/// paths return a `RunnerError` rather than `Missing`. A successful
+/// paths return a `HostError` rather than `Missing`. A successful
 /// `ExistingTryLock::Acquired` guard holds the shared lock until dropped.
-pub async fn try_acquire_existing_shared_or_missing(
-    path: PathBuf,
-) -> RunnerResult<ExistingTryLock> {
+pub async fn try_acquire_existing_shared_or_missing(path: PathBuf) -> HostResult<ExistingTryLock> {
     tokio::task::spawn_blocking(move || try_acquire_existing_shared_or_missing_blocking(&path))
         .await
-        .map_err(|e| RunnerError::Internal(format!("lock task: {e}")))?
+        .map_err(|e| HostError::Internal(format!("lock task: {e}")))?
 }
 
-pub(crate) fn try_acquire_existing_shared_or_missing_blocking(
-    path: &Path,
-) -> RunnerResult<ExistingTryLock> {
+pub fn try_acquire_existing_shared_or_missing_blocking(path: &Path) -> HostResult<ExistingTryLock> {
     match acquire_existing_result_blocking(path, LockMode::TryShared)? {
         Some(LockAcquire::Acquired(lock)) => Ok(ExistingTryLock::Acquired(lock)),
         Some(LockAcquire::Busy) => Ok(ExistingTryLock::Busy),
@@ -433,12 +418,12 @@ mod tests {
         std::fs::metadata(path).unwrap().permissions().mode() & 0o777
     }
 
-    fn replace_lock_path(path: &Path) -> RunnerResult<()> {
+    fn replace_lock_path(path: &Path) -> HostResult<()> {
         std::fs::remove_file(path).map_err(|e| {
-            RunnerError::Internal(format!("remove replaced lock {}: {e}", path.display()))
+            HostError::Internal(format!("remove replaced lock {}: {e}", path.display()))
         })?;
         std::fs::write(path, b"replacement").map_err(|e| {
-            RunnerError::Internal(format!("write replaced lock {}: {e}", path.display()))
+            HostError::Internal(format!("write replaced lock {}: {e}", path.display()))
         })
     }
 

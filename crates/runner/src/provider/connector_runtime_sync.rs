@@ -3115,8 +3115,7 @@ mod tests {
         let run_id = RunId::from(uuid::Uuid::nil());
         let harness = ConnectorRuntimeSyncHarness::new(&server, run_id).await;
         mock_publication_response(&server, run_id, terminal);
-        let mut gate =
-            crate::host_file::atomic_write_test::AtomicRenameGate::new(&harness.registry_path);
+        let mut gate = crate::proxy::RegistryWriteGate::new(&harness.registry_path);
         let caller = if cancel_caller {
             let core = harness.handle.core.clone();
             Some(tokio::spawn(async move {
@@ -3152,10 +3151,10 @@ mod tests {
         }
 
         let lock_path = harness._dir.path().join("registry.lock");
-        let lock = crate::lock::try_acquire_or_busy(lock_path.clone())
+        let lock = runner_host::lock::try_acquire_or_busy(lock_path.clone())
             .await
             .unwrap();
-        let publication_holds_lock = matches!(lock, crate::lock::TryLock::Busy);
+        let publication_holds_lock = matches!(lock, runner_host::lock::TryLock::Busy);
         drop(lock);
         let registry = ProxyRegistryHandle::new(harness.registry_path.clone(), lock_path);
         let unregister = registry.unregister_sandbox(&harness.source_ip);
@@ -3261,9 +3260,11 @@ mod tests {
             let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
             assert_eq!(request["method"], "registry.apply");
             let committed = tokio::fs::read(&registry_path).await.unwrap();
-            let lock = crate::lock::try_acquire_or_busy(lock_path).await.unwrap();
+            let lock = runner_host::lock::try_acquire_or_busy(lock_path)
+                .await
+                .unwrap();
             assert!(
-                matches!(lock, crate::lock::TryLock::Acquired(_)),
+                matches!(lock, runner_host::lock::TryLock::Acquired(_)),
                 "receipt wait must release publication ownership"
             );
             drop(lock);
@@ -3309,7 +3310,7 @@ mod tests {
             let (_dir, registry_path, lock_path, _) =
                 register_builtin_runtime(&handle.core, run_id, &["slack"], Some(attempt_tx)).await;
             let before = tokio::fs::read(&registry_path).await.unwrap();
-            let guard = crate::lock::acquire(lock_path).await.unwrap();
+            let guard = runner_host::lock::acquire(lock_path).await.unwrap();
             mock_publication_response(&server, run_id, terminal);
             handle
                 .notify_connector_runtime_sync(run_id, builtin_target("slack"))
@@ -3664,7 +3665,7 @@ mod tests {
                 refreshes: None,
             })
             .await;
-        let registry_guard = crate::lock::acquire(lock_path)
+        let registry_guard = runner_host::lock::acquire(lock_path)
             .await
             .expect("registry lock should be acquired");
 
@@ -4486,7 +4487,7 @@ mod tests {
                     ],
                 }));
         });
-        let registry_guard = crate::lock::acquire(lock_path)
+        let registry_guard = runner_host::lock::acquire(lock_path)
             .await
             .expect("registry lock should be acquired");
         let sync_task = tokio::spawn({
@@ -5411,7 +5412,7 @@ mod tests {
                 .try_send(sync_request(run_id, "slack"))
                 .expect("runtime sync queue should accept request");
         }
-        let lock_guard = crate::lock::acquire(lock_path)
+        let lock_guard = runner_host::lock::acquire(lock_path)
             .await
             .expect("registry lock should be acquired");
         let policy_before = tokio::fs::read_to_string(&registry_path)
@@ -5700,7 +5701,7 @@ mod tests {
         let policy_before = tokio::fs::read_to_string(&registry_path)
             .await
             .expect("registry should be readable before scheduled sync");
-        let lock_guard = crate::lock::acquire(lock_path)
+        let lock_guard = runner_host::lock::acquire(lock_path)
             .await
             .expect("registry lock should be acquired");
 

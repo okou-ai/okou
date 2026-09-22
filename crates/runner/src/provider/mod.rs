@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use crate::active_input::ActiveInputSource;
 use crate::error::RunnerResult;
-use crate::runner_process_identity::RunnerProcessIdentity;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, ExecutionContext, HeartbeatState};
 

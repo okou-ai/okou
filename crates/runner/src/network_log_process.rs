@@ -1,9 +1,9 @@
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, warn};
 
-use crate::child_cleanup::kill_and_reap_child_on_drop;
 use crate::error::{RunnerError, RunnerResult};
 use crate::network_log_drain::{DrainableLineReaderExit, NetworkLogDrainProducer};
+use runner_host::child_cleanup::kill_and_reap_child_on_drop;
 
 /// Owns the common post-spawn lifecycle of a required network-log process.
 pub(crate) struct NetworkLogProcess {
@@ -13,7 +13,7 @@ pub(crate) struct NetworkLogProcess {
     child: Option<tokio::process::Child>,
     child_cleanup: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
     #[cfg(test)]
-    reap_gate: Option<crate::child_cleanup::ReapGate>,
+    reap_gate: Option<crate::test_fixtures::ReapGate>,
     drain: NetworkLogDrainProducer,
 }
 
@@ -58,14 +58,23 @@ impl NetworkLogProcess {
             return;
         };
         let pid = child.id();
-        let reaper = crate::child_cleanup::ChildReaper::new(self.child_label, child);
+        let reaper = runner_host::child_cleanup::ChildReaper::new(self.child_label, child);
         #[cfg(test)]
-        let reaper = reaper.with_gate(self.reap_gate.take());
-        self.child_cleanup = Some(tokio::spawn(reaper.reap().instrument(tracing::info_span!(
-            "network_log_child_cleanup",
-            component = self.child_label,
-            pid
-        ))));
+        let gate = self.reap_gate.take();
+        self.child_cleanup = Some(tokio::spawn(
+            async move {
+                #[cfg(test)]
+                if let Some(gate) = gate {
+                    gate.wait().await;
+                }
+                reaper.reap().await
+            }
+            .instrument(tracing::info_span!(
+                "network_log_child_cleanup",
+                component = self.child_label,
+                pid
+            )),
+        ));
     }
 
     /// Cancel the monitor task and wait for the child and task to finish.
@@ -142,7 +151,7 @@ impl NetworkLogProcess {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_reap_gate(&mut self, gate: crate::child_cleanup::ReapGate) {
+    pub(crate) fn set_reap_gate(&mut self, gate: crate::test_fixtures::ReapGate) {
         self.reap_gate = Some(gate);
     }
 
@@ -203,7 +212,7 @@ impl Drop for NetworkLogProcess {
 #[cfg(target_os = "linux")]
 mod tests {
     use super::*;
-    use crate::process::read_process_stat;
+    use runner_host::process::read_process_stat;
     use std::time::Duration;
 
     #[tokio::test]

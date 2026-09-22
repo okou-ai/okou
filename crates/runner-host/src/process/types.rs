@@ -20,7 +20,7 @@ pub struct ProcfsProcessGeneration {
 }
 
 impl ProcessStat {
-    pub(crate) fn procfs_generation(&self) -> ProcfsProcessGeneration {
+    pub fn procfs_generation(&self) -> ProcfsProcessGeneration {
         ProcfsProcessGeneration {
             pgid: self.pgid,
             starttime: self.starttime,
@@ -33,7 +33,7 @@ impl ProcessStat {
 /// `/proc/<pid>/stat` can briefly expose terminal states before the proc entry
 /// disappears. Treat those as already exited so callers do not resolve or
 /// signal a stale process identity.
-pub(crate) fn process_stat_is_live(stat: &ProcessStat) -> bool {
+pub fn process_stat_is_live(stat: &ProcessStat) -> bool {
     !matches!(stat.state, 'Z' | 'X' | 'x')
 }
 
@@ -51,7 +51,7 @@ pub struct FirecrackerProcessInfo {
 }
 
 impl FirecrackerProcessInfo {
-    pub(crate) fn workspace_identity_incomplete(&self) -> bool {
+    pub fn workspace_identity_incomplete(&self) -> bool {
         self.base_dir.is_none()
     }
 }
@@ -79,8 +79,8 @@ pub struct DiscoveredProcesses {
 }
 
 /// Process discovery plus Firecracker cmdline-scan completeness.
-pub(crate) struct ProcessDiscovery {
-    pub(crate) processes: DiscoveredProcesses,
+pub struct ProcessDiscovery {
+    pub processes: DiscoveredProcesses,
     /// Whether `/proc` traversal and per-process classification left no
     /// uncertainty that callers must treat as a potentially undiscovered live
     /// Firecracker.
@@ -90,5 +90,5 @@ pub(crate) struct ProcessDiscovery {
     /// unreadable or unparseable live Firecracker cmdlines, and unavailable or
     /// malformed stat facts that cannot rule one out make this false. This is
     /// not a completeness guarantee for arbitrary process argvs.
-    pub(crate) proc_scan_complete: bool,
+    pub proc_scan_complete: bool,
 }

@@ -4,8 +4,8 @@ use std::path::Path;
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::live_runner_instances::LiveRunnerInstance;
-use crate::paths::HomePaths;
 use crate::status_file::{self, StatusActiveRunsOnly, StatusFileReadError};
+use runner_host::paths::HomePaths;
 
 /// Read `{base_dir}/status.json` and extract `(run_id, sandbox_id)` for
 /// every active run. Returns `None` if the file is missing or unparseable

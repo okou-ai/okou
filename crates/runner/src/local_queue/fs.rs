@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use nix::fcntl::{Flock, FlockArg};
 
-use crate::host_file::{self, DirMode};
+use runner_host::host_file::{self, DirMode};
 
 /// The group directory outlives individual runs. Lock its existing inode so
 /// cleanup cannot unlink a lock file while a publisher is waiting on it.

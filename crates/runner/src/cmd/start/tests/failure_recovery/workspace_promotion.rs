@@ -3,8 +3,8 @@ use super::super::support::{
     minimal_context, mock_run_config_with_overrides, push_job, shutdown, test_profiles,
     wait_budget_count, wait_cancel_handle,
 };
-use crate::paths::RunnerPaths;
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_host::paths::RunnerPaths;
 use sandbox::{ExecResult, SandboxError, SandboxOperation, SandboxOperationReason};
 use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 use tracing::Level;

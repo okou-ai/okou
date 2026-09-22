@@ -356,7 +356,7 @@ async fn assert_archive_overlaps_create(case: ArchiveOverlapCase) {
             .unwrap();
         if decoded_prefix {
             drop(
-                crate::lock::acquire(config.home.storage_lock(&name, "v1"))
+                runner_host::lock::acquire(config.home.storage_lock(&name, "v1"))
                     .await
                     .unwrap(),
             );
@@ -480,7 +480,7 @@ async fn fresh_decoded_delivery_pins_before_prefetch_and_retires_only_after_spaw
         std::fs::create_dir_all(&archive_dir).unwrap();
         std::fs::write(&archive, &body).unwrap();
         drop(
-            crate::lock::acquire(config.home.storage_lock("decoded", "v1"))
+            runner_host::lock::acquire(config.home.storage_lock("decoded", "v1"))
                 .await
                 .unwrap(),
         );
@@ -495,8 +495,11 @@ async fn fresh_decoded_delivery_pins_before_prefetch_and_retires_only_after_spaw
         let replacement = config
             .home
             .storages_dir()
-            .join(crate::paths::short_digest("decoded"))
-            .join(format!("decoded-v1-{}", crate::paths::short_digest("v1")));
+            .join(runner_host::paths::short_digest("decoded"))
+            .join(format!(
+                "decoded-v1-{}",
+                runner_host::paths::short_digest("v1")
+            ));
         let mut ctx = minimal_context();
         let mut storage = api_storage("decoded", "/data", "v1", &server.url("/decoded.tar.gz"));
         storage.archive_size = Some(body.len() as u64);
@@ -576,7 +579,7 @@ async fn cancelled_storage_preparation_releases_pinned_files_without_retirement(
     std::fs::create_dir_all(&archive_dir).unwrap();
     std::fs::write(&archive, storage_archive(b"cancelled files")).unwrap();
     drop(
-        crate::lock::acquire(config.home.storage_lock("decoded", "v1"))
+        runner_host::lock::acquire(config.home.storage_lock("decoded", "v1"))
             .await
             .unwrap(),
     );

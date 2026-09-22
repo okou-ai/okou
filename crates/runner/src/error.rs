@@ -40,6 +40,16 @@ pub enum RunnerError {
     ActiveJobs(Box<ActiveJobsError>),
 }
 
+impl From<runner_host::HostError> for RunnerError {
+    fn from(error: runner_host::HostError) -> Self {
+        match error {
+            runner_host::HostError::Config(message) => Self::Config(message),
+            runner_host::HostError::Internal(message) => Self::Internal(message),
+            runner_host::HostError::Io(error) => Self::Io(error),
+        }
+    }
+}
+
 /// Error returned by `service stop` / `service uninstall` when the target
 /// runner has active jobs and the user did not pass `--force`.
 #[derive(Debug)]

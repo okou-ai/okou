@@ -11,13 +11,13 @@ use std::time::Duration;
 use crate::config::RunnerConfig;
 use crate::error::{RunnerError, RunnerResult};
 use crate::live_runner_instances::LiveRunnerInstance;
-use crate::paths::HomePaths;
-use crate::process;
 use crate::status_file::{self, StatusForDoctor};
 use chrono::{DateTime, Utc};
 use clap::Args;
 use futures_util::{StreamExt, stream};
 use reqwest::Client;
+use runner_host::paths::HomePaths;
+use runner_host::process;
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -3580,9 +3580,9 @@ printf '%s\n' \
             ("malformed json", StatusInput::Contents("{".into())),
             (
                 "oversized",
-                StatusInput::Contents(
-                    "x".repeat(crate::private_fs::PRIVATE_STATUS_FILE_READ_MAX_BYTES as usize + 1),
-                ),
+                StatusInput::Contents("x".repeat(
+                    runner_host::private_fs::PRIVATE_STATUS_FILE_READ_MAX_BYTES as usize + 1,
+                )),
             ),
             (
                 "missing required field",
@@ -3827,7 +3827,7 @@ printf '%s\n' \
             .into_iter()
             .next()
             .unwrap();
-        crate::state_file::write_private_atomic(
+        runner_host::state_file::write_private_atomic(
             &home.live_runner_instance_record_path(runner.pid, runner.starttime),
             b"{",
         )

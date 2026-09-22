@@ -1,6 +1,6 @@
 use crate::cmd::service::RunnerServiceUnit;
 use crate::error::RunnerResult;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::filesystem::{next_entry_warn_or_stop, read_dir_or_missing};
 use super::lock_file::{LockProbe, probe_lock, remove_unused_lock_after_probe};
@@ -66,7 +66,7 @@ mod tests {
 
     use super::*;
     use crate::cmd::gc::test_support::test_home;
-    use crate::lock;
+    use runner_host::lock;
 
     #[tokio::test]
     async fn gc_orphaned_locks_preserves_only_current_service_locks() {

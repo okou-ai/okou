@@ -4,7 +4,7 @@ use super::super::{MAX_LOCAL_SUBMIT_TIMEOUT_SECS, SubmitArgs, SubmitPlan, run_su
 use super::support::{run_submit_and_write_success, submit_args_for_test};
 use crate::error::RunnerError;
 use crate::local_queue;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 fn prompt_len_for_serialized_job_size(root: &std::path::Path, target_bytes: usize) -> usize {
     let mut args = submit_args_for_test();

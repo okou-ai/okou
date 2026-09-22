@@ -1,9 +1,9 @@
 //! Persistent extracted files with bounded in-flight memory and worker ownership.
 
-use crate::paths::HomePaths;
 #[cfg(test)]
 use bytes::Bytes;
 use guest_contracts::storage_files::{self, StorageFile};
+use runner_host::paths::HomePaths;
 use std::io::{self, Read};
 use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -243,13 +243,14 @@ impl DecodedCache {
             {
                 return Ok(());
             }
-            let source_lock = match crate::lock::try_acquire_existing_or_missing_blocking(
+            let source_lock = match runner_host::lock::try_acquire_existing_or_missing_blocking(
                 &inner.home.storage_lock(&name, &version),
             )
             .map_err(io::Error::other)?
             {
-                crate::lock::ExistingTryLock::Acquired(lock) => lock,
-                crate::lock::ExistingTryLock::Busy | crate::lock::ExistingTryLock::Missing => {
+                runner_host::lock::ExistingTryLock::Acquired(lock) => lock,
+                runner_host::lock::ExistingTryLock::Busy
+                | runner_host::lock::ExistingTryLock::Missing => {
                     return Ok(());
                 }
             };
@@ -798,7 +799,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(root.path().to_owned());
         drop(
-            crate::lock::acquire(home.storage_lock("name", "v1"))
+            runner_host::lock::acquire(home.storage_lock("name", "v1"))
                 .await
                 .unwrap(),
         );

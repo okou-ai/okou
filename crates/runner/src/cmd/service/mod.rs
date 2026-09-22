@@ -2,11 +2,13 @@ use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
+#[cfg(test)]
+use crate::config::RootfsSnapshotPathsExt;
 use crate::error::{RunnerError, RunnerResult};
 use crate::live_runner_instances::{self, LiveRunnerInstance};
-use crate::paths::{HomePaths, touch_mtime};
 use crate::status_file::{self, StatusFileReadError, StatusForReadiness};
 use clap::{Args, Subcommand};
+use runner_host::paths::{HomePaths, touch_mtime};
 use sha2::{Digest, Sha256};
 use tokio::time::{Duration as TokioDuration, Instant as TokioInstant};
 use tracing::{info, warn};
@@ -171,7 +173,7 @@ async fn acquire_service_lock(
     unit: &RunnerServiceUnit,
     home: &HomePaths,
 ) -> RunnerResult<nix::fcntl::Flock<std::fs::File>> {
-    crate::lock::acquire(unit.lock_path(home)).await
+    Ok(runner_host::lock::acquire(unit.lock_path(home)).await?)
 }
 
 struct ServiceActivationConfig {
@@ -296,15 +298,16 @@ async fn prepare_service_activation_config(
         crate::config::lock_and_validate_runner_image_artifacts(&runner_config.profiles, home)
             .await?;
 
-    crate::private_fs::ensure_private_dir(&runner_config.base_dir).await?;
+    runner_host::private_fs::ensure_private_dir(&runner_config.base_dir).await?;
     let snapshot_dir = snapshot_path.parent().ok_or_else(|| {
         RunnerError::Internal(format!(
             "activation config snapshot path has no parent: {}",
             snapshot_path.display()
         ))
     })?;
-    crate::private_fs::ensure_private_dir(snapshot_dir).await?;
-    crate::private_fs::write_private_file(&snapshot_path, snapshot_content.as_bytes()).await?;
+    runner_host::private_fs::ensure_private_dir(snapshot_dir).await?;
+    runner_host::private_fs::write_private_file(&snapshot_path, snapshot_content.as_bytes())
+        .await?;
 
     Ok(ServiceActivationConfig {
         snapshot_path,
@@ -870,11 +873,11 @@ mod tests {
     use clap::Parser;
 
     use super::*;
-    use crate::paths::RootfsPaths;
-    use crate::process::read_process_stat;
     use crate::test_fixtures::ignored_child::{
         ignored_child_test_env_guard_enabled, run_ignored_child_test,
     };
+    use runner_host::paths::RootfsPaths;
+    use runner_host::process::read_process_stat;
 
     const TEST_ROOTFS_HASH: &str =
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -1251,7 +1254,7 @@ profiles:
     }
 
     async fn assert_artifact_locks_held(home: &HomePaths) {
-        let error = crate::lock::try_acquire(home.rootfs_lock(TEST_ROOTFS_HASH))
+        let error = runner_host::lock::try_acquire(home.rootfs_lock(TEST_ROOTFS_HASH))
             .await
             .unwrap_err();
         assert!(
@@ -1259,7 +1262,7 @@ profiles:
             "unexpected rootfs lock error: {error}"
         );
 
-        let snapshot_err = crate::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
+        let snapshot_err = runner_host::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
             .await
             .unwrap_err();
         assert!(
@@ -1270,12 +1273,12 @@ profiles:
 
     async fn assert_artifact_locks_released(home: &HomePaths) {
         drop(
-            crate::lock::try_acquire(home.rootfs_lock(TEST_ROOTFS_HASH))
+            runner_host::lock::try_acquire(home.rootfs_lock(TEST_ROOTFS_HASH))
                 .await
                 .unwrap(),
         );
 
-        let snapshot_lock = crate::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
+        let snapshot_lock = runner_host::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
             .await
             .unwrap();
         drop(snapshot_lock);

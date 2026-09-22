@@ -4,7 +4,7 @@ use rustix::time::{ClockId, clock_gettime};
 use tokio::process::Command;
 use tracing::warn;
 
-use crate::bounded_command::{
+use runner_host::bounded_command::{
     BoundedCommandError, BoundedCommandOutcome, CommandOutputPolicy, run_output_bounded,
 };
 

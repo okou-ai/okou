@@ -415,7 +415,7 @@ the per-drive split.
 
 ## Implementation Sources
 
-- [`crates/runner/src/host_env.rs`](../crates/runner/src/host_env.rs) defines
+- [`crates/runner-host/src/host_env.rs`](../crates/runner-host/src/host_env.rs) defines
   the file path, allowed keys, and file parser.
 - [`crates/runner/src/runtime_overrides.rs`](../crates/runner/src/runtime_overrides.rs)
   resolves the concurrency-factor override.

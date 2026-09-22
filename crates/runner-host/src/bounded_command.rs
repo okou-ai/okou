@@ -18,13 +18,13 @@ const OUTPUT_READ_CHUNK_BYTES: usize = 8 * 1024;
 const OUTPUT_TRUNCATION_MARKER: &[u8] = b"[output truncated]";
 
 #[derive(Debug)]
-pub(crate) enum BoundedCommandOutcome<T> {
+pub enum BoundedCommandOutcome<T> {
     Exited(T),
     TimedOut,
 }
 
 #[derive(Debug)]
-pub(crate) enum BoundedCommandError {
+pub enum BoundedCommandError {
     Spawn(io::Error),
     Wait(io::Error),
     Lifecycle(String),
@@ -32,7 +32,7 @@ pub(crate) enum BoundedCommandError {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct CommandOutputPolicy {
+pub struct CommandOutputPolicy {
     stdout: StdoutOutputPolicy,
     diagnostic_stderr_max_bytes: usize,
 }
@@ -44,14 +44,14 @@ enum StdoutOutputPolicy {
 }
 
 impl CommandOutputPolicy {
-    pub(crate) const fn diagnostic_stderr() -> Self {
+    pub const fn diagnostic_stderr() -> Self {
         Self {
             stdout: StdoutOutputPolicy::Discard,
             diagnostic_stderr_max_bytes: DEFAULT_DIAGNOSTIC_OUTPUT_LIMIT_BYTES,
         }
     }
 
-    pub(crate) const fn semantic_stdout() -> Self {
+    pub const fn semantic_stdout() -> Self {
         Self {
             stdout: StdoutOutputPolicy::Semantic {
                 max_bytes: DEFAULT_SEMANTIC_OUTPUT_LIMIT_BYTES,
@@ -61,7 +61,7 @@ impl CommandOutputPolicy {
     }
 }
 
-pub(crate) async fn run_bounded(
+pub async fn run_bounded(
     mut command: Command,
     program: &str,
     timeout: Duration,
@@ -85,7 +85,7 @@ pub(crate) async fn run_bounded(
     }
 }
 
-pub(crate) async fn run_output_bounded(
+pub async fn run_output_bounded(
     mut command: Command,
     program: &str,
     output_policy: CommandOutputPolicy,

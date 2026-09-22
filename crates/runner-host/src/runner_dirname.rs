@@ -21,38 +21,38 @@
 //!
 //! Neither input has a matching server-side schema; both are runner-local.
 
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{HostError, HostResult};
 
 /// Maximum byte length for a runner instance name.
 ///
 /// The limit is deliberately below common Linux `NAME_MAX` values after
 /// adding runner/service prefixes and staging suffixes.
-pub(crate) const MAX_NAME_BYTES: usize = 128;
+pub const MAX_NAME_BYTES: usize = 128;
 const INVALID_NAME_PREVIEW_CHARS: usize = 64;
 
-/// Validate `name` and return a `RunnerError::Config` with a uniform
+/// Validate `name` and return a `HostError::Config` with a uniform
 /// message if it fails. Use this at every callsite that takes a runner
 /// directory name from the user (currently only the `--runner-dirname`
 /// flag of `runner config`) so the error wording stays consistent.
-pub fn validate_or_err(name: &str) -> RunnerResult<()> {
+pub fn validate_or_err(name: &str) -> HostResult<()> {
     if !validate_name(name) {
         let diagnostic = invalid_name_diagnostic(name);
         let rules = validation_rules();
-        return Err(RunnerError::Config(format!(
+        return Err(HostError::Config(format!(
             "invalid runner-dirname: {diagnostic} ({rules})"
         )));
     }
     Ok(())
 }
 
-pub(crate) fn validation_rules() -> String {
+pub fn validation_rules() -> String {
     format!(
         "must be a non-empty single path segment of at most {MAX_NAME_BYTES} bytes, \
          lowercase alphanumeric, hyphens, and dots; cannot start with `.` or `-`"
     )
 }
 
-pub(crate) fn invalid_name_diagnostic(name: &str) -> String {
+pub fn invalid_name_diagnostic(name: &str) -> String {
     let mut preview = String::new();
     let mut chars = name.chars();
     for _ in 0..INVALID_NAME_PREVIEW_CHARS {
@@ -83,7 +83,7 @@ pub(crate) fn invalid_name_diagnostic(name: &str) -> String {
 /// name to a single path segment regardless of the host's separator
 /// conventions. The dot allowance exists for production semver dirnames
 /// produced by `ansible/playbooks/build-runner.yml` (e.g. `v0.3.0`).
-pub(crate) fn validate_name(name: &str) -> bool {
+pub fn validate_name(name: &str) -> bool {
     if name.is_empty()
         || name.len() > MAX_NAME_BYTES
         || name.starts_with('.')
