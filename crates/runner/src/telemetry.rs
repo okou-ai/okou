@@ -578,7 +578,7 @@ impl JobTelemetry {
     ) {
         let payload = serde_json::json!({
             "runId": self.run_id.to_string(), "sandboxId": sandbox_id,
-            "oomEvidence": evidence.telemetry_evidence(),
+            "oomEvidence": evidence,
         });
         let send = async {
             let mut response = match self
@@ -1806,6 +1806,46 @@ mod tests {
         assert!(request.contains(r#""action_type":"storage_cache_background_fill_filled""#));
         assert!(request.contains(r#""duration_ms":42"#));
         assert!(request.contains(r#""success":true"#));
+    }
+
+    #[tokio::test]
+    async fn oom_evidence_upload_payload_is_unchanged_by_the_removed_progress_field() {
+        // The v1 payload never carried `runtime_progress_at`: the field was
+        // `skip_serializing_if = "Option::is_none"` and the upload forced it to
+        // `None` first. An old producer's value must still not reach the API.
+        let legacy: guest_contracts::oom_evidence::OomEvidence =
+            serde_json::from_str(include_str!(
+                "../../guest-contracts/tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json"
+            ))
+            .unwrap();
+        let expected = serde_json::to_string(
+            &serde_json::from_str::<guest_contracts::oom_evidence::OomEvidence>(include_str!(
+                "../../guest-contracts/tests/fixtures/contained-tool-oom.json"
+            ))
+            .unwrap(),
+        )
+        .unwrap();
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true,"oomEvidenceVersion":1}"#,
+        ))])
+        .await;
+        let telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::from(uuid::Uuid::nil()),
+            "tok".to_string(),
+            None,
+        );
+
+        telemetry.upload_oom_evidence(&legacy, "sandbox").await;
+
+        let requests = server.assert_finished_with_requests().await;
+        assert!(!requests[0].contains("runtime_progress_at"));
+        assert!(
+            requests[0].contains(&format!(r#""oomEvidence":{expected}"#)),
+            "request={}",
+            requests[0]
+        );
     }
 
     #[tokio::test]

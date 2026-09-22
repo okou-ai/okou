@@ -361,5 +361,6 @@
   ],
   "dropped_incidents": 0,
   "kernel_cursor": 42,
-  "kernel_status": "available"
+  "kernel_status": "available",
+  "runtime_progress_at": 1789527602000
 }

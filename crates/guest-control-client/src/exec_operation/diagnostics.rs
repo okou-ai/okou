@@ -1,6 +1,5 @@
 use std::io;
 
-use guest_contracts::oom_evidence::ContainmentRejection;
 use guest_control_proto::{
     ExecCapturedOutput, ExecLifecyclePolicy, ExecProcessRole, ExecTermination,
 };
@@ -76,7 +75,9 @@ pub(in crate::exec_operation) struct ExecTerminalLogContext<'a> {
     /// The transported evidence proves an OOM decision rather than recording an
     /// inspected-and-empty capture candidate.
     pub(in crate::exec_operation) evidence_has_proof: bool,
-    pub(in crate::exec_operation) contained_tool_oom: bool,
+    /// Retained kernel records name a victim in the agent's own containment
+    /// domain rather than in a separately contained tool leaf.
+    pub(in crate::exec_operation) agent_domain_oom_kill: bool,
     /// A line claimed the evidence prefix but broke its bounds or encoding.
     pub(in crate::exec_operation) evidence_malformed: bool,
     pub(in crate::exec_operation) host_cancel_requested: bool,
@@ -206,32 +207,19 @@ impl ExecOperationDiagnostic {
         let evidence_has_proof = split.has_proof();
         let evidence_malformed = split.malformed_lines > 0;
         let oom_evidence = split.evidence.is_some();
-        // Report which guard refused, including the conditions this caller
-        // applies on top of the evidence itself. An unproven record without a
-        // reason cannot be attributed to a cause.
-        let containment_rejection = if self.process_class != ExecProcessRole::Agent.process_class()
-        {
-            Some(ContainmentRejection::ProcessClassNotAgent)
-        } else if lifecycle != ExecTerminalLogLifecycle::Supervised {
-            Some(ContainmentRejection::LifecycleNotSupervised)
-        } else {
-            match split.evidence.as_ref() {
-                None => Some(ContainmentRejection::EvidenceAbsent),
-                Some(evidence) if evidence.operation_sequence() != Some(self.seq) => {
-                    Some(ContainmentRejection::OperationSequenceMismatch)
-                }
-                Some(evidence) => evidence.containment_rejection(),
-            }
-        };
-        let contained_tool_oom = containment_rejection.is_none();
-        let oom_classification = if contained_tool_oom {
-            "contained_tool_oom"
-        } else {
-            "unproven_containment"
-        };
-        // A plain string keeps the field groupable; `?` formatting would emit
+        let agent_domain_oom_kill = split
+            .evidence
+            .as_ref()
+            .is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill);
+        // The classification names which cgroup the kernel killed, so only a
+        // record whose evidence proves an OOM decision carries one. A plain
+        // string keeps the field groupable; `?` formatting would emit
         // `Some(...)` and break equality matching in the log backend.
-        let oom_unproven_reason = containment_rejection.map_or("", ContainmentRejection::as_str);
+        let oom_classification = match (evidence_has_proof, agent_domain_oom_kill) {
+            (false, _) => "",
+            (true, true) => "agent_oom_kill",
+            (true, false) => "contained_tool_oom",
+        };
         // Parse identity before logging so malformed payload text never becomes
         // an unbounded log field. The owning Runner supplies run_id separately.
         let operation_id = split
@@ -264,7 +252,7 @@ impl ExecOperationDiagnostic {
             stream_overflowed,
             actionable_diagnostic: diagnostic_present,
             evidence_has_proof,
-            contained_tool_oom,
+            agent_domain_oom_kill,
             evidence_malformed,
             host_cancel_requested,
         }) else {
@@ -292,7 +280,6 @@ impl ExecOperationDiagnostic {
                     oom_evidence,
                     operation_id = ?operation_id,
                     oom_classification,
-                    oom_unproven_reason,
                     oom_evidence_proof = evidence_has_proof,
                     oom_evidence_malformed = evidence_malformed,
                     oom_incidents,
@@ -414,23 +401,21 @@ pub(in crate::exec_operation) fn exec_terminal_log_decision(
         });
     }
     if context.evidence_has_proof {
-        // A clean process exit permits this informational observation; it does
-        // not assert run success. Guest Agent/Runner retain semantic failures.
-        let contained = context.contained_tool_oom
-            && matches!(
-                context.termination,
-                ExecTermination::Exited { exit_code: 0 }
-            );
+        // The kernel record names which cgroup it killed. A kill confined to a
+        // tool leaf is an informational observation; it does not assert run
+        // success, and Guest Agent/Runner retain semantic failures. The process
+        // exit code says nothing about the kernel's choice, so it takes no part
+        // in this decision.
         return Some(ExecTerminalLogDecision {
-            severity: if contained {
-                ExecTerminalLogSeverity::Info
-            } else {
+            severity: if context.agent_domain_oom_kill {
                 ExecTerminalLogSeverity::Warn
-            },
-            reason: if contained {
-                ExecTerminalLogReason::ContainedToolOom
             } else {
+                ExecTerminalLogSeverity::Info
+            },
+            reason: if context.agent_domain_oom_kill {
                 ExecTerminalLogReason::OomEvidence
+            } else {
+                ExecTerminalLogReason::ContainedToolOom
             },
         });
     }
