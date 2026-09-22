@@ -214,7 +214,7 @@ async function generateStructuredVoiceResponse<T>(
   };
   return isVertexVoiceModel(args.model)
     ? await generateVertexVoice(
-        { ...args, model: args.model },
+        { ...args, model: args.model, diagnosticOwner: "segment" },
         parseResponse,
         signal,
       )

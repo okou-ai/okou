@@ -967,6 +967,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       previous?: string;
       status?: 204 | 503;
       expected?: Readonly<Record<string, unknown>>;
+      absent?: readonly string[];
       reported?: boolean;
       privateCorrelation?: boolean;
     }[] = [
@@ -1101,13 +1102,112 @@ describe("POST /api/voice-io/transcribe/segment", () => {
         expected: { stage: "transcription", reason: "unknown" },
       },
       {
-        name: "Google owns rejected output",
+        name: "Google truncation with bounded provider metadata",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return HttpResponse.json({
+            modelVersion: "gemini-3.1-flash-lite-001",
+            usageMetadata: {
+              promptTokenCount: 12_345,
+              candidatesTokenCount: 65_536,
+              thoughtsTokenCount: 1234,
+              toolUsePromptTokenCount: 5,
+              cachedContentTokenCount: 678,
+              totalTokenCount: 79_120,
+            },
+            candidates: [
+              {
+                finishReason: "MAX_TOKENS",
+                content: {
+                  parts: [
+                    { text: secret },
+                    { text: `thought-${secret}`, thought: true },
+                  ],
+                },
+              },
+            ],
+          });
+        },
+        previous: secret,
+        expected: {
+          stage: "finalization",
+          reason: "output_truncated",
+          location: "us",
+          operation: "voice_transcript_and_polish",
+          previous_transcript_chars: secret.length,
+          prompt_tokens: 12_345,
+          candidate_tokens: 65_536,
+          thought_tokens: 1234,
+          tool_use_prompt_tokens: 5,
+          cached_content_tokens: 678,
+          total_tokens: 79_120,
+          candidate_chars: secret.length,
+          thought_chars: `thought-${secret}`.length,
+          provider_model_version: "gemini-3.1-flash-lite-001",
+        },
+      },
+      {
+        name: "Google omits malformed optional diagnostics independently",
+        model: DEFAULT_VOICE_INPUT_MODEL,
+        url: VERTEX_VOICE_URL,
+        response: () => {
+          return HttpResponse.json({
+            modelVersion: `private model ${secret}`,
+            usageMetadata: {
+              promptTokenCount: 12,
+              candidatesTokenCount: "65536",
+              thoughtsTokenCount: -1,
+              toolUsePromptTokenCount: 1.5,
+              cachedContentTokenCount: Number.MAX_SAFE_INTEGER + 1,
+              totalTokenCount: 34,
+            },
+            candidates: [
+              {
+                finishReason: "MAX_TOKENS",
+                content: { parts: [{ text: secret }] },
+              },
+            ],
+          });
+        },
+        expected: {
+          stage: "finalization",
+          reason: "output_truncated",
+          prompt_tokens: 12,
+          total_tokens: 34,
+          candidate_chars: secret.length,
+          thought_chars: 0,
+        },
+        absent: [
+          "candidate_tokens",
+          "thought_tokens",
+          "tool_use_prompt_tokens",
+          "cached_content_tokens",
+          "provider_model_version",
+        ],
+      },
+      {
+        name: "Google omits missing optional diagnostics",
         model: DEFAULT_VOICE_INPUT_MODEL,
         url: VERTEX_VOICE_URL,
         response: () => {
           return vertexVoiceResponse(secret);
         },
-        reported: true,
+        expected: {
+          stage: "finalization",
+          reason: "invalid_output",
+          candidate_chars: secret.length,
+          thought_chars: 0,
+        },
+        absent: [
+          "prompt_tokens",
+          "candidate_tokens",
+          "thought_tokens",
+          "tool_use_prompt_tokens",
+          "cached_content_tokens",
+          "total_tokens",
+          "provider_model_version",
+        ],
       },
       {
         name: "OpenRouter owns HTTP rejection",
@@ -1247,6 +1347,9 @@ describe("POST /api/voice-io/transcribe/segment", () => {
                 deployment_commit_sha: deployment,
               }),
         });
+        for (const field of scenario.absent ?? []) {
+          expect(records[0], scenario.name).not.toHaveProperty(field);
+        }
         if (scenario.privateCorrelation) {
           expect(records[0]).not.toHaveProperty("x_client_request_id");
           expect(records[0]).not.toHaveProperty("deployment_commit_sha");
@@ -1281,13 +1384,15 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       await voiceActor();
       server.use(
         http.post(VERTEX_VOICE_URL, () => {
-          return vertexVoiceResponse(
-            JSON.stringify({
-              transcript: "[NO_SPEECH]",
-              polishedText: "[NO_SPEECH]",
-              language: "en",
-            }),
-          );
+          return HttpResponse.json({
+            usageMetadata: { totalTokenCount: 65_536 },
+            candidates: [
+              {
+                finishReason: "MAX_TOKENS",
+                content: { parts: [{ text: "private partial output" }] },
+              },
+            ],
+          });
         }),
       );
       context.mocks.console.log.mockImplementation((message) => {

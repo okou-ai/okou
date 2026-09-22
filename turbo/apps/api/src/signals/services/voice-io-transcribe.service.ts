@@ -34,7 +34,11 @@ import {
 } from "../external/voice-input-transcription";
 import { settle } from "../utils";
 import { GcpLlmAuthError, gcpLlmConfiguration } from "../external/gcp-llm-auth";
-import { isVertexVoiceModel, VertexVoiceError } from "../external/vertex-voice";
+import {
+  isVertexVoiceModel,
+  vertexVoiceDiagnosticFields,
+  VertexVoiceError,
+} from "../external/vertex-voice";
 import type { VoiceAudio } from "../external/voice-completion-types";
 import { VoiceProviderUnavailableError } from "../external/voice-provider-request";
 import { VoiceResponseError } from "../external/voice-response-error";
@@ -93,6 +97,31 @@ function voiceModelFields(model: VoiceDiagnosticModel | undefined) {
   };
 }
 
+function hasExistingVoiceFailureOwner(error: unknown): boolean {
+  return (
+    error instanceof GcpLlmAuthError ||
+    (error instanceof VertexVoiceError &&
+      error.diagnosticOwner === "provider") ||
+    error instanceof VoiceProviderUnavailableError ||
+    error instanceof OpenRouterRequestError ||
+    (error instanceof VoiceResponseError &&
+      error.diagnosticOwner === "provider")
+  );
+}
+
+function voiceFailureReason(error: unknown): string {
+  return error instanceof VoiceResponseError ||
+    error instanceof VertexVoiceError
+    ? error.reason
+    : "unknown";
+}
+
+function vertexFailureFields(error: unknown) {
+  return error instanceof VertexVoiceError
+    ? vertexVoiceDiagnosticFields(error)
+    : {};
+}
+
 async function emitVoiceFailure(
   input: VoiceDraftTranscriptionInput,
   attempt: VoiceTranscriptionAttempt,
@@ -101,14 +130,7 @@ async function emitVoiceFailure(
   result?: VoiceIoTranscribeSegmentResponse,
 ): Promise<void> {
   // These boundaries already own the terminal record for their error.
-  if (
-    error instanceof GcpLlmAuthError ||
-    error instanceof VertexVoiceError ||
-    error instanceof VoiceProviderUnavailableError ||
-    error instanceof OpenRouterRequestError ||
-    (error instanceof VoiceResponseError &&
-      error.diagnosticOwner === "provider")
-  ) {
+  if (hasExistingVoiceFailureOwner(error)) {
     return;
   }
   const span = trace.getActiveSpan()?.spanContext();
@@ -121,8 +143,9 @@ async function emitVoiceFailure(
     L.warn("Voice segment transcription failed", {
       type: "voice_transcription_failure",
       stage: attempt.stage,
-      reason: error instanceof VoiceResponseError ? error.reason : "unknown",
+      reason: voiceFailureReason(error),
       ...voiceModelFields(attempt.model),
+      ...vertexFailureFields(error),
       input_model: input.model.id,
       final: input.final,
       has_audio: input.files.length > 0,
