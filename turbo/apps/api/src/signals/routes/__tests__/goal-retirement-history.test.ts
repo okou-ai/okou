@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { gunzipSync } from "node:zlib";
 import {
   GetObjectCommand,
@@ -42,6 +43,7 @@ import { projectChatEventRows } from "./helpers/chat-event-test-reader";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   installFakeChatEventR2,
+  readFakeChatEventObject,
   type RecordedChatEventPut,
 } from "./helpers/fake-chat-event-r2";
 
@@ -63,6 +65,30 @@ describe("retired Goal logical history", () => {
       throw new Error("Expected snapshot and instruction storage mocks");
     }
     context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (
+        (command instanceof HeadObjectCommand ||
+          (command instanceof GetObjectCommand && command.input.Range)) &&
+        command.input.Key?.startsWith("chat-events/")
+      ) {
+        const bytes = readFakeChatEventObject(command.input.Key);
+        if (!bytes) {
+          throw new Error("Expected an immutable snapshot object");
+        }
+        const range = command.input.Range
+          ? /^bytes=(\d+)-(\d+)$/u.exec(command.input.Range)
+          : null;
+        const start = range ? Number(range[1]) : 0;
+        const end = range ? Number(range[2]) + 1 : bytes.length;
+        const body = bytes.subarray(start, end);
+        return Promise.resolve({
+          Body: Readable.from([body]),
+          ContentLength: body.length,
+          ContentRange: range
+            ? `bytes ${start}-${end - 1}/${bytes.length}`
+            : undefined,
+          ETag: `"${createHash("sha256").update(bytes).digest("hex")}"`,
+        });
+      }
       if (
         (command instanceof GetObjectCommand ||
           command instanceof HeadObjectCommand ||

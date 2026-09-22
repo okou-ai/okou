@@ -214,7 +214,7 @@ test("The unread filter applies to cached conversations", async () => {
   ]);
   await userEvent.click(fastButton("Open chat list menu"));
   const unreadOnly = queryAllByRoleFast("menuitem", document).find((item) => {
-    return item.textContent?.trim() === "Unread only";
+    return item.textContent?.trim().startsWith("Unread only");
   });
   expect(unreadOnly).toBeDefined();
   await userEvent.click(unreadOnly!);
