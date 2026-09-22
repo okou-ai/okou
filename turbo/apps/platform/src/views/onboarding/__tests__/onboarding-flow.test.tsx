@@ -266,6 +266,24 @@ function buttonByAriaLabel(
   return button;
 }
 
+/**
+ * The empty space of an illustration card's thumbnail strip. The strip scrolls
+ * above the full-card selection button, so the gap reaches that button through
+ * its own label rather than by bubbling; resolving it from the button's id
+ * fails loudly when that association breaks.
+ */
+function thumbnailStripGap(select: HTMLElement): HTMLElement {
+  const card = select.closest("article");
+  if (!card) {
+    throw new Error("Illustration template card not found");
+  }
+  const gap = card.querySelector<HTMLElement>(`label[for="${select.id}"]`);
+  if (!gap) {
+    throw new Error("Illustration thumbnail strip gap not found");
+  }
+  return gap;
+}
+
 function chooseTemplate(
   title: string,
   kind: "presentation" | "illustration" | "video",
@@ -1273,6 +1291,50 @@ test.each([
     );
   },
 );
+
+test("An illustration thumbnail strip gap selects the card it belongs to", async () => {
+  const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
+  const previouslySelected = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
+  mockOnboardingNeeded();
+  await setupPage({
+    context,
+    path: "/onboarding/image-template?choice=images",
+  });
+  await expect(
+    screen.findByRole("heading", {
+      name: "Pick an illustration template to start from",
+    }),
+  ).resolves.toBeInTheDocument();
+  const select = buttonByAriaLabel(
+    `Select ${template.title} illustration template`,
+  );
+  const previousSelect = buttonByAriaLabel(
+    `Select ${previouslySelected.title} illustration template`,
+  );
+  const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
+  const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
+
+  click(previousSelect);
+  click(secondVariant);
+  expect(select).toHaveAttribute("aria-pressed", "false");
+  expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+
+  click(thumbnailStripGap(select));
+
+  expect(select).toHaveAttribute("aria-pressed", "true");
+  expect(previousSelect).toHaveAttribute("aria-pressed", "false");
+  expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+  expect(firstVariant).toHaveAttribute("aria-pressed", "false");
+  expect(pathname()).toBe("/onboarding/image-template");
+
+  click(buttonByText("Continue"));
+  await expect(
+    screen.findByRole("heading", {
+      name: "Select one automation you would like to have a try",
+    }),
+  ).resolves.toBeInTheDocument();
+  expect(new URLSearchParams(search()).get("template")).toBe(template.slug);
+});
 
 test("An illustration template starts the chosen generation run", async () => {
   const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
