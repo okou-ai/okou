@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   chatThreadsContract,
   chatThreadEventsContract,
@@ -181,26 +182,37 @@ test("Agent details that fail to load offer a direct retry", async () => {
   expect(retry).toHaveAttribute("href", `/agents/${ARCHIVED_AGENT_ID}`);
 });
 
-test("A user opens avatar customization from an agent", async () => {
-  await setupTeamPage({
-    context,
-    path: `/agents/${RESEARCH_AGENT_ID}`,
-  });
+test.each(["{Enter}", " "])(
+  "A user opens avatar customization from an agent with %s",
+  async (key) => {
+    const user = userEvent.setup({ delay: null });
+    await setupTeamPage({
+      context,
+      path: `/agents/${RESEARCH_AGENT_ID}`,
+    });
 
-  const agentHeading = await screen.findByRole("heading", {
-    name: "Research Agent",
-  });
-  expect(agentHeading).toBeVisible();
-  const customize = labelledButton("Customize avatar");
-  expect(customize).toBeVisible();
-  click(customize);
+    const agentHeading = await screen.findByRole("heading", {
+      name: "Research Agent",
+    });
+    expect(agentHeading).toBeVisible();
+    const customize = labelledButton("Customize avatar");
+    expect(customize).toBeVisible();
+    customize.focus();
+    expect(customize).toHaveFocus();
+    expect(customize).toHaveAccessibleName("Customize avatar");
+    await user.keyboard(key);
 
-  const dialog = await screen.findByRole("dialog", {
-    name: "Give your agent a face",
-  });
-  expect(dialog).toBeVisible();
-  expect(within(dialog).getByText("Face")).toBeVisible();
-});
+    const dialog = await screen.findByRole("dialog", {
+      name: "Give your agent a face",
+    });
+    expect(dialog).toBeVisible();
+    expect(within(dialog).getByText("Face")).toBeVisible();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(new URLSearchParams(window.location.search).get("tab")).toBe(
+      "profile",
+    );
+  },
+);
 
 test("The agent header opens avatar customization on the current avatar", async () => {
   await setupTeamPage({

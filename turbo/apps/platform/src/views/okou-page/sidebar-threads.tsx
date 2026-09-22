@@ -350,7 +350,7 @@ function ChatThreadMenu({
               className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
                 hasRestingIndicator
                   ? ""
-                  : "md:invisible md:group-hover:visible md:data-popup-open:visible"
+                  : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
               } ${CHAT_THREAD_ROW_ICON_CLASS}`}
               aria-label={t(($) => {
                 return $.chat.sidebar.openChatMenu;
@@ -380,7 +380,7 @@ function ChatThreadMenu({
                 >
                   {hasRestingIndicator ? (
                     <>
-                      <span className="flex items-center justify-center md:group-hover:hidden md:group-data-[popup-open]/thread-menu:hidden">
+                      <span className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden">
                         {showStateIndicator ? (
                           <SessionStateIndicator signals={signals} />
                         ) : (
@@ -389,7 +389,7 @@ function ChatThreadMenu({
                       </span>
                       <Ellipsis
                         size={17}
-                        className="hidden opacity-70 md:group-hover:block md:group-data-[popup-open]/thread-menu:block"
+                        className="hidden opacity-70 md:group-hover:block group-focus-visible/thread-menu:block md:group-data-[popup-open]/thread-menu:block"
                       />
                     </>
                   ) : (

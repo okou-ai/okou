@@ -1095,6 +1095,46 @@ test("Locate the current chat in a long sidebar history", async () => {
   });
 });
 
+test.each([
+  { pinnedAt: null, key: "{Enter}" },
+  { pinnedAt: "2026-03-10T00:00:00Z", key: " " },
+])(
+  "Open a chat menu by keyboard and restore focus after $key (pinned: $pinnedAt)",
+  async ({ pinnedAt, key }) => {
+    const user = userEvent.setup({ delay: null });
+    prepareDefaultAgent();
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Existing conversation", { pinnedAt }),
+    ]);
+
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+    });
+
+    const list = await screen.findByTestId("chat-list-column");
+    await within(list).findByText("Existing conversation");
+    const row = threadRowByTitle("Existing conversation", list);
+    const trigger = within(row).getByLabelText("Open chat menu");
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAccessibleName("Open chat menu");
+
+    await user.keyboard(key);
+    await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  },
+);
+
 test("Keep the chat-list menu closed when navigating with a shortcut", async () => {
   const user = userEvent.setup({ delay: null });
   prepareDefaultAgent();
