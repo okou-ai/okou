@@ -2,7 +2,7 @@ use super::super::support::MockRunEnv;
 
 use std::time::Duration;
 
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(super) fn assert_no_completion_for_run(env: &MockRunEnv, run_id: RunId, reason: &str) {
     let completions = env.handle.completions.lock().unwrap();

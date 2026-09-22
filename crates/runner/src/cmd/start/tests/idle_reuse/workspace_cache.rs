@@ -9,10 +9,10 @@ use super::super::support::{
 
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use crate::paths::{HomePaths, RunnerPaths};
-use crate::types::{
+use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_types::types::{
     HeartbeatState, SandboxReuseResult, WORKSPACE_AFFINITY_VERSION, WorkspaceCacheCapability,
 };
-use crate::workspace_image_cache::WorkspaceImageCache;
 
 fn reusable_candidate(
     run_id: RunId,

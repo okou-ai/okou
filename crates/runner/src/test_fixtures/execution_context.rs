@@ -1,5 +1,5 @@
-use crate::ids::RunId;
-use crate::types::ExecutionContext;
+use runner_types::ids::RunId;
+use runner_types::types::ExecutionContext;
 use std::collections::HashMap;
 
 pub(crate) fn execution_context_for_test(run_id: RunId) -> ExecutionContext {

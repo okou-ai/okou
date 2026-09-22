@@ -17,7 +17,7 @@ use super::{
     FailureReason, Scope, SshRuntime, authority::PreparedCredential, cache::Access, engine,
     io::HostLease, observation::Attempt,
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 const IDLE_CAPACITY: usize = 8;
 // Eight short operations + eight retained sessions + eight idle transports.

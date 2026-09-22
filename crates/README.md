@@ -8,6 +8,7 @@ control and RPC services, shared contracts, and developer/test support.
 | Crate                    | Responsibility                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
 | runner                   | Host-side run orchestration, sandbox lifecycle, proxy, images and operational CLI                     |
+| runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                |
 | sandbox-firecracker      | Firecracker provider: VM lifecycle, networking, NBD COW and snapshot restore                          |
 | sandbox-mock             | Test implementation of the sandbox interfaces                                                         |

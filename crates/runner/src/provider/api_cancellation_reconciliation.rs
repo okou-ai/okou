@@ -24,9 +24,9 @@ use crate::error::{
     ApiFailureKind, ApiRequestContext, ApiTransportCause, ApiTransportError, RunnerError,
 };
 use crate::http::{HttpClient, api_transport_cause};
-use crate::ids::RunId;
 use crate::run_cancellation::{RunCancellationHandle, RunCancellationMode as Mode};
 use crate::runner_process_identity::RunnerProcessIdentity;
+use runner_types::ids::RunId;
 
 const INTERVAL: Duration = Duration::from_secs(30);
 const REQUEST_DEADLINE: Duration = Duration::from_secs(10);

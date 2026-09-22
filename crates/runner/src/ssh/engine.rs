@@ -21,7 +21,7 @@ use super::{
     observation::Attempt,
     output::{Output, RemoteExit, Stream},
 };
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 pub(super) struct Execution {
     pub(super) authority: Arc<Authority>,

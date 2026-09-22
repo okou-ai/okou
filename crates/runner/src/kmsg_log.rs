@@ -281,8 +281,8 @@ fn network_log_row(entry: &LogEntry, timestamp: DateTime<Utc>) -> serde_json::Va
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ids::RunId;
     use crate::network_log_drain::NetworkLogDrainContext;
+    use runner_types::ids::RunId;
     use tokio::io::AsyncWriteExt;
 
     #[tokio::test]
@@ -558,7 +558,7 @@ mod tests {
         producer
             .drain(
                 NetworkLogDrainContext {
-                    run_id: RunId::nil(),
+                    run_id: RunId::from(uuid::Uuid::nil()),
                     source_ip: "10.0.0.1",
                     path: &path,
                     generation: 1,

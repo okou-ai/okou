@@ -10,7 +10,7 @@ const WARNING_INTERVAL: Duration = Duration::from_secs(30);
 pub(crate) enum CleanupIdentity {
     Runner,
     Process(Option<u32>),
-    Run(crate::ids::RunId),
+    Run(runner_types::ids::RunId),
 }
 
 /// Dropping this observer stops diagnostics, never the cleanup it describes.

@@ -11,8 +11,8 @@ use crate::helper_exec::{
     format_command_output_excerpt, format_helper_exec_failure, helper_exec_succeeded,
     helper_exec_termination_label,
 };
-use crate::ids::RunId;
-use crate::types::ExecutionContext;
+use runner_types::ids::RunId;
+use runner_types::types::ExecutionContext;
 
 const ENTROPY_SIZE: usize = 256;
 const TIMEZONE_SYNC_MODE_ARG: &str = "--sync-timezone";

@@ -236,7 +236,7 @@ pub(super) async fn handle_stopping_signal(
 
 async fn dispatch_hard_cancellations(
     handles: Vec<(
-        crate::ids::RunId,
+        runner_types::ids::RunId,
         crate::run_cancellation::RunCancellationHandle,
     )>,
 ) {
@@ -253,10 +253,10 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-    use crate::ids::RunId;
     use crate::test_fixtures::ignored_child::{
         ignored_child_test_env_guard_enabled, run_ignored_child_test,
     };
+    use runner_types::ids::RunId;
 
     const EARLY_SIGNAL_CHILD_ENV: &str = "OKOU_RUNNER_EARLY_SIGNAL_TEST";
     const EARLY_SIGTERM_CHILD: &str =

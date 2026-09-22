@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::storage_manifest::StorageManifest;
+use runner_types::storage_manifest::StorageManifest;
 
 /// Fingerprints carried with reusable workspace state.
 ///

@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 use super::super::{DEFAULT_EXEC_TIMEOUT, GUEST_LOG_COPY_MAX_BYTES, guest_runtime_path};
 use crate::paths::LogPaths;
-use crate::types::ExecutionContext;
+use runner_types::types::ExecutionContext;
 
 /// Copy guest log files to host (best-effort, post-job).
 ///

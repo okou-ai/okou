@@ -125,6 +125,9 @@
             "release-type": "rust",
             "component": "runner-rs"
         },
+        "crates/runner-types": {
+            "release-type": "rust"
+        },
         "crates/sandbox": {
             "release-type": "rust"
         },

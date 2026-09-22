@@ -20,11 +20,11 @@ use crate::executor::tests::support::{
     minimal_context, sandbox_read_file_error, test_executor_config, test_telemetry,
 };
 use crate::http::{HttpClient, HttpClientConfig};
-use crate::ids::RunId;
 use crate::local_queue::{self, ActiveInputEntry, LocalQueue};
 use crate::provider::ApiClient;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
-use crate::types::SandboxReuseResult;
+use runner_types::ids::RunId;
+use runner_types::types::SandboxReuseResult;
 
 mod read_backoff;
 mod read_recovery;
@@ -73,7 +73,7 @@ async fn reap_spawned_test_task<T>(
 
 fn api_active_input_source(
     api_url: String,
-    run_id: crate::ids::RunId,
+    run_id: runner_types::ids::RunId,
     notifications: &ActiveInputNotifications,
     client_session_id: &str,
 ) -> ActiveInputSource {
@@ -141,7 +141,7 @@ async fn run_local_active_input_rejection(diagnostic: &str) -> Vec<CapturedEvent
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -245,7 +245,7 @@ async fn run_in_sandbox_forwards_local_active_inputs_in_order() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -341,7 +341,7 @@ async fn run_in_sandbox_retries_api_active_input_after_transient_read_failure() 
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -421,7 +421,7 @@ async fn run_in_sandbox_rechecks_api_active_input_without_notification() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -510,7 +510,7 @@ async fn run_in_sandbox_retries_local_active_input_with_same_id_after_uncertain_
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -587,7 +587,7 @@ async fn run_in_sandbox_retries_reserve_when_first_request_is_not_found() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -669,7 +669,7 @@ async fn run_in_sandbox_retrieves_reservation_after_lost_first_response() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -759,7 +759,7 @@ async fn run_in_sandbox_keeps_using_reserve_after_ambiguous_failure() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -820,7 +820,7 @@ async fn run_in_sandbox_stops_when_reserve_reports_terminal() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -871,7 +871,7 @@ async fn run_in_sandbox_stops_when_reserve_reports_held() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -929,7 +929,7 @@ async fn run_in_sandbox_stops_when_reserve_rejects_run_not_running() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -991,7 +991,7 @@ async fn run_in_sandbox_reconciles_after_payload_too_large_rejection() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -1112,7 +1112,7 @@ async fn run_in_sandbox_retries_not_written_delivery_with_same_id() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -1204,7 +1204,7 @@ async fn run_in_sandbox_retries_guest_backpressure_with_same_id() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -1331,7 +1331,7 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -1475,7 +1475,7 @@ async fn run_in_sandbox_carries_failed_journal_receipt_to_completion() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,

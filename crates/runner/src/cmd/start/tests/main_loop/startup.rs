@@ -4,8 +4,8 @@ use super::super::support::{
     test_profiles, wait_status_mode,
 };
 use crate::provider::{ClaimedJob, CompletionAuth, JobCandidate};
-use crate::types::HeartbeatState;
 use async_trait::async_trait;
+use runner_types::types::HeartbeatState;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,7 +26,7 @@ impl crate::provider::JobProvider for ShutdownRecordingProvider {
 
     async fn complete(
         &self,
-        _request: crate::types::CompleteRequest,
+        _request: runner_types::types::CompleteRequest,
         _completion_auth: CompletionAuth,
     ) {
         panic!("publish failure cleanup test does not complete jobs")

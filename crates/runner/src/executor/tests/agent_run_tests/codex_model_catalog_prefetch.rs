@@ -18,7 +18,7 @@ use crate::executor::tests::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox, minimal_context, sandbox_exec_error,
     spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
 };
-use crate::types::{ExecutionContext, Firewall, FirewallEntry, SandboxReuseResult};
+use runner_types::types::{ExecutionContext, Firewall, FirewallEntry, SandboxReuseResult};
 
 const PREFETCH_ACTION: &str = "runner_codex_model_catalog_prefetch";
 
@@ -166,7 +166,7 @@ async fn codex_catalog_prefetch_waits_for_guest_state_restore() {
             RunStart {
                 restore_guest_state: true,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -267,7 +267,7 @@ async fn codex_catalog_prefetch_post_write_timeout_stops_direct_run_before_agent
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -311,7 +311,7 @@ async fn codex_catalog_prefetch_partial_write_stops_direct_run_before_guest_work
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -593,9 +593,9 @@ async fn assert_codex_catalog_prefetch_skipped(
                 restore_guest_state: false,
                 reuse_result,
                 workspace_reuse_result: if reuse_result == SandboxReuseResult::Reused {
-                    crate::types::WorkspaceReuseResult::SandboxReused
+                    runner_types::types::WorkspaceReuseResult::SandboxReused
                 } else {
-                    crate::types::WorkspaceReuseResult::NotConfigured
+                    runner_types::types::WorkspaceReuseResult::NotConfigured
                 },
                 prev_storage: None,
             },
@@ -738,7 +738,7 @@ async fn codex_catalog_prefetch_records_one_event_through_executor_wiring() {
             RunStart {
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
-                workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
                 prev_storage: None,
             },
             &mut telemetry,
@@ -824,7 +824,8 @@ async fn codex_catalog_prefetch_guest_timeout_preserves_successful_agent_run() {
                 RunStart {
                     restore_guest_state: false,
                     reuse_result: SandboxReuseResult::PoolMiss,
-                    workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                    workspace_reuse_result:
+                        runner_types::types::WorkspaceReuseResult::NotConfigured,
                     prev_storage: None,
                 },
                 &mut telemetry,

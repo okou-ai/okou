@@ -62,12 +62,12 @@ use tracing::{info, warn};
 
 use super::api::{ApiClient, ConnectorRuntimeSyncOutcome};
 use crate::error::RunnerError;
-use crate::ids::RunId;
 use crate::proxy::{
     ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistryUpdate,
     CustomConnectorRuntimeRegistryState, ProxyRegistryHandle,
 };
-use crate::types::{
+use runner_types::ids::RunId;
+use runner_types::types::{
     ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeSyncState, ConnectorRuntimeTarget,
     ConnectorRuntimeTargetRegistration, ConnectorRuntimeUnresolvedReason, FirewallEntry,
     NetworkPolicy, NetworkPolicyRefresh,
@@ -2087,7 +2087,7 @@ mod tests {
     use crate::test_fixtures::raw_http::{
         RawHttpAction, RawHttpTestServer, join_raw_http_task, json_response, read_http_request,
     };
-    use crate::types::{Firewall, FirewallApi, FirewallAuth, FirewallEntry};
+    use runner_types::types::{Firewall, FirewallApi, FirewallAuth, FirewallEntry};
 
     const SYNC_PUBLICATION_TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -3112,7 +3112,7 @@ mod tests {
         cancel_caller: bool,
     ) {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let harness = ConnectorRuntimeSyncHarness::new(&server, run_id).await;
         mock_publication_response(&server, run_id, terminal);
         let mut gate =
@@ -3221,7 +3221,7 @@ mod tests {
 
         for terminal in [false, true] {
             let server = MockServer::start();
-            let run_id = RunId::nil();
+            let run_id = RunId::from(uuid::Uuid::nil());
             let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
             let (_dir, registry, registry_path, lock_path) =
                 registered_slack_registry(run_id).await;
@@ -3303,7 +3303,7 @@ mod tests {
     async fn shutdown_cancels_publications_waiting_for_registry_lock() {
         for terminal in [false, true] {
             let server = MockServer::start();
-            let run_id = RunId::nil();
+            let run_id = RunId::from(uuid::Uuid::nil());
             let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
             let (attempt_tx, mut attempt_rx) = tokio::sync::mpsc::unbounded_channel();
             let (_dir, registry_path, lock_path, _) =
@@ -3331,7 +3331,7 @@ mod tests {
     async fn shutdown_cancels_stalled_in_flight_sync() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let harness = ConnectorRuntimeSyncHarness::new_with_api(
             api_client_for_url(api_url),
             run_id,
@@ -3604,7 +3604,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
         let handle = ConnectorRuntimeSyncHandle::new(api_client_for_url(api_url));
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_old_dir, _old_registry) = register_slack_run(&handle, run_id).await;
 
         handle
@@ -3652,7 +3652,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
         let handle = ConnectorRuntimeSyncHandle::new(api_client_for_url(api_url));
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_dir, registry, registry_path, lock_path) = registered_slack_registry(run_id).await;
         let targets = [builtin_runtime_target_registration("slack")];
         handle
@@ -3709,7 +3709,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
         let handle = ConnectorRuntimeSyncHandle::new(api_client_for_url(api_url));
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_old_dir, _old_registry) = register_slack_run(&handle, run_id).await;
         let old_cancel = handle
             .core
@@ -3775,7 +3775,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
         let handle = ConnectorRuntimeSyncHandle::new(api_client_for_url(api_url));
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_old_dir, _old_registry) = register_slack_run(&handle, run_id).await;
         let old_cancel = handle
             .core
@@ -3891,7 +3891,7 @@ mod tests {
         let server = MockServer::start();
         let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
         let weak_state = Arc::downgrade(&handle.core.inner);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -3941,7 +3941,7 @@ mod tests {
         handle
             .core
             .register_run(ConnectorRuntimeSyncRegistration {
-                run_id: RunId::nil(),
+                run_id: RunId::from(uuid::Uuid::nil()),
                 source_ip: "10.200.0.2",
                 registry,
                 targets: &targets,
@@ -3956,7 +3956,7 @@ mod tests {
     async fn builtin_target_retains_last_known_good_until_runtime_sync_recovers() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let target = builtin_target("slack");
         let source_id = "550e8400-e29b-41d4-a716-446655440001";
         let registration = ConnectorRuntimeTargetRegistration::Builtin {
@@ -4142,7 +4142,7 @@ mod tests {
     async fn builtin_target_becomes_terminally_absent_and_restores_from_wakeup() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let target = builtin_target("slack");
         let registration = builtin_runtime_target_registration("slack");
         let absent_sync = server.mock(|when, then| {
@@ -4284,7 +4284,7 @@ mod tests {
     async fn builtin_batch_isolates_invalid_result_identities() {
         let server = MockServer::start();
         let (core, _requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_dir, registry_path, _lock_path, targets) =
             register_builtin_runtime(&core, run_id, &["slack", "github", "linear"], None).await;
         let unexpected_target = builtin_target("notion");
@@ -4385,7 +4385,7 @@ mod tests {
     async fn batch_keeps_current_target_when_another_generation_is_superseded() {
         let server = MockServer::start();
         let (core, _requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_dir, registry_path, _lock_path, targets) =
             register_builtin_runtime(&core, run_id, &["slack", "github"], None).await;
         let stale_batch = targets
@@ -4442,7 +4442,7 @@ mod tests {
     async fn batch_drops_target_superseded_while_registry_transaction_waits() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (update_attempt_tx, mut update_attempt_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_dir, registry_path, lock_path, targets) =
             register_builtin_runtime(&core, run_id, &["slack", "github"], Some(update_attempt_tx))
@@ -4539,7 +4539,7 @@ mod tests {
     async fn custom_target_registers_while_absent_and_restores_from_sync() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
         let target = custom_target(custom_connector_id);
         let registration = custom_runtime_target_registration(custom_connector_id, HashMap::new());
@@ -4660,7 +4660,7 @@ mod tests {
     async fn custom_target_rejects_builtin_unresolved_reason() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
         let target = custom_target(custom_connector_id);
         let runtime_sync = server.mock(|when, then| {
@@ -4733,7 +4733,7 @@ mod tests {
     async fn custom_target_forwards_pinned_routing_values_after_wakeup() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
         let source_id = "550e8400-e29b-41d4-a716-446655440001";
         let target = custom_target(custom_connector_id);
@@ -4892,7 +4892,7 @@ mod tests {
     async fn custom_target_rejects_routing_value_replacement() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
         let target = custom_target(custom_connector_id);
         let pinned_base_url_vars = HashMap::from([("subdomain".to_string(), "acme".to_string())]);
@@ -4978,7 +4978,7 @@ mod tests {
     async fn invalid_custom_response_retains_last_known_good_and_retries() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
         let target = custom_target(custom_connector_id);
         let initial_firewall = custom_runtime_firewall(custom_connector_id);
@@ -5051,7 +5051,7 @@ mod tests {
     async fn builtin_response_with_inline_firewall_retains_last_known_good_and_retries() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let target = builtin_target("slack");
         let invalid_firewall = custom_runtime_firewall("550e8400-e29b-41d4-a716-446655440000");
         server.mock(|when, then| {
@@ -5124,7 +5124,7 @@ mod tests {
     async fn runtime_sync_http_failure_retains_builtin_last_known_good_and_retries() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let target = builtin_target("slack");
         let route = server.mock(|when, then| {
             when.method(POST)
@@ -5183,7 +5183,7 @@ mod tests {
     async fn runtime_sync_http_failure_retains_custom_last_known_good_and_retries() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let custom_connector_id = "550e8400-e29b-41d4-a716-446655440000";
         let target = custom_target(custom_connector_id);
         let route = server.mock(|when, then| {
@@ -5242,7 +5242,7 @@ mod tests {
     async fn terminal_builtin_keeps_policy_without_matching_firewall() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let target = builtin_target("slack");
         let terminal_sync = server.mock(|when, then| {
             when.method(POST)
@@ -5306,7 +5306,7 @@ mod tests {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
 
-        core.notify_connector_runtime_sync(RunId::nil(), builtin_target("slack"))
+        core.notify_connector_runtime_sync(RunId::from(uuid::Uuid::nil()), builtin_target("slack"))
             .await;
 
         assert!(matches!(
@@ -5319,7 +5319,7 @@ mod tests {
     async fn active_connector_runtime_notification_filters_targets_and_schedules_sync() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -5354,7 +5354,7 @@ mod tests {
     async fn cancelled_connector_runtime_notification_does_not_wait_for_queue_capacity() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -5399,7 +5399,7 @@ mod tests {
     async fn full_queue_notification_preserves_policy_and_retries_without_registry_lock() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_dir, registry, registry_path, lock_path) = registered_slack_registry(run_id).await;
         core.inner
             .active_runs
@@ -5487,7 +5487,7 @@ mod tests {
     async fn scheduled_sync_task_clears_itself_after_firing() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -5524,7 +5524,7 @@ mod tests {
     async fn scheduled_sync_coalesces_due_connectors_for_run() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -5562,7 +5562,7 @@ mod tests {
     async fn retry_backoff_preserves_same_run_coalescing_and_caps_delay() {
         let server = MockServer::start();
         let (core, _requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -5641,7 +5641,7 @@ mod tests {
     async fn unregister_cancels_scheduled_sync_before_deadline() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -5685,7 +5685,7 @@ mod tests {
     async fn scheduled_sync_full_queue_preserves_policy_and_retries() {
         let server = MockServer::start();
         let (core, mut requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_dir, registry, registry_path, lock_path) = registered_slack_registry(run_id).await;
         core.inner
             .active_runs
@@ -5810,7 +5810,7 @@ mod tests {
     #[tokio::test]
     async fn terminal_connector_runtime_sync_reconciles_entire_run() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let sync_mock = server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"))
@@ -6011,7 +6011,7 @@ mod tests {
             ),
         ] {
             let server = MockServer::start();
-            let run_id = RunId::nil();
+            let run_id = RunId::from(uuid::Uuid::nil());
             let sync_mock = server.mock(|when, then| {
                 when.method(POST)
                     .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6042,7 +6042,7 @@ mod tests {
 
     #[tokio::test]
     async fn newer_notification_survives_older_in_flight_sync() {
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let first_body = json!({
             "results": [{
                 "target": { "kind": "builtin", "connectorSlug": "slack" },
@@ -6132,7 +6132,7 @@ mod tests {
     async fn transport_connector_runtime_sync_error_retries_and_recovers() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let api_url = format!("http://{}", listener.local_addr().unwrap());
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let harness = ConnectorRuntimeSyncHarness::new_with_api(
             api_client_for_url(api_url.clone()),
             run_id,
@@ -6247,7 +6247,7 @@ mod tests {
 
     #[tokio::test]
     async fn persistent_transport_failure_warns_once_per_recovery_episode() {
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let response_body = connector_runtime_sync_response(json!({
             "kind": "builtin",
             "connectorSlug": "slack",
@@ -6394,7 +6394,7 @@ mod tests {
 
     #[tokio::test]
     async fn mixed_transport_failure_warns_for_newly_degraded_targets_once() {
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let server =
             RawHttpTestServer::spawn(vec![RawHttpAction::Disconnect, RawHttpAction::Disconnect])
                 .await;
@@ -6463,7 +6463,7 @@ mod tests {
     #[tokio::test]
     async fn successful_connector_runtime_sync_ignores_additional_response_fields() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let sync_mock = server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6516,7 +6516,7 @@ mod tests {
     #[tokio::test]
     async fn stale_registry_ownership_stops_runtime_sync_without_retry() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let sync_mock = server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6574,7 +6574,7 @@ mod tests {
             ),
         ] {
             let server = MockServer::start();
-            let run_id = RunId::nil();
+            let run_id = RunId::from(uuid::Uuid::nil());
             let sync_mock = server.mock(|when, then| {
                 when.method(POST)
                     .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6597,7 +6597,7 @@ mod tests {
     #[tokio::test]
     async fn duplicate_connector_runtime_sync_retains_last_known_good_and_retries() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let sync_mock = server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6642,7 +6642,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_connector_runtime_sync_deadline_retains_last_known_good_and_retries() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6677,7 +6677,7 @@ mod tests {
     #[tokio::test]
     async fn registry_patch_error_retains_last_known_good_and_retries() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let sync_mock = server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6731,7 +6731,7 @@ mod tests {
     async fn invalid_initial_connector_runtime_sync_deadline_preserves_policy_and_retries() {
         let server = MockServer::start();
         let (core, _requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (_dir, registry, registry_path, _lock_path) = registered_slack_registry(run_id).await;
         let refreshes = HashMap::from([(
             "slack".to_string(),
@@ -6766,7 +6766,7 @@ mod tests {
     async fn initial_retry_summary_bounds_target_identity_samples() {
         let server = MockServer::start();
         let (core, _requests) = core_without_worker(&server);
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let dir = tempfile::tempdir().expect("tempdir should be created");
         let registry = ProxyRegistryHandle::new(
             dir.path().join("proxy-registry.json"),
@@ -6820,7 +6820,7 @@ mod tests {
     #[tokio::test]
     async fn connector_runtime_sync_splits_batches_without_limiting_run_targets() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let connector_slugs = (0..=CONNECTOR_RUNTIME_SYNC_BATCH_MAX)
             .map(|index| format!("connector-{index}"))
             .collect::<Vec<_>>();
@@ -6881,7 +6881,7 @@ mod tests {
 
     async fn assert_failed_connector_runtime_sync_retains_last_known_good() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
@@ -6906,7 +6906,7 @@ mod tests {
 
     async fn assert_mismatched_connector_runtime_sync_retains_last_known_good() {
         let server = MockServer::start();
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         server.mock(|when, then| {
             when.method(POST)
                 .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));

@@ -32,7 +32,9 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::{http::HttpClient, ids::RunId, runner_process_identity::RunnerProcessIdentity};
+use runner_types::ids::RunId;
+
+use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
 use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Trust};
 use io::GuestIo;
 use network::{Network, PublicNetwork};

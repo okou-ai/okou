@@ -18,12 +18,12 @@ use super::support::{
     TEST_PROFILE_NAME, local_cache, promote_current_cache_entry, write_current_cache_entry,
 };
 use crate::error::RunnerError;
-use crate::ids::RunId;
 use crate::paths::{RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_types::ids::RunId;
 
 const PERMISSIVE_UMASK_CHILD_ENV: &str = "OKOU_RUN_WORKSPACE_CACHE_PERMISSIVE_UMASK_TEST";
 const PUBLICATION_UMASK_ENV: &str = "OKOU_WORKSPACE_CACHE_PUBLICATION_UMASK";

@@ -10,7 +10,9 @@ use serde::{Serialize, de::DeserializeOwned};
 use zeroize::Zeroizing;
 
 use super::Failure;
-use crate::{http::HttpClient, ids::RunId, runner_process_identity::RunnerProcessIdentity};
+use runner_types::ids::RunId;
+
+use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
 
 const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;

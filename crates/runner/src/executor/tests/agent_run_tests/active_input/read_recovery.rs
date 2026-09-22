@@ -17,9 +17,9 @@ use crate::executor::tests::support::{
     CapturedEvent, CapturedEvents, create_overridden_sandbox, minimal_context,
     test_executor_config, test_telemetry,
 };
-use crate::ids::RunId;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
-use crate::types::SandboxReuseResult;
+use runner_types::ids::RunId;
+use runner_types::types::SandboxReuseResult;
 
 const FAILURE: &str = "active-input source read failed; retrying";
 const DEGRADED: &str = "active-input source reads degraded; retrying";
@@ -59,7 +59,8 @@ impl RunningInput {
                 RunStart {
                     restore_guest_state: false,
                     reuse_result: SandboxReuseResult::PoolMiss,
-                    workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+                    workspace_reuse_result:
+                        runner_types::types::WorkspaceReuseResult::NotConfigured,
                     prev_storage: None,
                 },
                 &mut telemetry,

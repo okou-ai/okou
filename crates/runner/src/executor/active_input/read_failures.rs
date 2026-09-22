@@ -10,7 +10,7 @@ use tracing::{Level, info};
 
 use crate::active_input::ActiveInputBatch;
 use crate::error::{ApiTransportCause, RunnerError};
-use crate::ids::RunId;
+use runner_types::ids::RunId;
 
 // An operational threshold on the same scale as the normal safety recheck,
 // not an input-delivery deadline. Evaluated when a failed request completes.

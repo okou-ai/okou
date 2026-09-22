@@ -8,9 +8,9 @@ use crate::active_input::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
 use crate::local_queue::{self, ActiveInputEntry};
 use crate::paths::HomePaths;
+use runner_types::ids::RunId;
 
 /// The job must have been submitted with --active-input to enable forwarding.
 /// Successful publication does not acknowledge delivery to the running agent.

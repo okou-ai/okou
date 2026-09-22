@@ -1,10 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use crate::ids::RunId;
 use crate::paths::{
     scoped_workspace_image_cache_key, workspace_image_cache_capacity_lock_path,
     workspace_image_cache_lock_path,
 };
+use runner_types::ids::RunId;
 
 use super::WorkspaceImageCache;
 use super::metadata::WorkspaceCacheMetadata;

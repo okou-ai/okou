@@ -7,8 +7,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::executor::workspace_session_history_materializer::WorkspaceSessionHistoryMaterializer;
 use crate::executor::{ExecutorConfig, SessionHistoryRestorePlan, effective_cli_framework};
-use crate::types::ExecutionContext;
 use crate::workspace_image_cache::WorkspaceSessionHistorySidecar;
+use runner_types::types::ExecutionContext;
 
 pub(super) async fn local_sidecar_restore_plan(
     context: &ExecutionContext,
@@ -43,7 +43,7 @@ pub(super) fn claude_history_source(session_id: &str) -> SessionHistorySourceRef
 }
 
 pub(super) fn final_identity_runtime_paths(
-    ctx: &crate::types::ExecutionContext,
+    ctx: &runner_types::types::ExecutionContext,
 ) -> (String, String) {
     let run_dir = guest_contracts::runtime_paths::run_dir_for_home(
         CANONICAL_GUEST_HOME_DIR,

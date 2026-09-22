@@ -9,12 +9,13 @@ mod sessions;
 #[cfg(test)]
 mod tests;
 
+use runner_types::ids::RunId;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-use crate::{http::HttpClient, ids::RunId, runner_process_identity::RunnerProcessIdentity};
+use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
 use authority::Authority;
 use network::{Network, PublicNetwork};
 use scope::Scope;

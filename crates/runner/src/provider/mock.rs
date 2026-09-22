@@ -28,8 +28,8 @@ use tracing::warn;
 
 use super::{ClaimedJob, CompletionAuth, CompletionReportTiming, JobCandidate, JobProvider};
 use crate::error::{RunnerError, RunnerResult};
-use crate::ids::RunId;
-use crate::types::{
+use runner_types::ids::RunId;
+use runner_types::types::{
     CompleteRequest, ExecutionContext, HeartbeatState, SandboxReuseResult, WorkspaceReuseResult,
 };
 use sandbox::SandboxId;
@@ -731,7 +731,7 @@ mod tests {
 
     #[tokio::test]
     async fn claim_rejects_mismatched_context() {
-        let candidate_run_id = RunId::nil();
+        let candidate_run_id = RunId::from(uuid::Uuid::nil());
         let context_run_id = RunId::new_v4();
         let (provider, _handle) = MockJobProvider::new(CancellationToken::new());
         provider.set_claim_result(candidate_run_id, Some(minimal_context(context_run_id)));
@@ -748,7 +748,7 @@ mod tests {
 
     #[tokio::test]
     async fn claim_accepts_matching_context() {
-        let run_id = RunId::nil();
+        let run_id = RunId::from(uuid::Uuid::nil());
         let (provider, _handle) = MockJobProvider::new(CancellationToken::new());
         provider.set_claim_result(run_id, Some(minimal_context(run_id)));
 

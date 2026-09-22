@@ -23,13 +23,13 @@ use crate::executor::{
 };
 use crate::telemetry::{JobTelemetry, SessionHistoryTelemetrySnapshot};
 use crate::test_fixtures::session_history::OneShotSessionHistoryServer;
-use crate::types::{
+use crate::workspace_image_cache::{
+    WorkspaceSessionHistorySidecar, WorkspaceSessionHistorySidecarRepresentation,
+};
+use runner_types::types::{
     ResumeSession, ResumeSessionHistory, ResumeSessionHistoryDownloadSource,
     ResumeSessionHistoryEncoding, ResumeSessionHistoryRef, ResumeSessionHistoryRefKind,
     SandboxReuseResult,
-};
-use crate::workspace_image_cache::{
-    WorkspaceSessionHistorySidecar, WorkspaceSessionHistorySidecarRepresentation,
 };
 
 fn gzip_bytes(raw: &[u8]) -> Vec<u8> {
@@ -159,7 +159,7 @@ async fn run_in_sandbox_materializes_resume_session_history_ref_before_restore()
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -211,7 +211,7 @@ async fn run_in_sandbox_records_gzip_session_history_download_encoding() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -323,7 +323,7 @@ async fn run_in_sandbox_records_zstd_session_history_download_encoding() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -458,7 +458,7 @@ async fn run_in_sandbox_uses_prestarted_session_history_materializer() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -596,7 +596,7 @@ async fn run_in_sandbox_restores_session_history_from_workspace_sidecar() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -701,7 +701,7 @@ async fn run_in_sandbox_falls_back_when_workspace_sidecar_hash_mismatches() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -777,7 +777,7 @@ async fn run_in_sandbox_falls_back_when_workspace_sidecar_open_fails() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -861,7 +861,7 @@ async fn run_in_sandbox_falls_back_when_workspace_sidecar_guest_restore_fails() 
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -979,7 +979,7 @@ async fn run_in_sandbox_restores_codex_zstd_sidecar_with_session_timestamp() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1077,7 +1077,7 @@ async fn run_in_sandbox_materializes_prune_eligible_codex_zstd_sidecar_as_raw() 
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1171,7 +1171,7 @@ async fn run_in_sandbox_restores_codex_raw_sidecar_with_session_timestamp() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::Reused,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::Reused,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1244,7 +1244,7 @@ async fn run_in_sandbox_restores_large_inline_codex_history_without_cleanup() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
@@ -1331,7 +1331,7 @@ async fn run_in_sandbox_records_completed_prestarted_materializer_failure() {
         RunStart {
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
-            workspace_reuse_result: crate::types::WorkspaceReuseResult::NotConfigured,
+            workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
             prev_storage: None,
         },
         &mut telemetry,
