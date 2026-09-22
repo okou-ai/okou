@@ -674,6 +674,7 @@ test("Let an existing thread send while model availability is reconciling", asyn
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [],
       workspaceDefaultModel: null,
       workspaceDefaultPolicyId: null,

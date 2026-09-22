@@ -804,6 +804,7 @@ test("Fails closed when an older API omits the addability projection", async () 
     return respond(200, {
       revision: "pre-addability-api",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [defaultPolicy],
       workspaceDefaultModel: defaultPolicy.model,
       workspaceDefaultPolicyId: defaultPolicy.id,

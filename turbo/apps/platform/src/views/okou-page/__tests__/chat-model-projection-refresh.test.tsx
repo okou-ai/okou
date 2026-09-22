@@ -167,6 +167,7 @@ test.each([
       return respond(200, {
         revision: "revision-1",
         writePreconditionRequired: false,
+        modelsAvailableToAdd: [],
         policies: [modelPolicy(personal, restricted)],
         workspaceDefaultModel: MODEL,
         workspaceDefaultPolicyId: POLICY_ID,
@@ -229,6 +230,7 @@ async function setupHeldProjectionRefresh() {
       return respond(200, {
         revision: "revision-1",
         writePreconditionRequired: false,
+        modelsAvailableToAdd: [],
         policies: [modelPolicy(true)],
         workspaceDefaultModel: MODEL,
         workspaceDefaultPolicyId: POLICY_ID,
@@ -325,6 +327,7 @@ test("A local active-account change refreshes the member projection", async () =
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [modelPolicy(personal)],
       workspaceDefaultModel: MODEL,
       workspaceDefaultPolicyId: POLICY_ID,
