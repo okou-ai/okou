@@ -2130,6 +2130,7 @@
       "pinned": "Pinned",
       "rename": "Rename chat",
       "renameDescription": "Enter a new name for this chat thread.",
+      "showAllChats": "Show all chats",
       "showArchived": "Show archived",
       "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",

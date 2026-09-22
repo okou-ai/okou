@@ -2122,6 +2122,7 @@
       "pinned": "已置顶",
       "rename": "重命名聊天",
       "renameDescription": "为这个聊天会话输入新名称。",
+      "showAllChats": "显示全部聊天",
       "showArchived": "显示已归档",
       "showArchivedChats": "显示已归档的聊天",
       "titlePlaceholder": "聊天标题",

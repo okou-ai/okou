@@ -2176,6 +2176,7 @@
       "pinned": "Fijado",
       "rename": "Renombrar chat",
       "renameDescription": "Introduce un nuevo nombre para este hilo de chat.",
+      "showAllChats": "Mostrar todas las conversaciones",
       "showArchived": "Mostrar archivados",
       "showArchivedChats": "Mostrar chats archivados",
       "titlePlaceholder": "Título del chat",
