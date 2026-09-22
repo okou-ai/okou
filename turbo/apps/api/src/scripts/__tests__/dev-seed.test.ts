@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import rawDevSeedSkillVolumes from "../dev-seed-skill-volumes.json";
-import { buildBuiltInModelKeys, USAGE_PRICING } from "../dev-seed";
+import {
+  buildBuiltInModelKeys,
+  getMetadataOnlySeedSkillNames,
+  USAGE_PRICING,
+} from "../dev-seed";
 
 function readEnvFrom(
   values: Readonly<Record<string, string | undefined>>,
@@ -34,6 +38,21 @@ describe("official skill volume seeds", () => {
       expect(volume.storageName).toContain("agent-skills@vm0-ai/vm0-skills/");
       expect(volume.message).toMatch(/^Synced from vm0-ai\/vm0-skills@/);
     }
+  });
+
+  it("keeps published historical Storage bindings out of metadata fallback", () => {
+    expect(
+      getMetadataOnlySeedSkillNames(
+        [
+          "computer-use",
+          "gen",
+          "office-files",
+          "ppt-avatar-video",
+          "workflow-setup",
+        ],
+        rawDevSeedSkillVolumes,
+      ),
+    ).toStrictEqual(["office-files", "ppt-avatar-video", "workflow-setup"]);
   });
 });
 

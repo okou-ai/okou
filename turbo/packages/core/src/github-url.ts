@@ -151,6 +151,67 @@ export const DEFAULT_SKILLS_REPO = "vm0-skills";
 export const DEFAULT_SKILLS_BRANCH = "main";
 
 /**
+ * Exact repository aliases for the official skill registry.
+ *
+ * Repository coordinates are mutable source metadata. Keep this list narrow so
+ * arbitrary GitHub repositories and branches retain their own identities.
+ */
+export const OFFICIAL_SKILLS_REPO_ALIASES = [
+  "vm0-skills",
+  "okou-skills",
+] as const;
+
+/**
+ * Durable fallback identity for official skill Storage and version hashes.
+ * Existing database bindings remain authoritative even when their names use an
+ * older coordinate; this identity is only used when no binding exists.
+ */
+export const OFFICIAL_SKILLS_IDENTITY_REPO = "vm0-skills";
+
+function officialSkillFullPath(repository: string, skillName: string): string {
+  return `${DEFAULT_SKILLS_OWNER}/${repository}/tree/${DEFAULT_SKILLS_BRANCH}/${skillName}`;
+}
+
+export function getOfficialSkillSourceUrl(skillName: string): string {
+  return `https://github.com/${officialSkillFullPath(DEFAULT_SKILLS_REPO, skillName)}`;
+}
+
+export function getOfficialSkillAliasUrls(
+  skillName: string,
+): readonly string[] {
+  return OFFICIAL_SKILLS_REPO_ALIASES.map((repository) => {
+    return `https://github.com/${officialSkillFullPath(repository, skillName)}`;
+  });
+}
+
+export function getOfficialSkillIdentityFullPath(skillName: string): string {
+  return officialSkillFullPath(OFFICIAL_SKILLS_IDENTITY_REPO, skillName);
+}
+
+export function getOfficialSkillIdentityUrl(skillName: string): string {
+  return `https://github.com/${getOfficialSkillIdentityFullPath(skillName)}`;
+}
+
+export function resolveOfficialSkillIdentityFullPath(
+  url: string,
+): string | null {
+  const parsed = parseGitHubTreeUrl(url);
+  if (
+    parsed === null ||
+    parsed.owner !== DEFAULT_SKILLS_OWNER ||
+    parsed.branch !== DEFAULT_SKILLS_BRANCH ||
+    !OFFICIAL_SKILLS_REPO_ALIASES.some((repository) => {
+      return repository === parsed.repo;
+    }) ||
+    parsed.path === ""
+  ) {
+    return null;
+  }
+
+  return officialSkillFullPath(OFFICIAL_SKILLS_IDENTITY_REPO, parsed.path);
+}
+
+/**
  * Resolve a skill reference to a full GitHub tree URL.
  *
  * Supports two formats:
@@ -171,7 +232,7 @@ export function resolveSkillRef(input: string): string {
 
   // Bare name: no "/" and no "https://"
   if (!trimmed.includes("/") && !trimmed.startsWith("https://")) {
-    return `https://github.com/${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/${trimmed}`;
+    return getOfficialSkillSourceUrl(trimmed);
   }
 
   // Full GitHub URL: validate with flexible parser

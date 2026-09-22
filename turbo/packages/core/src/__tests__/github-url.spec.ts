@@ -3,6 +3,11 @@ import {
   parseGitHubTreeUrl,
   parseGitHubUrl,
   getSkillNameFromPath,
+  getOfficialSkillAliasUrls,
+  getOfficialSkillIdentityFullPath,
+  getOfficialSkillIdentityUrl,
+  getOfficialSkillSourceUrl,
+  resolveOfficialSkillIdentityFullPath,
   resolveSkillRef,
 } from "../github-url";
 
@@ -278,5 +283,56 @@ describe("resolveSkillRef", () => {
     expect(() => {
       return resolveSkillRef("https://github.com/owner/repo/blob/main/file.ts");
     }).toThrow("Invalid skill URL");
+  });
+});
+
+describe("official skill repository identity", () => {
+  it("keeps the active source on vm0-skills", () => {
+    expect(getOfficialSkillSourceUrl("slack")).toBe(
+      "https://github.com/okou-ai/vm0-skills/tree/main/slack",
+    );
+  });
+
+  it("returns only the exact old and future official aliases", () => {
+    expect(getOfficialSkillAliasUrls("slack")).toStrictEqual([
+      "https://github.com/okou-ai/vm0-skills/tree/main/slack",
+      "https://github.com/okou-ai/okou-skills/tree/main/slack",
+    ]);
+  });
+
+  it("keeps a durable identity when the source alias changes", () => {
+    expect(getOfficialSkillIdentityFullPath("slack")).toBe(
+      "okou-ai/vm0-skills/tree/main/slack",
+    );
+    expect(getOfficialSkillIdentityUrl("slack")).toBe(
+      "https://github.com/okou-ai/vm0-skills/tree/main/slack",
+    );
+  });
+
+  it("normalizes only exact official tree aliases to durable identity", () => {
+    expect(
+      resolveOfficialSkillIdentityFullPath(
+        "https://github.com/okou-ai/okou-skills/tree/main/slack",
+      ),
+    ).toBe("okou-ai/vm0-skills/tree/main/slack");
+    expect(
+      resolveOfficialSkillIdentityFullPath(
+        "https://github.com/acme/okou-skills/tree/main/slack",
+      ),
+    ).toBeNull();
+    expect(
+      resolveOfficialSkillIdentityFullPath(
+        "https://github.com/okou-ai/okou-skills/tree/develop/slack",
+      ),
+    ).toBeNull();
+  });
+
+  it("does not rewrite explicit repositories or branches", () => {
+    const external = "https://github.com/acme/okou-skills/tree/main/slack";
+    const nonDefaultBranch =
+      "https://github.com/okou-ai/okou-skills/tree/develop/slack";
+
+    expect(resolveSkillRef(external)).toBe(external);
+    expect(resolveSkillRef(nonDefaultBranch)).toBe(nonDefaultBranch);
   });
 });

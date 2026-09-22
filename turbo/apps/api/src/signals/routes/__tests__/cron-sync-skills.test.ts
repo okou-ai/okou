@@ -563,6 +563,81 @@ describe("GET /api/cron/sync-skills", () => {
     expect(s3CallsByName("PutObjectCommand")).toHaveLength(4);
   });
 
+  it("reuses a historical Storage bound through the future repository alias", async () => {
+    const fixture = useCronSyncSkillsFixture();
+    const commitSha = newCommitSha();
+    await seedCurrentSeedSkillVersions(fixture);
+
+    const staleAlpha = {
+      ...fixture.alphaSkill,
+      files: [
+        {
+          path: "SKILL.md",
+          content: `---\nname: ${fixture.alphaSkill.name}\ndescription: stale\n---\n`,
+        },
+      ],
+    };
+    const staleVersion = buildMockSkillVersion(fixture, staleAlpha);
+    const futureAliasUrl = `https://github.com/okou-ai/okou-skills/tree/main/${fixture.alphaSkill.name}`;
+    const futureAliasFullPath = `okou-ai/okou-skills/tree/main/${fixture.alphaSkill.name}`;
+    const historicalStorageName = `agent-skills@vm0-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`;
+    fixture.skillUrls.add(futureAliasUrl);
+    fixture.storageNames.add(historicalStorageName);
+    await seedCurrentSkillVersionsState(context, {
+      staleCommitSha: STALE_PRESEEDED_COMMIT_SHA,
+      versions: [
+        {
+          name: staleVersion.name,
+          url: futureAliasUrl,
+          full_path: futureAliasFullPath,
+          storage_name: historicalStorageName,
+          version_hash: staleVersion.versionHash,
+          size: staleVersion.size,
+          archive_size: staleVersion.archiveSize,
+          file_count: staleVersion.fileCount,
+          frontmatter: staleVersion.frontmatter,
+        },
+      ],
+    });
+    setupMswHandlers(
+      commitSha,
+      createFullTarball(fixture, [fixture.alphaSkill]),
+    );
+
+    const response = await syncOwnedSkills(fixture);
+
+    expect(response).toStrictEqual({
+      success: true,
+      commitSha,
+      synced: 1,
+      skipped: fixture.requiredSeedSkillNames.length,
+      failed: 0,
+      removed: 0,
+      total: fixture.requiredSeedSkillNames.length + 1,
+    });
+    const currentVersion = buildMockSkillVersion(fixture, fixture.alphaSkill);
+    await expect(
+      findSkillByUrl(testSkillUrl(fixture.alphaSkill.name)),
+    ).resolves.toMatchObject({
+      fullPath: `okou-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
+      versionHash: currentVersion.versionHash,
+      commitSha,
+    });
+    await expect(
+      findSystemStorageByName(historicalStorageName),
+    ).resolves.toMatchObject({
+      headVersionId: currentVersion.versionHash,
+      size: currentVersion.size,
+    });
+    await expect(
+      findSystemStorageByName(
+        getSkillStorageName(
+          `okou-ai/vm0-skills/tree/main/${fixture.alphaSkill.name}`,
+        ),
+      ),
+    ).resolves.toBeNull();
+  });
+
   it("syncs isolated counterparts for the current default seed skills", async () => {
     const fixture = useCronSyncSkillsFixture();
     const commitSha = newCommitSha();
