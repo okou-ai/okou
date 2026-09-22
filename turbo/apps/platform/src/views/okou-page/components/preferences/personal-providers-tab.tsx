@@ -611,14 +611,16 @@ function OAuthAccountIdentity({
     <div className="min-w-0">
       {detail ? (
         <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              tabIndex={0}
-              className="block min-w-0 truncate rounded-md px-1 py-0.5 -mx-1 -my-0.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
-            >
-              {identity}
-            </span>
-          </TooltipTrigger>
+          <TooltipTrigger
+            render={
+              <span
+                tabIndex={0}
+                className="block min-w-0 truncate rounded-md px-1 py-0.5 -mx-1 -my-0.5 text-sm font-medium text-foreground outline-none transition-colors hover:bg-state-hover focus-visible:bg-state-hover"
+              >
+                {identity}
+              </span>
+            }
+          />
           <TooltipContent side="bottom" align="start" sideOffset={8}>
             {detail}
           </TooltipContent>
@@ -1353,52 +1355,54 @@ function SubscriptionUsageRing({
 
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
-          role="progressbar"
-          aria-label={t(
-            ($) => {
-              return $.settings.accountMenu.subscriptions.usageRemaining;
-            },
-            { provider: identity, window: windowLabel },
-          )}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={remainingPercent ?? undefined}
-          className="relative flex h-7 w-7 shrink-0 cursor-default items-center justify-center rounded-full outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 28 28"
-            className="h-7 w-7 -rotate-90"
+      <TooltipTrigger
+        render={
+          <span
+            tabIndex={0}
+            role="progressbar"
+            aria-label={t(
+              ($) => {
+                return $.settings.accountMenu.subscriptions.usageRemaining;
+              },
+              { provider: identity, window: windowLabel },
+            )}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={remainingPercent ?? undefined}
+            className="relative flex h-7 w-7 shrink-0 cursor-default items-center justify-center rounded-full outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <circle
-              cx="14"
-              cy="14"
-              r="11"
-              fill="none"
-              strokeWidth="3"
-              className={tone.ringTrackClassName}
-            />
-            <circle
-              cx="14"
-              cy="14"
-              r="11"
-              fill="none"
-              pathLength="100"
-              strokeDasharray="100"
-              strokeDashoffset={100 - progress}
-              strokeLinecap="round"
-              strokeWidth="3"
-              className={`${tone.ringClassName} transition-[stroke-dashoffset]`}
-            />
-          </svg>
-          <span className="absolute max-w-5 truncate text-[7px] font-semibold leading-none text-muted-foreground">
-            {shortWindowLabel}
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 28 28"
+              className="h-7 w-7 -rotate-90"
+            >
+              <circle
+                cx="14"
+                cy="14"
+                r="11"
+                fill="none"
+                strokeWidth="3"
+                className={tone.ringTrackClassName}
+              />
+              <circle
+                cx="14"
+                cy="14"
+                r="11"
+                fill="none"
+                pathLength="100"
+                strokeDasharray="100"
+                strokeDashoffset={100 - progress}
+                strokeLinecap="round"
+                strokeWidth="3"
+                className={`${tone.ringClassName} transition-[stroke-dashoffset]`}
+              />
+            </svg>
+            <span className="absolute max-w-5 truncate text-[7px] font-semibold leading-none text-muted-foreground">
+              {shortWindowLabel}
+            </span>
           </span>
-        </span>
-      </TooltipTrigger>
+        }
+      />
       <TooltipContent
         side="bottom"
         sideOffset={8}
