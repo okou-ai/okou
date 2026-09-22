@@ -44,6 +44,7 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
+  getSkillStorageName,
 } from "@okouai/core/storage-names";
 import {
   UNKNOWN_PERMISSION_GRANT,
@@ -1095,13 +1096,101 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const claim = await api.claimRunnerJob(run.runId);
     const mounts = expectCanonicalStorageManifest(
       claim.storageManifest,
-    )?.storageMounts.map((mount) => {
-      return mount.mountPath;
-    });
-    expect(mounts).toContain("/home/user/.claude/skills/workflow-setup");
-    expect(mounts).not.toContain("/home/user/.claude/skills/goal");
+    )?.storageMounts;
+    expect(mounts).toContainEqual(
+      expect.objectContaining({
+        name: versions.find((version) => {
+          return version.name === "workflow-setup";
+        })?.storage_name,
+        mountPath: "/home/user/.claude/skills/workflow-setup",
+      }),
+    );
+    expect(
+      mounts?.map((mount) => {
+        return mount.mountPath;
+      }),
+    ).not.toContain("/home/user/.claude/skills/goal");
     expect(claim.appendSystemPrompt).toContain("# Agent Tools");
     expect(claim.appendSystemPrompt).not.toContain("# Thread Goal");
+    await api.requestCancelRun(actor, run.runId, [200]);
+  });
+
+  it.each(["vm0-skills", "okou-skills"] as const)(
+    "mounts the Storage persisted through the %s repository alias",
+    async (repository) => {
+      const skillName = "workflow-setup";
+      const fullPath = `okou-ai/${repository}/tree/main/${skillName}`;
+      const url = `https://github.com/${fullPath}`;
+      const storageName = `official-skill-alias-${repository}-${randomUUID()}`;
+      onTestFinished(async () => {
+        await cleanupOwnedSkillsState(context, {
+          skillUrls: [url],
+          storageNames: [storageName],
+        });
+      });
+      await seedCurrentSkillVersionsState(context, {
+        staleCommitSha: `official-skill-alias-${repository}`,
+        versions: [
+          {
+            name: skillName,
+            url,
+            full_path: fullPath,
+            storage_name: storageName,
+            version_hash: createHash("sha256")
+              .update(randomUUID())
+              .digest("hex"),
+            size: 1024,
+            archive_size: 1024,
+            file_count: 1,
+            frontmatter: {
+              name: skillName,
+              description: `Persisted ${repository} binding`,
+            },
+          },
+        ],
+      });
+
+      const api = createRunsApi(context);
+      const { actor, agentId, runnerGroup } = await entitledRunActor();
+      const run = await api.createRun(actor, {
+        agentId,
+        prompt: `mount the ${repository} binding`,
+        modelProvider: "anthropic-api-key",
+      });
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+
+      expect(
+        expectCanonicalStorageManifest(
+          claim.storageManifest,
+        )?.storageMounts.find((mount) => {
+          return mount.mountPath === "/home/user/.claude/skills/workflow-setup";
+        }),
+      ).toMatchObject({ name: storageName });
+      await api.requestCancelRun(actor, run.runId, [200]);
+    },
+  );
+
+  it("uses the durable identity fallback when an official skill has no binding", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const run = await api.createRun(actor, {
+      agentId,
+      prompt: "mount the default official skill identity",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+
+    expect(
+      expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts.find(
+        (mount) => {
+          return mount.mountPath === "/home/user/.claude/skills/workflow-setup";
+        },
+      ),
+    ).toMatchObject({
+      name: getSkillStorageName("okou-ai/vm0-skills/tree/main/workflow-setup"),
+    });
     await api.requestCancelRun(actor, run.runId, [200]);
   });
 
