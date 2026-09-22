@@ -239,6 +239,12 @@ if [ "${1:-}" = "bash" ] && [ "${2:-}" = "-s" ]; then
   exit 0
 fi
 
+if [ "${1:-}" = "sudo" ] && [ "${2:-}" = "mkdir" ]; then
+  # Artifact staging creates its remote directory outside a remote script.
+  "$@"
+  exit 0
+fi
+
 if [ "${1:-}" = "sudo" ] && [ "${2:-}" = "install" ]; then
   if [ -n "${SSH_UPLOAD_STATUSES:-}" ]; then
     upload_attempt=$(( $(< "$SSH_UPLOAD_COUNT_FILE") + 1 ))
@@ -297,8 +303,19 @@ case "$command" in
     exec "$command" "$@"
     ;;
   mv)
-    [ "$1" = -f ] && [ "$3" = /var/lib/vm0-runner/bin/pr-123/runner ] || exit 1
-    mv -f "$2" "${SSH_UPLOAD_DIR}/runner"
+    [ "$1" = -f ] || exit 1
+    case "$3" in
+      /var/lib/vm0-runner/bin/pr-123/runner)
+        mv -f "$2" "${SSH_UPLOAD_DIR}/runner"
+        ;;
+      /var/lib/vm0-runner/bin/pr-123/okou-cli/*)
+        mkdir -p "${SSH_UPLOAD_DIR}/okou-cli"
+        mv -f "$2" "${SSH_UPLOAD_DIR}/okou-cli/${3##*/}"
+        ;;
+      *)
+        exit 1
+        ;;
+    esac
     ;;
   "${SSH_UPLOAD_DIR}/"*)
     exec "$command" "$@"
@@ -610,5 +627,59 @@ grep -Fq 'runner sha mismatch' "${upload_corrupt_case}/out" || fail "successful 
 [ -z "$(find "${upload_corrupt_case}/uploads" -type f -name 'runner.*')" ] || fail "verification failure must clean up its candidate"
 [ ! -e "${upload_corrupt_case}/manifest.json" ] || fail "corrupt upload must not publish a manifest"
 [ "$(< "${upload_corrupt_case}/gc-count")" -eq 0 ] || fail "corrupt upload must not reach GC"
+
+okou_cli_dir="${TMPDIR}/okou-cli-artifact"
+mkdir -p "$okou_cli_dir"
+printf 'cli tarball fixture\n' > "${okou_cli_dir}/package.tgz"
+okou_cli_sha=$(sha256sum "${okou_cli_dir}/package.tgz" | awk '{print $1}')
+jq -n --arg sha "$okou_cli_sha" '{
+  version: 1,
+  commitSha: "abc",
+  package: {path: "package.tgz", sha256: $sha, size: 20},
+  versions: {cli: "9.353.0", piAgentRuntime: "1.36.0", piSdk: "0.86.1+okou.0123456789ab"}
+}' > "${okou_cli_dir}/manifest.json"
+
+okou_cli_case="${TMPDIR}/okou-cli-staged"
+prepare_remote_case "$okou_cli_case"
+# One upload for the runner binary, then one per staged CLI artifact file.
+OKOU_CLI_ARTIFACT_DIR="$okou_cli_dir" REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 \
+  REMOTE_UPLOAD_STATUSES=0,0,0 run_remote_case "$okou_cli_case"
+grep -Fqx -- 'ci@dev-arm-1 sudo mkdir -p /var/lib/vm0-runner/bin/pr-123/okou-cli' "${okou_cli_case}/ssh.log" || fail "CLI artifact staging must create the artifact directory"
+[ "$(< "${okou_cli_case}/upload-count")" -eq 3 ] || fail "CLI artifact staging must upload every artifact file once"
+for artifact_file in package.tgz manifest.json; do
+  grep -Fqx -- "ci@dev-arm-1 bash -s -- /var/lib/vm0-runner/bin/pr-123/okou-cli/${artifact_file}.abc.1.tmp.XXXXXX" "${okou_cli_case}/ssh.log" || fail "CLI artifact ${artifact_file} must allocate a private candidate beside its final name"
+  grep -Eq "^ci@dev-arm-1 sudo install -m 644 /dev/stdin .*/${artifact_file}\.abc\.1\.tmp\.[^ /]+$" "${okou_cli_case}/ssh.log" || fail "CLI artifact ${artifact_file} must upload through a private candidate"
+  grep -Eq "^ci@dev-arm-1 bash -s -- .*/${artifact_file}\.abc\.1\.tmp\.[^ ]+ /var/lib/vm0-runner/bin/pr-123/okou-cli/${artifact_file} [0-9a-f]{64}$" "${okou_cli_case}/ssh.log" || fail "CLI artifact ${artifact_file} must publish under a checksum"
+  cmp "${okou_cli_dir}/${artifact_file}" "${okou_cli_case}/uploads/okou-cli/${artifact_file}" || fail "CLI artifact ${artifact_file} must publish the complete file"
+done
+[ -z "$(find "${okou_cli_case}/uploads" -type f -name '*.tmp.*')" ] || fail "CLI artifact staging must not leave candidates behind"
+grep -Fqx -- "$gc_command" "${okou_cli_case}/ssh.log" || fail "CLI artifact staging must precede GC"
+grep -Fqx -- "$setup_command" "${okou_cli_case}/ssh.log" || fail "CLI artifact staging must continue to runner setup"
+grep -Fq -- '--okou-cli-artifact "$OKOU_CLI_DIR"' "$PREPARE" || fail "runner build must receive the staged CLI artifact directory"
+
+# The case directory must not spell the remote artifact directory: the mocked
+# SSH log records fixture candidate paths under it.
+no_okou_cli_case="${TMPDIR}/legacy-cli-delivery"
+prepare_remote_case "$no_okou_cli_case"
+REMOTE_REACH_GC=1 REMOTE_GC_STATUSES=0 run_remote_case "$no_okou_cli_case"
+if grep -Fq '/var/lib/vm0-runner/bin/pr-123/okou-cli' "${no_okou_cli_case}/ssh.log"; then
+  fail "without OKOU_CLI_ARTIFACT_DIR no CLI artifact command may reach the host"
+fi
+
+printf 'tampered\n' > "${okou_cli_dir}/package.tgz"
+if OKOU_CLI_ARTIFACT_DIR="$okou_cli_dir" \
+  JOB_REF=pr-123 \
+  HEAD_SHA=abc \
+  METAL_HOSTS=dev-1 \
+  METAL_USER=ci \
+  TARGET_TRIPLE=aarch64-unknown-linux-musl \
+  EXPECTED_REMOTE_ARCH=aarch64 \
+  RUNNER_PATH="$runner" \
+  FRESH_METADATA_PATH="$metadata" \
+  EXPECTED_BINARY_INPUT_DIGEST="$input_digest" \
+  "$PREPARE" >"${TMPDIR}/okou-cli-mismatch.out" 2>"${TMPDIR}/okou-cli-mismatch.err"; then
+  fail "expected a CLI artifact whose package does not match its manifest to fail"
+fi
+grep -q "Okou CLI package sha mismatch" "${TMPDIR}/okou-cli-mismatch.err" || fail "expected CLI artifact sha mismatch message"
 
 echo "prepare-runner-image-test: ok"

@@ -303,6 +303,13 @@ export const rustTypeBindings = [
           sandboxEventSequenceStart: [
             "First sandbox event sequence number for the resumed session.",
           ],
+          requiredPiAgentRuntimeVersion: [
+            "Exact pi-agent-runtime release the API prepared this turn with;",
+            "the guest execs the rootfs-installed CLI only on an exact match.",
+          ],
+          minCliVersion: [
+            "Lowest installed Okou CLI release allowed to run this launch payload.",
+          ],
         },
       },
       {

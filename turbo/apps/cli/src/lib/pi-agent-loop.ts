@@ -271,6 +271,15 @@ export async function runPiSandboxAgentLoop(args: {
     sessionDir,
     sessionId: args.config.sessionId,
   });
+  if (handoff.degraded) {
+    // Plain text: guest-agent only parses the preparation-timing envelope on
+    // stderr and keeps everything else as a failure-tail diagnostic.
+    console.error(
+      `Pi API first-turn handoff restarted from H0 as sandbox-first: ${handoff.degraded.reason} ` +
+        `(required pi-agent-runtime ${handoff.degraded.requiredPiAgentRuntimeVersion}, ` +
+        `installed ${handoff.degraded.installedPiAgentRuntimeVersion})`,
+    );
+  }
   await writePiApiFirstTurnBoundaryControl(handoff.boundaryControl);
   return await runPiOfficialRpcMode({
     sessionId: args.config.sessionId,
