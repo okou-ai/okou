@@ -84,7 +84,7 @@ test.each(targets)(
     const user = userEvent.setup({ delay: null });
     installVoiceBoundaries();
     await setupPage({ context, path: RUN_PATH });
-    await findEnabledButton("Voice input");
+    await screen.findByRole("textbox", { name: "Message" });
     const dialog = await openForwardComposer(name);
     const editor = within(dialog).getByRole("textbox", {
       name: "Add a message",
