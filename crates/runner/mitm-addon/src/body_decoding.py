@@ -389,9 +389,10 @@ def decompress_body(
     - gzip/deflate: hard cap via ``decompressobj.decompress(data, max_length=)``;
       zlib stops decoding once the cap is reached. Concatenated members are
       decoded until the shared cap is exhausted.
-    - zstd: hard cap via ``ZstdDecompressor.stream_reader(data).read(max_output)``;
-      zstd reads incrementally so total memory is bounded by
-      ``max_output`` plus library internal buffers.
+    - zstd: hard cap via a cross-frame
+      ``ZstdDecompressor.stream_reader(data).read(max_output)``; concatenated
+      frames share the cap, and total memory remains bounded by ``max_output``
+      plus library internal buffers.
     - br: exact accumulator cap over adaptive compressed-input chunks.
       Brotli 1.2's ``output_buffer_limit`` keeps transient output near the
       remaining budget, plus library allocation blocks; returned chunks may
@@ -613,7 +614,10 @@ def _decode_body_bounded(
             # stream_reader.read(n) reads *up to* n bytes: the full frame if
             # smaller than n, exactly n if larger — so total memory is bounded
             # by n plus ZSTD_DStream{In,Out}Size (~128 KB library buffers).
-            with zstandard.ZstdDecompressor().stream_reader(data) as reader:
+            with zstandard.ZstdDecompressor().stream_reader(
+                data,
+                read_across_frames=True,
+            ) as reader:
                 return _BodyDecodeResult(reader.read(max_output), False)
     except (zlib.error, brotli.error, zstandard.ZstdError) as exc:
         return _BodyDecodeResult(data, True, exc)
