@@ -304,6 +304,22 @@ test("An owner creates an SSH-backed route with a distinct RFB destination and c
 
 test("An SSH-backed card shows topology and a missing saved SSH host blocks edits", async () => {
   mockSettings({ connections: [tunneledHost], sshConnections: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.update,
+    ({ body, params, respond }) => {
+      requests.push({ body, connectionId: params.connectionId });
+      return respond(200, {
+        ...host,
+        id: tunneledHost.id,
+        displayName: tunneledHost.displayName,
+        host: tunneledHost.host,
+        port: tunneledHost.port,
+        security: tunneledHost.security,
+        generation: tunneledHost.generation + 1,
+      });
+    },
+  );
   await page();
   await screen.findByText(tunneledHost.displayName);
   expect(screen.getByText("Through saved SSH host")).toBeInTheDocument();
@@ -330,6 +346,24 @@ test("An SSH-backed card shows topology and a missing saved SSH host blocks edit
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   await choose(dialog, "Connection route", "Direct from Runner");
   expect(getAction("button", "Save", dialog)).toBeEnabled();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      connectionId: tunneledHost.id,
+      body: {
+        expectedGeneration: tunneledHost.generation,
+        displayName: tunneledHost.displayName,
+        host: tunneledHost.host,
+        port: tunneledHost.port,
+        transport: { type: "direct" },
+        credential: { id: tunneledHost.credentialId },
+        security: tunneledHost.security,
+      },
+    },
+  ]);
 });
 
 test("Inline password creation preserves spaces and sends the selected custom certificate trust", async () => {
