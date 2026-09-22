@@ -696,3 +696,37 @@ describe("Hidden restore teardown", () => {
     ]);
   });
 });
+
+/**
+ * `prepareForQuitAndInstall` ends the lifetime and `quitAndInstall()` only
+ * then closes the windows, so the update quit always reaches the session
+ * before the teardown it causes does.
+ */
+describe("Update quit teardown", () => {
+  it("stops reporting the load rejection an update quit produces", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+    const window = currentWindow();
+
+    session.abortForQuit();
+    // Electron destroys the window before it emits `closed`, so the pending
+    // load can reject first and reach the caller as the attempt's outcome.
+    window.destroyed = true;
+    window.load.reject(new Error("Object has been destroyed"));
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([]);
+  });
+
+  it("stops reporting the window close an update quit produces", async () => {
+    const { session, refreshes } = setup();
+    const pending = session.getToken();
+    const window = currentWindow();
+
+    session.abortForQuit();
+    window.close();
+
+    expect(await pending).toBeNull();
+    expect(failures(refreshes)).toEqual([]);
+  });
+});

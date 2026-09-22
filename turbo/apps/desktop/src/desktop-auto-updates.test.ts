@@ -543,6 +543,43 @@ describe("desktop auto-updates", () => {
     expect(mocks.dialog.showMessageBox).not.toHaveBeenCalled();
   });
 
+  it("leaves the app running when the quit preparation rejects", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const { prepareForQuitAndInstall } = installAndCaptureAutoUpdates(
+      () => OFFLINE_COMPUTER_USE_HOST_STATE,
+    );
+    prepareForQuitAndInstall.mockRejectedValueOnce(
+      new Error("Computer Use could not stop"),
+    );
+
+    emitAutoUpdaterEvent("update-available");
+    emitAutoUpdaterEvent("update-downloaded");
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith(
+        "Desktop update install failed",
+        expect.any(Error),
+      );
+    });
+
+    // The preparation owns the teardown steps that assume the app is going
+    // away, and none of them has happened: the restart never reached the
+    // point that closes a window.
+    expect(mocks.autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+
+    finishNativeSettle();
+    runScheduledUpdateCheck();
+    emitAutoUpdaterEvent("checking-for-update");
+
+    await vi.waitFor(() => {
+      expect(prepareForQuitAndInstall).toHaveBeenCalledTimes(2);
+      expect(mocks.autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+    });
+
+    consoleError.mockRestore();
+  });
+
   it("defers without prompting during recent command activity", async () => {
     const { prepareForQuitAndInstall } = installAndCaptureAutoUpdates(() => ({
       ...OFFLINE_COMPUTER_USE_HOST_STATE,

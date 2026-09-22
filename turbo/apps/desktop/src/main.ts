@@ -707,6 +707,13 @@ function refreshComputerUsePermissionsForState(): void {
 
 async function prepareForQuitAndInstall(): Promise<void> {
   await computerUseController.stopForQuit("update_relaunch");
+  // `quitAndInstall()` closes every window before it quits the app, so the
+  // `before-quit` abort runs long after the auth window teardown it exists to
+  // excuse. This is the last point that still precedes it. It belongs after
+  // the stop for the same reason `allowQuitWithoutConfirmation` does: a stop
+  // that rejects never reaches `quitAndInstall()`, and stripping authority
+  // from an app that keeps running would then suppress nothing.
+  authSession?.abortForQuit();
   quitConfirmation.allowQuitWithoutConfirmation();
   appIsQuitting = true;
   applicationMenu.dispose();

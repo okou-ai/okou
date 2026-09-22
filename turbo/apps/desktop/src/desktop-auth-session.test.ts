@@ -18,7 +18,9 @@ import {
   buildDesktopAuthConsumeUrl,
   buildDesktopAuthSelectOrgUrl,
   buildDesktopAuthTokenUrl,
+  DesktopAuthTeardownError,
 } from "./desktop-auth";
+import { DesktopQuitConfirmationController } from "./desktop-quit-confirmation";
 import { createDesktopClientHeaderInjector } from "./desktop-client-headers";
 import type { DesktopAuthWindowRequest } from "./desktop-auth-window";
 
@@ -809,6 +811,183 @@ describe("App quit", () => {
     expect(session.getCachedToken()).toBeNull();
     expect(session.canRestoreSession()).toBe(false);
     expect(changes.length).toBeGreaterThan(notified);
+  });
+});
+
+/**
+ * The update quit prepares itself instead of going through `before-quit`:
+ * `restartForUpdate` awaits this whole function before `quitAndInstall()`
+ * closes any window, so the abort provably precedes every teardown. It mirrors
+ * `prepareForQuitAndInstall` in main.ts, including the ordering that matters —
+ * the lifetime ends only once the Computer Use stop has resolved, because a
+ * stop that rejects never reaches `quitAndInstall()` and tears nothing down.
+ */
+async function prepareForQuitAndInstall(
+  session: DesktopAuthSession,
+  quitConfirmation: DesktopQuitConfirmationController,
+  stopForQuit: () => Promise<void>,
+): Promise<void> {
+  await stopForQuit();
+  session.abortForQuit();
+  quitConfirmation.allowQuitWithoutConfirmation();
+}
+
+describe("Update quit", () => {
+  function quitConfirmationSpy() {
+    const quits: string[] = [];
+    const quitConfirmation = new DesktopQuitConfirmationController({
+      // The user declines whenever anything does ask, so a quit that goes
+      // ahead can only be one that never needed confirming.
+      confirmQuit: async () => false,
+      quit: () => quits.push("quit"),
+    });
+    return { quitConfirmation, quits };
+  }
+
+  it("stops reporting a hidden restore whose load rejects during the update quit", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    const { quitConfirmation, quits } = quitConfirmationSpy();
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getToken();
+    await prepareForQuitAndInstall(
+      session,
+      quitConfirmation,
+      async () => undefined,
+    );
+    // The rejection the destroyed window produces is an ordinary error, so
+    // before the lifetime ended it was classified as real unavailability.
+    failWindow(new Error("Desktop auth page could not load"));
+
+    expect(await pending).toBeNull();
+    expect(refreshes.map((event) => event.phase)).toEqual(["started"]);
+    expect(windows[0]?.signal.aborted).toBe(true);
+    expect(quitConfirmation.isQuitAllowed()).toBe(true);
+    expect(quits).toEqual([]);
+  });
+
+  it("stops reporting a hidden restore whose window closes during the update quit", async () => {
+    const { session, replies, refreshes } = createSession();
+    const { quitConfirmation } = quitConfirmationSpy();
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getToken();
+    await prepareForQuitAndInstall(
+      session,
+      quitConfirmation,
+      async () => undefined,
+    );
+    // The other rejection the same teardown produces arrives already typed as
+    // teardown. One abort has to cover both, and the guard reads the lifetime
+    // rather than the rejection.
+    failWindow(new DesktopAuthTeardownError("Desktop auth window closed"));
+
+    expect(await pending).toBeNull();
+    expect(refreshes.map((event) => event.phase)).toEqual(["started"]);
+  });
+
+  it("keeps the session live when the Computer Use stop rejects", async () => {
+    identityHandlers();
+    const { session, replies, windows, refreshes } = createSession();
+    const { quitConfirmation } = quitConfirmationSpy();
+    const reply = deferred<string | null>();
+    replies.push(reply.promise);
+
+    const pending = session.getToken();
+    await expect(
+      prepareForQuitAndInstall(session, quitConfirmation, async () => {
+        throw new Error("Computer Use could not stop");
+      }),
+    ).rejects.toThrow("Computer Use could not stop");
+
+    // The preparation rejects before `quitAndInstall()`, so no window is torn
+    // down and the app keeps running. Aborting here would strand it without
+    // authority in exchange for suppressing nothing.
+    expect(windows[0]?.signal.aborted).toBe(false);
+    expect(quitConfirmation.isQuitAllowed()).toBe(false);
+
+    reply.resolve("restored");
+    expect(await pending).toBe("restored");
+    expect(refreshes.map((event) => event.phase)).toEqual([
+      "started",
+      "completed",
+    ]);
+    expect(session.getAuthority()).not.toBeNull();
+  });
+
+  it("still reports a failure that arrives while the Computer Use stop runs", async () => {
+    const { session, replies, refreshes } = createSession();
+    const { quitConfirmation } = quitConfirmationSpy();
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getToken();
+    const stop = deferred<undefined>();
+    const prepared = prepareForQuitAndInstall(
+      session,
+      quitConfirmation,
+      () => stop.promise,
+    );
+    // Nothing has been torn down yet, so a page that genuinely failed while
+    // the stop was still running is unavailability and has to keep reporting.
+    failWindow(new Error("Desktop auth page failed: -2"));
+
+    expect(await pending).toBeNull();
+    expect(refreshes.at(-1)).toMatchObject({
+      phase: "failed",
+      classification: "unavailable",
+    });
+
+    stop.resolve(undefined);
+    await prepared;
+  });
+
+  it("keeps the session live when the user declines a quit", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    const { quitConfirmation, quits } = quitConfirmationSpy();
+    let failWindow!: (error: Error) => void;
+    replies.push(
+      new Promise<string | null>((_resolve, reject) => {
+        failWindow = reject;
+      }),
+    );
+
+    const pending = session.getToken();
+    // main.ts's `before-quit` handler keeps its abort below this gate, and
+    // must: the branch the gate takes leaves the app running.
+    const beforeQuit = (): Promise<void> | null => {
+      if (!quitConfirmation.isQuitAllowed())
+        return quitConfirmation.requestQuit();
+      session.abortForQuit();
+      return null;
+    };
+    await beforeQuit();
+
+    expect(quits).toEqual([]);
+    expect(quitConfirmation.isQuitAllowed()).toBe(false);
+    expect(windows[0]?.signal.aborted).toBe(false);
+
+    // The app carries on, so the teardown failure is still a real one.
+    failWindow(new DesktopAuthTeardownError("Desktop auth window closed"));
+    expect(await pending).toBeNull();
+    expect(refreshes.at(-1)).toMatchObject({
+      phase: "failed",
+      classification: "cancelled",
+    });
   });
 });
 
