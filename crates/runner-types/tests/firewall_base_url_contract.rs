@@ -33,12 +33,17 @@ fn firewall_base_url_validation_matches_shared_contract() {
         "shared firewall hostname policy changed without a runner compatibility review"
     );
 
+    assert!(
+        !contract.base_url_validation_cases.is_empty()
+            && !contract.catalog_base_url_validation_cases.is_empty(),
+        "shared firewall base URL contract should contain runtime and catalog cases"
+    );
+
     let cases: Vec<TestCase> = contract
         .base_url_validation_cases
         .into_iter()
         .chain(contract.catalog_base_url_validation_cases)
         .collect();
-    assert!(!cases.is_empty(), "shared contract should contain cases");
 
     let mut names = HashSet::new();
     let mismatches: Vec<String> = cases
