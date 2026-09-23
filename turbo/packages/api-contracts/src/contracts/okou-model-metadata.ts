@@ -8,67 +8,88 @@ export type OkouRunModel = (typeof OKOU_RUN_MODELS)[number];
 
 const OKOU_INPUT_MODALITIES = ["text", "image"] as const;
 
-// These limits are consumed by different runtime schemas: Pi's Model fields
-// and Codex's default/max context-window fields. Keep each runtime projection
-// explicit rather than treating the fields as interchangeable.
-const PI_RUNTIME_LIMITS = {
+// Pi reflects the OpenRouter model limits. Codex's context_window and
+// max_context_window follow the GPT-6 entries in Codex's own model catalog;
+// they are runtime-specific values, not contradictory limits on the model.
+const GPT_6_PI_LIMITS = {
   contextWindow: 1_050_000,
   maxTokens: 128_000,
 } as const;
 
-const CODEX_RUNTIME_LIMITS = {
+const GPT_6_CODEX_LIMITS = {
   contextWindow: 272_000,
   maxContextWindow: 872_000,
 } as const;
 
+const OKOU_BACKING_MODELS = {
+  "gpt-6-luna": {
+    displayName: "GPT-6 Luna",
+    pi: GPT_6_PI_LIMITS,
+    codex: GPT_6_CODEX_LIMITS,
+  },
+  "gpt-6-sol": {
+    displayName: "GPT-6 Sol",
+    pi: GPT_6_PI_LIMITS,
+    codex: GPT_6_CODEX_LIMITS,
+  },
+} as const;
+
+type OkouBackingModel = keyof typeof OKOU_BACKING_MODELS;
+
 type OkouModelMetadata = {
   readonly displayName: string;
-  readonly backingModel: string;
+  readonly backingModel: OkouBackingModel;
   readonly presetModel: string;
   readonly reasoningEffort: "low" | "high" | "max";
   readonly inputModalities: typeof OKOU_INPUT_MODALITIES;
-  readonly pi: typeof PI_RUNTIME_LIMITS;
-  readonly codex: typeof CODEX_RUNTIME_LIMITS & { readonly priority: number };
+  readonly pi: typeof GPT_6_PI_LIMITS;
+  readonly codex: typeof GPT_6_CODEX_LIMITS & { readonly priority: number };
 };
+
+type OkouModelDefinition = {
+  readonly displayName: string;
+  readonly backingModel: OkouBackingModel;
+  readonly presetModel: string;
+  readonly reasoningEffort: "low" | "high" | "max";
+  readonly codexPriority: number;
+};
+
+function defineOkouModel(definition: OkouModelDefinition): OkouModelMetadata {
+  const backingModel = OKOU_BACKING_MODELS[definition.backingModel];
+  return {
+    displayName: definition.displayName,
+    backingModel: definition.backingModel,
+    presetModel: definition.presetModel,
+    reasoningEffort: definition.reasoningEffort,
+    inputModalities: OKOU_INPUT_MODALITIES,
+    pi: backingModel.pi,
+    codex: { ...backingModel.codex, priority: definition.codexPriority },
+  };
+}
 
 /** Product-owned model facts shared by the Pi and Codex runtime projections. */
 export const OKOU_MODEL_METADATA = {
-  "okou-1.0": {
+  "okou-1.0": defineOkouModel({
     displayName: "Okou 1.0",
-    backingModel: "GPT-6 Luna",
+    backingModel: "gpt-6-luna",
     presetModel: "@preset/okou-1-0",
     reasoningEffort: "max",
-    inputModalities: OKOU_INPUT_MODALITIES,
-    pi: PI_RUNTIME_LIMITS,
-    codex: {
-      ...CODEX_RUNTIME_LIMITS,
-      priority: 3,
-    },
-  },
-  "okou-1.0-pro": {
+    codexPriority: 3,
+  }),
+  "okou-1.0-pro": defineOkouModel({
     displayName: "Okou 1.0 Pro",
-    backingModel: "GPT-6 Sol",
+    backingModel: "gpt-6-sol",
     presetModel: "@preset/okou-1-0-pro",
     reasoningEffort: "low",
-    inputModalities: OKOU_INPUT_MODALITIES,
-    pi: PI_RUNTIME_LIMITS,
-    codex: {
-      ...CODEX_RUNTIME_LIMITS,
-      priority: 2,
-    },
-  },
-  "okou-1.0-max": {
+    codexPriority: 2,
+  }),
+  "okou-1.0-max": defineOkouModel({
     displayName: "Okou 1.0 Max",
-    backingModel: "GPT-6 Sol",
+    backingModel: "gpt-6-sol",
     presetModel: "@preset/okou-1-0-max",
     reasoningEffort: "high",
-    inputModalities: OKOU_INPUT_MODALITIES,
-    pi: PI_RUNTIME_LIMITS,
-    codex: {
-      ...CODEX_RUNTIME_LIMITS,
-      priority: 2,
-    },
-  },
+    codexPriority: 2,
+  }),
 } as const satisfies Record<OkouRunModel, OkouModelMetadata>;
 
 const CODEX_REASONING_DESCRIPTIONS = {
@@ -115,7 +136,9 @@ export const OKOU_MODEL_CODEX_CATALOG = {
       ...CODEX_MODEL_DEFAULTS,
       slug,
       display_name: metadata.displayName,
-      description: `OpenRouter preset backed by ${metadata.backingModel}.`,
+      description: `OpenRouter preset backed by ${
+        OKOU_BACKING_MODELS[metadata.backingModel].displayName
+      }.`,
       default_reasoning_level: metadata.reasoningEffort,
       supported_reasoning_levels: [
         {
