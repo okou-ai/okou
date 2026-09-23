@@ -864,11 +864,9 @@ Existing z-index declarations are migration debt to audit under these ownership
 rules, including zero, negative values and values below 50; passing today's
 lint does not establish correct stacking.
 
-[Browser regression tests](../e2e/playwright/tests/floating-layers.spec.ts)
-check actual pointer hit targets over sidebar actions in fullscreen, nested
-dialog interaction and dismissal, a dialog above fullscreen content, and a
-select above its settings dialog.
-Class names and computed z-index values alone cannot verify these relationships.
+The routine Playwright gate covers chat send-and-reply rather than layout or
+pointer hit targets. Class names and computed z-index values alone cannot verify
+those relationships.
 Fullscreen state preservation also needs the shared primitive's state and
 scroll regression coverage. Standalone behavior still needs installed-PWA
 acceptance; desktop browser coverage does not establish iOS keyboard behavior.

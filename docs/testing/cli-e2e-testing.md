@@ -128,7 +128,8 @@ to preserve their existing billing and provider test prerequisites.
 Runner preparation completes onboarding through
 the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.
-Only the dedicated paid-onboarding spec exercises the video onboarding UI.
+Platform Vitest covers the video onboarding UI and checkout return flow.
+The deployed Playwright suite covers one chat send-and-reply happy path.
 
 Runner account preparation reads Clerk's Backend API
 `GET /v1/instance/organization_settings` once before creating its five identities.
