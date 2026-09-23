@@ -284,6 +284,17 @@ test("A touch preview starts on release and stays independent of selection", asy
   expect(media.play).toHaveBeenCalledTimes(1);
   expect(document.querySelector("[data-composer-inline-template]")).toBeNull();
 
+  // Once playback hides the overlay, a touch browser can emit a compatibility
+  // mouse exit. It must not reset the preview started by the tap.
+  const previewSurface = preview.closest("[data-video-template-preview]");
+  if (!previewSurface) {
+    throw new Error("Video preview surface not found");
+  }
+  fireEvent.playing(video);
+  fireEvent.mouseOut(previewSurface, { relatedTarget: document.body });
+  expect(video.paused).toBeFalsy();
+  expect(media.pause).not.toHaveBeenCalled();
+
   await user.pointer({
     target: within(dialog).getByLabelText(
       `Select video template ${template.title}`,
