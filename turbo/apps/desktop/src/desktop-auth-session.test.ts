@@ -345,6 +345,101 @@ describe("Okou App session authority", () => {
     expect(windows).toHaveLength(1);
   });
 
+  it("keeps execution authority during a server-verified same-identity renewal", async () => {
+    const { session, replies, windows, refreshes } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const authority = session.getAuthority();
+    const events = refreshes.length;
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const fresh = sessionToken(60, "fresh");
+    const reply = deferred<string | null>();
+    replies.push(reply.promise);
+
+    const renewal = session.getAuthState();
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).toBe(authority);
+    reply.resolve(fresh);
+    expect((await renewal).status).toBe("signed_in");
+    expect(session.getAuthority()).toBe(authority);
+    expect(session.getCachedToken()).toBe(fresh);
+    expect(refreshes).toHaveLength(events);
+  });
+
+  it("withdraws old authority at expiry when an in-flight renewal stalls", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const previousAuthority = session.getAuthority();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const deadline = new AbortController();
+    const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
+      ms < 15_000 ? deadline.signal : originalTimeout(ms),
+    );
+    const reply = deferred<string | null>();
+    const fresh = sessionToken(60, "fresh");
+    replies.push(reply.promise, Promise.resolve(fresh));
+    const renewal = session.getAuthState();
+    expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).toBe(previousAuthority);
+
+    deadline.abort();
+    expect(session.getAuthority()).toBeNull();
+    reply.resolve(null);
+    expect((await renewal).status).toBe("signed_in");
+    expect(session.getAuthority()).not.toBe(previousAuthority);
+    expect(windows).toHaveLength(3);
+  });
+
+  it("does not publish a late seamless renewal after sign-out", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const reply = deferred<string | null>();
+    replies.push(reply.promise);
+    const renewal = session.getAuthState();
+    expect(windows).toHaveLength(2);
+    session.signOut();
+    reply.resolve(sessionToken(60, "late"));
+    expect((await renewal).status).toBe("signed_out");
+    expect(session.getCachedToken()).toBeNull();
+    expect(session.getAuthority()).toBeNull();
+    expect(windows[1]?.signal.aborted).toBe(true);
+  });
+
+  it("revokes old authority immediately when a rejected request forces refresh during renewal", async () => {
+    const { session, replies, windows } = createSession();
+    identityHandlers({ userId: "same-user" });
+    replies.push(Promise.resolve(sessionToken(60, "old")));
+    await session.getAuthState();
+    const authority = session.getAuthority();
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 50_000);
+    const pendingReply = deferred<string | null>();
+    replies.push(
+      pendingReply.promise,
+      Promise.resolve(sessionToken(60, "hard")),
+    );
+    const renewal = session.getAuthState();
+    expect(session.getAuthority()).toBe(authority);
+    const hard = session.getToken({ forceRefresh: true });
+    const joined = session.getToken({ forceRefresh: true });
+    expect(session.getAuthority()).toBeNull();
+    pendingReply.resolve(sessionToken(60, "superseded"));
+    expect(await joined).toBe(await hard);
+    await renewal;
+    expect(session.getAuthority()).not.toBe(authority);
+    expect(windows).toHaveLength(3);
+  });
+
   it("does not deliver a pending request to a different identity during proactive renewal", async () => {
     const { session, replies, windows } = createSession();
     const old = sessionToken(10, "old");
@@ -377,13 +472,16 @@ describe("Okou App session authority", () => {
       }),
     );
     await session.getAuthState();
+    const previousAuthority = session.getAuthority();
     const first = session.fetchWithSessionAuth(new URL(`${api}/api/protected`));
     const second = session.fetchWithSessionAuth(
       new URL(`${api}/api/protected`),
     );
     expect(windows).toHaveLength(2);
+    expect(session.getAuthority()).toBe(previousAuthority);
     reply.resolve(fresh);
     expect((await first).status).toBe(401);
+    expect(session.getAuthority()).not.toBe(previousAuthority);
     expect((await second).status).toBe(401);
     expect(requests).toEqual([]);
     expect((await session.getAuthState()).user).toMatchObject({

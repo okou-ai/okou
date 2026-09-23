@@ -30,25 +30,29 @@ const IDENTITY_VALIDATION_TIMEOUT_MS = 30_000;
 // Leave room for the hidden auth window and the identity validation round trips.
 const TOKEN_REFRESH_MARGIN_SECONDS = 15;
 
-function tokenExpiresSoon(token: string): boolean {
+function tokenExpiresAt(token: string): number | null {
   try {
-    // The unverified claim is only a refresh hint. API validation remains the
-    // authority for the user and workspace, and 401 remains the fallback.
+    // The unverified claim is only a refresh deadline. API validation remains
+    // the authority for the user and workspace, and 401 remains the fallback.
     const payload: unknown = JSON.parse(
       Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
     );
     if (typeof payload !== "object" || payload === null || !("exp" in payload))
-      return false;
-    const expiresAt = payload.exp;
-    return (
-      typeof expiresAt === "number" &&
-      Number.isSafeInteger(expiresAt) &&
-      Date.now() / 1_000 + TOKEN_REFRESH_MARGIN_SECONDS >= expiresAt
-    );
+      return null;
+    return typeof payload.exp === "number" && Number.isSafeInteger(payload.exp)
+      ? payload.exp * 1_000
+      : null;
   } catch {
-    // Non-JWT tokens retain the server-authoritative 401 recovery path.
-    return false;
+    return null;
   }
+}
+
+function tokenExpiresSoon(token: string): boolean {
+  const expiresAt = tokenExpiresAt(token);
+  return (
+    expiresAt !== null &&
+    Date.now() + TOKEN_REFRESH_MARGIN_SECONDS * 1_000 >= expiresAt
+  );
 }
 
 type RunAuthWindow = (
@@ -156,6 +160,8 @@ export class DesktopAuthSession {
   // Retain the initiating identity for requests that join an in-flight refresh.
   private refreshingFrom: DesktopAuthState | null = null;
   private readonly tokenRefresh = singleFlight(() => this.refreshToken());
+  private seamlessRefresh: AbortController | null = null;
+  private hardRefreshRequested = false;
   private pendingCallback: DesktopAuthCallback | null = null;
   private signingIn = false;
   private restoreEnabled = true;
@@ -212,10 +218,20 @@ export class DesktopAuthSession {
     readonly forceRefresh?: boolean;
   }): Promise<string | null> {
     if (this.signingIn) return null;
+    if (options?.forceRefresh) {
+      if (this.seamlessRefresh) {
+        const pending = this.seamlessRefresh;
+        this.seamlessRefresh = null;
+        pending.abort();
+        this.tokenRefresh.clear();
+      }
+      if (!this.tokenRefresh.inFlight) this.hardRefreshRequested = true;
+    }
     if (!options?.forceRefresh && this.token && !tokenExpiresSoon(this.token)) {
       return this.token;
     }
     if (!this.restoreEnabled || this.restorePaused) {
+      this.hardRefreshRequested = false;
       return null;
     }
     return await this.refresh();
@@ -273,6 +289,7 @@ export class DesktopAuthSession {
     this.token = null;
     this.appState = signedOutDesktopAuthState();
     this.refreshingFrom = null;
+    this.hardRefreshRequested = false;
     this.tokenRefresh.clear();
     this.pendingCallback = null;
     this.signingIn = false;
@@ -331,12 +348,114 @@ export class DesktopAuthSession {
 
   private async refreshToken(): Promise<string | null> {
     try {
+      const hardRefresh = this.hardRefreshRequested;
+      this.hardRefreshRequested = false;
+      const expiresAt = this.token ? tokenExpiresAt(this.token) : null;
+      if (
+        !hardRefresh &&
+        expiresAt !== null &&
+        expiresAt > Date.now() &&
+        this.appState.status === "signed_in" &&
+        this.appState.organization &&
+        this.authority
+      )
+        return await this.renewVerifiedIdentity(expiresAt);
       return await this.authenticate(this.tokenUrl, false, false);
     } catch {
       // A failed App restoration requires explicit sign-in, never another
       // identity source. Interactive failures still reject to the caller.
       return null;
     }
+  }
+
+  /** Keep a still-valid authority only if the server verifies the renewal as the same identity. */
+  private async renewVerifiedIdentity(
+    expiresAt: number,
+  ): Promise<string | null> {
+    const lifetime = this.lifetime;
+    const oldToken = this.token;
+    const oldState = this.appState;
+    if (!oldToken || oldState.status !== "signed_in") return null;
+    const renewal = new AbortController();
+    this.seamlessRefresh = renewal;
+    const deadline = AbortSignal.timeout(Math.max(0, expiresAt - Date.now()));
+    const signal = AbortSignal.any([lifetime.signal, renewal.signal, deadline]);
+    const expire = () => {
+      if (this.lifetime !== lifetime || lifetime.signal.aborted) return;
+      lifetime.abort();
+      this.authority = null;
+      this.token = null;
+      this.appState = signedOutDesktopAuthState();
+      this.onChange();
+    };
+    deadline.addEventListener("abort", expire, { once: true });
+    try {
+      const token = await this.runAuthWindow({
+        url: this.tokenUrl,
+        visible: false,
+        allowInteractiveFallbacks: false,
+        signal,
+      });
+      signal.throwIfAborted();
+      if (token) {
+        const state = await this.validateAppIdentity(token, signal);
+        signal.throwIfAborted();
+        const renewedExpiry = tokenExpiresAt(token);
+        if (state.status === "signed_in") {
+          if (
+            state.user.userId === oldState.user.userId &&
+            state.organization?.id === oldState.organization?.id &&
+            renewedExpiry !== null &&
+            renewedExpiry > expiresAt
+          ) {
+            this.token = token;
+            this.appState = state;
+            this.onChange();
+            return token;
+          }
+          if (
+            state.user.userId !== oldState.user.userId ||
+            state.organization?.id !== oldState.organization?.id
+          ) {
+            // Revoke before publishing the changed identity so the old host
+            // cannot inherit the new user.
+            lifetime.abort();
+            this.authority = null;
+            this.token = null;
+            this.appState = signedOutDesktopAuthState();
+            this.onChange();
+            const nextLifetime = new AbortController();
+            this.lifetime = nextLifetime;
+            this.onBackgroundRefresh({
+              phase: "started",
+              signal: nextLifetime.signal,
+            });
+            this.token = token;
+            this.appState = state;
+            this.rememberAuthority(state, nextLifetime);
+            this.onBackgroundRefresh({
+              phase: "completed",
+              signal: nextLifetime.signal,
+              identity: "changed",
+            });
+            this.onChange();
+            return token;
+          }
+          // A non-extending bearer must take the fail-closed path below.
+        }
+      }
+    } catch {
+      // Re-enter the fail-closed path for a rejected or unavailable renewal.
+    } finally {
+      deadline.removeEventListener("abort", expire);
+      if (this.seamlessRefresh === renewal) this.seamlessRefresh = null;
+    }
+    if (
+      renewal.signal.aborted ||
+      (lifetime.signal.aborted && !deadline.aborted)
+    )
+      return null;
+    return await this.authenticate(this.tokenUrl, false, false);
   }
 
   private async authenticate(
