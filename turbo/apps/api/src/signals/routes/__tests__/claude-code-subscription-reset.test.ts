@@ -173,6 +173,18 @@ describe("Claude Code subscription reset", () => {
     expect((await owner.list())?.subscriptionResetCredits).toBe(1);
   });
 
+  it("omits the reset entry once no reset is left", async () => {
+    upstream({
+      grants: [{ id: "grant-spent", resets_left: 0 }],
+      nextGrantId: null,
+    });
+    const owner = await fixture();
+
+    const provider = await owner.list();
+    expect(provider).toBeDefined();
+    expect(provider?.subscriptionResetCredits).toBeUndefined();
+  });
+
   it("drops a malformed grant without counting the rest as spent", async () => {
     upstream({
       grants: [{ id: "grant-malformed" }, { id: "grant-open", resets_left: 2 }],
