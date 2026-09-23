@@ -113,7 +113,7 @@ export function createHtmlArtifactAuthoringPacket(
     options.siteSlug ?? slugify(options.slugSource ?? options.prompt);
   const outputDir = outputDirForSite(site);
   const visibilityFlag =
-    options.kind === "website" || options.visibility === undefined
+    options.visibility === undefined
       ? ""
       : ` --visibility ${options.visibility}`;
   const hostCommand = `okou host ${outputDir} --site ${site}${

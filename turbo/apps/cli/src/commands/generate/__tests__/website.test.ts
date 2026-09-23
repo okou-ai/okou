@@ -126,7 +126,6 @@ describe("okou generate website command", () => {
       "okou host ./generated/mockups/launch-site --site launch-site --spa\n",
     );
     expect(stdout).toContain("okou web upload-file -f <file>");
-    expect(stdout).not.toContain("--visibility");
     expect(stdout).toContain("do not make supporting media public separately");
     const imageWorkflow = stdout.split("\n").find((line) => {
       return line.startsWith("- Image workflow:");
@@ -344,6 +343,5 @@ describe("okou generate website command", () => {
     expect(helpOutput).toContain("--title <text>");
     expect(helpOutput).toContain("--design-system <id>");
     expect(helpOutput).toContain("--template <id>");
-    expect(helpOutput).not.toContain("--visibility <visibility>");
   });
 });
