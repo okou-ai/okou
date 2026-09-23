@@ -1,5 +1,7 @@
 import type { Editor } from "@tiptap/core";
+import type { EditorView } from "@tiptap/pm/view";
 import { command, state } from "ccstate";
+import { now } from "../../lib/time.ts";
 import { onRef } from "../utils.ts";
 
 interface ComposerEditorHandlers {
@@ -7,8 +9,34 @@ interface ComposerEditorHandlers {
   readonly paste: (event: ClipboardEvent) => boolean;
 }
 
+function needsNativeEnterEvent(): boolean {
+  const { userAgent, vendor, maxTouchPoints } = navigator;
+  // Match ProseMirror 1.42.3's Android Chrome and iOS/iPadOS input paths.
+  // See src/browser.ts in the locked prosemirror-view package.
+  return (
+    (/Android \d/.test(userAgent) && /Chrome\/\d/.test(userAgent)) ||
+    (/Apple Computer/.test(vendor) &&
+      (/Mobile\/\w+/.test(userAgent) || maxTouchPoints > 2))
+  );
+}
+
 /** Bind committed React callbacks without changing the editor's mount lifetime. */
 export function createComposerEditorEvents(editor: Editor) {
+  // Keep composition ownership on the view across committed callback rebinds.
+  const compositionEndedAt = new WeakMap<EditorView, number>();
+  function consumeRecentComposition(view: EditorView): boolean {
+    const endedAt = compositionEndedAt.get(view);
+    if (
+      view.composing ||
+      !/Apple Computer/.test(navigator.vendor) ||
+      endedAt === undefined ||
+      Math.abs(now() - endedAt) >= 500
+    ) {
+      return false;
+    }
+    compositionEndedAt.delete(view);
+    return true;
+  }
   const handlers$ = state<ComposerEditorHandlers | null>(null);
   const commit$ = command(({ set }, handlers: ComposerEditorHandlers) => {
     set(handlers$, handlers);
@@ -24,15 +52,34 @@ export function createComposerEditorEvents(editor: Editor) {
       view.setProps({
         handleDOMEvents: {
           ...handleDOMEvents,
+          compositionend: (currentView, event) => {
+            if (currentView.composing) {
+              compositionEndedAt.set(currentView, now());
+            }
+            return (
+              handleDOMEvents?.compositionend?.(currentView, event) ?? false
+            );
+          },
+          keypress: (currentView, event) => {
+            consumeRecentComposition(currentView);
+            return handleDOMEvents?.keypress?.(currentView, event) ?? false;
+          },
           keydown: (currentView, event) => {
-            // ProseMirror skips handleKeyDown for every Chrome Android Enter
-            // (including hardware send shortcuts). Its native DOM hook runs
-            // after NodeView stopEvent and requires explicit cancellation.
+            // Safari can end composition before dispatching its confirmation
+            // key. Preserve ProseMirror's one-key, 500ms composition guard
+            // before handling an Enter through the earlier DOM hook.
+            // See inOrNearComposition in prosemirror-view's src/input.ts.
+            const nearComposition = consumeRecentComposition(currentView);
+            // ProseMirror skips Android Enter and replays iOS Enter without
+            // modifiers. Handle the original event so Shift-Enter splits once
+            // and hardware Enter keeps the send preference. Unhandled mobile
+            // newlines still reach ProseMirror. This hook runs after NodeView
+            // stopEvent and requires explicit cancellation when handled.
             if (
-              /Android \d/.test(navigator.userAgent) &&
-              /Chrome\/\d/.test(navigator.userAgent) &&
               event.key === "Enter" &&
+              needsNativeEnterEvent() &&
               !currentView.composing &&
+              !nearComposition &&
               handlers.keyDown(event)
             ) {
               event.preventDefault();
