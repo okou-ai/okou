@@ -251,7 +251,7 @@ function logicalLookupCount(fixture: BenchFixture): number {
   }).length;
 }
 
-function repeatRequests<TRequest>(
+function repeatRequests<TRequest extends object>(
   requests: readonly TRequest[],
   count: number,
 ): readonly TRequest[] {
@@ -260,7 +260,7 @@ function repeatRequests<TRequest>(
     if (!request) {
       throw new Error("Cannot repeat an empty storage cache request group");
     }
-    return request;
+    return { ...request };
   });
 }
 
