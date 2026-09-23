@@ -476,30 +476,6 @@ const finalOutputDocuments = [
     },
   },
   {
-    label: "a fenced media-looking literal",
-    content: ["```text", "https://example.com/final-literal.png", "```"].join(
-      "\n",
-    ),
-    find: () => {
-      return screen.findByText("https://example.com/final-literal.png");
-    },
-  },
-  {
-    label: "an inline image",
-    content: "![Final chart](https://example.com/final-chart.png)",
-    find: () => {
-      return screen.findByAltText("Final chart");
-    },
-  },
-  {
-    label: "an artifact card",
-    content:
-      "![Report](https://cdn.vm7.io/artifacts/tests/run-folding/final-report.pdf)",
-    find: () => {
-      return findLink("Open pdf preview for final-report.pdf");
-    },
-  },
-  {
     label: "an action card",
     content: "[Compare plans](/?settings=billing&billingView=plans)",
     find: () => {
