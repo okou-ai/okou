@@ -67,6 +67,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { localizedSshError } from "../../lib/ssh-error.ts";
 import { SshAttention, SshHostWarning } from "./ssh-connection-status.tsx";
+import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
 function EndpointFields({
   connection,
@@ -966,6 +967,7 @@ function HostCard({
           })
         )}
       </p>
+      <RemoteHostDefaultToggle protocol="ssh" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"

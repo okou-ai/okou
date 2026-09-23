@@ -2076,6 +2076,19 @@
       "removeQueuedMessage": "移除排隊訊息",
       "skipAutomationEvent": "跳過自動化事件"
     },
+    "remoteAccess": {
+      "defaultEnabled": "聊天預設啟用",
+      "loadFailed": "無法載入遠端存取權限。",
+      "loading": "正在載入遠端存取…",
+      "noHosts": "尚未設定 SSH 或 VNC 主機。",
+      "off": "關閉",
+      "on": "開啟",
+      "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
+      "startChat": "開始聊天後可修改主機權限。",
+      "title": "遠端存取",
+      "unavailableSsh": "無法使用的 SSH 主機",
+      "useDefault": "使用預設設定"
+    },
     "replaceDraft": {
       "description": "繼續將清空你當前的輸入框草稿，並開始一個工作流提示詞。",
       "title": "替換輸入框草稿？"

@@ -2124,6 +2124,19 @@
       "removeQueuedMessage": "Remover mensagem da fila",
       "skipAutomationEvent": "Ignorar evento de automação"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Ativado por padrão para chats",
+      "loadFailed": "Não foi possível carregar o acesso remoto.",
+      "loading": "Carregando acesso remoto…",
+      "noHosts": "Nenhum host SSH ou VNC configurado.",
+      "off": "Desativado",
+      "on": "Ativado",
+      "requiresSsh": "Também requer acesso ao host SSH {{name}}.",
+      "startChat": "Inicie um chat para alterar o acesso aos hosts.",
+      "title": "Acesso remoto",
+      "unavailableSsh": "host SSH indisponível",
+      "useDefault": "Usar padrão"
+    },
     "replaceDraft": {
       "description": "Continuar limpará o rascunho atual do editor e iniciará um prompt de fluxo de trabalho.",
       "title": "Substituir rascunho do editor?"

@@ -2124,6 +2124,19 @@
       "removeQueuedMessage": "Rimuovi il messaggio in coda",
       "skipAutomationEvent": "Salta evento di automazione"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Abilitato per impostazione predefinita nelle chat",
+      "loadFailed": "Impossibile caricare l'accesso remoto.",
+      "loading": "Caricamento accesso remoto…",
+      "noHosts": "Nessun host SSH o VNC configurato.",
+      "off": "Disattivo",
+      "on": "Attivo",
+      "requiresSsh": "Richiede anche l'accesso all'host SSH {{name}}.",
+      "startChat": "Avvia una chat per modificare l'accesso agli host.",
+      "title": "Accesso remoto",
+      "unavailableSsh": "host SSH non disponibile",
+      "useDefault": "Usa impostazione predefinita"
+    },
     "replaceDraft": {
       "description": "Continuando, la bozza corrente nell'editor verrà cancellata e verrà avviato un prompt del workflow.",
       "title": "Sostituire la bozza nell'editor?"

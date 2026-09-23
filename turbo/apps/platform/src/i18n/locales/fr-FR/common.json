@@ -2124,6 +2124,19 @@
       "removeQueuedMessage": "Supprimer le message en attente",
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Activé par défaut pour les chats",
+      "loadFailed": "Impossible de charger l'accès à distance.",
+      "loading": "Chargement de l'accès à distance…",
+      "noHosts": "Aucun hôte SSH ou VNC configuré.",
+      "off": "Désactivé",
+      "on": "Activé",
+      "requiresSsh": "Nécessite aussi l'accès à l'hôte SSH {{name}}.",
+      "startChat": "Démarrez un chat pour modifier l'accès aux hôtes.",
+      "title": "Accès à distance",
+      "unavailableSsh": "hôte SSH indisponible",
+      "useDefault": "Utiliser la valeur par défaut"
+    },
     "replaceDraft": {
       "description": "Continuer effacera votre brouillon actuel dans la zone de saisie et démarrera un prompt de workflow.",
       "title": "Remplacer le brouillon du compositeur ?"

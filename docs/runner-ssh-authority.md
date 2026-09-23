@@ -15,6 +15,8 @@ credentials or command. The shared fleet secret authenticates the fleet, not an
 individual machine: the process identity is checked against the Run's immutable
 winning claim. Protecting the fleet secret remains a trust assumption.
 
+When `ThreadRemoteAccess` is enabled for the Run owner, each call requires the Run's current chat thread and that thread's effective permission for the exact SSH host. The host default applies when no override row exists. Explicit `false` denies even when the default is enabled; an explicit `true` allows independently of the Agent grant. A Run without a chat thread is denied. The original Agent-grant path below applies while the switch is off.
+
 Each call joins the current running Run, session, currently visible Agent,
 the Run user's SSH grant, exact user-owned connection and its credential.
 Run, session, grant and host user/workspace identities must agree. The Agent

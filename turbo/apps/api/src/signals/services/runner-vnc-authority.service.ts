@@ -9,9 +9,14 @@ import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNotNull, or } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  runThreadSshAccess,
+  runThreadVncAccess,
+  runUsesThreadRemoteAccess,
+} from "./run-thread-remote-access.service";
 
 type RunnerVncInput = Pick<
   RunnerVncResolveRequest,
@@ -24,6 +29,7 @@ export async function currentRunnerVncAuthority(
   input: RunnerVncInput,
   signal: AbortSignal,
 ) {
+  const threadMode = await runUsesThreadRemoteAccess(db, input.runId, signal);
   const [row] = await db
     .select({
       generation: vncConnections.generation,
@@ -35,6 +41,7 @@ export async function currentRunnerVncAuthority(
       sshConnectionId: vncConnections.sshConnectionId,
       sshGeneration: sshConnections.generation,
       sshGrantAgentId: agentSshAccess.agentId,
+      sshAllowed: runThreadSshAccess(db),
       x509ServerName: vncConnections.x509ServerName,
       securityType: vncConnections.securityType,
       trustMode: vncConnections.trustMode,
@@ -60,7 +67,7 @@ export async function currentRunnerVncAuthority(
         or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
       ),
     )
-    .innerJoin(
+    .leftJoin(
       agentVncAccess,
       and(
         eq(agentVncAccess.agentId, agents.id),
@@ -109,6 +116,7 @@ export async function currentRunnerVncAuthority(
           agentRuns.runnerHeartbeatGeneration,
           input.runnerIdentity.heartbeatGeneration,
         ),
+        threadMode ? runThreadVncAccess(db) : isNotNull(agentVncAccess.agentId),
       ),
     );
   signal.throwIfAborted();
@@ -124,5 +132,5 @@ export async function currentRunnerVncAuthority(
   if (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext)) {
     return null;
   }
-  return row;
+  return { ...row, threadMode };
 }

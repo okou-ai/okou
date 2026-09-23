@@ -311,6 +311,7 @@ import { VncLoadError } from "./vnc-load-error.tsx";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
+import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { orgPlanCapabilities$ } from "../../signals/okou-page/org-plan-capabilities.ts";
 import {
@@ -7735,6 +7736,8 @@ function ComposerConnectorsPopoverBody({
 }) {
   const { t } = useTranslation();
   const agentId = signals.agentId;
+  const threadRemoteAccessEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess] === true;
   const connectorData = useLastResolved(signals.connector.data$);
   const connectorsLoading = connectorData === undefined;
   const { agentConnectors, agentCustomConnectors } =
@@ -7752,8 +7755,8 @@ function ComposerConnectorsPopoverBody({
   const connectorItems = composerPopoverItems({
     agentConnectors,
     agentCustomConnectors,
-    sshAccess: sshAccess ?? undefined,
-    vncAccess: vncAccess ?? undefined,
+    sshAccess: threadRemoteAccessEnabled ? undefined : (sshAccess ?? undefined),
+    vncAccess: threadRemoteAccessEnabled ? undefined : (vncAccess ?? undefined),
     sshLabel: t(($) => {
       return $.ssh.label;
     }),
@@ -8054,12 +8057,12 @@ function ComposerConnectorsPopoverBody({
           )}
         </div>
       )}
-      {vncRows.state === "hasError" && (
+      {!threadRemoteAccessEnabled && vncRows.state === "hasError" && (
         <div className="px-3 py-2">
           <VncLoadError />
         </div>
       )}
-      {sshRows.state === "hasError" && (
+      {!threadRemoteAccessEnabled && sshRows.state === "hasError" && (
         <div className="px-3 py-2">
           <SshLoadError />
         </div>
@@ -8093,6 +8096,12 @@ function ComposerConnectorsPopoverBody({
           onOpenDownloadDialog={() => {
             onOpenDownloadDialog();
           }}
+        />
+      )}
+      {threadRemoteAccessEnabled && (
+        <ThreadRemoteAccessSection
+          threadId={signals.threadId}
+          remoteAccess$={signals.remoteAccess$}
         />
       )}
     </div>

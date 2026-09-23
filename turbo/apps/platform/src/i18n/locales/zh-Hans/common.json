@@ -2076,6 +2076,19 @@
       "removeQueuedMessage": "移除排队消息",
       "skipAutomationEvent": "跳过自动化事件"
     },
+    "remoteAccess": {
+      "defaultEnabled": "聊天默认启用",
+      "loadFailed": "无法加载远程访问权限。",
+      "loading": "正在加载远程访问…",
+      "noHosts": "尚未配置 SSH 或 VNC 主机。",
+      "off": "关闭",
+      "on": "开启",
+      "requiresSsh": "还需要访问 SSH 主机 {{name}}。",
+      "startChat": "开始聊天后可修改主机权限。",
+      "title": "远程访问",
+      "unavailableSsh": "不可用的 SSH 主机",
+      "useDefault": "使用默认设置"
+    },
     "replaceDraft": {
       "description": "继续将清空你当前的输入框草稿，并开始一个工作流提示词。",
       "title": "替换输入框草稿？"

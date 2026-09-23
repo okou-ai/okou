@@ -2083,6 +2083,19 @@
       "removeQueuedMessage": "Nachricht aus der Warteschlange entfernen",
       "skipAutomationEvent": "Automatisierungsereignis überspringen"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Für Chats standardmäßig aktiviert",
+      "loadFailed": "Fernzugriff konnte nicht geladen werden.",
+      "loading": "Fernzugriff wird geladen…",
+      "noHosts": "Keine SSH- oder VNC-Hosts eingerichtet.",
+      "off": "Aus",
+      "on": "Ein",
+      "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",
+      "startChat": "Starten Sie einen Chat, um den Hostzugriff zu ändern.",
+      "title": "Fernzugriff",
+      "unavailableSsh": "nicht verfügbarer SSH-Host",
+      "useDefault": "Standard verwenden"
+    },
     "replaceDraft": {
       "description": "Wenn Sie fortfahren, wird Ihr aktueller Composer-Entwurf gelöscht und eine Workflow-Eingabeaufforderung gestartet.",
       "title": "Composer-Entwurf ersetzen?"

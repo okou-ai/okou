@@ -2083,6 +2083,19 @@
       "removeQueuedMessage": "Remove queued message",
       "skipAutomationEvent": "Skip automation event"
     },
+    "remoteAccess": {
+      "defaultEnabled": "Enabled by default for chats",
+      "loadFailed": "Couldn't load remote access.",
+      "loading": "Loading remote access…",
+      "noHosts": "No SSH or VNC hosts configured.",
+      "off": "Off",
+      "on": "On",
+      "requiresSsh": "Requires SSH access to {{name}}.",
+      "startChat": "Start a chat to change host access.",
+      "title": "Remote access",
+      "unavailableSsh": "unavailable SSH host",
+      "useDefault": "Use default"
+    },
     "replaceDraft": {
       "description": "Continuing will clear your current composer draft and start a workflow prompt.",
       "title": "Replace composer draft?"
