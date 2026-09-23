@@ -124,35 +124,20 @@ export function MarkdownEventBody({
   readonly tree: Root | undefined;
   readonly mediaPreview: boolean | "link";
 }) {
-  const frameClassName = chatBubble
-    ? cn(CHAT_BUBBLE_MARKDOWN_CLASS, className)
-    : className;
+  const frameClassName = cn(
+    "text-[length:inherit]! leading-[inherit]!",
+    chatBubble && CHAT_BUBBLE_MARKDOWN_CLASS,
+    className,
+  );
   if (tree === undefined) {
     if (onRetry !== undefined) {
-      return (
-        <RichContentError
-          className={frameClassName}
-          onRetry={onRetry}
-          style={{ fontSize: "inherit", lineHeight: "inherit" }}
-        />
-      );
+      return <RichContentError className={frameClassName} onRetry={onRetry} />;
     }
-    return (
-      <RichContentLoading
-        className={frameClassName}
-        style={{ fontSize: "inherit", lineHeight: "inherit" }}
-      />
-    );
+    return <RichContentLoading className={frameClassName} />;
   }
   const plainText = plainTextFromMarkdownTree(tree);
   if (plainText !== null) {
-    return (
-      <PlainMarkdown
-        className={frameClassName}
-        text={plainText}
-        style={{ fontSize: "inherit", lineHeight: "inherit" }}
-      />
-    );
+    return <PlainMarkdown className={frameClassName} text={plainText} />;
   }
   return (
     <RichMarkdownEventBody

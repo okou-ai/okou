@@ -28,10 +28,6 @@ import { formatUsd } from "../../i18n/format.ts";
 
 const CREDITS_PER_DOLLAR = 1000;
 
-const settingsCardBorder = {
-  border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-} as const;
-
 export function AutoRechargeSection({
   allowed,
   loading = false,
@@ -117,10 +113,7 @@ export function AutoRechargeSection({
             return $.billing.autoRecharge.title;
           })}
         </h3>
-        <div
-          className="overflow-hidden rounded-xl bg-card"
-          style={settingsCardBorder}
-        >
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <div className="min-w-0">
               <p className="text-sm font-medium text-foreground">

@@ -186,6 +186,8 @@ surface; the index does not replace their detailed rules.
   control/runtime reclaim protection, and tool OOM trade-offs.
 - [Workspace history restore telemetry](./workspace-history-restore-telemetry.md):
   local source and restored payload sizes, representation and timing semantics.
+- [Admission-lock timing](./admission-lock-timing.md): attempt-scoped API launch
+  critical-section attribution, retry identity and production readout limits.
 - [Host archive phase diagnostics](./host-archive-phase-diagnostics.md): bounded
   early download, apply-gate and publication timing with cancellation semantics.
 - [Guest archive connection observation](./guest-archive-connection-observation.md):

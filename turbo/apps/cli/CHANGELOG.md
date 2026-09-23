@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.356.1](https://github.com/okou-ai/okou/compare/cli-v9.356.0...cli-v9.356.1) (2026-09-23)
+
+
+### Documentation
+
+* **cli:** clarify SERP language codes in help ([#36232](https://github.com/okou-ai/okou/issues/36232)) ([cd33f8d](https://github.com/okou-ai/okou/commit/cd33f8db28164f41c42d4b0fa7df855286900c00))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.497.0
+    * @okouai/core bumped to 8.703.0
+    * @okouai/pi-agent-runtime bumped to 1.39.2
+
 ## [9.356.0](https://github.com/okou-ai/okou/compare/cli-v9.355.3...cli-v9.356.0) (2026-09-23)
 
 

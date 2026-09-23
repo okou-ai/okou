@@ -183,8 +183,7 @@ function ContainedLiveBrowserViewport({
       data-browser-session-viewport
       data-browser-aspect-ratio={browserAspectRatio}
       data-can-fit-window={canFitWindow}
-      style={{ containerType: "size" }}
-      className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-muted/20"
+      className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-muted/20 [container-type:size]"
     >
       {children}
       <div

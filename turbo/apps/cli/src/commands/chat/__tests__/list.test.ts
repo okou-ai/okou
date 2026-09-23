@@ -26,7 +26,6 @@ const REFRESH_SEQ_ID = 4;
 const SNAPSHOT_URL = "http://localhost:3000/api/chat-threads/snapshot";
 const EVENTS_URL = "http://localhost:3000/api/chat-threads/events";
 const INDICATORS_URL = "http://localhost:3000/api/indicators";
-const UNREADS_URL = "http://localhost:3000/api/chat-thread-unreads";
 
 function okouToken(): string {
   const payload = Buffer.from(
@@ -495,44 +494,6 @@ describe("okou chat list command", () => {
       agentId: threads.at(-1)?.agentId,
       unreadAt: threads.at(-1)?.sortAt,
     });
-  });
-
-  it("uses the old unread route when a rollback API omits unreadAt", async () => {
-    const unreadAt = "2026-07-24T06:00:00.000Z";
-    mockStableThreadSnapshot([
-      snapshotThread({
-        id: THREAD_ID,
-        agentId: AGENT_ID,
-        title: "Unread thread",
-        sortAt: unreadAt,
-      }),
-    ]);
-    let oldRouteRequests = 0;
-    server.use(
-      http.get(INDICATORS_URL, () => {
-        return HttpResponse.json({
-          agents: { [AGENT_ID]: "unread" },
-          threads: { [THREAD_ID]: "unread" },
-        });
-      }),
-      http.get(UNREADS_URL, ({ request }) => {
-        oldRouteRequests++;
-        expect(new URL(request.url).searchParams.get("agentId")).toBe(AGENT_ID);
-        return HttpResponse.json({
-          unreads: [{ threadId: THREAD_ID, unreadAt }],
-        });
-      }),
-    );
-
-    await chatCommand.parseAsync(["node", "cli", "list", "--unread", "--json"]);
-
-    expect(oldRouteRequests).toBe(1);
-    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
-      {
-        total: 1,
-        threads: [{ id: THREAD_ID, unreadAt }],
-      },
-    );
   });
 
   it("rejects --all-agents with --agent", async () => {

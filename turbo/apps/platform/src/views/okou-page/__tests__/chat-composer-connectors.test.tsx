@@ -159,6 +159,7 @@ async function clearConnectorFilter(
 async function prepareScrollableDesktopConnectorMenu() {
   const user = userEvent.setup({ delay: null });
   const layout = mockConnectorPopoverLayout({
+    popupHeight: 400,
     viewport: { width: 1000, height: 520 },
     trigger: { x: 320, y: 320, width: 32, height: 32 },
   });
@@ -261,6 +262,7 @@ test("Keep the desktop connector menu above after clearing its filter", async ()
 test("Keep collision-selected connector menu below while filtering on mobile", async () => {
   const user = userEvent.setup({ delay: null });
   const layout = mockConnectorPopoverLayout({
+    popupHeight: 400,
     viewport: { width: 390, height: 700 },
     trigger: { x: 24, y: 220, width: 32, height: 32 },
   });

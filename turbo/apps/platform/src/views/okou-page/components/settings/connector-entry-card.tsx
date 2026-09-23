@@ -33,7 +33,11 @@ export function ConnectorEntryStatus({
   );
 }
 
-/** Shared directory presentation, independent of account or authorization models. */
+/**
+ * Shared directory presentation, independent of account or authorization models.
+ * This root owns the card's layers: secondary actions and the footer (z-20)
+ * stay above the whole-card action (z-10) without competing with page controls.
+ */
 export function ConnectorEntryCard({
   icon,
   label,
@@ -62,7 +66,7 @@ export function ConnectorEntryCard({
       data-slot="connector-card"
       className={cn(
         surfaceVariants({ interactive }),
-        "relative flex flex-col text-left",
+        "relative isolate flex flex-col text-left",
         showDescription && "overflow-hidden",
         interactive && "cursor-pointer",
       )}

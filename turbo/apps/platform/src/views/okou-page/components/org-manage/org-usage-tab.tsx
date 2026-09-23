@@ -424,11 +424,7 @@ export function CreditAdditionTable({
               <TooltipContent
                 side="top"
                 sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="border shadow-md"
+                className="border shadow-md bg-popover! text-popover-foreground!"
               >
                 <div className="font-medium text-foreground">{grant.label}</div>
                 <div className="mt-0.5 text-muted-foreground">
@@ -497,11 +493,7 @@ function CreditBreakdownBar({
               <TooltipContent
                 side="top"
                 sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="border shadow-md"
+                className="border shadow-md bg-popover! text-popover-foreground!"
               >
                 <div className="font-medium text-foreground">
                   {labelForSegment(s)} — {formatLocalizedNumber(s.credits)}

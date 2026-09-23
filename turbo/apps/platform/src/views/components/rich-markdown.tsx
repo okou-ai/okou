@@ -15,6 +15,7 @@ import { Fragment, jsx, jsxs } from "react/jsx-runtime";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
+import { cn } from "@okouai/ui";
 
 import {
   escapeHtmlTags,
@@ -797,10 +798,9 @@ export function MarkdownEventBody({
 }) {
   return (
     <MarkdownTreeFrame
-      className={className}
+      className={cn("text-[length:inherit]! leading-[inherit]!", className)}
       tree={tree}
       mediaPreview={mediaPreview}
-      style={{ fontSize: "inherit", lineHeight: "inherit" }}
     />
   );
 }

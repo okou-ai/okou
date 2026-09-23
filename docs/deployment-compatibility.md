@@ -67,6 +67,24 @@ processing due work. Qualification checks the Clerk membership and rollout
 boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
 recreated. No schema migration is needed.
 
+## Chat unread endpoint retirement (2026-09-23)
+
+API 1.662.0, App 0.948.0, and CLI 9.356.0 added unread timestamps to the
+shared `GET /api/indicators` response. The follow-up removes
+`GET /api/chat-thread-unreads` and requires `unreadAt` in that response.
+`POST /api/chat-thread-unreads/mark-read` and the unread query used by read-state
+writers remain available.
+
+The API force-upgrades App versions below 0.948.0 before route matching, so an
+older browser bundle cannot call the removed GET. CLI has no minimum-version
+gate; `okou chat list --unread` on CLI versions before 9.356.0 can fail against
+the new API. This compatibility loss was explicitly accepted for this cleanup.
+
+New App and CLI builds no longer fetch timestamps from the old GET when an API
+omits `unreadAt`. Rollback targets for the API must therefore include the
+shared indicators response introduced in API 1.662.0. Rolling the API back
+below that version requires restoring the clients' fallback first.
+
 ## Thread draft child table, phase 1 (2026-09-23)
 
 `chat_thread_drafts` holds one row per thread whose composer draft has been
