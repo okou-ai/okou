@@ -9,9 +9,10 @@
 //! `auth_mode: "chatgpt"`, `OPENAI_API_KEY: null`, and a `tokens` object
 //! whose JWTs carry far-future `exp` claims, we put the codex CLI into
 //! ChatGPT mode without ever holding real OAuth credentials inside the
-//! sandbox. The mitm firewall replaces the placeholder bytes (Bearer
-//! token + account_id header) on egress with the real values from
-//! server-side secrets.
+//! sandbox. Codex 0.156.1 compares the local account ID with workspace
+//! discovery, so the selected workspace ID is copied into auth.json. The
+//! bearer and refresh tokens remain placeholders; the mitm firewall injects
+//! real credentials on egress.
 //!
 //! Codex `decode_jwt_payload` (`codex-rs/login/src/token_data.rs:117-128`)
 //! base64url-decodes only the payload segment; the header and signature
@@ -68,8 +69,13 @@ const CODEX_HOME_MODE: u32 = 0o700;
 const AUTH_JSON_MODE: u32 = 0o600;
 
 pub(crate) enum DesiredCodexAuth<'a> {
-    ChatGpt { now: DateTime<Utc> },
-    ApiKey { api_key: &'a str },
+    ChatGpt {
+        now: DateTime<Utc>,
+        account_id: Option<&'a str>,
+    },
+    ApiKey {
+        api_key: &'a str,
+    },
     None,
 }
 
@@ -102,11 +108,11 @@ fn make_placeholder_jwt(payload: &Value) -> Result<String, AgentError> {
 /// `chatgpt_account_id` (under the `https://api.openai.com/auth`
 /// namespace) and `exp` (top-level). Far-future `exp` prevents
 /// proactive refresh.
-fn build_access_token_claims(now: DateTime<Utc>) -> Value {
+fn build_access_token_claims(now: DateTime<Utc>, account_id: &str) -> Value {
     let exp = now.timestamp() + FAR_FUTURE_EXP_SECS;
     json!({
         "https://api.openai.com/auth": {
-            "chatgpt_account_id": PLACEHOLDER_CHATGPT_ACCOUNT_ID,
+            "chatgpt_account_id": account_id,
             "chatgpt_plan_type": PLACEHOLDER_PLAN_TYPE,
         },
         "iat": now.timestamp(),
@@ -117,11 +123,11 @@ fn build_access_token_claims(now: DateTime<Utc>) -> Value {
 /// id_token claims include `chatgpt_account_id`, `chatgpt_plan_type`,
 /// `chatgpt_user_id`, and `chatgpt_account_is_fedramp` — parsed by
 /// codex's `IdTokenInfo` struct (`codex-rs/login/src/token_data.rs:28-42`).
-fn build_id_token_claims(now: DateTime<Utc>) -> Value {
+fn build_id_token_claims(now: DateTime<Utc>, account_id: &str) -> Value {
     let exp = now.timestamp() + FAR_FUTURE_EXP_SECS;
     json!({
         "https://api.openai.com/auth": {
-            "chatgpt_account_id": PLACEHOLDER_CHATGPT_ACCOUNT_ID,
+            "chatgpt_account_id": account_id,
             "chatgpt_plan_type": PLACEHOLDER_PLAN_TYPE,
             "chatgpt_user_id": "placeholder",
             "chatgpt_account_is_fedramp": false,
@@ -142,9 +148,9 @@ fn build_id_token_claims(now: DateTime<Utc>) -> Value {
 //   3. `tokens` populated with valid placeholder JWTs
 // ---------------------------------------------------------------------------
 
-fn build_chatgpt_auth_json(now: DateTime<Utc>) -> Result<Value, AgentError> {
-    let access_jwt = make_placeholder_jwt(&build_access_token_claims(now))?;
-    let id_jwt = make_placeholder_jwt(&build_id_token_claims(now))?;
+fn build_chatgpt_auth_json(now: DateTime<Utc>, account_id: &str) -> Result<Value, AgentError> {
+    let access_jwt = make_placeholder_jwt(&build_access_token_claims(now, account_id))?;
+    let id_jwt = make_placeholder_jwt(&build_id_token_claims(now, account_id))?;
 
     Ok(json!({
         "auth_mode": "chatgpt",
@@ -157,7 +163,7 @@ fn build_chatgpt_auth_json(now: DateTime<Utc>) -> Result<Value, AgentError> {
             // bypassing the firewall replacement entirely. The opaque marker
             // is replaced with the real refresh_token on /oauth/token egress.
             "refresh_token": PLACEHOLDER_CHATGPT_REFRESH_TOKEN,
-            "account_id": PLACEHOLDER_CHATGPT_ACCOUNT_ID,
+            "account_id": account_id,
         },
         "last_refresh": now.to_rfc3339(),
     }))
@@ -243,8 +249,9 @@ pub(crate) fn reconcile_codex_auth_state(
     prepare_codex_home(codex_home)?;
 
     match desired {
-        DesiredCodexAuth::ChatGpt { now } => {
-            let auth_json = build_chatgpt_auth_json(now)?;
+        DesiredCodexAuth::ChatGpt { now, account_id } => {
+            let auth_json =
+                build_chatgpt_auth_json(now, account_id.unwrap_or(PLACEHOLDER_CHATGPT_ACCOUNT_ID))?;
             let serialized = serde_json::to_string(&auth_json)?;
             write_auth_json_atomic(codex_home, &serialized)
         }
@@ -292,7 +299,13 @@ mod tests {
         codex_home: &std::path::Path,
         now: DateTime<Utc>,
     ) -> Result<(), AgentError> {
-        reconcile_codex_auth_state(codex_home, DesiredCodexAuth::ChatGpt { now })
+        reconcile_codex_auth_state(
+            codex_home,
+            DesiredCodexAuth::ChatGpt {
+                now,
+                account_id: None,
+            },
+        )
     }
 
     /// Reconcile ChatGPT auth against a temp dir and return the
@@ -426,6 +439,37 @@ mod tests {
                 !serialized.contains(needle),
                 "fabricated auth.json must not contain real-token shape {needle:?}: {serialized}"
             );
+        }
+    }
+
+    #[test]
+    fn reconcile_chatgpt_auth_uses_selected_workspace_id_without_real_tokens() {
+        let tmp = TempDir::new().unwrap();
+        let account_id = "ws_selected_workspace";
+        let codex_home = tmp.path().join(".codex");
+        reconcile_codex_auth_state(
+            &codex_home,
+            DesiredCodexAuth::ChatGpt {
+                now: fixed_now(),
+                account_id: Some(account_id),
+            },
+        )
+        .unwrap();
+
+        let auth = read_auth_json(&tmp);
+        assert_eq!(auth["tokens"]["account_id"], account_id);
+        assert_eq!(
+            auth["tokens"]["refresh_token"],
+            PLACEHOLDER_CHATGPT_REFRESH_TOKEN,
+        );
+        for token_field in ["access_token", "id_token"] {
+            let jwt = auth["tokens"][token_field].as_str().unwrap();
+            let claims = decode_segment(jwt.split('.').nth(1).unwrap());
+            assert_eq!(
+                claims["https://api.openai.com/auth"]["chatgpt_account_id"],
+                account_id,
+            );
+            assert!(jwt.ends_with("PLACEHOLDER_SIG_DO_NOT_TRUST"));
         }
     }
 

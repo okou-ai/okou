@@ -2520,6 +2520,63 @@ interface ModelProviderEnvironmentSecret {
   readonly encryptedValue: string | null;
 }
 
+async function loadModelProviderEnvironmentSecretRows(
+  db: Db,
+  args: {
+    readonly accountId?: string;
+    readonly orgId: string;
+    readonly userId: string;
+    readonly type: ModelProviderType;
+    readonly piExecution?: boolean;
+    readonly secretRows?: readonly ModelProviderEnvironmentSecret[];
+  },
+  hasFirewallAuth: boolean,
+): Promise<readonly ModelProviderEnvironmentSecret[]> {
+  if (args.secretRows) {
+    return args.secretRows;
+  }
+  // Codex CLI needs only the workspace ID; keep every other firewall secret
+  // lazy so bearer and refresh tokens are not read during run preparation.
+  const readCodexRoutingAccountId =
+    args.type === "codex-oauth-token" && !args.piExecution;
+  if (args.accountId) {
+    return await db
+      .select({
+        name: modelProviderAccountSecrets.name,
+        encryptedValue: hasFirewallAuth
+          ? readCodexRoutingAccountId
+            ? sql`CASE WHEN ${modelProviderAccountSecrets.name} = 'CHATGPT_ACCOUNT_ID' THEN ${modelProviderAccountSecrets.encryptedValue} ELSE NULL END`.mapWith(
+                nullableDriverValueDecoder(pgTextDecoder),
+              )
+            : sql`NULL`.mapWith(pgNullDecoder)
+          : modelProviderAccountSecrets.encryptedValue,
+      })
+      .from(modelProviderAccountSecrets)
+      .where(
+        eq(modelProviderAccountSecrets.modelProviderAccountId, args.accountId),
+      );
+  }
+  return await db
+    .select({
+      name: secretsTable.name,
+      encryptedValue: hasFirewallAuth
+        ? readCodexRoutingAccountId
+          ? sql`CASE WHEN ${secretsTable.name} = 'CHATGPT_ACCOUNT_ID' THEN ${secretsTable.encryptedValue} ELSE NULL END`.mapWith(
+              nullableDriverValueDecoder(pgTextDecoder),
+            )
+          : sql`NULL`.mapWith(pgNullDecoder)
+        : secretsTable.encryptedValue,
+    })
+    .from(secretsTable)
+    .where(
+      and(
+        eq(secretsTable.orgId, args.orgId),
+        eq(secretsTable.userId, args.userId),
+        eq(secretsTable.type, "model-provider"),
+      ),
+    );
+}
+
 async function multiAuthModelProviderEnvironment(
   db: Db,
   args: {
@@ -2546,38 +2603,13 @@ async function multiAuthModelProviderEnvironment(
 
   const firewall = getModelProviderFirewall(args.type);
   const hasFirewallAuth = firewall !== undefined;
-  const secretRows =
-    args.secretRows ??
-    (args.accountId
-      ? await db
-          .select({
-            name: modelProviderAccountSecrets.name,
-            encryptedValue: hasFirewallAuth
-              ? sql`NULL`.mapWith(pgNullDecoder)
-              : modelProviderAccountSecrets.encryptedValue,
-          })
-          .from(modelProviderAccountSecrets)
-          .where(
-            eq(
-              modelProviderAccountSecrets.modelProviderAccountId,
-              args.accountId,
-            ),
-          )
-      : await db
-          .select({
-            name: secretsTable.name,
-            encryptedValue: hasFirewallAuth
-              ? sql`NULL`.mapWith(pgNullDecoder)
-              : secretsTable.encryptedValue,
-          })
-          .from(secretsTable)
-          .where(
-            and(
-              eq(secretsTable.orgId, args.orgId),
-              eq(secretsTable.userId, args.userId),
-              eq(secretsTable.type, "model-provider"),
-            ),
-          ));
+  const needsCodexRoutingAccountId =
+    args.type === "codex-oauth-token" && !args.piExecution;
+  const secretRows = await loadModelProviderEnvironmentSecretRows(
+    db,
+    args,
+    hasFirewallAuth,
+  );
   const storedSecrets: Record<string, string> = {};
   if (hasFirewallAuth) {
     for (const row of secretRows) {
@@ -2617,6 +2649,25 @@ async function multiAuthModelProviderEnvironment(
     envBindings: selectedModelEnvBindings,
   });
   const runtimeModel = resolveMultiAuthRuntimeModel(args, selectedModel);
+  const environment = providerEnvironmentFromSecretMap(
+    args.type,
+    forwardableSecrets,
+    runtimeModel,
+  );
+  if (needsCodexRoutingAccountId) {
+    const encryptedAccountId = secretRows.find((row) => {
+      return row.name === "CHATGPT_ACCOUNT_ID";
+    })?.encryptedValue;
+    if (!encryptedAccountId) {
+      return null;
+    }
+    // Workspace routing compares this identifier with /wham/accounts/check.
+    // It is not an OAuth credential; bearer and refresh tokens remain server-side.
+    environment.CODEX_OAUTH_ACCOUNT_ID = await decryptStoredSecretValue(
+      encryptedAccountId,
+      args.featureSwitchContext,
+    );
+  }
   const authMaps = modelProviderFirewallAuthMaps(
     args.type,
     args.userId,
@@ -2629,11 +2680,7 @@ async function multiAuthModelProviderEnvironment(
     credentialOwner:
       args.userId === ORG_SENTINEL_USER_ID ? "organization" : "member",
     authMethod: args.authMethod,
-    environment: providerEnvironmentFromSecretMap(
-      args.type,
-      forwardableSecrets,
-      runtimeModel,
-    ),
+    environment,
     secrets: hasFirewallAuth ? {} : forwardableSecrets,
     selectedModel,
     secretConnectorMap: authMaps?.secretConnectorMap,
@@ -2887,6 +2934,7 @@ async function resolvePersonalModelProviderAccountEnvironment(
       type: account.type,
       authMethod: account.authMethod,
       selectedModel: args.selectedModelOverride ?? selectedModel,
+      piExecution: args.piExecution,
       featureSwitchContext: args.featureSwitchContext,
       accountId: account.id,
       secretRows,

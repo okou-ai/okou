@@ -1,5 +1,22 @@
 # Deployment Compatibility
 
+## Codex 0.156.1 OAuth workspace routing
+
+Codex 0.156.1 compares its local `auth.json` workspace ID with the selected
+entry returned by `/wham/accounts/check`. The Codex guest therefore writes the
+selected workspace ID from `CODEX_OAUTH_ACCOUNT_ID` into `auth.json` and both
+placeholder JWT claims. Access and refresh tokens remain placeholders; the
+firewall still injects real credentials into outbound requests.
+
+The API adds this non-credential identifier to Codex OAuth run environments
+while retaining the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
+and Pi. Deploy the API before the Runner image pinned to Codex 0.156.1. An older
+Runner ignores the additive field and continues using Codex 0.155.1. A newer
+Runner with an older API falls back to the placeholder workspace ID and can
+fail workspace discovery, so do not promote that combination. Existing queued
+runs retain their captured environment and should drain on their original
+Runner during the rollout.
+
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to

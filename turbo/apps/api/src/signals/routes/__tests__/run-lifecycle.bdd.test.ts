@@ -6632,6 +6632,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
         "codex-oauth-token",
         "CHATGPT_ACCOUNT_ID",
       ),
+      CODEX_OAUTH_ACCOUNT_ID: "workspace-id",
       OPENAI_MODEL: "gpt-5.6-sol",
     });
     expect(claim.environment).not.toHaveProperty("CHATGPT_REFRESH_TOKEN");
