@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import { createElement } from "react";
-import { enableViewportZoom } from "../lib/viewport-pinch.ts";
 import { OAuthConsentPage } from "../views/oauth-consent-page/oauth-consent-page.tsx";
 import { AuthV1LoadError } from "../views/auth-v1/auth-v1-load-error.tsx";
 import { clerk$, clerkUser$, ensureClerkUiLoaded$ } from "./auth.ts";
@@ -12,7 +11,6 @@ const L = logger("OAuthConsent");
 
 export const setupOAuthConsentPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    enableViewportZoom(signal);
     const clerk = await get(clerk$);
     signal.throwIfAborted();
     const user = await get(clerkUser$);

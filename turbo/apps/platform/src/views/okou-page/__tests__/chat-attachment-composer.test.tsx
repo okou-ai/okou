@@ -227,7 +227,13 @@ test("Dragging from an image preview onto its backdrop keeps it open", async () 
   expect(dialog).toBeVisible();
 });
 
-test("Viewport pinch is blocked outside an image preview canvas", async () => {
+async function openZoomablePreview() {
+  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
+    1600,
+  );
+  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
+    900,
+  );
   const image = draftAttachment("photo.png");
   mockAttachmentChat(context, {
     draft: draftForAttachment(image, ""),
@@ -235,36 +241,74 @@ test("Viewport pinch is blocked outside an image preview canvas", async () => {
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const wheelPinch = createEvent.wheel(composer);
-  Object.defineProperties(wheelPinch, {
-    ctrlKey: { value: true },
-    deltaY: { value: -20 },
-  });
-  fireEvent(composer, wheelPinch);
-  expect(wheelPinch.defaultPrevented).toBeTruthy();
-
-  const ordinaryScroll = createEvent.wheel(composer, { deltaY: 20 });
-  fireEvent(composer, ordinaryScroll);
-  expect(ordinaryScroll.defaultPrevented).toBeFalsy();
-
-  for (const eventName of ["gesturestart", "gesturechange"]) {
-    const viewportPinch = new Event(eventName, {
-      bubbles: true,
-      cancelable: true,
-    });
-    fireEvent(composer, viewportPinch);
-    expect(viewportPinch.defaultPrevented).toBeTruthy();
-  }
-
   click(await findNamedButton("Open image preview for photo.png"));
-  const imageCanvas = await screen.findByTestId("artifact-dialog-image-stage");
-  const imagePinch = new Event("gesturestart", {
-    bubbles: true,
-    cancelable: true,
+  const zoomLevel = await screen.findByTestId(
+    "artifact-dialog-image-zoom-level",
+  );
+  expect(zoomLevel).toHaveTextContent("100%");
+  return {
+    image: screen.getByTestId("attachment-lightbox-image"),
+    outsideCanvas: getNamedButton("Zoom in"),
+    zoomLevel,
+  };
+}
+
+function zoomWithWheel(target: HTMLElement, modifier: "ctrlKey" | "metaKey") {
+  const event = createEvent.wheel(target, { deltaY: -20 });
+  // Happy DOM's WheelEvent omits the inherited mouse/modifier properties.
+  Object.defineProperties(event, {
+    [modifier]: { value: true },
+    clientX: { value: 100 },
+    clientY: { value: 100 },
   });
-  fireEvent(imageCanvas, imagePinch);
-  expect(imagePinch.defaultPrevented).toBeFalsy();
+  fireEvent(target, event);
+}
+
+test.each(["ctrlKey", "metaKey"] as const)(
+  "Image preview %s wheel zoom belongs to the canvas",
+  async (modifier) => {
+    const { image, outsideCanvas, zoomLevel } = await openZoomablePreview();
+    zoomWithWheel(image, modifier);
+    await waitFor(() => {
+      expect(Number.parseInt(zoomLevel.textContent ?? "", 10)).toBeGreaterThan(
+        100,
+      );
+    });
+    const zoomedLevel = zoomLevel.textContent;
+
+    zoomWithWheel(outsideCanvas, modifier);
+    expect(zoomLevel.textContent).toBe(zoomedLevel);
+
+    fireEvent.wheel(image, { deltaY: 20 });
+    expect(zoomLevel.textContent).toBe(zoomedLevel);
+
+    click(getNamedButton("Reset zoom"));
+    expect(zoomLevel).toHaveTextContent("100%");
+  },
+);
+
+test("Two-finger image zoom belongs to the canvas", async () => {
+  const { image, outsideCanvas, zoomLevel } = await openZoomablePreview();
+  const startTouches = [
+    { identifier: 0, clientX: 100, clientY: 100, pageX: 100, pageY: 100 },
+    { identifier: 1, clientX: 200, clientY: 100, pageX: 200, pageY: 100 },
+  ];
+  const endTouches = [
+    { identifier: 0, clientX: 50, clientY: 100, pageX: 50, pageY: 100 },
+    { identifier: 1, clientX: 250, clientY: 100, pageX: 250, pageY: 100 },
+  ];
+
+  fireEvent.touchStart(image, { touches: startTouches });
+  fireEvent.touchMove(image, { touches: endTouches });
+  fireEvent.touchEnd(image, { touches: [] });
+  await waitFor(() => {
+    expect(zoomLevel).toHaveTextContent("200%");
+  });
+
+  fireEvent.touchStart(outsideCanvas, { touches: startTouches });
+  fireEvent.touchMove(outsideCanvas, { touches: endTouches });
+  fireEvent.touchEnd(outsideCanvas, { touches: [] });
+  expect(zoomLevel).toHaveTextContent("200%");
 });
 
 test("A confirmed image annotation reaches the agent as structured data", async () => {

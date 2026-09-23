@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../i18n/index.ts";
-import { enableViewportZoom } from "../lib/viewport-pinch.ts";
 import {
   AuthV1Page,
   type AuthV1PageMode,
@@ -23,7 +22,6 @@ const L = logger("AuthV1");
 
 function setupAuthV1Page(mode: AuthV1PageMode) {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    enableViewportZoom(signal);
     const authBrand = resolveAuthBrandContext();
     set(
       updateDocumentTitle$,
