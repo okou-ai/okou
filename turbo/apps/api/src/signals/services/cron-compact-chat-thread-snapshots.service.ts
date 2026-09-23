@@ -31,7 +31,10 @@ import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 import { z } from "zod";
-import { executeRawRows } from "../../lib/db-raw-rows";
+import {
+  executeRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import { env, optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
@@ -130,7 +133,7 @@ const snapshotCandidateRowSchema = z.object({
   chatThreads: z.array(
     chatThreadSnapshotProjectionSchema.extend({ modelSettings: z.unknown() }),
   ),
-  previousUpdatedAt: z.date().nullable(),
+  previousUpdatedAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   previousObjectKey: z.string().nullable(),
   previousSeqId: z.coerce.number().int().positive().nullable(),
   eventsApplied: z.int(),
