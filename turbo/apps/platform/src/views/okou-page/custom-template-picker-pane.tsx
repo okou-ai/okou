@@ -26,6 +26,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
+  Toggle,
+  ToggleGroup,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -500,34 +502,31 @@ function CustomTemplateKindFilters({
     },
   ] as const;
   return (
-    <div
-      role="group"
+    <ToggleGroup<UserTemplateKind>
+      value={[kind]}
+      onValueChange={(value) => {
+        // Reapplying the projected kind also pins the initial catalog default.
+        setKind(value[0] ?? kind);
+      }}
       aria-label={t(($) => {
         return $.artifacts.templates.categories;
       })}
-      className="flex w-full items-center gap-1 lg:w-auto"
+      className="w-full gap-1 lg:w-auto"
     >
       {options.map(({ value, label }) => {
         return (
-          <Button
+          <Toggle
             key={value}
-            type="button"
+            value={value}
             variant="quiet"
             size="sm"
-            aria-pressed={value === kind}
-            className={cn(
-              "flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none",
-              value === kind && "bg-gray-50 text-foreground",
-            )}
-            onClick={() => {
-              setKind(value);
-            }}
+            className="flex-1 max-[374px]:px-2 max-[374px]:text-xs lg:flex-none"
           >
             {label}
-          </Button>
+          </Toggle>
         );
       })}
-    </div>
+    </ToggleGroup>
   );
 }
 
