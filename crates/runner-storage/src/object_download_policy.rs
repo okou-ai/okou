@@ -3,4 +3,4 @@
 use std::time::Duration;
 
 /// Maximum time allowed for one bounded object-download request.
-pub(crate) const OBJECT_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
+pub const OBJECT_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);

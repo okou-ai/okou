@@ -2951,6 +2951,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pem"
+version = "4.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d354a98a3d1251555de99e8fdd8afda05573c31b82f59063a7b0a29b5527f120"
+dependencies = [
+ "base64 0.23.1",
+ "serde_core",
+]
+
+[[package]]
 name = "pem-rfc7468"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3324,6 +3334,7 @@ version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8774e05a7d0de114588e6a28fe7e71694b82614ed569d86d8b389dfbc98b8ad8"
 dependencies = [
+ "pem",
  "ring",
  "rustls-pki-types",
  "time",
@@ -3567,6 +3578,7 @@ dependencies = [
  "runner-provider",
  "runner-rpc-client",
  "runner-rpc-proto",
+ "runner-storage",
  "runner-types",
  "russh",
  "rustix",
@@ -3676,6 +3688,46 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "runner-storage"
+version = "0.1.0"
+dependencies = [
+ "api-contracts",
+ "async-trait",
+ "aws-sdk-s3",
+ "aws-smithy-mocks",
+ "bytes",
+ "chrono",
+ "flate2",
+ "futures-util",
+ "guest-contracts",
+ "guest-storage-apply",
+ "hex",
+ "http-body 1.1.0",
+ "httpmock",
+ "libc",
+ "nix",
+ "rcgen",
+ "reqwest",
+ "runner-host",
+ "runner-types",
+ "sandbox",
+ "sandbox-mock",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+ "url",
+ "zstd",
 ]
 
 [[package]]

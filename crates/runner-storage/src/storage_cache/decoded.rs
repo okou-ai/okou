@@ -21,8 +21,8 @@ const LOOKUP_KEY_BYTES: usize = 16 * 2 * 4096;
 pub(super) const REJECTION_BATCH_SIZE: usize = 16;
 
 #[derive(Debug)]
-pub(crate) struct CachedFiles {
-    pub(crate) files: Vec<StorageFile>,
+pub struct CachedFiles {
+    pub files: Vec<StorageFile>,
     pub(crate) archive_retirement_candidate: bool,
     _memory: OwnedSemaphorePermit,
 }
@@ -37,10 +37,10 @@ struct Inner {
 }
 
 #[derive(Clone)]
-pub(crate) struct DecodedCache(Arc<Inner>);
+pub struct DecodedCache(Arc<Inner>);
 
 impl DecodedCache {
-    pub(crate) fn new(home: HomePaths) -> Self {
+    pub fn new(home: HomePaths) -> Self {
         Self(Arc::new(Inner {
             home,
             closed: Mutex::new(false),
@@ -51,7 +51,7 @@ impl DecodedCache {
         }))
     }
 
-    pub(crate) async fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         {
             let mut closed = self.0.closed.lock().unwrap_or_else(|e| e.into_inner());
             *closed = true;
@@ -135,8 +135,8 @@ impl DecodedCache {
 
     /// Read already extracted files, without opening or decoding their archive.
     /// Missing/busy/ineligible entries retain ordinary archive delivery.
-    #[cfg(test)]
-    pub(crate) async fn get_ready(
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn get_ready(
         &self,
         name: &str,
         version: &str,
@@ -230,7 +230,7 @@ impl DecodedCache {
     }
 
     /// Called only by the existing post-spawn background-fill owner.
-    pub(crate) async fn warm_from_archive(&self, name: &str, version: &str) -> io::Result<()> {
+    pub async fn warm_from_archive(&self, name: &str, version: &str) -> io::Result<()> {
         if name.len() > 4096 || version.len() > 4096 {
             return Ok(());
         }

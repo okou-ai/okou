@@ -17,7 +17,7 @@ tokio::task_local! {
 /// Connector activity does not identify the transport that served the request:
 /// hyper can let a pool checkout win after a connection attempt has started.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct ArchiveConnectionAttempt {
+pub struct ArchiveConnectionAttempt {
     started: u8,
     succeeded: u8,
     failed: u8,
