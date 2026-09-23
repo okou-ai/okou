@@ -45,6 +45,7 @@ import { Check, Loader2 } from "lucide-react";
 import { DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { assistantName$ } from "../../signals/branding.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 
@@ -192,7 +193,7 @@ function canAuthorizeConnector(
 }
 
 function directedAuthorizeTitle(
-  t: ReturnType<typeof useTranslation>["t"],
+  t: TFunction<"common">,
   agentMissing: boolean,
   isAuthorized: boolean,
   connectorLabel: string,
