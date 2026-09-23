@@ -1057,6 +1057,15 @@ describe("GET /api/artifacts/catalog", () => {
     expect(filtered.artifacts).toStrictEqual([
       expect.objectContaining({ kind: "file", title: "first-thread.txt" }),
     ]);
+
+    await chat.deleteThread(owner.actor, first.threadId);
+
+    await expect(chat.listArtifactCatalog(owner.actor)).resolves.toMatchObject({
+      artifacts: [
+        expect.objectContaining({ kind: "file", title: "second-thread.txt" }),
+      ],
+      nextCursor: null,
+    });
   }, 180_000);
 });
 
