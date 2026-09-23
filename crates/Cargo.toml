@@ -82,6 +82,7 @@ guest-control-proto = { path = "guest-control-proto" }
 
 # External dependencies
 # Keep versions here and select features explicitly in each consuming crate.
+aes = { version = "0.9", default-features = false }
 aho-corasick = { version = "1", default-features = false }
 async-trait = { version = "0.1", default-features = false }
 aws-sdk-s3 = { version = "1", default-features = false }
@@ -91,9 +92,11 @@ bitvec = { version = "1", default-features = false }
 bytes = { version = "1", default-features = false }
 chrono = { version = "0.4", default-features = false }
 clap = { version = "4", default-features = false }
+crypto-bigint = { version = "0.7", default-features = false }
 des = { version = "0.9", default-features = false }
 flate2 = { version = "1", default-features = false }
 futures-util = { version = "0.3", default-features = false }
+getrandom = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false }
 hmac = { version = "0.13.0", default-features = false }
 http-body = { version = "1", default-features = false }
@@ -102,6 +105,7 @@ hyper = { version = "1", default-features = false }
 idna = { version = "1", default-features = false }
 libc = { version = "0.2", default-features = false }
 log = { version = "0.4", default-features = false }
+md-5 = { version = "0.11", default-features = false }
 nix = { version = "0.31", default-features = false }
 pin-project-lite = { version = "0.2", default-features = false }
 pkcs5 = { version = "0.8", default-features = false }
