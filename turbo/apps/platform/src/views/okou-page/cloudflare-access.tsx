@@ -13,17 +13,25 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@okouai/ui";
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   type CloudflareAccessConfig,
+  type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   acceptCloudflareAccessConflictReview$,
+  chooseCloudflareAccessScope$,
   closeCloudflareAccessDialog$,
   cloudflareAccessConfigs$,
   cloudflareAccessConflict$,
   cloudflareAccessConflictReview$,
+  cloudflareAccessCreateScope$,
   cloudflareAccessDialog$,
   cloudflareAccessReplaceToken$,
   cloudflareAccessSaveMessage$,
@@ -38,6 +46,7 @@ import {
 import { localizedCloudflareAccessError } from "../../lib/cloudflare-access-error.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { isOrgAdmin$ } from "../../signals/org.ts";
 
 export function CloudflareAccessConflictReview() {
   const { t } = useTranslation();
@@ -463,6 +472,7 @@ function CloudflareAccessFormActions({
 }
 
 export function CloudflareAccessDialog() {
+  const { t } = useTranslation();
   const data = useLoadable(cloudflareAccessDialog$);
   const close = useSet(closeCloudflareAccessDialog$);
   const [saving, save] = useLoadableSet(saveCloudflareAccess$);
@@ -470,6 +480,9 @@ export function CloudflareAccessDialog() {
   const signal = useGet(pageSignal$);
   const conflict = useGet(cloudflareAccessConflict$);
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
+  const admin = useLoadable(isOrgAdmin$);
+  const chooseScope = useSet(chooseCloudflareAccessScope$);
+  const createScope = useGet(cloudflareAccessCreateScope$);
   const dialog = data.state === "hasData" ? data.data : null;
   const { title, description } = useCloudflareAccessDialogCopy(dialog?.kind);
   const isSaving = saving.state === "loading";
@@ -477,6 +490,7 @@ export function CloudflareAccessDialog() {
     return null;
   }
   const destructive = dialog.kind === "delete";
+  const scope = dialog.kind === "create" ? createScope : dialog.scope;
   return (
     <Dialog
       open
@@ -507,6 +521,65 @@ export function CloudflareAccessDialog() {
           }}
         >
           <DialogBody className="grid gap-4">
+            {dialog.kind === "create" &&
+              admin.state === "hasData" &&
+              admin.data && (
+                <div className="grid gap-2">
+                  <span id="cloudflare-access-scope-label">
+                    {t(($) => {
+                      return $.cloudflareAccess.scope;
+                    })}
+                  </span>
+                  <Select
+                    items={[
+                      {
+                        value: "personal",
+                        label: t(($) => {
+                          return $.cloudflareAccess.personal;
+                        }),
+                      },
+                      {
+                        value: "organization",
+                        label: t(($) => {
+                          return $.cloudflareAccess.organization;
+                        }),
+                      },
+                    ]}
+                    value={scope}
+                    disabled={isSaving || uncertain}
+                    onValueChange={(value, details) => {
+                      if (value !== "personal" && value !== "organization") {
+                        details.cancel();
+                        return;
+                      }
+                      detach(chooseScope(value, signal), Reason.DomCallback);
+                    }}
+                  >
+                    <SelectTrigger aria-labelledby="cloudflare-access-scope-label">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="personal">
+                        {t(($) => {
+                          return $.cloudflareAccess.personal;
+                        })}
+                      </SelectItem>
+                      <SelectItem value="organization">
+                        {t(($) => {
+                          return $.cloudflareAccess.organization;
+                        })}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            {scope === "organization" && (
+              <p className="text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.cloudflareAccess.organizationHelp;
+                })}
+              </p>
+            )}
             {!destructive && (
               <fieldset
                 disabled={isSaving || uncertain}
@@ -531,11 +604,100 @@ export function CloudflareAccessDialog() {
   );
 }
 
+function CloudflareAccessSection({
+  scope,
+  configs,
+  canManage,
+}: {
+  readonly scope: "personal" | "organization";
+  readonly configs: readonly ScopedCloudflareAccessConfig[];
+  readonly canManage: boolean;
+}) {
+  const { t } = useTranslation();
+  const open = useSet(openCloudflareAccessDialog$);
+  const signal = useGet(pageSignal$);
+  return (
+    <section
+      aria-label={t(($) => {
+        return scope === "personal"
+          ? $.cloudflareAccess.personal
+          : $.cloudflareAccess.organization;
+      })}
+      className="grid gap-3"
+    >
+      <h2 className="text-base font-semibold">
+        {t(($) => {
+          return scope === "personal"
+            ? $.cloudflareAccess.personal
+            : $.cloudflareAccess.organization;
+        })}
+      </h2>
+      {configs.length === 0 && (
+        <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.cloudflareAccess.sectionEmpty;
+          })}
+        </p>
+      )}
+      {configs.map((config) => {
+        return (
+          <article
+            key={config.id}
+            className="grid gap-3 rounded-xl border bg-card p-5"
+          >
+            <h3 className="font-semibold">{config.name}</h3>
+            <AccessImpact config={config} />
+            {canManage && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    return detach(
+                      open("edit", config, signal),
+                      Reason.DomCallback,
+                    );
+                  }}
+                >
+                  {t(($) => {
+                    return $.cloudflareAccess.edit;
+                  })}
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={config.sshHosts.length > 0}
+                  onClick={() => {
+                    return detach(
+                      open("delete", config, signal),
+                      Reason.DomCallback,
+                    );
+                  }}
+                >
+                  {t(($) => {
+                    return $.cloudflareAccess.delete;
+                  })}
+                </Button>
+              </div>
+            )}
+            {canManage && config.sshHosts.length > 0 && (
+              <p className="text-sm text-muted-foreground">
+                {t(($) => {
+                  return $.cloudflareAccess.inUseHelp;
+                })}
+              </p>
+            )}
+          </article>
+        );
+      })}
+    </section>
+  );
+}
+
 export function CloudflareAccessConfigs() {
   const { t } = useTranslation();
   const configs = useLoadable(cloudflareAccessConfigs$);
   const open = useSet(openCloudflareAccessDialog$);
   const signal = useGet(pageSignal$);
+  const admin = useLoadable(isOrgAdmin$);
   if (configs.state === "loading") {
     return (
       <p role="status">
@@ -579,60 +741,20 @@ export function CloudflareAccessConfigs() {
           })}
         </Button>
       </div>
-      {configs.data.length === 0 && (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
-          {t(($) => {
-            return $.cloudflareAccess.empty;
-          })}
-        </p>
-      )}
-      {configs.data.map((config) => {
-        return (
-          <article
-            key={config.id}
-            className="grid gap-3 rounded-xl border bg-card p-5"
-          >
-            <h2 className="font-semibold">{config.name}</h2>
-            <AccessImpact config={config} />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  return detach(
-                    open("edit", config, signal),
-                    Reason.DomCallback,
-                  );
-                }}
-              >
-                {t(($) => {
-                  return $.cloudflareAccess.edit;
-                })}
-              </Button>
-              <Button
-                variant="outline"
-                disabled={config.sshHosts.length > 0}
-                onClick={() => {
-                  return detach(
-                    open("delete", config, signal),
-                    Reason.DomCallback,
-                  );
-                }}
-              >
-                {t(($) => {
-                  return $.cloudflareAccess.delete;
-                })}
-              </Button>
-            </div>
-            {config.sshHosts.length > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.cloudflareAccess.inUseHelp;
-                })}
-              </p>
-            )}
-          </article>
-        );
-      })}
+      <CloudflareAccessSection
+        scope="personal"
+        configs={configs.data.filter((config) => {
+          return config.scope === "personal";
+        })}
+        canManage
+      />
+      <CloudflareAccessSection
+        scope="organization"
+        configs={configs.data.filter((config) => {
+          return config.scope === "organization";
+        })}
+        canManage={admin.state === "hasData" && admin.data === true}
+      />
     </div>
   );
 }

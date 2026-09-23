@@ -1,6 +1,6 @@
 import {
   cloudflareAccessContract,
-  type CloudflareAccessConfig,
+  type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   sshConnectionsContract,
@@ -23,9 +23,10 @@ import {
 const context = testContext();
 const orgId = "org_access_ui";
 const timestamp = "2026-09-15T00:00:00.000Z";
-const config: CloudflareAccessConfig = Object.freeze({
+const config: ScopedCloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
   name: "Engineering gateway",
+  scope: "personal",
   revision: 1,
   generation: 1,
   sshHosts: [],
@@ -58,6 +59,12 @@ const directHost: SshConnectionResponse = Object.freeze({
 const host: SshConnectionResponse = Object.freeze({
   ...directHost,
   transport: { type: "cloudflare_access" as const, configId: config.id },
+});
+const retainedHost: SshConnectionResponse = Object.freeze({
+  ...host,
+  generation: 3,
+  learnedHostKey: { algorithm: "ssh-ed25519", fingerprint: "SHA256:retained" },
+  transport: { type: "cloudflare_access" as const, needsRebind: true as const },
 });
 
 beforeEach(() => {
@@ -198,6 +205,88 @@ test("SSH keeps Cloudflare Access in the host form without a management tab", as
   click(getAction("radio", "Cloudflare Access", dialog));
   await within(dialog).findByLabelText("Cloudflare Access");
   expect(within(dialog).getByLabelText("Name")).toBeInTheDocument();
+});
+
+test("A retained protected host requires explicit shared Access selection before saving", async () => {
+  const shared = { ...config, scope: "organization" as const };
+  const requests: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ query, respond }) => {
+    expect(query).toStrictEqual({ view: "scoped" });
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [retainedHost] });
+  });
+  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, {
+      ...retainedHost,
+      generation: 4,
+      transport: { type: "cloudflare_access", configId: shared.id },
+    });
+  });
+  await page();
+  expect(
+    await screen.findByText(/needs a new Cloudflare Access configuration/u),
+  ).toHaveAttribute("role", "alert");
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "Choose a permitted Cloudflare Access configuration or Direct",
+  );
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  await selectConfig(dialog, shared.name);
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(requests).toHaveLength(1);
+  });
+  expect(requests[0]).toMatchObject({
+    expectedGeneration: 3,
+    host: retainedHost.host,
+    credential: { id: retainedHost.credentialId },
+    transport: { type: "cloudflare_access", configId: shared.id },
+  });
+});
+
+test("Direct recovery is an explicit choice and does not replace the saved credential", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [] });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [retainedHost] });
+  });
+  context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    return respond(200, {
+      ...directHost,
+      generation: 4,
+      learnedHostKey: retainedHost.learnedHostKey,
+      port: body.port ?? 443,
+    });
+  });
+  await page();
+  await screen.findByText(retainedHost.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog");
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  click(getAction("radio", "Direct", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(requests).toHaveLength(1);
+  });
+  expect(requests[0]).toMatchObject({
+    expectedGeneration: 3,
+    host: retainedHost.host,
+    credential: { id: retainedHost.credentialId },
+    transport: { type: "direct" },
+  });
 });
 
 test("Direct and protected mode retain their port and configuration drafts but submit only active fields", async () => {

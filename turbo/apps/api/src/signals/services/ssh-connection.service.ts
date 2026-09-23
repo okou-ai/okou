@@ -169,11 +169,6 @@ function toSshConnectionResponse(
   row: SshConnectionRow,
   credential: { readonly name: string; readonly username: string },
 ): SshConnectionResponse {
-  // The old management DTO equates a null Access ID with Direct. Until the
-  // scoped DTO is available, fail closed rather than mislabel a protected host.
-  if (row.needsRebind) {
-    throw new Error("SSH Cloudflare Access needs rebind");
-  }
   const hasAlgorithm = row.learnedHostKeyAlgorithm !== null;
   const hasFingerprint = row.learnedHostKeyFingerprint !== null;
   if (hasAlgorithm !== hasFingerprint) {
@@ -181,14 +176,21 @@ function toSshConnectionResponse(
   }
 
   return {
-    ...(row.cloudflareAccessId === null
-      ? {}
-      : {
+    ...(row.needsRebind
+      ? {
           transport: {
             type: "cloudflare_access" as const,
-            configId: row.cloudflareAccessId,
+            needsRebind: true as const,
           },
-        }),
+        }
+      : row.cloudflareAccessId === null
+        ? {}
+        : {
+            transport: {
+              type: "cloudflare_access" as const,
+              configId: row.cloudflareAccessId,
+            },
+          }),
     id: row.id,
     displayName: row.displayName,
     host: row.host,
@@ -615,6 +617,14 @@ export async function updateSshConnection(
     if (current.generation !== args.body.expectedGeneration) {
       return failure("generationConflict");
     }
+    if (current.needsRebind && args.body.transport === undefined) {
+      return {
+        ok: false,
+        kind: "bad_request",
+        code: SSH_ERROR_CODES.INVALID_INPUT,
+        message: "Choose a transport to recover this SSH host",
+      };
+    }
     if (current.generation === 2_147_483_647) {
       return sshCredentialFailure("exhausted");
     }
@@ -649,6 +659,7 @@ export async function updateSshConnection(
         port,
         credentialId: credential.id,
         cloudflareAccessId: selectedAccess.id,
+        needsRebind: false,
         learnedHostKeyAlgorithm: endpointChanged
           ? null
           : current.learnedHostKeyAlgorithm,

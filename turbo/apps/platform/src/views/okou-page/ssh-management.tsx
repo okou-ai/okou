@@ -779,6 +779,7 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
   const unavailableProtectedHost =
     dialog.connection !== null &&
     "transport" in dialog.connection &&
+    "configId" in dialog.connection.transport &&
     configs.state === "hasData" &&
     configs.data === null;
   const invalidAccess =
@@ -801,6 +802,7 @@ function useSshHostSaveBlocked(dialog: SshDialogState, isSaving: boolean) {
 }
 
 function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
+  const { t } = useTranslation();
   const uncertain = useGet(sshSaveUncertain$);
   const fieldsDisabled = isSaving || uncertain;
   const transport = useGet(sshTransportEditor$);
@@ -835,6 +837,18 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
           >
             {hostEditor ? (
               <>
+                {dialog.connection &&
+                  "transport" in dialog.connection &&
+                  "needsRebind" in dialog.connection.transport && (
+                    <p
+                      role="alert"
+                      className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                    >
+                      {t(($) => {
+                        return $.ssh.cloudflare.rebindHelp;
+                      })}
+                    </p>
+                  )}
                 <EndpointFields
                   connection={dialog.connection}
                   disabled={fieldsDisabled}
@@ -911,7 +925,11 @@ function HostCard({
   const signal = useGet(pageSignal$);
   const configs = useLoadable(cloudflareAccessConfigs$);
   const configId =
-    "transport" in connection ? connection.transport.configId : null;
+    "transport" in connection && "configId" in connection.transport
+      ? connection.transport.configId
+      : null;
+  const needsRebind =
+    "transport" in connection && "needsRebind" in connection.transport;
   const unavailable =
     configId !== null && configs.state === "hasData" && configs.data === null;
   const config =
@@ -923,10 +941,21 @@ function HostCard({
   return (
     <article className="grid gap-3 rounded-xl border bg-card p-5">
       <h2 className="font-semibold">{connection.displayName}</h2>
-      <SshHostWarning
-        connectionId={connection.id}
-        generation={connection.generation}
-      />
+      {needsRebind ? (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+        >
+          {t(($) => {
+            return $.ssh.cloudflare.needsRebind;
+          })}
+        </p>
+      ) : (
+        <SshHostWarning
+          connectionId={connection.id}
+          generation={connection.generation}
+        />
+      )}
       <p className="text-sm text-muted-foreground">
         {connection.credentialName}
       </p>

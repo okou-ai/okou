@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui";
@@ -23,6 +25,18 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const configs = useLoadable(cloudflareAccessConfigs$);
   const editor = useGet(sshTransportEditor$);
   const choose = useSet(chooseSshAccessConfig$);
+  const personal =
+    configs.state === "hasData"
+      ? (configs.data?.filter((config) => {
+          return config.scope === "personal";
+        }) ?? [])
+      : [];
+  const organization =
+    configs.state === "hasData"
+      ? (configs.data?.filter((config) => {
+          return config.scope === "organization";
+        }) ?? [])
+      : [];
   const configItems = [
     ...(configs.state === "hasData" && configs.data
       ? configs.data.map((config) => {
@@ -87,13 +101,41 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
               />
             </SelectTrigger>
             <SelectContent>
-              {configItems.map((item) => {
-                return (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                );
-              })}
+              <SelectGroup>
+                <SelectLabel>
+                  {t(($) => {
+                    return $.cloudflareAccess.personal;
+                  })}
+                </SelectLabel>
+                {personal.map((config) => {
+                  return (
+                    <SelectItem key={config.id} value={config.id}>
+                      {config.name}
+                    </SelectItem>
+                  );
+                })}
+                <SelectItem value="new">
+                  {t(($) => {
+                    return $.cloudflareAccess.createNew;
+                  })}
+                </SelectItem>
+              </SelectGroup>
+              {organization.length > 0 && (
+                <SelectGroup>
+                  <SelectLabel>
+                    {t(($) => {
+                      return $.cloudflareAccess.organization;
+                    })}
+                  </SelectLabel>
+                  {organization.map((config) => {
+                    return (
+                      <SelectItem key={config.id} value={config.id}>
+                        {config.name}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectGroup>
+              )}
             </SelectContent>
           </Select>
           {editor.configId &&

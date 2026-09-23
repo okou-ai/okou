@@ -1,6 +1,6 @@
 import {
   cloudflareAccessContract,
-  type CloudflareAccessConfig,
+  type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
@@ -22,9 +22,10 @@ import {
 
 const context = testContext();
 const agentId = "c0000000-0000-4000-8000-000000000001";
-const config: CloudflareAccessConfig = Object.freeze({
+const config: ScopedCloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
   name: "Protected applications",
+  scope: "personal",
   revision: 1,
   generation: 1,
   sshHosts: [],
