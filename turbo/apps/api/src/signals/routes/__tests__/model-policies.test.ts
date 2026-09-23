@@ -476,6 +476,24 @@ describe("GET/PUT /api/model-policies", () => {
         [400],
       );
       expect(oldPreference.body.error.message).toBe(retired.body.error.message);
+      if (
+        !existing.body.policies.some((policy) => {
+          return policy.model === activeModel;
+        })
+      ) {
+        await accept(
+          client.update({
+            headers: authHeaders(),
+            body: {
+              policies: [
+                ...toUpdate(existing.body),
+                makeBuiltInPolicy(activeModel),
+              ],
+            },
+          }),
+          [200],
+        );
+      }
       const successor = await accept(
         preferences.update({
           headers: authHeaders(),
