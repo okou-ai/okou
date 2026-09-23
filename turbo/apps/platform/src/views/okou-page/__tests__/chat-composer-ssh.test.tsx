@@ -120,6 +120,7 @@ test("Opening services retains SSH while refreshing and applies the confirmed gr
 test.each([2, 3])(
   "SSH follows all builtin services and does not displace %s builtin trigger icons",
   async (count) => {
+    const user = userEvent.setup({ delay: null });
     const catalog = [
       builtinConnector({ slug: github, label: "GitHub" }),
       builtinConnector({ slug: slack, label: "Slack" }),
@@ -160,12 +161,16 @@ test.each([2, 3])(
     await waitFor(() => {
       expect(triggerIcons(trigger)).toStrictEqual(icons.slice(0, 2));
     });
-    click(
+    await user.click(
       await screen.findByRole("switch", {
         name: "Cloud browser",
         checked: true,
       }),
     );
+    await screen.findByRole("switch", {
+      name: "Cloud browser",
+      checked: false,
+    });
     await waitFor(() => {
       expect(triggerIcons(trigger)).toStrictEqual(
         [...icons, "SSH"].slice(0, 3),
