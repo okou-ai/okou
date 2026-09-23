@@ -87,6 +87,7 @@ export const connectorOverviewContract = c.router({
       200: connectorOverviewSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
+      404: apiErrorSchema,
       503: apiErrorSchema,
     },
     summary: "Get the user's connected connectors and computer access",

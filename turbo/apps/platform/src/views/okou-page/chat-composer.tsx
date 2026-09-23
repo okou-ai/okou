@@ -303,7 +303,7 @@ import {
   sshIdentity$,
 } from "../../signals/ssh.ts";
 import { updateAgentVncAccess$ } from "../../signals/vnc-access.ts";
-import { vncSummary$ } from "../../signals/vnc.ts";
+import { vncIdentity$, vncSummary$ } from "../../signals/vnc.ts";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
@@ -7686,7 +7686,7 @@ function composerPopoverItems({
   ];
 }
 
-function matchingComposerSshAccess(
+function matchingComposerAccess(
   identity: Loadable<string | null>,
   access:
     | {
@@ -7756,14 +7756,12 @@ function ConnectorsPopoverButton({
   const sshRows = useLoadable(signals.connector.sshAccess$);
   const sshIdentity = useLoadable(sshIdentity$);
   const lastSshAccess = useLastResolved(signals.connector.sshAccess$);
-  const sshAccess = matchingComposerSshAccess(
-    sshIdentity,
-    lastSshAccess,
-    agentId,
-  );
+  const sshAccess = matchingComposerAccess(sshIdentity, lastSshAccess, agentId);
   const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
   const vncRows = useLoadable(signals.connector.vncAccess$);
-  const vncAccess = useLastResolved(signals.connector.vncAccess$);
+  const vncIdentity = useLoadable(vncIdentity$);
+  const lastVncAccess = useLastResolved(signals.connector.vncAccess$);
+  const vncAccess = matchingComposerAccess(vncIdentity, lastVncAccess, agentId);
   const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
   const pageSignal = useGet(pageSignal$);
   const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;

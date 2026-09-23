@@ -121,7 +121,13 @@ export interface ComposerConnectorSignals {
       readonly enabled: boolean;
     } | null>
   >;
-  readonly vncAccess$: Computed<Promise<{ readonly enabled: boolean } | null>>;
+  readonly vncAccess$: Computed<
+    Promise<{
+      readonly identity: string;
+      readonly agentId: string;
+      readonly enabled: boolean;
+    } | null>
+  >;
 }
 
 /** Browse reads ask for no keyword; the category, when set, scopes them. */

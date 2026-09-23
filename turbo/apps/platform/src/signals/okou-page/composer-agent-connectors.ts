@@ -1,6 +1,8 @@
 import { command, computed, state } from "ccstate";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { composerAgentConnectorsChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -21,13 +23,39 @@ export const invalidateAgentConnectorAccess$ = command(
 export function composerAgentConnectors(agentId: string) {
   return computed(async (get) => {
     get(revisions$).get(agentId);
+    const createClient = get(apiClient$);
     const result = await accept(
-      get(apiClient$)(connectorOverviewContract).agent({
+      createClient(connectorOverviewContract).agent({
         params: { id: agentId },
       }),
-      [200],
+      [200, 404],
     );
-    return result.body;
+    if (result.status === 200) {
+      return result.body;
+    }
+
+    // A newly promoted App may reach an older API during rollout or rollback.
+    // Remove this bridge after those API versions leave serving and rollback.
+    const [builtin, custom] = await Promise.all([
+      accept(
+        createClient(userBuiltinConnectorsContract).get({
+          params: { id: agentId },
+        }),
+        [200],
+      ),
+      accept(
+        createClient(agentCustomConnectorsContract).get({
+          params: { id: agentId },
+        }),
+        [200],
+      ),
+    ]);
+    return {
+      enabledConnectorSlugs: builtin.body.enabledConnectorSlugs,
+      customConnectorIds: custom.body.grants.map((grant) => {
+        return grant.customConnectorId;
+      }),
+    };
   });
 }
 

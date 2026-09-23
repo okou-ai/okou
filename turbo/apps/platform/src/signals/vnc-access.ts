@@ -46,7 +46,7 @@ export function vncAccessForAgent(agentId: string) {
       undefined,
       { showErrorToast: false },
     );
-    return result.status === 200 ? result.body : null;
+    return result.status === 200 ? { identity, agentId, ...result.body } : null;
   });
 }
 
