@@ -8,14 +8,15 @@ import {
   hostedDeployments,
   privateHostedDeployments,
 } from "@okouai/db/schema/hosted-site";
-import type {
-  EncryptedErasureSelector,
-  ErasureHandler,
-  ErasureInventoryPage,
-  ErasureLease,
-  ErasureProof,
-  ErasureSubject,
-  ErasureUnresolved,
+import {
+  renewErasureLease,
+  type EncryptedErasureSelector,
+  type ErasureHandler,
+  type ErasureInventoryPage,
+  type ErasureLease,
+  type ErasureProof,
+  type ErasureSubject,
+  type ErasureUnresolved,
 } from "@okouai/db/operations/account-erasure";
 
 import { env } from "../../lib/env";
@@ -63,7 +64,7 @@ const HOSTED_SITE_NAMESPACE = "9a1c7f36-58d2-4ee0-9b47-0f6a2d5c8e14";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const HOSTED_SITE_ERASURE_COLLECTOR_VERSION =
-  "52a99c91-bc07-484b-a948-7361cca9eeaa";
+  "c7ba982a-3865-4830-8367-f97d72ba820e";
 
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), HOSTED_SITE_NAMESPACE);
@@ -86,12 +87,17 @@ function hostedSitesBucket(): string | undefined {
   return env("R2_HOSTED_SITES_BUCKET_NAME");
 }
 
-/** Bind the captured selector to the configured bucket without exposing its
- * name in the selector. A later bucket switch fails closed: it cannot turn an
- * empty listing in a different bucket into proof that old bytes disappeared.
+/** Bind the selector to the bucket, account and endpoint without exposing
+ * them in plaintext. A later storage configuration switch fails closed.
  */
 function storageReference(bucket: string): string {
-  return reference(["hosted-sites-storage", 2, bucket]);
+  return reference([
+    "hosted-sites-storage",
+    3,
+    bucket,
+    env("R2_ACCOUNT_ID"),
+    env("S3_ENDPOINT") ?? null,
+  ]);
 }
 
 const cursorSchema = z
@@ -251,6 +257,7 @@ async function inventoryPage(
   if (bucket === undefined) {
     return unresolved("permission_missing");
   }
+  await renewErasureLease(db, lease);
   let resume: { readonly ordinal: number; readonly id: string } | undefined;
   if (cursor !== null) {
     const decoded = await decryptErasureSelector(cursor);

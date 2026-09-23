@@ -705,6 +705,9 @@ export default [
       // whose row is already gone, and object absence is read back from the
       // provider rather than from a response this API serves.
       "src/signals/services/__tests__/account-erasure-hosted-site-collector.test.ts",
+      // The dormant artifact-byte sink must survive its catalog row vanishing
+      // between sealed capture and verification; no endpoint exposes that.
+      "src/signals/services/__tests__/account-erasure-artifact-file-collector.test.ts",
       // Storage erasure must use a sealed locator after its catalog row is
       // gone; no endpoint can construct that dormant executor state yet.
       "src/signals/services/__tests__/account-erasure-storage-object-collector.test.ts",

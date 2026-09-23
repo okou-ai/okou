@@ -5,14 +5,15 @@ import { v5 as uuidv5 } from "uuid";
 import { z } from "zod";
 
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import type {
-  EncryptedErasureSelector,
-  ErasureHandler,
-  ErasureInventoryPage,
-  ErasureLease,
-  ErasureProof,
-  ErasureSubject,
-  ErasureUnresolved,
+import {
+  renewErasureLease,
+  type EncryptedErasureSelector,
+  type ErasureHandler,
+  type ErasureInventoryPage,
+  type ErasureLease,
+  type ErasureProof,
+  type ErasureSubject,
+  type ErasureUnresolved,
 } from "@okouai/db/operations/account-erasure";
 
 import { env } from "../../lib/env";
@@ -46,7 +47,7 @@ const STORAGE_OBJECT_NAMESPACE = "0c9ba03d-923d-4607-8fd0-3487b7a34321";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const STORAGE_OBJECT_ERASURE_COLLECTOR_VERSION =
-  "f94f0338-9fb3-4e9e-81a1-f66d297f2c67";
+  "b07277ac-7e4a-4904-8a49-124be5094af0";
 
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), STORAGE_OBJECT_NAMESPACE);
@@ -69,12 +70,17 @@ function storageBucket(): string | undefined {
   return env("R2_USER_STORAGES_BUCKET_NAME");
 }
 
-/** Bind the captured selector to the configured bucket without exposing its
- * name in the selector. A later bucket switch fails closed: it cannot turn an
- * empty listing in a different bucket into proof that old bytes disappeared.
+/** Bind the selector to the bucket, account and endpoint without exposing
+ * them in plaintext. A later storage configuration switch fails closed.
  */
 function storageReference(bucket: string): string {
-  return reference(["user-storages-bucket", 2, bucket]);
+  return reference([
+    "user-storages-bucket",
+    3,
+    bucket,
+    env("R2_ACCOUNT_ID"),
+    env("S3_ENDPOINT") ?? null,
+  ]);
 }
 
 const cursorSchema = z
@@ -227,6 +233,8 @@ async function inventoryPage(
   if (bucket === undefined) {
     return unresolved("permission_missing");
   }
+  // The same worker owns every page. Extend the live lease before each one.
+  await renewErasureLease(db, lease);
   let resume: { readonly ordinal: number; readonly id: string } | undefined;
   if (cursor !== null) {
     const decoded = await decryptErasureSelector(cursor);
