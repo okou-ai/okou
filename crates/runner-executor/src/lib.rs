@@ -2,7 +2,7 @@
 
 pub mod executor;
 pub mod http;
-pub mod network_provider_adapter;
+mod network_provider_adapter;
 pub mod pre_spawn_admission;
 pub mod telemetry;
 

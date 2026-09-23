@@ -995,9 +995,6 @@ async fn run_start_with_home(
     let exec_config = Arc::new(ExecutorConfig {
         api_url: server.url,
         runner_hostname: hostname,
-        connector_runtime_registry: Arc::new(
-            crate::network_provider_adapter::ProviderRegistryAdapter(registry_handle.clone()),
-        ),
         registry: registry_handle,
         http,
         log_paths,

@@ -18,7 +18,6 @@ mod io_limits;
 use runner_lifecycle::lifecycle;
 mod live_runner_instances;
 mod network_log_http_adapter;
-use runner_executor::network_provider_adapter;
 use runner_executor::pre_spawn_admission;
 mod prefetch;
 mod profile;

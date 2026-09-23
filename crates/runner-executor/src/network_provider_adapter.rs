@@ -7,7 +7,7 @@ use runner_network::proxy::{
 use runner_types::types::ConnectorRuntimeTarget;
 
 #[derive(Clone)]
-pub struct ProviderRegistryAdapter(pub ProxyRegistryHandle);
+pub(crate) struct ProviderRegistryAdapter(pub ProxyRegistryHandle);
 
 struct ProviderTransactionAdapter(ConnectorRuntimeRegistryTransaction);
 struct ProviderPublicationReceipt(RegistryPublication);

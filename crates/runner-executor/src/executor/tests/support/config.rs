@@ -27,14 +27,6 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
         api_url: "http://localhost:9999".into(),
         runner_hostname: None,
         registry: proxy::ProxyRegistryHandle::new(registry_path, lock_path),
-        connector_runtime_registry: Arc::new(
-            crate::network_provider_adapter::ProviderRegistryAdapter(
-                proxy::ProxyRegistryHandle::new(
-                    dir.join("proxy-registry.json"),
-                    dir.join("proxy-registry.json.lock"),
-                ),
-            ),
-        ),
         http: crate::http::HttpClient::new(HttpClientConfig {
             api_url: "http://localhost:9999".into(),
             vercel_bypass: None,

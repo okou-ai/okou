@@ -1,6 +1,7 @@
 //! Sandbox preparation, reuse, and post-run cleanup glue.
 
 use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
@@ -1827,7 +1828,9 @@ pub(super) async fn register_proxy(
             .register_run(ConnectorRuntimeSyncRegistration {
                 run_id: context.run_id,
                 source_ip,
-                registry: config.connector_runtime_registry.clone(),
+                registry: Arc::new(crate::network_provider_adapter::ProviderRegistryAdapter(
+                    config.registry.clone(),
+                )),
                 targets: &context.connector_runtime_targets,
                 refreshes: context.network_policy_refreshes.as_ref(),
             })
