@@ -125,13 +125,14 @@ test.each([false, true])(
     if (directory) {
       await findFastControl("button", "Manage VNC access");
       await screen.findByRole("heading", { name: "VNC" });
-      expect(queryFastControl("link", "Manage VNC")).toBeNull();
     } else {
-      const link = await findFastControl("link", "Manage VNC");
-      expect(link).toHaveAttribute("href", "/connectors/vnc?add=1");
-      expect(queryFastControl("link", "Manage SSH hosts")).toBeNull();
+      await findFastControl("link", "Manage VNC");
       await screen.findByRole("heading", { name: "Remote access" });
     }
+    expect(
+      queryFastControl("link", "Manage VNC")?.getAttribute("href") ?? null,
+    ).toBe(directory ? null : "/connectors/vnc?add=1");
+    expect(queryFastControl("link", "Manage SSH hosts")).toBeNull();
   },
 );
 
@@ -210,15 +211,13 @@ test.each([false, true])(
     ).resolves.toBeInTheDocument();
     expect(screen.queryByText(/No connectors matching/u)).toBeNull();
     recovery.resolve();
-    if (directory) {
-      await expect(
-        screen.findByText("Add a VNC host to get started."),
-      ).resolves.toBeInTheDocument();
-    } else {
-      await expect(
-        findFastControl("link", "Manage VNC"),
-      ).resolves.toHaveAttribute("href", "/connectors/vnc?add=1");
-    }
+    const recovered = directory
+      ? await screen.findByText("Add a VNC host to get started.")
+      : await findFastControl("link", "Manage VNC");
+    expect(recovered).toBeInTheDocument();
+    expect(recovered.getAttribute("href")).toBe(
+      directory ? null : "/connectors/vnc?add=1",
+    );
   },
 );
 
@@ -239,11 +238,11 @@ test.each([false, true])(
     });
     if (directory) {
       await screen.findByRole("heading", { name: "SSH" });
-      expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
     } else {
       await findFastControl("link", "Manage SSH hosts");
-      expect(queryFastControl("link", "Manage VNC")).toBeNull();
     }
+    expect(screen.queryByRole("heading", { name: "VNC" })).toBeNull();
+    expect(queryFastControl("link", "Manage VNC")).toBeNull();
   },
 );
 
