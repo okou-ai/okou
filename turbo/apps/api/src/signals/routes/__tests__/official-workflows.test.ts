@@ -160,6 +160,7 @@ import {
   setOfficialWorkflowAutomationAdmissionStateFixture,
 } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
+import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { holdSecretKms } from "./helpers/hold-secret-kms";
 import {
   createCronOfficialWorkflowCatalogRoutes,
@@ -2494,7 +2495,7 @@ describe("Morning Brief preference", () => {
       { actor: missingAgent, createdAt: new Date("2020-01-01T00:00:00.000Z") },
     ]);
     await bdd.updateUserTimezone(missingAgent, "Asia/Shanghai");
-    await initializeBriefMember(missingAgent);
+    await tickBriefEnrollment(missingAgent);
     await setMorningBriefEnabled(missingAgent, true);
     const agentHeaders = authHeaders(missingAgent);
     const unavailableAgent = await accept(
@@ -2743,7 +2744,7 @@ describe("Morning Brief preference", () => {
       unavailableReason: null,
       lastRun: null,
     });
-    await initializeBriefMember(actor);
+    await tickBriefEnrollment(actor);
     await expect(listMorningBriefInstallations(actor)).resolves.toMatchObject([
       { id: installed.id, agentId: originalAgentId },
     ]);
@@ -3934,13 +3935,13 @@ async function connectBriefSource(actor: ApiTestUser): Promise<void> {
   }
 }
 
-async function initializeBriefMember(actor: ApiTestUser, timezone?: string) {
+async function initializeBriefMember(actor: ApiTestUser, timezone: string) {
   return await accept(
     setupApp({ context, routes: userPreferencesRoutes })(
       userPreferencesContract,
     ).initialize({
       headers: authHeaders(actor),
-      body: timezone === undefined ? {} : { timezone },
+      body: { timezone },
     }),
     [200],
   );
@@ -4014,6 +4015,31 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief default onboarding", () => {
+  it("enrolls a member whose timezone was saved before enrollment was recorded", async () => {
+    const { actor } = await prepareBriefMember();
+    await connectBriefSource(actor);
+    const device = createAuthDeviceApiActions(context);
+    const started = await device.startCliDevice();
+    await device.requestCliApproval(
+      actor,
+      { device_code: started.device_code, timezone: "Asia/Shanghai" },
+      [200],
+    );
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "paused",
+      timezone: "Asia/Shanghai",
+    });
+
+    await tickBriefEnrollment(actor);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "enabled",
+      timezone: "Asia/Shanghai",
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
+  });
+
   it("waits locally for a known member's timezone and installs as soon as initialization supplies it", async () => {
     const { actor, createdAt } = await prepareBriefMember();
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
@@ -4022,10 +4048,10 @@ describe("Morning Brief default onboarding", () => {
     membershipReads.mockClear();
     const startedAt = now();
     await withMockNowForTest(startedAt, async () => {
-      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
       await Promise.all([
-        initializeBriefMember(actor),
-        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+        tickBriefEnrollment(actor),
         tickBriefEnrollment(actor),
       ]);
     });
@@ -4064,7 +4090,7 @@ describe("Morning Brief default onboarding", () => {
     await withMockNowForTest(startedAt, async () => {
       await initializeBriefMember(actor, "Asia/Shanghai");
       expect(membershipReads).toHaveBeenCalledTimes(1);
-      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
       await tickBriefEnrollment(actor);
     });
     await withMockNowForTest(startedAt + 60_000, async () => {
@@ -4081,7 +4107,7 @@ describe("Morning Brief default onboarding", () => {
       );
 
       await deliverClerkOrganizationCreated(actor, createdAt);
-      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
       expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
@@ -4207,7 +4233,7 @@ describe("Morning Brief default onboarding", () => {
     await withMockNowForTest(startedAt, async () => {
       await initializeBriefMember(actor, "Asia/Shanghai");
       await Promise.all([
-        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
         tickBriefEnrollment(actor),
       ]);
       expect(membershipReads).not.toHaveBeenCalled();
@@ -4269,8 +4295,8 @@ describe("Morning Brief default onboarding", () => {
       const initialized = await initializeBriefMember(actor, "Asia/Shanghai");
       expect(initialized.body).toMatchObject({ timezone: "Asia/Shanghai" });
       await Promise.all([
-        initializeBriefMember(actor),
-        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
+        tickBriefEnrollment(actor),
         tickBriefEnrollment(actor),
       ]);
       expect(membershipReads).toHaveBeenCalledTimes(1);
@@ -4285,7 +4311,7 @@ describe("Morning Brief default onboarding", () => {
     mockBriefMemberships([{ actor, createdAt }]);
     await withMockNowForTest(startedAt + 59_999, async () => {
       await Promise.all([
-        initializeBriefMember(actor),
+        tickBriefEnrollment(actor),
         tickBriefEnrollment(actor),
       ]);
       expect(membershipReads).toHaveBeenCalledTimes(1);
@@ -4342,7 +4368,7 @@ describe("Morning Brief default onboarding", () => {
       });
       mockBriefMemberships([{ actor, createdAt }]);
       await withMockNowForTest(startedAt + 299_999, async () => {
-        await initializeBriefMember(actor);
+        await tickBriefEnrollment(actor);
         await tickBriefEnrollment(actor);
         expect(membershipReads).toHaveBeenCalledTimes(1);
         await expect(
@@ -4403,7 +4429,7 @@ describe("Morning Brief default onboarding", () => {
     let attempts = 1;
     await withMockNowForTest(attemptedAt, async () => {
       await tickBriefEnrollment(actor);
-      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
       expect(membershipReads).toHaveBeenCalledTimes(attempts);
       expect((await readBriefPreference(actor)).body).toMatchObject({
         enabled: true,
@@ -4413,7 +4439,7 @@ describe("Morning Brief default onboarding", () => {
     for (const retryDelay of [60_000, 120_000, 240_000, 480_000, 900_000]) {
       await withMockNowForTest(attemptedAt + retryDelay - 1, async () => {
         await Promise.all([
-          initializeBriefMember(actor),
+          tickBriefEnrollment(actor),
           tickBriefEnrollment(actor),
         ]);
         expect(membershipReads).toHaveBeenCalledTimes(attempts);
@@ -4422,7 +4448,7 @@ describe("Morning Brief default onboarding", () => {
       attempts++;
       await withMockNowForTest(attemptedAt, async () => {
         await Promise.all([
-          initializeBriefMember(actor),
+          tickBriefEnrollment(actor),
           tickBriefEnrollment(actor),
           tickBriefEnrollment(actor),
         ]);
@@ -4431,7 +4457,7 @@ describe("Morning Brief default onboarding", () => {
     }
     mockBriefMemberships([{ actor, createdAt }]);
     await withMockNowForTest(attemptedAt + 899_999, async () => {
-      await initializeBriefMember(actor);
+      await tickBriefEnrollment(actor);
       await tickBriefEnrollment(actor);
       expect(membershipReads).toHaveBeenCalledTimes(attempts);
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
@@ -4535,7 +4561,7 @@ describe("Morning Brief default onboarding", () => {
     await initializeBriefMember(first.actor, "Asia/Shanghai");
     await initializeBriefMember(second.actor, "America/Los_Angeles");
     await connectBriefSource(first.actor);
-    await initializeBriefMember(first.actor);
+    await tickBriefEnrollment(first.actor);
     expect((await readBriefPreference(first.actor)).body).toMatchObject({
       status: "enabled",
       timezone: "Asia/Shanghai",
@@ -4546,7 +4572,7 @@ describe("Morning Brief default onboarding", () => {
       timezone: "America/Los_Angeles",
     });
     await connectBriefSource(second.actor);
-    await initializeBriefMember(second.actor);
+    await tickBriefEnrollment(second.actor);
     expect((await readBriefPreference(second.actor)).body).toMatchObject({
       status: "paused",
       enabled: false,
@@ -4575,7 +4601,7 @@ describe("Morning Brief default onboarding", () => {
         mockBriefMemberships([]);
       }
       if (qualification !== "unstarted") {
-        await initializeBriefMember(actor);
+        await tickBriefEnrollment(actor);
         expect(membershipReads).toHaveBeenCalledTimes(1);
       }
       await deliverClerkOrganizationMembershipDeleted(actor);
@@ -4652,17 +4678,8 @@ describe("Morning Brief default onboarding", () => {
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
 
-  it("keeps an explicit timezone choice when browser initialization races it", async () => {
+  it("keeps an explicit timezone choice when initialization runs later", async () => {
     const { actor } = await prepareBriefMember();
-    await Promise.all([
-      initializeBriefMember(actor, "Asia/Shanghai"),
-      bdd.updateUserTimezone(actor, "Asia/Tokyo"),
-    ]);
-    const initialized = await initializeBriefMember(
-      actor,
-      "America/Los_Angeles",
-    );
-    expect(initialized.body.timezone).toBe("Asia/Tokyo");
     const invalid = await setupApp({ context, routes: userPreferencesRoutes })(
       userPreferencesContract,
     ).initialize({
@@ -4670,6 +4687,12 @@ describe("Morning Brief default onboarding", () => {
       body: { timezone: "Invalid/Timezone" },
     });
     expect(invalid.status).toBe(400);
+    await bdd.updateUserTimezone(actor, "Asia/Tokyo");
+    const initialized = await initializeBriefMember(
+      actor,
+      "America/Los_Angeles",
+    );
+    expect(initialized.body.timezone).toBe("Asia/Tokyo");
     const saved = await accept(
       setupApp({ context, routes: userPreferencesRoutes })(
         userPreferencesContract,
@@ -4688,12 +4711,12 @@ describe("Morning Brief default onboarding", () => {
     membershipReads.mockClear();
     await initializeBriefMember(actor, "Asia/Shanghai");
     expect(membershipReads).toHaveBeenCalledTimes(1);
-    await initializeBriefMember(actor);
+    await tickBriefEnrollment(actor);
     await tickBriefEnrollment(actor);
     expect(membershipReads).toHaveBeenCalledTimes(1);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
     await setMorningBriefEnabled(actor, true);
-    await initializeBriefMember(actor);
+    await tickBriefEnrollment(actor);
     expect(membershipReads).toHaveBeenCalledTimes(2);
     const [installed] = await listMorningBriefInstallations(actor);
     if (!installed) {
@@ -4706,7 +4729,7 @@ describe("Morning Brief default onboarding", () => {
       }),
       [204],
     );
-    await initializeBriefMember(actor);
+    await tickBriefEnrollment(actor);
     await tickBriefEnrollment(actor);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });

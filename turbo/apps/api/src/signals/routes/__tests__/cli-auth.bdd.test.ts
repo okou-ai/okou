@@ -149,8 +149,11 @@ describe("AUTH-02: approval transitions and timezone", () => {
     expectCliApprovalError(reApproved.body);
     expect(reApproved.body.error).toBe("Invalid or expired device code");
 
-    const initialPreferences = await support.readPreferences(actor);
-    expect(initialPreferences.body.timezone).toBeNull();
+    const initialPreferences =
+      await support.readUninitializedPreferences(actor);
+    expect(initialPreferences.body.error.code).toBe(
+      "USER_PREFERENCES_UNINITIALIZED",
+    );
 
     const second = await authDevice.startCliDevice();
     await authDevice.requestCliApproval(
@@ -177,8 +180,11 @@ describe("AUTH-02: approval transitions and timezone", () => {
       { device_code: fourth.device_code, timezone: "Not/AZone" },
       [200],
     );
-    const invalidTimezone = await support.readPreferences(freshActor);
-    expect(invalidTimezone.body.timezone).toBeNull();
+    const invalidTimezone =
+      await support.readUninitializedPreferences(freshActor);
+    expect(invalidTimezone.body.error.code).toBe(
+      "USER_PREFERENCES_UNINITIALIZED",
+    );
   });
 });
 

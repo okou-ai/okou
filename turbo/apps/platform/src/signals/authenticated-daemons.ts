@@ -24,7 +24,6 @@ import {
   installedSharedDatabaseBridge$,
 } from "./shared-database-bridge-state.ts";
 import { setupMorningBriefRealtime$ } from "./okou-page/settings/morning-brief-preference.ts";
-import { initializeUserTimezone$ } from "./okou-page/settings/user-preferences.ts";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import { detach, Reason, waitForOperation } from "./utils.ts";
 
@@ -132,9 +131,6 @@ export const setupAuthenticatedBootstrapData$ = command(
     }
     await get(bridgeConnected$);
     signal.throwIfAborted();
-    await Promise.all([
-      set(initializeChatThreadEventSource$, signal),
-      set(initializeUserTimezone$, signal),
-    ]);
+    await set(initializeChatThreadEventSource$, signal);
   },
 );

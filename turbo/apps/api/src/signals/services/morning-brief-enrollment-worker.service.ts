@@ -1,6 +1,7 @@
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
-import { and, asc, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -11,6 +12,7 @@ import {
   type MorningBriefMemberIdentity,
   morningBriefEnrollmentWhere,
 } from "./morning-brief-enrollment-data.service";
+import { prepareMorningBriefEnrollment } from "./morning-brief-enrollment-retry.service";
 import { ensureMorningBriefDefaultEnabled$ } from "./morning-brief-preference.service";
 
 const log = logger("MorningBriefEnrollment");
@@ -22,6 +24,36 @@ const executeMorningBriefEnrollmentScope$ = command(
     signal: AbortSignal,
   ): Promise<number> => {
     const db = set(writeDb$);
+    // Older members can have a timezone without an enrollment row. Admit a
+    // bounded set before selecting due work; qualification checks eligibility.
+    const missing = await db
+      .select({
+        orgId: orgMembersMetadata.orgId,
+        userId: orgMembersMetadata.userId,
+      })
+      .from(orgMembersMetadata)
+      .leftJoin(
+        morningBriefEnrollments,
+        and(
+          eq(morningBriefEnrollments.orgId, orgMembersMetadata.orgId),
+          eq(morningBriefEnrollments.userId, orgMembersMetadata.userId),
+        ),
+      )
+      .where(
+        and(
+          isNotNull(orgMembersMetadata.timezone),
+          isNull(morningBriefEnrollments.userId),
+          identity ? eq(orgMembersMetadata.orgId, identity.orgId) : undefined,
+          identity ? eq(orgMembersMetadata.userId, identity.userId) : undefined,
+        ),
+      )
+      .orderBy(asc(orgMembersMetadata.orgId), asc(orgMembersMetadata.userId))
+      .limit(20);
+    signal.throwIfAborted();
+    for (const member of missing) {
+      await prepareMorningBriefEnrollment(db, member);
+      signal.throwIfAborted();
+    }
     const currentTime = nowDate();
     const rows = await db
       .select()

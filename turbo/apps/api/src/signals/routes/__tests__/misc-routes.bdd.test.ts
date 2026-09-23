@@ -78,16 +78,10 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
   it("chains visible user-scoped reads and writes without hidden fixtures", async () => {
     const { api, admin } = testActors();
 
-    const initialPreferences = await api.readPreferences(admin);
-    expect(initialPreferences.body).toMatchObject({
-      timezone: null,
-      locale: null,
-      pinnedAgentIds: [],
-      sendMode: "enter",
-      cloudBrowserEnabledByDefault: true,
-      theme: null,
-      colorTheme: null,
-    });
+    const initialPreferences = await api.readUninitializedPreferences(admin);
+    expect(initialPreferences.body.error.code).toBe(
+      "USER_PREFERENCES_UNINITIALIZED",
+    );
 
     const firstPinnedAgentId = "00000000-0000-0000-0000-000000000001";
     const secondPinnedAgentId = "00000000-0000-0000-0000-000000000002";
@@ -200,6 +194,7 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 
   it("reads and writes every supported locale through the canonical contract", async () => {
     const { api, admin } = testActors();
+    await api.updatePreferences(admin, { timezone: "UTC" }, [200]);
     const supportedLocales = [
       "en-US",
       "pt-BR",

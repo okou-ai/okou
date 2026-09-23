@@ -1,10 +1,13 @@
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { isValidTimeZone } from "@okouai/core/timezone";
-import { and, eq, isNull } from "drizzle-orm";
+import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
+import { and, eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { command, computed } from "ccstate";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import {
+  USER_PREFERENCES_UNINITIALIZED,
+  userPreferencesContract,
+} from "@okouai/api-contracts/contracts/user-preferences";
 
 import { badRequestMessage } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -22,6 +25,7 @@ import {
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
+import { prepareMorningBriefEnrollment } from "../services/morning-brief-enrollment-retry.service";
 import { settle, tapError } from "../utils";
 
 const L = logger("user-preferences");
@@ -60,6 +64,17 @@ const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   const preferences = await get(
     userPreferences({ orgId: auth.orgId, userId: auth.userId }),
   );
+  if (preferences.timezone === null || !isValidTimeZone(preferences.timezone)) {
+    return {
+      status: 409 as const,
+      body: {
+        error: {
+          code: USER_PREFERENCES_UNINITIALIZED,
+          message: "User preferences require timezone initialization",
+        },
+      },
+    };
+  }
   return {
     status: 200 as const,
     body: preferences,
@@ -129,24 +144,41 @@ const initializeUserPreferencesInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const timezone = body.data.timezone;
-    if (timezone !== undefined && !isValidTimeZone(timezone)) {
+    const identity = { orgId: auth.orgId, userId: auth.userId };
+    const db = set(writeDb$);
+    const [existing] = await db
+      .select({ timezone: orgMembersMetadata.timezone })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, identity.orgId),
+          eq(orgMembersMetadata.userId, identity.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (existing?.timezone && isValidTimeZone(existing.timezone)) {
+      const current = await get(userPreferences(identity));
+      signal.throwIfAborted();
+      return {
+        status: 200 as const,
+        body: { ...current, timezone: existing.timezone },
+      };
+    }
+    const timezone = body.data.timezone ?? DEFAULT_USER_TIMEZONE;
+    if (!isValidTimeZone(timezone)) {
       return badRequestMessage("Invalid timezone");
     }
-    const db = set(writeDb$);
-    if (timezone !== undefined) {
-      await db
-        .insert(orgMembersMetadata)
-        .values({ orgId: auth.orgId, userId: auth.userId, timezone })
-        .onConflictDoUpdate({
-          target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-          set: { timezone },
-          setWhere: isNull(orgMembersMetadata.timezone),
-        });
-    }
+    await db
+      .insert(orgMembersMetadata)
+      .values({ ...identity, timezone })
+      .onConflictDoUpdate({
+        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+        set: { timezone },
+      });
     signal.throwIfAborted();
-    // The enrollment is durable before external reads. A dependency outage must
-    // not fail timezone setup; the cron worker owns recovery after this attempt.
+    await prepareMorningBriefEnrollment(db, identity);
+    signal.throwIfAborted();
     const enrollment = await settle(
       set(
         ensureMorningBriefDefaultEnabled$,
@@ -159,8 +191,7 @@ const initializeUserPreferencesInner$ = command(
       signal,
     );
     const details = {
-      orgId: auth.orgId,
-      userId: auth.userId,
+      ...identity,
       outcome: enrollment.ok ? enrollment.value : "failed",
       ...(!enrollment.ok ? { error: enrollment.error } : {}),
     };
@@ -169,29 +200,24 @@ const initializeUserPreferencesInner$ = command(
     } else {
       L.info("Morning Brief initialization outcome", details);
     }
-    await publishMorningBriefChangedSafely({
-      orgId: auth.orgId,
-      userId: auth.userId,
-    });
+    await publishMorningBriefChangedSafely(identity);
     signal.throwIfAborted();
-    const [preferences] = await db
+    const [stored] = await db
       .select({ timezone: orgMembersMetadata.timezone })
       .from(orgMembersMetadata)
       .where(
         and(
-          eq(orgMembersMetadata.orgId, auth.orgId),
-          eq(orgMembersMetadata.userId, auth.userId),
+          eq(orgMembersMetadata.orgId, identity.orgId),
+          eq(orgMembersMetadata.userId, identity.userId),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    const current = await get(
-      userPreferences({ orgId: auth.orgId, userId: auth.userId }),
-    );
+    const preferences = await get(userPreferences(identity));
     signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: { ...current, timezone: preferences?.timezone ?? null },
+      body: { ...preferences, timezone: stored?.timezone ?? null },
     };
   },
 );

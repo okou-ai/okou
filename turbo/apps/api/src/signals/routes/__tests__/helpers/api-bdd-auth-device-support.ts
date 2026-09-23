@@ -78,6 +78,15 @@ export function createAuthDeviceSupportApi(context: TestContext) {
       );
     },
 
+    async readUninitializedPreferences(actor: ApiTestUser) {
+      return await accept(
+        authDeviceSupportApp(context)(userPreferencesContract).get({
+          headers: authenticate(context, actor),
+        }),
+        [409],
+      );
+    },
+
     async listModelProviders(actor: ApiTestUser) {
       return await accept(
         authDeviceSupportApp(context)(modelProvidersMainContract).list({

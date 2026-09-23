@@ -70,6 +70,14 @@ export type UserPreferencesResponse = z.infer<
   typeof userPreferencesResponseSchema
 >;
 
+export const USER_PREFERENCES_UNINITIALIZED =
+  "USER_PREFERENCES_UNINITIALIZED" as const;
+
+export type InitializedUserPreferencesResponse = Omit<
+  UserPreferencesResponse,
+  "timezone"
+> & { readonly timezone: string };
+
 export const updateUserPreferencesRequestSchema = z
   .object({
     timezone: z.string().min(1).optional(),
@@ -133,6 +141,12 @@ export const userPreferencesContract = c.router({
     headers: authHeadersSchema,
     responses: {
       200: userPreferencesResponseSchema,
+      409: z.object({
+        error: z.object({
+          code: z.literal(USER_PREFERENCES_UNINITIALIZED),
+          message: z.string(),
+        }),
+      }),
       401: apiErrorSchema,
       500: apiErrorSchema,
     },

@@ -17,6 +17,31 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## User preference initialization (2026-09-23)
+
+`GET /api/user-preferences` now returns `409 USER_PREFERENCES_UNINITIALIZED`
+when the member has no valid timezone. The App accepts that response, then calls
+`POST /api/user-preferences/initialize` and uses its returned preferences. It
+also accepts an older API's `200` response with a null timezone and initializes
+through the same POST. A valid browser timezone is used when available;
+otherwise initialization saves `America/Los_Angeles`.
+
+The new API continues to accept the older App's optional POST timezone. An
+empty body initializes with the Pacific fallback. Once a valid timezone is
+stored, repeated initialization returns the existing preferences without
+writing. Concurrent requests that both read an uninitialized member may write
+in either order; the last write wins. Deploying the App before the API keeps
+the old-API/new-App combination functional. An old App that reads preferences
+before its startup POST against the new API can temporarily receive the new
+409; its existing POST then initializes the member.
+
+Morning Brief enrollment remains a separate durable obligation. The POST
+attempts it after saving a new timezone, and the enrollment worker admits up to
+20 timezone-bearing members without enrollment rows on each tick before
+processing due work. Qualification checks the Clerk membership and rollout
+boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
+recreated. No schema migration is needed.
+
 ## Browser user-action retention (2026-09-23)
 
 Browser user-action requests have no independent expiry. Their active lifetime
