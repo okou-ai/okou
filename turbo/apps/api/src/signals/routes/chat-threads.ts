@@ -97,6 +97,11 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
     userId: auth.userId,
     orgId: auth.orgId,
   });
+  if (process.env.NODE_ENV === "test") {
+    process.stderr.write(
+      `SNAPSHOT_DEBUG ${JSON.stringify({ keys: Object.keys(snapshot), seq: snapshot.latestSeqId })}\n`,
+    );
+  }
 
   if ("objectKey" in snapshot) {
     if (
@@ -115,6 +120,9 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
         snapshot.objectKey,
       ),
     );
+    if (process.env.NODE_ENV === "test") {
+      process.stderr.write(`SNAPSHOT_URL_DEBUG ${typeof url}\n`);
+    }
     return {
       status: 200 as const,
       body: {
