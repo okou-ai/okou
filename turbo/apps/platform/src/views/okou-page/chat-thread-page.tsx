@@ -4891,7 +4891,7 @@ function PaidCreditCheckoutActions({
                 handleCreditClick({ credits }, event);
               }}
               disabled={preparing}
-              variant="outline"
+              variant="default"
               size="sm"
               className="disabled:opacity-60"
             >

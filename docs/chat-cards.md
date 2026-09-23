@@ -146,7 +146,8 @@ repeats a known failure's visible copy. Banking keeps its connection polling
 owned by the card even when the dialog is closed. Preserve those action and
 lifecycle owners when adding another state. Paid-workspace credit options and
 the Custom amount form live in the recovery card; selecting an amount opens the
-purchase review.
+purchase review. Preset amounts use the primary `Button` style; Custom remains
+secondary.
 
 Current frame owners are `AssistantErrorContent` (including billing),
 `ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,
