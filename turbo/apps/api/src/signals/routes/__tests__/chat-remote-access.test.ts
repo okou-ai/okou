@@ -79,6 +79,18 @@ async function createSshHost(displayName: string, id = randomUUID()) {
   return id;
 }
 
+async function closeOwnerForErasure(userId: string): Promise<void> {
+  const closing = closeErasureSubjectFixture({
+    subjectKind: "user",
+    subjectId: userId,
+  });
+  onTestFinished(async () => {
+    const { jobId } = await closing;
+    await removeErasureSubjectsFixture([jobId]);
+  });
+  await closing;
+}
+
 describe("chat remote access owner API", () => {
   it("inherits the current default without chat rows and preserves explicit allow or deny across multiple hosts", async () => {
     useSecretKmsProbe();
@@ -481,13 +493,7 @@ describe("chat remote access owner API", () => {
       [200],
     );
 
-    const { jobId } = await closeErasureSubjectFixture({
-      subjectKind: "user",
-      subjectId: owner.actor.userId,
-    });
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([jobId]);
-    });
+    await closeOwnerForErasure(owner.actor.userId);
 
     await accept(
       accessClient().updateHostDefault({
@@ -547,13 +553,7 @@ describe("chat remote access owner API", () => {
       vnc.connections().create({ headers, body: vncConnectionBody() }),
       [201],
     );
-    const { jobId } = await closeErasureSubjectFixture({
-      subjectKind: "user",
-      subjectId: owner.actor.userId,
-    });
-    onTestFinished(async () => {
-      await removeErasureSubjectsFixture([jobId]);
-    });
+    await closeOwnerForErasure(owner.actor.userId);
 
     await accept(
       accessClient().updateHostDefault({
