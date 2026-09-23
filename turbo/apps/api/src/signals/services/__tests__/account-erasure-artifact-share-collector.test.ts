@@ -303,7 +303,7 @@ describe("artifact share policy, alias and snapshot erasure", () => {
     const bucket = bucketWithObjects(
       [
         policyKey,
-        ...Array.from({ length: 10005 }, (_value, index) => {
+        ...Array.from({ length: 10_005 }, (_value, index) => {
           return `${prefix}/file-${index.toString().padStart(5, "0")}`;
         }),
       ],

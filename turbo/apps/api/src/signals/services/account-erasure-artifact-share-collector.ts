@@ -422,6 +422,54 @@ function requestReference(
   ]);
 }
 
+async function eraseSelectedSnapshot(
+  db: Db,
+  lease: ErasureLease,
+  bucket: string,
+  prefix: string | undefined,
+  signal: AbortSignal,
+): Promise<boolean | ErasureUnresolved> {
+  if (!prefix) {
+    return false;
+  }
+  const store = createStore();
+  let deleted = false;
+  for (
+    let pageNumber = 0;
+    pageNumber < MAX_SNAPSHOT_DELETE_PAGES_PER_LEASE;
+    pageNumber += 1
+  ) {
+    signal.throwIfAborted();
+    await renewErasureLease(db, lease);
+    const page = await store.get(
+      listHostedSitesObjectsPage(bucket, prefix, SNAPSHOT_DELETE_PAGE_SIZE),
+    );
+    if (page.objects.length === 0) {
+      return deleted;
+    }
+    await store.get(
+      deleteArtifactSnapshotObjects(
+        bucket,
+        page.objects.map((object) => {
+          return object.key;
+        }),
+        true,
+        signal,
+      ),
+    );
+    deleted = true;
+    if (!page.isTruncated) {
+      return deleted;
+    }
+  }
+  return {
+    outcome: "pending",
+    errorCode: "boundary_unproven",
+    requestRef: requestReference(lease, "erased"),
+    retryAt: new Date(nowDate().getTime() + 60_000),
+  };
+}
+
 async function eraseShare(
   db: Db,
   lease: ErasureLease,
@@ -472,48 +520,15 @@ async function eraseShare(
   if (keys.length > 0) {
     await store.get(deleteArtifactSnapshotObjects(bucket, keys, true, signal));
   }
-  let snapshotDeleted = false;
-  if (share.snapshotPrefix) {
-    for (
-      let pageNumber = 0;
-      pageNumber < MAX_SNAPSHOT_DELETE_PAGES_PER_LEASE;
-      pageNumber += 1
-    ) {
-      signal.throwIfAborted();
-      await renewErasureLease(db, lease);
-      const page = await store.get(
-        listHostedSitesObjectsPage(
-          bucket,
-          share.snapshotPrefix,
-          SNAPSHOT_DELETE_PAGE_SIZE,
-        ),
-      );
-      if (page.objects.length === 0) {
-        break;
-      }
-      await store.get(
-        deleteArtifactSnapshotObjects(
-          bucket,
-          page.objects.map((object) => {
-            return object.key;
-          }),
-          true,
-          signal,
-        ),
-      );
-      snapshotDeleted = true;
-      if (!page.isTruncated) {
-        break;
-      }
-      if (pageNumber === MAX_SNAPSHOT_DELETE_PAGES_PER_LEASE - 1) {
-        return {
-          outcome: "pending",
-          errorCode: "boundary_unproven",
-          requestRef: requestReference(lease, "erased"),
-          retryAt: new Date(nowDate().getTime() + 60_000),
-        };
-      }
-    }
+  const snapshotDeleted = await eraseSelectedSnapshot(
+    db,
+    lease,
+    bucket,
+    share.snapshotPrefix,
+    signal,
+  );
+  if (typeof snapshotDeleted !== "boolean") {
+    return snapshotDeleted;
   }
   let privateObject = false;
   if (share.privateKey) {
