@@ -24,6 +24,7 @@ import {
   readyChat,
   RUN_PATH,
 } from "./chat-capability-test-helpers.ts";
+import { installRunChat, promptEvent } from "./chat-run-test-fixtures.ts";
 
 const RESPONSE_TEXT = "The completed response contains reusable guidance.";
 const STRUCTURED_FILE_ID = "structured-reference-file";
@@ -81,6 +82,145 @@ test("Hide the activity-log action outside debug mode", async () => {
   }
 
   expect(findLink(responseGroup, "View run logs")).toBeUndefined();
+  expect(screen.queryByLabelText("View run logs")).not.toBeInTheDocument();
+});
+
+test("Open an active run's logs beside Copy before any assistant output", async () => {
+  const prompt = "Check the connection";
+  installRunChat({
+    activeRunIds: [FIRST_CAPABILITY_RUN_ID],
+    chatEvents: [
+      promptEvent({
+        id: "no-output-user-message",
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 1,
+        text: prompt,
+      }),
+    ],
+  });
+  context.mocks.api(logsByIdContract.getById, ({ params, respond }) => {
+    return respond(200, {
+      id: params.id,
+      sessionId: "capability-session",
+      agentId: CAPABILITY_AGENT_ID,
+      displayName: "Run inspection",
+      framework: "claude-code",
+      modelProvider: "anthropic-api-key",
+      selectedModel: "claude-sonnet-4-6",
+      triggerSource: "web",
+      status: "running",
+      prompt,
+      appendSystemPrompt: null,
+      error: null,
+      createdAt: "2026-08-01T10:00:00.000Z",
+      startedAt: "2026-08-01T10:00:01.000Z",
+      completedAt: null,
+      artifact: { name: null, version: null },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await readyChat();
+
+  const actions = screen
+    .getByText(prompt)
+    .closest('[data-role="user"]')
+    ?.querySelector('[data-chat-user-message-actions]');
+  if (!actions) {
+    throw new Error("User message action row was not available");
+  }
+  const copy = buttonIn(actions, "Copy message");
+  const logs = linkIn(actions, "View run logs");
+  expect(
+    copy.compareDocumentPosition(logs) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(logs).toHaveAttribute(
+    "href",
+    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+  );
+  expect(logs.querySelector("svg")).toBeInTheDocument();
+
+  click(logs);
+  expect(await screen.findByRole("heading", { name: "Run inspection" })).toBeVisible();
+  expect(window.location.pathname).toBe(
+    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+  );
+});
+
+test("Do not show user run logs before a run ID is assigned", async () => {
+  installCapabilityChat({
+    events: [
+      promptEvent({
+        id: "pending-user-message",
+        seqId: 1,
+        text: "Wait for run creation",
+      }),
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await readyChat();
+
+  const actions = screen
+    .getByText("Wait for run creation")
+    .closest('[data-role="user"]')
+    ?.querySelector('[data-chat-user-message-actions]');
+  if (!actions) {
+    throw new Error("User message action row was not available");
+  }
+  expect(findLink(actions, "View run logs")).toBeUndefined();
+});
+
+test("Keep run logs under the user message when a run fails without output", async () => {
+  const prompt = "Check the connection";
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "failed-no-output-user-message",
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 1,
+        text: prompt,
+      }),
+      {
+        id: "failed-no-output-terminal",
+        eventType: "run.failed",
+        content: null,
+        error: "Connection failed",
+        runId: FIRST_CAPABILITY_RUN_ID,
+        seqId: 2,
+        createdAt: "2026-08-01T10:00:02.000Z",
+      },
+    ],
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
+  });
+  await readyChat();
+
+  const actions = screen
+    .getByText(prompt)
+    .closest('[data-role="user"]')
+    ?.querySelector('[data-chat-user-message-actions]');
+  if (!actions) {
+    throw new Error("User message action row was not available");
+  }
+  expect(linkIn(actions, "View run logs")).toHaveAttribute(
+    "href",
+    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+  );
+  expect(screen.getByText("Connection failed")).toBeInTheDocument();
+  expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
 
 test("Inspect or copy an assistant response from history", async () => {
