@@ -1930,27 +1930,16 @@ jobs:
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           E2E_ACCOUNT: ${{ needs.prepare.outputs.job-ref }}+clerk_test+${{ github.run_id }}-${{ github.run_attempt }}+browser@vm0-e2e.ai
   cli-e2e-02-playwright:
-    name: cli-e2e-02-playwright (${{ matrix.lane }})
+    name: cli-e2e-02-playwright
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - lane: features
-            project: features
-          - lane: paid-onboarding
-            project: paid-onboarding
-          - lane: auth-v1
-            project: auth-v1
     concurrency:
-      group: cli-e2e-02-playwright-${{ matrix.lane }}-${{ needs.prepare.outputs.job-ref }}
+      group: cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true
     needs:
       - prepare
       - deploy-api
       - deploy-app
-      - deploy-stripe-listener
       - deploy-runner-start
     if: |
       always() &&
@@ -1964,7 +1953,6 @@ jobs:
       ) &&
       needs.deploy-api.result == 'success' &&
       needs.deploy-app.result == 'success' &&
-      (github.event_name == 'push' || needs.deploy-stripe-listener.result == 'success') &&
       (
         (
           needs.prepare.outputs.turbo-runner-consumer-needed != 'true' &&
@@ -1990,74 +1978,16 @@ jobs:
         run: cd e2e && pnpm exec playwright install --only-shell chromium
       - name: Run Playwright fixture integration tests
         run: cd e2e && pnpm test
-      - name: Start Stripe webhook forwarding
-        # Staging receives webhooks from the Dashboard endpoint; PR previews use
-        # the long-running listener from deploy-stripe-listener.
-        if: github.event_name == 'push' && needs.prepare.outputs.job-ref != 'staging'
-        run: |
-          set -euo pipefail
-          export PATH="$HOME/.local/bin:$PATH"
-          bash e2e/scripts/ensure-stripe-cli.sh
-
-          stripe_webhook_secret="$(stripe listen --api-key "$STRIPE_SECRET_KEY" --print-secret 2>/dev/null)"
-          echo "::add-mask::$stripe_webhook_secret"
-
-          forward_url="${API_PREVIEW_URL%/}/api/webhooks/stripe"
-          if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
-            encoded_bypass="$(node -e 'process.stdout.write(encodeURIComponent(process.env.VERCEL_AUTOMATION_BYPASS_SECRET || ""))')"
-            echo "::add-mask::$encoded_bypass"
-            forward_url="${forward_url}?x-vercel-protection-bypass=${encoded_bypass}"
-          fi
-          stripe listen \
-            --api-key "$STRIPE_SECRET_KEY" \
-            --events checkout.session.completed,payment_intent.succeeded,invoice.paid,customer.subscription.updated,customer.subscription.deleted \
-            --forward-to "$forward_url" \
-            > /tmp/stripe-listen.log 2>&1 &
-          stripe_pid="$!"
-          echo "$stripe_pid" > /tmp/stripe-listen.pid
-
-          for _ in {1..10}; do
-            if grep -qi 'ready' /tmp/stripe-listen.log; then
-              echo "Stripe webhook forwarding started for $forward_url"
-              exit 0
-            fi
-            if ! kill -0 "$stripe_pid" 2>/dev/null; then
-              sed -E 's/whsec_[[:alnum:]_]+/[masked-stripe-webhook-secret]/g' /tmp/stripe-listen.log >&2
-              exit 1
-            fi
-            sleep 1
-          done
-
-          echo "Stripe CLI did not become ready" >&2
-          sed -E 's/whsec_[[:alnum:]_]+/[masked-stripe-webhook-secret]/g' /tmp/stripe-listen.log >&2
-          exit 1
-        env:
-          API_PREVIEW_URL: ${{ needs.deploy-api.outputs.preview-url }}
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
-          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Run Playwright E2E tests
         id: playwright-tests
         shell: bash
         run: |
           cd e2e
-          playwright_command=(
-            pnpm exec playwright test
-            --config playwright/playwright.config.ts
-            --project="$PLAYWRIGHT_PROJECT"
-          )
-          if [[ "$PLAYWRIGHT_PROJECT" == "auth-v1" ]]; then
-            set -o pipefail
-            "${playwright_command[@]}" 2>&1 |
-              sed -E \
-                -e 's/([?&])__clerk_db_jwt=[^&[:space:])]+/\1[masked-clerk-testing-token]/g' \
-                -e 's/[[:alnum:]._%+-]+\+clerk_test[^@[:space:]]*@[[:alnum:].-]+/[masked-clerk-test-email]/g' \
-                -e 's/(^|[^[:alnum:]_])(sess|user|org|sia|sua)_[[:alnum:]_-]+/\1[masked-clerk-resource-id]/g'
-          else
-            "${playwright_command[@]}"
-          fi
+          pnpm exec playwright test \
+            --config playwright/playwright.config.ts \
+            --project=chat-smoke
         env:
           E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-playwright
-          PLAYWRIGHT_PROJECT: ${{ matrix.project }}
           OKOU_API_BACKEND_URL: ${{ needs.deploy-api.outputs.preview-url }}
           OKOU_APP_URL: ${{ needs.deploy-app.outputs.preview-url }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
@@ -2068,29 +1998,17 @@ jobs:
         if: always() && steps.playwright-tests.outcome != 'skipped'
         run: >-
           cd e2e && pnpm exec tsx playwright/clerk-test-resources.ts
-          cleanup-recorded playwright,paid-onboarding
+          cleanup-recorded playwright
         env:
           E2E_CLERK_RESOURCE_DIR: /tmp/e2e-clerk-playwright
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
           JOB_REF: ${{ needs.prepare.outputs.job-ref }}
-      - name: Print Stripe webhook forwarding log
-        if: always() && github.event_name == 'push' && needs.prepare.outputs.job-ref != 'staging'
-        run: |
-          if [[ -f /tmp/stripe-listen.log ]]; then
-            tail -200 /tmp/stripe-listen.log | sed -E 's/whsec_[[:alnum:]_]+/[masked-stripe-webhook-secret]/g'
-          fi
-      - name: Stop Stripe webhook forwarding
-        if: always() && github.event_name == 'push' && needs.prepare.outputs.job-ref != 'staging'
-        run: |
-          if [[ -f /tmp/stripe-listen.pid ]]; then
-            kill "$(cat /tmp/stripe-listen.pid)" 2>/dev/null || true
-          fi
       - name: Upload Playwright blob report
-        if: always() && matrix.project != 'auth-v1'
+        if: always()
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-blob-${{ matrix.lane }}
+          name: playwright-blob-chat-smoke
           path: e2e/playwright/blob-report/
           retention-days: 7
           if-no-files-found: ignore
