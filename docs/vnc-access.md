@@ -8,6 +8,9 @@ The Runner, owner configuration and Agent inventory support the exact X509Vnc
 and X509Plain profiles. The feature remains unavailable until a separate
 activation decision.
 
+The Linux verification boundary and the blocked modern Apple SRP/RSA-host-key
+research conclusions are recorded in [Modern Apple VNC authentication](vnc-modern-apple-auth.md).
+
 ## Supported profiles and rollout state
 
 | Boundary                                 | X509Vnc                                                                   | X509Plain                                                                 | Activation meaning                     |
