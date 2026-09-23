@@ -145,9 +145,9 @@ test("Open an active run's logs beside Copy before any assistant output", async 
   expect(logs.querySelector("svg")).toBeInTheDocument();
 
   click(logs);
-  expect(
-    await screen.findByRole("heading", { name: "Run inspection" }),
-  ).toBeVisible();
+  await expect(
+    screen.findByRole("heading", { name: "Run inspection" }),
+  ).resolves.toBeVisible();
   expect(window.location.pathname).toBe(
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
   );
