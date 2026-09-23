@@ -282,22 +282,29 @@ describe("GET/PUT /api/model-policies", () => {
 
     expect(initial.body.modelsAvailableToAdd).toContain("gpt-5.6-sol");
     expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+    expect(initial.body.modelsAvailableToAdd).not.toContain("claude-opus-5-5");
     expect(initial.body.modelsAvailableToAdd).not.toContain(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
 
-    const rejected = await accept(
-      client.update({
-        headers: authHeaders(),
-        body: {
-          policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
-        },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toBe(
-      'Model "gpt-6-sol" is not available to add',
-    );
+    for (const stagedModel of ["gpt-6-sol", "claude-opus-5-5"] as const) {
+      const rejected = await accept(
+        client.update({
+          headers: authHeaders(),
+          body: {
+            policies: [
+              ...toUpdate(initial.body),
+              makeBuiltInPolicy(stagedModel),
+            ],
+          },
+        }),
+        [400],
+      );
+      expect(rejected.body.error.message).toBe(
+        `Model "${stagedModel}" is not available to add`,
+      );
+    }
+
     const unchanged = await accept(
       client.list({ headers: authHeaders() }),
       [200],

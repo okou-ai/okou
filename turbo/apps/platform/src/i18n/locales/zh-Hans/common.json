@@ -6037,6 +6037,9 @@
           "description": "个性化应用的外观和使用方式。",
           "title": "偏好设置"
         },
+        "tools": {
+          "title": "工具"
+        },
         "usage": {
           "balanceDescription": "团队还剩多少可用额度。",
           "balanceTitle": "积分余额",

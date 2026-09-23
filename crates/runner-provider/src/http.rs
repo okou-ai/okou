@@ -30,6 +30,7 @@ pub struct ProviderHttpRequest {
     timeout: Option<Duration>,
     query: Vec<(String, String)>,
     native_gpt_6_reader: bool,
+    native_claude_opus_5_5_reader: bool,
 }
 
 impl ProviderHttpRequest {
@@ -59,6 +60,10 @@ impl ProviderHttpRequest {
 
     pub fn uses_native_gpt_6_reader(&self) -> bool {
         self.native_gpt_6_reader
+    }
+
+    pub fn uses_native_claude_opus_5_5_reader(&self) -> bool {
+        self.native_claude_opus_5_5_reader
     }
 }
 
@@ -145,6 +150,7 @@ impl ProviderHttpClient {
                 timeout: None,
                 query: Vec::new(),
                 native_gpt_6_reader: false,
+                native_claude_opus_5_5_reader: false,
             }),
         }
     }
@@ -188,6 +194,13 @@ impl ProviderHttpRequestBuilder {
     pub(crate) fn native_gpt_6_reader(mut self) -> Self {
         if let Ok(request) = &mut self.request {
             request.native_gpt_6_reader = true;
+        }
+        self
+    }
+
+    pub(crate) fn native_claude_opus_5_5_reader(mut self) -> Self {
+        if let Ok(request) = &mut self.request {
+            request.native_claude_opus_5_5_reader = true;
         }
         self
     }
@@ -433,6 +446,9 @@ impl ProviderHttpTransport for TestHttpTransport {
             builder = builder
                 .header("X-Native-Gpt-6-Sol", "1")
                 .header("X-Native-Gpt-6-Luna", "1");
+        }
+        if request.native_claude_opus_5_5_reader {
+            builder = builder.header("X-Native-Claude-Opus-5-5", "1");
         }
         let mut request = builder
             .build()

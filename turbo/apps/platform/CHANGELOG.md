@@ -11,6 +11,27 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.947.0](https://github.com/okou-ai/okou/compare/app-v0.946.0...app-v0.947.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
+
+### Bug Fixes
+
+* **app:** use official cloudflare access icon ([#36186](https://github.com/okou-ai/okou/issues/36186)) ([33161ca](https://github.com/okou-ai/okou/commit/33161cab0bdc06ac1b3ea39f12da6265b6ea0bf1))
+* **platform:** reopen slash suggestions after Escape pointer click ([#36185](https://github.com/okou-ai/okou/issues/36185)) ([bb0cea6](https://github.com/okou-ai/okou/commit/bb0cea672991b3c9b68661a26c3d46433efe7204))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.495.0
+    * @okouai/core bumped to 8.702.0
+
 ## [0.946.0](https://github.com/okou-ai/okou/compare/app-v0.945.0...app-v0.946.0) (2026-09-23)
 
 

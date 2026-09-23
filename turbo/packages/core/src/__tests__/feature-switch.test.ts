@@ -543,6 +543,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.SettingsToolsTab]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       true,
@@ -567,6 +568,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.SettingsToolsTab]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PersonalModelProviderAccounts]).toBe(
       false,

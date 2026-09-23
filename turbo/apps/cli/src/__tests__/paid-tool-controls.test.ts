@@ -208,8 +208,8 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     await expect(run(args)).rejects.toThrow("process.exit(1)");
 
     expect(errors).toContain(`Paid tool "${tool}" is disabled`);
-    expect(errors).toContain("Settings > Personal > Chat");
-    expect(errors).toContain("http://localhost:3000/?settings=chat");
+    expect(errors).toContain("Settings > Personal > Tools");
+    expect(errors).toContain("http://localhost:3000/?settings=tools");
     expect(requests).toEqual([]);
     expect(await readdir(directory)).toEqual([]);
   });
@@ -344,7 +344,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
         code: "commander.helpDisplayed",
       });
       expect(output).toContain(`Disabled paid tools in this run: ${tool}.`);
-      expect(output).toContain("Settings > Personal > Chat");
+      expect(output).toContain("Settings > Personal > Tools");
       expect(requests).toEqual([]);
     },
   );
@@ -353,22 +353,22 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     {
       api: "https://api.okou.ai",
       app: undefined,
-      expected: "https://app.okou.ai/?settings=chat",
+      expected: "https://app.okou.ai/?settings=tools",
     },
     {
       api: "https://staging-api.vm6.ai",
       app: undefined,
-      expected: "https://staging-app.omby.ai/?settings=chat",
+      expected: "https://staging-app.omby.ai/?settings=tools",
     },
     {
       api: "https://pr-123-api.vm6.ai",
       app: undefined,
-      expected: "https://pr-123-app.omby.ai/?settings=chat",
+      expected: "https://pr-123-app.omby.ai/?settings=tools",
     },
     {
       api: "https://api.okou.ai",
       app: "https://preview.example.test/path",
-      expected: "https://preview.example.test/?settings=chat",
+      expected: "https://preview.example.test/?settings=tools",
     },
   ])(
     "uses the current platform recovery URL for $expected",

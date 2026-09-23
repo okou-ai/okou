@@ -6037,6 +6037,9 @@
           "description": "앱의 외관과 동작 방식을 개인화하세요.",
           "title": "환경설정"
         },
+        "tools": {
+          "title": "도구"
+        },
         "usage": {
           "balanceDescription": "팀이 사용할 수 있는 잔액입니다.",
           "balanceTitle": "크레딧 잔액",

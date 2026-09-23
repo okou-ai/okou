@@ -6037,6 +6037,9 @@
           "description": "Personalisasi tampilan dan perilaku aplikasi.",
           "title": "Preferensi"
         },
+        "tools": {
+          "title": "Alat"
+        },
         "usage": {
           "balanceDescription": "Sisa yang bisa dibelanjakan tim Anda.",
           "balanceTitle": "Saldo kredit",

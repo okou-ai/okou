@@ -9,7 +9,7 @@ import {
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import { SCROLL_FADE_Y_END_WHEN_OVERFLOWING } from "./scroll-fade.ts";
+import { SCROLL_FADE_Y_START_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 
 /**
  * How tall the list is allowed to be, in whole rows.
@@ -133,16 +133,16 @@ export function QuestWorkflowPicker({
 }) {
   return (
     /*
-     * The list is a window cut through the dialog rather than a block sitting
-     * inside its padding: it bleeds to both card edges and its own `px-6` puts
-     * the cards back on the column the title and the buttons use. Nothing is
-     * drawn across the bottom — the fade states that there is more below, and
-     * only while there is.
+     * The window the connector step cuts, at its own measurements: the list
+     * bleeds to both card edges and its own `px-6` puts the cards back on the
+     * column the title and the buttons use, the top fades only while a row is
+     * cut off above, and nothing is drawn at the bottom because the viewport's
+     * `pb-2` and the shell's `gap-4` already close the list.
      */
     <div className="-mx-6" data-testid="quest-workflow-picker">
       <ScrollArea.Root
         // `group` so the viewport's fade can read the root's own
-        // `data-overflow-y-end`.
+        // `data-overflow-y-start`.
         className="group relative"
         data-testid="quest-workflow-list"
       >
@@ -150,7 +150,7 @@ export function QuestWorkflowPicker({
           data-slot="scroll-area-viewport"
           className={cn(
             "px-6 pb-2 focus:outline-none",
-            SCROLL_FADE_Y_END_WHEN_OVERFLOWING,
+            SCROLL_FADE_Y_START_WHEN_OVERFLOWING,
           )}
           style={{ maxHeight: LIST_MAX_H }}
         >
@@ -162,9 +162,10 @@ export function QuestWorkflowPicker({
             })}
           </ScrollArea.Content>
         </ScrollArea.Viewport>
-        {/* In the card's own right margin, clear of the cards: the list owns the
-            full width, so a bar standing on its content would cross them. */}
-        <ScrollBar data-testid="quest-workflow-scrollbar" className="mr-2" />
+        {/* The track lands on the root's own edge, which is the card's, so the
+            dialog's `p-6` is what keeps it off the cards: no offset of its own,
+            the same as the connector list's. */}
+        <ScrollBar data-testid="quest-workflow-scrollbar" />
       </ScrollArea.Root>
     </div>
   );

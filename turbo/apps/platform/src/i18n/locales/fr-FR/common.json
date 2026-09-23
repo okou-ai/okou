@@ -6111,6 +6111,9 @@
           "description": "Personnalisez l'apparence et le comportement de l'application.",
           "title": "Préférences"
         },
+        "tools": {
+          "title": "Outils"
+        },
         "usage": {
           "balanceDescription": "Ce qu'il reste à dépenser à votre équipe.",
           "balanceTitle": "Solde de crédits",

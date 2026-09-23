@@ -6037,6 +6037,9 @@
           "description": "アプリの外観と動作をカスタマイズします。",
           "title": "好み"
         },
+        "tools": {
+          "title": "ツール"
+        },
         "usage": {
           "balanceDescription": "チームが使える残高です。",
           "balanceTitle": "クレジット残高",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.212.0...runner-rs-v0.213.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
 ## [0.212.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.1...runner-rs-v0.212.0) (2026-09-23)
 
 

@@ -6111,6 +6111,9 @@
           "description": "Personalize a aparência e o comportamento do app.",
           "title": "Preferência"
         },
+        "tools": {
+          "title": "Ferramentas"
+        },
         "usage": {
           "balanceDescription": "O que resta para a sua equipe gastar.",
           "balanceTitle": "Saldo de créditos",

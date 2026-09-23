@@ -177,34 +177,14 @@ export const setRewardsNoteOpen$ = command(({ set }, open: boolean) => {
  * same reason the share dialog is.
  */
 const internalQuestIntroKey$ = state<GetStartedQuestKey | null>(null);
-/**
- * What the connector step's search box holds.
- *
- * The step offers the whole one-click catalog, so the tool someone actually
- * came to connect can sit below the fold of a list they have to scroll. This
- * is its own value rather than the connectors page's `connectorsSearch$`
- * because the two surfaces are filtering different lists: typing here must not
- * decide what that page shows the next time it opens.
- */
-const internalQuestConnectorSearch$ = state("");
 export const questIntroKey$ = computed((get) => {
   return get(internalQuestIntroKey$);
-});
-export const questConnectorSearch$ = computed((get) => {
-  return get(internalQuestConnectorSearch$);
 });
 export const setQuestIntroKey$ = command(
   ({ set }, key: GetStartedQuestKey | null) => {
     set(internalQuestIntroKey$, key);
-    // Every open starts on the whole catalog. A search left over from the last
-    // time the dialog was open would otherwise hide most of it with no visible
-    // cause but a filled box the reader has to notice first.
-    set(internalQuestConnectorSearch$, "");
   },
 );
-export const setQuestConnectorSearch$ = command(({ set }, value: string) => {
-  set(internalQuestConnectorSearch$, value);
-});
 
 const internalShareDialogOpen$ = state(false);
 const internalSharePostDraft$ = state("");

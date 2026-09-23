@@ -165,6 +165,23 @@ describe("pinned Pi runtime capability", () => {
     expect(disagreements).toStrictEqual([]);
   });
 
+  it("leaves Claude Opus 5.5 off the loop while the native catalog lacks it", () => {
+    expect(
+      resolvesInRuntime({ provider: "anthropic", model: "claude-opus-5-5" }),
+    ).toBe(false);
+    for (const modelProviderType of getProvidersForModel("claude-opus-5-5")) {
+      expect(
+        isPiExecutionRoute({
+          selectedModel: "claude-opus-5-5",
+          modelProviderType,
+          runtimeProviderType: modelProviderType,
+          codexServiceTier: undefined,
+          piEnabled: true,
+        }),
+      ).toBe(false);
+    }
+  });
+
   it.each(["gpt-6-sol", "gpt-6-luna"])(
     "keeps %s off Pi while the pinned catalog cannot resolve it",
     (model) => {
