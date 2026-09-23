@@ -456,3 +456,51 @@ test("A user can save message-send and time-zone preferences", async () => {
   expect(timezone).toHaveAccessibleName("Time zone");
   expect(updates).toContainEqual({ timezone: "America/New_York" });
 });
+
+test("A failed preference save shows its error and can be retried", async () => {
+  let preferences = defaultPreferences();
+  let unavailable = true;
+  const releaseFailure = context.mocks.deferred<void>();
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, preferences);
+  });
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      if (unavailable) {
+        await withSignal(releaseFailure.promise);
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Preferences could not be saved",
+          },
+        });
+      }
+      preferences = { ...preferences, ...body };
+      return respond(200, preferences);
+    },
+  );
+  await setupPage({ context, path: "/agents?settings=preference" });
+
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  const sendMode = getFastRole("button", "⌘ Enter", dialog);
+  click(sendMode);
+  await waitFor(() => {
+    expect(sendMode).toBeDisabled();
+  });
+  releaseFailure.resolve();
+  await expect(
+    screen.findByText("Preferences could not be saved"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(sendMode).toBeEnabled();
+    expectSelected(getFastRole("button", "Enter", dialog));
+  });
+
+  unavailable = false;
+  click(sendMode);
+  await waitFor(() => {
+    expectSelected(sendMode);
+    expect(sendMode).toBeEnabled();
+  });
+});

@@ -1250,3 +1250,58 @@ test("A completed video checkout resumes onboarding and the run", async () => {
     expect(pathname()).toMatch(/^\/chats\//u);
   });
 });
+
+test("Image creation opens its template gallery", async () => {
+  const selectedTab = await expectCreativeChoiceOpensTemplateGallery({
+    option: "Generate images",
+    description: "Create high-quality visuals",
+    tab: "Illustration",
+  });
+  expect(selectedTab).toHaveAttribute("aria-selected", "true");
+});
+
+test("Website creation opens its template gallery", async () => {
+  const selectedTab = await expectCreativeChoiceOpensTemplateGallery({
+    option: "Build a website",
+    description: "Create and publish a shareable page",
+    tab: "Website",
+  });
+  expect(selectedTab).toHaveAttribute("aria-selected", "true");
+});
+
+test("Workflow drafts can be created after connectors are connected", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+  });
+  context.mocks.data.connectors([
+    {
+      id: "11111111-1111-4111-8111-111111111112",
+      slug: "notion",
+      authMethod: "oauth",
+      externalId: "notion-user-1",
+      externalUsername: "notion-user",
+      externalEmail: null,
+      oauthScopes: ["read", "write"],
+      connectionStatus: "connected",
+      reconnectReason: null,
+      tokenExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]);
+  await setupPage({
+    context,
+    path: "/onboarding/workflow-run?choice=workflow&category=product&workflow=summarize-user-feedback-notion",
+  });
+
+  await expect(
+    screen.findByRole("heading", {
+      name: "Review your workflow draft",
+    }),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonByText("Create workflow")).not.toBeDisabled();
+  });
+  expect(screen.queryByText(/to run this workflow/u)).toBeNull();
+});

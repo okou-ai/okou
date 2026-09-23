@@ -38,7 +38,11 @@ import { expect, test } from "vitest";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
-import { click, fill } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
   changeChatThreadList,
@@ -133,6 +137,37 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
     expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
   });
 });
+
+test.each([
+  { name: "Agents", route: "/agents" },
+  { name: "Works", route: "/works" },
+])(
+  "Mobile $name navigation closes the drawer on primary activation",
+  async ({ name, route }) => {
+    mockMobileLayout();
+    prepareDefaultAgent();
+    context.mocks.browser.open();
+    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    click(screen.getByLabelText("Open menu"));
+    await waitFor(() => {
+      expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
+    });
+    const link = queryAllByRoleFast("link", mobileSidebar()).find(
+      (candidate) => {
+        return candidate.getAttribute("href") === route;
+      },
+    );
+    if (!link) {
+      throw new Error(`Expected the ${name} sidebar link`);
+    }
+
+    click(link);
+    await waitFor(() => {
+      expect(pathname()).toBe(route);
+      expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+    });
+  },
+);
 
 test("Open and use workspace search with the keyboard", async () => {
   prepareAgents();

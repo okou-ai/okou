@@ -1610,6 +1610,39 @@ async function openCopyDialog(): Promise<HTMLElement> {
   });
 }
 
+function mockConnectedAutomationConnectors(): void {
+  context.mocks.data.connectors([
+    {
+      id: "10000000-0000-4000-a000-000000000001",
+      slug: "slack",
+      authMethod: "oauth",
+      externalId: "slack-workspace",
+      externalUsername: "workspace",
+      externalEmail: null,
+      oauthScopes: [],
+      connectionStatus: "connected",
+      reconnectReason: null,
+      tokenExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+    {
+      id: "10000000-0000-4000-a000-000000000002",
+      slug: "gmail",
+      authMethod: "oauth",
+      externalId: "gmail-user",
+      externalUsername: "user@example.com",
+      externalEmail: "user@example.com",
+      oauthScopes: ["https://www.googleapis.com/auth/gmail.modify"],
+      connectionStatus: "connected",
+      reconnectReason: null,
+      tokenExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    },
+  ]);
+}
+
 test("Hide Official Workflow discovery when it is unavailable", async () => {
   mockWorkflowApis([officialSalesResearch()]);
   await setupPage({
@@ -4526,4 +4559,41 @@ test("Clear the author cache when the active organization changes", async () => 
   await expect(
     screen.findByText("New Organization Author"),
   ).resolves.toBeInTheDocument();
+});
+
+test("Browse workspace workflows", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
+
+  await setupPage({
+    context,
+    path: "/workflows",
+  });
+
+  await waitFor(() => {
+    expect(pathname()).toBe("/workflows");
+    expect(
+      screen.getByRole("heading", { name: "Workflows" }),
+    ).toBeInTheDocument();
+  });
+  expect(screen.getByText("Sales Research")).toBeInTheDocument();
+
+  await user.hover(linkByAriaLabel("Open Sales Research"));
+  await expect(screen.findByText("TU")).resolves.toBeInTheDocument();
+});
+
+test("Open a workflow from the workspace", async () => {
+  mockWorkflowApis([salesResearch()]);
+  mockConnectedAutomationConnectors();
+
+  await setupPage({
+    context,
+    path: `/workflows/${SALES_WORKFLOW_ID}/automations`,
+  });
+
+  await waitFor(() => {
+    expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
+    expect(screen.getAllByText("Sales Research").length).toBeGreaterThan(0);
+  });
+  expect(screen.queryByText("Workflow not found.")).not.toBeInTheDocument();
 });
