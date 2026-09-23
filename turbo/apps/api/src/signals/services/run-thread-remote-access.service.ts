@@ -21,7 +21,7 @@ export async function runUsesThreadRemoteAccess(
   const [run] = await db
     .select({ orgId: agentRuns.orgId, userId: agentRuns.userId })
     .from(agentRuns)
-    .where(and(eq(agentRuns.id, runId), eq(agentRuns.status, "running")))
+    .where(eq(agentRuns.id, runId))
     .limit(1);
   signal.throwIfAborted();
   if (!run) {
