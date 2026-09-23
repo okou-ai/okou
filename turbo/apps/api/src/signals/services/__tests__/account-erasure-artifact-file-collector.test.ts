@@ -478,7 +478,7 @@ describe("dormant artifact-file byte erasure", () => {
       bucket.deletions.map((batch) => {
         return batch.length;
       }),
-    ).toStrictEqual([20, 20, 5]);
+    ).toStrictEqual([16, 16, 13]);
   });
 
   it("reclaims an expired capture lease and resumes the persisted cursor", async () => {

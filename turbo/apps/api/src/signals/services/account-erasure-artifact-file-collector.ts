@@ -60,7 +60,10 @@ interface ObjectLocator {
   readonly key: string;
 }
 
-const PAGE_SIZE = 20;
+// A row can contribute three public keys and three registry keys. A worst-case
+// 16-row page therefore stays below B1's 100-item inventory-page limit even
+// when long keys cannot be combined into one encrypted selector.
+const PAGE_SIZE = 16;
 const NAMESPACE = "e413c361-9811-490e-a21d-f48689204f0c";
 export const ARTIFACT_FILE_ERASURE_COLLECTOR_VERSION =
   "4c292141-c9fd-40c7-9673-82826c13d37b";
