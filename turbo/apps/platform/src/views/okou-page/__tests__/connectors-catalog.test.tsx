@@ -4,6 +4,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -24,6 +25,7 @@ import {
   customConnector,
   getConnectorAction,
   getConnectorCard,
+  getConnectorSwitch,
   getConnectorIcon,
   listAgent,
   mockConnectors,
@@ -36,6 +38,66 @@ import {
 } from "./connector-page-test-helpers.ts";
 
 const context = testContext();
+
+test("Authorize one agent without changing another agent", async () => {
+  const researchId = "c0000000-0000-4000-a000-000000000010";
+  const supportId = "c0000000-0000-4000-a000-000000000011";
+  context.mocks.data.agents([
+    listAgent(researchId, "Research", "preset:0"),
+    listAgent(supportId, "Support", "preset:0"),
+  ]);
+  mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "octocat" },
+  ]);
+  const authorized = new Set<string>();
+  context.mocks.api(connectorAgentAccessContract.get, ({ respond }) => {
+    return respond(200, {
+      visibleAgentIds: [researchId, supportId],
+      builtin: [...authorized].map((agentId) => {
+        return {
+          agentId,
+          connectorSlug: "github",
+        };
+      }),
+      custom: [],
+    });
+  });
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    ({ params, body, respond }) => {
+      if (body.operation === "add") {
+        authorized.add(params.id);
+      } else {
+        authorized.delete(params.id);
+      }
+      return respond(200, {
+        enabledConnectorSlugs: authorized.has(params.id) ? ["github"] : [],
+      });
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  const manage = await waitFor(() => {
+    return getConnectorAction("button", "Manage GitHub access");
+  });
+  click(manage);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Manage GitHub access",
+  });
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Authorize GitHub access for Research", dialog),
+    ).toHaveAttribute("aria-checked", "false");
+  });
+  click(getConnectorSwitch("Authorize GitHub access for Research", dialog));
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Revoke GitHub access for Research", dialog),
+    ).toHaveAttribute("aria-checked", "true");
+  });
+  expect(
+    getConnectorSwitch("Authorize GitHub access for Support", dialog),
+  ).toHaveAttribute("aria-checked", "false");
+});
 
 function oauthMethod() {
   return {

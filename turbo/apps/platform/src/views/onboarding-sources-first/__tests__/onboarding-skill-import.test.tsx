@@ -51,7 +51,7 @@ const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
 const CODEX_CARD = "Codex";
 const PROMPT_LABEL = "Skill import prompt";
 /** The prompt's own opening line, as the user's agent would read it. */
-const PROMPT_OPENING = "Import my local skills into Okou.";
+const PROMPT_OPENING = "Import my local personal skills into Okou.";
 const WAITING_FOR_SKILLS = "Imported skills appear here as they arrive.";
 /** The token the mocked session hands out, which only the prompt carries. */
 const SESSION_TOKEN = "vm0_skillimport_mock-session-token";
@@ -412,6 +412,11 @@ test("The step hands over the prompt its session produced, and copies it whole",
   // upload route it posts to is named.
   expect(prompt.textContent).toContain(SESSION_TOKEN);
   expect(prompt.textContent).toContain("/api/skill-import/skills");
+  expect(prompt.textContent).toContain("Mandatory HTTP client: curl");
+  expect(prompt.textContent).toContain("`--config -`");
+  expect(prompt.textContent).toContain("~/.codex/skills/");
+  expect(prompt.textContent).toContain("~/.agents/skills/");
+  expect(prompt.textContent).not.toContain("~/.claude/skills/");
 
   click(getButtonByName("Copy prompt"));
 
@@ -429,6 +434,23 @@ test("The step hands over the prompt its session produced, and copies it whole",
   );
   // The token is the session; it belongs on the clipboard and nowhere else.
   expect(JSON.stringify(posthog.events)).not.toContain(SESSION_TOKEN);
+});
+
+test("The skills step names Claude Code when it was selected", async () => {
+  mockAgentWorkflows();
+
+  await openSkillsStep("Claude Code");
+
+  expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Paste this prompt into your own Claude Code session and it brings the skills on your machine into Okou.",
+    ),
+  ).toBeInTheDocument();
+  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
+  expect(prompt.textContent).toContain("~/.claude/skills/");
+  expect(prompt.textContent).toContain("~/.agents/skills/");
+  expect(prompt.textContent).not.toContain("~/.codex/skills/");
 });
 
 test.each([
@@ -576,6 +598,39 @@ test("Coming back to the step keeps the prompt it already gave and what arrived"
   const returned = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(returned.textContent).toContain(`${SESSION_TOKEN}-1`);
   expect(screen.getByText(SKILL_DISPLAY_NAME)).toBeInTheDocument();
+});
+
+test("Changing the selected tool replaces the prompt for the new platform", async () => {
+  mockAgentWorkflows();
+  let issued = 0;
+  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
+    issued += 1;
+    return respond(200, {
+      uploadUrl: "https://api.okou.test/api/skill-import/skills",
+      token: `${SESSION_TOKEN}-${String(issued)}`,
+      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
+      limits: SKILL_IMPORT_LIMITS,
+    });
+  });
+
+  await openSkillsStep();
+  const codexPrompt = await screen.findByRole("region", { name: PROMPT_LABEL });
+  expect(codexPrompt.textContent).toContain(`${SESSION_TOKEN}-1`);
+
+  click(getButtonByName("Back"));
+  await screen.findByRole("heading", { name: EXPERIENCE_QUESTION });
+  click(answerRadio("Claude Code"));
+  click(getButtonByName("Continue"));
+
+  const claudePrompt = await screen.findByRole("region", {
+    name: PROMPT_LABEL,
+  });
+  await waitFor(() => {
+    expect(claudePrompt.textContent).toContain(`${SESSION_TOKEN}-2`);
+  });
+  expect(claudePrompt.textContent).toContain("~/.claude/skills/");
+  expect(claudePrompt.textContent).not.toContain("~/.codex/skills/");
+  expect(claudePrompt.textContent).not.toContain(`${SESSION_TOKEN}-1`);
 });
 
 test("The step can be left with nothing imported", async () => {

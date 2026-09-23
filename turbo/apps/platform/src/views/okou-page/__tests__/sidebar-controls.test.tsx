@@ -36,6 +36,7 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -144,6 +145,41 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
     expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+  });
+});
+
+test("The mobile chat-list menu closes on Escape and returns focus before the sidebar collapses", async () => {
+  const user = userEvent.setup({ delay: null });
+  mockMobileLayout();
+  prepareDefaultAgent();
+
+  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+
+  const openMenu = screen.getByLabelText("Open menu");
+  click(openMenu);
+  await waitFor(() => {
+    expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
+  });
+
+  const menuTrigger = within(mobileSidebar()).getByLabelText(
+    "Open chat list menu",
+  );
+  await user.click(menuTrigger);
+  await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(menuTrigger).toHaveFocus();
+  });
+
+  click(within(mobileSidebar()).getByLabelText("Collapse sidebar"));
+  await waitFor(() => {
+    expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+  });
+  click(openMenu);
+  await waitFor(() => {
+    expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
   });
 });
 

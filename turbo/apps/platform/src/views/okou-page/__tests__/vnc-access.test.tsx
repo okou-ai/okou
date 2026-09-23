@@ -487,3 +487,41 @@ test("Chat VNC grant changes leave SSH authorization intact", async () => {
     "true",
   );
 });
+
+test("Changing user clears retained VNC access in the chat composer", async () => {
+  installComposerConnectorFixture();
+  const clerk = context.mocks.clerk();
+  const nextOwner = context.mocks.deferred<void>();
+  let changing = false;
+  context.mocks.api(vncConnectionsContract.summary, async ({ respond }) => {
+    if (changing) {
+      await nextOwner.promise;
+    }
+    return respond(200, { configuredCount: 1 });
+  });
+  context.mocks.api(agentVncAccessContract.get, ({ respond }) => {
+    return respond(200, { enabled: !changing });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
+  });
+  const trigger = await findFastControl("button", "Connectors");
+  click(trigger);
+  await screen.findByLabelText("Remove VNC");
+  expect(within(trigger).getByRole("img", { name: "VNC" })).toBeInTheDocument();
+  changing = true;
+  act(() => {
+    clerk.user(
+      { id: "other-vnc-composer-user", fullName: "Other user" },
+      { token: "other-vnc-user-token" },
+    );
+    clerk.stateChanged();
+  });
+  await waitFor(() => {
+    expect(within(trigger).queryByRole("img", { name: "VNC" })).toBeNull();
+  });
+  nextOwner.resolve();
+  await screen.findByLabelText("Add VNC");
+});
