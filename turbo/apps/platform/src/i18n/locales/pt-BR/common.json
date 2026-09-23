@@ -3265,12 +3265,19 @@
       "noConnectorsAlt": "Nenhum conector",
       "otherCategory": "Outros",
       "remoteAccess": "Acesso remoto",
+      "remoteControl": {
+        "connections": "Conexões",
+        "credentials": "Credenciais",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Escopo dos conectores",
         "attention": "Requer atenção",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descobrir",
+        "privateNetwork": "Rede privada",
+        "remoteControl": "Controle remoto",
         "searchConnected": "Buscar conectores conectados",
         "searchCustom": "Buscar conectores personalizados"
       },

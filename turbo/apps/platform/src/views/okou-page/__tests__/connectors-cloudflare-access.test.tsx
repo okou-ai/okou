@@ -5,7 +5,7 @@ import {
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -58,37 +58,21 @@ async function page(path = "/connectors") {
 }
 
 test.each([false, true])(
-  "Remote access keeps SSH, VNC, then Cloudflare Access order (configured: %s)",
+  "Private network lists Cloudflare Access configurations (configured: %s)",
   async (configured) => {
     mockRemoteAccess(configured);
-    await page(configured ? "/connectors?scope=connected" : "/connectors");
-    const container = configured
-      ? await screen.findByTestId("connectors-connected-grid")
-      : await screen.findByTestId("connector-category-remote-access");
+    await page("/connectors?scope=private-network");
     expect(
-      within(container)
-        .getAllByTestId("connector-card-label")
-        .map((label) => {
-          return label.textContent;
-        }),
-    ).toStrictEqual(["SSH", "VNC", "Cloudflare Access"]);
-    expect(
-      getAction("link", "Manage Cloudflare Access", container),
-    ).toHaveAttribute(
-      "href",
-      configured
-        ? "/connectors/cloudflare-access"
-        : "/connectors/cloudflare-access?add=1",
-    );
-    const cloudflareCard = within(container)
-      .getByText("Cloudflare Access")
-      .closest('[data-slot="connector-card"]');
-    expect(cloudflareCard).not.toBeNull();
-    expect(
-      within(cloudflareCard as HTMLElement).queryByTestId(
-        "connector-card-agent-access",
-      ),
-    ).toBeNull();
+      screen.getByTestId("connectors-scope-private-network"),
+    ).toBeVisible();
+    if (configured) {
+      await screen.findByRole("heading", { name: "Protected applications" });
+    } else {
+      await screen.findByText(/No Cloudflare Access yet/u);
+    }
+    expect(getAction("button", "Add Cloudflare Access")).toBeVisible();
+    expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
   },
 );
 
@@ -112,14 +96,14 @@ test.each(["unshared", `agent:${agentId}`])(
   },
 );
 
-test("The connected directory names Cloudflare Access while its summary loads", async () => {
+test("Private network shows Cloudflare Access loading state", async () => {
   mockRemoteAccess(false);
   const pending = context.mocks.deferred<void>();
   context.mocks.api(cloudflareAccessContract.list, async ({ respond }) => {
     await pending.promise;
     return respond(200, { configs: [] });
   });
-  await page("/connectors?scope=connected");
+  await page("/connectors?scope=private-network");
   await expect(
     screen.findByText("Loading Cloudflare Access…"),
   ).resolves.toBeInTheDocument();

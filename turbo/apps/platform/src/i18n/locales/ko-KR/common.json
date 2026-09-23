@@ -3199,12 +3199,19 @@
       "noConnectorsAlt": "커넥터 없음",
       "otherCategory": "기타",
       "remoteAccess": "원격 액세스",
+      "remoteControl": {
+        "connections": "연결",
+        "credentials": "자격 증명",
+        "type": "유형"
+      },
       "scope": {
         "aria": "커넥터 범위",
         "attention": "확인이 필요함",
         "connected": "연결됨",
         "custom": "사용자 지정",
         "discover": "둘러보기",
+        "privateNetwork": "비공개 네트워크",
+        "remoteControl": "원격 제어",
         "searchConnected": "연결된 커넥터 찾기",
         "searchCustom": "사용자 지정 커넥터 찾기"
       },

@@ -9,17 +9,16 @@ export const connectorDirectoryEnabled$ = computed((get) => {
 });
 
 /**
- * Which list the connectors page is showing. The three are different tasks --
- * finding something that talks to Shopify, checking who can use Gmail, and
- * maintaining what this workspace built -- and each is organised by a different
- * dimension, so one toolbar cannot serve them. Discovery is the default because
- * that is what a visit is usually for.
- *
- * The names are the ones a reader can check against the cards underneath:
- * every card under `connected` carries an account, and every card under
- * `custom` was authored here.
+ * Which list the connectors page is showing. Discovery, connected accounts,
+ * remote connections, private network configurations, and custom connectors
+ * each have their own controls. Discovery is the default for a new visit.
  */
-export type ConnectorsScope = "discover" | "connected" | "custom";
+export type ConnectorsScope =
+  | "discover"
+  | "connected"
+  | "custom"
+  | "remote-control"
+  | "private-network";
 
 const CONNECTORS_SCOPE_PARAM = "scope";
 
@@ -30,7 +29,18 @@ export const connectorsScope$ = computed((get): ConnectorsScope => {
     return "discover";
   }
   const raw = get(searchParams$).get(CONNECTORS_SCOPE_PARAM);
-  return raw === "connected" || raw === "custom" ? raw : "discover";
+  if (
+    raw === "connected" ||
+    raw === "custom" ||
+    raw === "remote-control" ||
+    raw === "private-network"
+  ) {
+    return raw;
+  }
+  // Preserve links to the former catalog category after moving its resources.
+  return get(searchParams$).get("category") === "remote-access"
+    ? "remote-control"
+    : "discover";
 });
 
 /** Custom is a scope of its own rather than a destination inside the catalog. */

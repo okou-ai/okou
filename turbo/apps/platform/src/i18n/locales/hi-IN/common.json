@@ -3213,12 +3213,19 @@
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
+      "remoteControl": {
+        "connections": "कनेक्शन",
+        "credentials": "क्रेडेंशियल",
+        "type": "प्रकार"
+      },
       "scope": {
         "aria": "कनेक्टर दायरा",
         "attention": "ध्यान देने की आवश्यकता",
         "connected": "जुड़े हुए",
         "custom": "कस्टम",
         "discover": "खोजें",
+        "privateNetwork": "निजी नेटवर्क",
+        "remoteControl": "रिमोट कंट्रोल",
         "searchConnected": "कनेक्टेड कनेक्टर खोजें",
         "searchCustom": "कस्टम कनेक्टर खोजें"
       },
