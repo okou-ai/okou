@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.356.2](https://github.com/okou-ai/okou/compare/cli-v9.356.1...cli-v9.356.2) (2026-09-23)
+
+
+### Bug Fixes
+
+* prefer installed okou cli in agent instructions ([#36298](https://github.com/okou-ai/okou/issues/36298)) ([39f8244](https://github.com/okou-ai/okou/commit/39f8244b068c71322bf4803b3af23e50012ba348))
+
+
+### Refactoring
+
+* retire chat thread unreads get endpoint ([#36271](https://github.com/okou-ai/okou/issues/36271)) ([125f010](https://github.com/okou-ai/okou/commit/125f010e0c056b8051f04a5be40049dd5cafc2c6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.497.1
+    * @okouai/core bumped to 8.703.1
+    * @okouai/pi-agent-runtime bumped to 1.39.3
+
 ## [9.356.1](https://github.com/okou-ai/okou/compare/cli-v9.356.0...cli-v9.356.1) (2026-09-23)
 
 
