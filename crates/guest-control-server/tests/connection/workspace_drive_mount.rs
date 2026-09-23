@@ -86,6 +86,27 @@ printf 'helper stderr\n' >&2
 }
 
 #[test]
+fn workspace_drive_mount_accepts_second_request_on_same_connection() {
+    let runs = unique_tmp_path("workspace-mount-sequential-runs", ".txt");
+    let (_directory, program) =
+        create_program(&format!("printf 'mounted\\n' >> '{}'", runs.as_str()));
+    let (handle, mut host_stream) =
+        start_guest_connection_with_workspace_drive_mount_program(program, 1_000);
+
+    send_request(&mut host_stream, 513);
+    let first = read_result(&mut host_stream, 513);
+    assert_eq!(first.termination, ExecTermination::Exited { exit_code: 0 });
+    assert_eq!(std::fs::read(runs.as_str()).unwrap(), b"mounted\n");
+
+    send_request(&mut host_stream, 514);
+    let second = read_result(&mut host_stream, 514);
+    assert_eq!(second.termination, ExecTermination::Exited { exit_code: 0 });
+    assert_eq!(std::fs::read(runs.as_str()).unwrap(), b"mounted\nmounted\n");
+
+    finish_guest_connection(handle, host_stream);
+}
+
+#[test]
 fn workspace_drive_mount_returns_nonzero_exit_and_output() {
     let (_directory, program) = create_program(
         r#"
