@@ -5,11 +5,12 @@ import { useTranslation } from "react-i18next";
 import {
   Button,
   Input,
-  Popover,
-  PopoverClose,
-  PopoverContent,
-  PopoverTrigger,
-  cn,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
 } from "@okouai/ui";
 import type {
   UserTemplateCatalogEntry,
@@ -91,80 +92,78 @@ export function SharedByLabel({
 }
 
 function VisibilityOptionList({
+  templateId,
   visibility,
   onChange,
 }: {
   readonly visibility: UserTemplateVisibility;
+  readonly templateId: string;
   readonly onChange: (next: UserTemplateVisibility) => void;
 }) {
   const { t } = useTranslation();
+  const descriptionId = `custom-template-${templateId}-visibility`;
   return (
-    <div
-      role="radiogroup"
+    <DropdownMenuRadioGroup
+      value={visibility}
+      onValueChange={(next: UserTemplateVisibility) => {
+        if (next !== visibility) {
+          onChange(next);
+        }
+      }}
       aria-label={t(($) => {
         return $.templates.visibility.change;
       })}
     >
       {VISIBILITY_OPTIONS.map((value) => {
-        const selected = value === visibility;
         const Icon = value === "private" ? Lock : Users;
+        const label =
+          value === "private"
+            ? t(($) => {
+                return $.templates.visibility.private;
+              })
+            : t(($) => {
+                return $.templates.visibility.organization;
+              });
         return (
-          <PopoverClose
+          <DropdownMenuRadioItem
             key={value}
-            render={
-              <button
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                className={cn(
-                  "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-                  selected && "bg-state-selected",
-                )}
-                onClick={() => {
-                  if (!selected) {
-                    onChange(value);
-                  }
-                }}
+            value={value}
+            label={label}
+            aria-label={label}
+            aria-describedby={`${descriptionId}-${value}`}
+            closeOnClick
+            className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
+          >
+            <Icon
+              size={16}
+              className="mt-0.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm text-foreground">{label}</span>
+              <span
+                id={`${descriptionId}-${value}`}
+                className="block text-xs text-muted-foreground"
               >
-                <Icon
-                  size={16}
-                  className="mt-0.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm text-foreground">
-                    {value === "private"
-                      ? t(($) => {
-                          return $.templates.visibility.private;
-                        })
-                      : t(($) => {
-                          return $.templates.visibility.organization;
-                        })}
-                  </span>
-                  <span className="block text-xs text-muted-foreground">
-                    {value === "private"
-                      ? t(($) => {
-                          return $.templates.visibility.privateState;
-                        })
-                      : t(($) => {
-                          return $.templates.visibility.organizationState;
-                        })}
-                  </span>
-                </span>
-                {/* The check column is reserved on both rows: letting it appear
-                  only on the selected one narrows that row's text box, so the
-                  description reflows every time the selection moves. */}
-                <span className="mt-0.5 w-4 shrink-0">
-                  {selected ? (
-                    <Check size={16} className="text-foreground" aria-hidden />
-                  ) : null}
-                </span>
-              </button>
-            }
-          />
+                {value === "private"
+                  ? t(($) => {
+                      return $.templates.visibility.privateState;
+                    })
+                  : t(($) => {
+                      return $.templates.visibility.organizationState;
+                    })}
+              </span>
+            </span>
+            {/* Reserve the check column so descriptions do not reflow. */}
+            <span className="mt-0.5 w-4 shrink-0">
+              <DropdownMenuRadioItemIndicator>
+                <Check size={16} className="text-foreground" aria-hidden />
+              </DropdownMenuRadioItemIndicator>
+            </span>
+          </DropdownMenuRadioItem>
         );
       })}
-    </div>
+    </DropdownMenuRadioGroup>
   );
 }
 
@@ -184,7 +183,7 @@ function CustomTemplateVisibilityControl({
   const updateTemplate = useSet(updateCustomTemplate$);
   const CurrentIcon = detail.visibility === "private" ? Lock : Users;
   return (
-    <Popover>
+    <DropdownMenu>
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
         <CurrentIcon size={14} className="shrink-0" aria-hidden="true" />
         <span>
@@ -197,19 +196,20 @@ function CustomTemplateVisibilityControl({
               })}
         </span>
         <span aria-hidden="true">·</span>
-        <PopoverTrigger className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground">
+        <DropdownMenuTrigger className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground">
           {t(($) => {
             return $.templates.visibility.change;
           })}
-        </PopoverTrigger>
+        </DropdownMenuTrigger>
       </p>
-      <PopoverContent
+      <DropdownMenuContent
         align="start"
         side="bottom"
         sideOffset={6}
         className="w-[19rem] p-1.5"
       >
         <VisibilityOptionList
+          templateId={detail.id}
           visibility={detail.visibility}
           onChange={(visibility) => {
             detach(
@@ -221,8 +221,8 @@ function CustomTemplateVisibilityControl({
             );
           }}
         />
-      </PopoverContent>
-    </Popover>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

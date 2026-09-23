@@ -384,6 +384,39 @@ test("Dismiss workflow suggestions without losing the query", async () => {
   });
 });
 
+test("Reopen workflow suggestions after a pointer interaction", async () => {
+  mockAgent();
+  mockThread();
+  installWorkflows(() => {
+    return [workflow("sales-research")];
+  });
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const user = userEvent.setup();
+  const editor = await findComposerEditor();
+  await user.click(editor);
+  await user.keyboard("/sales");
+  await expect(
+    screen.findByTestId("slash-workflow-menu"),
+  ).resolves.toBeVisible();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveTextContent("/sales");
+  });
+
+  // The pointer event must reactivate the same logical caret without needing
+  // a synthetic keyboard selection change.
+  fireEvent.pointerUp(editor);
+  await expect(
+    screen.findByTestId("slash-workflow-menu"),
+  ).resolves.toBeVisible();
+  expect(editor).toHaveTextContent("/sales");
+});
+
 async function openWorkflowRefreshChat(initialWorkflows: WorkflowFixture[]) {
   let workflows = initialWorkflows;
   const primaryThread = {

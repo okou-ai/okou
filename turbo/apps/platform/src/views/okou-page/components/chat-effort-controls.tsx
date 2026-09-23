@@ -169,7 +169,7 @@ export function ChatFastSetting({
   });
   return (
     <div className="flex items-center justify-between gap-3 px-2 py-3">
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger className="flex cursor-default items-center gap-2 text-[13px]">
             <Zap

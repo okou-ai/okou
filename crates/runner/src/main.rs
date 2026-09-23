@@ -1,5 +1,3 @@
-mod active_input;
-mod archive_connection_attempt;
 mod axiom_layer;
 mod byte_size;
 mod ca;
@@ -23,32 +21,25 @@ mod io_limits;
 mod kmsg_log;
 mod lifecycle;
 mod live_runner_instances;
-mod local_queue;
 mod network_log_drain;
 mod network_log_manager;
 mod network_log_process;
 mod network_logs;
-mod object_download_policy;
-mod org_name;
 mod pre_spawn_admission;
 mod prefetch;
 mod profile;
-mod provider;
+#[cfg(test)]
+mod provider_test_support;
 mod proxy;
-mod r2_cache;
 mod resource_budget;
 mod restored_session_identity;
 mod retry;
-mod run_cancellation;
 mod run_resolution;
 mod run_usage;
 mod runtime_overrides;
 mod ssh;
 mod status;
 mod status_file;
-mod storage_cache;
-mod storage_fingerprints;
-mod storage_plan;
 mod telemetry;
 #[cfg(test)]
 mod test_fixtures;
@@ -56,6 +47,8 @@ mod vnc;
 mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;
+
+use runner_storage::{r2_cache, storage_cache, storage_fingerprints, storage_plan};
 
 // Source-observation API shared by the current-assignment usage composer.
 // (no-op Runner release marker refreshed for production delivery on 2026-09-21)

@@ -148,7 +148,7 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
     group: "Banking",
     label: "Read enabled banking accounts",
   },
-  "maps:read": { group: "Maps", label: "Use managed maps services" },
+  "maps:read": { group: "Maps", label: "Search with Google Maps grounding" },
   "weather:read": {
     group: "Weather",
     label: "Use managed weather and air quality services",

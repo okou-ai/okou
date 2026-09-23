@@ -188,8 +188,8 @@ describe("POST /api/onboarding/complete", () => {
   it.each([
     {
       provider: "codex" as const,
-      models: ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-luna"],
-      defaultModel: "gpt-5.6-luna",
+      models: ["gpt-6-astra", "gpt-6-luna", "gpt-5.6-sol"],
+      defaultModel: "gpt-6-luna",
       route: "codex-oauth-token",
     },
     {
@@ -264,6 +264,66 @@ describe("POST /api/onboarding/complete", () => {
       ).toStrictEqual(models);
     },
   );
+
+  it("applies a subscription choice after the previous untouched model seed", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    const policies = modelPoliciesClient();
+    const oldSeed = await accept(
+      policies.update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            {
+              model: "claude-fable-5-1",
+              isDefault: false,
+              defaultProviderType: "built-in",
+              credentialScope: "org",
+              modelProviderId: null,
+            },
+            {
+              model: "gpt-6-astra",
+              isDefault: false,
+              defaultProviderType: "built-in",
+              credentialScope: "org",
+              modelProviderId: null,
+            },
+            {
+              model: "gpt-5.6-luna",
+              isDefault: true,
+              defaultProviderType: "built-in",
+              credentialScope: "org",
+              modelProviderId: null,
+            },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(oldSeed.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+
+    await accept(
+      onboardingCompleteClient().complete({
+        headers: authHeaders(),
+        query: { modelProvider: "codex" },
+        body: {},
+      }),
+      [200],
+    );
+    const after = await accept(
+      policies.list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(after.body.workspaceDefaultModel).toBe("gpt-6-luna");
+    expect(
+      after.body.policies.find((policy) => {
+        return policy.isDefault;
+      }),
+    ).toMatchObject({
+      model: "gpt-6-luna",
+      defaultProviderType: "codex-oauth-token",
+    });
+  });
 
   it("seeds the chosen models when no model policies were read before completion", async () => {
     const actor = orgActor();

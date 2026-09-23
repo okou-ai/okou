@@ -6,8 +6,8 @@ use api_contracts::generated::types::webhooks::agent::complete::RequestFailureRe
 use chrono::{DateTime, Utc};
 use sandbox::SandboxId;
 
-use crate::provider::{CompletionAuth, JobProvider};
 use crate::resource_budget::BudgetLease;
+use runner_provider::{CompletionAuth, JobProvider};
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, SandboxReuseResult, WorkspaceReuseResult};
 
@@ -286,9 +286,9 @@ mod tests {
     use async_trait::async_trait;
     use sandbox::SandboxId;
 
-    use crate::provider::{ClaimedJob, JobCandidate, JobProvider};
     use crate::resource_budget::{BudgetLease, ResourceBudget};
     use crate::status::StatusTracker;
+    use runner_provider::{ClaimedJob, JobCandidate, JobProvider};
     use runner_types::ids::RunId;
     use runner_types::types::{HeartbeatState, SandboxReuseResult};
 
@@ -339,7 +339,9 @@ mod tests {
 
         async fn complete(&self, request: CompleteRequest, completion_auth: CompletionAuth) {
             self.auth_matches.store(
-                completion_auth.matches_sandbox_token_for_test(request.run_id, "completion-token"),
+                completion_auth
+                    .into_sandbox_token(request.run_id)
+                    .is_ok_and(|token| token == "completion-token"),
                 Ordering::SeqCst,
             );
             *self.failure_reason.lock().unwrap() = request.failure_reason;

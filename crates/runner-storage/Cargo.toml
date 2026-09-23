@@ -1,0 +1,53 @@
+[package]
+name = "runner-storage"
+version = "0.1.0"
+edition.workspace = true
+description = "Runner storage planning, archive delivery, and host/R2 caches"
+
+[features]
+# Exposes deterministic seams for Runner's existing cross-crate tests.
+test-support = []
+
+[dependencies]
+api-contracts.workspace = true
+guest-contracts.workspace = true
+runner-host.workspace = true
+runner-types.workspace = true
+sandbox.workspace = true
+
+aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest", "default-https-client", "rt-tokio"] }
+bytes = { workspace = true, features = ["std"] }
+chrono = { workspace = true, features = ["now", "serde"] }
+flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
+futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
+hex = { workspace = true, features = ["std"] }
+libc = { workspace = true, features = ["std"] }
+nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
+reqwest = { workspace = true, features = ["json", "rustls"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+sha2 = { workspace = true, features = ["alloc", "oid"] }
+tar = { workspace = true, features = ["xattr"] }
+thiserror = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
+tower-layer.workspace = true
+tower-service.workspace = true
+tracing = { workspace = true, features = ["attributes", "std"] }
+url = { workspace = true, features = ["std"] }
+zstd = { workspace = true, features = ["zstdmt"] }
+
+[dev-dependencies]
+async-trait.workspace = true
+aws-sdk-s3 = { workspace = true, features = ["test-util"] }
+aws-smithy-mocks.workspace = true
+guest-storage-apply.workspace = true
+http-body.workspace = true
+httpmock = { workspace = true, features = ["cookies"] }
+sandbox-mock.workspace = true
+rcgen = { workspace = true, features = ["crypto", "ring", "pem"] }
+tempfile = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true, features = ["process", "signal", "test-util"] }
+
+[lints]
+workspace = true

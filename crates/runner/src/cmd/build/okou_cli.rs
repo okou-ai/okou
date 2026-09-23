@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use guest_contracts::okou_cli::{
     InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
-    OkouCliVersions, parse_release_version,
+    OkouCliSessionConstruction, OkouCliVersions, parse_release_version,
 };
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -30,6 +30,9 @@ struct ArtifactManifest {
     commit_sha: String,
     package: ArtifactPackage,
     versions: OkouCliVersions,
+    /// Absent from artifacts built before the digest existed.
+    #[serde(default)]
+    session_construction: Option<OkouCliSessionConstruction>,
 }
 
 #[derive(Deserialize)]
@@ -100,6 +103,14 @@ impl OkouCliArtifact {
                 "Okou CLI artifact manifest is missing the piSdk version".into(),
             ));
         }
+        if let Some(session_construction) = &manifest.session_construction
+            && !OkouCliSessionConstruction::is_valid_digest(&session_construction.digest)
+        {
+            return Err(RunnerError::Internal(format!(
+                "Okou CLI artifact manifest has an invalid sessionConstruction digest: {}",
+                session_construction.digest
+            )));
+        }
 
         let source_package = dir.join(OKOU_CLI_PACKAGE_FILE);
         let package_bytes = tokio::fs::read(&source_package).await.map_err(|e| {
@@ -132,6 +143,7 @@ impl OkouCliArtifact {
                 sha256: package_sha256,
                 size: package_size,
             },
+            session_construction: manifest.session_construction,
         };
         let mut installed_manifest_bytes = serde_json::to_vec(&installed).map_err(|e| {
             RunnerError::Internal(format!("encode installed Okou CLI manifest: {e}"))
@@ -202,9 +214,10 @@ pub(super) mod test_support {
         std::fs::write(
             dir.join(super::OKOU_CLI_MANIFEST_FILE),
             format!(
-                r#"{{"version":1,"commitSha":"{}","package":{{"path":"package.tgz","sha256":"{sha256}","size":{}}},"versions":{{"cli":"{cli_version}","piAgentRuntime":"{runtime_version}","piSdk":"0.86.1+okou.0123456789ab"}}}}"#,
+                r#"{{"version":1,"commitSha":"{}","package":{{"path":"package.tgz","sha256":"{sha256}","size":{}}},"versions":{{"cli":"{cli_version}","piAgentRuntime":"{runtime_version}","piSdk":"0.86.1+okou.0123456789ab"}},"sessionConstruction":{{"digest":"{}"}}}}"#,
                 "c".repeat(40),
-                package_bytes.len()
+                package_bytes.len(),
+                "d".repeat(64)
             ),
         )
         .unwrap();
@@ -237,6 +250,12 @@ mod tests {
         let installed = InstalledOkouCli::parse(artifact.installed_manifest_bytes()).unwrap();
         assert_eq!(installed, artifact.installed);
         assert_eq!(installed.versions.pi_agent_runtime, "1.36.0");
+        assert_eq!(
+            installed.session_construction,
+            Some(OkouCliSessionConstruction {
+                digest: "d".repeat(64)
+            })
+        );
         assert_eq!(installed.package.sha256, sha256);
         assert_eq!(installed.package.size, 13);
         assert_eq!(
@@ -277,5 +296,30 @@ mod tests {
         .unwrap();
         let error = OkouCliArtifact::resolve(dir.path()).await.unwrap_err();
         assert!(error.to_string().contains("versions"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn resolve_accepts_artifacts_without_a_digest_and_rejects_malformed_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let sha256 = write_artifact_dir(dir.path(), b"tarball-bytes", "9.353.0", "1.36.0");
+        let legacy_manifest = format!(
+            r#"{{"version":1,"commitSha":"{}","package":{{"path":"package.tgz","sha256":"{sha256}","size":13}},"versions":{{"cli":"9.353.0","piAgentRuntime":"1.36.0","piSdk":"0.86.1+okou.0123456789ab"}}}}"#,
+            "c".repeat(40)
+        );
+        std::fs::write(dir.path().join(OKOU_CLI_MANIFEST_FILE), &legacy_manifest).unwrap();
+        let artifact = OkouCliArtifact::resolve(dir.path()).await.unwrap();
+        assert_eq!(artifact.installed.session_construction, None);
+        assert!(
+            !artifact
+                .installed_manifest_bytes()
+                .windows(19)
+                .any(|w| w == b"sessionConstruction")
+        );
+
+        let malformed =
+            legacy_manifest.replace(r#"}}"#, r#"},"sessionConstruction":{"digest":"nope"}}"#);
+        std::fs::write(dir.path().join(OKOU_CLI_MANIFEST_FILE), &malformed).unwrap();
+        let error = OkouCliArtifact::resolve(dir.path()).await.unwrap_err();
+        assert!(error.to_string().contains("sessionConstruction"), "{error}");
     }
 }

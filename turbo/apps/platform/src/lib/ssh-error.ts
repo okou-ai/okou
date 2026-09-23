@@ -1,32 +1,12 @@
 import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
-import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { i18n } from "../i18n/index.ts";
+import { localizedCloudflareAccessError } from "./cloudflare-access-error.ts";
 
 export function localizedSshError(code: string): string | undefined {
   switch (code) {
     case SSH_ERROR_CODES.RESOURCE_ID_CONFLICT: {
       return i18n.t(($) => {
         return $.ssh.saveRecovery.resourceIdConflict;
-      });
-    }
-    case CLOUDFLARE_ACCESS_ERROR_CODES.UNAVAILABLE: {
-      return i18n.t(($) => {
-        return $.ssh.cloudflare.unavailable;
-      });
-    }
-    case CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND: {
-      return i18n.t(($) => {
-        return $.ssh.cloudflare.missing;
-      });
-    }
-    case CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE: {
-      return i18n.t(($) => {
-        return $.ssh.cloudflare.inUse;
-      });
-    }
-    case CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT: {
-      return i18n.t(($) => {
-        return $.ssh.cloudflare.changed;
       });
     }
     case SSH_ERROR_CODES.CREDENTIAL_NOT_FOUND: {
@@ -74,13 +54,18 @@ export function localizedSshError(code: string): string | undefined {
         return $.ssh.errors.hostUnavailable;
       });
     }
+    case SSH_ERROR_CODES.CONNECTION_IN_USE: {
+      return i18n.t(($) => {
+        return $.ssh.errors.hostInUse;
+      });
+    }
     case SSH_ERROR_CODES.GENERATION_CONFLICT: {
       return i18n.t(($) => {
         return $.ssh.errors.configurationChanged;
       });
     }
     default: {
-      return undefined;
+      return localizedCloudflareAccessError(code);
     }
   }
 }

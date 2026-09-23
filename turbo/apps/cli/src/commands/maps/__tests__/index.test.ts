@@ -1,28 +1,43 @@
-import {
-  describe,
-  it,
-  expect,
-  vi,
-  afterAll,
-  afterEach,
-  beforeEach,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import chalk from "chalk";
-import { mkdtempSync } from "fs";
-import * as fs from "fs/promises";
-import * as os from "os";
-import * as path from "path";
-import { http, HttpResponse } from "msw";
+import { HttpResponse, http } from "msw";
+
 import { server } from "../../../mocks/server";
 import { mapsCommand } from "../index";
 
-const TEST_OUTPUT_DIR = mkdtempSync(path.join(os.tmpdir(), "maps-output-"));
+function groundedResponse() {
+  const answer = "Café Central is open nearby.";
+  return {
+    query: "best café near me",
+    location: { latitude: 48.21, longitude: 16.37 },
+    languageCode: "de_AT",
+    provider: "google-maps-grounding" as const,
+    model: "gemini-2.5-flash" as const,
+    billingCategory: "provider_cost_usd_micros" as const,
+    billingQuantity: 25_155,
+    providerCostUsd: 0.025155,
+    creditsCharged: 32,
+    answer,
+    sources: [
+      {
+        title: "Café Central",
+        uri: "https://maps.google.com/?cid=123",
+      },
+    ],
+    citations: [
+      {
+        startByte: 0,
+        endByte: Buffer.byteLength(answer),
+        text: answer,
+        sourceIndices: [0],
+      },
+    ],
+    attribution: "Google Maps" as const,
+    usage: { inputTokens: 100, outputTokens: 50 },
+  };
+}
 
 describe("okou maps command", () => {
-  afterAll(async () => {
-    await fs.rm(TEST_OUTPUT_DIR, { recursive: true, force: true });
-  });
-
   const mockExit = vi.spyOn(process, "exit").mockImplementation((() => {
     throw new Error("process.exit called");
   }) as never);
@@ -44,20 +59,14 @@ describe("okou maps command", () => {
     vi.unstubAllEnvs();
   });
 
-  it("posts directions requests to the maps API and prints JSON", async () => {
+  it("posts one conversational search with explicit location and language", async () => {
     let requestBody: unknown;
     server.use(
       http.post(
-        "http://localhost:3000/api/maps/directions",
+        "http://localhost:3000/api/maps/search",
         async ({ request }) => {
           requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "directions",
-            provider: "google-maps",
-            creditsCharged: 6,
-            billingCategory: "routes.directions",
-            result: { distanceMeters: 42 },
-          });
+          return HttpResponse.json(groundedResponse());
         },
       ),
     );
@@ -65,345 +74,77 @@ describe("okou maps command", () => {
     await mapsCommand.parseAsync([
       "node",
       "cli",
-      "directions",
-      "--origin",
-      "SFO",
-      "--destination",
-      "Mountain View",
+      "search",
+      "best café near me",
+      "--lat",
+      "48.21",
+      "--lng",
+      "16.37",
+      "--language",
+      "de-AT",
       "--json",
     ]);
 
-    expect(requestBody).toEqual({
-      origin: "SFO",
-      destination: "Mountain View",
-      mode: "driving",
+    expect(requestBody).toStrictEqual({
+      query: "best café near me",
+      location: { latitude: 48.21, longitude: 16.37 },
+      languageCode: "de_AT",
     });
     expect(mockConsoleLog).toHaveBeenCalledWith(
-      JSON.stringify({
-        operation: "directions",
-        provider: "google-maps",
-        creditsCharged: 6,
-        billingCategory: "routes.directions",
-        result: { distanceMeters: 42 },
-      }),
+      JSON.stringify(groundedResponse()),
     );
   });
 
-  it("defaults places search to a small result limit", async () => {
-    let requestBody: unknown;
+  it("keeps the grounded answer immediately adjacent to Google Maps sources", async () => {
     server.use(
-      http.post(
-        "http://localhost:3000/api/maps/places/search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "places.search",
-            provider: "google-maps",
-            creditsCharged: 39,
-            result: { places: [] },
-          });
-        },
-      ),
-    );
-
-    await mapsCommand.parseAsync([
-      "node",
-      "cli",
-      "places",
-      "search",
-      "--query",
-      "coffee near Union Square SF",
-      "--json",
-    ]);
-
-    expect(requestBody).toEqual({
-      query: "coffee near Union Square SF",
-      limit: 5,
-      fields: "pro",
-    });
-  });
-
-  it("posts Enterprise places search fieldsets to the maps API", async () => {
-    let requestBody: unknown;
-    server.use(
-      http.post(
-        "http://localhost:3000/api/maps/places/search",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "places.search",
-            provider: "google-maps",
-            creditsCharged: 42,
-            billingCategory: "places.text_search.enterprise",
-            result: { places: [] },
-          });
-        },
-      ),
-    );
-
-    await mapsCommand.parseAsync([
-      "node",
-      "cli",
-      "places",
-      "search",
-      "--query",
-      "coffee near Union Square SF",
-      "--fields",
-      "enterprise",
-      "--json",
-    ]);
-
-    expect(requestBody).toEqual({
-      query: "coffee near Union Square SF",
-      limit: 5,
-      fields: "enterprise",
-    });
-  });
-
-  it("posts Enterprise place details fieldsets to the maps API", async () => {
-    let requestBody: unknown;
-    server.use(
-      http.post(
-        "http://localhost:3000/api/maps/places/details",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "places.details",
-            provider: "google-maps",
-            creditsCharged: 24,
-            billingCategory: "places.details.enterprise",
-            result: { id: "ChIJtest" },
-          });
-        },
-      ),
-    );
-
-    await mapsCommand.parseAsync([
-      "node",
-      "cli",
-      "places",
-      "details",
-      "--place-id",
-      "ChIJtest",
-      "--fields",
-      "enterprise",
-      "--json",
-    ]);
-
-    expect(requestBody).toEqual({
-      placeId: "ChIJtest",
-      fields: "enterprise",
-    });
-  });
-
-  it("writes OSM download GeoJSON output", async () => {
-    const outputPath = path.join(TEST_OUTPUT_DIR, "map.geojson");
-    let requestBody: unknown;
-    server.use(
-      http.post(
-        "http://localhost:3000/api/maps/osm/download",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "osm.download",
-            provider: "openstreetmap",
-            creditsCharged: 1,
-            billingCategory: "osm.download",
-            billingQuantity: 1,
-            result: {
-              bbox: {
-                west: -122.43,
-                south: 37.76,
-                east: -122.4,
-                north: 37.79,
-              },
-              layers: ["roads", "buildings"],
-              attribution: "© OpenStreetMap contributors",
-              featureCount: 1,
-              geojson: {
-                type: "FeatureCollection",
-                features: [
-                  {
-                    type: "Feature",
-                    properties: { layer: "roads" },
-                    geometry: {
-                      type: "LineString",
-                      coordinates: [
-                        [-122.43, 37.76],
-                        [-122.4, 37.79],
-                      ],
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        },
-      ),
-    );
-
-    await mapsCommand.parseAsync([
-      "node",
-      "cli",
-      "osm",
-      "download",
-      "--bbox",
-      "-122.43,37.76,-122.40,37.79",
-      "--layers",
-      "roads,buildings",
-      "--output",
-      outputPath,
-    ]);
-
-    expect(requestBody).toEqual({
-      bbox: { west: -122.43, south: 37.76, east: -122.4, north: 37.79 },
-      layers: ["roads", "buildings"],
-    });
-    const written = JSON.parse(
-      await fs.readFile(outputPath, "utf8"),
-    ) as unknown;
-    expect(written).toMatchObject({
-      type: "FeatureCollection",
-      features: [{ properties: { layer: "roads" } }],
-    });
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("✓ OSM download completed");
-    expect(output).toContain(`Output: ${outputPath}`);
-  });
-
-  it("writes OSM render PNG output", async () => {
-    const outputPath = path.join(TEST_OUTPUT_DIR, "map.png");
-    const pngBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-    let requestBody: unknown;
-    server.use(
-      http.post(
-        "http://localhost:3000/api/maps/osm/render",
-        async ({ request }) => {
-          requestBody = await request.json();
-          return HttpResponse.json({
-            operation: "osm.render",
-            provider: "openstreetmap",
-            creditsCharged: 2,
-            billingCategory: "osm.render.png",
-            billingQuantity: 1,
-            result: {
-              bbox: {
-                west: -122.4308,
-                south: 37.7641,
-                east: -122.408,
-                north: 37.7857,
-              },
-              layers: ["roads", "buildings", "water", "parks"],
-              width: 640,
-              height: 480,
-              style: "guide",
-              attribution: "© OpenStreetMap contributors",
-              featureCount: 4,
-              image: {
-                mimeType: "image/png",
-                base64: pngBytes.toString("base64"),
-              },
-            },
-          });
-        },
-      ),
-    );
-
-    await mapsCommand.parseAsync([
-      "node",
-      "cli",
-      "osm",
-      "render",
-      "--center",
-      "37.7749,-122.4194",
-      "--radius",
-      "1200",
-      "--width",
-      "640",
-      "--height",
-      "480",
-      "--style",
-      "guide",
-      "--title",
-      "Mission walk",
-      "--marker",
-      "37.7749,-122.4194,Ferry Building",
-      "--output",
-      outputPath,
-    ]);
-
-    expect(requestBody).toEqual({
-      center: { lat: 37.7749, lng: -122.4194 },
-      radiusMeters: 1200,
-      layers: ["roads", "buildings", "water", "parks"],
-      width: 640,
-      height: 480,
-      style: "guide",
-      title: "Mission walk",
-      markers: [{ lat: 37.7749, lng: -122.4194, label: "Ferry Building" }],
-    });
-    await expect(fs.readFile(outputPath)).resolves.toEqual(pngBytes);
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("✓ OSM render completed");
-    expect(output).toContain(`Output: ${outputPath}`);
-  });
-
-  it("documents Enterprise fieldsets in places help output", () => {
-    const placesCommand = mapsCommand.commands.find((command) => {
-      return command.name() === "places";
-    });
-    if (!placesCommand) {
-      throw new Error("places command not found");
-    }
-    const searchCommand = placesCommand.commands.find((command) => {
-      return command.name() === "search";
-    });
-    const detailsCommand = placesCommand.commands.find((command) => {
-      return command.name() === "details";
-    });
-    if (!searchCommand || !detailsCommand) {
-      throw new Error("places fieldset commands not found");
-    }
-
-    expect(searchCommand.helpInformation()).toContain(
-      "Field set: pro or enterprise",
-    );
-    expect(detailsCommand.helpInformation()).toContain(
-      "Field set: essentials, pro, or enterprise",
-    );
-  });
-
-  it("renders credit metadata in human output", async () => {
-    server.use(
-      http.post("http://localhost:3000/api/maps/geocode", () => {
-        return HttpResponse.json({
-          operation: "geocode",
-          provider: "google-maps",
-          creditsCharged: 6,
-          billingCategory: "geocoding",
-          billingQuantity: 1,
-          result: {
-            formattedAddress: "1 Infinite Loop, Cupertino, CA",
-            location: { lat: 37.3317, lng: -122.0301 },
-          },
-        });
+      http.post("http://localhost:3000/api/maps/search", () => {
+        return HttpResponse.json(groundedResponse());
       }),
     );
 
     await mapsCommand.parseAsync([
       "node",
       "cli",
-      "geocode",
-      "--address",
-      "1 Infinite Loop, Cupertino",
+      "search",
+      "best café near me",
     ]);
 
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("✓ Geocode completed");
-    expect(output).toContain("Provider: google-maps");
-    expect(output).toContain("Billing category: geocoding");
-    expect(output).toContain("Credits charged: 6");
-    expect(output).toContain("1 Infinite Loop, Cupertino, CA");
+    const lines = mockConsoleLog.mock.calls.map(([line]) => {
+      return String(line);
+    });
+    const answerIndex = lines.indexOf(groundedResponse().answer);
+    expect(answerIndex).toBeGreaterThanOrEqual(0);
+    expect(lines[answerIndex + 1]).toBe("Google Maps sources:");
+    expect(lines[answerIndex + 2]).toBe("1. Café Central");
+    expect(lines[answerIndex + 3]).toBe("   https://maps.google.com/?cid=123");
+    expect(lines.join("\n")).toContain("Provider cost: $0.025155");
+    expect(lines.join("\n")).toContain("Credits charged: 32");
+  });
+
+  it("requires latitude and longitude together", async () => {
+    await expect(
+      mapsCommand.parseAsync([
+        "node",
+        "cli",
+        "search",
+        "coffee near me",
+        "--lat",
+        "40.7",
+      ]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "--lat and --lng must be provided together",
+    );
+  });
+
+  it("exposes only the search subcommand", () => {
+    expect(
+      mapsCommand.commands.map((command) => {
+        return command.name();
+      }),
+    ).toStrictEqual(["search"]);
+    expect(mapsCommand.helpInformation()).toContain("search [options] <query>");
   });
 
   it("shows auth guidance when no token is available", async () => {
@@ -413,9 +154,8 @@ describe("okou maps command", () => {
       mapsCommand.parseAsync([
         "node",
         "cli",
-        "geocode",
-        "--address",
-        "1 Infinite Loop, Cupertino",
+        "search",
+        "coffee near Union Square",
       ]),
     ).rejects.toThrow("process.exit called");
 

@@ -1466,20 +1466,7 @@
             "title": "チームがすでに会話している場所で {{assistantName}} を使う"
           },
           "workflow": {
-            "browse": "テンプレートを見る",
-            "confirm": "ひとつ試してみる",
             "description": "繰り返している仕事を、チームが実行できるワークフローにします。",
-            "prompt": "毎週月曜の朝に、競合が先週公開した内容を調べて、テーマごとにまとめて比較表にしてください。",
-            "promptConfirm": "{{assistantName}} に送る",
-            "promptDescription": "このまま {{assistantName}} に送るか、文言を変えてから送ってください。",
-            "promptOutcome": "情報源を読み、見つけたものを整理して、表にして返します。結果が良ければ、その実行をワークフローとして保存するか聞いてきます。",
-            "promptTitle": "同僚に頼むように伝えてください",
-            "stepRun": "まず 1 回動かす",
-            "stepRunDescription": "何かを決める前に、仕上がった成果物を確認できます。",
-            "stepSave": "保存して、スケジュールを決める",
-            "stepSaveDescription": "誰も頼まなくても動き、チームの誰でも実行できます。",
-            "stepTemplate": "テンプレートから始める",
-            "stepTemplateDescription": "白紙からではなく、自分の仕事に近いものを選びます。",
             "title": "うまくいった 1 回が、チームの資産になります"
           }
         },
@@ -1558,7 +1545,6 @@
         "enteredChat": "{{userName}} がチャットに参加しました。",
         "goodToSeeYou": "初めまして、{{userName}} さん。",
         "knewYouWouldCome": "必ず戻ってくると思っていました、{{userName}}。",
-        "letsRoll": "{{agentName}} は準備ができています、{{userName}}。転がりましょう。",
         "makeTodayCount": "今日を有意義に過ごしましょう、{{userName}}。",
         "newIdeas": "{{userName}} さん、今日は新しいアイデアがありますか?",
         "readyToBuild": "ビルドする準備はできましたか? {{userName}}?",
@@ -1733,6 +1719,11 @@
       "upgradeToRun": "{{assistantName}} を実行するには Pro にアップグレードしてください",
       "upgradeWorkspace": "ワークスペースをアップグレードする"
     },
+    "browserAction": {
+      "documentTitle": "ブラウザ操作",
+      "loading": "ブラウザリクエストを読み込んでいます",
+      "unavailableDescription": "このブラウザリクエストは無効か、利用できなくなっています。"
+    },
     "browserInput": {
       "applyFailed": "情報を追加できませんでした。入力内容は保持されています。もう一度お試しください。",
       "applying": "情報を追加しています",
@@ -1750,12 +1741,10 @@
       "delivered": "エージェントに通知しました",
       "deliveredDescription": "エージェントは作業を続行できます。",
       "description": "このサイトで求められている情報を入力してください。",
-      "documentTitle": "ブラウザ入力",
       "expired": "リクエストの有効期限が切れました",
       "expiredDescription": "ブラウザが閉じられたか、このリクエストは無効になりました。",
       "loadFailed": "このリクエストを読み込めませんでした",
       "loadFailedDescription": "しばらくしてからもう一度お試しください。",
-      "loading": "ブラウザ入力を読み込んでいます",
       "loadingDescription": "リクエストを確認しています…",
       "open": "情報を入力",
       "optional": "（任意）",
@@ -1768,9 +1757,33 @@
       "submitting": "追加しています…",
       "title": "ブラウザに情報を入力",
       "unavailable": "リクエストを利用できません",
-      "unavailableDescription": "このブラウザ入力リクエストは無効か、利用できなくなっています。",
       "uncertain": "ブラウザを確認してください",
       "uncertainDescription": "ブラウザが情報を受け取った可能性があります。再試行する前にエージェントに確認を依頼してください。"
+    },
+    "browserInteraction": {
+      "applying": "ブラウザ操作を完了しています",
+      "applyingDescription": "ブラウザでこのリクエストを完了しています。",
+      "callbackFailed": "エージェントに通知できませんでした。もう一度［続行］を選択してください。",
+      "cancel": "キャンセル",
+      "cancelFailed": "このリクエストをキャンセルできませんでした。もう一度お試しください。",
+      "cancelled": "リクエストをキャンセルしました",
+      "cancelledDescription": "ブラウザの引き継ぎをキャンセルしました。エージェントに通知するには続行してください。",
+      "cancelling": "キャンセルしています…",
+      "completed": "ブラウザ操作が完了しました",
+      "completedDescription": "ブラウザ操作を記録しました。エージェントに通知するには続行してください。",
+      "completeFailed": "このリクエストを完了できませんでした。もう一度お試しください。",
+      "completing": "完了しています…",
+      "continue": "続行",
+      "continuing": "続行しています…",
+      "delivered": "エージェントに通知しました",
+      "deliveredDescription": "エージェントは処理を続行できます。",
+      "description": "ブラウザを開いてこの手順を完了し、［完了］を選択してください。",
+      "done": "完了",
+      "stale": "ブラウザは利用できません",
+      "staleDescription": "エージェントに新しいリクエストの作成を依頼してください。",
+      "title": "ブラウザを引き継ぐ",
+      "uncertain": "ブラウザを確認してください",
+      "uncertainDescription": "操作が完了している可能性があります。再試行する前にエージェントに確認を依頼してください。"
     },
     "cards": {
       "viewDetails": "詳細を表示"
@@ -2911,6 +2924,48 @@
       "named": "ワークフロー {{title}}",
       "open": "ワークフロー {{title}} を開く"
     }
+  },
+  "cloudflareAccess": {
+    "add": "Cloudflare Access を追加",
+    "cancel": "キャンセル",
+    "changed": "編集中にこの Cloudflare Access が変更されました。保存する前に最新の設定を確認してください。",
+    "clientId": "Service Token のクライアント ID",
+    "clientIdPlaceholder": "Service Token の Client ID を貼り付け",
+    "clientSecret": "Service Token のクライアントシークレット",
+    "clientSecretPlaceholder": "Service Token の Client Secret を貼り付け",
+    "configuration": "Cloudflare Access",
+    "createNew": "新しい Cloudflare Access を作成",
+    "delete": "Cloudflare Access を削除",
+    "deleteHelp": "未使用の Cloudflare Access を削除しますか？保存された Service Token は復元できません。",
+    "description": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
+    "edit": "Cloudflare Access を編集",
+    "empty": "Cloudflare Access はまだありません。サービストークンを追加して保護されたアプリケーションにアクセスします。",
+    "failed": "Cloudflare Accessの変更を保存できませんでした。再試行してください。",
+    "inUse": "この Cloudflare Access はホストが使用しています。対象ホストを確認し、先に別の設定に変更するか削除してください。",
+    "inUseHelp": "この Cloudflare Access を削除する前に、対象ホストに別の Cloudflare Access を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
+    "invalidInput": "一部のCloudflare Access設定が無効です。入力内容を確認して再試行してください。",
+    "keepChanges": "このバージョンに自分の変更を適用",
+    "latest": "最後に保存された設定",
+    "loadFailed": "Cloudflare Access を読み込めませんでした。もう一度お試しください。",
+    "loading": "Cloudflare Access を読み込み中…",
+    "manage": "Cloudflare Access を管理",
+    "missing": "この Cloudflare Access は利用できなくなりました。別のものを選択するか作成してください。",
+    "name": "名前",
+    "namePlaceholder": "例: 本番環境へのアクセス",
+    "replace": "Service Token を置換",
+    "resourceIdConflict": "このリソース ID は使用できません。フォームを閉じて開き直し、もう一度お試しください。",
+    "retry": "再試行",
+    "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
+    "revisionExhausted": "これ以上更新できません。新しく作成してください。",
+    "save": "保存",
+    "saveUncertain": "変更が保存されたか確認できませんでした。同じ内容で保存を再試行するか、閉じて一覧を確認してから追加し直してください。",
+    "select": "Cloudflare Access を選択",
+    "summary_other": "{{count}} 件の Cloudflare Access を設定済み",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Cloudflare Access サービストークンで保護されたアプリケーションにアクセスします。",
+    "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
+    "unused": "使用中のホストはありません",
+    "usedBy_other": "{{count}} 台のホストが使用："
   },
   "connectors": {
     "access": {
@@ -5983,6 +6038,9 @@
           "description": "アプリの外観と動作をカスタマイズします。",
           "title": "好み"
         },
+        "tools": {
+          "title": "ツール"
+        },
         "usage": {
           "balanceDescription": "チームが使える残高です。",
           "balanceTitle": "クレジット残高",
@@ -6263,14 +6321,14 @@
         "workspaceDescription": "このワークスペース内の全員が利用できます。"
       },
       "reset": {
-        "confirmDescription": "Codexリセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
+        "confirmDescription": "{{provider}}リセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
         "progress": "リセット中...",
         "remaining_one": "リセット残り{{value}}回",
         "remaining_other": "リセット残り{{value}}回",
         "remainingUnavailable": "残りのリセット回数を取得できません",
         "remainingUnknown": "リセット —",
         "remainingWithExpiry_other": "リセット残り{{value}}回 · 有効期限{{expiry}}",
-        "title": "Codexの使用量をリセットしますか？"
+        "title": "{{provider}}の使用量をリセットしますか？"
       },
       "stale": {
         "claudeExpired": "Claude Codeセッションの有効期限が切れました。続行するには再接続してください。",
@@ -6287,9 +6345,9 @@
         "accountSwitched": "使用するアカウントを切り替えました",
         "disconnected": "{{provider}} が切断されました",
         "policiesUpdated": "モデルプロバイダーの設定が更新されました",
-        "reset": "Codex 使用量のリセット",
-        "resetUnavailable": "Codex 使用状況のリセットは利用できません",
-        "resetUnneeded": "Codex の使用状況は現時点ではリセットする必要はありません"
+        "reset": "{{provider}} 使用量のリセット",
+        "resetUnavailable": "{{provider}} 使用状況のリセットは利用できません",
+        "resetUnneeded": "{{provider}} の使用状況は現時点ではリセットする必要はありません"
       },
       "usage": {
         "inDays": "{{days}}日後",
@@ -6776,36 +6834,15 @@
     "chooseFile": "ファイルを選択",
     "choosePrivateKeyFile": "秘密鍵ファイルを選択",
     "cloudflare": {
-      "add": "Cloudflare Access を追加",
-      "changed": "編集中にこの Cloudflare Access が変更されました。保存する前に最新の設定を確認してください。",
-      "clientId": "Service Token のクライアント ID",
-      "clientSecret": "Service Token のクライアントシークレット",
-      "configuration": "Cloudflare Access",
-      "createNew": "新しい Cloudflare Access を作成",
-      "delete": "Cloudflare Access を削除",
-      "deleteHelp": "未使用の Cloudflare Access を削除しますか？保存された Service Token は復元できません。",
       "direct": "直接接続",
-      "edit": "Cloudflare Access を編集",
-      "empty": "Cloudflare Access はまだありません。Service Token を追加して保護された SSH ホストに接続します。",
-      "inUse": "この Cloudflare Access はホストが使用しています。対象ホストを確認し、先に別の設定に変更するか削除してください。",
-      "inUseHelp": "この Cloudflare Access を削除する前に、対象ホストに別の Cloudflare Access を選択するか、明示的に直接接続に切り替えるか、ホストを削除してください。",
       "keepChanges": "このバージョンに自分の変更を適用",
       "latest": "最後に保存された設定",
-      "loadFailed": "Cloudflare Access を読み込めませんでした。もう一度お試しください。",
-      "loading": "Cloudflare Access を読み込み中…",
-      "missing": "この Cloudflare Access は利用できなくなりました。別のものを選択するか作成してください。",
       "mode": "接続",
-      "name": "名前",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "公開ホスト名",
-      "replace": "Service Token を置換",
       "reviewHelp": "下書きは保持されています。変更を適用する前に、最後に保存された設定を確認してください。",
-      "select": "Cloudflare Access を選択",
-      "summary_other": "{{count}} 件の Cloudflare Access を設定済み",
       "title": "Cloudflare Access",
-      "tokenHelp": "SSH アプリケーションの Service Auth ポリシーで許可された Service Token を使用してください。SSH ログインとは別のものです。",
-      "unavailable": "このアカウントでは Cloudflare Access を利用できません。",
-      "usedBy_other": "{{count}} 台のホストが使用："
+      "unavailable": "このアカウントでは Cloudflare Access を利用できません。"
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access が SSH トンネルを確立できませんでした。公開ホスト名と Tunnel のルーティングを確認してください。",
@@ -6860,6 +6897,7 @@
       "credentialInUse": "この認証情報は使用中です。先に対象ホストに別の認証情報を割り当てるか、対象ホストを削除してください。",
       "credentialUnavailable": "この SSH 認証情報は利用できません。別の認証情報を選択するか、新しく作成してください。",
       "failed": "SSHの変更を保存できませんでした。再試行してください。",
+      "hostInUse": "このSSHホストはVNCルートで使用されています。このホストを削除する前に、対象のVNCルートで別のSSHホストを選択するか、明示的に直接接続へ切り替えるか、ルートを削除してください。",
       "hostUnavailable": "このSSHホストは利用できなくなりました。ホスト一覧に戻り、既存のホストを選択してください。",
       "invalidHost": "URLスキーム、パス、空白を含めずにホスト名またはIPアドレスを入力してください。",
       "invalidInput": "一部のSSH設定が無効です。入力内容を確認して再試行してください。",
@@ -6880,9 +6918,6 @@
     "notLearned": "ホスト鍵はまだ記憶されていません",
     "passphrase": "パスフレーズ（任意）",
     "placeholders": {
-      "accessName": "例: 本番環境へのアクセス",
-      "clientId": "Service Token の Client ID を貼り付け",
-      "clientSecret": "Service Token の Client Secret を貼り付け",
       "credentialName": "例: デプロイ用ログイン",
       "displayName": "例: 本番サーバー",
       "host": "例: ssh.example.com",
@@ -7077,6 +7112,9 @@
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
       "custom": "カスタム認証局",
       "profileLabel": "セキュリティプロファイル",
+      "serverName": "TLS証明書の識別名",
+      "serverNameHelp": "任意です。空欄の場合、RFB接続先ホストに対して証明書を検証します。証明書が別のDNS名を使用する場合のみ設定してください。",
+      "serverNameHint": "例: desktop.internal.example.com",
       "system": "システムの認証局",
       "title": "サーバー証明書の信頼",
       "x509Plain": "暗号化されたユーザー名とパスワード（X509Plain）",
@@ -7087,6 +7125,22 @@
     "summary_one": "設定済みホスト {{count}} 台",
     "summary_other": "設定済みホスト {{count}} 台",
     "title": "VNC リモートアクセス",
+    "transport": {
+      "destination": "RFB接続先",
+      "destinationHelp": "SSHルートでは、このホストとポートへRunnerから直接ではなく、選択したSSHサーバーから接続します。",
+      "direct": "Runnerから直接",
+      "empty": "保存済みSSHホストがありません。このルートを使用する前にSSH設定で追加してください。",
+      "loadFailed": "保存済みSSHホストを読み込めませんでした。",
+      "loading": "保存済みSSHホストを読み込み中…",
+      "select": "保存済みSSHホストを選択",
+      "selectionUnavailable": "選択したSSHホストは利用できません。別のホストを選択するか、明示的に直接接続へ切り替えてください。",
+      "ssh": "保存済みSSHホスト経由",
+      "sshConnection": "SSHホスト",
+      "sshHelp": "SSHはRunnerからSSHサーバーまでを保護します。そのサーバーからRFB接続先へ到達できる必要があります。AgentにはVNCとSSHの両方のアクセス権が必要です。",
+      "title": "接続ルート",
+      "unavailable": "このアカウントではSSH設定を利用できません。",
+      "via": "SSHホスト:"
+    },
     "unavailable": "このワークスペースでは VNC を利用できません。"
   },
   "workflows": {

@@ -730,25 +730,20 @@ function ArtifactDialogImageBody({
 
 function ArtifactDialogVideoBody({
   filename,
-  fullscreen,
   preview,
 }: {
   filename: string;
-  fullscreen: boolean;
   preview: AttachmentLightboxState;
 }) {
   const { t } = useTranslation();
   const resourceUrl = useLastResolved(preview.resourceUrl$) ?? null;
 
-  // Fullscreen exists to make the picture bigger. The default stage clamps its
-  // content to a reading measure, so playback has to opt out of it.
+  // Video is the canvas, not reading content. Let it use the whole preview
+  // surface in both windowed and fullscreen modes while preserving its ratio.
   return (
-    <ArtifactDialogStage centered flush={fullscreen} scrollable={!fullscreen}>
+    <ArtifactDialogStage flush scrollable={false}>
       <div
-        className={cn(
-          "w-full overflow-hidden bg-black",
-          fullscreen && "h-full min-h-0",
-        )}
+        className="h-full min-h-0 w-full overflow-hidden bg-black"
         data-testid="artifact-dialog-video-stage"
       >
         {resourceUrl !== null && (
@@ -758,10 +753,7 @@ function ArtifactDialogVideoBody({
             autoPlay
             playsInline
             preload="metadata"
-            className={cn(
-              "block w-full bg-black object-contain",
-              fullscreen ? "h-full" : "aspect-video",
-            )}
+            className="block h-full w-full bg-black object-contain"
             aria-label={t(
               ($) => {
                 return $.artifacts.preview.videoLabel;
@@ -983,13 +975,7 @@ export function ArtifactPreviewBody({
   }
 
   if (preview.kind === "video") {
-    return (
-      <ArtifactDialogVideoBody
-        filename={filename}
-        fullscreen={fullscreen}
-        preview={preview}
-      />
-    );
+    return <ArtifactDialogVideoBody filename={filename} preview={preview} />;
   }
 
   if (preview.kind === "audio") {

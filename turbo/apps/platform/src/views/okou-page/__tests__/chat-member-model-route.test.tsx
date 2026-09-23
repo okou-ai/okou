@@ -288,6 +288,7 @@ test("Refreshes the account target on explicit reconnect after a remote account 
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [
         {
           ...currentPolicy,

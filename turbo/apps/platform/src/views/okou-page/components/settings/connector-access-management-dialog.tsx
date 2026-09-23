@@ -175,7 +175,7 @@ function AgentAccessRow({
         <p className="truncate text-sm font-medium text-foreground">{name}</p>
       </div>
       {canManage && (
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={

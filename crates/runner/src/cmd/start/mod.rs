@@ -74,14 +74,9 @@ use crate::network_log_drain::{DrainableLineReaderExit, NetworkLogDrainCoordinat
 use crate::network_log_manager::NetworkLogManager;
 use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::prefetch;
-use crate::provider::{
-    ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
-    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
-};
 use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::retry::{RetryState, sleep_until_retry};
-use crate::run_cancellation::{RunCancellationRegistration, RunCancellationRegistry};
 use crate::status::{StatusTracker, remove_stale_status_file};
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceCacheWatcher, WorkspaceImageCache,
@@ -90,6 +85,11 @@ use runner_host::host;
 use runner_host::lock;
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::{
+    ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
+    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
+};
+use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
 mod active_runs;
 mod blank_pool;
@@ -726,13 +726,13 @@ async fn run_start_with_home(
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
         let group_dir = home.groups_dir().join(&group);
-        crate::local_queue::ensure_group_dir(&group_dir).map_err(|e| {
+        runner_provider::local_queue::ensure_group_dir(&group_dir).map_err(|e| {
             RunnerError::Config(format!("create group dir {}: {e}", group_dir.display()))
         })?;
         for profile in runner_config.profiles.keys() {
-            crate::local_queue::ensure_profile_jobs_dir(&group_dir, profile).map_err(|e| {
-                RunnerError::Config(format!("create job dir for profile {profile}: {e}"))
-            })?;
+            runner_provider::local_queue::ensure_profile_jobs_dir(&group_dir, profile).map_err(
+                |e| RunnerError::Config(format!("create job dir for profile {profile}: {e}")),
+            )?;
         }
         Some(group_dir)
     } else {
@@ -954,10 +954,12 @@ async fn run_start_with_home(
         let group_name = group.clone();
         let profiles: Vec<String> = runner_config.profiles.keys().cloned().collect();
         let provider = ApiProvider::new(
-            http.clone(),
+            runner_provider::ProviderHttpClient::new(http.clone()),
             server.token,
             ApiProviderConfig {
-                ssh: ssh.clone(),
+                ably_side_message_handler: ssh
+                    .clone()
+                    .map(|runtime| runtime as Arc<dyn runner_provider::AblySideMessageHandler>),
                 runner_identity,
                 runner_hostname: hostname.clone(),
                 group,
@@ -1881,7 +1883,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         if startup_readiness_cancelled {
             return Ok(());
         }
-        return Err(e);
+        return Err(e.into());
     }
 
     let mut factories = match start_factories(
@@ -2243,7 +2245,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         let pending_finalizing_deadline = pending_finalizing_candidate
             .as_ref()
             .and_then(JobCandidate::runner_preference)
-            .map(crate::provider::ActiveRunnerPreference::deadline);
+            .map(runner_provider::ActiveRunnerPreference::deadline);
         tokio::select! {
             connection = prune_listener.accept() => {
                 match connection {

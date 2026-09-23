@@ -2660,6 +2660,7 @@ describe("CHAT-01 chat thread read state", () => {
         [runningRun.threadId]: "active",
         [queuedRun.threadId]: "active",
       },
+      unreadAt: { [completedRun.threadId]: expect.any(String) },
     });
 
     chatCallbacks.mockChatOutputEvents([]);
@@ -2683,6 +2684,10 @@ describe("CHAT-01 chat thread read state", () => {
         [completedRun.threadId]: "unread",
         [runningRun.threadId]: "unread",
         [queuedRun.threadId]: "active",
+      },
+      unreadAt: {
+        [completedRun.threadId]: expect.any(String),
+        [runningRun.threadId]: expect.any(String),
       },
     });
   }, 120_000);
@@ -2719,6 +2724,7 @@ describe("CHAT-01 chat thread read state", () => {
           [recentRun.threadId]: "unread",
           [activeRun.threadId]: "active",
         },
+        unreadAt: { [recentRun.threadId]: expect.any(String) },
       });
     });
   }, 120_000);
@@ -2755,14 +2761,22 @@ describe("CHAT-01 chat thread read state", () => {
         [agentA]: "unread",
         [agentB]: "unread",
       });
+      if (!indicators.unreadAt) {
+        throw new Error("Expected unread timestamps from the current API");
+      }
       expect(Object.keys(indicators.threads)).toHaveLength(50);
+      expect(Object.keys(indicators.unreadAt)).toHaveLength(50);
       const oldestRun = runs[0];
       if (!oldestRun) {
         throw new Error("Expected an oldest completed run");
       }
       expect(indicators.threads).not.toHaveProperty(oldestRun.threadId);
+      expect(indicators.unreadAt).not.toHaveProperty(oldestRun.threadId);
       for (const run of runs.slice(1)) {
         expect(indicators.threads[run.threadId]).toBe("unread");
+        expect(indicators.unreadAt[run.threadId]).toStrictEqual(
+          expect.any(String),
+        );
       }
     });
   }, 240_000);
@@ -2818,6 +2832,11 @@ describe("CHAT-01 chat thread read state", () => {
         [completeGoalRun.threadId]: "unread",
         [activeGoalRun.threadId]: "unread",
       },
+      unreadAt: {
+        [completedRun.threadId]: expect.any(String),
+        [completeGoalRun.threadId]: expect.any(String),
+        [activeGoalRun.threadId]: expect.any(String),
+      },
     });
 
     chatCallbacks.mockChatOutputEvents([]);
@@ -2852,6 +2871,12 @@ describe("CHAT-01 chat thread read state", () => {
         [completedRun.threadId]: "unread",
         [completeGoalRun.threadId]: "unread",
         [activeGoalRun.threadId]: "unread",
+      },
+      unreadAt: {
+        [runningRun.threadId]: expect.any(String),
+        [completedRun.threadId]: expect.any(String),
+        [completeGoalRun.threadId]: expect.any(String),
+        [activeGoalRun.threadId]: expect.any(String),
       },
     });
   }, 120_000);

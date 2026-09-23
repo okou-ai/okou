@@ -170,9 +170,11 @@ test("keeps run work history off a delivery that has no Run", async () => {
 test("agrees with unread accounting about a runless delivery", async () => {
   const markedReadThreadIds: string[] = [];
   installRunChat({ chatEvents: nativeDeliveryAfterRunHistory() });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      unreads: [{ threadId: RUN_THREAD_ID, unreadAt: NATIVE_DELIVERED_AT }],
+      agents: {},
+      threads: { [RUN_THREAD_ID]: "unread" },
+      unreadAt: { [RUN_THREAD_ID]: NATIVE_DELIVERED_AT },
     });
   });
   context.mocks.api(

@@ -75,12 +75,6 @@ pub use log_flush::{MitmJsonlFlushHandle, MitmRunLogFlush};
 pub(crate) use managed_process::ManagedMitmdump;
 pub(crate) use process::MitmRestartError;
 pub use process::{MitmProxy, ProxyConfig};
-#[cfg(test)]
-pub(crate) use registry::write_test::RegistryWriteGate;
-pub(crate) use registry::{
-    ConnectorRuntimeFailCloseOutcome, ConnectorRuntimePublication, ConnectorRuntimeRegistryUpdate,
-    CustomConnectorRuntimeRegistryState,
-};
 pub use registry::{ProxyRegistryHandle, SandboxRegistration};
 pub use run_usage::{
     CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,

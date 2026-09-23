@@ -145,7 +145,7 @@ test("Rename dialog uses the latest cached title", async () => {
 test("Signed-out pages do not sync private conversations", async () => {
   let snapshotRequested = false;
   let eventsRequested = false;
-  let unreadRequested = false;
+  let indicatorsRequested = false;
   let agentsRequested = false;
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     snapshotRequested = true;
@@ -159,8 +159,8 @@ test("Signed-out pages do not sync private conversations", async () => {
       error: { code: "UNAUTHORIZED", message: "Authentication required" },
     });
   });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    unreadRequested = true;
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    indicatorsRequested = true;
     return respond(401, {
       error: { code: "UNAUTHORIZED", message: "Authentication required" },
     });
@@ -179,7 +179,7 @@ test("Signed-out pages do not sync private conversations", async () => {
   expect(window.location.pathname).toBe("/sign-in");
   expect(snapshotRequested).toBeFalsy();
   expect(eventsRequested).toBeFalsy();
-  expect(unreadRequested).toBeFalsy();
+  expect(indicatorsRequested).toBeFalsy();
   expect(agentsRequested).toBeFalsy();
 });
 
@@ -198,6 +198,7 @@ test("The unread filter applies to cached conversations", async () => {
     return respond(200, {
       agents: { [CHAT_LIST_AGENT_ID]: "unread" },
       threads: { [unread.id]: "unread" },
+      unreadAt: {},
     });
   });
 

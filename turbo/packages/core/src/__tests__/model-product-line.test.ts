@@ -16,6 +16,7 @@ describe("model product line", () => {
     // Anthropic, and behind a gateway vendor prefix on shared gateways.
     ["gpt-6-astra", "astra"],
     ["claude-fable-5-1", "fable"],
+    ["claude-opus-5-5", "opus"],
     ["deepseek-v4.1-flash", "flash"],
     ["anthropic/claude-fable-5.1", "fable"],
     ["openai/gpt-6-astra", "astra"],
@@ -38,6 +39,7 @@ describe("model product line", () => {
     ["claude-fable-5-1", true],
     ["gpt-6-astra", true],
     ["fable-6", true],
+    ["claude-opus-5-5", false],
     ["claude-opus-5", false],
     ["gpt-5.6-sol", false],
     ["deepseek-v4-pro", false],

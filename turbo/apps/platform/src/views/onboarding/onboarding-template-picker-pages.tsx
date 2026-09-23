@@ -321,31 +321,30 @@ function IllustrationTemplateCard({
   const { t } = useTranslation();
   const activeImage =
     template.previewImages[variantIndex] ?? template.previewImage;
+  const selectButtonId = `onboarding-image-template-${template.slug}`;
   return (
     <article
-      role="button"
-      tabIndex={0}
-      aria-pressed={selected}
-      aria-label={t(
-        ($) => {
-          return $.onboarding.templatePicker.image.selectTemplate;
-        },
-        { title: template.title },
-      )}
       className={cn(
-        "mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-xl border bg-background shadow-[var(--okou-card-shadow)] transition-colors hover:border-primary",
+        "relative isolate mb-3 inline-block w-full break-inside-avoid rounded-xl border bg-background shadow-[var(--okou-card-shadow)] transition-colors hover:border-primary",
         selected && "border-primary",
       )}
-      onClick={onSelect}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onSelect();
-        }
-      }}
     >
+      {/* The card isolates its full-card selection below the scrollable strip. */}
+      <button
+        id={selectButtonId}
+        type="button"
+        aria-pressed={selected}
+        aria-label={t(
+          ($) => {
+            return $.onboarding.templatePicker.image.selectTemplate;
+          },
+          { title: template.title },
+        )}
+        onClick={onSelect}
+        className="absolute -inset-px z-10 cursor-pointer rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      />
       <div
-        className="w-full overflow-hidden bg-muted"
+        className="w-full overflow-hidden rounded-t-[inherit] bg-muted"
         style={{ aspectRatio: `${template.width} / ${template.height}` }}
       >
         <img
@@ -355,39 +354,47 @@ function IllustrationTemplateCard({
           className="h-full w-full object-cover"
         />
       </div>
-      <div className="flex gap-1.5 overflow-x-auto px-2.5 pt-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {template.previewImages.map((image, index) => {
-          return (
-            <button
-              key={image}
-              type="button"
-              className={cn(
-                "h-[38px] w-[38px] shrink-0 overflow-hidden rounded-lg border p-px",
-                index === variantIndex
-                  ? "border-primary/70"
-                  : "border-transparent",
-              )}
-              aria-label={t(
-                ($) => {
-                  return $.onboarding.templatePicker.image.showVariant;
-                },
-                { title: template.title, variant: index + 1 },
-              )}
-              aria-pressed={index === variantIndex}
-              onClick={(event) => {
-                event.stopPropagation();
-                onVariantChange(index);
-              }}
-            >
-              <img
-                src={r2ImageTransformUrl(image, { width: 76 })}
-                alt=""
-                loading="lazy"
-                className="h-full w-full rounded-md object-cover"
-              />
-            </button>
-          );
-        })}
+      <div className="relative z-20 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="relative flex w-max min-w-full gap-1.5 px-2.5 pt-2">
+          {/* A native label keeps gaps clickable without covering the scroll
+              surface. The independent variant buttons are its siblings. */}
+          <label
+            htmlFor={selectButtonId}
+            aria-hidden="true"
+            className="absolute inset-0 cursor-pointer"
+          />
+          {template.previewImages.map((image, index) => {
+            return (
+              <button
+                key={image}
+                type="button"
+                className={cn(
+                  "relative h-[38px] w-[38px] shrink-0 cursor-pointer overflow-hidden rounded-lg border p-px hover:border-primary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  index === variantIndex
+                    ? "border-primary/70"
+                    : "border-transparent",
+                )}
+                aria-label={t(
+                  ($) => {
+                    return $.onboarding.templatePicker.image.showVariant;
+                  },
+                  { title: template.title, variant: index + 1 },
+                )}
+                aria-pressed={index === variantIndex}
+                onClick={() => {
+                  onVariantChange(index);
+                }}
+              >
+                <img
+                  src={r2ImageTransformUrl(image, { width: 76 })}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full rounded-md object-cover"
+                />
+              </button>
+            );
+          })}
+        </div>
       </div>
       <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 py-[9px]">
         <span className="truncate text-[11px] font-semibold leading-4">

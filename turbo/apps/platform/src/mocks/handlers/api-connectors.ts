@@ -33,7 +33,7 @@ import {
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
-import { sshCloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
+import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { mockApi } from "../msw-contract.ts";
 import {
@@ -423,7 +423,7 @@ export const apiConnectorsHandlers = [
   mockApi(sshCredentialsContract.list, ({ respond }) => {
     return respond(200, { credentials: [] });
   }),
-  mockApi(sshCloudflareAccessContract.list, ({ respond }) => {
+  mockApi(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [] });
   }),
   mockApi(agentSshAccessContract.get, ({ respond }) => {

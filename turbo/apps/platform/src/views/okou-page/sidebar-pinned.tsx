@@ -371,7 +371,7 @@ function PinnedAgentGridCard({
   );
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip disabled={isDragInFlight}>
         <TooltipTrigger render={card} />
         <TooltipContent side="top">

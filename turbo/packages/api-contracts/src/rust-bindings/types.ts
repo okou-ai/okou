@@ -310,6 +310,10 @@ export const rustTypeBindings = [
           minCliVersion: [
             "Lowest installed Okou CLI release allowed to run this launch payload.",
           ],
+          requiredPiSessionConstructionDigest: [
+            "Digest of the session construction the API prepared this turn with;",
+            "when present it replaces the runtime version as the parity key.",
+          ],
         },
       },
       {

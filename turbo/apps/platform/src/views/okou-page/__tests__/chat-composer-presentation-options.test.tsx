@@ -95,13 +95,20 @@ function visibleText(message: SubmittedMessage | undefined): string {
   );
 }
 
-test("Presentation offers the documented slide counts and default", async () => {
+test("Presentation defaults to 8-12 slides", async () => {
   setupModels();
   mockChatLifecycle(context);
   const editor = await setupComposer();
   expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
   const picker = await enterPresentation(editor);
   expect(picker).toHaveTextContent("8–12 slides");
+});
+
+test("Presentation offers every documented slide count", async () => {
+  setupModels();
+  mockChatLifecycle(context);
+  const editor = await setupComposer();
+  const picker = await enterPresentation(editor);
   click(picker);
   const menu = await screen.findByRole("listbox");
   expect(

@@ -4,6 +4,7 @@ import type {
   BrowserUserActionApplyRequest,
   BrowserUserActionCreateRequest,
   BrowserUserActionResponse,
+  BrowserUserActionState,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/contracts/browser";
 import {
@@ -18,7 +19,7 @@ import {
   browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
-import { and, eq, gt, inArray, lt } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, lt, lte } from "drizzle-orm";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
@@ -32,6 +33,7 @@ import {
   BrowserUseUserActionValidationError,
   BrowserUseUserActionMutationError,
   getBrowserUseSession,
+  preflightBrowserUseUserAction,
   validateBrowserUseUserAction,
 } from "./browser-use.service";
 import {
@@ -43,6 +45,13 @@ import {
 const REQUEST_TOKEN_PREFIX = "vm0_browser_user_action";
 const APPLY_STUCK_AFTER_MS = 60_000;
 const IDLE_LEASE_MS = BROWSER_IDLE_LEASE_MINUTES * 60_000;
+const CALLBACK_RECOVERY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const TERMINAL_STATES: readonly BrowserUserActionState[] = [
+  "succeeded",
+  "cancelled",
+  "stale",
+  "uncertain",
+];
 
 type RequestRow = typeof browserUserActionRequests.$inferSelect;
 
@@ -320,6 +329,161 @@ async function finalize(
     )
     .returning();
   return row ?? null;
+}
+
+async function convertClosedBrowserUserActions(
+  db: Db,
+  limit: number,
+  chatThreadIds: readonly string[] | null,
+  signal: AbortSignal,
+): Promise<number> {
+  const candidates = await db
+    .select({
+      requestTokenHash: browserUserActionRequests.requestTokenHash,
+      providerSessionId: browserUserActionRequests.providerSessionId,
+      status: browserUserActionRequests.status,
+      finishedAt: browserSessionInstances.finishedAt,
+    })
+    .from(browserUserActionRequests)
+    .innerJoin(
+      browserSessionInstances,
+      eq(
+        browserSessionInstances.providerSessionId,
+        browserUserActionRequests.providerSessionId,
+      ),
+    )
+    .where(
+      and(
+        inArray(browserUserActionRequests.status, ["pending", "applying"]),
+        eq(browserSessionInstances.status, "stopped"),
+        isNotNull(browserSessionInstances.finishedAt),
+        chatThreadIds === null
+          ? undefined
+          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
+      ),
+    )
+    .orderBy(asc(browserUserActionRequests.requestTokenHash))
+    .limit(limit);
+  signal.throwIfAborted();
+
+  for (const candidate of candidates) {
+    if (
+      candidate.finishedAt === null ||
+      (candidate.status !== "pending" && candidate.status !== "applying")
+    ) {
+      throw new Error("Expected a closed Browser user-action candidate");
+    }
+    const nextStatus = candidate.status === "pending" ? "stale" : "uncertain";
+    await db
+      .update(browserUserActionRequests)
+      .set({
+        status: nextStatus,
+        completedAt: candidate.finishedAt,
+      })
+      .where(
+        and(
+          eq(
+            browserUserActionRequests.requestTokenHash,
+            candidate.requestTokenHash,
+          ),
+          eq(
+            browserUserActionRequests.providerSessionId,
+            candidate.providerSessionId,
+          ),
+          eq(browserUserActionRequests.status, candidate.status),
+        ),
+      );
+    signal.throwIfAborted();
+  }
+  return candidates.length;
+}
+
+async function deleteExpiredBrowserUserActions(
+  db: Db,
+  limit: number,
+  chatThreadIds: readonly string[] | null,
+  signal: AbortSignal,
+): Promise<number> {
+  const cutoff = new Date(nowDate().getTime() - CALLBACK_RECOVERY_RETENTION_MS);
+  const candidates = await db
+    .select({
+      requestTokenHash: browserUserActionRequests.requestTokenHash,
+      providerSessionId: browserUserActionRequests.providerSessionId,
+      status: browserUserActionRequests.status,
+      completedAt: browserUserActionRequests.completedAt,
+    })
+    .from(browserUserActionRequests)
+    .innerJoin(
+      browserSessionInstances,
+      eq(
+        browserSessionInstances.providerSessionId,
+        browserUserActionRequests.providerSessionId,
+      ),
+    )
+    .where(
+      and(
+        inArray(browserUserActionRequests.status, [...TERMINAL_STATES]),
+        isNotNull(browserUserActionRequests.completedAt),
+        lte(browserUserActionRequests.completedAt, cutoff),
+        eq(browserSessionInstances.status, "stopped"),
+        isNotNull(browserSessionInstances.finishedAt),
+        lte(browserSessionInstances.finishedAt, cutoff),
+        chatThreadIds === null
+          ? undefined
+          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
+      ),
+    )
+    .orderBy(asc(browserUserActionRequests.requestTokenHash))
+    .limit(limit);
+  signal.throwIfAborted();
+
+  for (const candidate of candidates) {
+    if (
+      candidate.completedAt === null ||
+      !TERMINAL_STATES.includes(candidate.status)
+    ) {
+      throw new Error("Expected a retained Browser user-action candidate");
+    }
+    await db
+      .delete(browserUserActionRequests)
+      .where(
+        and(
+          eq(
+            browserUserActionRequests.requestTokenHash,
+            candidate.requestTokenHash,
+          ),
+          eq(
+            browserUserActionRequests.providerSessionId,
+            candidate.providerSessionId,
+          ),
+          eq(browserUserActionRequests.status, candidate.status),
+          eq(browserUserActionRequests.completedAt, candidate.completedAt),
+        ),
+      );
+    signal.throwIfAborted();
+  }
+  return candidates.length;
+}
+
+export async function reconcileBrowserUserActions(
+  db: Db,
+  limit: number,
+  chatThreadIds: readonly string[] | null,
+  signal: AbortSignal,
+): Promise<number> {
+  const checkedForConversion = await convertClosedBrowserUserActions(
+    db,
+    limit,
+    chatThreadIds,
+    signal,
+  );
+  const checkedForCleanup = await deleteExpiredBrowserUserActions(
+    db,
+    limit,
+    chatThreadIds,
+    signal,
+  );
+  return checkedForConversion + checkedForCleanup;
 }
 
 interface CreateBrowserUserActionArgs {
@@ -831,6 +995,137 @@ function exactInputTarget(
     pageUrlHash: payload.target.pageUrlHash,
   };
 }
+
+async function markPendingBrowserUserActionStale(
+  db: Db,
+  row: RequestRow,
+): Promise<RequestRow | null> {
+  const [stale] = await db
+    .update(browserUserActionRequests)
+    .set({ status: "stale", completedAt: nowDate() })
+    .where(
+      and(
+        eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
+        eq(browserUserActionRequests.status, "pending"),
+      ),
+    )
+    .returning();
+  return stale ?? null;
+}
+
+export const preflightBrowserUserAction$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly requestToken: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ServiceResult<BrowserUserActionResponse>> => {
+    const db = set(writeDb$);
+    const located = await loadOwnedRequest(db, args);
+    signal.throwIfAborted();
+    if (!located) {
+      return notFound();
+    }
+    const admitted = await withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: located.chatThreadId,
+        authorize: (identity) => {
+          return authorized(located, identity);
+        },
+        threadLock: "update",
+      },
+      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
+        const operationDb = tx as Db;
+        const current = await loadExactRequest(operationDb, located);
+        if (!current) {
+          return notFound();
+        }
+        const payload = decodePayload(current);
+        if (!payload) {
+          return conflict(
+            "Browser user-action request payload is unavailable",
+            "BROWSER_USER_ACTION_UNAVAILABLE",
+          );
+        }
+        if (payload.kind !== "input") {
+          return conflict("This Browser request does not accept input values");
+        }
+        if (current.status !== "pending") {
+          return conflict("Browser input is no longer pending");
+        }
+        const leased = await touchExactProvider(operationDb, current);
+        if (!leased) {
+          return expired();
+        }
+        const provider = await settle(
+          getBrowserUseSession(current.providerSessionId, signal),
+        );
+        signal.throwIfAborted();
+        if (!provider.ok) {
+          return providerFailure(provider.error);
+        }
+        if (provider.value.status === "stopped") {
+          const stale = await markPendingBrowserUserActionStale(
+            operationDb,
+            current,
+          );
+          return stale
+            ? {
+                kind: "ok",
+                value: publicRequest(stale, args.requestToken, payload),
+              }
+            : conflict("Browser input state changed during preflight");
+        }
+        if (!provider.value.cdpUrl) {
+          return providerFailure(new Error("Browser provider is not active"));
+        }
+        const target = exactInputTarget(payload);
+        const checked = await settle(
+          preflightBrowserUseUserAction(
+            provider.value.cdpUrl,
+            {
+              ...target,
+              fields: payload.target.fields.map((field) => {
+                return {
+                  backendNodeId: field.backendNodeId,
+                  fingerprint: field.fingerprint,
+                };
+              }),
+            },
+            signal,
+          ),
+        );
+        signal.throwIfAborted();
+        if (!checked.ok) {
+          return providerFailure(checked.error);
+        }
+        if (checked.value === "stale") {
+          const stale = await markPendingBrowserUserActionStale(
+            operationDb,
+            current,
+          );
+          if (!stale) {
+            return conflict("Browser input state changed during preflight");
+          }
+          return {
+            kind: "ok",
+            value: publicRequest(stale, args.requestToken, payload),
+          };
+        }
+        return {
+          kind: "ok",
+          value: publicRequest(current, args.requestToken, payload),
+        };
+      },
+      signal,
+    );
+    return admitted.outcome === "written" ? admitted.value : notFound();
+  },
+);
 
 async function claimBrowserUserAction(
   db: Db,
