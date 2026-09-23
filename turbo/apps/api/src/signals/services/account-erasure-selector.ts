@@ -77,6 +77,8 @@ const selectorSchema = z.discriminatedUnion("kind", [
     version: z.literal(1),
     kind: z.literal("provider"),
     accountRef: z.uuid(),
+    subjectId: z.string().min(1).max(192),
+    sourceId: z.uuid().optional(),
     resourceType: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
     resourceId: z.string().min(1).max(512),
   }),

@@ -92,7 +92,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
     .select()
     .from(accountErasureSinks)
     .where(eq(accountErasureSinks.jobId, captured?.id ?? ""));
-  expect(sinks).toHaveLength(7);
+  expect(sinks).toHaveLength(9);
   const inventory = await db
     .select()
     .from(accountErasureWork)
@@ -101,7 +101,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
     inventory.filter((item) => {
       return item.kind === "inventory";
     }),
-  ).toHaveLength(7);
+  ).toHaveLength(9);
   expect(
     inventory.every((item) => {
       return item.kind !== "inventory" || item.captureComplete;

@@ -703,6 +703,12 @@ export default [
       // Export result and staging bytes must disappear after the owner row is
       // removed; no API can create that sealed-capture replay state.
       "src/signals/services/__tests__/account-erasure-export-object-collector.test.ts",
+      // Provider profile capture needs a sealed catalog row followed by a
+      // deleted row and an authenticated provider read; no route exposes it.
+      "src/signals/services/__tests__/account-erasure-browser-profile-collector.test.ts",
+      // A stopped remote browser still retains a provider record. This DB
+      // capture/terminal-state test requires a removed thread and sealed lease.
+      "src/signals/services/__tests__/account-erasure-browser-session-collector.test.ts",
       // Storage erasure must use a sealed locator after its catalog row is
       // gone; no endpoint can construct that dormant executor state yet.
       "src/signals/services/__tests__/account-erasure-storage-object-collector.test.ts",
@@ -943,6 +949,8 @@ export default [
       "src/signals/services/__tests__/account-erasure.service.test.ts",
       "src/signals/services/__tests__/account-erasure-user-executor.test.ts",
       "src/signals/services/__tests__/account-erasure-export-object-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-browser-profile-collector.test.ts",
+      "src/signals/services/__tests__/account-erasure-browser-session-collector.test.ts",
       // Immutable Feishu ownership must be measured across admission,
       // disconnect and rebind commits, which HTTP cannot interleave.
       "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
