@@ -405,6 +405,41 @@ async fn archive_required_instruction_does_not_exclude_same_key_decoded_targets(
 }
 
 #[tokio::test]
+async fn missing_decoded_files_do_not_mark_same_key_artifact_ineligible() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home);
+    let url = "https://storage.example/unused";
+    let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
+    instruction.instructions_target_filename = Some("AGENTS.md".into());
+    let mut plan = plan_from_entries(
+        vec![instruction],
+        vec![artifact_entry(
+            "/mnt/artifact".into(),
+            url.into(),
+            NAME,
+            VERSION,
+        )],
+        None,
+    );
+    let mut groups = group_targets(collect_targets(plan.cache_candidates()));
+    let mut telemetry = new_telemetry();
+
+    prepare_decoded_storage(&mut plan, &mut groups, &cache, &mut telemetry)
+        .await
+        .unwrap();
+
+    assert!(plan.take_decoded().is_empty());
+    assert!(
+        telemetry
+            .pending_ops_snapshot()
+            .iter()
+            .all(|(action, _, _)| action != STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE)
+    );
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn mixed_key_does_not_hide_corrupt_decoded_files_from_eligible_targets() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

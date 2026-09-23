@@ -1706,15 +1706,14 @@ async fn prepare_decoded_storage(
             RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
         })?;
         for (group, files) in batch.iter_mut().zip(ready) {
-            let decoded_eligible = is_decoded_download_group(group, plan);
             group.decoded_ready_observed = files.is_some();
             let decoded_reused = reuse_decoded(plan, group, files)?;
-            if group
-                .targets
-                .iter()
-                .any(|target| target.handle.is_artifact() && !plan.has_decoded(target.handle))
-                && (!decoded_eligible || (group.decoded_ready_observed && !decoded_reused))
-            {
+            if group.targets.iter().any(|target| {
+                target.handle.is_artifact()
+                    && !plan.has_decoded(target.handle)
+                    && (!plan.is_decoded_download(target.handle)
+                        || (group.decoded_ready_observed && !decoded_reused))
+            }) {
                 telemetry.record(
                     STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE,
                     Duration::ZERO,
