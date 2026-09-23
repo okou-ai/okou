@@ -1,5 +1,5 @@
 import { mockClerkUsers } from "./clerk-users";
-import { createHmac, randomInt, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 
 import {
   integrationsPhoneUploadCompleteContract,
@@ -125,7 +125,7 @@ export function uniqueConversationId(): string {
 }
 
 export function bddGroupId(conversationId: string): string {
-  return `grp_bdd_${createHmac("sha256", "agentphone-bdd-group")
+  return `grp_bdd_${createHash("sha256")
     .update(conversationId)
     .digest("hex")
     .slice(0, 16)}`;
