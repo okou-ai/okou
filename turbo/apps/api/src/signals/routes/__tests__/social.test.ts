@@ -433,6 +433,7 @@ describe("managed SocialKit route", () => {
           likes: 4,
           comments: 2,
           author: "example",
+          duration: null,
           videoUrl: "https://media.example/video.mp4",
         };
         server.use(

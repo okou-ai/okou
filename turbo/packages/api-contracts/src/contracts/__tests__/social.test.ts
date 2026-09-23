@@ -79,12 +79,12 @@ describe("managed SocialKit contract", () => {
     },
   );
 
-  it("accepts nullable Instagram views without widening other counts", () => {
+  it("accepts nullable Instagram views and duration without widening counts", () => {
     const resultSchema = MANAGED_SOCIALKIT_TOOLS.find((tool) => {
       return tool.name === "instagram_stats";
     })!.resultSchema;
     for (const result of [
-      { views: null, likes: 4, author: "example" },
+      { views: null, duration: null, likes: 4, author: "example" },
       { likes: 4, author: "example" },
       { views: 0, likes: 4, author: "example" },
       { views: 12, likes: 4, author: "example" },
