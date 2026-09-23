@@ -773,7 +773,7 @@ export function assertRelationalSweepComplete(
 }
 
 function subjectPredicate(root: RelationalErasureRoot, id: string) {
-  return sql.join(
+  const owner = sql.join(
     root.owners.map((owner) => {
       const column = sql`${sql.identifier(root.table)}.${sql.identifier(owner.column)}`;
       if (owner.kind === "direct") {
@@ -793,6 +793,12 @@ function subjectPredicate(root: RelationalErasureRoot, id: string) {
     }),
     sql` OR `,
   );
+  // The durable user.deleted task is the executor's control record. Erasing
+  // it inside its own sweep loses the lease before the worker can verify and
+  // complete the B1 job. Other background work remains account-owned.
+  return root.table === "background_jobs"
+    ? sql`(${owner}) AND ${sql.identifier(root.table)}.${sql.identifier("kind")} <> 'clerk-user-deletion'`
+    : owner;
 }
 
 /** The descendant's own membership test, built from the path's hops.
@@ -873,7 +879,7 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "3309e929-944d-4a10-a647-b4c9387c35bd";
+  "a296ba1a-e288-4ad9-9238-29ad0ab2e36e";
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
@@ -1069,6 +1075,20 @@ export async function sweepRelationalErasure(
       },
       binding.required,
     );
+    // A user-export worker can still write result or staging bytes after D1
+    // closes new admissions. Its durable row is the cleanup coordinator; do
+    // not sweep that row until export cleanup has quiesced the writer, aborted
+    // uploads and removed the row itself.
+    const [activeExport] = await executeRawRows(
+      tx,
+      sql`SELECT id FROM background_jobs
+          WHERE user_id = ${subject.subjectId} AND kind = 'user-export'
+          LIMIT 1`,
+      z.object({ id: z.uuid() }),
+    );
+    if (activeExport) {
+      throw new Error("account_erasure_relational:export_work_unresolved");
+    }
     const owned = plan.order.map((root) => {
       return {
         table: root.table,

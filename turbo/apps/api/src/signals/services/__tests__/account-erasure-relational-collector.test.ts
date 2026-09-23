@@ -616,6 +616,98 @@ describe("dormant relational sweep", () => {
     return { job, sealed };
   }
 
+  it("keeps its durable deletion task while sweeping other owner jobs", async () => {
+    const mine = account("control");
+    const theirs = account("control-survivor");
+    const controlId = randomUUID();
+    const exportId = randomUUID();
+    const survivorId = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(sql`
+        DELETE FROM background_jobs
+        WHERE id IN (${controlId}, ${exportId}, ${survivorId})
+      `);
+    });
+    await db.execute(sql`
+      INSERT INTO background_jobs
+        (id, kind, handler_version, user_id, org_id, input)
+      VALUES
+        (${controlId}, 'clerk-user-deletion', 1, ${mine}, '', '{}'::jsonb),
+        (${exportId}, 'account-task-fixture', 1, ${mine}, '', '{}'::jsonb),
+        (${survivorId}, 'account-task-fixture', 1, ${theirs}, '', '{}'::jsonb)
+    `);
+
+    const plan = await planRelationalErasure(db);
+    const { job, sealed } = await drive(mine, {
+      ...plan,
+      unattributableDescendants: [],
+    });
+    const remaining = await db.execute(sql`
+      SELECT id FROM background_jobs
+      WHERE id IN (${controlId}, ${exportId}, ${survivorId})
+      ORDER BY id
+    `);
+    expect(remaining.rows).toStrictEqual(
+      [{ id: controlId }, { id: survivorId }].sort((a, b) => {
+        return a.id.localeCompare(b.id);
+      }),
+    );
+    expect(
+      await relationalErasureResidual(
+        db,
+        { subjectKind: "user", subjectId: mine },
+        plan,
+      ),
+    ).toStrictEqual([]);
+    // The inventory proof may run before its erase sibling. Retry it after
+    // the sweep so the gate sees the same sealed revision with no residual.
+    await db.execute(sql`
+      UPDATE account_erasure_work SET available_at = clock_timestamp()
+      WHERE job_id = ${job.id} AND kind = 'inventory'
+    `);
+    const [inventory] = await claimErasureWork(db, job.id, "verification");
+    expect(inventory).toBeDefined();
+    if (inventory) {
+      await executeErasureWork(
+        db,
+        inventory,
+        createRelationalErasureCollector(db, {
+          ...plan,
+          unattributableDescendants: [],
+        }),
+        context.signal,
+      );
+    }
+    expect((await finalizeErasureJob(db, job.id, sealed)).state).toBe(
+      "verified_erased",
+    );
+  });
+
+  it("holds the relational sweep while an export cleanup coordinator exists", async () => {
+    const mine = account("export-inflight");
+    const exportId = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM background_jobs WHERE id = ${exportId}`);
+      await db.execute(sql`DELETE FROM users WHERE id = ${mine}`);
+    });
+    await db.execute(sql`INSERT INTO users (id) VALUES (${mine})`);
+    await db.execute(sql`
+      INSERT INTO background_jobs
+        (id, kind, handler_version, user_id, org_id, input)
+      VALUES (${exportId}, 'user-export', 1, ${mine}, '', '{}'::jsonb)
+    `);
+    const plan = await planRelationalErasure(db);
+    await expect(
+      drive(mine, { ...plan, unattributableDescendants: [] }),
+    ).rejects.toThrow("account_erasure_relational:export_work_unresolved");
+    const remaining = await db.execute(sql`
+      SELECT
+        (SELECT count(*)::int FROM users WHERE id = ${mine}) AS users,
+        (SELECT count(*)::int FROM background_jobs WHERE id = ${exportId}) AS export_jobs
+    `);
+    expect(remaining.rows).toStrictEqual([{ users: 1, export_jobs: 1 }]);
+  });
+
   it("releases only deleted conversation and candidate blob retains", async () => {
     const mine = account("blob-owner");
     const theirs = account("blob-survivor");
