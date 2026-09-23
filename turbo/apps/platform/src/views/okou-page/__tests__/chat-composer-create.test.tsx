@@ -185,51 +185,48 @@ test("The type a slash command selects states the run in the action row", async 
   );
 });
 
-test.each(["presentation"] as const)(
-  "Persisted %s additional info stays out of the message and copied text",
-  async (mode) => {
-    setupModels();
-    const clipboard = context.mocks.browser.clipboardWrite();
-    mockChatLifecycle(context, {
-      threadId: THREAD_ID,
-      chatEvents: [
-        {
-          role: "user",
-          content: null,
-          userMessage: {
-            version: 1,
-            parts: [
-              {
-                type: "additional_info",
-                text: `Create ${mode === "image" ? "an" : "a"} ${mode}.\nAdditional generation settings.`,
-              },
-              { type: "text", text: "Our launch brief" },
-            ],
-          },
-          createdAt: "2026-09-07T00:00:00.000Z",
+test("Persisted additional info stays out of the message and copied text", async () => {
+  setupModels();
+  const clipboard = context.mocks.browser.clipboardWrite();
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    chatEvents: [
+      {
+        role: "user",
+        content: null,
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "additional_info",
+              text: "Create a presentation.\nAdditional generation settings.",
+            },
+            { type: "text", text: "Our launch brief" },
+          ],
         },
-      ],
-    });
-    await setupPage({
-      context,
-      path: `/chats/${THREAD_ID}`,
-      featureSwitches: { [FeatureSwitchKey.ComposerTaskChips]: true },
-    });
-    const text = await screen.findByText("Our launch brief");
-    const message = text.closest<HTMLElement>('[data-role="user"]');
-    if (!message) {
-      throw new Error("Expected the user message");
-    }
-    expect(message).toBeVisible();
-    expect(message).not.toHaveTextContent("Create");
-    expect(message).not.toHaveTextContent("Additional generation settings");
-    click(button("Copy message", message));
-    const item = await readSingleRichClipboardWrite(clipboard);
-    await expect(readClipboardItemText(item, "text/plain")).resolves.toBe(
-      "Our launch brief",
-    );
-  },
-);
+        createdAt: "2026-09-07T00:00:00.000Z",
+      },
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerTaskChips]: true },
+  });
+  const text = await screen.findByText("Our launch brief");
+  const message = text.closest<HTMLElement>('[data-role="user"]');
+  if (!message) {
+    throw new Error("Expected the user message");
+  }
+  expect(message).toBeVisible();
+  expect(message).not.toHaveTextContent("Create");
+  expect(message).not.toHaveTextContent("Additional generation settings");
+  click(button("Copy message", message));
+  const item = await readSingleRichClipboardWrite(clipboard);
+  await expect(readClipboardItemText(item, "text/plain")).resolves.toBe(
+    "Our launch brief",
+  );
+});
 
 async function setupQueuedCreateConversation(): Promise<UserMessageDocument[]> {
   setupModels();
