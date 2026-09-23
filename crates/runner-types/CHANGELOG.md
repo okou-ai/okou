@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.4](https://github.com/okou-ai/okou/compare/runner-types-v0.1.3...runner-types-v0.1.4) (2026-09-23)
+
+
+### Refactoring
+
+* **runner:** extract provider coordination crate ([#36148](https://github.com/okou-ai/okou/issues/36148)) ([789a24f](https://github.com/okou-ai/okou/commit/789a24f6632566071af38533d4df58a0ef0c0c75))
+
+## [0.1.3](https://github.com/okou-ai/okou/compare/runner-types-v0.1.2...runner-types-v0.1.3) (2026-09-22)
+
 ## [0.1.2](https://github.com/okou-ai/okou/compare/runner-types-v0.1.1...runner-types-v0.1.2) (2026-09-22)
 
 

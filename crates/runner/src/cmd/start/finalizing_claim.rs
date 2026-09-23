@@ -74,11 +74,11 @@ use crate::executor::{
     FinalizingHandoffReason, RunnerPreSpawnPhase, RunnerPreSpawnTiming, validate_resume_session_id,
 };
 use crate::idle_pool::{ExactIdleReservationMiss, FinalizingHandoffCandidate};
-use crate::provider::ClaimedJob;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
-use crate::run_cancellation::RunCancellationRegistration;
 use crate::telemetry::JobTelemetry;
 use crate::workspace_image_cache::WorkspaceImagePrepareLockPolicy;
+use runner_provider::ClaimedJob;
+use runner_provider::RunCancellationRegistration;
 use runner_types::ids::RunId;
 use runner_types::types::{CompleteRequest, SandboxReuseResult};
 

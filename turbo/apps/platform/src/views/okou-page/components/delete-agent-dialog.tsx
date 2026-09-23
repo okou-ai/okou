@@ -145,6 +145,68 @@ interface AgentDeleteReconcileViewProps {
   setCopyChoices: (choices: Record<string, string>) => void;
 }
 
+function AgentDeleteWorkflowDestination({
+  items,
+  value,
+  disabled,
+  workflowTitle,
+  onValueChange,
+}: {
+  items: readonly { value: string; label: string }[];
+  value: string;
+  disabled: boolean;
+  workflowTitle: string;
+  onValueChange: (value: string) => void;
+}) {
+  const { t } = useTranslation("agents");
+  const reloadAgents = useSet(reloadAgents$);
+  return (
+    <Select
+      items={items}
+      value={value}
+      disabled={disabled}
+      onOpenChange={(open) => {
+        if (open) {
+          reloadAgents();
+        }
+      }}
+      onValueChange={(value, details) => {
+        if (
+          value === null ||
+          !items.some((item) => {
+            return item.value === value;
+          })
+        ) {
+          details.cancel();
+          return;
+        }
+        onValueChange(value);
+      }}
+    >
+      <SelectTrigger
+        className="w-full focus-visible:ring-inset focus-visible:-outline-offset-2"
+        aria-label={t(
+          ($) => {
+            return $.delete.workflows.handle;
+          },
+          { workflowTitle },
+        )}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {items.map((item) => {
+          return (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          );
+        })}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function AgentDeleteReconcileView({
   agentName,
   deleting,
@@ -157,7 +219,27 @@ function AgentDeleteReconcileView({
   setCopyChoices,
 }: AgentDeleteReconcileViewProps) {
   const { t } = useTranslation("agents");
-  const reloadAgents = useSet(reloadAgents$);
+  const destinationItems = [
+    {
+      value: DELETE_WITH_AGENT,
+      label: t(($) => {
+        return $.delete.workflows.deleteWithAgent;
+      }),
+    },
+    ...deleteCopyTargets.map((target) => {
+      return {
+        value: target.id,
+        label: t(
+          ($) => {
+            return $.delete.workflows.copyTo;
+          },
+          {
+            agentName: target.displayName ?? target.id,
+          },
+        ),
+      };
+    }),
+  ];
 
   return (
     <div className="grid grid-cols-[264px_1fr]">
@@ -208,49 +290,15 @@ function AgentDeleteReconcileView({
                 >
                   {workflow.title}
                 </span>
-                <Select
+                <AgentDeleteWorkflowDestination
+                  items={destinationItems}
                   value={copyChoices[workflow.id] ?? DELETE_WITH_AGENT}
                   disabled={deleting || copying || !workflowsReady}
-                  onOpenChange={(open) => {
-                    if (open) {
-                      reloadAgents();
-                    }
-                  }}
+                  workflowTitle={workflow.title}
                   onValueChange={(value) => {
                     setCopyChoices({ ...copyChoices, [workflow.id]: value });
                   }}
-                >
-                  <SelectTrigger
-                    className="w-full focus-visible:ring-inset focus-visible:-outline-offset-2"
-                    aria-label={t(
-                      ($) => {
-                        return $.delete.workflows.handle;
-                      },
-                      { workflowTitle: workflow.title },
-                    )}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={DELETE_WITH_AGENT}>
-                      {t(($) => {
-                        return $.delete.workflows.deleteWithAgent;
-                      })}
-                    </SelectItem>
-                    {deleteCopyTargets.map((target) => {
-                      return (
-                        <SelectItem key={target.id} value={target.id}>
-                          {t(
-                            ($) => {
-                              return $.delete.workflows.copyTo;
-                            },
-                            { agentName: target.displayName ?? target.id },
-                          )}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                />
               </div>
             );
           })}

@@ -121,6 +121,26 @@ const GPT_6_ASTRA_PRICING: readonly UsagePricingRow[] = [
   ["tokens.output", usd(50), 1_000_000],
 ];
 
+// Official Standard token rates / 0.8, rounded per billing category.
+const GPT_6_LUNA_PRICING: readonly UsagePricingRow[] = [
+  ["tokens.input", 125, 1_000_000],
+  ["tokens.cache_read", 13, 1_000_000],
+  ["tokens.cache_creation", 156, 1_000_000],
+  ["tokens.output", 625, 1_000_000],
+  ["tokens.input.long_context", 250, 1_000_000],
+  ["tokens.cache_read.long_context", 25, 1_000_000],
+  ["tokens.cache_creation.long_context", 313, 1_000_000],
+  ["tokens.output.long_context", 938, 1_000_000],
+  ["tokens.input.fast", 250, 1_000_000],
+  ["tokens.cache_read.fast", 25, 1_000_000],
+  ["tokens.cache_creation.fast", 313, 1_000_000],
+  ["tokens.output.fast", 1250, 1_000_000],
+  ["tokens.input.long_context.fast", 500, 1_000_000],
+  ["tokens.cache_read.long_context.fast", 50, 1_000_000],
+  ["tokens.cache_creation.long_context.fast", 625, 1_000_000],
+  ["tokens.output.long_context.fast", 1875, 1_000_000],
+];
+
 const GPT_5_6_SOL_PRICING: readonly UsagePricingRow[] = [
   ["tokens.input", usd(5), 1_000_000],
   ["tokens.cache_read", usd(0.5), 1_000_000],
@@ -457,6 +477,8 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     "gpt-6-astra",
     withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
   ),
+  // https://developers.openai.com/api/docs/models/gpt-6-luna
+  ...usageGroup("model", "gpt-6-luna", GPT_6_LUNA_PRICING),
   // OpenAI API pricing retrieved 2026-07-31 from:
   // https://developers.openai.com/api/docs/pricing
   ...usageGroup("model", "gpt-5.6-sol", GPT_5_6_SOL_USAGE_PRICING),

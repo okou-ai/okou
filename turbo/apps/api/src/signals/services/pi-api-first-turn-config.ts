@@ -116,6 +116,14 @@ export function requirePiApiFirstTurnExecutionContext(
           : {
               minCliVersion: context.piLaunchConfig.apiFirstTurn.minCliVersion,
             }),
+        ...(context.piLaunchConfig.apiFirstTurn
+          .requiredPiSessionConstructionDigest === undefined
+          ? {}
+          : {
+              requiredPiSessionConstructionDigest:
+                context.piLaunchConfig.apiFirstTurn
+                  .requiredPiSessionConstructionDigest,
+            }),
       },
     },
     platformEnvironment: context.platformEnvironment,

@@ -40,6 +40,14 @@ describe("chat reasoning effort capabilities", () => {
       "max",
       "ultra",
     ]);
+    expect(getModelReasoningEfforts("gpt-6-luna")).toStrictEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(defaultModelReasoningEffort("gpt-6-luna")).toBe("max");
     expect(defaultModelReasoningEffort("gpt-5.6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("gpt-6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("deepseek-v4-flash")).toBe("high");

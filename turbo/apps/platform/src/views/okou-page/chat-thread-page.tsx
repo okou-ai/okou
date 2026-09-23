@@ -654,6 +654,7 @@ export function ChatThreadHeaderTitle({
   const threadTitle = useGet(thread.threadTitle$)?.trim() ?? "";
   const threadTitleEmoji = useGet(thread.threadTitleEmoji$);
   const threadTitleText = useGet(thread.threadTitleText$);
+  const optimisticCreateUnsettled = useGet(thread.optimisticCreateUnsettled$);
   const openRenameChatThreadDialog = useSet(
     openRenameChatThreadDialogForThreadId$,
   );
@@ -669,16 +670,20 @@ export function ChatThreadHeaderTitle({
 
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <ChatThreadEmojiMenuButton
-        threadId={thread.threadId}
-        title={threadTitle}
-        emoji={threadTitleEmoji}
-      />
+      {!optimisticCreateUnsettled && (
+        <ChatThreadEmojiMenuButton
+          threadId={thread.threadId}
+          title={threadTitle}
+          emoji={threadTitleEmoji}
+        />
+      )}
       {threadTitleText && (
         <span
           className="min-w-0 truncate text-sm font-medium text-foreground"
           data-testid="chat-thread-header-title"
-          onDoubleClick={openRenameDialog}
+          onDoubleClick={
+            optimisticCreateUnsettled ? undefined : openRenameDialog
+          }
         >
           {threadTitleText}
         </span>
@@ -694,6 +699,16 @@ function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Only mount one emoji picker for the thread's shared menu state.
   return isDesktop ? <DesktopChatThreadHeader thread={thread} /> : null;
+}
+
+export function SettledChatThreadActions({
+  thread,
+  children,
+}: {
+  thread: ChatPanelSignals;
+  children: ReactNode;
+}) {
+  return useGet(thread.optimisticCreateUnsettled$) ? null : children;
 }
 
 function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
@@ -740,48 +755,52 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       {headerActionsEnabled ? (
         <div className="flex min-w-0 items-center gap-2 pr-3">
           <ChatThreadHeaderTitle thread={thread} />
-          <ChatThreadPinButton thread={thread} />
+          <SettledChatThreadActions thread={thread}>
+            <ChatThreadPinButton thread={thread} />
+          </SettledChatThreadActions>
         </div>
       ) : (
         <ChatThreadHeaderTitle thread={thread} />
       )}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  onClick={() => {
-                    detach(
-                      startSharing(pageSignal),
-                      Reason.DomCallback,
-                      "start shared thread selection",
-                    );
-                  }}
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                  className="shrink-0 duration-150"
-                  aria-label={t(($) => {
-                    return $.chat.sharing.start;
-                  })}
-                >
-                  <Share2 size={18} />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">
-              {t(($) => {
-                return $.chat.sharing.start;
-              })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <AutomationMenuButton thread={thread} />
-        <BrowserMenuButton thread={thread} />
-        <ArtifactsButton thread={thread} />
-      </div>
+      <SettledChatThreadActions thread={thread}>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      detach(
+                        startSharing(pageSignal),
+                        Reason.DomCallback,
+                        "start shared thread selection",
+                      );
+                    }}
+                    variant="quiet"
+                    size="icon-sm"
+                    iconSize="md"
+                    className="shrink-0 duration-150"
+                    aria-label={t(($) => {
+                      return $.chat.sharing.start;
+                    })}
+                  >
+                    <Share2 size={18} />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => {
+                  return $.chat.sharing.start;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <AutomationMenuButton thread={thread} />
+          <BrowserMenuButton thread={thread} />
+          <ArtifactsButton thread={thread} />
+        </div>
+      </SettledChatThreadActions>
     </header>
   );
 }
@@ -2480,12 +2499,21 @@ function HeaderIntervalField({
   readonly defaultIntervalSeconds: number;
 }) {
   const { t } = useTranslation();
+  const intervalItems = getWorkflowIntervalSecondOptions(
+    defaultIntervalSeconds,
+  ).map((seconds) => {
+    return {
+      value: String(seconds),
+      label: formatWorkflowIntervalSeconds(seconds),
+    };
+  });
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {t(($) => {
         return $.chat.automations.every;
       })}
       <Select
+        items={intervalItems}
         name="intervalSeconds"
         defaultValue={String(defaultIntervalSeconds)}
         disabled={disabled}
@@ -2499,15 +2527,13 @@ function HeaderIntervalField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {getWorkflowIntervalSecondOptions(defaultIntervalSeconds).map(
-            (seconds) => {
-              return (
-                <SelectItem key={seconds} value={String(seconds)}>
-                  {formatWorkflowIntervalSeconds(seconds)}
-                </SelectItem>
-              );
-            },
-          )}
+          {intervalItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </label>
@@ -7155,18 +7181,11 @@ function inputPromptRunAnchor(inputEvent: ChatInputEvent | undefined) {
  * message row re-render on every optimistic change.
  */
 function OptimisticSpinner({ eventId }: { eventId: string }) {
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.OptimisticMessageSpinner] === true;
   // Streaming deltas rebuild the optimistic buffer, so compare the ids instead
   // of the set identity: a pending message keeps every other spinner idle.
   const optimisticEventIds = useGet(optimisticEventIds$, {
     equalityFn: equalSets,
   });
-  // Only the presentation is gated: the message still renders and reconciles
-  // exactly as before, so a message keeps its layout while the switch is off.
-  if (!enabled) {
-    return null;
-  }
   // The slot repeats the bubble's own padding and line metrics so the spinner
   // centers on the first line of text however many lines the message wraps to.
   // It stays reserved when the message is confirmed, so the bubble never

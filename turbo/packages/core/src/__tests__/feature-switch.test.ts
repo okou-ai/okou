@@ -26,7 +26,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.PiLoop).toBe("piLoop");
     expect(FeatureSwitchKey.PiMemory).toBe("piMemory");
-    expect(FeatureSwitchKey.RunUsage).toBe("runUsage");
     expect(FeatureSwitchKey.OkouModels).toBe("okouModels");
     expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
     expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
@@ -135,34 +134,6 @@ describe("isFeatureEnabled", () => {
       description:
         "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
       rolloutStage: "alpha",
-    });
-  });
-
-  it("enables current-run usage for staff and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, context)).toBe(false);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.RunUsage, {
-          ...context,
-          overrides: { [FeatureSwitchKey.RunUsage]: true },
-        }),
-      ).toBe(true);
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(isFeatureEnabled(FeatureSwitchKey.RunUsage, staffContext)).toBe(
-      true,
-    );
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.RunUsage, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.RunUsage]: false },
-      }),
-    ).toBe(false);
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.RunUsage]).toEqual({
-      maintainer: "liangyou@okou.ai",
-      description:
-        "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
-      rolloutStage: "beta",
     });
   });
 
@@ -406,22 +377,6 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
-  it("should release chat unread shortcuts and optimistic message spinners", () => {
-    for (const key of [
-      FeatureSwitchKey.ChatUnreadOnlyShortcut,
-      FeatureSwitchKey.OptimisticMessageSpinner,
-    ]) {
-      expect(isFeatureEnabled(key, {})).toBe(true);
-      expect(isFeatureEnabled(key, { orgId: "org_nonexistent" })).toBe(true);
-      expect(
-        isFeatureEnabled(key, {
-          overrides: { [key]: false },
-        }),
-      ).toBe(false);
-      expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
-    }
-  });
-
   it("should link user message urls for every reader and accept an opt-out", () => {
     expect(FeatureSwitchKey.UserMessageLinks).toBe("userMessageLinks");
     // A share link is read without a session, so the signed-out visitor's
@@ -597,10 +552,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
-      true,
-    );
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
 
@@ -625,10 +576,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(
       false,
-    );
-    expect(otherOrgStates[FeatureSwitchKey.ChatUnreadOnlyShortcut]).toBe(true);
-    expect(otherOrgStates[FeatureSwitchKey.OptimisticMessageSpinner]).toBe(
-      true,
     );
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });

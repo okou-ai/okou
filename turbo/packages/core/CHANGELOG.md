@@ -1,5 +1,41 @@
 # Changelog
 
+## [8.701.0](https://github.com/okou-ai/okou/compare/core-v8.700.2...core-v8.701.0) (2026-09-23)
+
+
+### Features
+
+* add manual usage reset for claude code subscriptions ([#36165](https://github.com/okou-ai/okou/issues/36165)) ([741e209](https://github.com/okou-ai/okou/commit/741e2092ecb9b944dc41e155cb58787d3316673b))
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.494.0
+
+## [8.700.2](https://github.com/okou-ai/okou/compare/core-v8.700.1...core-v8.700.2) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+## [8.700.1](https://github.com/okou-ai/okou/compare/core-v8.700.0...core-v8.700.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove released chat feature switches ([#36144](https://github.com/okou-ai/okou/issues/36144)) ([3d77ae2](https://github.com/okou-ai/okou/commit/3d77ae255476951c7e7bd72dadf0723b74637c36))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.493.0
+
 ## [8.700.0](https://github.com/okou-ai/okou/compare/core-v8.699.0...core-v8.700.0) (2026-09-22)
 
 

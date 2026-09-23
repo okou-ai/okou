@@ -11,6 +11,7 @@ import {
   artifactReferenceLookupKey,
   createAttachmentPreviewSignals,
   createAttachmentPreviewSlot,
+  isAuthenticatedAttachmentUrl,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import {
@@ -54,19 +55,58 @@ export type ArtifactCardSignalsRegistry = CardSignalsRegistry<
 export function createArtifactSignals(
   descriptor: ArtifactDescriptor,
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>,
+  previewRefreshRevision$?: Computed<number>,
+  previewCatalogReady$?: Computed<boolean>,
 ): ArtifactSignals {
   const preview = createAttachmentPreviewSignals(descriptor.url, {
     contentType: descriptor.contentType,
   });
   const previewImageLoad = createImageLoadSignals();
-  // The screenshot or poster is only known once the artifact list resolves,
-  // and reloading that list reports the same image again. The card keeps the
-  // graph it resolved, so a reload reuses those credentials instead of signing
-  // the image again and replacing the URL the browser already loaded.
+  // Keep the resolved poster graph with the card. Catalog and file-level
+  // refreshes that report the same image reuse its credentials instead of
+  // replacing the URL the browser already loaded.
   const previewImageSlot = createAttachmentPreviewSlot();
+  let refreshedPreview:
+    | {
+        readonly revision: number;
+        readonly signals: AttachmentPreviewSignals;
+      }
+    | undefined;
   const previewImageUrl$ = computed(async (get) => {
     if (descriptor.kind !== "html" && descriptor.kind !== "video") {
       return undefined;
+    }
+    if (isAuthenticatedAttachmentUrl(descriptor.url)) {
+      const token = await get(preview.presignedToken$);
+      let url = token?.previewImageUrl;
+      // A current API returns null when no poster exists. Only an older API
+      // omits the field, and its catalog fallback must wait for thread create.
+      if (
+        url === undefined &&
+        (!previewCatalogReady$ || get(previewCatalogReady$))
+      ) {
+        const previewImageUrlsByUrl = await get(previewImageUrlsByUrl$);
+        url = previewImageUrlsByUrl.get(
+          artifactReferenceLookupKey(descriptor.url),
+        );
+      }
+      let revision = 0;
+      if (!url && previewRefreshRevision$) {
+        revision = get(previewRefreshRevision$);
+      }
+      if (!url && revision > 0) {
+        if (refreshedPreview?.revision !== revision) {
+          refreshedPreview = {
+            revision,
+            signals: createAttachmentPreviewSignals(descriptor.url, {
+              contentType: descriptor.contentType,
+            }),
+          };
+        }
+        url = (await get(refreshedPreview.signals.presignedToken$))
+          ?.previewImageUrl;
+      }
+      return url ? await get(previewImageSlot(url).thumbnailUrl$) : undefined;
     }
     const previewImageUrlsByUrl = await get(previewImageUrlsByUrl$);
     const url =
@@ -92,13 +132,20 @@ export function createArtifactSignals(
 
 export function createArtifactCardSignalsRegistry(
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>,
+  previewRefreshRevision$?: Computed<number>,
+  previewCatalogReady$?: Computed<boolean>,
 ): ArtifactCardSignalsRegistry {
   return createCardSignalsRegistry(
     (descriptor: ArtifactDescriptor) => {
       return publicAttachmentUrl(descriptor.url);
     },
     (descriptor) => {
-      return createArtifactSignals(descriptor, previewImageUrlsByUrl$);
+      return createArtifactSignals(
+        descriptor,
+        previewImageUrlsByUrl$,
+        previewRefreshRevision$,
+        previewCatalogReady$,
+      );
     },
   );
 }

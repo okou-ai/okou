@@ -380,13 +380,19 @@ describe("Lark integration", () => {
     };
   }
 
-  it("keeps agent selection scoped to Feishu and Lark", async () => {
+  it("keeps Lark on the default Agent when Feishu selection changes", async () => {
     const scenario = await agentSelectionFixture();
     await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
     await expect(scenario.getAgentRun("lark")).resolves.toMatchObject({
       agentId: scenario.defaultAgentId,
       triggerSource: "lark",
     });
+    await scenario.removeInstallations();
+  });
+
+  it("keeps Feishu selection when Lark selection changes", async () => {
+    const scenario = await agentSelectionFixture();
+    await scenario.send("feishu", `/switch ${scenario.feishuAgentId}`);
     await scenario.send("lark", `/switch ${scenario.larkAgentId}`);
     await expect(scenario.getAgentRun("feishu")).resolves.toMatchObject({
       agentId: scenario.feishuAgentId,

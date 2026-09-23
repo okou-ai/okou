@@ -298,13 +298,44 @@ describe("GET/PUT /api/model-policies", () => {
     expect(rejected.body.error.message).toBe(
       'Model "gpt-6-sol" is not available to add',
     );
-
     const unchanged = await accept(
       client.list({ headers: authHeaders() }),
       [200],
     );
     expect(unchanged.body.revision).toBe(initial.body.revision);
     expect(toUpdate(unchanged.body)).toStrictEqual(toUpdate(initial.body));
+  });
+
+  it("can re-add GPT 6 Luna after replacing the new workspace default", async () => {
+    const fixture = seedFixture();
+    useSession(fixture);
+    const client = apiClient();
+    const replaced = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: { policies: [makeBuiltInPolicy("gpt-5.6-luna", true)] },
+      }),
+      [200],
+    );
+    expect(replaced.body.modelsAvailableToAdd).toContain("gpt-6-luna");
+
+    const restored = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            makeBuiltInPolicy("gpt-5.6-luna", true),
+            makeBuiltInPolicy("gpt-6-luna"),
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(restored.body.policies).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ model: "gpt-6-luna", isDefault: false }),
+      ]),
+    );
   });
 
   it("fails closed when an active model has no catalog row", async () => {
@@ -445,6 +476,24 @@ describe("GET/PUT /api/model-policies", () => {
         [400],
       );
       expect(oldPreference.body.error.message).toBe(retired.body.error.message);
+      if (
+        !existing.body.policies.some((policy) => {
+          return policy.model === activeModel;
+        })
+      ) {
+        await accept(
+          client.update({
+            headers: authHeaders(),
+            body: {
+              policies: [
+                ...toUpdate(existing.body),
+                makeBuiltInPolicy(activeModel),
+              ],
+            },
+          }),
+          [200],
+        );
+      }
       const successor = await accept(
         preferences.update({
           headers: authHeaders(),
@@ -514,7 +563,7 @@ describe("GET/PUT /api/model-policies", () => {
     );
   });
 
-  it("seeds Fable 5.1, Astra, and Luna with Luna as the workspace default", async () => {
+  it("seeds Fable 5.1, Astra, and GPT 6 Luna as the workspace default", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
 
@@ -529,19 +578,19 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"]);
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-6-luna"]);
     expect(response.body.policies[0]).toMatchObject({
       defaultProviderType: "built-in",
       credentialScope: "org",
       modelProviderId: null,
       routeStatus: "valid",
     });
-    expect(response.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    expect(response.body.workspaceDefaultModel).toBe("gpt-6-luna");
     expect(
       response.body.policies.find((policy) => {
         return policy.isDefault;
       })?.model,
-    ).toBe("gpt-5.6-luna");
+    ).toBe("gpt-6-luna");
   });
 
   it("advertises the current built-in provider for route-specific effort controls", async () => {
@@ -670,13 +719,13 @@ describe("GET/PUT /api/model-policies", () => {
       response.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-5.6-luna"]);
-    expect(response.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-6-luna"]);
+    expect(response.body.workspaceDefaultModel).toBe("gpt-6-luna");
     expect(
       response.body.policies.find((policy) => {
         return policy.isDefault;
       })?.model,
-    ).toBe("gpt-5.6-luna");
+    ).toBe("gpt-6-luna");
   });
 
   it.each([

@@ -3,7 +3,7 @@ use tracing::{info, warn};
 
 use crate::idle_pool::ParkingGate;
 use crate::lifecycle::{LifecycleController, RunnerMode, SoftDrainOutcome};
-use crate::run_cancellation::RunCancellationRegistry;
+use runner_provider::RunCancellationRegistry;
 
 /// Pre-registered signal streams.
 ///
@@ -237,7 +237,7 @@ pub(super) async fn handle_stopping_signal(
 async fn dispatch_hard_cancellations(
     handles: Vec<(
         runner_types::ids::RunId,
-        crate::run_cancellation::RunCancellationHandle,
+        runner_provider::RunCancellationHandle,
     )>,
 ) {
     futures_util::future::join_all(handles.into_iter().map(|(run_id, handle)| async move {
@@ -272,8 +272,8 @@ mod tests {
     async fn hard_cancellation_dispatch_does_not_serialize_transfer_gate_waits() {
         let blocked_run_id = RunId::new_v4();
         let ready_run_id = RunId::new_v4();
-        let blocked = crate::run_cancellation::RunCancellationHandle::new();
-        let ready = crate::run_cancellation::RunCancellationHandle::new();
+        let blocked = runner_provider::RunCancellationHandle::new();
+        let ready = runner_provider::RunCancellationHandle::new();
         let transfer_guard = blocked.transfer_guard().await;
         let ready_token = ready.token();
         let blocked_token = blocked.token();
@@ -508,7 +508,7 @@ mod tests {
         // A registration after the first hard-stop barrier is cancelled by
         // registration itself; repeat-signal handling need not rescan it.
         let registration = tokens.register(RunId::new_v4()).await.unwrap();
-        assert!(registration.is_cancelled());
+        assert!(registration.token().is_cancelled());
 
         // Repeat call: must early-return on the already-Stopping guard.
         handle_stopping_signal("SIGTERM", &cancel, &tokens, &lifecycle).await;

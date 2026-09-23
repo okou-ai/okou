@@ -15,7 +15,7 @@ const UNRESOLVABLE: PiRuntimeIdentity = {
  * The production interface cannot reach this state on its own: every model the
  * policy table admits has capability data, and `pi-runtime-capability.test.ts`
  * in `@okouai/pi-agent-runtime` keeps that true against the real resolver. The
- * only other unadmitted model, `gpt-6-sol`, is refused one layer earlier by the
+ * other unadmitted models, `gpt-6-sol` and `gpt-6-luna`, are refused one layer earlier by the
  * policy table, so it never exercises the gate. Substituting the capability
  * lookup is the only way to prove the gate itself is load-bearing.
  */

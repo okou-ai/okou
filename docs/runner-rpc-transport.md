@@ -178,18 +178,17 @@ process control/placement IPC, not this cross-VM transport.
 `run.usage` is a read-only, assignment-bound method. It accepts only the empty
 object `{}`. Any guest-supplied Run ID, host path, endpoint, addon generation or
 source total is an `invalid_request` rejected before dispatch. The host selects
-the Run from the current assignment and, when the captured `runUsage` switch is
-enabled, reads the immutable API-first handoff observation plus one
-generation-frozen MITM snapshot. The method requires no SSH consumer,
-credential or capability grant.
+the Run from the current assignment and reads the immutable API-first handoff
+observation plus one generation-frozen MITM snapshot. The method requires no SSH
+consumer, credential or capability grant.
 
-A current Runner that knows the method but did not install the usage consumer
-returns `unavailable` with `not_dispatched`. An older Runner returns
-`unknown_method`. Callers use that distinction for feature-disabled versus
-unsupported assignments; neither response permits a fallback or retry. Source
-absence, invalid handoff data, MITM saturation and bounded MITM read failures
-are source states inside a successful business result when the Runner can still
-return a truthful snapshot.
+During independent artifact promotion, a Runner that knows the method but did
+not install the usage consumer returns `unavailable` with `not_dispatched`. An
+older Runner returns `unknown_method`. Callers preserve that distinction as
+assignment-unavailable versus unsupported Runner; neither response permits a
+fallback or retry. Source absence, invalid handoff data, MITM saturation and
+bounded MITM read failures are source states inside a successful business result
+when the Runner can still return a truthful snapshot.
 
 The method uses the same eight-request admission limit, 60-second request
 budget, assignment and sandbox cancellation, joined shutdown and

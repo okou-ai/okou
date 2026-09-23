@@ -26,12 +26,14 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { localizedVncError } from "../../lib/vnc-error.ts";
+import { sshConnections$ } from "../../signals/ssh.ts";
 import {
   VncCredentialFields,
   VncCredentialImpact,
   VncCredentialSelection,
   VncEndpointFields,
   VncSecurityFields,
+  VncTransportFields,
 } from "./vnc-fields.tsx";
 
 function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
@@ -130,13 +132,14 @@ function VncSaveNotice({ saving }: { readonly saving: boolean }) {
 
 function useSaveBlocked(dialog: VncDialogState) {
   const credentials = useLoadable(vncCredentials$);
+  const sshConnections = useLoadable(sshConnections$);
   const editor = useGet(vncEditor$);
   const conflict = useGet(vncConflict$);
   if (conflict) {
     return true;
   }
   if (dialog.kind === "create" || dialog.kind === "edit") {
-    return (
+    const credentialBlocked =
       credentials.state !== "hasData" ||
       credentials.data === null ||
       (editor.selection !== "new" &&
@@ -145,8 +148,15 @@ function useSaveBlocked(dialog: VncDialogState) {
             credential.id === editor.selection &&
             vncCredentialMatchesProfile(credential, editor.profile)
           );
-        }))
-    );
+        }));
+    const transportBlocked =
+      editor.transport === "ssh" &&
+      (sshConnections.state !== "hasData" ||
+        sshConnections.data === null ||
+        !sshConnections.data.some((connection) => {
+          return connection.id === editor.sshConnectionId;
+        }));
+    return credentialBlocked || transportBlocked;
   }
   return (
     dialog.kind === "delete-credential" &&
@@ -248,6 +258,7 @@ function VncForm({
             {hostEditor ? (
               <>
                 <VncEndpointFields connection={dialog.connection} />
+                <VncTransportFields disabled={disabled} />
                 <VncSecurityFields
                   connection={dialog.connection}
                   disabled={disabled}

@@ -6,9 +6,9 @@ use std::collections::BTreeMap;
 
 use crate::executor;
 use crate::lifecycle::LifecycleController;
-use crate::provider::mock::{MockJobProvider, MockProviderHandle};
-use crate::run_cancellation::RunCancellationRegistry;
+use crate::provider_test_support::{MockJobProvider, MockProviderHandle};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::RunCancellationRegistry;
 use sandbox_mock::MockSandboxRuntime;
 
 pub(in super::super) const TEST_RUNNER_ID: &str = "550e8400-e29b-41d4-a716-446655440000";

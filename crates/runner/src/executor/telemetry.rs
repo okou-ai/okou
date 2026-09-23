@@ -13,13 +13,13 @@ use tracing::warn;
 
 use crate::guest_timezone::GuestTimezoneAssumption;
 use crate::idle_pool::ExactIdleReservationMiss;
-use crate::provider::ApiClaimTiming;
 use crate::resource_budget::ResourceBudget;
 use crate::telemetry::{
     JobTelemetry, RunnerPreSpawnAttribution, RunnerPreSpawnConcurrencyBucket,
     RunnerResourceBudgetOccupancy, RunnerStartupPath,
 };
 use crate::workspace_image_cache::{WorkspaceCacheCheckoutResult, WorkspaceImageLease};
+use runner_provider::ApiClaimTiming;
 use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 
 static INVALID_API_START_TIME_WARNED: AtomicBool = AtomicBool::new(false);

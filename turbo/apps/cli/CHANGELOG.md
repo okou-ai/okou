@@ -1,5 +1,47 @@
 # Changelog
 
+## [9.355.2](https://github.com/okou-ai/okou/compare/cli-v9.355.1...cli-v9.355.2) (2026-09-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.494.0
+    * @okouai/core bumped to 8.701.0
+    * @okouai/pi-agent-runtime bumped to 1.38.0
+
+## [9.355.1](https://github.com/okou-ai/okou/compare/cli-v9.355.0...cli-v9.355.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.700.2
+    * @okouai/pi-agent-runtime bumped to 1.37.1
+
+## [9.355.0](https://github.com/okou-ai/okou/compare/cli-v9.354.0...cli-v9.355.0) (2026-09-22)
+
+
+### Features
+
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.493.0
+    * @okouai/core bumped to 8.700.1
+    * @okouai/pi-agent-runtime bumped to 1.37.0
+
 ## [9.354.0](https://github.com/okou-ai/okou/compare/cli-v9.353.0...cli-v9.354.0) (2026-09-22)
 
 

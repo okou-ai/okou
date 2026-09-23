@@ -292,6 +292,30 @@ function AgentTabNav({
   showProfileAndInstructions: boolean;
 }) {
   const { t } = useTranslation("agents");
+  const tabItems = [
+    {
+      value: "authorization",
+      label: t(($) => {
+        return $.detail.tabs.authorization;
+      }),
+    },
+    ...(showProfileAndInstructions
+      ? [
+          {
+            value: "profile",
+            label: t(($) => {
+              return $.detail.tabs.profile;
+            }),
+          },
+          {
+            value: "instructions",
+            label: t(($) => {
+              return $.detail.tabs.instructions;
+            }),
+          },
+        ]
+      : []),
+  ];
   return (
     <Tabs
       value={activeTab}
@@ -300,30 +324,35 @@ function AgentTabNav({
     >
       {/* Mobile: Select dropdown */}
       <div className="sm:hidden">
-        <Select value={activeTab} onValueChange={onTabChange}>
+        <Select
+          items={tabItems}
+          value={activeTab}
+          onValueChange={(value, details) => {
+            if (
+              value === null ||
+              !tabItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            if (value !== activeTab) {
+              onTabChange(value);
+            }
+          }}
+        >
           <SelectTrigger className="h-9 w-full">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="authorization">
-              {t(($) => {
-                return $.detail.tabs.authorization;
-              })}
-            </SelectItem>
-            {showProfileAndInstructions && (
-              <SelectItem value="profile">
-                {t(($) => {
-                  return $.detail.tabs.profile;
-                })}
-              </SelectItem>
-            )}
-            {showProfileAndInstructions && (
-              <SelectItem value="instructions">
-                {t(($) => {
-                  return $.detail.tabs.instructions;
-                })}
-              </SelectItem>
-            )}
+            {tabItems.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>

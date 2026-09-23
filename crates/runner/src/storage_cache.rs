@@ -118,6 +118,12 @@ const STORAGE_CACHE_LOCK_WAIT_FAILED: &str = "storage-cache-lock-wait-failed";
 const STORAGE_CACHE_HIT_READ: &str = "storage_cache_hit_read";
 const STORAGE_CACHE_MISS_PASSTHROUGH: &str = "storage_cache_miss_passthrough";
 const STORAGE_CACHE_LOCK_BUSY_PASSTHROUGH: &str = "storage_cache_lock_busy_passthrough";
+const STORAGE_CACHE_ARTIFACT_DECODED: &str = "storage_cache_artifact_decoded";
+const STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE: &str = "storage_cache_artifact_decoded_ineligible";
+const STORAGE_CACHE_ARTIFACT_ARCHIVE_HIT: &str = "storage_cache_artifact_archive_hit";
+const STORAGE_CACHE_ARTIFACT_MISS_PASSTHROUGH: &str = "storage_cache_artifact_miss_passthrough";
+const STORAGE_CACHE_ARTIFACT_LOCK_BUSY_PASSTHROUGH: &str =
+    "storage_cache_artifact_lock_busy_passthrough";
 const STORAGE_CACHE_BACKGROUND_FILL_FILLED: &str = "storage_cache_background_fill_filled";
 const STORAGE_CACHE_BACKGROUND_FILL_ALREADY_CACHED: &str =
     "storage_cache_background_fill_already_cached";
@@ -1666,7 +1672,7 @@ async fn prepare_decoded_storage(
             .iter()
             .map(|group| {
                 group.targets.first().and_then(|target| {
-                    is_ordinary_storage_group(group, plan)
+                    is_decoded_download_group(group, plan)
                         .then_some((target.name.as_str(), target.version.as_str()))
                 })
             })
@@ -1683,8 +1689,22 @@ async fn prepare_decoded_storage(
             RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
         })?;
         for (group, files) in batch.iter_mut().zip(ready) {
+            let decoded_eligible = is_decoded_download_group(group, plan);
             group.decoded_ready_observed = files.is_some();
-            reuse_decoded(plan, group, files)?;
+            let decoded_reused = reuse_decoded(plan, group, files)?;
+            if group
+                .targets
+                .iter()
+                .any(|target| target.handle.is_artifact())
+                && (!decoded_eligible || (group.decoded_ready_observed && !decoded_reused))
+            {
+                telemetry.record(
+                    STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+            }
         }
     }
     plan.finish_decoded_preparation();
@@ -2328,12 +2348,12 @@ fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
         .map(|target| (target.name.clone(), target.version.clone()))
 }
 
-fn is_ordinary_storage_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
+fn is_decoded_download_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
     !group.targets.is_empty()
         && group
             .targets
             .iter()
-            .all(|target| plan.is_ordinary_storage_download(target.handle))
+            .all(|target| plan.is_decoded_download(target.handle))
 }
 
 fn group_has_decoded(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
@@ -2356,7 +2376,7 @@ fn defer_background_fill_groups(
         .filter_map(|(group, outcome)| {
             let decoded = decoded
                 .as_ref()
-                .filter(|_| is_ordinary_storage_group(group, plan));
+                .filter(|_| is_decoded_download_group(group, plan));
             let action = if matches!(outcome, TargetOutcome::Decoded) {
                 if !group
                     .targets
@@ -3918,13 +3938,25 @@ fn apply_outcome(
     outcome: &TargetOutcome,
     telemetry: &mut JobTelemetry,
 ) {
+    let artifact = target.handle.is_artifact();
     match outcome {
         TargetOutcome::Decoded => {
-            telemetry.record("storage_cache_decoded", Duration::ZERO, true, None)
+            telemetry.record("storage_cache_decoded", Duration::ZERO, true, None);
+            if artifact {
+                telemetry.record(STORAGE_CACHE_ARTIFACT_DECODED, Duration::ZERO, true, None);
+            }
         }
         TargetOutcome::Hit => {
             rewrite_url(plan, target);
             telemetry.record("storage_cache_hit", Duration::ZERO, true, None);
+            if artifact {
+                telemetry.record(
+                    STORAGE_CACHE_ARTIFACT_ARCHIVE_HIT,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+            }
         }
         TargetOutcome::MissPassthrough { reason } => {
             telemetry.record(
@@ -3933,6 +3965,14 @@ fn apply_outcome(
                 true,
                 Some(reason),
             );
+            if artifact {
+                telemetry.record(
+                    STORAGE_CACHE_ARTIFACT_MISS_PASSTHROUGH,
+                    Duration::ZERO,
+                    true,
+                    Some(reason),
+                );
+            }
         }
         TargetOutcome::LockBusyPassthrough => {
             telemetry.record(
@@ -3941,6 +3981,14 @@ fn apply_outcome(
                 true,
                 None,
             );
+            if artifact {
+                telemetry.record(
+                    STORAGE_CACHE_ARTIFACT_LOCK_BUSY_PASSTHROUGH,
+                    Duration::ZERO,
+                    true,
+                    None,
+                );
+            }
         }
     }
 }
@@ -4642,7 +4690,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn instruction_and_artifact_delivery_never_reads_or_warms_decoded_entries() {
+    async fn instruction_delivery_never_reads_or_warms_decoded_entries() {
         for corrupt in [false, true] {
             let temp = tempfile::tempdir().unwrap();
             let home = home_at(&temp);
@@ -4665,31 +4713,122 @@ mod tests {
             let mut instruction =
                 storage_entry("/mnt/instructions".into(), url.into(), "name", "v1");
             instruction.instructions_target_filename = Some("AGENTS.md".into());
-            for mut plan in [
-                plan_from_entries(vec![instruction], Vec::new(), None),
-                fresh_artifact_plan(url.into(), "name", "v1"),
-            ] {
-                let deferred = populate_cache_with_fresh_delivery(
-                    &mut plan,
-                    &sandbox,
-                    &home,
-                    &mut new_telemetry(),
-                    None,
-                    Some(&cache),
-                )
-                .await
-                .unwrap();
-                assert!(deferred.is_none(), "irrelevant decoded fill was selected");
-                assert!(plan.take_decoded().is_empty());
-                let source =
-                    storage_archive_url(&plan, 0).or_else(|| artifact_archive_url(&plan, 0));
-                assert!(source.unwrap().starts_with("file://"));
-            }
+            let mut plan = plan_from_entries(vec![instruction], Vec::new(), None);
+            let deferred = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut new_telemetry(),
+                None,
+                Some(&cache),
+            )
+            .await
+            .unwrap();
+            assert!(deferred.is_none(), "irrelevant decoded fill was selected");
+            assert!(plan.take_decoded().is_empty());
+            assert!(
+                storage_archive_url(&plan, 0)
+                    .unwrap()
+                    .starts_with("file://")
+            );
             if !corrupt {
                 assert!(cache.get_ready("name", "v1").await.unwrap().is_none());
             }
             cache.shutdown().await;
         }
+    }
+
+    #[tokio::test]
+    async fn artifact_delivery_reads_validated_decoded_entries_and_rejects_corruption() {
+        for corrupt in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let home = home_at(&temp);
+            let sandbox = MockSandbox::new("decoded-artifact");
+            let warming_cache = decoded::DecodedCache::new(home.clone());
+            write_cached_archive(&home, "name", "v1", &tarball_bytes());
+            write_storage_lock(&home, "name", "v1");
+            warming_cache.warm_from_archive("name", "v1").await.unwrap();
+            warming_cache.shutdown().await;
+            std::fs::remove_file(home.storage_cache_dir("name", "v1").join("archive.tar.gz"))
+                .unwrap();
+            if corrupt {
+                let entry = home
+                    .storages_dir()
+                    .join(short_digest("name"))
+                    .join(format!("decoded-v1-{}", short_digest("v1")));
+                std::fs::write(entry.join("index.json"), b"{").unwrap();
+            }
+            let cache = decoded::DecodedCache::new(home.clone());
+            let mut plan = fresh_artifact_plan(
+                "https://storage.example/artifact.tar.gz".into(),
+                "name",
+                "v1",
+            );
+            let mut telemetry = new_telemetry();
+            let result = populate_cache_with_fresh_delivery(
+                &mut plan,
+                &sandbox,
+                &home,
+                &mut telemetry,
+                None,
+                Some(&cache),
+            )
+            .await;
+            if corrupt {
+                assert!(result.is_err());
+            } else {
+                assert!(result.unwrap().is_none());
+                let files = plan.take_decoded();
+                assert_eq!(files.len(), 1);
+                assert_eq!(files[0].0, "/mnt/artifact-name");
+                assert_eq!(files[0].1.files[0].content, b"storage cache test file\n");
+                assert_op(
+                    &telemetry.pending_ops_snapshot(),
+                    STORAGE_CACHE_ARTIFACT_DECODED,
+                    true,
+                );
+            }
+            cache.shutdown().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn conflicting_artifact_decoded_hit_reports_bounded_ineligibility() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let cache = decoded::DecodedCache::new(home.clone());
+        write_cached_archive(&home, "artifact", "v1", &tarball_bytes());
+        write_storage_lock(&home, "artifact", "v1");
+        cache.warm_from_archive("artifact", "v1").await.unwrap();
+        let mut plan = plan_from_entries(
+            vec![storage_entry(
+                "/mnt/artifact-artifact/child".into(),
+                "https://storage.example/other.tar.gz".into(),
+                "other",
+                "v1",
+            )],
+            vec![artifact_entry(
+                "/mnt/artifact-artifact".into(),
+                "https://storage.example/artifact.tar.gz".into(),
+                "artifact",
+                "v1",
+            )],
+            None,
+        );
+        let mut groups = group_targets(collect_targets(plan.cache_candidates()));
+        let mut telemetry = new_telemetry();
+
+        prepare_decoded_storage(&mut plan, &mut groups, &cache, &mut telemetry)
+            .await
+            .unwrap();
+
+        assert!(plan.take_decoded().is_empty());
+        assert_op(
+            &telemetry.pending_ops_snapshot(),
+            STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE,
+            true,
+        );
+        cache.shutdown().await;
     }
 
     #[tokio::test]
@@ -5035,7 +5174,7 @@ mod tests {
 
     fn partial_content_response(total: usize) -> Vec<u8> {
         format!(
-            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-0/{total}\r\nContent-Length: 1\r\n\r\nx"
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 0-0/{total}\r\nContent-Length: 1\r\nConnection: close\r\n\r\nx"
         )
         .into_bytes()
     }
@@ -8456,6 +8595,7 @@ mod tests {
         assert!(!home.storage_lock(name, version).exists());
         let ops = telemetry.pending_ops_snapshot();
         assert_op(&ops, STORAGE_CACHE_MISS_PASSTHROUGH, true);
+        assert_op(&ops, STORAGE_CACHE_ARTIFACT_MISS_PASSTHROUGH, true);
     }
 
     #[tokio::test]
@@ -8482,6 +8622,32 @@ mod tests {
         let ops = telemetry.pending_ops_snapshot();
         assert_op(&ops, STORAGE_CACHE_LOCK_BUSY_PASSTHROUGH, true);
         assert_op(&ops, "storage_cache_passthrough_lock_busy_count_1", true);
+        assert_no_op(&ops, STORAGE_CACHE_MISS_PASSTHROUGH);
+    }
+
+    #[tokio::test]
+    async fn guarded_artifact_lock_busy_passthrough_does_not_wait_for_writer() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("artifact-busy");
+        let mut telemetry = new_telemetry();
+        let name = "guarded-artifact-busy";
+        let version = "v1";
+        let original = "https://r2.example.com/artifact-busy.tar.gz".to_string();
+        let _writer = lock::acquire(home.storage_lock(name, version))
+            .await
+            .unwrap();
+        let mut manifest = fresh_artifact_plan(original.clone(), name, version);
+
+        let deferred = populate_cache(&mut manifest, &sandbox, &home, &mut telemetry)
+            .await
+            .unwrap();
+
+        assert!(deferred.is_none());
+        assert_eq!(artifact_archive_url(&manifest, 0), Some(original.as_str()));
+        let ops = telemetry.pending_ops_snapshot();
+        assert_op(&ops, STORAGE_CACHE_LOCK_BUSY_PASSTHROUGH, true);
+        assert_op(&ops, STORAGE_CACHE_ARTIFACT_LOCK_BUSY_PASSTHROUGH, true);
         assert_no_op(&ops, STORAGE_CACHE_MISS_PASSTHROUGH);
     }
 
@@ -8661,6 +8827,82 @@ mod tests {
         assert_op_count(&ops, STORAGE_CACHE_PROCESS_GROUP, 2);
         assert_op_count(&ops, STORAGE_CACHE_LOCK_WAIT, 2);
         assert_op_count(&ops, STORAGE_CACHE_HIT_READ, 1);
+    }
+
+    #[tokio::test]
+    async fn cold_artifact_fill_warms_decoded_cache_for_the_next_plan() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let sandbox = MockSandbox::new("artifact-cold-fill");
+        let cache = decoded::DecodedCache::new(home.clone());
+        let mut telemetry = new_telemetry();
+        let server = MockServer::start_async().await;
+        let body = tarball_bytes();
+        let probe = server
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path("/artifact.tar.gz")
+                    .header("range", "bytes=0-0");
+                then.status(206)
+                    .header("content-range", format!("bytes 0-0/{}", body.len()))
+                    .body(b"x");
+            })
+            .await;
+        let get = server
+            .mock_async(|when, then| {
+                when.method(GET)
+                    .path("/artifact.tar.gz")
+                    .header_missing("range");
+                then.status(200).body(body.clone());
+            })
+            .await;
+        let source = server.url("/artifact.tar.gz");
+        let name = "cold-artifact";
+        let version = "v1";
+        let mut first = fresh_artifact_plan(source.clone(), name, version);
+
+        let deferred = populate_cache_with_fresh_delivery(
+            &mut first,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap()
+        .expect("cold artifact should schedule a background fill");
+        let records = deferred.run().await;
+        assert_background_op(&records, STORAGE_CACHE_BACKGROUND_FILL_FILLED, true);
+        probe.assert_calls_async(1).await;
+        get.assert_calls_async(1).await;
+        assert!(cache.get_ready(name, version).await.unwrap().is_some());
+
+        let mut second = fresh_artifact_plan(source, name, version);
+        let deferred = populate_cache_with_fresh_delivery(
+            &mut second,
+            &sandbox,
+            &home,
+            &mut telemetry,
+            None,
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        assert!(
+            deferred.is_some(),
+            "decoded use should schedule archive retirement"
+        );
+        let files = second.take_decoded();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "/mnt/artifact-cold-artifact");
+        assert_eq!(files[0].1.files[0].content, b"storage cache test file\n");
+        assert_op(
+            &telemetry.pending_ops_snapshot(),
+            STORAGE_CACHE_ARTIFACT_DECODED,
+            true,
+        );
+        cache.shutdown().await;
     }
 
     #[tokio::test]
@@ -9591,6 +9833,11 @@ mod tests {
         assert_eq!(
             artifact_archive_url(&manifest, 0),
             Some(format!("file://{}", guest_archive_path(name, version)).as_str())
+        );
+        assert_op(
+            &telemetry.pending_ops_snapshot(),
+            STORAGE_CACHE_ARTIFACT_ARCHIVE_HIT,
+            true,
         );
     }
 

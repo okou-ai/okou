@@ -28,10 +28,10 @@ use crate::executor::{
     SandboxReuseRejection, SandboxReuseTerminal, SessionHistoryMaterializer,
     SessionHistoryRestorePlan, effective_cli_framework,
 };
-use crate::run_cancellation::RunCancellationHandle;
 use crate::workspace_image_cache::{
     WorkspaceSessionHistorySidecar, WorkspaceSessionHistorySidecarRepresentation,
 };
+use runner_provider::RunCancellationHandle;
 use runner_types::types::{
     ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind, SandboxReuseResult,

@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.212.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.1...runner-rs-v0.212.0) (2026-09-23)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+
+
+### Refactoring
+
+* **runner:** extract provider coordination crate ([#36148](https://github.com/okou-ai/okou/issues/36148)) ([789a24f](https://github.com/okou-ai/okou/commit/789a24f6632566071af38533d4df58a0ef0c0c75))
+
+## [0.211.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.0...runner-rs-v0.211.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+## [0.211.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.1...runner-rs-v0.211.0) (2026-09-22)
+
+
+### Features
+
+* expose ssh-backed vnc access ([#36116](https://github.com/okou-ai/okou/issues/36116)) ([05910d3](https://github.com/okou-ai/okou/commit/05910d386aebd37b12637adf5dea4a935c9a0198))
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
 ## [0.210.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.0...runner-rs-v0.210.1) (2026-09-22)
 
 

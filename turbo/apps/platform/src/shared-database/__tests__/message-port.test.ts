@@ -919,43 +919,81 @@ function cachedRows(
   );
 }
 
-test("Warm unread chats on connect and on every indicator refresh", async () => {
+test("Warm unread chats only after chat message notifications", async () => {
   const startedAt = 10_000;
   mockNow(startedAt, context.signal);
   const threadId = crypto.randomUUID();
+  const notifiedThreadId = crypto.randomUUID();
   const rows = [row(threadId, 1), row(threadId, 2)];
   let availableRows = rows.slice(0, 1);
+  let catchUpRequestCount = 0;
   mockUnreadIndicators(threadId);
-  mockChatEventCatchUp(() => {
-    return availableRows;
-  });
+  mockChatEventCatchUp(
+    () => {
+      return availableRows;
+    },
+    () => {
+      catchUpRequestCount += 1;
+    },
+  );
   initializeWorker();
   const warming = chatEventInvalidations(threadId);
-  const connectWarmed = warming.next();
-  const { bridge } = connectProtocolTransport(
-    context.signal,
-    undefined,
-    warming.events,
-  );
+  let indicatorReloadCount = 0;
+  const { bridge } = connectProtocolTransport(context.signal, undefined, {
+    ...warming.events,
+    computedReloaded: (computedKey) => {
+      if (computedKey === "chat-thread-indicators") {
+        indicatorReloadCount += 1;
+      }
+    },
+  });
   await bridge.registerTab(context.signal);
-  // The `threadListChanged` subscription primes warming when it attaches.
-  await connectWarmed;
+  await vi.waitFor(() => {
+    expect(indicatorReloadCount).toBeGreaterThan(0);
+  });
+
+  const reloadsBeforeNotifications = indicatorReloadCount;
+  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
+    "chatThreadReadCursorUpdated",
+    { threadId, lastReadAt: null },
+  );
+  await vi.waitFor(() => {
+    expect(indicatorReloadCount).toBeGreaterThanOrEqual(
+      reloadsBeforeNotifications + 2,
+    );
+  });
+  expect(catchUpRequestCount).toBe(0);
+
+  const firstWarmed = warming.next();
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
+    `chatThreadMessageCreated:${notifiedThreadId}`,
+  );
+  await firstWarmed;
+  expect(catchUpRequestCount).toBe(1);
   await expect(cachedRows(bridge, threadId)).resolves.toStrictEqual(
     rows.slice(0, 1),
   );
 
   availableRows = rows;
-  const refreshWarmed = warming.next();
+  const secondWarmed = warming.next();
   mockNow(startedAt + 2000, context.signal);
-  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
-  await refreshWarmed;
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
+    `chatThreadMessageCreated:${notifiedThreadId}`,
+  );
+  await secondWarmed;
+  expect(catchUpRequestCount).toBe(2);
   await expect(cachedRows(bridge, threadId)).resolves.toStrictEqual(rows);
 });
 
-test("Keep indicators readable when chat warming fails", async () => {
+test("Keep indicators readable when message-triggered chat warming fails", async () => {
   const startedAt = 20_000;
   mockNow(startedAt, context.signal);
   const threadId = crypto.randomUUID();
+  const notifiedThreadId = crypto.randomUUID();
   const rows = [row(threadId, 1), row(threadId, 2)];
   let availableRows = rows.slice(0, 1);
   let failCatchUp = false;
@@ -986,21 +1024,26 @@ test("Keep indicators readable when chat warming fails", async () => {
   });
   initializeWorker();
   const warming = chatEventInvalidations(threadId);
-  const connectWarmed = warming.next();
   const { bridge } = connectProtocolTransport(
     context.signal,
     undefined,
     warming.events,
   );
   await bridge.registerTab(context.signal);
-  await connectWarmed;
+  await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasChannelSubscriptionOnChannel(credentialChannel()),
+    ).toBeTruthy();
+  });
 
   // Warming is a head start for readers that fall back to their own catch-up,
   // so its failure must stay inside the Worker instead of failing every tab's
   // unread indicators.
   failCatchUp = true;
-  mockNow(startedAt + 2000, context.signal);
-  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
+    `chatThreadMessageCreated:${notifiedThreadId}`,
+  );
   await failedCatchUp.promise;
   await expect(
     bridge.getComputed("chat-thread-indicators"),
@@ -1012,10 +1055,99 @@ test("Keep indicators readable when chat warming fails", async () => {
   failCatchUp = false;
   availableRows = rows;
   const recoveredWarming = warming.next();
-  mockNow(startedAt + 4000, context.signal);
-  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  mockNow(startedAt + 2000, context.signal);
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
+    `chatThreadMessageCreated:${notifiedThreadId}`,
+  );
   await recoveredWarming;
   await expect(cachedRows(bridge, threadId)).resolves.toStrictEqual(rows);
+});
+
+test("Throttle detached warming without blocking chat message invalidations", async () => {
+  const startedAt = 25_000;
+  mockNow(startedAt, context.signal);
+  const warmedThreadId = crypto.randomUUID();
+  const firstThreadId = crypto.randomUUID();
+  const secondThreadId = crypto.randomUUID();
+  const thirdThreadId = crypto.randomUUID();
+  const warmingStarted = context.mocks.deferred<void>();
+  const releaseWarming = context.mocks.deferred<void>();
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
+  let requestCount = 0;
+  mockUnreadIndicators(warmedThreadId);
+  context.mocks.api(
+    chatThreadEventsContract.catchUp,
+    async ({ body, respond }) => {
+      requestCount += 1;
+      activeRequests += 1;
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+      if (requestCount === 1) {
+        warmingStarted.resolve();
+        await releaseWarming.promise;
+      }
+      activeRequests -= 1;
+      return respond(200, {
+        events: Object.fromEntries(
+          body.map(([threadId]) => {
+            return [threadId, []];
+          }),
+        ),
+        notFoundThreads: [],
+      });
+    },
+  );
+  initializeWorker();
+  const events = bridgeEvents();
+  const { bridge } = connectProtocolTransport(
+    context.signal,
+    undefined,
+    events,
+  );
+  await bridge.registerTab(context.signal);
+  await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasChannelSubscriptionOnChannel(credentialChannel()),
+    ).toBeTruthy();
+  });
+
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
+    `chatThreadMessageCreated:${firstThreadId}`,
+  );
+  await warmingStarted.promise;
+
+  try {
+    context.mocks.ably.triggerOnChannel(
+      credentialChannel(),
+      `chatThreadMessageCreated:${secondThreadId}`,
+    );
+    context.mocks.ably.triggerOnChannel(
+      credentialChannel(),
+      `chatThreadMessageCreated:${thirdThreadId}`,
+    );
+    await vi.waitFor(() => {
+      expect(events.databaseInvalidated).toHaveBeenCalledWith({
+        kind: "chat-event",
+        threadId: secondThreadId,
+      });
+      expect(events.databaseInvalidated).toHaveBeenCalledWith({
+        kind: "chat-event",
+        threadId: thirdThreadId,
+      });
+    });
+    expect(requestCount).toBe(1);
+    expect(maxActiveRequests).toBe(1);
+  } finally {
+    mockNow(startedAt + 2000, context.signal);
+    releaseWarming.resolve();
+  }
+
+  await vi.waitFor(() => {
+    expect(requestCount).toBe(2);
+  });
+  expect(maxActiveRequests).toBe(1);
 });
 
 test("Cancel waiting indicator reads when their Worker lifecycle ends", async () => {

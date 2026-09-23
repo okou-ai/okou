@@ -646,7 +646,11 @@ function MemberUsageRow({
         <Select
           disabled={disabled}
           value={String(selection)}
-          onValueChange={(value) => {
+          onValueChange={(value, details) => {
+            if (value === null) {
+              details.cancel();
+              return;
+            }
             onSelect(parseUsagePackOption(value, catalog));
           }}
         >
@@ -789,6 +793,9 @@ function MemberUsageConfiguration({
               member={member}
               selection={selection}
               onSelect={(usage) => {
+                if (usage === selection) {
+                  return;
+                }
                 setSelection({ memberId: member.id, usage });
                 onSelectionChange?.();
               }}

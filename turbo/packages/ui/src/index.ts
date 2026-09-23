@@ -58,6 +58,7 @@ export {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubTrigger,
