@@ -1126,7 +1126,7 @@ CLI changes must ship through the same commit-addressed CLI artifact selection.
 Previously captured contexts retain their package and history reference; new
 contexts select the new reader. Old Runners already support 128 MiB history.
 
-Pi remains staff-only behind `PiLoop`. Rolling the API back below this change
+Pi is enabled by default through `PiLoop`. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 There is no history truncation, migration, or alternate reader for that rollback.

@@ -111,6 +111,25 @@ describe("isFeatureEnabled", () => {
     });
   });
 
+  it("enables Pi loop by default for every organization and honors explicit overrides", () => {
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.PiLoop, context)).toBe(true);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PiLoop, {
+          ...context,
+          overrides: { [FeatureSwitchKey.PiLoop]: false },
+        }),
+      ).toBe(false);
+    }
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.PiLoop]?.rolloutStage,
+    ).toBe("released");
+  });
+
   it("keeps chat thread archiving disabled by default and honors explicit overrides", () => {
     for (const context of [
       {},
@@ -538,7 +557,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(false);
