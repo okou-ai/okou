@@ -931,6 +931,74 @@ describe("model-first canonical catalog", () => {
     },
   );
 
+  it.each([
+    {
+      model: "okou-1.0",
+      preset: "@preset/okou-1-0",
+      displayName: "Okou 1.0",
+      sourceModel: "GPT-6 Luna",
+      sourceModelId: "openai/gpt-6-luna",
+      reasoningEffort: "max",
+    },
+    {
+      model: "okou-1.0-pro",
+      preset: "@preset/okou-1-0-pro",
+      displayName: "Okou 1.0 Pro",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "low",
+    },
+    {
+      model: "okou-1.0-max",
+      preset: "@preset/okou-1-0-max",
+      displayName: "Okou 1.0 Max",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "high",
+    },
+  ] as const)(
+    "projects Codex metadata for Okou $model to its OpenRouter Preset",
+    ({
+      model,
+      preset,
+      displayName,
+      sourceModel,
+      sourceModelId,
+      reasoningEffort,
+    }) => {
+      const catalog = getModelProviderCodexCatalogForModel(
+        model,
+        preset,
+        "openrouter-codex",
+      );
+
+      expect(catalog?.models).toHaveLength(1);
+      expect(catalog?.models).toEqual([
+        expect.objectContaining({
+          slug: preset,
+          display_name: displayName,
+          description: expect.stringContaining(
+            `${sourceModel} (${sourceModelId})`,
+          ),
+          default_reasoning_level: reasoningEffort,
+          supported_reasoning_levels: [
+            expect.objectContaining({ effort: reasoningEffort }),
+          ],
+          supports_reasoning_effort_updates: false,
+          context_window: 1_050_000,
+          max_context_window: 1_050_000,
+          effective_context_window_percent: 87,
+          input_modalities: ["text", "image"],
+          truncation_policy: { mode: "tokens", limit: 10_000 },
+          apply_patch_tool_type: "freeform",
+          web_search_tool_type: "text_and_image",
+          supports_search_tool: true,
+          tool_mode: "code_mode_only",
+        }),
+      ]);
+    },
+  );
+
   it("builds the default org policy seed from the workspace defaults", () => {
     expect(DEFAULT_ORG_MODEL_POLICY_MODELS).toEqual([
       "claude-fable-5-1",
