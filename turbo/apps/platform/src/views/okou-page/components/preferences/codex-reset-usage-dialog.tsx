@@ -153,10 +153,10 @@ export function CodexResetCreditsMenuItem({
             aria-label={label}
             aria-disabled={resetDisabled || undefined}
             className={cn(
-              "shrink-0 gap-1.5 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
+              "shrink-0 gap-1 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
               className,
               resetDisabled &&
-                "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
+                "opacity-70 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
             )}
             closeOnClick={!resetDisabled}
             onClick={() => {
