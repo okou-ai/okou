@@ -281,9 +281,20 @@ async function dispatchTelegramMessage(args: {
   });
 
   const runs = createRunsApi(context);
-  // Own the provider and initialize storage downloads so dispatch does not
-  // depend on another test's shared model keys or mock teardown.
-  await runs.ensureOrgModelProvider(actor);
+  // Own a native route so the diagnostic probe observes one pending Runner
+  // run rather than Pi's API-first terminal reply. Other seed-only cases still
+  // exercise the original free-tier fixture.
+  await runs.grantProEntitlement(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   runs.acceptStorageDownloads();
   context.mocks.s3.send.mockResolvedValue({});
   runs.configureRunnerGroup();
@@ -414,7 +425,7 @@ describe("GET /api/test/telegram-state", () => {
     expect(body.org_metadata).toMatchObject({
       orgId: fixture.orgId,
       defaultAgentId: fixture.defaultAgentId,
-      tier: "free",
+      tier: "pro",
     });
     expect(body.default_agent).toMatchObject({
       id: fixture.defaultAgentId,

@@ -397,11 +397,22 @@ async function setupConnectedTeamsActor(
       "Expected paid onboarding to create a Teams callback agent",
     );
   }
-  await Promise.all([
+  const [{ providerId }] = await Promise.all([
+    runsApi.ensureOrgModelProvider(actor),
     authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
       visibility: "public",
     }),
-    runsApi.ensureOrgModelProvider(actor),
+  ]);
+  // Queued Teams callbacks inspect and complete the Runner claim. Fable keeps
+  // this native fixture claimable while eligible Pi routes remain enabled.
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
   ]);
   if (options.okouDebug) {
     await updateFeatureSwitchesForUser(

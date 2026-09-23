@@ -15,6 +15,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testTeamsDispatchProbeRoutes } from "../test-teams-dispatch-probe";
 import { testTeamsStateRoutes } from "../test-teams-state";
 import { createFixtureTracker } from "./helpers/route-test";
+import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
@@ -127,9 +128,8 @@ async function seedTeamsFixture(
     defaultAgentId: body.default_agent_id,
   };
   await trackTeamsFixture(Promise.resolve(fixture));
-  // Teams dispatch diagnostics assert the queued Runner path. The default
-  // model now has a Pi route, so keep this fixture on its intended path.
-
+  // Dispatch diagnostics select their native route separately so the seed-only
+  // free-plan cases still observe the unmodified fixture.
   return fixture;
 }
 
@@ -181,6 +181,25 @@ async function dispatchTeamsMessage(args: {
   readonly text: string;
 }): Promise<void> {
   configureTeamsDispatchMocks();
+  // The dispatch probe observes a pending native Runner claim, not a Pi
+  // API-first completion. Upgrade only this dispatch fixture; seeded free-tier
+  // diagnostic tests still exercise their original plan separately.
+  const runs = createRunsApi(context);
+  const actor = createBddApi(context).user({
+    userId: args.fixture.userId,
+    orgId: args.fixture.orgId,
+  });
+  await runs.grantProEntitlement(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const response = await requestApp(TEAMS_DISPATCH_PROBE_ROUTE, {
     method: "POST",
     headers: { "content-type": "application/json" },
