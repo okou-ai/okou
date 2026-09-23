@@ -1906,7 +1906,8 @@ export const chatSearchContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Search up to 25 newest matching chat messages within caller's org",
+    summary:
+      "Search up to 25 newest matching chat messages within caller's org",
   },
 });
 
