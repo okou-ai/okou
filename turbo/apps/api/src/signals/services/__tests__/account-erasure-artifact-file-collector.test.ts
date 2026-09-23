@@ -103,7 +103,11 @@ describe("dormant artifact-file byte erasure", () => {
     return id;
   }
 
-  async function capture(subjectId: string, shortenAfterFirstPage = false) {
+  async function capture(
+    subjectId: string,
+    shortenAfterFirstPage = false,
+    restartAfterFirstPage = false,
+  ) {
     const selector = await encryptErasureSelector({
       version: 1,
       kind: "subject",
@@ -132,12 +136,24 @@ describe("dormant artifact-file byte erasure", () => {
     });
     const job = await reviseErasureInventory(db, initial.id, initial, [sink]);
     const handler = createArtifactFileErasureCollector(db);
-    const [collector] = await claimErasureWork(db, job.id, "inventory");
+    let [collector] = await claimErasureWork(db, job.id, "inventory");
     if (!collector) {
       throw new Error("Missing artifact inventory lease");
     }
     for (let page = 0; page < 8; page += 1) {
       await executeErasureWork(db, collector, handler, context.signal);
+      if (page === 0 && restartAfterFirstPage) {
+        await pool.query(
+          "UPDATE account_erasure_work SET lease_expires_at = clock_timestamp() - interval '1 second' WHERE id = $1",
+          [collector.workId],
+        );
+        const [resumed] = await claimErasureWork(db, job.id, "inventory");
+        expect(resumed?.workId).toBe(collector.workId);
+        if (!resumed) {
+          throw new Error("Missing resumed artifact inventory lease");
+        }
+        collector = resumed;
+      }
       if (page === 0 && shortenAfterFirstPage) {
         await pool.query(
           "UPDATE account_erasure_work SET lease_expires_at = clock_timestamp() + interval '2 seconds' WHERE id = $1",
@@ -359,7 +375,37 @@ describe("dormant artifact-file byte erasure", () => {
     }
     const bucket = bucketWithObjects(keys);
     const captured = await capture(userId, true);
-    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(46);
+    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(4);
     expect(bucket.live.size).toBe(0);
+    expect(
+      bucket.deletions.map((batch) => {
+        return batch.length;
+      }),
+    ).toStrictEqual([20, 20, 5]);
+  });
+
+  it("reclaims an expired capture lease and resumes the persisted cursor", async () => {
+    const userId = "user_artifact_" + randomUUID().replaceAll("-", "");
+    const keys: string[] = [];
+    for (let index = 0; index < 45; index += 1) {
+      const key =
+        "artifacts/" +
+        encodeURIComponent(userId) +
+        "/" +
+        randomUUID() +
+        "/restart.txt";
+      await fileFor(userId, key);
+      keys.push(key);
+    }
+    const bucket = bucketWithObjects(keys);
+    const captured = await capture(userId, false, true);
+    await pool.query("DELETE FROM run_uploaded_files WHERE user_id = $1", [
+      userId,
+    ]);
+    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(4);
+    expect(bucket.live.size).toBe(0);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).resolves.toMatchObject({ state: "verified_erased" });
   });
 });

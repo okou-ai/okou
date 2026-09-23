@@ -22,6 +22,12 @@ const selectorSchema = z.discriminatedUnion("kind", [
     key: z.string().min(1).max(2048),
     versionId: z.string().min(1).max(256).optional(),
   }),
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("object_batch"),
+    storageRef: z.uuid(),
+    keys: z.array(z.string().min(1).max(2048)).min(1).max(20),
+  }),
   // A resource whose bytes are owned by a key prefix rather than by a listed
   // set of keys. A hosted deployment is the case: its manifest names the files
   // it uploaded, but the prefix owns everything under it, so capturing the

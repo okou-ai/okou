@@ -85,9 +85,11 @@ async function leaseSubject(lease: ErasureLease): Promise<string | undefined> {
     : undefined;
 }
 
-async function leaseObject(
+async function leaseObjects(
   lease: ErasureLease,
-): Promise<ObjectLocator | undefined> {
+): Promise<
+  { readonly bucket: string; readonly keys: readonly string[] } | undefined
+> {
   if (!lease.item.selectorCiphertext || !lease.item.selectorDigest) {
     return undefined;
   }
@@ -95,7 +97,7 @@ async function leaseObject(
     ciphertext: lease.item.selectorCiphertext,
     digest: lease.item.selectorDigest,
   });
-  if (selector.kind !== "object") {
+  if (selector.kind !== "object_batch") {
     return undefined;
   }
   const buckets = [
@@ -105,7 +107,7 @@ async function leaseObject(
   const bucket = buckets.find((candidate) => {
     return candidate && selector.storageRef === storageReference(candidate);
   });
-  return bucket ? { bucket, key: selector.key } : undefined;
+  return bucket ? { bucket, keys: selector.keys } : undefined;
 }
 
 function firstPartyPublicUrl(value: string): boolean {
@@ -229,6 +231,49 @@ async function rowLocators(
   return locations;
 }
 
+function objectBatches(
+  locations: readonly ObjectLocator[],
+): readonly { readonly bucket: string; readonly keys: readonly string[] }[] {
+  const ordered = [...locations].sort((left, right) => {
+    return (
+      left.bucket.localeCompare(right.bucket) ||
+      left.key.localeCompare(right.key)
+    );
+  });
+  const batches: { bucket: string; keys: string[] }[] = [];
+  const seen = new Set<string>();
+  for (const location of ordered) {
+    const identity = `${location.bucket}\u0000${location.key}`;
+    if (seen.has(identity)) {
+      continue;
+    }
+    seen.add(identity);
+    const last = batches.at(-1);
+    const candidate =
+      last?.bucket === location.bucket
+        ? [...last.keys, location.key]
+        : [location.key];
+    const selectorSize = Buffer.byteLength(
+      JSON.stringify({
+        version: 1,
+        kind: "object_batch",
+        storageRef: storageReference(location.bucket),
+        keys: candidate,
+      }),
+    );
+    if (
+      last?.bucket === location.bucket &&
+      candidate.length <= 20 &&
+      selectorSize <= 4096
+    ) {
+      last.keys.push(location.key);
+    } else {
+      batches.push({ bucket: location.bucket, keys: [location.key] });
+    }
+  }
+  return batches;
+}
+
 function requestReference(
   lease: ErasureLease,
   outcome: "erased" | "empty",
@@ -290,36 +335,43 @@ async function inventoryPage(
       return await rowLocators(row, signal);
     }),
   );
-  const items = [];
+  const collected: ObjectLocator[] = [];
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
-    const locations = resolved[index];
-    if (!row || !locations) {
+    const rowLocations = resolved[index];
+    if (!row || !rowLocations) {
       throw new Error("Artifact inventory result length mismatch");
     }
-    if ("outcome" in locations) {
-      return locations;
+    if ("outcome" in rowLocations) {
+      return rowLocations;
     }
-    for (const location of locations) {
-      items.push({
+    collected.push(...rowLocations);
+  }
+  const batches = objectBatches(collected);
+  const items = await Promise.all(
+    batches.map(async (batch, index) => {
+      return {
         sinkId: lease.item.sinkId,
         itemKey: reference([
-          "artifact-object-item",
-          row.id,
-          location.bucket,
-          location.key,
+          "artifact-object-batch-item",
+          lease.jobId,
+          lease.captureRevision,
+          after ?? null,
+          index,
+          batch.bucket,
+          batch.keys,
         ]),
         kind: "erase" as const,
         selector: await encryptErasureSelector({
           version: 1,
-          kind: "object",
-          storageRef: storageReference(location.bucket),
-          key: location.key,
+          kind: "object_batch",
+          storageRef: storageReference(batch.bucket),
+          keys: batch.keys,
         }),
         dependencies: [],
-      });
-    }
-  }
+      };
+    }),
+  );
   const last = rows[rows.length - 1];
   const complete = rows.length < PAGE_SIZE;
   return {
@@ -354,17 +406,27 @@ async function eraseObject(
   lease: ErasureLease,
   signal: AbortSignal,
 ): Promise<{ readonly requestRef: string } | ErasureUnresolved> {
-  const object = await leaseObject(lease);
-  if (!object) {
+  const objects = await leaseObjects(lease);
+  if (!objects) {
     return unresolved("selector_missing");
   }
   const store = createStore();
-  if (!(await store.get(s3ObjectExists(object.bucket, object.key)))) {
+  const present = await Promise.all(
+    objects.keys.map(async (key) => {
+      return (await store.get(s3ObjectExists(objects.bucket, key)))
+        ? key
+        : null;
+    }),
+  );
+  const keys = present.filter((key): key is string => {
+    return key !== null;
+  });
+  if (keys.length === 0) {
     return { requestRef: requestReference(lease, "empty") };
   }
   // Reuse the existing DeleteObjects primitive, including its 1000-key bound
   // and per-object provider error handling.
-  await store.get(deleteS3Objects(object.bucket, [object.key], signal));
+  await store.get(deleteS3Objects(objects.bucket, keys, signal));
   return { requestRef: requestReference(lease, "erased") };
 }
 
@@ -372,9 +434,15 @@ async function verifyObjectAbsent(
   lease: ErasureLease,
   producerBoundary: string,
 ): Promise<ErasureProof | ErasureUnresolved> {
-  const object = await leaseObject(lease);
-  if (object) {
-    if (await createStore().get(s3ObjectExists(object.bucket, object.key))) {
+  const objects = await leaseObjects(lease);
+  if (objects) {
+    const store = createStore();
+    const remaining = await Promise.all(
+      objects.keys.map(async (key) => {
+        return await store.get(s3ObjectExists(objects.bucket, key));
+      }),
+    );
+    if (remaining.includes(true)) {
       return unresolved("verification_failed", "retryable_failure");
     }
   } else if (!(await leaseSubject(lease))) {
@@ -400,7 +468,7 @@ async function verifyObjectAbsent(
     authenticatedReaderRef: reference([
       "artifact-object-reader",
       ARTIFACT_FILE_ERASURE_COLLECTOR_VERSION,
-      object?.bucket ?? null,
+      objects?.bucket ?? null,
     ]),
     enumerationRef: reference([
       "artifact-object-item-enumeration",
