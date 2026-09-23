@@ -572,6 +572,11 @@ test.each([
     "codex_access_program_unavailable",
     CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
   ],
+  [
+    "safety refusal",
+    "safety_policy_refusal",
+    "The model provider rejected this request under its content safety policy.",
+  ],
 ] as const)(
   "A terminal provider failure (%s) displays its message without a recovery action",
   async (_owner, failureReason, message) => {
