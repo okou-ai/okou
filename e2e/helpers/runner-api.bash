@@ -12,7 +12,6 @@ runner_e2e_setup_test() {
     THREAD_ID=""
     RUN_ID=""
     CONNECTOR_ACCOUNT_ID=""
-    runner_e2e_use_legacy_route
 }
 
 runner_e2e_teardown_test() {
