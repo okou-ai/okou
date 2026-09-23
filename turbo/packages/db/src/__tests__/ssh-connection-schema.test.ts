@@ -35,6 +35,7 @@ describe("SSH connection schema", () => {
       "learned_host_key_algorithm",
       "learned_host_key_fingerprint",
       "generation",
+      "default_enabled_for_chats",
       "created_at",
       "updated_at",
     ]);

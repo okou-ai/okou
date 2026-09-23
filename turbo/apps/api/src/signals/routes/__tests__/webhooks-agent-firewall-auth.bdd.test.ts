@@ -249,7 +249,7 @@ describe("FW-1: firewall auth boundaries", () => {
 });
 
 describe("FW-2: template resolution without connector refresh", () => {
-  it("resolves secret, var, and basic templates across headers, base, and query", async () => {
+  it("resolves secret-backed auth headers", async () => {
     const fw = createFirewallApi(context);
     const { headers } = await firewallRun();
 
@@ -258,27 +258,12 @@ describe("FW-2: template resolution without connector refresh", () => {
       {
         encryptedSecrets: fw.encryptedSecretsBody({
           API_KEY: "secret-value",
-          BASIC_USER: "alice",
-          BASE_SECRET: "base-secret",
-          QUERY_SECRET: "query-secret",
           SCRAPENINJA_TOKEN: "rapidapi-secret",
-          SHARED: "secret-shared",
         }),
         authHeaders: {
           Authorization: `Bearer ${secretTemplate("API_KEY")}`,
           "X-RapidAPI-Host": "scrapeninja.p.rapidapi.com",
           "X-RapidAPI-Key": secretTemplate("SCRAPENINJA_TOKEN"),
-          "X-Tenant": varTemplate("TENANT"),
-          "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
-          "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
-          "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
-        },
-        authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
-        authQuery: { token: secretTemplate("QUERY_SECRET") },
-        vars: {
-          TENANT: "tenant-1",
-          BASIC_PASS: "var-pass",
-          SHARED: "var-shared",
         },
       },
       [200],
@@ -291,6 +276,40 @@ describe("FW-2: template resolution without connector refresh", () => {
       "scrapeninja.p.rapidapi.com",
     );
     expect(resolved.body.headers["X-RapidAPI-Key"]).toBe("rapidapi-secret");
+    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+    expect(resolved.body.resolvedSecrets).toContain("API_KEY");
+    expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
+  });
+
+  it("resolves variable and basic auth header templates", async () => {
+    const fw = createFirewallApi(context);
+    const { headers } = await firewallRun();
+
+    const resolved = await fw.requestFirewallAuth(
+      headers,
+      {
+        encryptedSecrets: fw.encryptedSecretsBody({
+          BASIC_USER: "alice",
+          SHARED: "secret-shared",
+        }),
+        authHeaders: {
+          "X-Tenant": varTemplate("TENANT"),
+          "X-Basic": basicTemplate("secrets.BASIC_USER", "vars.BASIC_PASS"),
+          "X-Literal-Basic": basicTemplate('"alice"', '"literal-pass"'),
+          "X-Shared": `${secretTemplate("SHARED")}:${varTemplate("SHARED")}`,
+        },
+        vars: {
+          TENANT: "tenant-1",
+          BASIC_PASS: "var-pass",
+          SHARED: "var-shared",
+        },
+      },
+      [200],
+    );
+    if (resolved.status !== 200) {
+      throw new Error("Expected firewall auth resolution to succeed");
+    }
     expect(resolved.body.headers["X-Tenant"]).toBe("tenant-1");
     expect(resolved.body.headers["X-Basic"]).toBe(
       `Basic ${Buffer.from("alice:var-pass").toString("base64")}`,
@@ -299,6 +318,30 @@ describe("FW-2: template resolution without connector refresh", () => {
       `Basic ${Buffer.from("alice:literal-pass").toString("base64")}`,
     );
     expect(resolved.body.headers["X-Shared"]).toBe("secret-shared:var-shared");
+    expect(resolved.body.refreshedConnectors).toStrictEqual([]);
+    expect(resolved.body.refreshedSecrets).toStrictEqual([]);
+  });
+
+  it("resolves secret templates in the base URL and query", async () => {
+    const fw = createFirewallApi(context);
+    const { headers } = await firewallRun();
+
+    const resolved = await fw.requestFirewallAuth(
+      headers,
+      {
+        encryptedSecrets: fw.encryptedSecretsBody({
+          BASE_SECRET: "base-secret",
+          QUERY_SECRET: "query-secret",
+        }),
+        authHeaders: {},
+        authBase: `https://api.example.test/${secretTemplate("BASE_SECRET")}`,
+        authQuery: { token: secretTemplate("QUERY_SECRET") },
+      },
+      [200],
+    );
+    if (resolved.status !== 200) {
+      throw new Error("Expected firewall auth resolution to succeed");
+    }
     expect(resolved.body.base).toBe("https://api.example.test/base-secret");
     expect(resolved.body.query).toStrictEqual({ token: "query-secret" });
     expect(resolved.body.expiresAt).toBeNull();
@@ -309,7 +352,6 @@ describe("FW-2: template resolution without connector refresh", () => {
     );
     expect(resolved.body.resolvedSecrets).toContain("BASE_SECRET");
     expect(resolved.body.resolvedSecrets).toContain("QUERY_SECRET");
-    expect(resolved.body.resolvedSecrets).toContain("SCRAPENINJA_TOKEN");
   });
 
   it("reports unresolvable template references as connector-not-configured", async () => {

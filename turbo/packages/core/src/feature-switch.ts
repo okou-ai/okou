@@ -469,6 +469,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
   },
+  [FeatureSwitchKey.ThreadRemoteAccess]: {
+    maintainer: "liangyou@okou.ai",
+    description: "Enable chat-scoped SSH and VNC host defaults and overrides",
+    enabled: false,
+  },
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:

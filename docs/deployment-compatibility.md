@@ -61,7 +61,7 @@ source-scoped cleanup before the delete triggers can be retired.
 
 ## Artifact and chat trigger retirement (contract step)
 
-Migration `1205_retire_artifact_chat_triggers` removes the eleven triggers named
+Migration `1206_retire_artifact_chat_triggers` removes the eleven triggers named
 in #33749 and their six unreferenced functions. It is a **contract step**, not
 an API expand step. It cannot ship while any serving API instance or supported
 rollback binary still relies on trigger-owned catalog writes/deletes, chat event

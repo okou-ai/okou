@@ -18,7 +18,7 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 import type { Db } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -180,13 +180,22 @@ async function openActiveInputDeliveryEventIds(
   );
 }
 
-function unrevokedQueueEventCondition(db: ChatQueueReadDb) {
+interface QueueEventIdentityColumns {
+  readonly id: AnyPgColumn;
+  readonly eventType: AnyPgColumn;
+  readonly runId: AnyPgColumn;
+}
+
+function unrevokedQueueEventCondition(
+  db: ChatQueueReadDb,
+  event: QueueEventIdentityColumns = chatEvents,
+) {
   return and(
     notExists(
       db
         .select({ id: queueEventRevoker.id })
         .from(queueEventRevoker)
-        .where(eq(queueEventRevoker.revokesEventId, chatEvents.id)),
+        .where(eq(queueEventRevoker.revokesEventId, event.id)),
     ),
     notExists(
       db
@@ -198,7 +207,7 @@ function unrevokedQueueEventCondition(db: ChatQueueReadDb) {
         )
         .where(
           and(
-            eq(activeInputDeliveryItems.sourceEventId, chatEvents.id),
+            eq(activeInputDeliveryItems.sourceEventId, event.id),
             isNull(activeInputDeliveryItems.disposition),
             eq(activeInputDeliveries.status, "open"),
           ),
@@ -232,10 +241,18 @@ export function pendingActiveInputCondition(
 }
 
 export function pendingChatQueueEventCondition(db: ChatQueueReadDb) {
+  return pendingChatQueueEventConditionFor(db, chatEvents);
+}
+
+/** Apply the authoritative pending-queue predicate to a queue-event alias. */
+export function pendingChatQueueEventConditionFor(
+  db: ChatQueueReadDb,
+  event: QueueEventIdentityColumns,
+) {
   return and(
-    chatEventTypeIn(["input.prompt", "input.automation"]),
-    isNull(chatEvents.runId),
-    unrevokedQueueEventCondition(db),
+    inArray(event.eventType, ["input.prompt", "input.automation"]),
+    isNull(event.runId),
+    unrevokedQueueEventCondition(db, event),
   );
 }
 

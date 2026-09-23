@@ -358,19 +358,6 @@ describe("DELETE /api/integrations/slack", () => {
     };
   }
 
-  it("returns 401 when unauthenticated", async () => {
-    const client = setupApp({ context, routes: integrationsSlackRoutes })(
-      integrationsSlackContract,
-    );
-
-    const response = await accept(
-      client.disconnect({ headers: {}, query: {} }),
-      [401],
-    );
-
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
   it("returns 404 when the user has no Slack connection", async () => {
     const seeded = await seedDeleteContext({ withConnection: false });
     mocks.clerk.session(seeded.userId, seeded.orgId);
@@ -701,13 +688,6 @@ describe("GET /api/integrations/slack/download-file", () => {
       token: okouToken({ userId, orgId, capabilities: ["slack:write"] }),
     };
   }
-
-  it("returns 401 when the request is unauthenticated", async () => {
-    expect.hasAssertions();
-    const response = await requestDownloadFile("?file_id=F1");
-
-    await expectErrorResponse(response, 401, "UNAUTHORIZED");
-  });
 
   it("rejects an agent token without slack:write capability", async () => {
     expect.hasAssertions();

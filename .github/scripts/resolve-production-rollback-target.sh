@@ -118,7 +118,7 @@ if ! git merge-base --is-ancestor "$PREPARED_DOMAIN_TRIGGER_RELEASE" "$TARGET_CO
   fail "Rollback target lacks prepared billing, OAuth and hosting writers; first supported release is ${PREPARED_DOMAIN_TRIGGER_RELEASE}."
 fi
 
-# Migration 1205 drops eleven artifact/chat triggers before the new API deploys.
+# Migration 1206 drops eleven artifact/chat triggers before the new API deploys.
 # A rollback keeps the contracted schema, so pre-writer API binaries are unsafe.
 if ! git merge-base --is-ancestor "$ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates artifact/chat explicit writers: ${ARTIFACT_CHAT_TRIGGER_WRITERS_COMMIT} (first supported release: 3a2a331d50503a73407029ed9074e7d6930778da, API 1.664.0)."

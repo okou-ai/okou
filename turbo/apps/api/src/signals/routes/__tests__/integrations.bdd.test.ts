@@ -6628,8 +6628,8 @@ describe("INT-02: Telegram integration", () => {
       {},
       [401],
     );
-    expect(unauthenticatedAvatar.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedAvatar.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const missingAvatar = await integrations.requestTelegramAvatar(
