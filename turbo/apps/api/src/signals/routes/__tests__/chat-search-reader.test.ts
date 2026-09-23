@@ -9,7 +9,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import {
-  insertChatSearchWindowFixture,
+  insertChatSearchHistoryFixture,
   insertChatSearchProjectionCoverageFixture,
   insertSearchablePromptFixture,
   removeChatSearchParentThreadsFixture,
@@ -79,15 +79,15 @@ async function sendNoCreditMessage(
 }
 
 describe("GET /api/chat/search durable reader", () => {
-  it("returns fewer than 25 matches without searching beyond the recent window", async () => {
+  it("finds older matches beyond the newest 400 messages", async () => {
     const orgId = `org_${randomUUID()}`;
     const owner = bdd.user({ orgId });
     const source = await createSearchThread(
       owner,
-      `bounded-reader-${randomUUID().slice(0, 8)}`,
+      `history-reader-${randomUUID().slice(0, 8)}`,
     );
-    const keyword = `bounded${randomUUID().replaceAll("-", "")}`;
-    await insertChatSearchWindowFixture({
+    const keyword = `history${randomUUID().replaceAll("-", "")}`;
+    await insertChatSearchHistoryFixture({
       chatThreadId: source.threadId,
       agentId: source.agentId,
       userId: owner.userId,
@@ -100,7 +100,7 @@ describe("GET /api/chat/search durable reader", () => {
       search.results.map((result) => {
         return result.matchedMessage.seqId;
       }),
-    ).toStrictEqual([2]);
+    ).toStrictEqual([2, 1]);
   });
 
   it("returns up to 25 newest matches without pagination", async () => {

@@ -70,8 +70,8 @@ export async function insertOrphanedChatEventSearchProjectionFixture(args: {
   });
 }
 
-/** Places one keyword match on each side of the chat search's 400-row window. */
-export async function insertChatSearchWindowFixture(args: {
+/** Places two old keyword matches before 399 unrelated messages. */
+export async function insertChatSearchHistoryFixture(args: {
   readonly chatThreadId: string;
   readonly userId: string;
   readonly orgId: string;
