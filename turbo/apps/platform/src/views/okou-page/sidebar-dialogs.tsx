@@ -71,7 +71,7 @@ import {
 } from "../../signals/okou-page/thread-number-shortcuts.ts";
 import { ThreadNumberShortcutHint } from "./thread-number-shortcut-hint.tsx";
 import { equalSets } from "../../lib/equality.ts";
-import { AgentAvatarImg } from "./sidebar-shared.tsx";
+import { AgentAvatarImg, ChatThreadStateText } from "./sidebar-shared.tsx";
 import {
   threeColumnAgentSearchResults$,
   threeColumnArtifactSearchResults$,
@@ -363,22 +363,19 @@ function ChatThreadCommandIndicator({
 }: {
   readonly indicator: ChatThreadCommandIndicatorValue;
 }) {
-  const { t } = useTranslation("agents");
-
-  if (indicator === "running") {
-    return <RunningIndicator />;
+  if (indicator === null) {
+    return null;
   }
-  if (indicator === "unread") {
-    return (
-      <span
-        aria-label={t(($) => {
-          return $.status.unread;
-        })}
-        className="h-2 w-2 rounded-full bg-sky-600"
-      />
-    );
-  }
-  return null;
+  return (
+    <>
+      {indicator === "running" ? (
+        <RunningIndicator />
+      ) : (
+        <span aria-hidden="true" className="h-2 w-2 rounded-full bg-sky-600" />
+      )}
+      <ChatThreadStateText state={indicator} />
+    </>
+  );
 }
 
 interface ChatMessageSnippetPart {
