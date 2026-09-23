@@ -379,7 +379,11 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadsContract.indicators,
     handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-thread:read",
+      },
       listChatIndicatorsInner$,
     ),
   },

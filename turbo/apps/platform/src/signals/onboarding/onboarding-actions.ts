@@ -8,6 +8,7 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { reloadAgents$ } from "../agent.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
+import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
 import { ROUTES } from "../route-paths.ts";
 import { billingStatusAsync$ } from "../okou-page/billing.ts";
 import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
@@ -17,7 +18,10 @@ import {
   resetOnboardingDraft$,
   storeOnboardingCheckoutDraft$,
 } from "./onboarding-state.ts";
-import { sourcesFirstDraft$ } from "./onboarding-sources-first-state.ts";
+import {
+  clearSourcesFirstDraft$,
+  sourcesFirstDraft$,
+} from "./onboarding-sources-first-state.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
@@ -49,18 +53,23 @@ export const completeOnboarding$ = command(
     const onboardingClient = createClient(onboardingCompleteContract);
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-    // Only the source-first flow asks for a field, and only an answered one is
-    // sent: the make-something flow leaves the draft empty, and the ready
-    // step's display fallback is not an answer worth storing.
-    const industry = get(sourcesFirstDraft$).industry;
+    // Only the source-first flow asks for these fields. Its industry answer can
+    // be absent after a resumed run, while its model choice still applies.
+    // The make-something flow leaves the draft empty.
+    const { industry, provider } = get(sourcesFirstDraft$);
     await accept(
       onboardingClient.complete({
+        query: provider === null ? {} : { modelProvider: provider },
         body: industry === null ? { timezone } : { timezone, industry },
         fetchOptions: { signal },
       }),
       [200],
     );
     signal.throwIfAborted();
+    if (provider !== null) {
+      set(invalidateOrgModelPolicies$);
+    }
+    set(clearSourcesFirstDraft$);
     if (role) {
       set(capturePaidOnboardingRoleConfirmed$, role);
     }

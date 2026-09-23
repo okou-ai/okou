@@ -57,6 +57,8 @@ use crate::duration::duration_ms as saturated_duration_ms;
 #[cfg(test)]
 use runner_types::ids::RunId;
 
+#[cfg(test)]
+use crate::config::RootfsSnapshotPathsExt;
 use crate::config::{self, ProfileConfig};
 use crate::deps;
 use crate::dns;
@@ -64,30 +66,30 @@ use crate::error::{RunnerError, RunnerResult};
 use crate::executor::{
     ExecutorConfig, RunnerPreSpawnConcurrency, SessionHistoryCpuPool, SessionHistoryProbe,
 };
-use crate::host;
 use crate::http::{HttpClient, HttpClientConfig};
 use crate::idle_pool::{IdlePool, IdlePoolConfig, ParkingGate};
 use crate::kmsg_log;
 use crate::lifecycle::{LifecycleController, RunnerMode};
-use crate::lock;
 use crate::network_log_drain::{DrainableLineReaderExit, NetworkLogDrainCoordinator};
 use crate::network_log_manager::NetworkLogManager;
-use crate::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::prefetch;
-use crate::provider::{
-    ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
-    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
-};
 use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::retry::{RetryState, sleep_until_retry};
-use crate::run_cancellation::{RunCancellationRegistration, RunCancellationRegistry};
-use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::status::{StatusTracker, remove_stale_status_file};
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceCacheWatcher, WorkspaceImageCache,
 };
+use runner_host::host;
+use runner_host::lock;
+use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
+use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::{
+    ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
+    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
+};
+use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
 mod active_runs;
 mod blank_pool;
@@ -300,11 +302,11 @@ impl TeardownTimer {
         Self::duration_ms(self.start.elapsed())
     }
 
-    fn phase_start(&self, phase: &'static str) -> crate::cleanup_progress::CleanupProgress {
-        let phase_start = crate::cleanup_progress::CleanupProgress::start(
+    fn phase_start(&self, phase: &'static str) -> runner_host::cleanup_progress::CleanupProgress {
+        let phase_start = runner_host::cleanup_progress::CleanupProgress::start(
             "runner",
             phase,
-            crate::cleanup_progress::CleanupIdentity::Runner,
+            runner_host::cleanup_progress::CleanupIdentity::Runner,
         );
         info!(
             phase,
@@ -317,7 +319,7 @@ impl TeardownTimer {
     fn phase_complete(
         &self,
         phase: &'static str,
-        phase_start: crate::cleanup_progress::CleanupProgress,
+        phase_start: runner_host::cleanup_progress::CleanupProgress,
     ) {
         info!(
             phase,
@@ -576,7 +578,7 @@ pub async fn run_start(
     args: StartArgs,
     runtime_provider: &dyn RuntimeProvider,
 ) -> RunnerResult<()> {
-    run_start_with_home(args, runtime_provider, HomePaths::new).await
+    run_start_with_home(args, runtime_provider, || Ok(HomePaths::new()?)).await
 }
 
 async fn run_start_with_home(
@@ -615,7 +617,7 @@ async fn run_start_with_home(
 
     let server = validate_server_config_for_start(server)?;
 
-    let runner_host_env = crate::host_env::read_runner_host_env()?;
+    let runner_host_env = runner_host::host_env::read_runner_host_env()?;
     let config::SandboxConfig {
         max_concurrent,
         concurrency_factor: yaml_concurrency_factor,
@@ -628,7 +630,7 @@ async fn run_start_with_home(
         )?;
     if concurrency_factor_source.is_override() {
         info!(
-            env_var = crate::host_env::RUNNER_CONCURRENCY_FACTOR_ENV,
+            env_var = runner_host::host_env::RUNNER_CONCURRENCY_FACTOR_ENV,
             override_source = concurrency_factor_source.label(),
             concurrency_factor,
             yaml_concurrency_factor,
@@ -636,7 +638,7 @@ async fn run_start_with_home(
         );
     }
 
-    crate::private_fs::ensure_private_dir(&runner_config.base_dir).await?;
+    runner_host::private_fs::ensure_private_dir(&runner_config.base_dir).await?;
 
     // Exclusive lock — prevents two runner processes from sharing the same base_dir.
     // Canonicalize so that equivalent paths (e.g. with `..`) produce the same lock.
@@ -701,7 +703,7 @@ async fn run_start_with_home(
     }
 
     let log_paths = LogPaths::new(home.logs_dir());
-    crate::log_file::ensure_log_dir(log_paths.dir()).map_err(|e| {
+    runner_host::log_file::ensure_log_dir(log_paths.dir()).map_err(|e| {
         RunnerError::Config(format!(
             "create logs_dir {}: {e}",
             log_paths.dir().display()
@@ -724,13 +726,13 @@ async fn run_start_with_home(
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
         let group_dir = home.groups_dir().join(&group);
-        crate::local_queue::ensure_group_dir(&group_dir).map_err(|e| {
+        runner_provider::local_queue::ensure_group_dir(&group_dir).map_err(|e| {
             RunnerError::Config(format!("create group dir {}: {e}", group_dir.display()))
         })?;
         for profile in runner_config.profiles.keys() {
-            crate::local_queue::ensure_profile_jobs_dir(&group_dir, profile).map_err(|e| {
-                RunnerError::Config(format!("create job dir for profile {profile}: {e}"))
-            })?;
+            runner_provider::local_queue::ensure_profile_jobs_dir(&group_dir, profile).map_err(
+                |e| RunnerError::Config(format!("create job dir for profile {profile}: {e}")),
+            )?;
         }
         Some(group_dir)
     } else {
@@ -952,10 +954,12 @@ async fn run_start_with_home(
         let group_name = group.clone();
         let profiles: Vec<String> = runner_config.profiles.keys().cloned().collect();
         let provider = ApiProvider::new(
-            http.clone(),
+            runner_provider::ProviderHttpClient::new(http.clone()),
             server.token,
             ApiProviderConfig {
-                ssh: ssh.clone(),
+                ably_side_message_handler: ssh
+                    .clone()
+                    .map(|runtime| runtime as Arc<dyn runner_provider::AblySideMessageHandler>),
                 runner_identity,
                 runner_hostname: hostname.clone(),
                 group,
@@ -1879,7 +1883,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         if startup_readiness_cancelled {
             return Ok(());
         }
-        return Err(e);
+        return Err(e.into());
     }
 
     let mut factories = match start_factories(
@@ -2241,7 +2245,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         let pending_finalizing_deadline = pending_finalizing_candidate
             .as_ref()
             .and_then(JobCandidate::runner_preference)
-            .map(crate::provider::ActiveRunnerPreference::deadline);
+            .map(runner_provider::ActiveRunnerPreference::deadline);
         tokio::select! {
             connection = prune_listener.accept() => {
                 match connection {

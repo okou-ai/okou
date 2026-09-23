@@ -12,7 +12,7 @@ use nix::fcntl::Flock;
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::process::{ProcessStat, ProcessStatRead, process_stat_is_live};
+use runner_host::process::{ProcessStat, ProcessStatRead, process_stat_is_live};
 
 // Marker-bearing descendants can outlive their runner, so cleanup resolves the
 // canonical marker from each process environment before signalling it.
@@ -59,14 +59,14 @@ pub(super) struct MitmdumpRuntime {
 
 impl MitmdumpRuntime {
     pub(super) async fn acquire(root: PathBuf, lock_path: PathBuf) -> RunnerResult<Arc<Self>> {
-        crate::private_fs::ensure_private_dir(&root).await?;
+        runner_host::private_fs::ensure_private_dir(&root).await?;
         let root = tokio::fs::canonicalize(&root).await.map_err(|error| {
             RunnerError::Config(format!(
                 "canonicalize mitmdump runtime directory {}: {error}",
                 root.display()
             ))
         })?;
-        let runtime_lock = crate::lock::try_acquire(lock_path.clone())
+        let runtime_lock = runner_host::lock::try_acquire(lock_path.clone())
             .await
             .map_err(|error| {
                 RunnerError::Config(format!(
@@ -328,7 +328,7 @@ fn scan_marked_processes(root: &Path, exact_path: Option<&Path>) -> RunnerResult
         {
             continue;
         }
-        let before = match crate::process::read_process_stat_checked_blocking(pid) {
+        let before = match runner_host::process::read_process_stat_checked_blocking(pid) {
             ProcessStatRead::Found(stat) if process_stat_is_live(&stat) => stat,
             ProcessStatRead::Found(_) | ProcessStatRead::Missing => continue,
             ProcessStatRead::Unreadable(error) if process_disappeared(&error) => continue,
@@ -349,7 +349,7 @@ fn scan_marked_processes(root: &Path, exact_path: Option<&Path>) -> RunnerResult
         if resolve_runtime_marker(&rechecked_environ) != Some(marker) {
             continue;
         }
-        let after = match crate::process::read_process_stat_checked_blocking(pid) {
+        let after = match runner_host::process::read_process_stat_checked_blocking(pid) {
             ProcessStatRead::Found(stat) if process_stat_is_live(&stat) => stat,
             ProcessStatRead::Found(_) | ProcessStatRead::Missing => continue,
             ProcessStatRead::Unreadable(error) if process_disappeared(&error) => continue,
@@ -478,7 +478,7 @@ async fn wait_for_processes_exit(target: &Path, snapshot: &ProcessSnapshot) -> R
 async fn observe_stable_process(
     process: &ProcessObservation,
 ) -> RunnerResult<Option<ProcessObservation>> {
-    match crate::process::read_process_stat_checked(process.identity.pid).await {
+    match runner_host::process::read_process_stat_checked(process.identity.pid).await {
         ProcessStatRead::Found(stat)
             if process_stat_is_live(&stat) && stat.starttime == process.identity.starttime =>
         {
@@ -576,7 +576,7 @@ async fn marked_process_matches_after_pidfd_open(
     exact_path: Option<&Path>,
     process: ProcessIdentity,
 ) -> RunnerResult<bool> {
-    let before = match crate::process::read_process_stat_checked(process.pid).await {
+    let before = match runner_host::process::read_process_stat_checked(process.pid).await {
         ProcessStatRead::Found(stat) if process_stat_is_live(&stat) => stat,
         ProcessStatRead::Found(_) | ProcessStatRead::Missing => return Ok(false),
         ProcessStatRead::Unreadable(error) if process_disappeared(&error) => return Ok(false),
@@ -601,7 +601,7 @@ async fn marked_process_matches_after_pidfd_open(
         Ok(environ) => environ,
         Err(error) if process_disappeared(&error) => return Ok(false),
         Err(environment_error) => {
-            match crate::process::read_process_stat_checked(process.pid).await {
+            match runner_host::process::read_process_stat_checked(process.pid).await {
                 ProcessStatRead::Found(stat)
                     if process_stat_is_live(&stat) && stat.starttime == process.starttime =>
                 {
@@ -639,7 +639,7 @@ async fn marked_process_matches_after_pidfd_open(
         return Ok(false);
     }
 
-    let after = match crate::process::read_process_stat_checked(process.pid).await {
+    let after = match runner_host::process::read_process_stat_checked(process.pid).await {
         ProcessStatRead::Found(stat) if process_stat_is_live(&stat) => stat,
         ProcessStatRead::Found(_) | ProcessStatRead::Missing => return Ok(false),
         ProcessStatRead::Unreadable(error) if process_disappeared(&error) => return Ok(false),
@@ -728,7 +728,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("runtime");
         let lock_path = dir.path().join("runtime.lock");
-        crate::private_fs::ensure_private_dir(&root).await.unwrap();
+        runner_host::private_fs::ensure_private_dir(&root)
+            .await
+            .unwrap();
         let launch = root.join("launch-canonical");
         std::fs::create_dir(&launch).unwrap();
         let mut child = ProbeChild::spawn(Some((CANONICAL_RUNTIME_MARKER_ENV, &launch)));
@@ -776,7 +778,8 @@ mod tests {
     }
 
     async fn process_identity(pid: u32) -> ProcessIdentity {
-        let ProcessStatRead::Found(stat) = crate::process::read_process_stat_checked(pid).await
+        let ProcessStatRead::Found(stat) =
+            runner_host::process::read_process_stat_checked(pid).await
         else {
             panic!("probe child process stat is unavailable");
         };
@@ -842,7 +845,8 @@ mod tests {
             nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL).unwrap();
             let deadline = std::time::Instant::now() + Duration::from_secs(1);
             loop {
-                match crate::process::read_process_stat_checked_blocking(pid.as_raw() as u32) {
+                match runner_host::process::read_process_stat_checked_blocking(pid.as_raw() as u32)
+                {
                     ProcessStatRead::Found(stat) if !process_stat_is_live(&stat) => break,
                     ProcessStatRead::Found(_) => {}
                     ProcessStatRead::Missing => panic!("probe child disappeared before reaping"),

@@ -24,6 +24,7 @@ import {
   History,
   MessageCircle,
   ReceiptText,
+  Wrench,
   Users,
 } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -43,6 +44,7 @@ import {
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { PreferenceSection } from "./sections/preference-section.tsx";
 import { ChatSection } from "./sections/chat-section.tsx";
+import { ToolsSection } from "./sections/paid-tools-section.tsx";
 import { ModelSection } from "./sections/model-section.tsx";
 import { DebugSection } from "./sections/debug-section.tsx";
 import { GeneralSection } from "./sections/general-section.tsx";
@@ -74,6 +76,7 @@ interface SidebarGroup {
 const SECTION_COMPONENTS = {
   preference: PreferenceSection,
   chat: ChatSection,
+  tools: ToolsSection,
   model: ModelSection,
   debug: DebugSection,
   general: GeneralSection,
@@ -150,6 +153,9 @@ function SettingsDialog({
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
   const showChat = features[FeatureSwitchKey.ChatPreference] ?? false;
+  const showTools =
+    (features[FeatureSwitchKey.SettingsToolsTab] ?? false) &&
+    (features[FeatureSwitchKey.PaidToolControls] ?? false);
 
   const sectionMeta = {
     preference: {
@@ -166,6 +172,14 @@ function SettingsDialog({
       }),
       description: t(($) => {
         return $.settings.preferences.chat.description;
+      }),
+    },
+    tools: {
+      title: t(($) => {
+        return $.settings.dialog.sections.tools.title;
+      }),
+      description: t(($) => {
+        return $.settings.paidTools.description;
       }),
     },
     model: {
@@ -248,6 +262,15 @@ function SettingsDialog({
           },
         ]
       : []),
+    ...(showTools
+      ? [
+          {
+            id: "tools" as const,
+            label: sectionMeta.tools.title,
+            icon: Wrench,
+          },
+        ]
+      : []),
     { id: "debug", label: sectionMeta.debug.title, icon: Bug },
   ];
   const personalGroup: SidebarGroup = {
@@ -315,10 +338,17 @@ function SettingsDialog({
     ...(billingGroup.items.length > 0 ? [billingGroup] : []),
   ];
 
+  const sectionItems = sidebarGroups.flatMap((group) => {
+    return group.items.map((item) => {
+      return { value: item.id, label: item.label };
+    });
+  });
+
   // If the user lost admin while the dialog is open, fall back to a safe section
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
     chatPreferenceEnabled: showChat,
+    toolsTabEnabled: showTools,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"
@@ -359,23 +389,36 @@ function SettingsDialog({
           {/* Mobile: dropdown nav */}
           <div className="sm:hidden shrink-0 px-4 pr-14 pt-4 pb-4 border-b border-border/50 bg-[hsl(var(--gray-0))]">
             <Select
+              items={sectionItems}
               value={resolvedSection}
-              onValueChange={(v) => {
-                handleSectionChange(v as SettingsSection);
+              onValueChange={(value, details) => {
+                const section = sectionItems.find((item) => {
+                  return item.value === value;
+                });
+                if (!section) {
+                  details.cancel();
+                  return;
+                }
+                if (section.value !== resolvedSection) {
+                  handleSectionChange(section.value);
+                }
               }}
             >
-              <SelectTrigger className="h-9 w-full">
+              <SelectTrigger
+                className="h-9 w-full"
+                aria-label={t(($) => {
+                  return $.settings.dialog.sectionNavigation;
+                })}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {sidebarGroups.flatMap((group) => {
-                  return group.items.map((item) => {
-                    return (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.label}
-                      </SelectItem>
-                    );
-                  });
+                {sectionItems.map((item) => {
+                  return (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  );
                 })}
               </SelectContent>
             </Select>

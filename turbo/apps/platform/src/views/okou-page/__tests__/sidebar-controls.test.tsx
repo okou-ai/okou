@@ -37,10 +37,7 @@ import {
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import {
-  chatThreadEventsContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -414,6 +411,7 @@ test("Show pinned agents before unread indicators finish loading", async () => {
     return respond(200, {
       agents: { [SUPPORT_AGENT_ID]: "unread" },
       threads: {},
+      unreadAt: {},
     });
   });
 
@@ -507,11 +505,14 @@ test("Recognize and pin sidebar conversation states", async () => {
   context.mocks.api(chatThreadsContract.drafts, ({ respond }) => {
     return respond(200, { draftThreadIds: [ARCHIVED_THREAD_ID] });
   });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      unreads: [
-        { threadId: INCIDENT_THREAD_ID, unreadAt: "2026-03-10T00:05:00Z" },
-      ],
+      agents: { [AGENT_ID]: "unread" },
+      threads: {
+        [INCIDENT_THREAD_ID]: "unread",
+        [AUTOMATION_THREAD_ID]: "active",
+      },
+      unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
   });
 
@@ -612,28 +613,9 @@ test.each(["agent", "thread"] as const)(
       return respond(200, {
         agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
         threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
-      });
-    });
-    context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
-      return respond(200, {
-        events: Object.fromEntries(
-          body.map(([threadId]) => {
-            return [threadId, []];
-          }),
-        ),
-        notFoundThreads: [],
-      });
-    });
-    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-      return respond(200, {
-        unreads: hasUnread
-          ? [
-              {
-                threadId: EXISTING_THREAD_ID,
-                unreadAt: "2026-03-10T00:05:00Z",
-              },
-            ]
-          : [],
+        unreadAt: hasUnread
+          ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }
+          : {},
       });
     });
 
@@ -673,67 +655,24 @@ test.each(["agent", "thread"] as const)(
   },
 );
 
-test.each([
-  ["thread list", "pending"],
-  ["thread list", "failed"],
-  ["read cursor", "pending"],
-  ["read cursor", "failed"],
-] as const)(
-  "Show the running indicator after a %s change while chat warming is %s",
-  async (notification, warmingOutcome) => {
+test.each(["thread list", "read cursor"] as const)(
+  "Refresh the running indicator after a %s change without warming chats",
+  async (notification) => {
     mockMobileLayout();
     prepareDefaultAgent();
     mockSidebarThreadStory([
       createThread(EXISTING_THREAD_ID, "Remote running conversation"),
     ]);
     let running = false;
-    let runningIndicatorsReturned = false;
-    const warmingStarted = context.mocks.deferred<void>();
-    const warmingResponse = context.mocks.deferred<void>();
     context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-      runningIndicatorsReturned = running;
       return respond(200, {
         agents: {},
         threads: { [EXISTING_THREAD_ID]: running ? "active" : "unread" },
+        unreadAt: running
+          ? {}
+          : { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" },
       });
     });
-    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-      return respond(200, {
-        unreads: [
-          {
-            threadId: EXISTING_THREAD_ID,
-            unreadAt: "2026-03-10T00:05:00Z",
-          },
-        ],
-      });
-    });
-    context.mocks.api(
-      chatThreadEventsContract.catchUp,
-      async ({ body, respond }) => {
-        if (runningIndicatorsReturned) {
-          if (!warmingStarted.settled()) {
-            warmingStarted.resolve();
-          }
-          if (warmingOutcome === "pending") {
-            await warmingResponse.promise;
-          }
-          return respond(500, {
-            error: {
-              message: "Chat warming failed",
-              code: "INTERNAL_SERVER_ERROR",
-            },
-          });
-        }
-        return respond(200, {
-          events: Object.fromEntries(
-            body.map(([threadId]) => {
-              return [threadId, []];
-            }),
-          ),
-          notFoundThreads: [],
-        });
-      },
-    );
 
     await setupSidebarPage({
       context,
@@ -747,21 +686,29 @@ test.each([
       expect(within(indicatorRow()).getByLabelText("Unread")).toBeVisible();
     });
 
+    const changeIndicator = () => {
+      if (notification === "thread list") {
+        changeChatThreadList();
+      } else {
+        changeChatThreadReadCursor({
+          threadId: EXISTING_THREAD_ID,
+          lastReadAt: null,
+        });
+      }
+    };
     running = true;
-    if (notification === "thread list") {
-      changeChatThreadList();
-    } else {
-      changeChatThreadReadCursor({
-        threadId: EXISTING_THREAD_ID,
-        lastReadAt: null,
-      });
-    }
-
-    await warmingStarted.promise;
+    changeIndicator();
     await waitFor(() => {
       expect(within(indicatorRow()).getByLabelText("Running")).toBeVisible();
     });
     expect(within(indicatorRow()).queryByLabelText("Unread")).toBeNull();
+
+    running = false;
+    changeIndicator();
+    await waitFor(() => {
+      expect(within(indicatorRow()).queryByLabelText("Running")).toBeNull();
+      expect(within(indicatorRow()).getByLabelText("Unread")).toBeVisible();
+    });
   },
 );
 

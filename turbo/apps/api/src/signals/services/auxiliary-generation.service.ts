@@ -22,6 +22,7 @@ type AuxiliaryFeature =
   | "chat_initial_thinking"
   | "run_summary"
   | "recommended_followups"
+  | "home_task_recommendations"
   | "notification_summary";
 type Outcome = "success" | "degraded" | "cancelled" | "error" | "skipped";
 type Reason =

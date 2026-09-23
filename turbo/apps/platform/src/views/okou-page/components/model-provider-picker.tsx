@@ -2,7 +2,7 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -11,9 +11,9 @@ import {
 } from "ccstate-react";
 import { Check, ChevronDown, Cpu, Zap } from "lucide-react";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
   Button,
   Select,
   SelectContent,
@@ -162,8 +162,6 @@ interface ModelProviderPickerProps {
   menuSignals?: ModelPickerMenuSignals;
   /** Replaces the menu's pages with the detached type/model flyout. */
   flyoutLayout?: boolean;
-  /** Lets the flyout dismiss itself once a model has been committed. */
-  onSelected?: () => void;
   /** Model omitted from this caller's list of available choices. */
   excludedModel?: SupportedRunModel;
   /**
@@ -197,7 +195,7 @@ function ByokBadge({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -457,7 +455,12 @@ function modelFirstSelectionFromInteraction(
   raw: string,
   currentSelection: ModelProviderSelection | null,
 ): ModelProviderSelection | null | undefined {
+  // Fast uses a hidden selected-value marker, distinct from its toggle option.
+  // Replaying that value must not parse it as the inherit-default sentinel.
   if (currentSelection?.codexServiceTier === "fast") {
+    if (raw === modelFirstSelectValue(currentSelection)) {
+      return undefined;
+    }
     if (raw === currentSelection.selectedModel) {
       return undefined;
     }
@@ -568,7 +571,7 @@ function ModelFirstPolicyRow({
             showSelectedIndicator={fastSelected}
           />
         </SelectItem>
-        <TooltipProvider delayDuration={800} skipDelayDuration={0}>
+        <TooltipProvider delay={800} timeout={0}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1096,7 +1099,9 @@ function ModelFirstSelectPicker({
       ) => void)
     | undefined;
   modal: boolean | undefined;
-  onValueChange: (raw: string) => void;
+  onValueChange: NonNullable<
+    ComponentProps<typeof Select<string>>["onValueChange"]
+  >;
 }) {
   return (
     <Select
@@ -1185,7 +1190,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   showInheritOption,
   menuSignals,
   flyoutLayout,
-  onSelected,
   onMenuChange,
 }: {
   value: ModelProviderSelection | null;
@@ -1196,7 +1200,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   showInheritOption: boolean;
   menuSignals: ModelPickerMenuSignals | undefined;
   flyoutLayout: boolean;
-  onSelected: (() => void) | undefined;
   onMenuChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
@@ -1254,7 +1257,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
         placeholder={placeholder}
         mediaModelPanel={mediaModelPanel}
         onChange={onMenuChange}
-        onSelected={onSelected}
         options={state.policies.map((policy) => {
           return {
             model: policy.model,
@@ -1331,7 +1333,18 @@ function EnabledExplicitModelFirstModelPicker(
     placeholder: props.placeholder,
     fastLabel: props.fastLabel,
   });
-  const handleRawValueChange = (raw: string) => {
+  const handleRawValueChange: NonNullable<
+    ComponentProps<typeof Select<string>>["onValueChange"]
+  > = (raw, details) => {
+    if (raw === null) {
+      details.cancel();
+      return;
+    }
+    // Replaying the displayed selection must not save a model preference.
+    // Explicit item presses still reach the command, including failed saves.
+    if (raw === state.selectValue && details.reason === "none") {
+      return;
+    }
     const selection = modelFirstSelectionFromInteraction(raw, state.selection);
     if (selection !== undefined) {
       handleSelectionChange(selection);
@@ -1347,62 +1360,27 @@ function EnabledExplicitModelFirstModelPicker(
       showInheritOption={props.showInheritOption ?? false}
       menuSignals={props.menuSignals}
       flyoutLayout={props.flyoutLayout ?? false}
-      onSelected={props.onSelected}
       onMenuChange={handleSelectionChange}
     />
   );
   if (props.menuSignals) {
     return (
-      <Popover
-        open={props.open}
-        onOpenChange={props.onOpenChange}
-        modal={props.modal}
+      <ComposerModelMenu
+        {...props}
+        menuSignals={props.menuSignals}
+        triggerAriaLabel={state.triggerAriaLabel}
+        triggerLabel={
+          <ModelFirstTriggerLabel
+            selection={state.selection}
+            placeholder={props.placeholder}
+            mobileIcon={props.mobileIconTrigger}
+            fastLabel={props.fastLabel}
+            fastShownByCaller={props.fastShownByCaller ?? false}
+          />
+        }
       >
-        <PopoverTrigger
-          render={
-            <Button
-              variant="ghost"
-              aria-label={state.triggerAriaLabel}
-              className={cn(
-                "h-9 w-full justify-start gap-2 rounded-lg text-sm font-normal",
-                props.triggerClassName,
-              )}
-            >
-              <span data-slot="select-value" className="min-w-0">
-                <ModelFirstTriggerLabel
-                  selection={state.selection}
-                  placeholder={props.placeholder}
-                  mobileIcon={props.mobileIconTrigger}
-                  fastLabel={props.fastLabel}
-                  fastShownByCaller={props.fastShownByCaller ?? false}
-                />
-              </span>
-              <span data-slot="select-icon">
-                <ChevronDown
-                  size={16}
-                  className="shrink-0 opacity-50"
-                  aria-hidden="true"
-                />
-              </span>
-            </Button>
-          }
-        />
-        <PopoverContent
-          side="top"
-          align="end"
-          collisionPadding={8}
-          aria-label={props.placeholder}
-          className={cn(
-            props.flyoutLayout
-              ? // The popover is the type rail's own card, so it keeps the
-                // component's hairline and shadow and only resizes.
-                "w-[188px] max-w-[calc(100vw-16px)] p-1"
-              : "w-[304px] max-w-[calc(100vw-16px)] max-h-[var(--available-height)] overflow-y-auto overscroll-contain p-1",
-          )}
-        >
-          {content}
-        </PopoverContent>
-      </Popover>
+        {content}
+      </ComposerModelMenu>
     );
   }
   return (
@@ -1422,6 +1400,95 @@ function EnabledExplicitModelFirstModelPicker(
   );
 }
 
+function ComposerModelMenu({
+  menuSignals,
+  flyoutLayout,
+  open,
+  onOpenChange,
+  modal,
+  placeholder,
+  triggerClassName,
+  triggerAriaLabel,
+  triggerLabel,
+  children,
+}: Pick<
+  ModelProviderPickerProps,
+  | "flyoutLayout"
+  | "open"
+  | "onOpenChange"
+  | "modal"
+  | "placeholder"
+  | "triggerClassName"
+> & {
+  menuSignals: ModelPickerMenuSignals;
+  triggerAriaLabel: string;
+  triggerLabel: ReactNode;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const page = useGet(menuSignals.page$);
+  const reset = useSet(menuSignals.reset$);
+  return (
+    <DropdownMenu
+      open={open}
+      modal={modal}
+      onOpenChange={(nextOpen, details) => {
+        if (
+          !nextOpen &&
+          !flyoutLayout &&
+          page.kind === "models" &&
+          details.reason === "escape-key"
+        ) {
+          details.cancel();
+          reset();
+          return;
+        }
+        onOpenChange?.(nextOpen, details);
+      }}
+    >
+      <DropdownMenuTrigger
+        render={<Button variant="ghost" />}
+        aria-label={triggerAriaLabel}
+        className={cn(
+          "h-9 w-full justify-start gap-2 rounded-lg text-sm font-normal",
+          triggerClassName,
+        )}
+      >
+        <span data-slot="select-value" className="min-w-0">
+          {triggerLabel}
+        </span>
+        <span data-slot="select-icon">
+          <ChevronDown
+            size={16}
+            className="shrink-0 opacity-50"
+            aria-hidden="true"
+          />
+        </span>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="top"
+        align="end"
+        collisionPadding={8}
+        aria-labelledby={undefined}
+        aria-label={
+          flyoutLayout
+            ? t(($) => {
+                return $.settings.models.picker.models;
+              })
+            : placeholder
+        }
+        className={
+          flyoutLayout
+            ? "w-[188px] max-w-[calc(100vw-16px)] data-starting-style:opacity-100 data-starting-style:[transform:scale(1)]"
+            : "w-[304px] max-w-[calc(100vw-16px)] overscroll-contain"
+        }
+      >
+        {children}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function ModelProviderPicker({
   value,
   onChange,
@@ -1436,7 +1503,6 @@ export function ModelProviderPicker({
   mediaModelPanel,
   menuSignals,
   flyoutLayout = false,
-  onSelected,
   excludedModel,
   fastShownByCaller,
 }: ModelProviderPickerProps) {
@@ -1476,7 +1542,6 @@ export function ModelProviderPicker({
       menuSignals={menuSignals}
       flyoutLayout={flyoutLayout}
       fastShownByCaller={fastShownByCaller ?? false}
-      {...(onSelected ? { onSelected } : {})}
       {...(mediaModelPanel ? { mediaModelPanel } : {})}
     />
   );

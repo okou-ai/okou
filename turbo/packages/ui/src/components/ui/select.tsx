@@ -9,120 +9,7 @@ import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 import { resolveCollisionPadding } from "../../lib/safe-area";
 
-interface InferredSelectItem<Value> {
-  label: React.ReactNode;
-  value: Value;
-}
-
-interface SelectItemElementProps {
-  children?: React.ReactNode;
-  value?: unknown;
-}
-
-type SelectCompatibilityValue<
-  Value,
-  Multiple extends boolean | undefined,
-> = Multiple extends true ? Value[] : Value;
-
-type SelectProps<Value, Multiple extends boolean | undefined = false> = Omit<
-  SelectPrimitive.Root.Props<Value, Multiple>,
-  "onValueChange"
-> & {
-  onValueChange?: (
-    value: SelectCompatibilityValue<Value, Multiple>,
-    eventDetails: SelectPrimitive.Root.ChangeEventDetails,
-  ) => void;
-};
-
-function collectSelectItems<Value>(
-  children: React.ReactNode,
-  items: InferredSelectItem<Value>[],
-): void {
-  React.Children.forEach(children, (child) => {
-    if (!React.isValidElement(child)) {
-      return;
-    }
-    const element = child as React.ReactElement<SelectItemElementProps>;
-    if (element.type === SelectItem && "value" in element.props) {
-      items.push({
-        label: element.props.children,
-        value: element.props.value as Value,
-      });
-    }
-    collectSelectItems(element.props.children, items);
-  });
-}
-
-function selectValuesEqual<Value>(
-  left: unknown,
-  right: unknown,
-  multiple: boolean | undefined,
-  isItemEqualToValue: ((itemValue: Value, value: Value) => boolean) | undefined,
-): boolean {
-  const itemEquals = (item: unknown, value: unknown): boolean => {
-    if (item === null || value === null) {
-      return Object.is(item, value);
-    }
-    return isItemEqualToValue
-      ? isItemEqualToValue(item as Value, value as Value)
-      : Object.is(item, value);
-  };
-
-  if (!multiple) {
-    return itemEquals(left, right);
-  }
-  if (!Array.isArray(left) || !Array.isArray(right)) {
-    return false;
-  }
-  return (
-    left.length === right.length &&
-    left.every((item, index) => {
-      return itemEquals(item, right[index]);
-    })
-  );
-}
-
-function Select<Value, Multiple extends boolean | undefined = false>({
-  children,
-  items,
-  onValueChange,
-  ...props
-}: SelectProps<Value, Multiple>) {
-  const inferredItems = React.useMemo(() => {
-    if (items !== undefined) {
-      return items;
-    }
-    const result: InferredSelectItem<Value>[] = [];
-    collectSelectItems<Value>(children, result);
-    return result;
-  }, [children, items]);
-
-  return (
-    <SelectPrimitive.Root
-      items={inferredItems}
-      onValueChange={(nextValue, eventDetails) => {
-        const isControlledSynchronization =
-          props.value !== undefined &&
-          eventDetails.reason === "none" &&
-          selectValuesEqual<Value>(
-            nextValue,
-            props.value,
-            props.multiple,
-            props.isItemEqualToValue,
-          );
-        if (nextValue !== null && !isControlledSynchronization) {
-          onValueChange?.(
-            nextValue as SelectCompatibilityValue<Value, Multiple>,
-            eventDetails,
-          );
-        }
-      }}
-      {...props}
-    >
-      {children}
-    </SelectPrimitive.Root>
-  );
-}
+const Select = SelectPrimitive.Root;
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
@@ -230,7 +117,6 @@ type SelectPositionerProps = Pick<
 type SelectContentProps = SelectPrimitive.Popup.Props &
   SelectPositionerProps & {
     hideScrollButtons?: boolean;
-    position?: "item-aligned" | "popper";
     viewportClassName?: string;
   };
 
@@ -238,7 +124,7 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
   (
     {
       align = "center",
-      alignItemWithTrigger,
+      alignItemWithTrigger = false,
       alignOffset = 0,
       anchor,
       children,
@@ -247,7 +133,6 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       collisionBoundary,
       collisionPadding,
       hideScrollButtons = false,
-      position = "popper",
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
@@ -258,14 +143,11 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
     },
     ref,
   ) => {
-    const resolvedAlignItemWithTrigger =
-      alignItemWithTrigger ?? position === "item-aligned";
-
     return (
       <SelectPrimitive.Portal>
         <SelectPrimitive.Positioner
           align={align}
-          alignItemWithTrigger={resolvedAlignItemWithTrigger}
+          alignItemWithTrigger={alignItemWithTrigger}
           alignOffset={alignOffset}
           anchor={anchor}
           collisionAvoidance={collisionAvoidance}

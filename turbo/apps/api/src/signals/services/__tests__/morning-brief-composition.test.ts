@@ -38,6 +38,16 @@ import { normalizeMorningBriefGithub } from "../morning-brief-github-source";
 import { normalizeMorningBriefGmail } from "../morning-brief-gmail-source";
 import { normalizeMorningBriefSlack } from "../morning-brief-slack-source";
 import {
+  MAX_HEADING_LENGTH,
+  MAX_ITEM_LENGTH,
+  MAX_ITEMS_PER_SECTION,
+  MAX_LANGUAGE_LENGTH,
+  MAX_SECTIONS,
+  MAX_SOURCE_IDS,
+  MAX_TITLE_LENGTH,
+  MORNING_BRIEF_COMPOSED_RESULT_JSON_SCHEMA,
+} from "../morning-brief-generation-result";
+import {
   morningBriefEnvelopeBytes,
   buildMorningBriefProviderRequest,
   buildMorningBriefRequest,
@@ -1672,21 +1682,33 @@ describe("preserved provider facts", () => {
   });
 });
 
+/** A node of the response contract, read the way a provider reads it. */
+interface ContractNode {
+  readonly type?: string;
+  readonly enum?: readonly string[];
+  readonly minLength?: number;
+  readonly maxLength?: number;
+  readonly minItems?: number;
+  readonly maxItems?: number;
+  readonly items?: ContractNode;
+  readonly properties?: Readonly<Record<string, ContractNode>>;
+  readonly required?: readonly string[];
+  readonly additionalProperties?: boolean;
+}
+
 describe("provider-enforced response contract", () => {
-  /** The `response_format` the transport actually serializes. */
-  function responseFormat(): {
-    readonly type: string;
-    readonly json_schema: {
-      readonly name: string;
-      readonly strict: boolean;
-      readonly schema: {
-        readonly type: string;
-        readonly anyOf: readonly {
+  /** The transport body, parsed back out of the bytes that actually travel. */
+  function providerBody(): {
+    readonly messages: readonly { readonly content: string }[];
+    readonly response_format: {
+      readonly type: string;
+      readonly json_schema: {
+        readonly name: string;
+        readonly strict: boolean;
+        readonly schema: {
           readonly type: string;
-          readonly properties: Record<string, { readonly enum?: string[] }>;
-          readonly required: readonly string[];
-          readonly additionalProperties: boolean;
-        }[];
+          readonly anyOf: readonly ContractNode[];
+        };
       };
     };
   } {
@@ -1699,10 +1721,48 @@ describe("provider-enforced response contract", () => {
       instructions: null,
       omittedByNormalizedCap: {},
     });
-    const body = JSON.parse(packed.providerRequest.body) as {
-      response_format: ReturnType<typeof responseFormat>;
-    };
-    return body.response_format;
+    return JSON.parse(packed.providerRequest.body) as ReturnType<
+      typeof providerBody
+    >;
+  }
+
+  /** The `response_format` the transport actually serializes. */
+  function responseFormat(): ReturnType<
+    typeof providerBody
+  >["response_format"] {
+    return providerBody().response_format;
+  }
+
+  /**
+   * Reach one branch, property or element, failing loudly when it is absent.
+   *
+   * Every bound below is read back out of the serialized body rather than off
+   * the object it was built from, and a missing step throws instead of
+   * resolving to `undefined`. That distinction is the whole defect: a contract
+   * that carries none of its bounds still reads as a complete schema.
+   */
+  function branch(index: number): ContractNode {
+    const found = responseFormat().json_schema.schema.anyOf[index];
+    if (found === undefined) {
+      throw new Error(`the serialized contract has no branch ${String(index)}`);
+    }
+    return found;
+  }
+
+  function property(node: ContractNode, name: string): ContractNode {
+    const found = node.properties?.[name];
+    if (found === undefined) {
+      throw new Error(`the serialized contract has no \`${name}\``);
+    }
+    return found;
+  }
+
+  function element(node: ContractNode): ContractNode {
+    const found = node.items;
+    if (found === undefined) {
+      throw new Error("the serialized contract has no array element");
+    }
+    return found;
   }
 
   it("asks the provider to enforce the deliver or skip union", () => {
@@ -1715,8 +1775,8 @@ describe("provider-enforced response contract", () => {
     const branches = format.json_schema.schema.anyOf;
     expect(branches).toHaveLength(2);
     expect(
-      branches.map((branch) => {
-        return branch.properties.decision?.enum;
+      branches.map((each) => {
+        return each.properties?.decision?.enum;
       }),
     ).toStrictEqual([["deliver"], ["skip"]]);
     expect(branches[0]?.required).toStrictEqual([
@@ -1730,16 +1790,90 @@ describe("provider-enforced response contract", () => {
       "language",
       "reason",
     ]);
-    expect(branches[1]?.properties.reason?.enum).toStrictEqual([
+    expect(branches[1]?.properties?.reason?.enum).toStrictEqual([
       "nothing_actionable",
     ]);
     // Unknown keys are refused by the provider schema exactly as the validator
     // refuses them, so neither side quietly accepts a field nobody asked for.
     expect(
-      branches.every((branch) => {
-        return branch.additionalProperties === false;
+      branches.every((each) => {
+        return each.additionalProperties === false;
       }),
     ).toBeTruthy();
+  });
+
+  it("bounds every length and count the validator enforces", () => {
+    const deliver = branch(0);
+    const section = element(property(deliver, "sections"));
+    const sectionItem = element(property(section, "items"));
+
+    // The seven bounds, as numbers, compared against the constants the
+    // validator parses with. The values are the assertion, not the presence of
+    // a keyword: a contract that stated the shape and none of the numbers was
+    // what let a well-formed answer be built and then thrown away.
+    expect(property(deliver, "title").maxLength).toBe(MAX_TITLE_LENGTH);
+    expect(property(section, "heading").maxLength).toBe(MAX_HEADING_LENGTH);
+    expect(property(sectionItem, "text").maxLength).toBe(MAX_ITEM_LENGTH);
+    expect(property(deliver, "language").maxLength).toBe(MAX_LANGUAGE_LENGTH);
+    expect(property(deliver, "sections").maxItems).toBe(MAX_SECTIONS);
+    expect(property(section, "items").maxItems).toBe(MAX_ITEMS_PER_SECTION);
+    expect(property(sectionItem, "citations").maxItems).toBe(MAX_SOURCE_IDS);
+
+    // Each is bounded from below too, because the validator refuses an empty
+    // title, a brief with no sections and an item that cites nothing.
+    expect(property(deliver, "title").minLength).toBe(1);
+    expect(property(section, "heading").minLength).toBe(1);
+    expect(property(sectionItem, "text").minLength).toBe(1);
+    expect(property(deliver, "language").minLength).toBe(1);
+    expect(property(deliver, "sections").minItems).toBe(1);
+    expect(property(section, "items").minItems).toBe(1);
+    expect(property(sectionItem, "citations").minItems).toBe(1);
+  });
+
+  it("bounds the language a skipping answer reports", () => {
+    const skip = branch(1);
+
+    expect(property(skip, "language").maxLength).toBe(MAX_LANGUAGE_LENGTH);
+    expect(property(skip, "language").minLength).toBe(1);
+  });
+
+  it("derives the contract from the validator instead of restating it", () => {
+    // Not a snapshot, and not a second copy of the numbers: the serialized
+    // schema is compared to the object the result validator converts itself
+    // into. A bound can only be changed where the validator declares it, and
+    // both sides move together when it is. A hand-written copy would satisfy
+    // every assertion above on the day it was written and drift the day after.
+    expect(responseFormat().json_schema.schema).toStrictEqual(
+      MORNING_BRIEF_COMPOSED_RESULT_JSON_SCHEMA,
+    );
+  });
+
+  it("tells the model the two counts it was never told", () => {
+    const content = providerBody().messages[0]?.content;
+    if (content === undefined) {
+      throw new Error("the serialized body carries no message");
+    }
+    const document = JSON.parse(content) as {
+      readonly schema: {
+        readonly deliver: { readonly title: string };
+        readonly limits: Readonly<Record<string, string>>;
+      };
+    };
+
+    // The validator has always refused a seventh section and a ninth item, and
+    // the document the model reads used to say nothing about either. A model
+    // cut off at a limit and a model told the limit write different briefs.
+    expect(document.schema.limits.sections).toBe(
+      `one to ${String(MAX_SECTIONS)} sections`,
+    );
+    expect(document.schema.limits.itemsPerSection).toBe(
+      `one to ${String(MAX_ITEMS_PER_SECTION)} items in every section`,
+    );
+    // The lengths it always stated are now quoted from the same constants, so
+    // the prose and the enforced schema cannot describe different briefs.
+    expect(document.schema.deliver.title).toBe(
+      `at most ${String(MAX_TITLE_LENGTH)} characters`,
+    );
   });
 
   it("keeps the contract in the request when evidence is reduced to fit", () => {

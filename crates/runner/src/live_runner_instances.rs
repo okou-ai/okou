@@ -6,9 +6,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
-use crate::process;
-use crate::state_file::OwnerCheck;
+use runner_host::paths::HomePaths;
+use runner_host::process;
+use runner_host::state_file::OwnerCheck;
 
 const LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES: u64 = 64 * 1024;
 
@@ -124,9 +124,9 @@ pub(crate) async fn publish(
     let content = serde_json::to_vec_pretty(&record)
         .map_err(|e| RunnerError::Internal(format!("serialize live runner instance: {e}")))?;
 
-    crate::host_file::ensure_dir(
+    runner_host::host_file::ensure_dir(
         &home.live_runner_instances_dir(),
-        crate::host_file::DirMode::Private,
+        runner_host::host_file::DirMode::Private,
         "live runner instances",
     )
     .map_err(|e| {
@@ -136,7 +136,7 @@ pub(crate) async fn publish(
         ))
     })?;
     remove_stale_records(home).await;
-    crate::state_file::write_private_atomic(&path, &content).await?;
+    runner_host::state_file::write_private_atomic(&path, &content).await?;
 
     Ok(LiveRunnerInstanceHandle { path, identity })
 }
@@ -233,9 +233,9 @@ fn validate_existing_live_runner_instances_dir(home: &HomePaths) -> RunnerResult
         }
     }
 
-    crate::host_file::validate_dir(
+    runner_host::host_file::validate_dir(
         &dir,
-        crate::host_file::DirMode::Private,
+        runner_host::host_file::DirMode::Private,
         "live runner instances",
     )
     .map_err(|e| {
@@ -314,7 +314,7 @@ async fn read_record_with_liveness(
     path: &Path,
     liveness: &LivenessContext,
 ) -> RunnerResult<RecordRead> {
-    let content = match crate::state_file::read_to_string(
+    let content = match runner_host::state_file::read_to_string(
         path,
         LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES,
         OwnerCheck::CurrentEuid,
@@ -851,9 +851,9 @@ mod tests {
         }
 
         fn ensure_dir(&self) {
-            crate::host_file::ensure_dir(
+            runner_host::host_file::ensure_dir(
                 &self.home.live_runner_instances_dir(),
-                crate::host_file::DirMode::Private,
+                runner_host::host_file::DirMode::Private,
                 "live runner instances",
             )
             .unwrap();
@@ -933,7 +933,7 @@ mod tests {
 
     async fn write_record(path: &Path, record: &LiveRunnerInstanceRecord) {
         let content = serde_json::to_vec_pretty(record).unwrap();
-        crate::state_file::write_private_atomic(path, &content)
+        runner_host::state_file::write_private_atomic(path, &content)
             .await
             .unwrap();
     }
@@ -1073,7 +1073,7 @@ mod tests {
         let registry = TestRegistry::new();
         let handle = publish(&registry.home, registry.metadata()).await.unwrap();
         let record = read_valid_record(&handle.path).await.unwrap();
-        crate::state_file::write_private_atomic(
+        runner_host::state_file::write_private_atomic(
             &handle.path,
             &serialize_record_without_subcommand(&record),
         )
@@ -1111,25 +1111,25 @@ mod tests {
         registry.ensure_dir();
         let stale_record = registry.stale_record().await;
         let stale_path = registry.record_path(&stale_record);
-        crate::state_file::write_private_atomic(
+        runner_host::state_file::write_private_atomic(
             &stale_path,
             &serialize_record_without_subcommand(&stale_record),
         )
         .await
         .unwrap();
-        crate::state_file::write_private_atomic(
+        runner_host::state_file::write_private_atomic(
             &registry.home.live_runner_instance_record_path(1, 1),
             b"{",
         )
         .await
         .unwrap();
-        crate::state_file::write_private_atomic(
+        runner_host::state_file::write_private_atomic(
             &registry.home.live_runner_instance_record_path(2, 2),
             &vec![b'a'; (LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES + 1) as usize],
         )
         .await
         .unwrap();
-        crate::state_file::write_private_atomic(
+        runner_host::state_file::write_private_atomic(
             &registry
                 .home
                 .live_runner_instances_dir()
@@ -1149,7 +1149,7 @@ mod tests {
     async fn try_list_fails_closed_for_invalid_record_with_live_file_identity() {
         let registry = TestRegistry::new();
         let handle = publish(&registry.home, registry.metadata()).await.unwrap();
-        crate::state_file::write_private_atomic(&handle.path, b"{")
+        runner_host::state_file::write_private_atomic(&handle.path, b"{")
             .await
             .unwrap();
 
@@ -1274,7 +1274,7 @@ mod tests {
             .home
             .live_runner_instances_dir()
             .join("malformed.json");
-        crate::state_file::write_private_atomic(&path, b"{")
+        runner_host::state_file::write_private_atomic(&path, b"{")
             .await
             .unwrap();
 
@@ -1291,7 +1291,7 @@ mod tests {
             .home
             .live_runner_instances_dir()
             .join("oversized.json");
-        crate::state_file::write_private_atomic(
+        runner_host::state_file::write_private_atomic(
             &path,
             &vec![b'a'; (LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES + 1) as usize],
         )
@@ -1490,7 +1490,7 @@ mod tests {
     async fn remove_if_current_removes_invalid_current_record() {
         let registry = TestRegistry::new();
         let handle = publish(&registry.home, registry.metadata()).await.unwrap();
-        crate::state_file::write_private_atomic(&handle.path, b"{")
+        runner_host::state_file::write_private_atomic(&handle.path, b"{")
             .await
             .unwrap();
 

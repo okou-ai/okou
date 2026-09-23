@@ -133,10 +133,10 @@ impl NetworkLogSession {
         {
             use tracing::Instrument;
             async {
-                let _progress = crate::cleanup_progress::CleanupProgress::start(
+                let _progress = runner_host::cleanup_progress::CleanupProgress::start(
                     "network_log",
                     "accepted_write_flush",
-                    crate::cleanup_progress::CleanupIdentity::Run(run_id),
+                    runner_host::cleanup_progress::CleanupIdentity::Run(run_id),
                 );
                 self.manager.flush_path(&self.path).await;
             }

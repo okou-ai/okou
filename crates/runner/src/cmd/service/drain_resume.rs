@@ -81,8 +81,8 @@ use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::live_runner_instances::{self, LiveRunnerInstance};
-use crate::paths::HomePaths;
 use crate::status_file;
+use runner_host::paths::HomePaths;
 
 use super::drain_override::{
     DrainRestartOverrideWrite, remove_drain_restart_override, write_drain_restart_override,

@@ -14,6 +14,7 @@ import {
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
 import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
@@ -26,7 +27,7 @@ import {
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
-import { updatePage$ } from "../react-router.ts";
+import { page$, updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
@@ -36,7 +37,13 @@ import {
 } from "./onboarding-page-setup.ts";
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
+  allowOnboardingRecommendationFallback$,
+  resumeOnboardingRecommendation$,
+} from "./onboarding-recommendation.ts";
+import {
   claimSourcesFirstStartEvent$,
+  clearSourcesFirstDraft$,
+  restoreSourcesFirstDraft$,
   setSourcesFirstFlow$,
   sourcesFirstDraft$,
   sourcesFirstSteps,
@@ -101,7 +108,9 @@ function createSourcesFirstPageSetup(
   config: SourcesFirstPageConfig,
 ): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    set(showAppSkeleton$);
+    if (!get(page$)) {
+      set(showAppSkeleton$);
+    }
 
     if (!(await set(sourcesFirstEnabled$, signal))) {
       signal.throwIfAborted();
@@ -111,10 +120,17 @@ function createSourcesFirstPageSetup(
 
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
+    if (status.hasOrg) {
+      const { orgId, userId } = await get(authenticatedIdentity$);
+      signal.throwIfAborted();
+      set(restoreSourcesFirstDraft$, { orgId, userId });
+    }
     if (!status.needsOnboarding) {
+      set(clearSourcesFirstDraft$);
       set(forwardOnboardedVisitor$);
       return;
     }
+    set(resumeOnboardingRecommendation$, signal);
 
     // The run started, whichever step this setup ended up on: a guard redirect
     // below, or the way back, still belongs to the same run.
@@ -140,7 +156,7 @@ function createSourcesFirstPageSetup(
       }
     }
 
-    if (!sourcesFirstSteps(flow, draft.experienced).includes(config.step)) {
+    if (!sourcesFirstSteps(flow, draft.provider).includes(config.step)) {
       // The step is not part of this run's branch, for example a member
       // opening the invite step or a new user opening the skills step.
       set(redirectTo$, ROUTES.onboardingExperience);
@@ -275,4 +291,5 @@ export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingReadyPage,
+  enter: allowOnboardingRecommendationFallback$,
 });

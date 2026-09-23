@@ -17,7 +17,7 @@ import {
 } from "./cloudflare-access-client-invalidation.service";
 import { lockSshOwner } from "./ssh-credential.service";
 import { checkSshCreationId } from "./ssh-creation.service";
-import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
+import { publishSshRunnerInvalidation } from "./ssh-runtime-wakeup.service";
 
 interface Owner {
   readonly orgId: string;
@@ -325,7 +325,7 @@ export async function updateCloudflareAccessConfig(args: {
   });
   if (result.ok) {
     await publishCloudflareAccessMutationInvalidation(args.owner, () => {
-      return publishSshRuntimeInvalidation(args.db, {
+      return publishSshRunnerInvalidation(args.db, {
         ...args.owner,
         connectionIds: result.affectedIds,
       });

@@ -59,11 +59,11 @@ pub(crate) use session_history_restore_plan::{
     build_session_history_restore_plan,
 };
 
-use crate::active_input::ActiveInputSource;
 use agent_run::{PreparedRunInputs, ProcessCancelTimeouts, RunControls, RunStart};
 use env::validate_execution_context_before_sandbox;
 pub(crate) use env::validate_resume_session_id;
 use reused_sandbox::{ReusedSandboxRun, execute_reused_sandbox};
+use runner_provider::ActiveInputSource;
 use sandbox_run::{FreshPreparation, NewSandboxHooks, execute_new_sandbox_with_prepared_notifier};
 pub(crate) use telemetry::{
     BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming,
@@ -73,12 +73,12 @@ pub(crate) use telemetry::{
 };
 use telemetry::{RunnerSpawnTiming, record_api_latency, record_reuse_result};
 
-use crate::run_cancellation::RunCancellationSignals;
 use api_contracts::generated::constants::runners::{
     AGENT_EXECUTION_TIMEOUT_SECONDS, RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
     paths::{CANONICAL_GUEST_HOME_DIR, CANONICAL_WORKING_DIR},
 };
 use guest_contracts::exec_terminal::EXEC_TERMINAL_CLEANUP_BUDGET;
+use runner_provider::RunCancellationSignals;
 use runner_types::ids::RunId;
 
 /// Maximum guest-side runtime budget for a single agent process.
@@ -161,7 +161,6 @@ use crate::idle_pool::{IdleSandboxKind, ReusableIdleSandbox, ReusableIdleSandbox
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogManager;
 use crate::network_log_manager::NetworkLogSession;
-use crate::paths::{HomePaths, LogPaths};
 use crate::proxy::{MitmJsonlFlushHandle, ProxyRegistryHandle};
 use crate::telemetry::JobTelemetry;
 use crate::workspace_image_cache::{
@@ -171,6 +170,7 @@ use crate::workspace_image_cache::{
     WorkspaceImagePromotionIdentityRequest,
 };
 use crate::workspace_promotion::abandon_unpublished_workspace_promotion;
+use runner_host::paths::{HomePaths, LogPaths};
 use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {
@@ -202,7 +202,7 @@ pub struct ExecutorConfig {
     pub network_log_drain: NetworkLogDrainCoordinator,
     pub(crate) network_log_upload_health: crate::network_logs::NetworkLogUploadHealthTracker,
     pub mitm_jsonl_flush: Option<MitmJsonlFlushHandle>,
-    pub(crate) connector_runtime_sync: Option<crate::provider::ConnectorRuntimeSyncHandle>,
+    pub(crate) connector_runtime_sync: Option<runner_provider::ConnectorRuntimeSyncHandle>,
     pub(crate) guest_rpc: Option<crate::guest_rpc::Runtime>,
     pub(crate) session_history_cpu: SessionHistoryCpuPool,
     pub(crate) session_history_probe: SessionHistoryProbe,
@@ -613,7 +613,7 @@ pub async fn execute_job(
         dispatch,
         config,
         params,
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks::none(),
     )
     .await
@@ -730,7 +730,7 @@ pub async fn execute_job_reuse(
         context,
         config,
         params,
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks::none(),
     )
     .await

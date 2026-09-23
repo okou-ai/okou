@@ -3,13 +3,13 @@ use super::super::super::*;
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_pool::{ParkResult, test_support::ParkedIdleCandidateBuilder};
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
-use crate::paths::RunnerPaths;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::workspace_image_cache::{
     WorkspaceCacheTerminalStatus, WorkspaceImageCache, WorkspaceImageLeaseIdentity,
     WorkspaceImagePrepareRequest, WorkspaceImagePromotionRequest,
 };
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 use sandbox::SandboxId;
 

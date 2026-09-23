@@ -7,7 +7,7 @@ use tracing::warn;
 use crate::cmd::service;
 use crate::config;
 use crate::image_hash;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::filesystem::{GcDirEntryReader, read_dir_or_missing};
 use super::versions::VersionGcAnalysis;

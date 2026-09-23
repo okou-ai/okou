@@ -1168,7 +1168,6 @@ describe("shared native Pi route activation", () => {
     configureNativeCliArtifact();
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PiLoop]: true,
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
     });
     const model = "claude-sonnet-5";

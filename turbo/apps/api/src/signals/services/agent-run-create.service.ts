@@ -26,6 +26,7 @@ import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
   PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
   assertPiNativeCredential,
   materializePiExecutionRoute,
   normalizePiExecutionRoute,
@@ -86,6 +87,7 @@ import { modelProviderSurfaceProtocolSchema } from "@okouai/api-contracts/contra
 import {
   getDefaultModel,
   getModelProviderCodexCatalogForModel,
+  getModelProviderCodexRuntimeCapabilities,
   getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getModelImageInputSupport,
@@ -387,6 +389,7 @@ import {
   checkOrgPlanRunAdmission,
   checkOrgCreditsForRunAdmission,
   checkResolvedOrgCreditsForRunAdmission,
+  isFreePlanForCreditAdmission,
   resolveOrgCreditAvailability,
 } from "./run-admission.service";
 import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
@@ -945,7 +948,7 @@ export function isThreadSessionSnapshotStale(
 interface CommitPreparedLaunchArgs {
   readonly db: Db;
   readonly createArgs: CreateAgentRunArgs;
-  readonly creditAdmitted: boolean;
+  readonly enforceBuiltInCredits: boolean;
   readonly context: FinalizedPreparedRunContext;
   readonly identity: LaunchRunIdentity;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
@@ -1136,6 +1139,7 @@ export interface CreateAgentRunArgs {
   readonly validateEnvironmentReferences?: boolean;
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueOnConcurrencyLimit?: boolean;
+  /** Require initial Built-in credits; this does not grant deficit continuation. */
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
@@ -2264,17 +2268,22 @@ function resolveModelProviderCodexRuntimeConfig(args: {
   readonly environment: Readonly<Record<string, string>>;
 }): ModelProviderCodexRuntimeConfig | undefined {
   const providerConfig = getModelProviderCodexRuntimeConfig(args.type);
-  if (providerConfig || !args.logicalModel || !args.runtimeModel) {
+  if (providerConfig) {
     return providerConfig;
   }
-  const modelCatalog = getModelProviderCodexCatalogForModel(
-    args.logicalModel,
-    args.runtimeModel,
+  const providerCapabilities = getModelProviderCodexRuntimeCapabilities(
     args.type,
   );
-  if (!modelCatalog) {
+  if (!providerCapabilities) {
     return undefined;
   }
+  const modelCatalog = args.logicalModel
+    ? getModelProviderCodexCatalogForModel(
+        args.logicalModel,
+        args.runtimeModel,
+        args.type,
+      )
+    : undefined;
   const baseUrl = args.environment.OPENAI_BASE_URL;
   if (!baseUrl) {
     throw new Error(`Missing OPENAI_BASE_URL for Codex provider ${args.type}`);
@@ -2286,8 +2295,8 @@ function resolveModelProviderCodexRuntimeConfig(args: {
     envKey: "OPENAI_API_KEY",
     requiresOpenaiAuth: false,
     wireApi: "responses",
-    supportsWebsockets: false,
-    modelCatalog,
+    supportsWebsockets: providerCapabilities.supportsWebsockets,
+    ...(modelCatalog ? { modelCatalog } : {}),
   };
 }
 
@@ -7509,15 +7518,13 @@ function assemblePiLaunchResources(args: {
           args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
-        // The rootfs-installed CLI is used only for this exact runtime build;
-        // anything else launches the commit-addressed package (#35967). This
-        // launch config is persisted in the encrypted queue payload and decoded
-        // by whichever API instance serves the claim through the strict
-        // `piApiFirstTurnConfigSchema`, so the tolerant reader shipped first in
-        // 8d8f3a3e14d23f7471e0773bd9acb988f59217af (api 1.657.0), which the
-        // production rollback resolver now enforces as the API floor.
+        // The installed CLI must have this session construction and meet the
+        // CLI floor; otherwise the guest uses the commit-addressed package.
+        // The queued launch config is decoded by a strict API reader, so the
+        // production rollback floor includes the digest reader in 322efb6d.
         requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
         minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+        requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
       },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined
@@ -8045,7 +8052,7 @@ function preparedLaunchRowsArgs(args: {
     officialWorkflowProvenance:
       args.commit.context.officialWorkflowRun?.provenance,
     error: undefined,
-    creditAdmitted: args.status === "pending" && args.commit.creditAdmitted,
+    creditAdmitted: false,
   };
 }
 
@@ -8170,7 +8177,10 @@ function launchThreadBindingCte(args: {
   );
 }
 
-function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
+function buildAtomicLaunchCteContext(
+  args: PersistAtomicLaunchRowsArgs,
+  creditAdmitted: boolean,
+) {
   const preparedRows = args.commit.persistence.rows[args.status];
   const { rowsArgs, metadata } = preparedRows;
   const createdAt = nowDate();
@@ -8194,6 +8204,7 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
       .insert(agentRuns)
       .values({
         ...launchRunValues(rowsArgs, createdAt, metadata),
+        creditAdmitted,
         modelProviderAccountIdentity: args.validatedAccountIdentity,
         sessionId: insertedSession
           ? returnedCteId(insertedSession)
@@ -8409,7 +8420,17 @@ async function persistAtomicLaunchRows(
 async function persistAtomicLaunchRows(
   args: PersistAtomicLaunchRowsArgs,
 ): Promise<PersistedAtomicLaunchRows> {
-  const context = buildAtomicLaunchCteContext(args);
+  const capabilities =
+    args.status === "pending" && args.commit.enforceBuiltInCredits
+      ? await loadOrgPlanCapabilities(args.tx, args.commit.createArgs.orgId, {
+          forUpdate: true,
+        })
+      : null;
+  const creditAdmitted =
+    args.status === "pending" &&
+    args.commit.enforceBuiltInCredits &&
+    isFreePlanForCreditAdmission(capabilities?.planKey);
+  const context = buildAtomicLaunchCteContext(args, creditAdmitted);
   const persisted = await args.commit.timing.measure(
     "api_dispatch_persist_atomic_launch",
     "nested",
@@ -11248,7 +11269,7 @@ export interface CreatorAuthorizedPiPreparation {
 interface AtomicLaunchRunInput {
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
-  readonly creditAdmitted: boolean;
+  readonly enforceBuiltInCredits: boolean;
   readonly context: FinalizedPreparedRunContext;
   readonly timing: ApiDispatchTimingCollector;
   readonly phaseTiming: ApiDispatchPhaseCollector;
@@ -11446,7 +11467,7 @@ const commitAndActivateAtomicLaunch$ = command(
             return await commitPreparedLaunch({
               db: input.db,
               createArgs: input.args,
-              creditAdmitted: input.creditAdmitted,
+              enforceBuiltInCredits: input.enforceBuiltInCredits,
               context: input.context,
               identity,
               callbackRows,
@@ -11757,7 +11778,7 @@ export const completeAgentRun$ = command(
       context.modelProvider?.type ?? args.modelProviderType;
     const selectedModel =
       context.modelProvider?.selectedModel ?? args.selectedModelOverride;
-    const creditAdmitted =
+    const enforceBuiltInCredits =
       args.enforceBuiltInCredits === true &&
       isBuiltInModelProviderType(context.modelProvider?.type);
     const admissionGate = await timing.measure(
@@ -11771,7 +11792,7 @@ export const completeAgentRun$ = command(
             userId: args.userId,
             modelProviderType,
             selectedModel,
-            enforceBuiltInCredits: creditAdmitted,
+            enforceBuiltInCredits,
             timing,
           },
           signal,
@@ -11803,7 +11824,7 @@ export const completeAgentRun$ = command(
       {
         db,
         args,
-        creditAdmitted,
+        enforceBuiltInCredits,
         context: launchContext,
         timing,
         phaseTiming: input.prepared.phaseTiming,

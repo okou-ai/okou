@@ -50,8 +50,8 @@ export function vertexVoiceResponse(text: string) {
 }
 
 /** Synthetic HTTP identity, isolated per test without resetting production caches. */
-export function mockGoogleVoice() {
-  const project = `voice-${randomUUID().slice(0, 18)}`;
+export function mockGoogleLlm(prefix = "voice") {
+  const project = `${prefix}-${randomUUID().slice(0, 18)}`;
   const serviceAccount = `llm-dev@${project}.iam.gserviceaccount.com`;
   mockOptionalEnv("GCP_LLM_PROJECT_ID", project);
   mockOptionalEnv("GCP_LLM_WORKLOAD_IDENTITY_PROVIDER", GOOGLE_VOICE_PROVIDER);
@@ -74,4 +74,8 @@ export function mockGoogleVoice() {
     }),
   );
   return { project, serviceAccount };
+}
+
+export function mockGoogleVoice() {
+  return mockGoogleLlm();
 }

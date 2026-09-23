@@ -1,11 +1,6 @@
-mod active_input;
-mod archive_connection_attempt;
 mod axiom_layer;
-mod bounded_command;
 mod byte_size;
 mod ca;
-mod child_cleanup;
-mod cleanup_progress;
 mod cmd;
 mod config;
 mod deps;
@@ -17,9 +12,6 @@ mod group;
 mod guest_rpc;
 mod guest_timezone;
 mod helper_exec;
-mod host;
-mod host_env;
-mod host_file;
 mod http;
 mod idle_pool;
 mod idle_prune_control;
@@ -29,41 +21,25 @@ mod io_limits;
 mod kmsg_log;
 mod lifecycle;
 mod live_runner_instances;
-mod local_queue;
-mod lock;
-mod log_file;
 mod network_log_drain;
 mod network_log_manager;
 mod network_log_process;
 mod network_logs;
-mod object_download_policy;
-mod org_name;
-mod parent_death;
-mod paths;
 mod pre_spawn_admission;
 mod prefetch;
-mod private_fs;
-mod process;
 mod profile;
-mod provider;
+#[cfg(test)]
+mod provider_test_support;
 mod proxy;
-mod r2_cache;
 mod resource_budget;
 mod restored_session_identity;
 mod retry;
-mod run_cancellation;
 mod run_resolution;
 mod run_usage;
-mod runner_dirname;
-mod runner_process_identity;
 mod runtime_overrides;
 mod ssh;
-mod state_file;
 mod status;
 mod status_file;
-mod storage_cache;
-mod storage_fingerprints;
-mod storage_plan;
 mod telemetry;
 #[cfg(test)]
 mod test_fixtures;
@@ -71,6 +47,8 @@ mod vnc;
 mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;
+
+use runner_storage::{r2_cache, storage_cache, storage_fingerprints, storage_plan};
 
 // Source-observation API shared by the current-assignment usage composer.
 // (no-op Runner release marker refreshed for production delivery on 2026-09-21)
@@ -160,9 +138,10 @@ fn runner_log_prefix(release: &str) -> String {
 fn init_tracing_with_file(
     axiom_layer: Option<axiom_layer::AxiomLayer>,
 ) -> Result<tracing_appender::non_blocking::WorkerGuard, Box<dyn std::error::Error>> {
-    let home = paths::HomePaths::new()?;
+    let home = runner_host::paths::HomePaths::new()?;
     let log_dir = home.logs_dir();
-    log_file::ensure_log_dir(&log_dir).map_err(|e| format!("create {}: {e}", log_dir.display()))?;
+    runner_host::log_file::ensure_log_dir(&log_dir)
+        .map_err(|e| format!("create {}: {e}", log_dir.display()))?;
 
     let prefix = runner_log_prefix(RUNNER_RELEASE);
 

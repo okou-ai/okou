@@ -216,7 +216,7 @@ function VisibilityIcon({ workflow }: { readonly workflow: WorkflowSummary }) {
         return $.workflows.common.private;
       });
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -354,7 +354,7 @@ function ConnectorCell({
   const remaining = entries.length - 2;
   return (
     <Popover>
-      <TooltipProvider delayDuration={200}>
+      <TooltipProvider delay={200}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -524,7 +524,7 @@ export function WorkflowTooltip({
       ? result.data.profile
       : undefined;
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip
         onOpenChange={(open) => {
           if (open) {

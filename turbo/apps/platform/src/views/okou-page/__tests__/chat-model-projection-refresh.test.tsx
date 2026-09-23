@@ -1,3 +1,7 @@
+import {
+  modelMenuOption,
+  findModelMenuOption,
+} from "./chat-model-menu-test-helpers.ts";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type {
   ModelProviderResponse,
@@ -71,7 +75,6 @@ async function openChat(
     path: NEW_CHAT_PATH,
     sharedWorkerTestTransport: transport,
     featureSwitches: {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -95,7 +98,7 @@ async function openChat(
 
 async function personalOption(): Promise<HTMLElement> {
   return await waitFor(() => {
-    const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
+    const option = modelMenuOption(/GPT 5\.6 Sol/u);
     expect(within(option).getByText("BYOK")).toBeInTheDocument();
     return option;
   });
@@ -163,6 +166,7 @@ test.each([
       return respond(200, {
         revision: "revision-1",
         writePreconditionRequired: false,
+        modelsAvailableToAdd: [],
         policies: [modelPolicy(personal, restricted)],
         workspaceDefaultModel: MODEL,
         workspaceDefaultPolicyId: POLICY_ID,
@@ -172,9 +176,7 @@ test.each([
     // page transport intentionally forwards named events only.
     await openChat("message-port");
     click(await findButton("GPT 5.6 Sol"));
-    const initial = await screen.findByRole("option", {
-      name: /GPT 5\.6 Sol/u,
-    });
+    const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
     expect(within(initial).queryByText("BYOK") !== null).toBe(initialPersonal);
     expect(within(initial).queryByText("Pro") !== null).toBe(initialRestricted);
 
@@ -199,7 +201,7 @@ test.each([
     }
 
     await waitFor(() => {
-      const option = screen.getByRole("option", { name: /GPT 5\.6 Sol/u });
+      const option = modelMenuOption(/GPT 5\.6 Sol/u);
       expect(within(option).queryByText("BYOK") !== null).toBe(nextPersonal);
       expect(within(option).queryByText("Pro") !== null).toBe(nextRestricted);
     });
@@ -227,6 +229,7 @@ async function setupHeldProjectionRefresh() {
       return respond(200, {
         revision: "revision-1",
         writePreconditionRequired: false,
+        modelsAvailableToAdd: [],
         policies: [modelPolicy(true)],
         workspaceDefaultModel: MODEL,
         workspaceDefaultPolicyId: POLICY_ID,
@@ -323,6 +326,7 @@ test("A local active-account change refreshes the member projection", async () =
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [modelPolicy(personal)],
       workspaceDefaultModel: MODEL,
       workspaceDefaultPolicyId: POLICY_ID,
@@ -346,7 +350,7 @@ test("A local active-account change refreshes the member projection", async () =
   );
   await openChat();
   click(await findButton("GPT 5.6 Sol"));
-  const initial = await screen.findByRole("option", { name: /GPT 5\.6 Sol/u });
+  const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
   expect(within(initial).queryByText("BYOK")).not.toBeInTheDocument();
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Escape}");
@@ -364,17 +368,17 @@ test("A local active-account change refreshes the member projection", async () =
     screen.findByRole("heading", { name: "Models" }),
   ).resolves.toBeInTheDocument();
   const row = await screen.findByTestId(`oauth-account-${secondId}`);
-  const activate = queryAllByRoleFast("radio", row).find((radio) => {
-    return radio.getAttribute("aria-label") === "Use";
+  const activate = queryAllByRoleFast("button", row).find((button) => {
+    return button.getAttribute("aria-label")?.startsWith("Use:");
   });
   expect(activate).toBeDefined();
   click(activate!);
   await waitFor(() => {
     expect(
-      queryAllByRoleFast("radio", row).find((radio) => {
-        return radio.getAttribute("aria-label") === "Active";
+      queryAllByRoleFast("button", row).find((button) => {
+        return button.getAttribute("aria-label")?.startsWith("Active:");
       }),
-    ).toHaveAttribute("aria-checked", "true");
+    ).toHaveAttribute("aria-pressed", "true");
   });
   click(within(settings).getByLabelText("Close"));
   await waitFor(() => {

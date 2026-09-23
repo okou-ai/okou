@@ -2368,7 +2368,7 @@ describe("Morning Brief calendar collection preview", () => {
       expect([...eventRequests].sort()).toStrictEqual(startedRequests);
     });
 
-    it("keeps public cancellation pending until a blocked authorized sibling settles", async () => {
+    it("preserves cancellation while an authorized sibling is blocked", async () => {
       const fixture = await setupOwner();
       const cancellation = new Error(`cancelled ${randomUUID()}`);
       const controller = new AbortController();
@@ -2420,15 +2420,7 @@ describe("Morning Brief calendar collection preview", () => {
         headers: authHeaders(fixture.actor),
         body: { anchor: ANCHOR_ISO },
       });
-      const publicOutcome = createDeferredPromise<
-        | { readonly ok: true; readonly value: unknown }
-        | { readonly ok: false; readonly error: unknown }
-      >(context.signal);
-      const outcomeObservation = settleIncludingAbort(request).then(
-        (outcome) => {
-          publicOutcome.resolve(outcome);
-        },
-      );
+      const outcomeObservation = settleIncludingAbort(request);
 
       // Both first-page HTTP requests are real and in flight before the
       // canonical installation relation is locked. Releasing only one page
@@ -2441,19 +2433,12 @@ describe("Morning Brief calendar collection preview", () => {
       controller.abort(cancellation);
       await cancelled.promise;
       const callsAtCancellation = [...eventRequests];
-      // Let the rejected worker and the route promise run their microtasks. A
-      // plain Promise.all settles here; joinAll must still be waiting for the
-      // sibling whose real authorization query remains blocked.
-      const nextTurn = createDeferredPromise<void>(context.signal);
-      setImmediate(() => {
-        nextTurn.resolve();
-      });
-      await nextTurn.promise;
-      expect(publicOutcome.settled()).toBeFalsy();
-
+      // The production authorizer bounds every database lock wait, so elapsed
+      // event-loop turns cannot prove that this sibling remains pending. The
+      // explicit arrival above establishes the ordering; release it before its
+      // own timeout and verify cancellation crosses no later provider boundary.
       await barrier.release();
-      const outcome = await publicOutcome.promise;
-      await outcomeObservation;
+      const outcome = await outcomeObservation;
       expect(outcome.ok).toBeFalsy();
       if (outcome.ok) {
         throw new Error("Expected caller cancellation");

@@ -333,7 +333,7 @@ impl WorkspaceImageCache {
         let bytes = serde_json::to_vec_pretty(&sidecar_metadata).map_err(|e| {
             RunnerError::Internal(format!("serialize workspace session history sidecar: {e}"))
         })?;
-        if let Err(e) = crate::host_file::write_private_new(
+        if let Err(e) = runner_host::host_file::write_private_new(
             &tmp_metadata_path,
             &bytes,
             "workspace session history metadata staging file",
@@ -387,14 +387,14 @@ impl WorkspaceImageCache {
         &self,
         path: &Path,
     ) -> Result<WorkspaceSessionHistorySidecarMetadata, WorkspaceSessionHistorySidecarMiss> {
-        let bytes = crate::state_file::read_to_bytes_required(
+        let bytes = runner_host::state_file::read_to_bytes_required(
             path,
-            crate::state_file::WORKSPACE_METADATA_MAX_BYTES,
-            crate::state_file::OwnerCheck::None,
+            runner_host::state_file::WORKSPACE_METADATA_MAX_BYTES,
+            runner_host::state_file::OwnerCheck::None,
         )
         .await
         .map_err(|error| match error {
-            RunnerError::Io(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            runner_host::HostError::Io(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 WorkspaceSessionHistorySidecarMiss::Missing
             }
             _ => WorkspaceSessionHistorySidecarMiss::InvalidMetadata,

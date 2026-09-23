@@ -3,6 +3,7 @@ import {
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
+import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import {
   SKILL_IMPORT_LIMITS,
   skillImportSessionsContract,
@@ -23,8 +24,10 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { now } from "../../../lib/time.ts";
 import { pathname } from "../../../signals/location.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 vi.hoisted(() => {
   // Product analytics resolves the deployment environment at module load.
@@ -32,6 +35,10 @@ vi.hoisted(() => {
 });
 
 const context = testContext();
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const completedDraftStorage = localStorageSignals(
+  "onboarding:sources-first-draft",
+);
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -179,6 +186,12 @@ function getButtonByName(name: string): HTMLElement {
   return button;
 }
 
+async function waitForContinueEnabled(): Promise<void> {
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+}
+
 /** The control of the answer card carrying `name`, as a user would aim at it. */
 function answerRadio(name: string): HTMLElement {
   const card = screen.getByText(name).closest("label");
@@ -230,7 +243,10 @@ function mockChatChannelInstalls(): void {
  * The skills step belongs to the branch a plan answer opens, so the run walks
  * into it the way a person does.
  */
-async function openSkillsStep(): Promise<void> {
+async function openSkillsStep(
+  provider: "Codex" | "Claude Code" = CODEX_CARD,
+  fromStart = false,
+): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -242,16 +258,33 @@ async function openSkillsStep(): Promise<void> {
   await setupPage({
     context,
     locale: "en-US",
-    path: ROUTES.onboardingExperience,
+    path: fromStart ? ROUTES.onboarding : ROUTES.onboardingExperience,
     host: "app.okou.ai",
     featureSwitches: SOURCES_FIRST_ON,
   });
+
+  if (fromStart) {
+    await screen.findByRole("heading", {
+      name: "What kind of work do you do?",
+    });
+    click(answerRadio("Marketing & content"));
+    await waitForContinueEnabled();
+    click(getButtonByName("Continue"));
+    await screen.findByRole("heading", {
+      name: "Okou is for you, and shared across your whole team.",
+    });
+    click(getButtonByName("Continue"));
+    await screen.findByRole("heading", {
+      name: "Bring the people who do this work with you.",
+    });
+    click(getButtonByName("Not now"));
+  }
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
 
-  click(answerRadio(CODEX_CARD));
+  click(answerRadio(provider));
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
   });
@@ -262,12 +295,116 @@ async function openSkillsStep(): Promise<void> {
   ).resolves.toBeInTheDocument();
 }
 
+test("The skills step requires a selected tool", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: true,
+  });
+  mockConnectedSource();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingSkills,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingExperience);
+});
+
+test("Refreshing the skills step restores the chosen tool", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: true,
+  });
+  mockConnectedSource();
+  mockAgentWorkflows();
+  // A fresh browser app starts with storage from the previous app lifetime.
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: true,
+      provider: "claudeCode",
+      startingPromptDraft: "Draft my launch plan",
+      startingPromptKey: "marketing:gmail",
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingSkills,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: SKILLS_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingSkills);
+  expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
+});
+
+test("A saved draft from another user cannot select the current user's tool", async () => {
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: true,
+  });
+  mockConnectedSource();
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "another-user",
+      industry: "marketing",
+      experienced: true,
+      provider: "claudeCode",
+      startingPromptDraft: "",
+      startingPromptKey: "",
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingExperience,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(getButtonByName("Continue")).toBeDisabled();
+  expect(answerRadio("Claude Code")).not.toBeChecked();
+});
+
 test("The step hands over the prompt its session produced, and copies it whole", async () => {
   const posthog = context.mocks.posthog();
   const clipboard = context.mocks.browser.clipboardWriteText();
   mockAgentWorkflows();
 
   await openSkillsStep();
+
+  expect(screen.getByText("Run this in Codex")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Paste this prompt into your own Codex session and it brings the skills on your machine into Okou.",
+    ),
+  ).toBeInTheDocument();
 
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
   expect(prompt).toHaveTextContent(PROMPT_OPENING);
@@ -293,6 +430,85 @@ test("The step hands over the prompt its session produced, and copies it whole",
   // The token is the session; it belongs on the clipboard and nowhere else.
   expect(JSON.stringify(posthog.events)).not.toContain(SESSION_TOKEN);
 });
+
+test("The skills step names Claude Code when it was selected", async () => {
+  mockAgentWorkflows();
+
+  await openSkillsStep("Claude Code");
+
+  expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Paste this prompt into your own Claude Code session and it brings the skills on your machine into Okou.",
+    ),
+  ).toBeInTheDocument();
+});
+
+test.each([
+  {
+    card: "Codex" as const,
+    provider: "codex",
+    fromStart: true,
+    scenario: "full flow",
+    expectedIndustry: "marketing",
+  },
+  {
+    card: "Claude Code" as const,
+    provider: "claudeCode",
+    fromStart: true,
+    scenario: "full flow",
+    expectedIndustry: "marketing",
+  },
+  {
+    card: "Claude Code" as const,
+    provider: "claudeCode",
+    fromStart: false,
+    scenario: "resumed without an industry answer",
+    expectedIndustry: undefined,
+  },
+])(
+  "Finishing onboarding sends the selected $card model preference after a $scenario",
+  async ({ card, provider, fromStart, expectedIndustry }) => {
+    mockAgentWorkflows();
+    mockChatLifecycle(context);
+    let sentProvider: string | undefined;
+    let sentIndustry: string | undefined;
+    context.mocks.api(
+      onboardingCompleteContract.complete,
+      ({ query, body, respond }) => {
+        sentProvider = query?.modelProvider;
+        sentIndustry = body.industry;
+        context.mocks.data.onboardingStatus({
+          needsOnboarding: false,
+          onboardingComplete: true,
+        });
+        return respond(200, {
+          onboardingComplete: true,
+          needsOnboarding: false,
+        });
+      },
+    );
+
+    await openSkillsStep(card, fromStart);
+    click(getButtonByName("Continue"));
+    await expect(
+      screen.findByRole("heading", { name: SLACK_QUESTION }),
+    ).resolves.toBeInTheDocument();
+    click(getButtonByName("Skip for now"));
+    await expect(
+      screen.findByRole("heading", { name: "Okou is ready for you" }),
+    ).resolves.toBeInTheDocument();
+    expect(context.store.get(draftStorage.get$)).not.toBeNull();
+    click(getButtonByName("Start with Okou"));
+    await waitFor(() => {
+      expect(sentProvider).toBe(provider);
+    });
+    expect(sentIndustry).toBe(expectedIndustry);
+    await waitFor(() => {
+      expect(context.store.get(completedDraftStorage.get$)).toBeNull();
+    });
+  },
+);
 
 test("A skill the import writes appears without the step being asked again", async () => {
   const posthog = context.mocks.posthog();

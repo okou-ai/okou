@@ -14,6 +14,8 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("openai/gpt-6-astra")).toBe("GPT 6 Astra");
     expect(getModelDisplayName("gpt-6-sol")).toBe("GPT 6 Sol");
     expect(getModelDisplayName("openai/gpt-6-sol")).toBe("GPT 6 Sol");
+    expect(getModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
+    expect(getModelDisplayName("openai/gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getModelDisplayName("gpt-5.6-sol")).toBe("GPT 5.6 Sol");
     expect(getModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
     expect(getModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
@@ -26,7 +28,11 @@ describe("getModelDisplayName", () => {
     expect(getModelDisplayName("claude-opus-4-7")).toBe("claude-opus-4-7");
   });
 
-  it("uses friendly labels for Claude Opus 5 model IDs", () => {
+  it("uses friendly labels for Claude Opus model IDs", () => {
+    expect(getModelDisplayName("claude-opus-5-5")).toBe("Claude Opus 5.5");
+    expect(getModelDisplayName("anthropic/claude-opus-5.5")).toBe(
+      "Claude Opus 5.5",
+    );
     expect(getModelDisplayName("claude-opus-5")).toBe("Claude Opus 5");
     expect(getModelDisplayName("anthropic/claude-opus-5")).toBe(
       "Claude Opus 5",

@@ -1,17 +1,20 @@
 import { command, computed, state } from "ccstate";
+import {
+  onboardingIndustrySchema,
+  onboardingSubscriptionProviderSchema,
+  type OnboardingRecommendation,
+  type OnboardingSubscriptionProvider,
+} from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
+import { z } from "zod";
+import { localStorageSignals } from "../external/local-storage.ts";
+import { jsonParseOr } from "../utils.ts";
 
 /**
- * Source-first onboarding draft. The connector step drives the live connector
- * catalog, the invite step records what the invitation API answered, and the
- * chat-channel step reads the org's own Slack and Teams installations; the
- * remaining answers are held here until their endpoints land.
- *
- * One application start owns this draft, because a Store lives exactly that
- * long: switching Clerk session or organization replaces the document, so the
- * draft cannot reach another user or workspace. Re-entering the flow within
- * one start continues the same run and keeps its answers, which is also what
- * the back button relies on.
+ * Source-first onboarding draft. Unsaved answers survive a browser refresh in
+ * local storage, scoped to the current user and organization. Connections and
+ * invitations keep their own server-backed state; their transient UI status
+ * belongs to this application start.
  */
 
 export type SourcesFirstFlow = "owner" | "member";
@@ -25,7 +28,7 @@ export type SourcesFirstStep =
   | "slack"
   | "ready";
 
-export type SubscriptionProvider = "codex" | "claudeCode";
+export type SubscriptionProvider = OnboardingSubscriptionProvider;
 
 /** The other places a mention works, offered beside Slack on the same step. */
 export type ChatChannelId = "telegram" | "imessage" | "teams";
@@ -43,6 +46,15 @@ export interface SourcesFirstInvite {
   readonly failure: string | null;
 }
 
+export type SourcesFirstRecommendationStatus =
+  | "idle"
+  | "starting"
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "timed-out";
+
 export interface SourcesFirstDraft {
   readonly industry: OnboardingIndustry | null;
   /** One entry per address this run tried, with what the API answered. */
@@ -56,8 +68,15 @@ export interface SourcesFirstDraft {
   readonly provider: SubscriptionProvider | null;
   /** Edited copy of the matched starting prompt, kept across step changes. */
   readonly startingPromptDraft: string;
-  /** `industry:source` the draft was generated from, so a later change re-seeds it. */
+  /** The displayed seed the edit belongs to; any non-empty key owns later text. */
   readonly startingPromptKey: string;
+  /** The durable context-generation job started when the source step continues. */
+  readonly recommendationJobId: string | null;
+  /** Client wall-clock time when that generation attempt began. */
+  readonly recommendationStartedAt: number | null;
+  readonly recommendationStatus: SourcesFirstRecommendationStatus;
+  /** Only the final, schema-validated recommendation; raw source data never enters the browser. */
+  readonly recommendation: OnboardingRecommendation | null;
 }
 
 function emptyDraft(): SourcesFirstDraft {
@@ -68,10 +87,120 @@ function emptyDraft(): SourcesFirstDraft {
     provider: null,
     startingPromptDraft: "",
     startingPromptKey: "",
+    recommendationJobId: null,
+    recommendationStartedAt: null,
+    recommendationStatus: "idle",
+    recommendation: null,
   };
 }
 
+interface SourcesFirstDraftIdentity {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
+const persistedDraftIdentitySchema = z.object({
+  orgId: z.string().min(1),
+  userId: z.string().min(1),
+});
+
+const persistedDraftSchema = persistedDraftIdentitySchema.extend({
+  version: z.literal(2),
+  industry: onboardingIndustrySchema.nullable(),
+  experienced: z.boolean().nullable(),
+  provider: onboardingSubscriptionProviderSchema.nullable(),
+  startingPromptDraft: z.string().max(1000),
+  startingPromptKey: z.string(),
+  recommendationJobId: z.uuid().nullable(),
+  recommendationStartedAt: z.number().finite().nonnegative().nullable(),
+});
+
+type PersistedSourcesFirstDraft = z.infer<typeof persistedDraftSchema>;
+
+function savedDraftForIdentity(
+  raw: string | null,
+  identity: SourcesFirstDraftIdentity,
+): PersistedSourcesFirstDraft | null {
+  if (raw === null) {
+    return null;
+  }
+  const parsed = persistedDraftSchema.safeParse(
+    jsonParseOr<unknown>(raw, null),
+  );
+  if (!parsed.success) {
+    return null;
+  }
+  if (
+    parsed.data.orgId !== identity.orgId ||
+    parsed.data.userId !== identity.userId
+  ) {
+    return null;
+  }
+  return parsed.data;
+}
+
+function restoredDraft(
+  saved: PersistedSourcesFirstDraft | null,
+): SourcesFirstDraft {
+  if (saved === null) {
+    return emptyDraft();
+  }
+  const recommendationStatus: SourcesFirstRecommendationStatus =
+    saved.recommendationJobId !== null
+      ? "pending"
+      : saved.recommendationStartedAt === null
+        ? "idle"
+        : "starting";
+  return {
+    ...emptyDraft(),
+    industry: saved.industry,
+    experienced: saved.experienced,
+    provider: saved.provider,
+    startingPromptDraft: saved.startingPromptDraft,
+    startingPromptKey: saved.startingPromptKey,
+    recommendationJobId: saved.recommendationJobId,
+    recommendationStartedAt: saved.recommendationStartedAt,
+    recommendationStatus,
+  };
+}
+
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
 const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
+
+/** Restore before a page checks whether the selected plan adds the skills step. */
+export const restoreSourcesFirstDraft$ = command(
+  ({ get, set }, identity: SourcesFirstDraftIdentity): void => {
+    const active = get(internalDraftIdentity$);
+    if (active?.orgId === identity.orgId && active.userId === identity.userId) {
+      return;
+    }
+
+    const saved = savedDraftForIdentity(get(draftStorage.get$), identity);
+    set(internalDraftIdentity$, identity);
+    set(internalDraft$, restoredDraft(saved));
+  },
+);
+
+export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
+  const identity = get(internalDraftIdentity$);
+  if (identity === null) {
+    set(internalDraft$, emptyDraft());
+    return;
+  }
+  const raw = get(draftStorage.get$);
+  const parsed = persistedDraftIdentitySchema.safeParse(
+    raw === null ? null : jsonParseOr<unknown>(raw, null),
+  );
+  if (
+    parsed.success &&
+    parsed.data.orgId === identity.orgId &&
+    parsed.data.userId === identity.userId
+  ) {
+    set(draftStorage.clear$);
+  }
+  set(internalDraft$, emptyDraft());
+});
 
 /**
  * Owner runs the full flow; a member invited into an existing org skips the
@@ -98,15 +227,10 @@ export const claimSourcesFirstStartEvent$ = command(({ get, set }): boolean => {
 
 /** Transient screen state: this flow has no React-local state by convention. */
 interface SourcesFirstUi {
-  readonly searchOpen: boolean;
-  /** What the catalog search is filtered by, kept while its dialog is open. */
-  readonly searchQuery: string;
   readonly inviteEmail: string;
 }
 
 const internalUi$ = state<SourcesFirstUi>({
-  searchOpen: false,
-  searchQuery: "",
   inviteEmail: "",
 });
 
@@ -138,14 +262,31 @@ export const sourcesFirstDraft$ = computed((get) => {
 
 export const updateSourcesFirstDraft$ = command(
   (
-    { set },
+    { get, set },
     patch: Partial<{
       -readonly [Key in keyof SourcesFirstDraft]: SourcesFirstDraft[Key];
     }>,
   ) => {
-    set(internalDraft$, (current) => {
-      return { ...current, ...patch };
-    });
+    const next = { ...get(internalDraft$), ...patch };
+    set(internalDraft$, next);
+    const identity = get(internalDraftIdentity$);
+    if (identity === null) {
+      return;
+    }
+    set(
+      draftStorage.set$,
+      JSON.stringify({
+        version: 2,
+        ...identity,
+        industry: next.industry,
+        experienced: next.experienced,
+        provider: next.provider,
+        startingPromptDraft: next.startingPromptDraft,
+        startingPromptKey: next.startingPromptKey,
+        recommendationJobId: next.recommendationJobId,
+        recommendationStartedAt: next.recommendationStartedAt,
+      }),
+    );
   },
 );
 
@@ -164,27 +305,27 @@ const MEMBER_BASE_STEPS = [
 
 /**
  * Step order for one run. Members skip invite and Slack; answering the AI
- * experience question with a plan adds the skills step before Slack.
+ * experience question with a selected plan adds the skills step before Slack.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): readonly SourcesFirstStep[] {
   const base = flow === "owner" ? OWNER_BASE_STEPS : MEMBER_BASE_STEPS;
-  const experiencedSteps: readonly SourcesFirstStep[] =
-    experienced === true ? ["skills"] : [];
+  const skillSteps: readonly SourcesFirstStep[] =
+    provider === null ? [] : ["skills"];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
-  return [...base, ...experiencedSteps, ...slackStep, "ready"];
+  return [...base, ...skillSteps, ...slackStep, "ready"];
 }
 
 /** Progress markers: one per step of this run. */
 export function sourcesFirstProgress(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): { readonly current: number; readonly total: number } {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return { current: (index === -1 ? 0 : index) + 1, total: steps.length };
 }
@@ -193,9 +334,9 @@ export function sourcesFirstProgress(
 export function previousSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return index > 0 ? (steps[index - 1] ?? null) : null;
 }
@@ -204,9 +345,9 @@ export function previousSourcesFirstStep(
 export function nextSourcesFirstStep(
   step: SourcesFirstStep,
   flow: SourcesFirstFlow,
-  experienced: boolean | null,
+  provider: SubscriptionProvider | null,
 ): SourcesFirstStep | null {
-  const steps = sourcesFirstSteps(flow, experienced);
+  const steps = sourcesFirstSteps(flow, provider);
   const index = steps.indexOf(step);
   return index === -1 ? null : (steps[index + 1] ?? null);
 }

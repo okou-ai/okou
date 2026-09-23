@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { FeatureSwitchKey, isFeatureEnabled } from "@okouai/core";
+import type { OnboardingSubscriptionProvider } from "@okouai/api-contracts/contracts/onboarding";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
@@ -85,6 +86,26 @@ type ServiceResult<T> =
     };
 
 const ORG_SENTINEL_USER_ID = "__org__";
+
+const ONBOARDING_MODEL_POLICY_SEEDS = {
+  codex: {
+    models: ["gpt-6-luna", "gpt-6-astra", "gpt-5.6-sol"],
+    defaultModel: "gpt-6-luna",
+    providerType: "codex-oauth-token",
+  },
+  claudeCode: {
+    models: ["claude-opus-5", "claude-fable-5-1", "claude-sonnet-5"],
+    defaultModel: "claude-opus-5",
+    providerType: "claude-code-oauth-token",
+  },
+} as const satisfies Record<
+  OnboardingSubscriptionProvider,
+  {
+    readonly models: readonly SupportedRunModel[];
+    readonly defaultModel: SupportedRunModel;
+    readonly providerType: ModelProviderType;
+  }
+>;
 
 function ok<T>(data: T): ServiceResult<T> {
   return { ok: true, data };
@@ -1079,9 +1100,7 @@ async function listOrgModelPolicies(
     orgId,
     userId,
   );
-  const capabilities = member.priorityEnabled
-    ? await loadOrgPlanCapabilities(db, orgId)
-    : null;
+  const capabilities = await loadOrgPlanCapabilities(db, orgId);
   const providers = await listOrgProviderRoutes(db, orgId);
   const surfaces = await listOrgSurfaceRoutes(db, orgId);
   const providersById = new Map(
@@ -1111,9 +1130,6 @@ async function listOrgModelPolicies(
       )
         ? { ...policy, runtimeProviderType: runtimeRoute?.providerType ?? null }
         : policy;
-      if (!member.priorityEnabled) {
-        return administrative;
-      }
       const effective = await resolveEffectivePolicyRoute({
         db,
         orgId,
@@ -1166,7 +1182,9 @@ async function listOrgModelPolicies(
   return {
     policies,
     revision: policyRevision(persistedRows),
-    writePreconditionRequired: member.priorityEnabled,
+    // Permanent since the personal subscription priority rollout completed.
+    // Removing the field needs its own client-compatibility window.
+    writePreconditionRequired: true,
     modelsAvailableToAdd: modelsAvailableToAdd(
       persistedRows,
       modelsAllowedForNewPolicy,
@@ -1273,6 +1291,64 @@ async function persistOrgModelPolicyUpdates(params: {
   }
 }
 
+/** Apply the onboarding choice only before an organization customizes its model policies. */
+export async function initializeOnboardingOrgModelPolicies(
+  db: Db,
+  orgId: string,
+  userId: string,
+  provider: OnboardingSubscriptionProvider,
+): Promise<void> {
+  await lockPolicyWrites(db, orgId);
+  const existing = await loadRows(db, orgId, true);
+  const standardSeed = getDefaultOrgModelPolicySeed();
+  // An older API may have written this untouched seed before onboarding finishes.
+  // Remove after old API writers drain and no incomplete org retains that seed;
+  // track the removal in #36167.
+  const previousSeed = standardSeed.map((seed) => {
+    return seed.model === "gpt-6-luna"
+      ? { ...seed, model: "gpt-5.6-luna" as const }
+      : seed;
+  });
+  const hasOnlyStandardSeed = [standardSeed, previousSeed].some((seedRows) => {
+    return (
+      existing.length === seedRows.length &&
+      seedRows.every((seed) => {
+        const row = existing.find((candidate) => {
+          return candidate.model === seed.model;
+        });
+        return (
+          row?.isDefault === seed.isDefault &&
+          row.defaultProviderType === seed.defaultProviderType &&
+          row.credentialScope === seed.credentialScope &&
+          row.modelProviderId === null &&
+          row.modelProviderSurfaceId === null
+        );
+      })
+    );
+  });
+  if (existing.length > 0 && !hasOnlyStandardSeed) {
+    return;
+  }
+
+  const seed = ONBOARDING_MODEL_POLICY_SEEDS[provider];
+  await persistOrgModelPolicyUpdates({
+    db,
+    orgId,
+    userId,
+    now: nowDate(),
+    policies: seed.models.map((model) => {
+      return {
+        model,
+        isDefault: model === seed.defaultModel,
+        defaultProviderType: seed.providerType,
+        credentialScope: "member",
+        modelProviderId: null,
+        modelProviderSurfaceId: null,
+      };
+    }),
+  });
+}
+
 export const listOrgModelPolicies$ = command(
   async (
     { set },
@@ -1302,16 +1378,6 @@ export const updateOrgModelPolicies$ = command(
     signal: AbortSignal,
   ): Promise<ServiceResult<OrgModelPoliciesResponse>> => {
     const db = set(writeDb$);
-    const context = await loadUserFeatureSwitchContext(
-      db,
-      params.orgId,
-      params.userId,
-    );
-    signal.throwIfAborted();
-    const priorityEnabled = isFeatureEnabled(
-      FeatureSwitchKey.PersonalSubscriptionPriority,
-      context,
-    );
     const refreshConflict = () => {
       return {
         ok: false as const,
@@ -1321,7 +1387,7 @@ export const updateOrgModelPolicies$ = command(
       };
     };
     // Reject unidentified old writers before even the lazy seed/default path.
-    if (priorityEnabled && !params.revision) {
+    if (!params.revision) {
       return refreshConflict();
     }
     const written = await db.transaction(async (tx) => {

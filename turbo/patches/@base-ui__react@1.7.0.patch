@@ -1,0 +1,26 @@
+diff --git a/floating-ui-react/components/FloatingFocusManager.js b/floating-ui-react/components/FloatingFocusManager.js
+index 5d5b40c9500cd0f4f546dd62ef38d3900e3b6519..a583d54512cfd88e8be4992847edd825e50c3a9e 100644
+--- a/floating-ui-react/components/FloatingFocusManager.js
++++ b/floating-ui-react/components/FloatingFocusManager.js
+@@ -595,7 +595,7 @@ function FloatingFocusManager(props) {
+             const prevTabbable = (0, _tabbable.getPreviousTabbable)(domReference);
+             prevTabbable?.focus();
+           } else {
+-            (0, _resolveRef.resolveRef)(nextFocusableElement ?? portalContext.afterOutsideRef)?.focus();
++            ((0, _resolveRef.resolveRef)(nextFocusableElement) ?? portalContext.afterOutsideRef.current)?.focus();
+           }
+         }
+       }
+diff --git a/floating-ui-react/components/FloatingFocusManager.mjs b/floating-ui-react/components/FloatingFocusManager.mjs
+index 8a6039fc4fb65de89bb4bfcca286ef819a54fcf4..5f71b5375feb01ec509ea377ffa4cb53b2827a86 100644
+--- a/floating-ui-react/components/FloatingFocusManager.mjs
++++ b/floating-ui-react/components/FloatingFocusManager.mjs
+@@ -589,7 +589,7 @@ export function FloatingFocusManager(props) {
+             const prevTabbable = getPreviousTabbable(domReference);
+             prevTabbable?.focus();
+           } else {
+-            resolveRef(nextFocusableElement ?? portalContext.afterOutsideRef)?.focus();
++            (resolveRef(nextFocusableElement) ?? portalContext.afterOutsideRef.current)?.focus();
+           }
+         }
+       }

@@ -17,6 +17,7 @@ import { cronOfficialWorkflowCatalogRoutes } from "./routes/cron-official-workfl
 import { cronConnectorOauthStateCleanupRoutes } from "./routes/cron-connector-oauth-state-cleanup";
 import { cronDrainEmailOutboxRoutes } from "./routes/cron-drain-email-outbox";
 import { cronExecuteMorningBriefsRoutes } from "./routes/cron-execute-morning-briefs";
+import { cronRefreshHomeTaskRecommendationsRoutes } from "./routes/cron-refresh-home-task-recommendations";
 import { cronExecuteWorkflowAutomationsRoutes } from "./routes/cron-execute-workflow-automations";
 import { cronMonitorChatEventQueueRoutes } from "./routes/cron-monitor-chat-event-queue";
 import { cronRenewGmailWatchesRoutes } from "./routes/cron-renew-gmail-watches";
@@ -84,6 +85,7 @@ import { billingStatusRoutes } from "./routes/billing-status";
 import { billingUsagePackCreditsRoutes } from "./routes/billing-usage-pack-credits";
 import { bankingRoutes } from "./routes/banking";
 import { chatThreadRoutes } from "./routes/chat-threads";
+import { homeTaskRecommendationRoutes } from "./routes/home-task-recommendations";
 import { welcomeChatThreadRoutes } from "./routes/welcome-chat-threads";
 import { chatEventsRoutes } from "./routes/chat-events";
 import { sharedThreadRoutes } from "./routes/shared-threads";
@@ -120,6 +122,7 @@ import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
 import { modelProvidersRoutes } from "./routes/model-providers";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
+import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgDeleteRoutes } from "./routes/org-delete";
@@ -273,6 +276,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronConnectorOauthStateCleanupRoutes,
   ...cronDrainEmailOutboxRoutes,
   ...cronExecuteMorningBriefsRoutes,
+  ...cronRefreshHomeTaskRecommendationsRoutes,
   ...cronExecuteWorkflowAutomationsRoutes,
   ...cronMonitorChatEventQueueRoutes,
   ...cronRenewGmailWatchesRoutes,
@@ -312,6 +316,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingUsagePackCreditsRoutes,
   ...bankingRoutes,
   ...chatThreadRoutes,
+  ...homeTaskRecommendationRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
@@ -385,6 +390,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runsRoutes,
   ...runsCancelRoutes,
   ...onboardingCompleteRoutes,
+  ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,

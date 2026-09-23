@@ -235,8 +235,9 @@ async fn routine_gc_progresses_while_the_reactor_waits_for_the_idle_pool() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
     let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
-    let capacity_path =
-        crate::paths::workspace_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
+    let capacity_path = runner_host::paths::workspace_image_cache_capacity_lock_path(
+        &paths.base_dir().join("locks"),
+    );
     Arc::get_mut(&mut config.exec_config)
         .unwrap()
         .workspace_cache = Some(
@@ -266,7 +267,7 @@ async fn routine_gc_progresses_while_the_reactor_waits_for_the_idle_pool() {
     // filesystem work and retain the capacity lock through its completion marker.
     let capacity_holder = tokio::time::timeout(
         Duration::from_secs(2),
-        crate::lock::acquire(capacity_path.clone()),
+        runner_host::lock::acquire(capacity_path.clone()),
     )
     .await
     .expect("routine GC must progress independently")
@@ -287,8 +288,9 @@ async fn teardown_joins_routine_gc_before_releasing_its_capacity_lock() {
     let entered = Arc::new(tokio::sync::Notify::new());
     let release = Arc::new(tokio::sync::Semaphore::new(0));
     let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
-    let capacity_path =
-        crate::paths::workspace_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
+    let capacity_path = runner_host::paths::workspace_image_cache_capacity_lock_path(
+        &paths.base_dir().join("locks"),
+    );
     Arc::get_mut(&mut config.exec_config)
         .unwrap()
         .workspace_cache = Some(
@@ -324,17 +326,17 @@ async fn teardown_joins_routine_gc_before_releasing_its_capacity_lock() {
     }
     drive_ready_reactor(reactor.as_mut()).await;
     assert!(matches!(
-        crate::lock::try_acquire_or_busy(capacity_path.clone())
+        runner_host::lock::try_acquire_or_busy(capacity_path.clone())
             .await
             .unwrap(),
-        crate::lock::TryLock::Busy
+        runner_host::lock::TryLock::Busy
     ));
     release.add_permits(1);
     tokio::time::timeout(Duration::from_secs(5), reactor)
         .await
         .expect("GC completion must unblock teardown")
         .unwrap();
-    let capacity_holder = crate::lock::acquire(capacity_path).await.unwrap();
+    let capacity_holder = runner_host::lock::acquire(capacity_path).await.unwrap();
     assert!(capacity_holder.metadata().unwrap().len() > 0);
     assert_stopped_status(&env).await;
 }

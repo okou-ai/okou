@@ -432,17 +432,15 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: "reuse the routing receipt facts",
       });
     });
-    // The second plan read is final admission. Stable-context materialization
-    // no longer repeats the switch read, because this send hands its
-    // request-scoped feature-switch context to run preparation. Routing owns
-    // only the single policy read and never loads personal account metadata on
-    // this organization path.
+    // The second plan read is final admission. The existing thread reuses
+    // its request-scoped policy and feature-switch reads; member routing
+    // loads personal metadata and accounts once to check for a preferred route.
     expect(captured.receipt).toStrictEqual({
       planReads: 2,
       policyReads: 1,
       featureSwitchReads: 1,
-      personalMetadataReads: 0,
-      personalAccountReads: 0,
+      personalMetadataReads: 1,
+      personalAccountReads: 1,
     });
     await cancelChatRun(actor, captured.result.runId);
   }, 90_000);
@@ -1819,6 +1817,9 @@ describe("CHAT-02: model-first provider policies", () => {
       cliAgentType: "codex",
     });
 
+    // A connected personal Codex subscription takes priority over an
+    // organization API route for the same model.
+    await misc.deletePersonalModelProvider(actor, "codex-oauth-token", [204]);
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-5.6-luna",
@@ -1885,6 +1886,13 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(claim.modelUsageProvider).toBe(model);
       expect(environment.OPENAI_BASE_URL).toBe("https://openrouter.ai/api/v1");
       expect(environment.OPENAI_MODEL).toBe(preset);
+      expect(claim.codexRuntimeConfig).toMatchObject({
+        providerId: "openrouter-codex",
+        baseUrl: "https://openrouter.ai/api/v1",
+        wireApi: "responses",
+        supportsWebsockets: false,
+      });
+      expect(claim.codexRuntimeConfig?.modelCatalog).toBeUndefined();
       expect(environment.OKOU_REASONING_EFFORT).toBeUndefined();
       expect(environment.OKOU_CODEX_SERVICE_TIER).toBeUndefined();
       await cancelChatRun(actor, run.runId);
@@ -1953,6 +1961,7 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(environment.OPENAI_MODEL).toBe(expectedModel);
       expect(claim.codexRuntimeConfig).toMatchObject({
         providerId: expectedProvider,
+        supportsWebsockets: false,
         modelCatalog: {
           models: expect.arrayContaining([
             expect.objectContaining({ slug: expectedModel }),
@@ -2125,8 +2134,13 @@ describe("CHAT-02: model-first provider policies", () => {
         environment[messages ? "ANTHROPIC_BASE_URL" : "OPENAI_BASE_URL"],
       ).toBe(baseUrl);
       expect(claim.cliAgentType).toBe(messages ? "claude-code" : "codex");
-      if (model.startsWith("deepseek")) {
-        expect(claim.codexRuntimeConfig?.baseUrl).toBe(baseUrl);
+      if (!messages) {
+        expect(claim.codexRuntimeConfig).toMatchObject({
+          providerId: "openrouter-codex",
+          baseUrl,
+          wireApi: "responses",
+          supportsWebsockets: false,
+        });
       }
       const name = `model-provider:${messages ? "openrouter-api-key" : "openrouter-codex"}`;
       expect(claim.billableFirewalls).toContain(name);

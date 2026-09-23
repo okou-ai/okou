@@ -295,8 +295,6 @@ async fn destroy_keep_cow_preserves_file() {
     // Sync to flush the write buffer to the COW file
     let status = Command::new("sync").status().expect("sync");
     assert!(status.success());
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
     device
         .destroy_keep_cow_with_retries(keep_cow_policy())
         .await
@@ -477,9 +475,6 @@ async fn cow_file_is_sparse() {
     let status = Command::new("sync").status().expect("sync");
     assert!(status.success());
 
-    // Give the flush a moment
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
     device
         .destroy_keep_cow_with_retries(keep_cow_policy())
         .await
@@ -605,8 +600,6 @@ async fn snapshot_restore_round_trip() {
         // Sync to flush to COW file
         let status = Command::new("sync").status().expect("sync");
         assert!(status.success());
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
         device.log_status().await;
         device
             .destroy_keep_cow_with_retries(keep_cow_policy())

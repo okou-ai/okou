@@ -2,22 +2,32 @@ import {
   connectorCatalogContract,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  onboardingCompleteContract,
+  onboardingRecommendationContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockNow } from "../../../__tests__/time.ts";
 import { pathname, search } from "../../../signals/location.ts";
+import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
+const draftStorage = localStorageSignals("onboarding:sources-first-draft");
+const completedDraftStorage = localStorageSignals(
+  "onboarding:sources-first-draft",
+);
 
 const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
@@ -47,7 +57,15 @@ function mockMemberOnboardingNeeded(): void {
 }
 
 /** One catalog entry, so the source step has a grid to render. */
-function mockCatalog({ connected = false } = {}): void {
+function mockCatalog({
+  connected = false,
+  ready,
+  unavailable,
+}: {
+  connected?: boolean;
+  ready?: Promise<void>;
+  unavailable?: () => boolean;
+} = {}): void {
   const connector: PublicConnectorCatalogStatusItem = {
     slug: "gmail",
     label: "Gmail",
@@ -84,7 +102,18 @@ function mockCatalog({ connected = false } = {}): void {
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
+    if (ready) {
+      await ready;
+    }
+    if (unavailable?.()) {
+      return respond(503, {
+        error: {
+          code: "PROVIDER_UNAVAILABLE",
+          message: "Connector catalog is temporarily unavailable",
+        },
+      });
+    }
     return respond(200, { connectors: [connector] });
   });
 }
@@ -144,11 +173,28 @@ test("The switch opens the field question on /onboarding and continues to the so
 
   click(fieldRadio(MARKETING_FIELD));
 
+  expect(
+    JSON.parse(context.store.get(draftStorage.get$) ?? "null"),
+  ).toMatchObject({
+    orgId: "org_default",
+    userId: "test-user-123",
+    industry: "marketing",
+  });
+
   await waitFor(() => {
     expect(getButtonByName("Continue")).toBeEnabled();
   });
 
   click(getButtonByName("Continue"));
+
+  // Keep the current question in place while the next route is being set up.
+  // The full-screen app loader would otherwise flash over every step change.
+  expect(
+    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("status", { name: "Loading" }),
+  ).not.toBeInTheDocument();
 
   await expect(
     screen.findByRole("heading", { name: SOURCES_QUESTION }),
@@ -159,12 +205,94 @@ test("The switch opens the field question on /onboarding and continues to the so
 
   click(getButtonByName("Back"));
 
+  expect(
+    screen.getByRole("heading", { name: SOURCES_QUESTION }),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("status", { name: "Loading" }),
+  ).not.toBeInTheDocument();
+
   await expect(
     screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboarding);
   // The answer survives the way back, so the field can be changed.
   expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
+});
+
+test("The first step waits for connector choices before opening the sources step", async () => {
+  mockOnboardingNeeded();
+  const catalogReady = context.mocks.deferred<void>();
+  mockCatalog({ ready: catalogReady.promise });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  click(fieldRadio(MARKETING_FIELD));
+
+  expect(getButtonByName("Continue")).toBeEnabled();
+  click(getButtonByName("Continue"));
+
+  expect(getButtonByName("Continue")).toBeDisabled();
+  expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "true");
+  expect(pathname()).toBe(ROUTES.onboarding);
+  expect(
+    screen.getByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).toBeInTheDocument();
+
+  catalogReady.resolve();
+  await expect(
+    screen.findByRole("heading", { name: SOURCES_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Connect Gmail")).toBeInTheDocument();
+  expect(screen.queryByText("Loading connectors…")).not.toBeInTheDocument();
+});
+
+test("The first step can retry when connector choices are unavailable", async () => {
+  mockOnboardingNeeded();
+  const catalogReady = context.mocks.deferred<void>();
+  let unavailable = true;
+  mockCatalog({
+    ready: catalogReady.promise,
+    unavailable: () => {
+      return unavailable;
+    },
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(fieldRadio(MARKETING_FIELD));
+  click(getButtonByName("Continue"));
+  expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "true");
+  catalogReady.resolve();
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("Couldn't load built-in connectors.");
+  expect(getButtonByName("Continue")).toBeDisabled();
+  expect(getButtonByName("Continue")).toHaveAttribute("aria-busy", "false");
+
+  unavailable = false;
+  click(getButtonByName("Retry"));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+
+  click(getButtonByName("Continue"));
+  await expect(
+    screen.findByRole("heading", { name: SOURCES_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Connect Gmail")).toBeInTheDocument();
 });
 
 test("A later step returns to the entry until a source is connected", async () => {
@@ -184,6 +312,196 @@ test("A later step returns to the entry until a source is connected", async () =
   expect(pathname()).toBe(ROUTES.onboarding);
 });
 
+test("Connected account context replaces the static starting prompt", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7493e";
+  const generatedPrompt =
+    "Review my recent Gmail workload, group the messages that need a reply, and draft the three most important responses for my approval.";
+  let startBody: unknown;
+  context.mocks.api(
+    onboardingRecommendationContract.start,
+    ({ body, respond }) => {
+      startBody = body;
+      return respond(202, { jobId, status: "pending" });
+    },
+  );
+  let pollCount = 0;
+  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
+    pollCount += 1;
+    return pollCount === 1
+      ? respond(200, { jobId, status: "running" })
+      : respond(200, {
+          jobId,
+          status: "completed",
+          recommendation: {
+            kind: "task",
+            title: "Clear the replies that matter",
+            outcome: "Three priority responses ready for review",
+            prompt: generatedPrompt,
+          },
+        });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByRole("heading", { name: SOURCES_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByRole("heading", {
+      name: "Have you used Codex or Claude Code?",
+    }),
+  ).resolves.toBeInTheDocument();
+  click(fieldRadio("No, I’m new to this"));
+  click(getButtonByName("Continue"));
+
+  await expect(
+    screen.findByText("Clear the replies that matter"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
+  expect(startBody).toStrictEqual({
+    industry: "marketing",
+    locale: "en-US",
+  });
+  expect(pollCount).toBe(2);
+});
+
+test("The fallback budget starts with generation and a late result preserves edits", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  const startedAt = Date.parse("2026-09-22T08:00:00.000Z");
+  mockNow(startedAt, context.signal);
+  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7494e";
+  const startRequested = context.mocks.deferred<void>();
+  const releaseStart = context.mocks.deferred<void>();
+  const generatedPrompt =
+    "Review the newest Gmail threads and draft the replies that need attention.";
+  context.mocks.api(
+    onboardingRecommendationContract.start,
+    async ({ respond }) => {
+      startRequested.resolve();
+      await releaseStart.promise;
+      return respond(202, { jobId, status: "pending" });
+    },
+  );
+  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
+    return respond(200, {
+      jobId,
+      status: "completed",
+      recommendation: {
+        kind: "task",
+        title: "Catch up on important replies",
+        outcome: "Priority replies ready for review",
+        prompt: generatedPrompt,
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: SOURCES_QUESTION });
+  click(getButtonByName("Continue"));
+  await startRequested.promise;
+
+  // Time spent on the intervening step counts toward the same 12-second budget.
+  mockNow(startedAt + 12_000, context.signal);
+  await screen.findByRole("heading", {
+    name: "Have you used Codex or Claude Code?",
+  });
+  click(fieldRadio("No, I’m new to this"));
+  click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", { name: READY_TITLE });
+  const prompt = await screen.findByRole("textbox");
+  expect(prompt).not.toHaveValue("");
+  expect(getButtonByName(START_ACTION)).toBeEnabled();
+
+  const editedPrompt = "Keep my edited fallback prompt.";
+  await fill(prompt, editedPrompt);
+  releaseStart.resolve();
+
+  await screen.findByText("Catch up on important replies");
+  expect(prompt).toHaveValue(editedPrompt);
+  expect(prompt).not.toHaveValue(generatedPrompt);
+  expect(getButtonByName(START_ACTION)).toBeEnabled();
+});
+
+test("A refreshed ready step resumes its durable recommendation job", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  const startedAt = Date.parse("2026-09-22T08:00:00.000Z");
+  mockNow(startedAt + 1000, context.signal);
+  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7495e";
+  const generatedPrompt =
+    "Review the latest Gmail threads and draft the replies that need attention.";
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: false,
+      provider: null,
+      startingPromptDraft: "",
+      startingPromptKey: "",
+      recommendationJobId: jobId,
+      recommendationStartedAt: startedAt,
+    }),
+  );
+  let pollCount = 0;
+  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
+    pollCount += 1;
+    return respond(200, {
+      jobId,
+      status: "completed",
+      recommendation: {
+        kind: "task",
+        title: "Resume the important replies",
+        outcome: "Priority drafts ready for review",
+        prompt: generatedPrompt,
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByText("Resume the important replies"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
+  expect(pollCount).toBe(1);
+});
+
 test("The ready step completes onboarding once, before it runs the first request", async () => {
   mockOnboardingNeeded();
   mockCatalog({ connected: true });
@@ -196,17 +514,21 @@ test("The ready step completes onboarding once, before it runs the first request
   // Where the browser still was when completion went out, so the order of the
   // two is observable rather than assumed.
   const completedFrom: string[] = [];
-  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
-    completedFrom.push(pathname());
-    context.mocks.data.onboardingStatus({
-      needsOnboarding: false,
-      onboardingComplete: true,
-    });
-    return respond(200, {
-      onboardingComplete: true,
-      needsOnboarding: false,
-    });
-  });
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    ({ query, respond }) => {
+      completedFrom.push(pathname());
+      expect(query?.modelProvider).toBeUndefined();
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    },
+  );
 
   await setupPage({
     context,
@@ -225,6 +547,72 @@ test("The ready step completes onboarding once, before it runs the first request
     expect(runPrompt).toBeTruthy();
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
+});
+
+test("A refreshed ready step keeps the industry, model choice, and edited request", async () => {
+  mockOnboardingNeeded();
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  let sentIndustry: string | undefined;
+  let sentProvider: string | undefined;
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    ({ body, query, respond }) => {
+      sentIndustry = body.industry;
+      sentProvider = query?.modelProvider;
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    },
+  );
+  // A fresh browser app starts with storage from the previous app lifetime.
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: true,
+      provider: "claudeCode",
+      startingPromptDraft: "Draft my launch plan",
+      startingPromptKey: "marketing:gmail",
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: READY_TITLE }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+    "Draft my launch plan",
+  );
+
+  click(getButtonByName(START_ACTION));
+  await waitFor(() => {
+    expect(runPrompt).toBe("Draft my launch plan");
+  });
+  expect(sentIndustry).toBe("marketing");
+  expect(sentProvider).toBe("claudeCode");
+  expect(context.store.get(completedDraftStorage.get$)).toBeNull();
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {

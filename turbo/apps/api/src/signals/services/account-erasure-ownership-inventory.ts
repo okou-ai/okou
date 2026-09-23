@@ -677,6 +677,10 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_descendant",
     parents: ["google_workspace_event_subscription_states"],
   },
+  home_task_recommendations: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
   hosted_deployments: { coverage: "user_root", ownership: ["user_id"] },
   hosted_sites: { coverage: "user_root", ownership: ["user_id"] },
   image_artifact_edit_snapshots: {

@@ -13,9 +13,9 @@ use super::super::support::{
     minimal_context, mock_run_config_with_overrides, push_job, seed_workspace_cache_state,
     shutdown, test_profiles, wait_cancel_handle, wait_idle_pool_len,
 };
-use crate::paths::RunnerPaths;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_host::paths::RunnerPaths;
 use runner_types::storage_manifest::{ArtifactEntry, StorageManifest};
 use runner_types::types::{
     ExecutionContext, ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding,

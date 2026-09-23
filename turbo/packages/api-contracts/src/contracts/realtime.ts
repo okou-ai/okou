@@ -45,6 +45,15 @@ export type BrowserSessionChangedPayload = z.infer<
   typeof browserSessionChangedPayloadSchema
 >;
 
+/** Invalidate the cached task cards for one Agent after a cron refresh. */
+export const homeTaskRecommendationsChangedPayloadSchema = z
+  .object({ agentId: z.uuid() })
+  .strict();
+
+export type HomeTaskRecommendationsChangedPayload = z.infer<
+  typeof homeTaskRecommendationsChangedPayloadSchema
+>;
+
 /**
  * Preference keys that can flip as part of a `userPreferenceChanged` push.
  * Consumers subscribe and reload the corresponding resource when its key is

@@ -322,8 +322,13 @@ const CHIP_RAIL_FADE = {
  * cannot -- a chip already at rest under the fade when focus arrives -- so a
  * keyboard user never lands on a control the row dimmed. `composer-rail.tsx`
  * pairs the same two.
+ *
+ * `:focus-visible` rather than `:focus-within`, for the reason spelled there: a
+ * chip clicked with a pointer keeps focus after the click, and the row would
+ * hold its mask off -- ending on a hard cut through a chip -- for as long as
+ * that focus lasts.
  */
-const CHIP_RAIL_FADE_OFF = "focus-within:[mask-image:none]";
+const CHIP_RAIL_FADE_OFF = "has-[:focus-visible]:[mask-image:none]";
 
 /**
  * The dialog's own surface is `--card`, not `--background`: in dark the two are
@@ -981,6 +986,7 @@ function DirectoryConnectorCardSlot({
   connector,
   connected,
   busy,
+  blocked,
   summary,
   accountLabelOf,
   connect,
@@ -989,6 +995,7 @@ function DirectoryConnectorCardSlot({
   readonly connector: PlatformConnectorCatalogStatusItem;
   readonly connected: boolean;
   readonly busy: boolean;
+  readonly blocked: boolean;
   readonly summary: ConnectorAccountSummary | undefined;
   readonly accountLabelOf: (
     account: NonNullable<ConnectorAccountSummary["defaultConnection"]>,
@@ -1001,6 +1008,7 @@ function DirectoryConnectorCardSlot({
       variant="directory"
       connector={connector}
       busy={busy}
+      blocked={blocked}
       connected={connected}
       accountCount={summary?.accountCount ?? (connected ? 1 : 0)}
       accountLabel={
@@ -1070,6 +1078,7 @@ interface ConnectorDirectoryDialogProps {
   readonly connectedCustom: readonly CustomConnectorResponse[];
   readonly unconnectedCustom: readonly CustomConnectorResponse[];
   readonly connecting: boolean;
+  readonly isConnectorConnecting: (connectorSlug: ConnectorSlug) => boolean;
   readonly connectHandlers: (
     connector: PlatformConnectorCatalogStatusItem,
   ) => ConnectorConnectHandlers;
@@ -1090,6 +1099,7 @@ export function ConnectorDirectoryDialog({
   connectedCustom,
   unconnectedCustom,
   connecting,
+  isConnectorConnecting,
   connectHandlers,
   onConnectCustom,
   onConfigurePermissions,
@@ -1133,7 +1143,8 @@ export function ConnectorDirectoryDialog({
         key={connector.slug}
         connector={connector}
         connected={isConnected}
-        busy={connecting}
+        busy={isConnectorConnecting(connector.slug)}
+        blocked={connecting}
         summary={accountSummaries.get(`builtin:${connector.slug}`)}
         accountLabelOf={accountLabelOf}
         connect={connectHandlers(connector)}
@@ -1166,7 +1177,7 @@ export function ConnectorDirectoryDialog({
               `builtin:${detailConnector.slug}`,
             )}
             model={model}
-            connecting={connecting}
+            connecting={isConnectorConnecting(detailConnector.slug)}
             connectHandlers={connectHandlers}
             onConfigurePermissions={onConfigurePermissions}
             onUpdateState={onUpdateState}

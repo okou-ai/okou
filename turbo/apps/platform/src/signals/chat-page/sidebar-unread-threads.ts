@@ -1,34 +1,12 @@
 import { command, computed } from "ccstate";
-import {
-  chatThreadMarkAgentReadContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { currentChatAgentId$ } from "../agent-chat.ts";
-import { reloadChatIndicatorsCounter$ } from "../chat-thread-list-reload.ts";
+import { chatThreadIndicatorsFromWorker$ } from "../shared-database.ts";
 import { optimisticReadMarks$ } from "./optimistic-chat-thread-read-marks.ts";
 
-type UnreadSnapshot = readonly { threadId: string; unreadAt: string }[];
-
 /**
- * Server unread snapshot for the current agent. Refetched alongside the
- * indicator counter. Shared thread-list synchronization and user-channel
- * read-cursor updates both invalidate this shared counter.
- */
-const fetchedUnreads$ = computed(async (get): Promise<UnreadSnapshot> => {
-  get(reloadChatIndicatorsCounter$);
-  const agentId = await get(currentChatAgentId$);
-  if (!agentId) {
-    return [];
-  }
-  const client = get(apiClient$)(chatThreadsContract);
-  const result = await accept(client.unreads({ query: { agentId } }), [200]);
-  return result.body.unreads;
-});
-
-/**
- * The server's own unread instant for one thread, once optimistic local marks
+ * The server's unread instant for one thread, once optimistic local marks
  * are applied.
  *
  * The server watermark already covers both kinds of unread: a Run terminal
@@ -38,29 +16,27 @@ const fetchedUnreads$ = computed(async (get): Promise<UnreadSnapshot> => {
  */
 export function serverUnreadAt$(threadId: string) {
   return computed(async (get): Promise<string | undefined> => {
-    const unreads = await get(fetchedUnreads$);
-    const unread = unreads.find((entry) => {
-      return entry.threadId === threadId;
-    });
-    if (!unread) {
+    const { unreadAt } = await get(chatThreadIndicatorsFromWorker$);
+    const timestamp = unreadAt[threadId];
+    if (timestamp === undefined) {
       return undefined;
     }
     const markedAt = get(optimisticReadMarks$).get(threadId);
-    return markedAt === undefined || Date.parse(unread.unreadAt) > markedAt
-      ? unread.unreadAt
+    return markedAt === undefined || Date.parse(timestamp) > markedAt
+      ? timestamp
       : undefined;
   });
 }
 
 export const sidebarUnreadThreadIds$ = computed(
   async (get): Promise<ReadonlySet<string>> => {
-    const unreads = await get(fetchedUnreads$);
+    const { unreadAt } = await get(chatThreadIndicatorsFromWorker$);
     const marks = get(optimisticReadMarks$);
     const ids = new Set<string>();
-    for (const unread of unreads) {
-      const markedAt = marks.get(unread.threadId);
-      if (markedAt === undefined || Date.parse(unread.unreadAt) > markedAt) {
-        ids.add(unread.threadId);
+    for (const [threadId, timestamp] of Object.entries(unreadAt)) {
+      const markedAt = marks.get(threadId);
+      if (markedAt === undefined || Date.parse(timestamp) > markedAt) {
+        ids.add(threadId);
       }
     }
     return ids;

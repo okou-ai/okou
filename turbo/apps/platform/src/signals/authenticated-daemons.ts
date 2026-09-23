@@ -18,6 +18,7 @@ import { subscribeCustomTemplatesChanged$ } from "./okou-page/custom-template-li
 import { subscribePresentationTemplatesChanged$ } from "./okou-page/presentation-template-library.ts";
 import { subscribeCustomConnectorListChanged$ } from "./okou-page/settings/custom-connectors.ts";
 import { subscribeSshChanged$ } from "./ssh.ts";
+import { subscribeCloudflareAccessChanged$ } from "./cloudflare-access.ts";
 import {
   bridgeConnected$,
   installedSharedDatabaseBridge$,
@@ -47,6 +48,7 @@ const runAppRealtimeDaemons$ = command(
     set(subscribeCustomConnectorListChanged$, signal);
     set(subscribeCustomTemplatesChanged$, signal);
     set(subscribeSshChanged$, signal);
+    set(subscribeCloudflareAccessChanged$, signal);
   },
 );
 

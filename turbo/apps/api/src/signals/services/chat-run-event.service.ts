@@ -40,7 +40,6 @@ export async function resolveRunChatThreadModelContext(params: {
     userId: params.userId,
     threadId: params.threadId,
     persistRequestedCodexServiceTier: false,
-    featureSwitchContext,
   });
   if (!resolved) {
     return badRequestMessage("Chat thread not found");

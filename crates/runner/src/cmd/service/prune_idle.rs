@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::error::{RunnerError, RunnerResult};
 use crate::idle_prune_control;
-use crate::paths::HomePaths;
-use crate::runner_process_identity::RunnerProcessIdentity;
+use runner_host::paths::HomePaths;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 use super::{RunnerServiceUnit, read_unit_config_path, selected_config_live_instance};
 

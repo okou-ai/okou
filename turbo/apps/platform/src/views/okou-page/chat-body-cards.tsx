@@ -339,7 +339,12 @@ export function MarkdownCardView({
       return <BrowserSessionCard signals={card.signals} />;
     }
     case "browser-user-action": {
-      return <BrowserUserActionCard signals={card.signals} />;
+      return (
+        <BrowserUserActionCard
+          signals={card.signals}
+          browserSessionSignals={card.browserSessionSignals}
+        />
+      );
     }
   }
 }

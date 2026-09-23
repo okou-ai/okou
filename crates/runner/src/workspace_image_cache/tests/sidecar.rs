@@ -1,4 +1,4 @@
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::Path;
 use std::time::Duration;
 
@@ -9,7 +9,6 @@ use guest_contracts::session_history_identity::{SessionHistoryFramework, Session
 use sha2::{Digest, Sha256};
 use tokio::fs;
 
-use super::super::fs::workspace_cache_path_allocated_bytes;
 use super::super::metadata::WorkspaceImageFileIdentity;
 use super::super::types::{
     WorkspaceSessionHistorySidecarMiss, WorkspaceSessionHistorySidecarPublication,
@@ -19,11 +18,11 @@ use super::super::{
     WorkspaceSessionHistorySidecarRepresentation,
 };
 use super::support::{TEST_PROFILE_NAME, local_cache, write_current_cache_entry};
-use crate::paths::RunnerPaths;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
 const PERMISSIVE_UMASK_CHILD_ENV: &str = "OKOU_RUN_SIDECAR_PERMISSIVE_UMASK_TEST";
@@ -886,18 +885,37 @@ async fn session_history_sidecar_counts_toward_gc_candidate_and_inspection() {
         "2026-05-01T00:00:00.000Z",
     )
     .await;
-    publish_test_session_history_sidecar(&cache, &cache_key, run_id, session_id, history).await;
+    let identity =
+        publish_test_session_history_sidecar(&cache, &cache_key, run_id, session_id, history).await;
     let entry_paths = cache.entry_paths(&cache_key);
-    let current_allocated = workspace_cache_path_allocated_bytes(entry_paths.current_image()).await;
-    let sidecar_allocated = cache
-        .session_history_sidecar_allocated_bytes(&entry_paths)
-        .await;
+    let body_path = cache
+        .probe_session_history_sidecar(&cache_key, &identity)
+        .await
+        .unwrap()
+        .path;
+    let current_allocated = fs::symlink_metadata(entry_paths.current_image())
+        .await
+        .unwrap()
+        .blocks()
+        .saturating_mul(512);
+    let body_allocated = fs::symlink_metadata(body_path)
+        .await
+        .unwrap()
+        .blocks()
+        .saturating_mul(512);
+    let metadata_allocated = fs::symlink_metadata(entry_paths.session_history_sidecar_metadata())
+        .await
+        .unwrap()
+        .blocks()
+        .saturating_mul(512);
+    assert!(body_allocated > 0);
+    assert!(metadata_allocated > 0);
+    let expected_allocated = current_allocated
+        .saturating_add(body_allocated)
+        .saturating_add(metadata_allocated);
 
     let candidate = cache.gc_candidate(cache_key.clone()).await.unwrap();
-    assert_eq!(
-        candidate.allocated_bytes,
-        current_allocated.saturating_add(sidecar_allocated)
-    );
+    assert_eq!(candidate.allocated_bytes, expected_allocated);
 
     let inspection = cache.inspect().await.unwrap();
     let entry = inspection
@@ -905,8 +923,5 @@ async fn session_history_sidecar_counts_toward_gc_candidate_and_inspection() {
         .iter()
         .find(|entry| entry.cache_key == cache_key)
         .unwrap();
-    assert_eq!(
-        entry.allocated_bytes,
-        current_allocated.saturating_add(sidecar_allocated)
-    );
+    assert_eq!(entry.allocated_bytes, expected_allocated);
 }

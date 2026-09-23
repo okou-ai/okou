@@ -37,7 +37,6 @@ const SCHEMA = {
   BYTEPLUS_API_KEY: z.string().min(1).optional(),
   MINIMAX_API_KEY: z.string().min(1).optional(),
   BYTEPLUS_STT_API_KEY: z.string().min(1).optional(),
-  OKOU_MAPS_GOOGLE_MAPS_TOKEN: z.string().min(1).optional(),
   OKOU_WEATHER_GOOGLE_WEATHER_TOKEN: z.string().min(1).optional(),
   OKOU_SCRAPE_FIRECRAWL_TOKEN: z.string().min(1).optional(),
   OKOU_WEB_SEARCH_PERPLEXITY_TOKEN: z.string().min(1).optional(),

@@ -193,7 +193,7 @@ describe("okou run usage", () => {
 
   it.each([
     ["unknown_method", "unsupported-runner"],
-    ["unavailable", "feature-unavailable"],
+    ["unavailable", "assignment-unavailable"],
     ["resource_exhausted", "busy"],
     ["timed_out", "timed-out"],
     ["protocol", "invalid-response"],

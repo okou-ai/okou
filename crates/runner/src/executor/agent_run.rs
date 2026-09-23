@@ -68,9 +68,7 @@ use super::{
     guest_runtime_dir, guest_runtime_path, job_supervisor_timeout, job_terminal_wait_timeout,
     normalize_failure_exit_code,
 };
-use crate::active_input::ActiveInputSource;
 use crate::helper_exec::helper_exec_succeeded;
-use crate::paths::guest;
 use crate::restored_session_identity::{
     FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT, RestoredSessionFinalMetadataVerification,
     RestoredSessionIdentity, RestoredSessionIdentityMismatchReason,
@@ -80,6 +78,8 @@ use crate::telemetry::{
     HistoryTransferSource, JobTelemetry, SessionHistoryTelemetryMetadata,
     WorkspaceSessionHistoryTelemetry, session_history_prefix_extension_action_type,
 };
+use guest_contracts::guest_binary::AGENT_PATH;
+use runner_provider::ActiveInputSource;
 use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
@@ -435,8 +435,7 @@ async fn materialize_inline_resume_session(
 fn validate_agent_bootstrap_exec_boundary(env_pairs: &[(String, String)]) -> RunnerResult<()> {
     let mut values = Vec::with_capacity(env_pairs.len() + 1);
     values.push(guest_contracts::exec_limits::ExecBoundaryValue::arg(
-        "argv[0]",
-        guest::RUN_AGENT,
+        "argv[0]", AGENT_PATH,
     ));
     for (key, value) in env_pairs {
         values.push(guest_contracts::exec_limits::ExecBoundaryValue::env(
@@ -1106,13 +1105,6 @@ fn sandbox_reuse_disposition_for_process_exit(
 const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
     "The agent process ran out of memory and was terminated by the sandbox out-of-memory killer";
 
-/// Whether retained guest kernel records name a victim in the agent's own
-/// containment domain.
-///
-/// Shell tools run in separately contained `<workload>/tools/tool-*` leaves.
-/// The kernel routinely reclaims those without ending the run, so only the
-/// workload domain itself and its runtime leaf attribute a terminated agent.
-/// Evidence whose identity could not be correlated cannot attribute anything.
 /// Whether this failed run was terminated by a guest out-of-memory kill of the
 /// agent process itself.
 ///
@@ -1143,29 +1135,6 @@ fn agent_failure_error(
     // Stderr is empty (redirected to log file). Check for a structured error
     // file written by the guest-agent for final failure handoff.
     guest_error.unwrap_or_else(|| agent_exit_failure_message(failure_exit_code))
-}
-
-fn guest_kernel_oom_killed_agent_domain(
-    evidence: &guest_contracts::oom_evidence::OomEvidence,
-) -> bool {
-    use guest_contracts::oom_evidence::EvidenceStatus;
-
-    let workload = evidence.groups[0].cgroup.as_str();
-    let runtime = format!("{workload}/runtime");
-    evidence
-        .incidents
-        .iter()
-        .filter(|incident| {
-            !matches!(
-                incident.kernel_status,
-                EvidenceStatus::Recreated | EvidenceStatus::Uncorrelated
-            )
-        })
-        .flat_map(|incident| incident.kernel_events.iter())
-        .any(|event| {
-            event.boottime_us >= evidence.started_boottime_us
-                && (event.task_cgroup == workload || event.task_cgroup == runtime)
-        })
 }
 
 /// Remove bounded OOM metadata before outcome processing so it never reaches
@@ -1422,13 +1391,13 @@ impl RunControls {
         active_input_source: Option<ActiveInputSource>,
     ) -> Self {
         Self::from_cancellation(
-            crate::run_cancellation::RunCancellationSignals::hard_only(cancel),
+            runner_provider::RunCancellationSignals::from_hard_token(cancel),
             active_input_source,
         )
     }
 
     pub(super) fn from_cancellation(
-        cancellation: crate::run_cancellation::RunCancellationSignals,
+        cancellation: runner_provider::RunCancellationSignals,
         active_input_source: Option<ActiveInputSource>,
     ) -> Self {
         Self {
@@ -1970,7 +1939,7 @@ async fn populate_storage_plan(
         result.is_ok(),
         result.is_err().then_some(STORAGE_CACHE_POPULATE_FAILED),
     );
-    result
+    result.map_err(Into::into)
 }
 
 enum GuestRuntimeStatePreparation {
@@ -3476,6 +3445,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let mut agent_domain_oom_kill = false;
     if let Some(evidence) = take_oom_evidence(context.run_id, &mut exit.diagnostic).or(oom_evidence)
     {
+        agent_domain_oom_kill = evidence.agent_domain_oom_kill();
         if evidence
             .incidents
             .iter()
@@ -3483,10 +3453,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         {
             info!(run_id = %context.run_id, operation_id = %evidence.operation_id,
                 evidence_kind = ResourceFailureKind::GuestMemoryOomKilled.as_str(),
-                oom_classification = if evidence.proves_contained_tool_oom() { "contained_tool_oom" } else { "unproven_containment" },
+                oom_classification = if agent_domain_oom_kill { "agent_oom_kill" } else { "contained_tool_oom" },
                 "preserved operation-scoped guest kernel oom evidence");
         }
-        agent_domain_oom_kill = guest_kernel_oom_killed_agent_domain(&evidence);
         let path = config.log_paths.oom_evidence_log(context.run_id);
         if let Ok(bytes) = serde_json::to_vec(&evidence) {
             let retained =
@@ -3807,7 +3776,6 @@ mod tests {
             guest_boot_id: None,
             started_boottime_us: TEST_OPERATION_STARTED_US,
             sampled_at: "2026-09-09T10:34:57.253Z".to_string(),
-            runtime_progress_at: None,
             kernel_cursor: None,
             kernel_status,
             groups: test_memory_groups(),
@@ -3832,28 +3800,19 @@ mod tests {
     }
 
     #[test]
-    fn guest_kernel_evidence_attributes_agent_domain_victims() {
-        for task_cgroup in [
-            TEST_WORKLOAD_CGROUP.to_string(),
-            format!("{TEST_WORKLOAD_CGROUP}/runtime"),
-        ] {
-            let evidence = test_oom_evidence(
-                guest_contracts::oom_evidence::EvidenceStatus::Available,
-                vec![test_kernel_event(&task_cgroup, TEST_OPERATION_STARTED_US)],
-            );
-
-            assert!(
-                guest_kernel_oom_killed_agent_domain(&evidence),
-                "agent domain victim must be attributed: {task_cgroup}"
-            );
-        }
-    }
-
-    #[test]
-    fn guest_kernel_evidence_ignores_separately_contained_tool_victims() {
+    fn user_visible_oom_failure_follows_the_shared_agent_domain_predicate() {
+        // Attribution itself is owned and tested by `guest-contracts`; this
+        // pins the user-facing failure to that predicate's verdict.
+        let agent_domain = test_oom_evidence(
+            guest_contracts::oom_evidence::EvidenceStatus::Available,
+            vec![test_kernel_event(
+                TEST_WORKLOAD_CGROUP,
+                TEST_OPERATION_STARTED_US,
+            )],
+        );
         // A reclaimed shell tool is the ordinary case in production and must
         // keep the run's original terminal outcome.
-        let evidence = test_oom_evidence(
+        let tool_leaf = test_oom_evidence(
             guest_contracts::oom_evidence::EvidenceStatus::Available,
             vec![test_kernel_event(
                 &format!("{TEST_WORKLOAD_CGROUP}/tools/tool-281-10-3-1"),
@@ -3861,47 +3820,16 @@ mod tests {
             )],
         );
 
-        assert!(!guest_kernel_oom_killed_agent_domain(&evidence));
-        assert!(!guest_memory_oom_killed_agent(
-            guest_kernel_oom_killed_agent_domain(&evidence),
+        assert!(agent_domain.agent_domain_oom_kill());
+        assert!(guest_memory_oom_killed_agent(
+            agent_domain.agent_domain_oom_kill(),
             &sigkill_process_exit(),
         ));
-    }
-
-    #[test]
-    fn guest_kernel_evidence_requires_a_correlated_record_from_this_operation() {
-        let no_records = test_oom_evidence(
-            guest_contracts::oom_evidence::EvidenceStatus::Missing,
-            Vec::new(),
-        );
-        let stale_record = test_oom_evidence(
-            guest_contracts::oom_evidence::EvidenceStatus::Available,
-            vec![test_kernel_event(
-                TEST_WORKLOAD_CGROUP,
-                TEST_OPERATION_STARTED_US - 1,
-            )],
-        );
-
-        assert!(!guest_kernel_oom_killed_agent_domain(&no_records));
-        assert!(!guest_kernel_oom_killed_agent_domain(&stale_record));
-
-        for kernel_status in [
-            guest_contracts::oom_evidence::EvidenceStatus::Recreated,
-            guest_contracts::oom_evidence::EvidenceStatus::Uncorrelated,
-        ] {
-            let evidence = test_oom_evidence(
-                kernel_status,
-                vec![test_kernel_event(
-                    TEST_WORKLOAD_CGROUP,
-                    TEST_OPERATION_STARTED_US,
-                )],
-            );
-
-            assert!(
-                !guest_kernel_oom_killed_agent_domain(&evidence),
-                "uncorrelated identity cannot attribute a victim: {kernel_status:?}"
-            );
-        }
+        assert!(!tool_leaf.agent_domain_oom_kill());
+        assert!(!guest_memory_oom_killed_agent(
+            tool_leaf.agent_domain_oom_kill(),
+            &sigkill_process_exit(),
+        ));
     }
 
     #[test]
@@ -4083,7 +4011,7 @@ mod tests {
 
     #[test]
     fn bootstrap_exec_boundary_counts_fixed_agent_executable_arg() {
-        let executable_arg_bytes = exec_arg_aggregate_bytes(guest::RUN_AGENT);
+        let executable_arg_bytes = exec_arg_aggregate_bytes(AGENT_PATH);
         let env_pairs = env_pairs_for_aggregate_bytes(
             guest_contracts::exec_limits::EXECVE_ARG_ENV_MAX_BYTES + 1 - executable_arg_bytes,
         );

@@ -39,7 +39,6 @@ use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogSession;
 use crate::resource_budget::BudgetLease;
 use crate::restored_session_identity::RestoredSessionIdentity;
-use crate::run_cancellation::RunCancellationHandle;
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
@@ -48,6 +47,7 @@ use crate::workspace_image_cache::{
     WorkspaceImagePromotionRequest,
 };
 use crate::workspace_promotion::prepare_workspace_image_from_active_sandbox;
+use runner_provider::RunCancellationHandle;
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 use runner_types::types::{
@@ -418,7 +418,7 @@ async fn finalize_sandbox_for_completion_inner(
 
     let mut reuse_state_changed = false;
     let budget = if let Some(reuse_key) = parkable_reuse_key {
-        let reuse_key_fingerprint = crate::paths::short_digest(&reuse_key);
+        let reuse_key_fingerprint = runner_host::paths::short_digest(&reuse_key);
         let reuse_kind = reuse_key_kind(&reuse_key);
         // Inflate the guest balloon BEFORE acquiring the pool lock —
         // the HTTP call to Firecracker can take milliseconds, and we
@@ -1261,7 +1261,6 @@ mod tests {
     };
     use crate::network_log_drain::NetworkLogDrainCoordinator;
     use crate::network_log_manager::NetworkLogManager;
-    use crate::paths::RunnerPaths;
     use crate::resource_budget::{BudgetLease, ResourceBudget};
     use crate::restored_session_identity::RestoredSessionIdentity;
     use crate::status::StatusTracker;
@@ -1273,6 +1272,7 @@ mod tests {
         WorkspaceImagePromotionOutcome, WorkspaceImagePromotionRequest,
         WorkspaceSessionHistorySidecarRepresentation,
     };
+    use runner_host::paths::RunnerPaths;
     use runner_types::ids::RunId;
     use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
     use runner_types::types::SandboxReuseResult;

@@ -18,11 +18,12 @@ use super::support::{
     TEST_PROFILE_NAME, local_cache, promote_current_cache_entry, write_current_cache_entry,
 };
 use crate::error::RunnerError;
-use crate::paths::{RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use crate::test_fixtures::workspace_image_cache_key;
+use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
 const PERMISSIVE_UMASK_CHILD_ENV: &str = "OKOU_RUN_WORKSPACE_CACHE_PERMISSIVE_UMASK_TEST";
@@ -531,9 +532,9 @@ async fn assert_promotion_private_permissions(source_mode: u32) {
         })
         .await;
     let active_image = paths.active_workspace_image(&sandbox_id);
-    crate::host_file::ensure_dir(
+    runner_host::host_file::ensure_dir(
         active_image.parent().unwrap(),
-        crate::host_file::DirMode::Private,
+        runner_host::host_file::DirMode::Private,
         "test workspace directory",
     )
     .unwrap();
@@ -787,7 +788,7 @@ async fn lock_busy_checkout_cannot_promote_without_entry_lock() {
     let (_dir, _paths, cache) = local_cache().await;
     let run_id = RunId::new_v4();
     let cache_key = cache.scoped_cache_key(TEST_PROFILE_NAME, "sess-1", "/workspace", 1024);
-    let _held_lock = crate::lock::acquire(cache.entry_lock_path(&cache_key))
+    let _held_lock = runner_host::lock::acquire(cache.entry_lock_path(&cache_key))
         .await
         .unwrap();
 
@@ -1011,7 +1012,7 @@ async fn promotion_context_validates_expected_identity() {
 
     let scoped_cache = WorkspaceImageCache::with_cache_dirs(
         paths.clone(),
-        paths.workspace_image_cache_dir(),
+        crate::test_fixtures::runner_workspace_image_cache_dir(&paths),
         paths.base_dir().join("locks"),
         "other-scope",
     );
@@ -1380,7 +1381,7 @@ async fn promote_skips_when_capacity_lock_is_busy() {
         .await
         .unwrap();
     let cache_key = workspace_image_cache_key("sess-capacity-lock", "/workspace");
-    let _capacity_lock = crate::lock::acquire(cache.capacity_lock_path())
+    let _capacity_lock = runner_host::lock::acquire(cache.capacity_lock_path())
         .await
         .unwrap();
 

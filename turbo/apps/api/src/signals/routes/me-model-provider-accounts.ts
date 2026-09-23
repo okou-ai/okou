@@ -16,6 +16,7 @@ import {
   personalModelProviderAccountResponseById,
 } from "../services/model-provider-account.service";
 import {
+  consumePersonalClaudeCodeSubscriptionReset$,
   consumePersonalCodexRateLimitResetCredit$,
   refreshPersonalModelProviderSubscriptionUsage$,
 } from "../services/model-provider-subscription-usage.service";
@@ -186,7 +187,11 @@ function resetAccountSubscriptionUsage(
       id: params.id,
     });
     signal.throwIfAborted();
-    if (!account || account.type !== "codex-oauth-token") {
+    if (
+      !account ||
+      (account.type !== "codex-oauth-token" &&
+        account.type !== "claude-code-oauth-token")
+    ) {
       return notFound("Resource not found");
     }
     const expectedIdentity = runId
@@ -207,7 +212,9 @@ function resetAccountSubscriptionUsage(
       return notFound("Resource not found");
     }
     const result = await set(
-      consumePersonalCodexRateLimitResetCredit$,
+      account.type === "claude-code-oauth-token"
+        ? consumePersonalClaudeCodeSubscriptionReset$
+        : consumePersonalCodexRateLimitResetCredit$,
       {
         orgId: auth.orgId,
         userId: auth.userId,

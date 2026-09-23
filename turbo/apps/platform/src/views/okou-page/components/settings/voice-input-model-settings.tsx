@@ -1,3 +1,4 @@
+import type { Select as SelectPrimitive } from "@base-ui/react/select";
 import { useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Mic } from "lucide-react";
@@ -73,9 +74,19 @@ export function VoiceInputModelSettings() {
     });
   }
 
-  const handleChange = (value: string) => {
+  const handleChange = (
+    value: string | null,
+    details: SelectPrimitive.Root.ChangeEventDetails,
+  ) => {
+    if (value === null || updateLoadable.state === "loading") {
+      details.cancel();
+      return;
+    }
     const model =
       value === "default" ? null : voiceInputModelIdSchema.parse(value);
+    if (preference.state === "hasData" && model === preference.data) {
+      return;
+    }
     detach(updateModel(model, pageSignal), Reason.DomCallback);
   };
 

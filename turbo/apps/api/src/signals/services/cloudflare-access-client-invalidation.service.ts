@@ -1,7 +1,5 @@
 import { publishUserSignal } from "../external/realtime";
 
-import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
-
 interface Owner {
   readonly orgId: string;
   readonly userId: string;
@@ -26,7 +24,5 @@ export async function publishCloudflareAccessMutationInvalidation(
 export function publishCloudflareAccessClientInvalidation(
   owner: Owner,
 ): Promise<void> {
-  return publishCloudflareAccessMutationInvalidation(owner, () => {
-    return publishSshClientInvalidation(owner);
-  });
+  return publishCloudflareAccessChanged(owner);
 }

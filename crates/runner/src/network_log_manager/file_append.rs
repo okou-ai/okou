@@ -2,7 +2,7 @@ use std::io::{self, IoSlice, Write};
 use std::path::Path;
 
 pub(super) fn append_lines(path: &Path, lines: &[String]) -> io::Result<()> {
-    let mut file = crate::log_file::open_append(path, false)?;
+    let mut file = runner_host::log_file::open_append(path, false)?;
 
     match lines {
         [] => Ok(()),

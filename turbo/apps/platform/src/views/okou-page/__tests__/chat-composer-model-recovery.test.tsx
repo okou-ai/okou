@@ -1,4 +1,8 @@
 import {
+  findModelMenuOption,
+  modelMenuOption,
+} from "./chat-model-menu-test-helpers.ts";
+import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
@@ -533,12 +537,8 @@ async function openLimitedModelAvailability() {
   await readyChat();
   const picker = await composerModelTrigger("GPT 5.6 Luna");
   click(picker);
-  await expect(
-    screen.findByRole("option", { name: /GPT 5\.6 Luna/iu }),
-  ).resolves.toBeVisible();
-  const gatedBuiltInOption = await screen.findByRole("option", {
-    name: /Claude Opus 4\.8/iu,
-  });
+  await expect(findModelMenuOption(/GPT 5\.6 Luna/iu)).resolves.toBeVisible();
+  const gatedBuiltInOption = await findModelMenuOption(/Claude Opus 4\.8/iu);
   expect(within(gatedBuiltInOption).getByText("Pro")).toBeVisible();
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
@@ -553,9 +553,7 @@ async function expectUpgradedModelsAvailable(
   context.mocks.ably.trigger("billing:changed");
 
   await waitFor(() => {
-    const builtInOption = screen.getByRole("option", {
-      name: /Claude Opus 4\.8/iu,
-    });
+    const builtInOption = modelMenuOption(/Claude Opus 4\.8/iu);
     expect(builtInOption).toBeVisible();
     expect(within(builtInOption).queryByText("Pro")).toBeNull();
   });
@@ -564,9 +562,7 @@ async function expectUpgradedModelsAvailable(
 test("A billing upgrade makes previously gated built-in models available", async () => {
   const scenario = await openLimitedModelAvailability();
   await expectUpgradedModelsAvailable(scenario);
-  const builtInOption = screen.getByRole("option", {
-    name: /Claude Opus 4\.8/iu,
-  });
+  const builtInOption = modelMenuOption(/Claude Opus 4\.8/iu);
   expect(builtInOption).toBeVisible();
   expect(within(builtInOption).queryByText("Pro")).toBeNull();
 });
@@ -581,9 +577,7 @@ test("A failed availability refresh keeps models resolved by the preceding billi
   await expect(
     screen.findByText("Model availability could not be refreshed"),
   ).resolves.toBeVisible();
-  expect(
-    screen.getByRole("option", { name: /Claude Opus 4\.8/iu }),
-  ).toBeVisible();
+  expect(modelMenuOption(/Claude Opus 4\.8/iu)).toBeVisible();
   expect(screen.queryByText("Loading models...")).toBeNull();
 });
 

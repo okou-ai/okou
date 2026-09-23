@@ -62,7 +62,7 @@ describe("CAPABILITIES", () => {
     expect(CAPABILITIES).toContain("browser:write");
   });
 
-  it("should include managed maps read capability", () => {
+  it("should include Google Maps grounding read capability", () => {
     expect(CAPABILITIES).toContain("maps:read");
   });
 

@@ -82,7 +82,7 @@ pub(super) fn gc_budget_satisfied(
 
 impl WorkspaceImageCache {
     pub(crate) async fn gc(&self, dry_run: bool) -> RunnerResult<u64> {
-        let _capacity_lock = crate::lock::acquire(self.capacity_lock_path()).await?;
+        let _capacity_lock = runner_host::lock::acquire(self.capacity_lock_path()).await?;
         self.gc_locked(dry_run).await
     }
 
@@ -91,9 +91,9 @@ impl WorkspaceImageCache {
         minimum_interval: Duration,
     ) -> RunnerResult<Option<u64>> {
         let mut capacity_lock =
-            match crate::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
-                crate::lock::TryLock::Acquired(lock) => lock,
-                crate::lock::TryLock::Busy => return Ok(None),
+            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(None),
             };
         // The persistent lock file doubles as an opaque completion marker. Old
         // runners ignore its contents and preserve them when opening the lock.
@@ -161,7 +161,7 @@ impl WorkspaceImageCache {
                 break;
             }
             let Ok(lock) =
-                crate::lock::try_acquire(self.entry_lock_path(&candidate.cache_key)).await
+                runner_host::lock::try_acquire(self.entry_lock_path(&candidate.cache_key)).await
             else {
                 continue;
             };
@@ -423,7 +423,7 @@ impl WorkspaceImageCache {
         &self,
         entry: &GcCacheEntry,
     ) -> RunnerResult<Option<Flock<File>>> {
-        let Ok(lock) = crate::lock::try_acquire(self.entry_lock_path(&entry.cache_key)).await
+        let Ok(lock) = runner_host::lock::try_acquire(self.entry_lock_path(&entry.cache_key)).await
         else {
             return Ok(None);
         };

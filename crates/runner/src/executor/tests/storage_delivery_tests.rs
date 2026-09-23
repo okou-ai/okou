@@ -1,6 +1,7 @@
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::sync::Arc;
 
+use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::storage_files;
 use guest_contracts::storage_manifest::{Manifest, StorageEntry};
 use sandbox::ExecResult;
@@ -9,13 +10,13 @@ use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 use super::super::storage::download_storages_with_files;
 use super::super::{ExecutorConfig, guest_runtime_dir};
 use super::support::{
-    RUN_IN_SANDBOX_TEST_TIMEOUT, api_storage, create_overridden_sandbox, minimal_context,
-    spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
+    RUN_IN_SANDBOX_TEST_TIMEOUT, api_artifact, api_storage, create_overridden_sandbox,
+    minimal_context, spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
 };
-use crate::paths::guest;
 use crate::storage_cache::decoded::CachedFiles;
 use crate::storage_cache::{populate_cache_with_fresh_delivery, prepare_fresh_archive_delivery};
 use crate::storage_plan::build_storage_plan;
+use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 use runner_types::storage_manifest::StorageManifest;
 
 struct DeliveryFixture {
@@ -58,7 +59,10 @@ impl DeliveryFixture {
             let archive_dir = config.home.storage_cache_dir(&name, &version);
             std::fs::create_dir_all(&archive_dir).unwrap();
             std::fs::write(archive_dir.join("archive.tar.gz"), &archive).unwrap();
-            drop(crate::lock::open_lock_file(&config.home.storage_lock(&name, &version)).unwrap());
+            drop(
+                runner_host::lock::open_lock_file(&config.home.storage_lock(&name, &version))
+                    .unwrap(),
+            );
             if index < ready {
                 config
                     .decoded_cache
@@ -84,6 +88,56 @@ impl DeliveryFixture {
             manifest: StorageManifest {
                 storages,
                 artifacts: Vec::new(),
+            },
+        }
+    }
+
+    async fn artifacts(count: usize, ready: usize, url_bytes: usize) -> Self {
+        let root = tempfile::tempdir().unwrap();
+        let config = test_executor_config(root.path()).await;
+        let archive = archive_bytes();
+        let mut artifacts = Vec::new();
+        for index in 0..count {
+            let name = format!("artifact-{index:03}-{}", "n".repeat(40));
+            let version = "v".repeat(64);
+            let mount = root
+                .path()
+                .join("guest")
+                .join(format!("artifact-{index:03}"));
+            let prefix = format!("http://127.0.0.1:9/artifact-{index:03}?signature=");
+            let url = format!("{prefix}{}", "x".repeat(url_bytes - prefix.len()));
+            let archive_dir = config.home.storage_cache_dir(&name, &version);
+            std::fs::create_dir_all(&archive_dir).unwrap();
+            std::fs::write(archive_dir.join("archive.tar.gz"), &archive).unwrap();
+            drop(
+                runner_host::lock::open_lock_file(&config.home.storage_lock(&name, &version))
+                    .unwrap(),
+            );
+            if index < ready {
+                config
+                    .decoded_cache
+                    .warm_from_archive(&name, &version)
+                    .await
+                    .unwrap();
+                std::fs::remove_file(archive_dir.join("archive.tar.gz")).unwrap();
+            }
+            let mut artifact = api_artifact(
+                &name,
+                mount.to_str().unwrap(),
+                &format!("artifact-id-{index:03}"),
+                &version,
+                &url,
+            );
+            artifact.missing_root_policy =
+                Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion);
+            artifacts.push(artifact);
+        }
+        Self {
+            root,
+            config,
+            manifest: StorageManifest {
+                storages: Vec::new(),
+                artifacts,
             },
         }
     }
@@ -180,6 +234,179 @@ async fn high_fanout_storage_plans_deliver_ready_files_without_refilling_archive
         }
         fixture.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn fresh_artifact_hit_retains_identity_and_delivers_decoded_files() {
+    let fixture = DeliveryFixture::artifacts(1, 1, 604).await;
+    let sandbox = MockSandbox::new("decoded-artifact");
+    let (manifest, files) = fixture.prepare(&sandbox).await;
+    assert_eq!(files.len(), 1);
+    assert_eq!(manifest.artifacts.len(), 1);
+    let artifact = &manifest.artifacts[0];
+    let source = &fixture.manifest.artifacts[0];
+    assert!(!artifact.cached);
+    assert!(!artifact.empty);
+    assert_eq!(
+        artifact.vas_storage_name.as_deref(),
+        Some(source.vas_storage_name.as_str())
+    );
+    assert_eq!(
+        artifact.vas_storage_id.as_deref(),
+        Some(source.vas_storage_id.as_str())
+    );
+    assert_eq!(
+        artifact.vas_version_id.as_deref(),
+        Some(source.vas_version_id.as_str())
+    );
+    assert!(
+        artifact
+            .archive_url
+            .as_deref()
+            .unwrap()
+            .starts_with("http://")
+    );
+    assert_eq!(
+        artifact.missing_root_policy.as_deref(),
+        Some("preserveParentVersion")
+    );
+    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+    assert_binary_calls(&sandbox, 1);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn oversized_artifact_manifest_uses_preencoded_decoded_batches() {
+    let fixture = DeliveryFixture::artifacts(3, 3, 35_000).await;
+    let sandbox = MockSandbox::new("decoded-large-artifacts");
+    let (manifest, files) = fixture.prepare(&sandbox).await;
+    assert_eq!(files.len(), 3);
+    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+    assert_eq!(sandbox.storage_manifest_calls().len(), 3);
+    for call in sandbox.storage_manifest_calls() {
+        let (json, _) = storage_files::split_input(&call.manifest_json).unwrap();
+        let batch: Manifest = serde_json::from_slice(json).unwrap();
+        assert!(batch.storages.is_empty());
+        assert_eq!(batch.artifacts.len(), 1);
+        assert!(batch.cleanup_paths.is_empty());
+    }
+    assert_binary_calls(&sandbox, 3);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
+    let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
+    let sandbox = MockSandbox::new("decoded-large-mixed");
+    let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
+    let storage_mount = fixture.root.path().join("guest/storage");
+    let prefix = "http://127.0.0.1:9/storage?signature=";
+    manifest.storages.push(StorageEntry {
+        mount_path: storage_mount.to_str().unwrap().into(),
+        extract_path: None,
+        archive_url: Some(format!("{prefix}{}", "x".repeat(35_000 - prefix.len()))),
+        instructions_target_filename: None,
+        cached: false,
+        vas_storage_name: Some("mixed-storage".into()),
+        vas_version_id: Some("v1".into()),
+    });
+    let storage_files = Arc::clone(&files[0].1);
+    files.push((storage_mount.to_str().unwrap().into(), storage_files));
+
+    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+    let mut storage_entries = 0;
+    let mut artifact_entries = 0;
+    for call in sandbox.storage_manifest_calls() {
+        let (json, _) = storage_files::split_input(&call.manifest_json).unwrap();
+        let batch: Manifest = serde_json::from_slice(json).unwrap();
+        assert_eq!(batch.storages.len() + batch.artifacts.len(), 1);
+        assert!(batch.cleanup_paths.is_empty());
+        storage_entries += batch.storages.len();
+        artifact_entries += batch.artifacts.len();
+    }
+    assert_eq!(storage_entries, 1);
+    assert_eq!(artifact_entries, 2);
+    assert_binary_calls(&sandbox, 3);
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
+async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
+    let fixture = DeliveryFixture::artifacts(1, 1, 604).await;
+    let sandbox = MockSandbox::new("decoded-mixed-boundary");
+    let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
+    let storage_mount = fixture.root.path().join("guest/storage-boundary");
+    let mut storage = StorageEntry {
+        mount_path: storage_mount.to_str().unwrap().into(),
+        extract_path: None,
+        archive_url: Some("https://archive.invalid/storage?signature=".into()),
+        instructions_target_filename: None,
+        cached: false,
+        vas_storage_name: Some("boundary-storage".into()),
+        vas_version_id: Some("v1".into()),
+    };
+    let decoded_manifest = |storage: StorageEntry| Manifest {
+        storages: vec![storage],
+        artifacts: manifest.artifacts.clone(),
+        cleanup_paths: Vec::new(),
+        instruction_cleanups: Vec::new(),
+    };
+    let base_len = serde_json::to_vec(&decoded_manifest(storage.clone()))
+        .unwrap()
+        .len();
+    storage
+        .archive_url
+        .as_mut()
+        .unwrap()
+        .push_str(&"x".repeat(storage_files::MAX_MANIFEST_BYTES - base_len));
+    assert_eq!(
+        serde_json::to_vec(&decoded_manifest(storage.clone()))
+            .unwrap()
+            .len(),
+        storage_files::MAX_MANIFEST_BYTES
+    );
+    manifest.storages.push(storage);
+    files.push((
+        storage_mount.to_str().unwrap().into(),
+        Arc::clone(&files[0].1),
+    ));
+    manifest.storages.push(StorageEntry {
+        mount_path: fixture
+            .root
+            .path()
+            .join("guest/ordinary")
+            .to_str()
+            .unwrap()
+            .into(),
+        extract_path: None,
+        archive_url: Some(format!("https://archive.invalid/{}", "o".repeat(70_000))),
+        instructions_target_filename: None,
+        cached: false,
+        vas_storage_name: Some("ordinary".into()),
+        vas_version_id: Some("v1".into()),
+    });
+
+    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        .await
+        .unwrap();
+    let binary_calls = sandbox
+        .storage_manifest_calls()
+        .into_iter()
+        .filter(|call| call.manifest_json.starts_with(storage_files::INPUT_MAGIC))
+        .collect::<Vec<_>>();
+    assert_eq!(binary_calls.len(), 1);
+    let (json, _) = storage_files::split_input(&binary_calls[0].manifest_json).unwrap();
+    let batch: Manifest = serde_json::from_slice(json).unwrap();
+    assert_eq!(batch.storages.len(), 1);
+    assert_eq!(batch.artifacts.len(), 1);
+    assert_binary_calls(&sandbox, 2);
+    fixture.shutdown().await;
 }
 
 #[tokio::test]
@@ -431,7 +658,7 @@ async fn oversized_ordinary_manifest_keeps_file_transport_before_decoded_batches
         .unwrap();
     let writes = sandbox.write_file_calls();
     assert_eq!(writes.len(), 1);
-    assert_eq!(writes[0].path, guest::STORAGE_MANIFEST);
+    assert_eq!(writes[0].path, STORAGE_MANIFEST_PATH);
     let ordinary: Manifest = serde_json::from_slice(&writes[0].content).unwrap();
     assert_eq!(ordinary.storages.len(), 1);
     assert!(ordinary.storages[0].mount_path.ends_with("ordinary"));

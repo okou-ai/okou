@@ -21,11 +21,10 @@ type SshInvalidationScope = {
 );
 
 /** Best-effort post-commit eviction. Deleted grants/connections must not filter out Runs. */
-export async function publishSshRuntimeInvalidation(
+export async function publishSshRunnerInvalidation(
   db: ReadonlyDb,
   scope: SshInvalidationScope,
 ): Promise<void> {
-  await publishSshClientInvalidation(scope);
   const connectionIds = scope.connectionIds ?? [scope.connectionId];
   if (connectionIds.length === 0) {
     return;
@@ -79,4 +78,12 @@ export async function publishSshRuntimeInvalidation(
       }),
     );
   }
+}
+
+export async function publishSshRuntimeInvalidation(
+  db: ReadonlyDb,
+  scope: SshInvalidationScope,
+): Promise<void> {
+  await publishSshClientInvalidation(scope);
+  await publishSshRunnerInvalidation(db, scope);
 }

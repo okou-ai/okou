@@ -3,6 +3,10 @@ import {
   type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
 import {
+  sshConnectionsContract,
+  type SshConnectionResponse,
+} from "@okouai/api-contracts/contracts/ssh-connections";
+import {
   vncCredentialsContract,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
@@ -79,16 +83,44 @@ const plainCredential = Object.freeze<PlainCredential>({
 });
 const caBundle =
   "-----BEGIN CERTIFICATE-----\nTEST-CA-CERTIFICATE\n-----END CERTIFICATE-----\n";
+const sshHost = Object.freeze<SshConnectionResponse>({
+  id: "a0000000-0000-4000-8000-000000000001",
+  displayName: "Desktop gateway",
+  host: "gateway.example.com",
+  port: 22,
+  username: "deploy",
+  credentialId: "c0000000-0000-4000-8000-000000000001",
+  credentialName: "Gateway login",
+  generation: 2,
+  learnedHostKey: null,
+  createdAt: host.createdAt,
+  updatedAt: host.updatedAt,
+});
+const tunneledHost = Object.freeze<VncConnectionResponse>({
+  ...host,
+  id: "b0000000-0000-4000-8000-000000000003",
+  displayName: "Private desktop",
+  host: "127.0.0.1",
+  port: 5901,
+  security: {
+    type: "x509_vnc",
+    trust: { mode: "system" },
+    serverName: "desktop.internal.example.com",
+  },
+  transport: { type: "ssh", connectionId: sshHost.id },
+});
 
 function mockSettings(
   options: {
     connections?: VncConnectionResponse[];
     credentials?: VncCredentialResponse[];
+    sshConnections?: SshConnectionResponse[];
   } = {},
 ) {
   const data = {
     connections: options.connections ?? [host],
     credentials: options.credentials ?? [credential],
+    sshConnections: options.sshConnections ?? [],
   };
   context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: data.connections.length });
@@ -98,6 +130,9 @@ function mockSettings(
   });
   context.mocks.api(vncCredentialsContract.list, ({ respond }) => {
     return respond(200, { credentials: data.credentials });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: data.sshConnections });
   });
   return data;
 }
@@ -128,7 +163,7 @@ async function addCredential() {
 async function fillHost(dialog: HTMLElement) {
   await fill(within(dialog).getByLabelText("Display name"), "Second desktop");
   await fill(
-    within(dialog).getByLabelText("Hostname or IP address"),
+    within(dialog).getByLabelText("RFB destination host"),
     "second.example.com",
   );
 }
@@ -194,7 +229,9 @@ test("An owner reuses a VNC credential without exposing its password", async () 
   await page("/connectors/vnc?add=1");
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await fillHost(dialog);
-  expect(within(dialog).getByLabelText("Port")).toHaveValue(5900);
+  expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
+    5900,
+  );
   await choose(dialog, "Credential", "Desktop login");
   expect(within(dialog).queryByLabelText("VNC password")).toBeNull();
   click(getAction("button", "Save", dialog));
@@ -207,8 +244,124 @@ test("An owner reuses a VNC credential without exposing its password", async () 
       displayName: "Second desktop",
       host: "second.example.com",
       port: 5900,
+      transport: { type: "direct" },
       credential: { id: credential.id },
       security: { type: "x509_vnc", trust: { mode: "system" } },
+    },
+  ]);
+});
+
+test("An owner creates an SSH-backed route with a distinct RFB destination and certificate identity", async () => {
+  mockSettings({ connections: [], sshConnections: [sshHost] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, tunneledHost);
+  });
+  await page("/connectors/vnc?add=1");
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(dialog, "Connection route", "Through saved SSH host");
+  await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
+  await fill(
+    within(dialog).getByLabelText("TLS certificate identity"),
+    "desktop.internal.example.com",
+  );
+  await choose(dialog, "Credential", "Desktop login");
+
+  await choose(dialog, "Connection route", "Direct from Runner");
+  expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
+    "second.example.com",
+  );
+  expect(within(dialog).getByLabelText("TLS certificate identity")).toHaveValue(
+    "desktop.internal.example.com",
+  );
+  await choose(dialog, "Connection route", "Through saved SSH host");
+  expect(within(dialog).getByLabelText("SSH host")).toHaveTextContent(
+    "Desktop gateway",
+  );
+
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "ssh", connectionId: sshHost.id },
+      credential: { id: credential.id },
+      security: {
+        type: "x509_vnc",
+        trust: { mode: "system" },
+        serverName: "desktop.internal.example.com",
+      },
+    },
+  ]);
+});
+
+test("An SSH-backed card shows topology and a missing saved SSH host blocks edits", async () => {
+  mockSettings({ connections: [tunneledHost], sshConnections: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.update,
+    ({ body, params, respond }) => {
+      requests.push({ body, connectionId: params.connectionId });
+      return respond(200, {
+        ...host,
+        id: tunneledHost.id,
+        displayName: tunneledHost.displayName,
+        host: tunneledHost.host,
+        port: tunneledHost.port,
+        security: tunneledHost.security,
+        generation: tunneledHost.generation + 1,
+      });
+    },
+  );
+  await page();
+  await screen.findByText(tunneledHost.displayName);
+  expect(screen.getByText("Through saved SSH host")).toBeInTheDocument();
+  expect(
+    screen.getByText(/RFB destination: 127\.0\.0\.1:5901/u),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      /TLS certificate identity: desktop\.internal\.example\.com/u,
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/The selected SSH host is no longer available/u),
+  ).toBeInTheDocument();
+
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
+    "Through saved SSH host",
+  );
+  expect(
+    within(dialog).getByText(/The selected SSH host is no longer available/u),
+  ).toBeInTheDocument();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  await choose(dialog, "Connection route", "Direct from Runner");
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      connectionId: tunneledHost.id,
+      body: {
+        expectedGeneration: tunneledHost.generation,
+        displayName: tunneledHost.displayName,
+        host: tunneledHost.host,
+        port: tunneledHost.port,
+        transport: { type: "direct" },
+        credential: { id: tunneledHost.credentialId },
+        security: tunneledHost.security,
+      },
     },
   ]);
 });
@@ -251,6 +404,7 @@ test("Inline password creation preserves spaces and sends the selected custom ce
       displayName: "Second desktop",
       host: "second.example.com",
       port: 5900,
+      transport: { type: "direct" },
       credential: {
         create: {
           name: "New login",
@@ -313,6 +467,7 @@ test.each([
         displayName: "Second desktop",
         host: "second.example.com",
         port: 5900,
+        transport: { type: "direct" },
         credential: {
           create: {
             name: "Plain login",
@@ -913,6 +1068,7 @@ test.each(["host", "credential"] as const)(
             displayName: "Second desktop",
             host: "second.example.com",
             port: 5900,
+            transport: { type: "direct" },
             credential: { create: newCredential },
             security: { type: "x509_vnc", trust: { mode: "system" } },
           }
@@ -1114,6 +1270,7 @@ test("Replacing a session during token acquisition retains the draft and retries
         displayName: "Second desktop",
         host: "second.example.com",
         port: 5900,
+        transport: { type: "direct" },
         credential: {
           create: {
             name: "Retained login",
