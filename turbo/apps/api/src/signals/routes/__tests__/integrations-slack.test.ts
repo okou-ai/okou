@@ -242,13 +242,12 @@ describe("GET /api/integrations/slack", () => {
     // Admin + installed: scope fields should be present (botScopes null → mismatch)
     expect(response.body).toHaveProperty("scopeMismatch");
     expect(response.body).toHaveProperty("reinstallUrl");
-    // Not connected: workspace/environment fields should NOT be present
+    // Not connected: workspace fields should NOT be present
     expect(response.body).not.toHaveProperty("workspaceName");
     expect(response.body).not.toHaveProperty("defaultAgentName");
-    expect(response.body).not.toHaveProperty("environment");
   });
 
-  it("returns connected status without agent environment details", async () => {
+  it("returns connected workspace and default agent for a connected user", async () => {
     await postSlackState({
       org_id: fixture.orgId,
       user_id: fixture.userId,
@@ -280,8 +279,9 @@ describe("GET /api/integrations/slack", () => {
     );
 
     expect(response.body.isConnected).toBeTruthy();
+    expect(response.body.isInstalled).toBeTruthy();
+    expect(response.body.workspaceName).toBeTruthy();
     expect(response.body.defaultAgentName).toBe("Slack Bot");
-    expect(response.body).not.toHaveProperty("environment");
   });
 });
 
