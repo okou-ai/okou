@@ -633,6 +633,10 @@ fn is_reserved_normalized_private_dir_path(normalized: &Path) -> bool {
     }
 
     let home = HomePaths::with_root(PathBuf::from(RUNNER_HOME_ROOT));
+    if !normalized.starts_with(home.root()) {
+        return false;
+    }
+
     normalized == home.root()
         || normalized == home.runners_dir()
         || home
