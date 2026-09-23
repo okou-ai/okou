@@ -33,7 +33,10 @@ Every card in the chat transcript must keep one outer height for the lifetime of
 that card occurrence, at a given available width. This includes action, failure
 recovery, billing, unavailable, and resource-preview cards. Different card types
 may use different dimensions, and responsive breakpoints may select a different
-height. Asynchronous data and status changes must not select the card's height.
+height. Asynchronous data and status changes must not select the card's height,
+except billing helper copy: a longer translated or role-specific message may
+wrap onto another line rather than leaving a blank reserved line in every
+short-copy state.
 
 The height itself may come from the card's own synchronous row structure rather
 than from a hardcoded pixel value. A notice card that renders only a headline is
@@ -41,13 +44,15 @@ one row tall, and the same card with a supporting line is taller, because that
 choice is known at mount. Reserve geometry only where an asynchronous read can
 add content. Failure cards render their synchronous supporting copy invisibly
 while classification loads, so a one-line reason keeps its natural height
-without collapsing during that read. Usage-limit recovery separately reserves
-the account-and-window rows that provider metadata can introduce and the same
+without collapsing during that read. Personal usage-limit recovery reserves
+the account-and-window rows that provider metadata can introduce; ordinary
+usage-limit errors use their actual supporting-copy height. Both keep the same
 one-row action floor as other recovery kinds. Resolved controls remain
 content-sized and add another row only when they actually wrap; do not leave an
 empty second row for a hypothetical later model change. Billing states keep
-their own two-line copy and action reservations because both can change after
-role and credit reads. Do not pay for a reservation on rows the asynchronous
+their action reservation because it can change after role and credit reads;
+their helper copy wraps to its actual height so a short sentence does not leave
+an empty second line. Do not pay for a reservation on rows the asynchronous
 read cannot introduce.
 
 ### Keep the frame mounted

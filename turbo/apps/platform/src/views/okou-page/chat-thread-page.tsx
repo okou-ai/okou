@@ -4741,7 +4741,7 @@ function isImageFilename(filename: string): boolean {
 }
 
 const CREDITS_PER_DOLLAR = 1000;
-const CREDIT_TOP_UP_OPTIONS = [100_000, 200_000, 300_000] as const;
+const CREDIT_TOP_UP_OPTIONS = [20_000, 50_000, 300_000] as const;
 
 function formatCreditsUsd(credits: number): string {
   const dollars = credits / CREDITS_PER_DOLLAR;
@@ -4766,14 +4766,13 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
-/** Billing copy changes after role and credit reads, so its existing two-line
- * reservation stays fixed. Error cards instead render their synchronous copy
- * invisibly while classification loads, then hug the resolved copy. */
+/** Let resolved billing copy wrap to its actual height, including longer
+ * translations, without leaving an unused second line under short copy. */
 const BILLING_NOTICE_DESCRIPTION_CLASS =
-  "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+  "text-sm leading-5 text-muted-foreground";
 
 /** A personal usage limit can resolve to an account plus two exhausted windows.
- * Reserve those semantic rows while the run source loads; never clamp them. */
+ * Ordinary usage limits need only their actual description height. */
 const USAGE_RECOVERY_DESCRIPTION_CLASS = "min-h-20 @[640px]:min-h-10";
 
 /**
@@ -5788,7 +5787,9 @@ function assistantErrorRecoveryContent(
     title: assistantRecoveryTitle(recovery, t),
     description: description.content,
     descriptionTitle: description.title,
-    ...(recovery.kind === "usage-limit"
+    ...(recovery.kind === "usage-limit" &&
+    (recovery.source?.credentialScope === "member" ||
+      recovery.resetWindows.length > 0)
       ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
       : {}),
     ...(hasActions
@@ -5879,7 +5880,8 @@ function assistantErrorFallbackContent(
       icon: structuredFailureIcon(knownReason.data),
       title: structuredFailureTitle(knownReason.data),
       description: structuredFailureDescription(knownReason.data, t),
-      ...(knownReason.data === "usage_limit"
+      ...(knownReason.data === "usage_limit" &&
+      isLegacyUsageLimitError(error, undefined)
         ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
         : {}),
       reserveActions: structuredFailureHasActions(knownReason.data),

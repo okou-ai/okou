@@ -154,7 +154,7 @@ test("Direct a workspace member to an admin when billing blocks a run", async ()
     screen.findByText(/Ask a workspace admin to upgrade to Pro/u),
   ).resolves.toBeVisible();
   expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
-  expect(queryButton("$100")).not.toBeInTheDocument();
+  expect(queryButton("$20")).not.toBeInTheDocument();
   expect(queryButton("Custom")).not.toBeInTheDocument();
 });
 
@@ -228,24 +228,29 @@ test("Let a paid workspace admin buy more credits", async () => {
     screen.findByText("You're out of credits"),
   ).resolves.toBeVisible();
   const frame = screen.getByTestId("assistant-error-card-shell");
-  expect(queryButton("$100", frame)).not.toBeInTheDocument();
+  expect(queryButton("$20", frame)).not.toBeInTheDocument();
   click(button("Add credits", frame));
   await screen.findByRole("dialog", { name: "You're out of credits" });
-  for (const amount of ["$100", "$200", "$300"]) {
+  for (const amount of ["$20", "$50", "$300"]) {
     expect(button(amount)).toBeVisible();
   }
 
-  click(button("$100"));
-
-  let review = await screen.findByRole("dialog", {
-    name: "Review credit purchase",
-  });
-  expect(within(review).getByText("$100.00")).toBeVisible();
-  expect(checkoutRequests[0]).toMatchObject({
-    credits: 100_000,
-    supportsInAppPreview: true,
-  });
-  click(button("Cancel", review));
+  for (const [amount, credits] of [
+    ["$20", 20_000],
+    ["$50", 50_000],
+    ["$300", 300_000],
+  ] as const) {
+    click(button(amount));
+    const review = await screen.findByRole("dialog", {
+      name: "Review credit purchase",
+    });
+    expect(within(review).getByText(`${amount}.00`)).toBeVisible();
+    expect(checkoutRequests.at(-1)).toMatchObject({
+      credits,
+      supportsInAppPreview: true,
+    });
+    click(button("Cancel", review));
+  }
 
   click(button("Custom"));
   const creditOptions = screen.getByRole("dialog", {
@@ -257,11 +262,11 @@ test("Let a paid workspace admin buy more credits", async () => {
   await fill(customAmount, "250");
   click(button("Buy"));
 
-  review = await screen.findByRole("dialog", {
+  const review = await screen.findByRole("dialog", {
     name: "Review credit purchase",
   });
   expect(within(review).getByText("$250.00")).toBeVisible();
-  expect(checkoutRequests[1]).toMatchObject({
+  expect(checkoutRequests[3]).toMatchObject({
     credits: 250_000,
     customAmount: true,
     supportsInAppPreview: true,
@@ -273,14 +278,14 @@ test("Let a paid workspace admin buy more credits", async () => {
   await expect(
     screen.findAllByText("Enter between $1 and $10,000"),
   ).resolves.not.toHaveLength(0);
-  expect(checkoutRequests).toHaveLength(2);
+  expect(checkoutRequests).toHaveLength(4);
 
   await fill(customAmount, "10001");
   await user.click(button("Buy"));
   expect(screen.getAllByText("Enter between $1 and $10,000")).not.toHaveLength(
     0,
   );
-  expect(checkoutRequests).toHaveLength(2);
+  expect(checkoutRequests).toHaveLength(4);
 });
 
 test("Offer a plan upgrade when a limited workspace cannot buy top-ups", async () => {
@@ -299,7 +304,7 @@ test("Offer a plan upgrade when a limited workspace cannot buy top-ups", async (
     screen.findByText(/Upgrade to Pro to keep chatting/u),
   ).resolves.toBeVisible();
   await expect(findButton("Upgrade to Pro")).resolves.toBeVisible();
-  expect(queryButton("$100")).not.toBeInTheDocument();
+  expect(queryButton("$20")).not.toBeInTheDocument();
   expect(queryButton("Custom")).not.toBeInTheDocument();
 });
 
@@ -323,5 +328,5 @@ test("Show that a previously blocked chat can continue after credits return", as
   ).toBeVisible();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
   expect(queryButton("Upgrade to Pro")).not.toBeInTheDocument();
-  expect(queryButton("$100")).not.toBeInTheDocument();
+  expect(queryButton("$20")).not.toBeInTheDocument();
 });
