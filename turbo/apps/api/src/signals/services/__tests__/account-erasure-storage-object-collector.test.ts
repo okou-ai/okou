@@ -23,10 +23,9 @@ import {
 } from "../account-erasure-storage-object-collector";
 import { encryptErasureSelector } from "../account-erasure-selector";
 
-// The executor has no production caller before activation. Drive the durable
-// job contract directly and mock only the AWS SDK boundary: provider listings
-// after delete, rather than the delete response, decide completion.
-describe("dormant storage-object erasure", () => {
+// Drive the durable job contract directly and mock only the AWS SDK boundary:
+// provider listings after delete, rather than the response, decide completion.
+describe("storage-object erasure", () => {
   const applicationName = `erasure_storage_${randomUUID()}`;
   const databaseUrl = new URL(env("DATABASE_URL"));
   databaseUrl.searchParams.set("application_name", applicationName);
@@ -67,15 +66,18 @@ describe("dormant storage-object erasure", () => {
         command.constructor.name === "ListObjectsV2Command"
       ) {
         const prefix = typeof input.Prefix === "string" ? input.Prefix : "";
+        const maxKeys =
+          typeof input.MaxKeys === "number" ? input.MaxKeys : 1000;
+        const matching = [...live]
+          .filter((key) => {
+            return key.startsWith(prefix);
+          })
+          .sort();
         return Promise.resolve({
-          Contents: [...live]
-            .filter((key) => {
-              return key.startsWith(prefix);
-            })
-            .sort()
-            .map((Key) => {
-              return { Key, Size: 1, LastModified: nowDate() };
-            }),
+          Contents: matching.slice(0, maxKeys).map((Key) => {
+            return { Key, Size: 1, LastModified: nowDate() };
+          }),
+          IsTruncated: matching.length > maxKeys,
         });
       }
       if (
@@ -389,6 +391,36 @@ describe("dormant storage-object erasure", () => {
         return batch.length;
       }),
     ).toStrictEqual([1000, 1000, 500]);
+  });
+
+  it("replays a large prefix after the bounded lease without claiming completion early", async () => {
+    const subject = owner("large-replay");
+    const prefix = `storages/${randomUUID()}`;
+    await createStorage(subject, prefix);
+    const bucket = bucketWithObjects(
+      Array.from({ length: 10005 }, (_value, index) => {
+        return `${prefix}/file-${index.toString().padStart(5, "0")}`;
+      }),
+    );
+    const captured = await capture(subject);
+    await runVerification(captured.job.id, captured.handler);
+    expect(bucket.live.size).toBe(5);
+    expect(bucket.batches).toHaveLength(10);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).rejects.toThrow("account_erasure:work_unresolved");
+
+    // Advance only this test's durable retry boundary; no sleeping or special
+    // production retry path is needed to exercise lease replay.
+    await db.execute(sql`UPDATE account_erasure_work
+      SET available_at = clock_timestamp() - interval '1 second'
+      WHERE job_id = ${captured.job.id} AND state = 'pending'`);
+    await runVerification(captured.job.id, captured.handler);
+    expect(bucket.live.size).toBe(0);
+    expect(bucket.batches.at(-1)).toHaveLength(5);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).resolves.toMatchObject({ state: "verified_erased" });
   });
 
   it("resumes capture across both storage and version pages", async () => {

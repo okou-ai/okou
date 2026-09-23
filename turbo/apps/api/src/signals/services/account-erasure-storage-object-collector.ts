@@ -20,7 +20,7 @@ import { env } from "../../lib/env";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { safeJsonParse } from "../utils";
-import { deleteS3Objects, listS3ObjectsUnderPrefix } from "../external/s3";
+import { deleteS3Objects, listS3ObjectsPage } from "../external/s3";
 import {
   decryptErasureSelector,
   encryptErasureSelector,
@@ -37,6 +37,12 @@ type Db = NodePgDatabase<Record<string, never>>;
 const STORAGE_SOURCES = ["storages", "storage_versions"] as const;
 
 const MAX_INVENTORY_PAGE = 100;
+const OBJECT_DELETE_PAGE_SIZE = 1000;
+const MAX_OBJECT_DELETE_PAGES_PER_LEASE = 10;
+
+function objectListPrefix(prefix: string): string {
+  return prefix.endsWith("/") ? prefix : `${prefix}/`;
+}
 
 // Immutable v1 namespace. Names are JSON tuples, never concatenation, so two
 // different reference inputs cannot collide on one string.
@@ -364,22 +370,47 @@ async function erasePrefix(
     return unresolved("selector_missing");
   }
   const store = createStore();
-  const objects = await store.get(listS3ObjectsUnderPrefix(bucket, prefix));
-  if (objects.length === 0) {
-    return { requestRef: requestReference(lease, "empty") };
+  const listPrefix = objectListPrefix(prefix);
+  for (
+    let pageNumber = 0;
+    pageNumber < MAX_OBJECT_DELETE_PAGES_PER_LEASE;
+    pageNumber += 1
+  ) {
+    signal.throwIfAborted();
+    // Delete the first page, then list the first page again. A continuation
+    // token would be invalid after removing the objects that preceded it.
+    const page = await store.get(
+      listS3ObjectsPage(bucket, listPrefix, OBJECT_DELETE_PAGE_SIZE),
+    );
+    if (page.objects.length === 0) {
+      return {
+        requestRef:
+          lease.item.requestRef === requestReference(lease, "erased")
+            ? requestReference(lease, "erased")
+            : requestReference(lease, "empty"),
+      };
+    }
+    await store.get(
+      deleteS3Objects(
+        bucket,
+        page.objects.map((object) => {
+          return object.key;
+        }),
+        signal,
+      ),
+    );
+    if (!page.isTruncated) {
+      return { requestRef: requestReference(lease, "erased") };
+    }
   }
-  // Batching belongs to `deleteS3Objects`, which already caps a
-  // request at `S3_DELETE_OBJECTS_LIMIT` and stops at the first failed batch.
-  await store.get(
-    deleteS3Objects(
-      bucket,
-      objects.map((object) => {
-        return object.key;
-      }),
-      signal,
-    ),
-  );
-  return { requestRef: requestReference(lease, "erased") };
+  // The same durable work item resumes after its lease is released. A known
+  // remaining page is progress, not a transient provider failure budget.
+  return {
+    outcome: "pending",
+    errorCode: "boundary_unproven",
+    requestRef: requestReference(lease, "erased"),
+    retryAt: new Date(nowDate().getTime() + 60_000),
+  };
 }
 
 /** Absence, read back from the provider rather than inferred from the delete.
@@ -417,9 +448,9 @@ async function verifyPrefixAbsent(
     }
   } else {
     const remaining = await createStore().get(
-      listS3ObjectsUnderPrefix(bucket, prefix),
+      listS3ObjectsPage(bucket, objectListPrefix(prefix), 1),
     );
-    if (remaining.length > 0) {
+    if (remaining.objects.length > 0 || remaining.isTruncated) {
       return unresolved("verification_failed", "retryable_failure");
     }
   }
