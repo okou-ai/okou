@@ -9,6 +9,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import {
+  insertChatSearchWindowFixture,
   insertChatSearchProjectionCoverageFixture,
   insertSearchablePromptFixture,
   removeChatSearchParentThreadsFixture,
@@ -78,6 +79,27 @@ async function sendNoCreditMessage(
 }
 
 describe("GET /api/chat/search durable reader", () => {
+  it("returns fewer than 25 matches without searching beyond the recent window", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const owner = bdd.user({ orgId });
+    const source = await createSearchThread(
+      owner,
+      `bounded-reader-${randomUUID().slice(0, 8)}`,
+    );
+    const keyword = `bounded${randomUUID().replaceAll("-", "")}`;
+    await insertChatSearchWindowFixture({
+      ...source,
+      userId: owner.userId,
+      orgId,
+      keyword,
+    });
+
+    const search = await chat.searchChat(owner, keyword);
+    expect(
+      search.results.map((result) => result.matchedMessage.seqId),
+    ).toStrictEqual([2]);
+  });
+
   it("returns up to 25 newest matches without pagination", async () => {
     const owner = bdd.user();
     const source = await createSearchThread(
@@ -252,7 +274,7 @@ describe("GET /api/chat/search durable reader", () => {
     expect(otherOrgSearch.results).toStrictEqual([]);
   });
 
-  it("continues past orphan-only candidate batches to find visible matches", async () => {
+  it("does not refill orphaned matches from older messages", async () => {
     const owner = bdd.user();
     const keyword = `orphanpage${randomUUID().replaceAll("-", "")}`;
     const baseTime = now();
@@ -294,12 +316,13 @@ describe("GET /api/chat/search durable reader", () => {
     await removeChatSearchParentThreadsFixture(orphanThreadIds);
 
     const search = await chat.searchChat(owner, keyword);
-    expect(search.results).toHaveLength(1);
-    expect(search.results[0]?.chatThreadId).toBe(visible.threadId);
+    expect(search.results).toStrictEqual([]);
 
     const cleanup = await requestChatSearchProjection(orphanThreadIds);
     expect(cleanup.orphanedThreads).toBe(orphanThreadIds.length);
     const clean = await requestChatSearchProjection(orphanThreadIds);
     expect(clean.orphanedThreads).toBe(0);
+    const afterCleanup = await chat.searchChat(owner, keyword);
+    expect(afterCleanup.results[0]?.chatThreadId).toBe(visible.threadId);
   }, 60_000);
 });

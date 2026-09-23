@@ -70,6 +70,38 @@ export async function insertOrphanedChatEventSearchProjectionFixture(args: {
   });
 }
 
+/** Places one keyword match on each side of the chat search's 400-row window. */
+export async function insertChatSearchWindowFixture(args: {
+  readonly chatThreadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly keyword: string;
+}): Promise<void> {
+  const baseTime = nowDate().getTime();
+  const filler = `filler${randomUUID().replaceAll("-", "")}`;
+  await db()
+    .insert(chatEventSearchMessages)
+    .values(
+      Array.from({ length: 401 }, (_, index) => {
+        const seqId = index + 1;
+        const text = seqId <= 2 ? args.keyword : filler;
+        return {
+          chatThreadId: args.chatThreadId,
+          seqId,
+          runId: null,
+          userId: args.userId,
+          orgId: args.orgId,
+          agentId: args.agentId,
+          role: "user" as const,
+          createdAt: new Date(baseTime + seqId * 1000),
+          text,
+          textBigram: chatSearchIndexText(text),
+        };
+      }),
+    );
+}
+
 /**
  * Performs the projector's message-then-watermark write order in one real
  * transaction so cleanup tests can place both operations around a row lock.

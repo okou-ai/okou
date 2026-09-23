@@ -9,13 +9,12 @@ import { isRetiredGoalArchiveText } from "@okouai/api-contracts/contracts/retire
 import { agents } from "@okouai/db/schema/agent";
 import { chatEventSearchMessages } from "@okouai/db/schema/chat-event-search";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { and, count, desc, eq, gte, lt, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, sql, type SQL } from "drizzle-orm";
 
 import {
   chatSearchBigramTsquery,
   chatSearchMatchRanges,
 } from "../../lib/chat-search-bigram";
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { db$, type ReadonlyDb } from "../external/db";
 
 type ChatSearchMessageRow = {
@@ -31,14 +30,7 @@ type ChatSearchMatchRow = ChatSearchMessageRow & {
   readonly agentName: string;
 };
 
-interface ChatSearchCandidateCursor {
-  readonly createdAt: string;
-  readonly chatThreadId: string;
-  readonly seqId: number;
-}
-
 type ChatSearchCandidateRow = ChatSearchMessageRow & {
-  readonly cursorCreatedAt: string;
   readonly existingChatThreadId: string | null;
   readonly agentName: string | null;
 };
@@ -69,27 +61,6 @@ function toChatSearchMessage(row: ChatSearchMessageRow): ChatSearchMessage {
   };
 }
 
-function chatSearchCursorCondition(
-  cursor: ChatSearchCandidateCursor | undefined,
-) {
-  if (cursor === undefined) {
-    return undefined;
-  }
-  const cursorCreatedAt = sql`${cursor.createdAt}::timestamp`;
-  return or(
-    lt(chatEventSearchMessages.createdAt, cursorCreatedAt),
-    and(
-      eq(chatEventSearchMessages.createdAt, cursorCreatedAt),
-      lt(chatEventSearchMessages.chatThreadId, cursor.chatThreadId),
-    ),
-    and(
-      eq(chatEventSearchMessages.createdAt, cursorCreatedAt),
-      eq(chatEventSearchMessages.chatThreadId, cursor.chatThreadId),
-      lt(chatEventSearchMessages.seqId, cursor.seqId),
-    ),
-  );
-}
-
 function chatSearchRecentMatches(
   db: ReadonlyDb,
   args: {
@@ -98,8 +69,8 @@ function chatSearchRecentMatches(
     readonly limit: number;
   },
 ) {
-  // Common terms can fill a page from recent messages. Bound this ordered
-  // scan before applying the keyword so rare terms cannot scan all history.
+  // Search only the newest bounded window, even when it contains fewer than
+  // 25 keyword matches. The result count does not trigger a history scan.
   const recentMessages = db
     .select({
       ...searchMessageColumns,
@@ -140,11 +111,10 @@ function chatSearchRecentMatches(
 }
 
 /**
- * Selects one bounded candidate page entirely from the durable projection.
- * Parent existence and the agent's current name are resolved only after the
- * full-text LIMIT, so the parent lookup cannot expand the expensive match.
+ * Selects matches from one bounded window in the durable projection. Parent
+ * existence and the agent's current name are resolved after the match limit.
  */
-async function chatSearchIndexedMatchBatch(
+async function chatSearchRecentMatchBatch(
   db: ReadonlyDb,
   args: {
     readonly userId: string;
@@ -152,8 +122,6 @@ async function chatSearchIndexedMatchBatch(
     readonly keyword: string;
     readonly agentId?: string;
     readonly since?: Date;
-    readonly limit: number;
-    readonly cursor?: ChatSearchCandidateCursor;
   },
 ): Promise<ChatSearchCandidateRow[]> {
   const tsquery = chatSearchBigramTsquery(args.keyword);
@@ -168,54 +136,16 @@ async function chatSearchIndexedMatchBatch(
       ? eq(chatEventSearchMessages.agentId, args.agentId)
       : undefined,
     args.since ? gte(chatEventSearchMessages.createdAt, args.since) : undefined,
-    chatSearchCursorCondition(args.cursor),
   );
 
   const recentMatches = chatSearchRecentMatches(db, {
     scopeCondition,
     tsquery,
-    limit: args.limit,
+    limit: CHAT_SEARCH_RESULT_LIMIT,
   });
-  const recentMatchCount = db.select({ count: count() }).from(recentMatches);
 
-  const projectionColumns = {
-    ...searchMessageColumns,
-    agentId: chatEventSearchMessages.agentId,
-  };
-  const keywordQuery = db
-    .select(projectionColumns)
-    .from(chatEventSearchMessages)
-    .where(
-      and(
-        scopeCondition,
-        sql`${chatEventSearchMessages.tsv} @@ to_tsquery('simple', ${tsquery})`,
-      ),
-    );
-  // OFFSET 0 keeps Top-N planning outside the complete keyword match. Unlike
-  // materializing every message body, it streams matches into a bounded sort.
-  // Drizzle omits a numeric .offset(0), so retain this SQL optimization fence.
-  const keywordMatches = db
-    .$with("chat_search_keyword_matches", projectionColumns)
-    .as(sql`${keywordQuery} OFFSET 0`);
-  const fullMatches = db
-    .select({
-      chatThreadId: keywordMatches.chatThreadId,
-      seqId: keywordMatches.seqId,
-      runId: keywordMatches.runId,
-      role: keywordMatches.role,
-      createdAt: keywordMatches.createdAt,
-      text: keywordMatches.text,
-      agentId: keywordMatches.agentId,
-    })
-    .from(keywordMatches)
-    .orderBy(
-      sql`${desc(keywordMatches.createdAt)} NULLS LAST`,
-      desc(keywordMatches.chatThreadId),
-      desc(keywordMatches.seqId),
-    )
-    .limit(args.limit)
-    .as("chat_search_full_matches");
-  const indexedMatches = db
+  return await db
+    .with(recentMatches)
     .select({
       chatThreadId: recentMatches.chatThreadId,
       seqId: recentMatches.seqId,
@@ -223,57 +153,24 @@ async function chatSearchIndexedMatchBatch(
       role: recentMatches.role,
       createdAt: recentMatches.createdAt,
       text: recentMatches.text,
-      agentId: recentMatches.agentId,
-    })
-    .from(recentMatches)
-    .where(eq(recentMatchCount, args.limit))
-    .unionAll(
-      db
-        .select({
-          chatThreadId: fullMatches.chatThreadId,
-          seqId: fullMatches.seqId,
-          runId: fullMatches.runId,
-          role: fullMatches.role,
-          createdAt: fullMatches.createdAt,
-          text: fullMatches.text,
-          agentId: fullMatches.agentId,
-        })
-        .from(fullMatches)
-        .where(lt(recentMatchCount, args.limit)),
-    )
-    .as("chat_search_indexed_matches");
-
-  return await db
-    .with(recentMatches, keywordMatches)
-    .select({
-      chatThreadId: indexedMatches.chatThreadId,
-      seqId: indexedMatches.seqId,
-      runId: indexedMatches.runId,
-      role: indexedMatches.role,
-      createdAt: indexedMatches.createdAt,
-      text: indexedMatches.text,
-      cursorCreatedAt: sql`${indexedMatches.createdAt}::text`
-        .mapWith(pgTextDecoder)
-        .as("cursor_created_at"),
       existingChatThreadId: chatThreads.id,
       agentName: agents.name,
     })
-    .from(indexedMatches)
-    .leftJoin(chatThreads, eq(indexedMatches.chatThreadId, chatThreads.id))
-    .leftJoin(agents, eq(indexedMatches.agentId, agents.id))
+    .from(recentMatches)
+    .leftJoin(chatThreads, eq(recentMatches.chatThreadId, chatThreads.id))
+    .leftJoin(agents, eq(recentMatches.agentId, agents.id))
     .orderBy(
-      desc(indexedMatches.createdAt),
-      desc(indexedMatches.chatThreadId),
-      desc(indexedMatches.seqId),
+      desc(recentMatches.createdAt),
+      desc(recentMatches.chatThreadId),
+      desc(recentMatches.seqId),
     );
 }
 
 /**
- * Discards matches whose source thread has already been deleted. The internal
- * keyset cursor continues past those rows until 25 visible results are found
- * or the index is exhausted; it is never exposed as search pagination.
+ * Discards matches whose source thread has already been deleted, without
+ * widening the search window to replace them.
  */
-async function chatSearchIndexedMatches(
+async function chatSearchRecentVisibleMatches(
   db: ReadonlyDb,
   args: {
     readonly userId: string;
@@ -283,28 +180,16 @@ async function chatSearchIndexedMatches(
     readonly since?: Date;
   },
 ): Promise<ChatSearchMatchRow[]> {
-  const matches: ChatSearchMatchRow[] = [];
-  let cursor: ChatSearchCandidateCursor | undefined;
-
-  while (matches.length < CHAT_SEARCH_RESULT_LIMIT) {
-    const candidateLimit = CHAT_SEARCH_RESULT_LIMIT - matches.length;
-    const candidates = await chatSearchIndexedMatchBatch(db, {
-      ...args,
-      limit: candidateLimit,
-      cursor,
-    });
-    if (candidates.length === 0) {
-      break;
+  const candidates = await chatSearchRecentMatchBatch(db, args);
+  return candidates.flatMap((candidate): ChatSearchMatchRow[] => {
+    if (
+      candidate.existingChatThreadId === null ||
+      candidate.agentName === null
+    ) {
+      return [];
     }
-
-    for (const candidate of candidates) {
-      if (
-        candidate.existingChatThreadId === null ||
-        candidate.agentName === null
-      ) {
-        continue;
-      }
-      matches.push({
+    return [
+      {
         chatThreadId: candidate.chatThreadId,
         seqId: candidate.seqId,
         runId: candidate.runId,
@@ -312,30 +197,9 @@ async function chatSearchIndexedMatches(
         createdAt: candidate.createdAt,
         text: candidate.text,
         agentName: candidate.agentName,
-      });
-      if (matches.length === CHAT_SEARCH_RESULT_LIMIT) {
-        break;
-      }
-    }
-
-    if (
-      matches.length === CHAT_SEARCH_RESULT_LIMIT ||
-      candidates.length < candidateLimit
-    ) {
-      break;
-    }
-    const lastCandidate = candidates[candidates.length - 1];
-    if (!lastCandidate) {
-      throw new Error("Chat search candidate page unexpectedly has no tail");
-    }
-    cursor = {
-      createdAt: lastCandidate.cursorCreatedAt,
-      chatThreadId: lastCandidate.chatThreadId,
-      seqId: lastCandidate.seqId,
-    };
-  }
-
-  return matches;
+      },
+    ];
+  });
 }
 
 export function chatSearch(args: {
@@ -352,7 +216,7 @@ export function chatSearch(args: {
   return computed(async (get) => {
     const db = get(db$);
     const sinceDate = args.since ? new Date(args.since) : undefined;
-    const matches = await chatSearchIndexedMatches(db, {
+    const matches = await chatSearchRecentVisibleMatches(db, {
       userId: args.userId,
       orgId: args.orgId,
       keyword: args.keyword,
