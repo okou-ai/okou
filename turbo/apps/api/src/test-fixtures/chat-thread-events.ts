@@ -257,6 +257,27 @@ export async function setChatThreadSnapshotObjectKeyFixture(args: {
     );
 }
 
+/** Confirms R2 publication retires the inline JSONB projection. */
+export async function readChatThreadSnapshotStorageFixture(args: {
+  readonly userId: string;
+  readonly orgId: string;
+}) {
+  const [snapshot] = await db()
+    .select({
+      objectKey: chatThreadSnapshots.objectKey,
+      chatThreads: chatThreadSnapshots.chatThreads,
+    })
+    .from(chatThreadSnapshots)
+    .where(
+      and(
+        eq(chatThreadSnapshots.userId, args.userId),
+        eq(chatThreadSnapshots.orgId, args.orgId),
+      ),
+    )
+    .limit(1);
+  return snapshot;
+}
+
 /** Reads exact physical lifecycle rows, including rows hidden by the reader. */
 export async function readChatThreadEventIdsFixture(args: {
   readonly userId: string;

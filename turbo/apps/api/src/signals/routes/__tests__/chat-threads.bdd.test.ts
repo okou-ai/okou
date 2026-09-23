@@ -50,6 +50,7 @@ import {
   insertCanonicalOrphanChatThreadEventFixture,
   insertChatThreadEventTransactionFixture,
   readChatThreadEventIdsFixture,
+  readChatThreadSnapshotStorageFixture,
   setChatThreadSnapshotBoundaryFixture,
   setChatThreadSnapshotObjectKeyFixture,
   setChatThreadVideoModelFixture,
@@ -916,11 +917,20 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       title: "R2 snapshot pointer thread",
     });
     await compactChatThreadSnapshots(actor);
-    const legacy = await chat.getThreadSnapshot(actor);
+    await expect(
+      readChatThreadSnapshotStorageFixture({
+        userId: actor.userId,
+        orgId: actor.orgId,
+      }),
+    ).resolves.toStrictEqual({
+      objectKey: expect.any(String),
+      chatThreads: [],
+    });
+    const materialized = await chat.getThreadSnapshot(actor);
     await setChatThreadSnapshotObjectKeyFixture({
       userId: actor.userId,
       orgId: actor.orgId,
-      latestSeqId: legacy.latestSeqId,
+      latestSeqId: materialized.latestSeqId,
       body: Buffer.from("{}"),
     });
 
@@ -940,8 +950,8 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     expect(response.body).toMatchObject({
       url: expect.any(String),
       expiresInSeconds: expect.any(Number),
-      latestEventId: legacy.latestEventId,
-      latestSeqId: legacy.latestSeqId,
+      latestEventId: materialized.latestEventId,
+      latestSeqId: materialized.latestSeqId,
     });
     expect("chatThreads" in response.body).toBeFalsy();
   });
