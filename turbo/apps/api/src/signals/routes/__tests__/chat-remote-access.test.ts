@@ -40,8 +40,7 @@ function sshClient() {
   );
 }
 
-async function ownerWithThread() {
-  const actor = bdd.user();
+async function ownerWithThread(actor = bdd.user()) {
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, {
     displayName: "Remote access test agent",
@@ -295,6 +294,31 @@ describe("chat remote access owner API", () => {
           protocol: "ssh",
           connectionId: firstHost,
         },
+        body: { enabled: true },
+      }),
+      [404],
+    );
+
+    const sameUserOtherOrg = await ownerWithThread(
+      bdd.user({ userId: secondOwner.actor.userId }),
+    );
+    const otherOrgHost = await createSshHost("Other organization host");
+    mocks.clerk.session(
+      secondOwner.actor.userId,
+      secondOwner.actor.orgId,
+      secondOwner.actor.orgRole,
+    );
+    await accept(
+      accessClient().listThreadAccess({
+        headers,
+        params: { threadId: sameUserOtherOrg.threadId },
+      }),
+      [404],
+    );
+    await accept(
+      accessClient().updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: otherOrgHost },
         body: { enabled: true },
       }),
       [404],
