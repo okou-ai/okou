@@ -151,6 +151,7 @@ describe("Browser user-action route", () => {
     let malformedNodeResponse = false;
     let verificationMatches = true;
     let failNextProviderRead = false;
+    let providerStopped = false;
     let providerReadCount = 0;
     let providerReadBarrier:
       | {
@@ -291,7 +292,11 @@ describe("Browser user-action route", () => {
           barrier.entered.resolve(undefined);
           await barrier.release.promise;
         }
-        return HttpResponse.json(providerBrowser(String(params.id)));
+        return HttpResponse.json(
+          providerBrowser(String(params.id), {
+            status: providerStopped ? "stopped" : "active",
+          }),
+        );
       }),
       http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
         return HttpResponse.json(
@@ -1005,6 +1010,41 @@ describe("Browser user-action route", () => {
     );
     controlTagName = "INPUT";
     expect(incompatiblePreflight.body.state).toBe("stale");
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+
+    const stoppedProviderCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after Browser closure",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              backendNodeId: 44,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    providerStopped = true;
+    const stoppedPreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: {
+          requestToken: stoppedProviderCandidate.body.action.requestToken,
+        },
+        body: {},
+      }),
+      [200],
+    );
+    providerStopped = false;
+    expect(stoppedPreflight.body.state).toBe("stale");
     expect(browserInputWrites()).toHaveLength(writesBeforeStale);
 
     const uncertainCandidate = await accept(

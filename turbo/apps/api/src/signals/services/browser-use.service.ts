@@ -698,9 +698,7 @@ async function inspectBrowserUseControls(
   objectIds: readonly string[],
   commandId: number,
   signal: AbortSignal,
-): Promise<
-  readonly NonNullable<ReturnType<typeof safeControlInspection>>[] | null
-> {
+): Promise<readonly BrowserUseControlInspection[]> {
   const [firstObjectId, ...otherObjectIds] = objectIds;
   if (!firstObjectId) {
     return [];
@@ -859,7 +857,6 @@ async function validateBrowserUseUserActionOnSocket(
     signal,
   );
   if (
-    !inspections ||
     inspections.some((inspection) => {
       return (
         !inspection.connected ||
@@ -1043,9 +1040,6 @@ async function resolveBrowserUseApplyFields(
     commandId,
     signal,
   );
-  if (!inspections) {
-    return null;
-  }
   commandId += objectIds.length === 0 ? 0 : 1;
   const resolved: ResolvedBrowserUseUserActionField[] = [];
   for (const [index, field] of fields.entries()) {
