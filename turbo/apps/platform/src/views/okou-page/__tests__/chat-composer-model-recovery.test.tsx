@@ -345,7 +345,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   click(buttonNamed("Connect", dialog));
 
   await expect(
-    screen.findByText("Paste the Claude Code authorization code to continue."),
+    screen.findByText("Paste the Claude authorization code to continue."),
   ).resolves.toBeVisible();
 
   click(buttonNamed("Open Claude approval page", dialog));
@@ -361,7 +361,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   click(buttonNamed("Connect", dialog));
 
   await expect(
-    screen.findByText("Claude Code connected"),
+    screen.findByText("Claude connected"),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(queryButton("Configure model")).toBeNull();
