@@ -45,7 +45,7 @@ surface; the index does not replace their detailed rules.
 
 - [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
-- [Modern Apple VNC authentication](./vnc-modern-apple-auth.md): Linux verification
+- [Modern Apple VNC authentication](./vnc-modern-apple-auth.md): Linux and disposable-Mac verification
   evidence and the boundary for Apple-specific compatibility claims.
 - [OpenSSH plus TigerVNC interoperability](../crates/runner/tests/VNC_SSH_INTEROPERABILITY.md):
   disposable pinned outer-SSH and inner-VNC production-path acceptance.

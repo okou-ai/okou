@@ -430,7 +430,12 @@ async fn rejected_plaintext(payload: Vec<u8>, truncated: bool) -> Error {
 
 #[tokio::test]
 async fn rejects_unsupported_versions_and_insecure_security_lists() {
-    for banner in [b"RFB 003.003\n", b"RFB 003.007\n", b"RFB garbage\n"] {
+    for banner in [
+        b"RFB 003.003\n",
+        b"RFB 003.007\n",
+        b"RFB 003.889\n", // Observed on macOS 26.6.2 Remote Management.
+        b"RFB garbage\n",
+    ] {
         assert!(matches!(
             rejected_plaintext(banner.to_vec(), false).await,
             Error::UnsupportedRfbVersion
