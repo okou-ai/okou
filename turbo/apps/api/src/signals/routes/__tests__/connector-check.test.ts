@@ -416,7 +416,7 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       mode: "url",
       connector: { connectorSlug: "aws" },
-      base: "https://sts.us-west-2.amazonaws.com",
+      base: "https://{awsHost+}.amazonaws.com",
       permission: {
         kind: "unknown-endpoint",
         policy: { outcome: "unavailable", basis: "not-run-scoped" },

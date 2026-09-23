@@ -820,8 +820,8 @@ function awsDiagnosticDecisionOptions(
   aws: Extract<ConnectorCheckRequestBody, { readonly mode: "url" }>["aws"],
 ): FirewallRequestDecisionOptions {
   return {
-    awsDiagnostic: {
-      ...(aws === undefined
+    awsDiagnostic:
+      aws === undefined
         ? {}
         : {
             context: {
@@ -831,8 +831,7 @@ function awsDiagnosticDecisionOptions(
               query: aws.query ?? [],
               headerNames: aws.headerNames ?? [],
             },
-          }),
-    },
+          },
   };
 }
 
