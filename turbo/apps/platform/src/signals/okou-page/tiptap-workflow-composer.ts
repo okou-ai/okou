@@ -671,9 +671,6 @@ function buildFeedbackItemChrome(
   });
   removeButton.setAttribute("aria-label", removeLabel);
   removeButton.title = removeLabel;
-  removeButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-  });
   removeButton.addEventListener("click", onRemove);
   return quoteDom;
 }
@@ -1028,14 +1025,8 @@ function createTemplateAttachmentNodeView(
       iconContainer.append(icon);
     }
   }
-  openButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-  });
   openButton.addEventListener("click", () => {
     openTemplate(templateAttachmentNodeAttributes(currentNode).category);
-  });
-  removeButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
   });
   removeButton.addEventListener("click", removeTemplate);
   localizedUi.add(localize);
@@ -1143,9 +1134,6 @@ function createInlineTemplateNodeView(
   function localize(): void {
     render(currentNode);
   }
-  openButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-  });
   openButton.addEventListener("click", () => {
     actions.openTemplate(
       templateAttachmentNodeAttributes(currentNode).category,
@@ -2241,12 +2229,19 @@ function createMountEditorCommand({
       };
       runtime.removeFeedback = (id) => {
         set(feedback.signals.remove$, id);
+        // The native button held focus and was removed with the quote.
+        editor.view.focus();
       };
       runtime.openTemplate = (intent) => {
         set(openTemplatePicker$, intent);
+        // A chip button lives inside the editing host, so the caret owns the
+        // picker's focus return. Space and Enter activate a native button, and
+        // a chip that kept focus would reopen the picker instead of editing.
+        editor.view.focus();
       };
       runtime.removeTemplate = () => {
         set(legacyTemplateAttachment.remove$);
+        editor.view.focus();
       };
       configureMountedWorkflowEditor(editor);
       setWorkflowComposerDocument(
