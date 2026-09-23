@@ -5944,7 +5944,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     expect(queue.body.concurrency.active).toBe(0);
   });
 
-  it("defaults limited-free runs to Luna and rejects paid models", async () => {
+  it("defaults limited-free runs to Luna on Pi and rejects paid models", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const chat = createChatFilesBddApi(context);
@@ -5984,9 +5984,11 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     }
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(sent.body.runId);
-    expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-6-luna" });
-    expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
+    expect(claim.cliAgentType).toBe("pi");
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openai",
+      model: "gpt-6-luna",
+    });
     expect(claim.modelUsageProvider).toBe("gpt-6-luna");
     await api.requestCancelRun(actor, sent.body.runId, [200]);
 
