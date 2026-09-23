@@ -1,15 +1,29 @@
 import { randomUUID } from "node:crypto";
+import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { getStartedClaims } from "@okouai/db/schema/get-started-claim";
 import { usagePackInvitationPurchases } from "@okouai/db/schema/usage-pack-subscription";
 import { and, eq, or } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import {
   createGetStartedClaim,
   getStartedRewardsEnabled,
   grantGetStartedClaim,
   type GetStartedClaimRow,
 } from "./get-started-rewards.service";
+
+async function notifyGetStartedInviteReward(
+  claim: GetStartedClaimRow | null,
+): Promise<void> {
+  if (!claim || claim.status !== "granted" || !claim.beneficiaryUserId) {
+    return;
+  }
+  await publishUserSignal(
+    [claim.beneficiaryUserId],
+    GET_STARTED_REWARDS_CHANGED_EVENT,
+  );
+}
 
 export function prepareGetStartedInvitation(
   db: Db,
@@ -98,7 +112,7 @@ export async function acceptGetStartedInvitation(
   if (!args.invitationId && !args.getStartedClaimId && !args.purchaseId) {
     return;
   }
-  await db.transaction(async (tx) => {
+  const notificationClaim = await db.transaction(async (tx) => {
     const [existingClaim] = await tx
       .select()
       .from(getStartedClaims)
@@ -124,7 +138,7 @@ export async function acceptGetStartedInvitation(
     let claim: GetStartedClaimRow | undefined = existingClaim;
     if (!claim) {
       if (!args.purchaseId && !args.invitationId) {
-        return;
+        return null;
       }
       const [purchase] = await tx
         .select({
@@ -151,7 +165,7 @@ export async function acceptGetStartedInvitation(
         )
         .limit(1);
       if (!purchase) {
-        return;
+        return null;
       }
       const created = await createGetStartedClaim(tx, {
         orgId: args.orgId,
@@ -161,15 +175,15 @@ export async function acceptGetStartedInvitation(
         invitationId: purchase.invitationId ?? args.invitationId,
       });
       if (!created) {
-        return;
+        return null;
       }
       claim = created;
     }
     if (["granted", "ineligible"].includes(claim.status)) {
-      return;
+      return null;
     }
     if (!(await getStartedRewardsEnabled(tx, claim.orgId, claim.actorUserId))) {
-      return;
+      return null;
     }
     if (
       claim.invitationId &&
@@ -187,7 +201,7 @@ export async function acceptGetStartedInvitation(
           updatedAt: nowDate(),
         })
         .where(eq(getStartedClaims.id, claim.id));
-      return;
+      return null;
     }
     // The shared grant service serializes inviter slots and invited-account uniqueness.
     const granted = await grantGetStartedClaim(
@@ -204,5 +218,7 @@ export async function acceptGetStartedInvitation(
         updatedAt: nowDate(),
       })
       .where(eq(getStartedClaims.id, granted.id));
+    return granted;
   });
+  await notifyGetStartedInviteReward(notificationClaim);
 }

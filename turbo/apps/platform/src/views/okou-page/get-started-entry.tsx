@@ -2,7 +2,7 @@ import type {
   GetStartedClaim,
   GetStartedQuestKey,
 } from "@okouai/api-contracts/contracts/get-started";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -32,7 +32,6 @@ import {
   Input,
 } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
@@ -40,10 +39,11 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
   checkInGetStarted$,
-  isCheckinMilestone,
+  dismissGetStartedReward$,
   getStartedQuests$,
   getStartedSummary$,
-  setCheckinClaimedOpen$,
+  pendingGetStartedReward$,
+  refreshGetStartedRewardStatus$,
   rewardsNoteOpen$,
   setQuestIntroKey$,
   setRewardsNoteOpen$,
@@ -54,7 +54,6 @@ import {
   sharePostDraft$,
   submitSharePost$,
   shareSubmission$,
-  setGetStartedMenuOpen$,
   type GetStartedQuest,
   type GetStartedSummary,
 } from "../../signals/okou-page/get-started.ts";
@@ -65,6 +64,7 @@ import { SlackMark } from "./components/slack-mark.tsx";
 import {
   GetStartedCheckinDialog,
   GetStartedQuestIntroDialog,
+  GetStartedQuestRewardDialog,
   questHasIntro,
 } from "./get-started-quest-intro-dialog.tsx";
 
@@ -807,15 +807,12 @@ function ShareOnXDialog() {
  */
 function useQuestHandoffs(
   checkIn: (signal: AbortSignal) => Promise<number>,
-  checkinReward: number,
+  closePanel: () => void,
 ): Record<GetStartedQuestKey, () => void> {
-  const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
   const navigate = useSet(detachedNavigateTo$);
   const setShareDialogOpen = useSet(setShareDialogOpen$);
-  const setCheckinClaimedOpen = useSet(setCheckinClaimedOpen$);
-  const introEnabled = useQuestIntroEnabled();
   return {
     connector: () => {
       navigate(ROUTES.connectors);
@@ -835,33 +832,8 @@ function useQuestHandoffs(
     checkin: () => {
       detach(
         (async () => {
-          const streak = await checkIn(pageSignal);
-          if (!introEnabled) {
-            return;
-          }
-          // The first day and every full week earn the screen; the days in
-          // between earn a line. Both name the streak, which is the part that
-          // brings someone back tomorrow.
-          if (isCheckinMilestone(streak)) {
-            setCheckinClaimedOpen(true);
-            return;
-          }
-          toast.success(
-            t(
-              ($) => {
-                return $.chat.agentPage.getStarted.streak;
-              },
-              { amount: formatLocalizedNumber(streak) },
-            ),
-            {
-              description: t(
-                ($) => {
-                  return $.chat.agentPage.getStarted.intro.checkin.amount;
-                },
-                { amount: formatLocalizedNumber(checkinReward) },
-              ),
-            },
-          );
+          await checkIn(pageSignal);
+          closePanel();
         })(),
         Reason.DomCallback,
       );
@@ -936,15 +908,16 @@ function GetStartedPanel({
   quests,
   summary,
   handoffs,
+  copy,
   checkinPending,
 }: {
   quests: readonly GetStartedQuest[];
   summary: GetStartedSummary;
   handoffs: Record<GetStartedQuestKey, () => void>;
+  copy: Record<GetStartedQuestKey, QuestCopy>;
   checkinPending: boolean;
 }) {
   const { t } = useTranslation();
-  const copy = useQuestCopy();
   const actions = useQuestActions(handoffs);
   const introEnabled = useQuestIntroEnabled();
   const opensModal = (quest: GetStartedQuest): boolean => {
@@ -1030,20 +1003,19 @@ export function GetStartedEntry() {
   const { t } = useTranslation();
   const questsLoadable = useLastLoadable(getStartedQuests$);
   const summaryLoadable = useLastLoadable(getStartedSummary$);
-  const setMenuOpen = useSet(setGetStartedMenuOpen$);
+  const copy = useQuestCopy();
+  const rewardNotice = useGet(pendingGetStartedReward$);
+  const reward = rewardNotice?.claim ?? null;
+  const dismissReward = useSet(dismissGetStartedReward$);
+  const refreshRewards = useSet(refreshGetStartedRewardStatus$);
+  const pageSignal = useGet(pageSignal$);
+  const [panelOpen, setPanelOpen] = useState(false);
   // The dialogs outlive the dropdown that opened them, so the handoffs they
   // run are built here rather than inside the panel's own tree.
   const [checkinLoadable, checkIn] = useLoadableSet(checkInGetStarted$);
-  // Read before the loading guard below, because the handoffs are hooks and
-  // cannot be built conditionally. Zero until the quests land, which is also
-  // when the entry renders nothing at all.
-  const checkinReward =
-    questsLoadable.state === "hasData"
-      ? (questsLoadable.data.find((quest) => {
-          return quest.key === "checkin";
-        })?.rewardAmount ?? 0)
-      : 0;
-  const handoffs = useQuestHandoffs(checkIn, checkinReward);
+  const handoffs = useQuestHandoffs(checkIn, () => {
+    setPanelOpen(false);
+  });
 
   if (
     questsLoadable.state !== "hasData" ||
@@ -1055,13 +1027,22 @@ export function GetStartedEntry() {
   if (summary.total === 0) {
     return null;
   }
-  const checkinQuest = questsLoadable.data.find((quest) => {
-    return quest.key === "checkin";
-  });
 
   return (
     <>
-      <DropdownMenu onOpenChange={setMenuOpen}>
+      <DropdownMenu
+        open={panelOpen}
+        onOpenChange={(open) => {
+          setPanelOpen(open);
+          if (open) {
+            detach(
+              refreshRewards(pageSignal),
+              Reason.DomCallback,
+              "refresh get started rewards",
+            );
+          }
+        }}
+      >
         <DropdownMenuTrigger
           render={
             <Button
@@ -1093,6 +1074,7 @@ export function GetStartedEntry() {
           quests={questsLoadable.data}
           summary={summary}
           handoffs={handoffs}
+          copy={copy}
           checkinPending={checkinLoadable.state === "loading"}
         />
       </DropdownMenu>
@@ -1102,12 +1084,22 @@ export function GetStartedEntry() {
           handoffs[key]();
         }}
       />
-      {/* The quest the dialog reports on is the one the panel just checked in,
-          so the dialog exists exactly when that quest does. */}
-      {checkinQuest && (
+      {reward?.questKey === "checkin" && (
         <GetStartedCheckinDialog
-          reward={checkinQuest.rewardAmount}
-          streak={summary.checkinStreak}
+          reward={reward.rewardAmount}
+          streak={rewardNotice?.checkinStreak ?? summary.checkinStreak}
+          onClose={() => {
+            dismissReward(reward.id);
+          }}
+        />
+      )}
+      {reward && reward.questKey !== "checkin" && (
+        <GetStartedQuestRewardDialog
+          claim={reward}
+          questName={copy[reward.questKey].name}
+          onClose={() => {
+            dismissReward(reward.id);
+          }}
         />
       )}
     </>

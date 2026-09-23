@@ -1,4 +1,7 @@
-import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
+import type {
+  GetStartedClaim,
+  GetStartedQuestKey,
+} from "@okouai/api-contracts/contracts/get-started";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -17,10 +20,8 @@ import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import {
-  checkinClaimedOpen$,
   getStartedQuests$,
   questIntroKey$,
-  setCheckinClaimedOpen$,
   setQuestIntroKey$,
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
@@ -595,22 +596,27 @@ function QuestConnectModal() {
 export function GetStartedCheckinDialog({
   reward,
   streak,
+  onClose,
 }: {
   reward: number;
   /** Consecutive days, named here because it is the reason to come back. */
   streak: number;
+  onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const open = useGet(checkinClaimedOpen$);
-  const setOpen = useSet(setCheckinClaimedOpen$);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
       <DialogContent smMaxWidth={680}>
-        {/* The milestone joins the same two panels as every other quest
-            screen. It keeps the one thing a reward screen needs that a step
-            screen does not -- the amount at display size -- but it stops
-            being the one dialog in the flow with its own shape. */}
+        {/* Keep the daily confirmation in the same two-panel frame as the
+            other quest screens, with its reward amount leading the body. */}
         <div className="-m-6 flex items-stretch">
           <QuestFigure art="checkinWeek" />
           <div className="flex min-w-0 flex-1 flex-col gap-3 p-6">
@@ -622,7 +628,7 @@ export function GetStartedCheckinDialog({
               </DialogTitle>
               {/* The streak, not the amount, is what brings someone back
                   tomorrow, and the screen never said it. It reads as the
-                  subtitle but it is not the dialog's description: a milestone
+                  subtitle but it is not the dialog's description: a check-in
                   at streak 0 is reachable, and the slot that names the screen
                   has to be the line that is always there. */}
               {streak > 0 && (
@@ -645,20 +651,15 @@ export function GetStartedCheckinDialog({
               )}
             </p>
             {/* The component rather than a hand-written paragraph, so this
-                screen's body prose takes the same leading as the other six
-                instead of its own. */}
+                screen's body prose takes the same leading as the other quest
+                screens instead of its own. */}
             <DialogDescription>
               {t(($) => {
                 return $.chat.agentPage.getStarted.intro.checkin.description;
               })}
             </DialogDescription>
             <DialogFooter className="mt-auto">
-              <Button
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                }}
-              >
+              <Button type="button" onClick={onClose}>
                 {t(($) => {
                   return $.chat.agentPage.getStarted.intro.checkin.confirm;
                 })}
@@ -666,6 +667,71 @@ export function GetStartedCheckinDialog({
             </DialogFooter>
           </div>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Confirms a Get started reward after the grant has settled. */
+export function GetStartedQuestRewardDialog({
+  claim,
+  questName,
+  onClose,
+}: {
+  claim: GetStartedClaim;
+  questName: string;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const balanceDescription =
+    claim.rewardTarget === "org"
+      ? t(($) => {
+          return $.chat.agentPage.getStarted.rewardDialog
+            .organizationDescription;
+        })
+      : t(($) => {
+          return $.chat.agentPage.getStarted.rewardDialog.personalDescription;
+        });
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent smMaxWidth={680}>
+        <DialogHeader>
+          <DialogTitle className="pr-7">
+            {t(($) => {
+              return $.chat.agentPage.getStarted.rewardDialog.title;
+            })}
+          </DialogTitle>
+          <DialogDescription>{questName}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col items-center gap-3 py-2 text-center">
+          <span className="flex size-12 items-center justify-center rounded-full bg-brand-subtle text-brand-text">
+            <Coins className="size-6" aria-hidden="true" />
+          </span>
+          <p className="text-2xl font-semibold tabular-nums tracking-tight text-brand-text">
+            {t(
+              ($) => {
+                return $.chat.agentPage.getStarted.rewardDialog.amount;
+              },
+              { amount: formatLocalizedNumber(claim.rewardAmount) },
+            )}
+          </p>
+          <p className="text-sm text-muted-foreground">{balanceDescription}</p>
+        </div>
+        <DialogFooter>
+          <Button type="button" onClick={onClose}>
+            {t(($) => {
+              return $.chat.agentPage.getStarted.rewardDialog.confirm;
+            })}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

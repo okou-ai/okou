@@ -1482,6 +1482,13 @@
           "alreadyRedeemed": "帖子已被使用",
           "postMustMention": "需要提到{{assistantName}}"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} 积分",
+          "confirm": "回去干活",
+          "organizationDescription": "积分已添加到工作区余额。",
+          "personalDescription": "积分已添加到你的余额。",
+          "title": "做得好！"
+        },
         "rewardsNote": "奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
         "share": {
           "action": "分享",

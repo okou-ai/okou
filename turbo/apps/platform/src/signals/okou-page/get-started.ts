@@ -2,15 +2,25 @@ import { command, computed, state } from "ccstate";
 import {
   GET_STARTED_REWARDS_CHANGED_EVENT,
   getStartedContract,
+  type GetStartedClaim,
   type GetStartedQuestKey,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitches$ } from "../external/feature-switch.ts";
+import { localStorageSignals } from "../external/local-storage.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import { detach, Reason, resetSignal, waitForOperation } from "../utils.ts";
+import {
+  detach,
+  isRecord,
+  jsonParseOr,
+  Reason,
+  resetSignal,
+  settle,
+  waitForOperation,
+} from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 
@@ -65,11 +75,240 @@ const reloadGetStarted$ = command(({ set }) => {
     return value + 1;
   });
 });
-export const setGetStartedMenuOpen$ = command(({ set }, open: boolean) => {
-  if (open) {
-    set(reloadGetStarted$);
-  }
+
+const {
+  get$: getStartedRewardNoticeIdsRaw$,
+  set$: setGetStartedRewardNoticeIdsRaw$,
+} = localStorageSignals("get-started-reward-notice-ids");
+const MAX_STORED_GET_STARTED_ACCOUNTS = 12;
+const MAX_STORED_GET_STARTED_REWARDS = 20;
+
+interface GetStartedRewardQueue {
+  readonly identityKey: string | null;
+  readonly claims: readonly GetStartedRewardNotice[];
+}
+
+interface GetStartedRewardNotice {
+  readonly claim: GetStartedClaim;
+  /** The streak at the time of a direct check-in, when the client knows it. */
+  readonly checkinStreak: number | null;
+}
+
+const internalGetStartedRewardQueue$ = state<GetStartedRewardQueue>({
+  identityKey: null,
+  claims: [],
 });
+export const pendingGetStartedReward$ = computed((get) => {
+  return get(internalGetStartedRewardQueue$).claims[0] ?? null;
+});
+
+function storedGetStartedRewardIds(
+  raw: string | null,
+): Record<string, string[]> {
+  if (raw === null) {
+    return {};
+  }
+  const parsed = jsonParseOr<unknown>(raw, {});
+  if (!isRecord(parsed) || Array.isArray(parsed)) {
+    return {};
+  }
+  const entries: Record<string, string[]> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (
+      Array.isArray(value) &&
+      value.every((id): id is string => {
+        return typeof id === "string";
+      })
+    ) {
+      entries[key] = value.slice(-MAX_STORED_GET_STARTED_REWARDS);
+    }
+  }
+  return entries;
+}
+
+function serializeGetStartedRewardIds(
+  stored: Record<string, string[]>,
+  identityKey: string,
+  ids: readonly string[],
+): string {
+  const accounts = Object.entries(stored).filter(([key]) => {
+    return key !== identityKey;
+  });
+  const next = [
+    ...accounts.slice(-(MAX_STORED_GET_STARTED_ACCOUNTS - 1)),
+    [identityKey, [...new Set(ids)].slice(-MAX_STORED_GET_STARTED_REWARDS)],
+  ];
+  return JSON.stringify(Object.fromEntries(next));
+}
+
+const reconcileGetStartedRewardNotices$ = command(
+  async (
+    { get, set },
+    status: GetStartedStatus,
+    signal: AbortSignal,
+  ): Promise<readonly GetStartedClaim[]> => {
+    const identity = await get(runtimeAuthenticatedIdentity$);
+    signal.throwIfAborted();
+    const identityKey = JSON.stringify([identity.orgId, identity.userId]);
+    const stored = storedGetStartedRewardIds(
+      get(getStartedRewardNoticeIdsRaw$),
+    );
+    const granted = status.recentGrants
+      .filter((claim) => {
+        return claim.status === "granted";
+      })
+      .reverse();
+    const previouslySeen = stored[identityKey];
+    if (!previouslySeen) {
+      // The first snapshot is the baseline. Past rewards must not all open a
+      // dialog the first time this version reaches an existing workspace.
+      set(
+        setGetStartedRewardNoticeIdsRaw$,
+        serializeGetStartedRewardIds(
+          stored,
+          identityKey,
+          granted.map((claim) => {
+            return claim.id;
+          }),
+        ),
+      );
+      set(internalGetStartedRewardQueue$, (queue) => {
+        return queue.identityKey === identityKey
+          ? queue
+          : { identityKey, claims: [] };
+      });
+      return [];
+    }
+
+    const seen = new Set(previouslySeen);
+    const queue = get(internalGetStartedRewardQueue$);
+    const currentClaims = queue.identityKey === identityKey ? queue.claims : [];
+    const queuedIds = new Set(
+      currentClaims.map((notice) => {
+        return notice.claim.id;
+      }),
+    );
+    const newlyGranted = granted.filter((claim) => {
+      return !seen.has(claim.id) && !queuedIds.has(claim.id);
+    });
+    set(internalGetStartedRewardQueue$, {
+      identityKey,
+      claims: [
+        ...currentClaims,
+        ...newlyGranted.map((claim) => {
+          return {
+            claim,
+            checkinStreak:
+              claim.questKey === "checkin" ? status.checkinStreak : null,
+          };
+        }),
+      ],
+    });
+    return newlyGranted;
+  },
+);
+
+/** The check-in response is authoritative, even if it races the first snapshot. */
+const queueGetStartedReward$ = command(
+  async (
+    { get, set },
+    claim: GetStartedClaim,
+    checkinStreak: number,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (claim.status !== "granted" || claim.questKey !== "checkin") {
+      return;
+    }
+    const identity = await get(runtimeAuthenticatedIdentity$);
+    signal.throwIfAborted();
+    const identityKey = JSON.stringify([identity.orgId, identity.userId]);
+    const queue = get(internalGetStartedRewardQueue$);
+    const currentClaims = queue.identityKey === identityKey ? queue.claims : [];
+    const currentNotice = currentClaims.find((notice) => {
+      return notice.claim.id === claim.id;
+    });
+    if (currentNotice) {
+      set(internalGetStartedRewardQueue$, {
+        identityKey,
+        claims: currentClaims.map((notice) => {
+          return notice.claim.id === claim.id
+            ? { ...notice, checkinStreak }
+            : notice;
+        }),
+      });
+      return;
+    }
+    const seenIds = storedGetStartedRewardIds(
+      get(getStartedRewardNoticeIdsRaw$),
+    )[identityKey];
+    if (seenIds?.includes(claim.id)) {
+      return;
+    }
+    set(internalGetStartedRewardQueue$, {
+      identityKey,
+      claims: [...currentClaims, { claim, checkinStreak }],
+    });
+  },
+);
+
+export const refreshGetStartedRewardStatus$ = command(
+  async (
+    { get, set },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly status: GetStartedStatus | null;
+    readonly newlyGranted: readonly GetStartedClaim[];
+  }> => {
+    set(reloadGetStarted$);
+    const status = await waitForOperation(get(getStartedStatus$), signal);
+    signal.throwIfAborted();
+    if (!status) {
+      return { status: null, newlyGranted: [] };
+    }
+    const newlyGranted = await set(
+      reconcileGetStartedRewardNotices$,
+      status,
+      signal,
+    );
+    if (newlyGranted.length > 0) {
+      detach(
+        set(reloadAccountMenuCreditBalances$, signal),
+        Reason.Daemon,
+        "reload get started credit balances",
+      );
+    }
+    return { status, newlyGranted };
+  },
+);
+
+export const dismissGetStartedReward$ = command(
+  ({ get, set }, claimId: string) => {
+    const queue = get(internalGetStartedRewardQueue$);
+    const claim = queue.claims.find((candidate) => {
+      return candidate.claim.id === claimId;
+    });
+    if (!claim || !queue.identityKey) {
+      return;
+    }
+
+    const stored = storedGetStartedRewardIds(
+      get(getStartedRewardNoticeIdsRaw$),
+    );
+    set(
+      setGetStartedRewardNoticeIdsRaw$,
+      serializeGetStartedRewardIds(stored, queue.identityKey, [
+        ...(stored[queue.identityKey] ?? []),
+        claim.claim.id,
+      ]),
+    );
+    set(internalGetStartedRewardQueue$, {
+      identityKey: queue.identityKey,
+      claims: queue.claims.filter((candidate) => {
+        return candidate.claim.id !== claim.claim.id;
+      }),
+    });
+  },
+);
 
 /**
  * The latest share claim, which carries what the row cannot: which post is in
@@ -236,29 +475,10 @@ export const submitSharePost$ = command(
   },
 );
 
-/** Whether the check-in confirmation is showing; the check-in itself already ran. */
-const internalCheckinClaimedOpen$ = state(false);
-export const checkinClaimedOpen$ = computed((get) => {
-  return get(internalCheckinClaimedOpen$);
-});
-export const setCheckinClaimedOpen$ = command(({ set }, open: boolean) => {
-  set(internalCheckinClaimedOpen$, open);
-});
-
-/**
- * Which check-ins are worth a whole screen.
- *
- * The first one, and every full week after it. A daily habit that opens a modal
- * every single day stops being a reward somewhere around the fourth day and
- * starts being a thing to dismiss, so the ordinary day gets a toast instead.
- */
-export function isCheckinMilestone(streak: number): boolean {
-  return streak <= 1 || streak % 7 === 0;
-}
-
 export const checkInGetStarted$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<number> => {
-    await accept(
+    const previousStreak = (await get(getStartedSummary$)).checkinStreak;
+    const { body: claim } = await accept(
       get(apiClient$)(getStartedContract).checkin({
         fetchOptions: { signal },
       }),
@@ -266,28 +486,37 @@ export const checkInGetStarted$ = command(
       signal,
     );
     signal.throwIfAborted();
-    set(reloadGetStarted$);
-    const [status] = await Promise.all([
-      waitForOperation(get(getStartedStatus$), signal),
-      set(reloadAccountMenuCreditBalances$, signal),
-    ]);
+    const optimisticStreak = previousStreak + 1;
+    await set(queueGetStartedReward$, claim, optimisticStreak, signal);
     signal.throwIfAborted();
-    // The streak the server now holds, so the caller can pick the surface that
-    // fits this particular day rather than the same one every day.
-    return status?.checkinStreak ?? 0;
+    const refresh = await settle(
+      set(refreshGetStartedRewardStatus$, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    const checkinStreak = refresh.ok
+      ? (refresh.value.status?.checkinStreak ?? optimisticStreak)
+      : optimisticStreak;
+    await set(queueGetStartedReward$, claim, checkinStreak, signal);
+    signal.throwIfAborted();
+    if (!refresh.ok || refresh.value.newlyGranted.length === 0) {
+      detach(
+        set(reloadAccountMenuCreditBalances$, signal),
+        Reason.DomCallback,
+        "reload get started credit balances",
+      );
+    }
+    return checkinStreak;
   },
 );
 
 const refreshGetStartedFromRealtime$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-    set(reloadGetStarted$);
-    const data = await waitForOperation(get(getStartedStatus$), signal);
+  async ({ set }, signal: AbortSignal): Promise<boolean> => {
+    const { status } = await set(refreshGetStartedRewardStatus$, signal);
     signal.throwIfAborted();
-    if (!data) {
+    if (!status) {
       return true;
     }
-    await set(reloadAccountMenuCreditBalances$, signal);
-    signal.throwIfAborted();
     return false;
   },
 );
@@ -302,15 +531,24 @@ export const setupGetStartedRewards$ = command(
         if (!switches[FeatureSwitchKey.GetStartedQuests]) {
           return;
         }
-        set(
-          setAblyLoop$,
-          {
-            topic: GET_STARTED_REWARDS_CHANGED_EVENT,
-            loopCommand$: refreshGetStartedFromRealtime$,
-            options: { runOnSubscribe: true },
-          },
-          ownerSignal,
-        );
+        for (const topic of [
+          GET_STARTED_REWARDS_CHANGED_EVENT,
+          "connector:changed",
+          "customConnectorListChanged",
+          "slack:changed",
+        ]) {
+          set(
+            setAblyLoop$,
+            {
+              topic,
+              loopCommand$: refreshGetStartedFromRealtime$,
+              options: {
+                runOnSubscribe: topic === GET_STARTED_REWARDS_CHANGED_EVENT,
+              },
+            },
+            ownerSignal,
+          );
+        }
       })(signal),
       Reason.Daemon,
       "get started",
