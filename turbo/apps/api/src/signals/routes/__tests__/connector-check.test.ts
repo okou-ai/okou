@@ -434,6 +434,11 @@ describe("POST /api/connectors/diagnostics/check", () => {
       outcome: "resolved",
       mode: "url",
       connector: { connectorSlug: "aws" },
+      environmentNames: expect.arrayContaining([
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+      ]),
       permission: {
         kind: "matched",
         permissions: [
