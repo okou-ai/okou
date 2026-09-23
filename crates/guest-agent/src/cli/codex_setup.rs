@@ -75,10 +75,17 @@ fn setup_codex_with_values(
     let setup_start = Instant::now();
     let codex_home = std::path::PathBuf::from(codex_home_dir);
     let (desired, mode_label) = if codex_oauth_mode {
+        let account_id = codex_oauth_account_id
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| {
+                AgentError::Execution(
+                    "Codex OAuth run is missing CODEX_OAUTH_ACCOUNT_ID".to_string(),
+                )
+            })?;
         (
             DesiredCodexAuth::ChatGpt {
                 now: chrono::Utc::now(),
-                account_id: codex_oauth_account_id,
+                account_id,
             },
             "chatgpt",
         )
@@ -106,4 +113,23 @@ fn setup_codex_with_values(
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codex_oauth_requires_selected_workspace_id_before_writing_auth() {
+        let tmp = tempfile::tempdir().unwrap();
+        let codex_home = tmp.path().join(".codex");
+        let codex_home_dir = codex_home.to_str().unwrap();
+
+        for account_id in [None, Some(""), Some(" ")] {
+            let error = setup_codex_with_values(true, account_id, codex_home_dir, "")
+                .expect_err("Codex OAuth must not use a placeholder workspace ID");
+            assert!(error.to_string().contains("missing CODEX_OAUTH_ACCOUNT_ID"));
+            assert!(!codex_home.join("auth.json").exists());
+        }
+    }
 }

@@ -25,10 +25,9 @@
 
 use std::path::Path;
 
-use api_contracts::generated::constants::codex_oauth_token::placeholders::{
-    CHATGPT_ACCOUNT_ID as PLACEHOLDER_CHATGPT_ACCOUNT_ID,
-    CHATGPT_REFRESH_TOKEN as PLACEHOLDER_CHATGPT_REFRESH_TOKEN,
-};
+#[cfg(test)]
+use api_contracts::generated::constants::codex_oauth_token::placeholders::CHATGPT_ACCOUNT_ID as PLACEHOLDER_CHATGPT_ACCOUNT_ID;
+use api_contracts::generated::constants::codex_oauth_token::placeholders::CHATGPT_REFRESH_TOKEN as PLACEHOLDER_CHATGPT_REFRESH_TOKEN;
 use base64::Engine;
 use chrono::{DateTime, Utc};
 use guest_contracts::runtime_paths::{self, PrivateFileReplacementTarget};
@@ -50,9 +49,9 @@ use crate::error::AgentError;
 pub(crate) const PLACEHOLDER_PLAN_TYPE: &str = "plus";
 
 /// Far-future JWT `exp` offset, in seconds. For a parseable access token,
-/// Codex 0.147.0's `AuthManager::should_refresh_proactively` returns true when
+/// Codex 0.156.1's `AuthManager::should_refresh_proactively` returns true when
 /// its `exp` is no later than five minutes from now:
-/// <https://github.com/openai/codex/blob/rust-v0.147.0/codex-rs/login/src/auth/manager.rs#L2762-L2784>.
+/// <https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/auth/manager.rs#L2955-L2974>.
 /// This version is pinned by `CODEX_CLI_VERSION` in
 /// `crates/runner/scripts/build-template.sh`; an `exp` ~100 years from now
 /// therefore keeps the predicate false during runs.
@@ -71,7 +70,7 @@ const AUTH_JSON_MODE: u32 = 0o600;
 pub(crate) enum DesiredCodexAuth<'a> {
     ChatGpt {
         now: DateTime<Utc>,
-        account_id: Option<&'a str>,
+        account_id: &'a str,
     },
     ApiKey {
         api_key: &'a str,
@@ -250,8 +249,7 @@ pub(crate) fn reconcile_codex_auth_state(
 
     match desired {
         DesiredCodexAuth::ChatGpt { now, account_id } => {
-            let auth_json =
-                build_chatgpt_auth_json(now, account_id.unwrap_or(PLACEHOLDER_CHATGPT_ACCOUNT_ID))?;
+            let auth_json = build_chatgpt_auth_json(now, account_id)?;
             let serialized = serde_json::to_string(&auth_json)?;
             write_auth_json_atomic(codex_home, &serialized)
         }
@@ -303,7 +301,7 @@ mod tests {
             codex_home,
             DesiredCodexAuth::ChatGpt {
                 now,
-                account_id: None,
+                account_id: PLACEHOLDER_CHATGPT_ACCOUNT_ID,
             },
         )
     }
@@ -451,7 +449,7 @@ mod tests {
             &codex_home,
             DesiredCodexAuth::ChatGpt {
                 now: fixed_now(),
-                account_id: Some(account_id),
+                account_id,
             },
         )
         .unwrap();

@@ -12,10 +12,11 @@ The API adds this non-credential identifier to Codex OAuth run environments
 while retaining the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
 and Pi. Deploy the API before the Runner image pinned to Codex 0.156.1. An older
 Runner ignores the additive field and continues using Codex 0.155.1. A newer
-Runner with an older API falls back to the placeholder workspace ID and can
-fail workspace discovery, so do not promote that combination. Existing queued
-runs retain their captured environment and should drain on their original
-Runner during the rollout.
+Runner with an older API rejects Codex OAuth setup because the workspace ID is
+missing, so do not promote that combination. Runs queued before API promotion
+also retain their captured environment without the new field. Let old Runners
+claim and drain those runs before promoting new Runners, or recreate the runs
+after API promotion; draining only already-running work is not sufficient.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
