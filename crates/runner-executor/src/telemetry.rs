@@ -1890,7 +1890,7 @@ mod tests {
             ))
             .unwrap();
         let expected = serde_json::to_value(
-            &serde_json::from_str::<guest_contracts::oom_evidence::OomEvidence>(include_str!(
+            serde_json::from_str::<guest_contracts::oom_evidence::OomEvidence>(include_str!(
                 "../../guest-contracts/tests/fixtures/contained-tool-oom.json"
             ))
             .unwrap(),

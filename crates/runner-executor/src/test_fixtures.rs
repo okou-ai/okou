@@ -1,3 +1,15 @@
+// The opt-in feature builds assertion-heavy fixtures for dependent Runner tests.
+// Keep these test-only allowances within the fixture module.
+#![cfg_attr(
+    feature = "test-support",
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
+
 pub mod execution_context;
 pub use runner_host::test_fixtures::ignored_child;
 pub mod raw_http;
