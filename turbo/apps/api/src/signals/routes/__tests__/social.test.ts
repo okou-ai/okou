@@ -1895,6 +1895,43 @@ describe("managed SocialKit route", () => {
     }
   });
 
+  it("rejects contradictory Instagram comment continuation without billing", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    await fundActor(actor);
+    const pricing = await setupConfiguredPricing();
+    const beforeCredits = await credits(actor);
+
+    server.use(
+      providerHandler("GET", "/instagram/comments", () => {
+        return HttpResponse.json(
+          providerResponse({
+            comments: [{ id: "one" }],
+            commentCount: 1,
+            hasMore: true,
+            cursor: "next",
+            collectionStatus: "exhausted",
+            stopReason: "upstream_exhausted",
+          }),
+        );
+      }),
+    );
+
+    const response = await accept(
+      client(pricing.resolution)(socialContract).request({
+        headers: authenticate(actor),
+        body: requestForPath("/instagram/comments", {
+          url: "https://instagram.com/p/example",
+          limit: 10,
+        }),
+      }),
+      [502],
+    );
+    expectApiError(response.body);
+    expect(response.body.error.code).toBe("SOCIALKIT_INVALID_RESPONSE");
+    expect(await credits(actor)).toBe(beforeCredits);
+  });
+
   it("uses reported comment totals to prevent false completion", async () => {
     const actor = createBddApi(context).user();
     configureProvider();

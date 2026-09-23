@@ -3788,6 +3788,50 @@ describe("okou social command", () => {
     });
   });
 
+  it("keeps an Instagram partial stop partial when the requested count is met", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            {
+              state: "provider_limited",
+              itemsReturned: 1,
+              reason: "provider_partial",
+              providerOutcome: {
+                collectionStatus: "partial",
+                stopReason: "repeated_cursor",
+              },
+            },
+            {
+              comments: [{ id: "one" }],
+              commentCount: null,
+              hasMore: false,
+              collectionStatus: "partial",
+              stopReason: "repeated_cursor",
+            },
+          ),
+        );
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "comments",
+      "https://instagram.com/p/example",
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    const result = JSON.parse(output()) as Readonly<Record<string, unknown>>;
+    expect(result).toMatchObject({
+      status: "partial",
+      collection: { state: "provider_limited", itemsReturned: 1 },
+      warnings: [{ code: "PROVIDER_LIMITED" }],
+    });
+  });
+
   it("marks a complete provider page caller-limited when trimming overshoot", async () => {
     server.use(
       http.post("http://localhost:3000/api/social/request", () => {
