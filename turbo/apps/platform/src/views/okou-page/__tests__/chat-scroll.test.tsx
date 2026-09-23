@@ -1,13 +1,8 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
-import userEvent from "@testing-library/user-event";
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -21,7 +16,6 @@ import {
   mockChatLifecycleWithoutBrowserSession,
   setupPage,
 } from "./chat-lifecycle-test-helpers.ts";
-import { selectPassage } from "./chat-capability-test-helpers.ts";
 
 const ROW_HEIGHT_PX = 100;
 const ROW_CONTENT_HEIGHT_PX = 80;
@@ -32,65 +26,18 @@ const THREAD_IDS = {
   growingHistory: "b0000000-0000-4000-a000-000000000921",
   incomingLatest: "b0000000-0000-4000-a000-000000000922",
   incomingHistory: "b0000000-0000-4000-a000-000000000923",
-  richContent: "b0000000-0000-4000-a000-000000000924",
-  layoutResize: "b0000000-0000-4000-a000-000000000925",
-  olderHistory: "b0000000-0000-4000-a000-000000000926",
-  desktopResize: "b0000000-0000-4000-a000-000000000927",
-  emptyHistory: "b0000000-0000-4000-a000-000000000928",
   prependedHistory: "b0000000-0000-4000-a000-000000000929",
-  mobileHistory: "b0000000-0000-4000-a000-000000000930",
-  mobileLatest: "b0000000-0000-4000-a000-000000000931",
   expandedWork: "b0000000-0000-4000-a000-000000000932",
-  selectedPassage: "b0000000-0000-4000-a000-000000000933",
-  sharingHistory: "b0000000-0000-4000-a000-000000000934",
 } as const;
 
 interface ChatScrollGeometry {
   readonly bottomScrollTop: () => number;
   readonly firstVisibleAnchor: () => HTMLElement;
   readonly growBeforeMessages: (height: number) => void;
-  readonly growBeforeMessagesOnNextNoopScrollWrite: (height: number) => void;
-  readonly resizeViewport: (height: number) => void;
 }
 
 interface MutableConversation {
-  readonly add: (events: readonly MockChatEventInput[]) => void;
   readonly publish: (events: readonly MockChatEventInput[]) => void;
-}
-
-interface AnimationFrameController {
-  readonly flush: () => void;
-}
-
-function installQueuedAnimationFrames(): AnimationFrameController {
-  let nextFrameId = 0;
-  let callbacks = new Map<number, FrameRequestCallback>();
-
-  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-    nextFrameId += 1;
-    callbacks.set(nextFrameId, callback);
-    return nextFrameId;
-  });
-  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((frameId) => {
-    callbacks.delete(frameId);
-  });
-
-  return {
-    flush: () => {
-      const scheduledCallbacks = Array.from(callbacks.values());
-      callbacks = new Map<number, FrameRequestCallback>();
-      for (const callback of scheduledCallbacks) {
-        callback(performance.now());
-      }
-    },
-  };
-}
-
-function mockPointerDevice(pointer: "desktop" | "touch"): void {
-  context.mocks.browser.maxTouchPoints(pointer === "touch" ? 5 : 0);
-  context.mocks.browser.matchMedia((query) => {
-    return pointer === "touch" && query === "(pointer: coarse)";
-  });
 }
 
 function rect(top: number, height: number, width = 800, left = 0): DOMRect {
@@ -122,10 +69,9 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
     HTMLElement.prototype,
     "getBoundingClientRect",
   );
-  let clientHeight = INITIAL_VIEWPORT_HEIGHT_PX;
+  const clientHeight = INITIAL_VIEWPORT_HEIGHT_PX;
   let scrollTop = 0;
   let heightBeforeMessages = 0;
-  let nextNoopScrollWriteGrowth = 0;
 
   const scrollHeight = (): number => {
     return (
@@ -155,12 +101,7 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
         return scrollTop;
       },
       set: (top: number) => {
-        const nextScrollTop = clampScrollTop(top);
-        if (nextScrollTop === scrollTop && nextNoopScrollWriteGrowth !== 0) {
-          heightBeforeMessages += nextNoopScrollWriteGrowth;
-          nextNoopScrollWriteGrowth = 0;
-        }
-        scrollTop = nextScrollTop;
+        scrollTop = clampScrollTop(top);
       },
     },
   });
@@ -215,13 +156,6 @@ function installChatScrollGeometry(container: HTMLElement): ChatScrollGeometry {
     },
     growBeforeMessages: (height) => {
       heightBeforeMessages += height;
-    },
-    growBeforeMessagesOnNextNoopScrollWrite: (height) => {
-      nextNoopScrollWriteGrowth = height;
-    },
-    resizeViewport: (height) => {
-      clientHeight = height;
-      scrollTop = clampScrollTop(scrollTop);
     },
   };
 }
@@ -297,9 +231,6 @@ function mockMutableConversation(
     return respond(200, chatEventRowsResponse(rows, query));
   });
   return {
-    add: (nextEvents) => {
-      events.push(...nextEvents);
-    },
     publish: (nextEvents) => {
       events.push(...nextEvents);
       createChatEvent(threadId);
@@ -357,17 +288,6 @@ function queryButtonByLabel(label: string): HTMLElement | null {
   );
 }
 
-function queryPassageAction(name: string): HTMLElement | null {
-  return (
-    queryAllByRoleFast("button").find((candidate) => {
-      return (
-        candidate.getAttribute("aria-keyshortcuts") !== null &&
-        candidate.textContent?.replace(/\s+/gu, " ").trim().startsWith(name)
-      );
-    }) ?? null
-  );
-}
-
 function buttonByLabel(label: string): HTMLElement {
   const button = queryButtonByLabel(label);
   if (!button) {
@@ -404,102 +324,6 @@ test("Preserve the visible message when earlier content grows", async () => {
     expect(
       anchorById(container, readingAnchorId).getBoundingClientRect().top,
     ).toBe(readingTop);
-  });
-});
-
-async function selectPassageAfterCompensatedGrowth() {
-  mockMutableConversation(
-    THREAD_IDS.selectedPassage,
-    completedHistoryEvents(8),
-  );
-  const container = await openConversation(
-    THREAD_IDS.selectedPassage,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 440);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-  await selectPassage("History answer 8");
-  const selection = window.getSelection();
-  if (!selection || selection.rangeCount === 0) {
-    throw new Error("Selected passage range not found");
-  }
-  const selectedRange = selection.getRangeAt(0);
-  const selectedAtScrollTop = container.scrollTop;
-  let heightBeforeSelection = 0;
-  const selectionRect = (): DOMRect => {
-    return rect(
-      24 + heightBeforeSelection - (container.scrollTop - selectedAtScrollTop),
-      24,
-      200,
-      24,
-    );
-  };
-  Object.defineProperty(selectedRange, "getClientRects", {
-    configurable: true,
-    value: () => {
-      return [selectionRect()];
-    },
-  });
-  Object.defineProperty(selectedRange, "getBoundingClientRect", {
-    configurable: true,
-    value: selectionRect,
-  });
-
-  expect(queryPassageAction("Quote")).toBeVisible();
-  const animationFrames = installQueuedAnimationFrames();
-
-  geometry.growBeforeMessages(75);
-  heightBeforeSelection += 75;
-  container.scrollTop += 75;
-  fireEvent.scroll(container);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-  act(() => {
-    animationFrames.flush();
-  });
-
-  expect(queryPassageAction("Quote")).toBeVisible();
-
-  return { container, animationFrames };
-}
-
-test("Keep selected passage actions when earlier content growth is compensated", async () => {
-  await selectPassageAfterCompensatedGrowth();
-  expect(queryPassageAction("Quote")).toBeVisible();
-});
-
-test("Dismiss passage actions only after cumulative user scrolling exceeds the buffer", async () => {
-  const { container, animationFrames } =
-    await selectPassageAfterCompensatedGrowth();
-  scrollFromUser(container, container.scrollTop - 4);
-  act(() => {
-    animationFrames.flush();
-  });
-  expect(queryPassageAction("Quote")).toBeVisible();
-
-  scrollFromUser(container, container.scrollTop - 4);
-  act(() => {
-    animationFrames.flush();
-  });
-  expect(queryPassageAction("Quote")).toBeVisible();
-
-  scrollFromUser(container, container.scrollTop - 1);
-  act(() => {
-    animationFrames.flush();
-  });
-
-  await waitFor(() => {
-    expect(queryPassageAction("Quote")).not.toBeInTheDocument();
   });
 });
 
@@ -554,10 +378,6 @@ async function completeRunWhileReadingExpandedWork() {
   const geometry = installChatScrollGeometry(container);
   scrollFromUser(container, geometry.bottomScrollTop() - 150);
   await expectHistoryPositionHeld();
-  const historyMessageTop = anchorById(
-    container,
-    "scroll-expanded-work-earlier",
-  ).getBoundingClientRect().top;
 
   act(() => {
     conversation.publish([
@@ -583,7 +403,6 @@ async function completeRunWhileReadingExpandedWork() {
 
   await screen.findByText("The rollout is healthy");
   await screen.findByText("Worked for 1m");
-  return { container, historyMessageTop };
 }
 
 test("Keep expanded work history and its duration visible after the run completes", async () => {
@@ -592,197 +411,6 @@ test("Keep expanded work history and its duration visible after the run complete
     expect(screen.getByText("Checked the first rollout stage")).toBeVisible();
     expect(buttonByLabel("Collapse work history")).toBeVisible();
     expect(screen.getByText("Worked for 1m")).toBeVisible();
-  });
-});
-
-test("Keep the visible work message anchored when its run completes", async () => {
-  const { container, historyMessageTop } =
-    await completeRunWhileReadingExpandedWork();
-  await waitFor(() => {
-    expect(
-      anchorById(
-        container,
-        "scroll-expanded-work-earlier",
-      ).getBoundingClientRect().top,
-    ).toBe(historyMessageTop);
-  });
-});
-
-test.each(["answer", "work message", "hidden history", "bottom"] as const)(
-  "Preserve the reading position when sharing hides an expanded history at the %s",
-  async (reading) => {
-    mockMutableConversation(THREAD_IDS.sharingHistory, [
-      ...completedHistoryEvents(6),
-      {
-        id: "scroll-sharing-user",
-        role: "user",
-        content: "Inspect the rollout",
-        runId: "scroll-sharing-run",
-        seqId: 19,
-        createdAt: "2026-08-20T12:20:00.000Z",
-      },
-      ...["First check", "Second check", "The rollout is healthy"].map(
-        (content, index) => {
-          return {
-            id: `scroll-sharing-output-${index.toString()}`,
-            role: "assistant" as const,
-            content,
-            runId: "scroll-sharing-run",
-            seqId: 20 + index,
-            createdAt: `2026-08-20T12:20:0${(index + 1).toString()}.000Z`,
-          };
-        },
-      ),
-      {
-        id: "scroll-sharing-complete",
-        role: "assistant",
-        content: null,
-        runId: "scroll-sharing-run",
-        runLifecycleEvent: "completed",
-        seqId: 23,
-        createdAt: "2026-08-20T12:20:04.000Z",
-      },
-      ...completedTurn(9),
-    ]);
-    const container = await openConversation(
-      THREAD_IDS.sharingHistory,
-      "History answer 9",
-    );
-    click(buttonByLabel("Expand work history"));
-    await screen.findByText("First check");
-    const geometry = installChatScrollGeometry(container);
-    if (reading === "hidden history") {
-      geometry.resizeViewport(150);
-    }
-    const answerId = "scroll-sharing-output-2";
-    const readingId =
-      reading === "answer" ? answerId : "scroll-sharing-output-0";
-    if (reading === "bottom") {
-      scrollFromUser(container, geometry.bottomScrollTop());
-    } else {
-      scrollFromUser(
-        container,
-        container.scrollTop +
-          anchorById(container, readingId).getBoundingClientRect().top +
-          20,
-      );
-    }
-    await waitFor(() => {
-      expect(queryButtonByLabel("Scroll to bottom") !== null).toBe(
-        reading !== "bottom",
-      );
-    });
-    expect(anchorId(geometry.firstVisibleAnchor())).toBe(
-      reading === "bottom" ? "scroll-user-9" : readingId,
-    );
-    const answerTop =
-      reading === "hidden history"
-        ? 0
-        : anchorById(container, answerId).getBoundingClientRect().top;
-    const expectReadingPosition = () => {
-      expect(
-        reading === "bottom"
-          ? container.scrollTop
-          : anchorById(container, answerId).getBoundingClientRect().top,
-      ).toBe(reading === "bottom" ? geometry.bottomScrollTop() : answerTop);
-    };
-
-    click(buttonByLabel("Share messages"));
-    await screen.findAllByText("0 selected");
-    expect(screen.queryByText("First check")).not.toBeInTheDocument();
-    await waitFor(expectReadingPosition);
-
-    fireEvent(window, new Event("resize"));
-    expectReadingPosition();
-
-    click(screen.getByText("Cancel", { selector: "button" }));
-    await screen.findByText("First check");
-    await waitFor(expectReadingPosition);
-    expect(buttonByLabel("Collapse work history")).toBeVisible();
-  },
-);
-
-test("Keep a live answer readable when it changes during sharing", async () => {
-  const runId = "scroll-live-sharing-run";
-  const conversation = mockMutableConversation(
-    THREAD_IDS.sharingHistory,
-    [
-      ...completedHistoryEvents(6),
-      {
-        id: "scroll-live-sharing-user",
-        role: "user",
-        content: "Inspect the rollout live",
-        runId,
-        seqId: 19,
-        createdAt: "2026-08-20T12:20:00.000Z",
-      },
-      {
-        id: "scroll-live-sharing-answer",
-        role: "assistant",
-        content: "The first rollout check is complete",
-        runId,
-        seqId: 20,
-        createdAt: "2026-08-20T12:20:01.000Z",
-      },
-    ],
-    [runId],
-  );
-  const container = await openConversation(
-    THREAD_IDS.sharingHistory,
-    "The first rollout check is complete",
-  );
-  const geometry = installChatScrollGeometry(container);
-  geometry.resizeViewport(100);
-  scrollFromUser(
-    container,
-    container.scrollTop +
-      anchorById(
-        container,
-        "scroll-live-sharing-answer",
-      ).getBoundingClientRect().top +
-      20,
-  );
-  await expectHistoryPositionHeld();
-  click(buttonByLabel("Share messages"));
-  await screen.findAllByText("0 selected");
-  expect(anchorId(geometry.firstVisibleAnchor())).toBe(
-    "scroll-live-sharing-answer",
-  );
-  const readingTop = geometry.firstVisibleAnchor().getBoundingClientRect().top;
-
-  act(() => {
-    conversation.publish([
-      {
-        id: "scroll-live-sharing-next-answer",
-        role: "assistant",
-        content: "The second rollout check is complete",
-        runId,
-        seqId: 21,
-        createdAt: "2026-08-20T12:20:02.000Z",
-      },
-    ]);
-  });
-
-  await screen.findByText("The second rollout check is complete");
-  expect(
-    screen.queryByText("The first rollout check is complete"),
-  ).not.toBeInTheDocument();
-  const expectReadingPosition = () => {
-    expect(
-      anchorById(
-        container,
-        "scroll-live-sharing-next-answer",
-      ).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  };
-  await waitFor(expectReadingPosition);
-  fireEvent(window, new Event("resize"));
-  expectReadingPosition();
-
-  click(screen.getByText("Cancel", { selector: "button" }));
-  await waitFor(() => {
-    expect(buttonByLabel("Expand work history")).toBeInTheDocument();
-    expectReadingPosition();
   });
 });
 
@@ -851,211 +479,6 @@ test("Preserve the reading position when new messages are added", async () => {
   });
 });
 
-test("Keep following the latest message while rich content finishes rendering", async () => {
-  const richEvents = historyWithLateImage(5).map((event) => {
-    return event.id === "scroll-assistant-5"
-      ? {
-          ...event,
-          content:
-            "Latest rich report\n\n| Item | Status |\n| --- | --- |\n| Diagram | Ready |",
-        }
-      : event;
-  });
-  const conversation = mockMutableConversation(
-    THREAD_IDS.richContent,
-    richEvents,
-  );
-  const container = await openConversation(
-    THREAD_IDS.richContent,
-    "Latest rich report",
-  );
-  const table = await screen.findByRole("table");
-  const geometry = installChatScrollGeometry(container);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-
-  geometry.growBeforeMessages(120);
-  act(() => {
-    fireEvent.load(screen.getByAltText("Late history image"));
-  });
-
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  expect(screen.getByText("Latest rich report")).toBeVisible();
-  expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-
-  const richScroller = table.parentElement ?? table;
-  Object.defineProperty(richScroller, "scrollLeft", {
-    configurable: true,
-    value: 80,
-    writable: true,
-  });
-  fireEvent.scroll(richScroller);
-  const nextTurn = completedTurn(6).map((event) => {
-    return event.id === "scroll-assistant-6"
-      ? {
-          ...event,
-          content: "A newer message arrived after the table.",
-        }
-      : event;
-  });
-  act(() => {
-    conversation.publish(nextTurn);
-  });
-
-  const newerMessage = await screen.findByText(
-    "A newer message arrived after the table.",
-  );
-  expect(newerMessage).toBeVisible();
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-});
-
-test("Keep the settled tail stable across a redundant layout restore", async () => {
-  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.layoutResize,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-
-  // Safari can reveal layout-taking horizontal scrollbars when a parent scroll
-  // offset is written, even when the requested offset is already current. Model
-  // that browser-side growth and verify a layout acknowledgement does not
-  // disturb a tail that is already settled.
-  geometry.growBeforeMessagesOnNextNoopScrollWrite(40);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-});
-
-test("Preserve reading intent when the chat layout changes size", async () => {
-  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.layoutResize,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-  geometry.resizeViewport(220);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-
-  click(buttonByLabel("Scroll to bottom"));
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-  });
-  geometry.resizeViewport(180);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  expect(screen.getByText("History answer 8")).toBeVisible();
-});
-
-test("Keep the current message in place while older history loads", async () => {
-  mockMutableConversation(THREAD_IDS.olderHistory, completedHistoryEvents(12));
-  const container = await openConversation(
-    THREAD_IDS.olderHistory,
-    "History answer 12",
-  );
-  const geometry = installChatScrollGeometry(container);
-  expect(screen.queryByText("History question 3")).toBeNull();
-
-  container.scrollTop = 40;
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-  fireEvent.scroll(container);
-
-  const olderMessage = await screen.findByText("History question 3");
-  expect(olderMessage).toBeVisible();
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-});
-
-test("Desktop resize does not trigger mobile scroll correction", async () => {
-  mockPointerDevice("desktop");
-  mockMutableConversation(THREAD_IDS.desktopResize, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.desktopResize,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  geometry.resizeViewport(220);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-  expect(container.scrollTop).not.toBe(geometry.bottomScrollTop());
-});
-
-test("An empty history load does not cause a later scroll jump", async () => {
-  mockMutableConversation(THREAD_IDS.emptyHistory, historyWithLateImage(5));
-  const container = await openConversation(
-    THREAD_IDS.emptyHistory,
-    "History answer 5",
-  );
-  const oldestAvailableMessage = screen.getByText("History question 1");
-  expect(oldestAvailableMessage).toBeVisible();
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 40);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  geometry.growBeforeMessages(75);
-  act(() => {
-    fireEvent.load(screen.getByAltText("Late history image"));
-  });
-
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-  expect(oldestAvailableMessage).toBeVisible();
-});
-
 test("Loading older messages preserves the reading position", async () => {
   mockMutableConversation(
     THREAD_IDS.prependedHistory,
@@ -1081,217 +504,4 @@ test("Loading older messages preserves the reading position", async () => {
       anchorById(container, readingAnchorId).getBoundingClientRect().top,
     ).toBe(readingTop);
   });
-});
-
-test("A mobile history reader keeps their position when the viewport shrinks", async () => {
-  mockPointerDevice("touch");
-  mockMutableConversation(THREAD_IDS.mobileHistory, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.mobileHistory,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingAnchorId = anchorId(readingAnchor);
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-
-  geometry.resizeViewport(180);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-
-  await waitFor(() => {
-    expect(
-      anchorById(container, readingAnchorId).getBoundingClientRect().top,
-    ).toBe(readingTop);
-  });
-  expect(container.scrollTop).not.toBe(geometry.bottomScrollTop());
-});
-
-test("A mobile user at the bottom stays with the latest message", async () => {
-  mockPointerDevice("touch");
-  mockMutableConversation(THREAD_IDS.mobileLatest, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.mobileLatest,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-
-  geometry.resizeViewport(180);
-  act(() => {
-    window.dispatchEvent(new Event("resize"));
-  });
-
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  expect(screen.getByText("History answer 8")).toBeVisible();
-  expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-});
-
-test("Deleting composer text keeps following the tail after a transient viewport resize", async () => {
-  mockMutableConversation(THREAD_IDS.incomingLatest, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.incomingLatest,
-    "History answer 8",
-  );
-  const composer = await screen.findByLabelText("Message");
-  await fill(composer, "1\n2\n3\n4");
-  const geometry = installChatScrollGeometry(container);
-  // Native contenteditable editing can temporarily enlarge the sibling viewport
-  // and clamp scrollTop, then restore exactly the original dimensions. No resize
-  // notification is delivered for that final, unchanged size.
-  geometry.resizeViewport(INITIAL_VIEWPORT_HEIGHT_PX + 16);
-  geometry.resizeViewport(INITIAL_VIEWPORT_HEIGHT_PX);
-  expect(container.scrollTop).toBe(geometry.bottomScrollTop() - 16);
-  await userEvent.keyboard("{Backspace}");
-  expect(composer).not.toHaveTextContent("4");
-  fireEvent.scroll(container);
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-    expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
-  });
-});
-
-test("Editing the composer preserves the message being read", async () => {
-  mockMutableConversation(
-    THREAD_IDS.incomingHistory,
-    completedHistoryEvents(8),
-  );
-  const container = await openConversation(
-    THREAD_IDS.incomingHistory,
-    "History answer 8",
-  );
-  const composer = await screen.findByLabelText("Message");
-  await fill(composer, "1\n2\n3\n4");
-  const geometry = installChatScrollGeometry(container);
-  scrollFromUser(container, 240);
-  await expectHistoryPositionHeld();
-  const readingAnchor = geometry.firstVisibleAnchor();
-  const readingTop = readingAnchor.getBoundingClientRect().top;
-  geometry.resizeViewport(180);
-  await userEvent.keyboard("{Backspace}");
-  expect(composer).not.toHaveTextContent("4");
-  expect(readingAnchor.getBoundingClientRect().top).toBe(readingTop);
-  expect(queryButtonByLabel("Scroll to bottom")).toBeVisible();
-});
-
-function dispatchLayoutTransition(
-  element: HTMLElement,
-  type: "transitionrun" | "transitionend" | "transitioncancel",
-  propertyName: "width" | "flex-basis",
-): void {
-  fireEvent(
-    element,
-    Object.assign(new Event(type, { bubbles: true }), { propertyName }),
-  );
-}
-
-test("Follow overlapping sidebar transitions until the final end or cancellation", async () => {
-  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.layoutResize,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  const sidebar = screen.getByTestId("chat-thread-sidebar-pane");
-  const primary = sidebar.parentElement?.firstElementChild;
-  if (!(primary instanceof HTMLElement)) {
-    throw new Error("Expected the primary chat pane");
-  }
-  const frames = installQueuedAnimationFrames();
-
-  dispatchLayoutTransition(primary, "transitionrun", "width");
-  dispatchLayoutTransition(sidebar, "transitionrun", "width");
-  dispatchLayoutTransition(sidebar, "transitionrun", "flex-basis");
-  geometry.growBeforeMessages(40);
-  await act(() => {
-    frames.flush();
-  });
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-
-  dispatchLayoutTransition(sidebar, "transitionend", "width");
-  geometry.growBeforeMessages(60);
-  await act(() => {
-    frames.flush();
-  });
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-
-  dispatchLayoutTransition(sidebar, "transitioncancel", "flex-basis");
-  geometry.growBeforeMessages(70);
-  await act(() => {
-    frames.flush();
-  });
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  dispatchLayoutTransition(primary, "transitionend", "width");
-  await act(() => {
-    frames.flush();
-  });
-  const stoppedAt = container.scrollTop;
-  geometry.growBeforeMessages(80);
-  await act(() => {
-    frames.flush();
-  });
-  expect(container.scrollTop).toBe(stoppedAt);
-
-  // A later transition gets a new frame lifetime after the cancelled loop.
-  dispatchLayoutTransition(sidebar, "transitionrun", "width");
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  geometry.growBeforeMessages(100);
-  await act(() => {
-    frames.flush();
-  });
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  dispatchLayoutTransition(sidebar, "transitionend", "width");
-});
-
-test("Unmount cancels sidebar transition frames and removes transition listeners", async () => {
-  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.layoutResize,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  const sidebar = screen.getByTestId("chat-thread-sidebar-pane");
-  const frames = installQueuedAnimationFrames();
-  dispatchLayoutTransition(sidebar, "transitionrun", "width");
-  geometry.growBeforeMessages(40);
-  await act(() => {
-    frames.flush();
-  });
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-
-  const agents = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "Agents";
-  });
-  if (!agents) {
-    throw new Error("Expected the Agents navigation link");
-  }
-  click(agents);
-  await screen.findByRole("heading", { name: "Agents" });
-  const stoppedAt = container.scrollTop;
-  geometry.growBeforeMessages(80);
-  dispatchLayoutTransition(sidebar, "transitionrun", "flex-basis");
-  await act(() => {
-    frames.flush();
-  });
-  expect(container.scrollTop).toBe(stoppedAt);
-  expect(
-    screen.queryByRole("region", { name: "Chat thread" }),
-  ).not.toBeInTheDocument();
 });

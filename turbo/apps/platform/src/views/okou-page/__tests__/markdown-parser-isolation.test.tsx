@@ -92,13 +92,9 @@ async function prepareLiteralPlusMarkdownChat() {
   return { chat, rows };
 }
 
-test("Opening Instructions preserves literal plus signs in the initial message", async () => {
-  await prepareLiteralPlusMarkdownChat();
-  await expect(screen.findByText("++Plain message++")).resolves.toBeVisible();
-});
-
 test("Opening Instructions preserves literal plus signs through streamed revisions", async () => {
   const { chat, rows } = await prepareLiteralPlusMarkdownChat();
+  await expect(screen.findByText("++Plain message++")).resolves.toBeVisible();
   rows.push(
     chat.outputMessage("**Streaming:** ++Reply", {
       id: "streamed-markdown",

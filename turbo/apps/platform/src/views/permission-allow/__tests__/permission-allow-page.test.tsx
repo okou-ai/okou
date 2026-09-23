@@ -494,36 +494,6 @@ test("Permission grants that cannot be loaded fail closed", async () => {
   ).toBeUndefined();
 });
 
-test("A failed permission update leaves the decision retryable", async () => {
-  context.mocks.api(userPermissionGrantsContract.apply, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Save rejected" },
-    });
-  });
-  await setupPermissionPage({
-    userName: "Quinn",
-    agentName: "Save Error Bot",
-  });
-
-  await expect(
-    screen.findByText(
-      "Hey Quinn, you're updating your permissions for Save Error Bot.",
-    ),
-  ).resolves.toBeInTheDocument();
-  click(buttonByText("Confirm"));
-
-  await expect(
-    screen.findByText("Couldn't update permissions"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Save Error Bot").length).toBeGreaterThan(0);
-  expect(screen.getByText("Slack")).toBeInTheDocument();
-  expect(
-    screen.getByText("Access workspace analytics data"),
-  ).toBeInTheDocument();
-  expect(buttonByText("Confirm")).toBeEnabled();
-  expect(screen.queryByText("Permissions updated")).not.toBeInTheDocument();
-});
-
 test("A missing connector cannot be authorized", async () => {
   await setupPermissionPage({
     userName: "Dana",

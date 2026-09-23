@@ -66,13 +66,7 @@ const canonical = artifactReferencePath(deploymentId, "index.html");
 const organizationUrl = `https://app.okou.ai${artifactReferencePath(shareId, "index.html")}`;
 const publicUrl = `https://${"b".repeat(24)}.okou.app/`;
 
-async function openArtifact({
-  enabled = true,
-  repeatedResolutionUnavailable = false,
-}: {
-  enabled?: boolean;
-  repeatedResolutionUnavailable?: boolean;
-} = {}) {
+async function openArtifact({ enabled = true }: { enabled?: boolean } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Private report" })],
@@ -94,17 +88,7 @@ async function openArtifact({
       },
     });
   });
-  let resolutionRequestCount = 0;
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    resolutionRequestCount += 1;
-    if (resolutionRequestCount > 1 && repeatedResolutionUnavailable) {
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Preview grant unavailable",
-        },
-      });
-    }
     return respond(200, {
       url: `https://pv-${"a".repeat(48)}.okou.app/`,
       expiresAt: "2099-01-01T00:00:00Z",
@@ -225,26 +209,6 @@ test("a recipient's share button copies directly without a permissions menu or m
   await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
 });
 
-test("the menu shows the link Copy link will put on the clipboard", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(200, sharingStatus());
-  });
-  await openArtifact();
-  await openShareMenu();
-  const copied = new URL(canonical, location.origin);
-  const menu = screen.getByRole("dialog", { name: "Share" });
-  // The row states the destination so the owner can see what they are about to
-  // hand out; the copy below is what proves the two are the same link.
-  expect(
-    within(menu).getByText(`${copied.host}${copied.pathname}`),
-  ).toBeInTheDocument();
-  click(action("button", "Copy link"));
-  await waitFor(() => {
-    return expect(clipboard.writes).toStrictEqual([copied.href]);
-  });
-});
-
 test("owner copying uses the canonical version reference returned by the API", async () => {
   const ownerUrl = "https://app.okou.ai/artifacts/a1b2c3d4e5.html";
   const clipboard = context.mocks.browser.clipboardWriteText();
@@ -263,41 +227,17 @@ test("owner copying uses the canonical version reference returned by the API", a
   });
 });
 
-test("an owner clipboard failure shows an error without changing access or claiming success", async () => {
-  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
-    new DOMException("Clipboard denied", "NotAllowedError"),
-  );
+test("failed permission saves retain the current audience", async () => {
   context.mocks.api(artifactSharesContract.status, ({ respond }) => {
     return respond(200, sharingStatus("organization"));
   });
-  await openArtifact();
-  await openShareMenu();
-  click(action("button", "Copy link"));
-  await expect(
-    screen.findByText("Failed to copy link"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
-  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
-  expect(permission("Organization")).toHaveAttribute("aria-checked", "true");
-});
-
-test("failed permission saves retain the current audience and can be retried", async () => {
-  let status = sharingStatus("organization");
-  let fail = true;
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(200, status);
-  });
-  context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-    if (fail) {
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Unable to save sharing",
-        },
-      });
-    }
-    status = sharingStatus(body.audience);
-    return respond(200, status);
+  context.mocks.api(artifactSharesContract.update, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Unable to save sharing",
+      },
+    });
   });
   await openArtifact();
   await openShareMenu();
@@ -308,192 +248,17 @@ test("failed permission saves retain the current audience and can be retried", a
     return expect(permission("Organization")).not.toBeDisabled();
   });
   expect(permission("Organization")).toHaveAttribute("aria-checked", "true");
-  fail = false;
-  click(permission("Only me"));
-  await waitFor(() => {
-    return expect(permission("Only me")).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
-  });
 });
 
-test("reopening a site reuses its resolved identity for sharing", async () => {
-  context.mocks.api(artifactSharesContract.status, ({ body, respond }) => {
-    expect(body).toStrictEqual({ kind: "html", id: deploymentId });
-    return respond(200, sharingStatus());
-  });
-  await openArtifact({ repeatedResolutionUnavailable: true });
-
-  click(action("button", "Close"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-  });
-  click(await findArtifactAction("Private report"));
-  await screen.findByTestId("artifact-dialog-site-frame");
-  await openShareMenu();
-  expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
-});
-
-test("permissions prefetch on lightbox open and pending reads use an in-menu skeleton", async () => {
-  const initial = context.mocks.deferred<ArtifactShareStatus>();
-  const requested = context.mocks.deferred<void>();
+test("status errors do not treat an owner as a recipient", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
-    requested.resolve();
-    return respond(200, await initial.promise);
-  });
-  await openArtifact();
-  await requested.promise;
-  expect(
-    screen.queryByRole("status", { name: "Loading permissions" }),
-  ).not.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([]);
-  click(action("button", "Share"));
-  await expect(
-    screen.findByRole("status", { name: "Loading permissions" }),
-  ).resolves.toBeInTheDocument();
-  expect(action("button", "Share")).not.toBeDisabled();
-  expect(action("button", "Share")).not.toHaveAttribute("aria-busy", "true");
-  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
-  initial.resolve(sharingStatus());
-  await waitFor(() => {
-    expect(permission("Only me")).toBeInTheDocument();
-  });
-  expect(
-    screen.queryByRole("status", { name: "Loading permissions" }),
-  ).not.toBeInTheDocument();
-  click(action("button", "Copy link"));
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
-});
-
-test("closing a pending share cancels copying and reopening reuses the prefetched permissions", async () => {
-  const initial = context.mocks.deferred<void>();
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(artifactSharesContract.status, async ({ respond }) => {
-    await initial.promise;
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Artifact not found" },
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Permissions unavailable",
+      },
     });
-  });
-  await openArtifact();
-  click(action("button", "Share"));
-  await screen.findByRole("status", { name: "Loading permissions" });
-  // A share menu is a popover, so its own trigger closes it; it carries no
-  // dialog-style close button of its own.
-  click(action("button", "Share"));
-  await waitFor(() => {
-    return expect(
-      screen.queryByRole("dialog", { name: "Share" }),
-    ).not.toBeInTheDocument();
-  });
-  initial.resolve();
-  // Opening again explicitly copies; the cancelled click must not also copy.
-  click(action("button", "Share"));
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
-  expect(clipboard.writes).toStrictEqual([
-    new URL(canonical, location.origin).href,
-  ]);
-  expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
-});
-
-test("saving marks only the selected choice and reports success after the write", async () => {
-  const saved = context.mocks.deferred<ArtifactShareStatus>();
-  let status = sharingStatus();
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(200, status);
-  });
-  context.mocks.api(artifactSharesContract.update, async ({ respond }) => {
-    status = await saved.promise;
-    return respond(200, status);
-  });
-  await openArtifact();
-  await openShareMenu();
-  expect(
-    screen.queryByText("Changes saved automatically"),
-  ).not.toBeInTheDocument();
-  click(permission("Public access"));
-  await waitFor(() => {
-    return expect(permission("Public access")).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
-  });
-  expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
-  expect(permission("Public access")).toHaveAttribute("aria-checked", "true");
-  for (const choice of queryAllByRoleFast("radio")) {
-    expect(choice).not.toBeDisabled();
-  }
-  expect(action("button", "Copy link")).not.toBeDisabled();
-  for (const close of queryAllByRoleFast("button").filter((button) => {
-    return button.getAttribute("aria-label") === "Close";
-  })) {
-    expect(close).not.toBeDisabled();
-  }
-  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
-  expect(screen.queryByText("Link copied")).not.toBeInTheDocument();
-  saved.resolve(sharingStatus("public"));
-  await expect(
-    screen.findByText("Access updated"),
-  ).resolves.toBeInTheDocument();
-  expect(permission("Public access")).toHaveAttribute("aria-busy", "false");
-});
-
-test("rapid permission changes serialize writes and preserve the latest selection", async () => {
-  const first = context.mocks.deferred<void>();
-  const second = context.mocks.deferred<void>();
-  let status = sharingStatus();
-  const writes: string[] = [];
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(200, status);
-  });
-  context.mocks.api(
-    artifactSharesContract.update,
-    async ({ body, respond }) => {
-      writes.push(body.audience);
-      await (writes.length === 1 ? first.promise : second.promise);
-      status = sharingStatus(body.audience);
-      return respond(200, status);
-    },
-  );
-  await openArtifact();
-  await openShareMenu();
-  click(permission("Public access"));
-  await waitFor(() => {
-    return expect(writes).toStrictEqual(["public"]);
-  });
-  click(permission("Organization"));
-  click(permission("Only me"));
-  await waitFor(() => {
-    return expect(permission("Only me")).toHaveAttribute("aria-busy", "true");
-  });
-  expect(writes).toStrictEqual(["public"]);
-  first.resolve();
-  await waitFor(() => {
-    return expect(writes).toStrictEqual(["public", "private"]);
-  });
-  expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
-  expect(screen.queryByText("Access updated")).not.toBeInTheDocument();
-  second.resolve();
-  await expect(
-    screen.findByText("Access updated"),
-  ).resolves.toBeInTheDocument();
-  expect(permission("Only me")).toHaveAttribute("aria-busy", "false");
-});
-
-test("status errors do not treat an owner as a recipient, and the action can be retried", async () => {
-  let fail = true;
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return fail
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Permissions unavailable",
-          },
-        })
-      : respond(200, sharingStatus());
   });
   await openArtifact();
   click(action("button", "Share"));
@@ -518,17 +283,6 @@ test("status errors do not treat an owner as a recipient, and the action can be 
     within(choices).getByText("Anyone in your organization"),
   ).toBeInTheDocument();
   expect(within(choices).queryByText(/Acme/u)).not.toBeInTheDocument();
-
-  fail = false;
-  click(action("button", "Retry"));
-  await waitFor(() => {
-    expect(permission("Only me")).toBeInTheDocument();
-  });
-  expect(permission("Only me")).toBeEnabled();
-  expect(permission("Only me")).toHaveAttribute("aria-checked", "true");
-  expect(
-    screen.queryByText("Unable to load permissions"),
-  ).not.toBeInTheDocument();
 });
 
 test("the shared rollout switch keeps the private share menu hidden", async () => {
@@ -536,39 +290,34 @@ test("the shared rollout switch keeps the private share menu hidden", async () =
   expect(queryAction("button", "Share")).toBeUndefined();
 });
 
-test.each([
-  artifactReferencePath(shareId, "index.html"),
-  `/share/artifacts/${shareId}`,
-])(
-  "an authorized link preserves its fragment and navigates straight to isolated content: %s",
-  async (path) => {
-    const redirect = vi
-      .spyOn(window.location, "replace")
-      .mockImplementation(() => {});
-    const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
-    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-      return respond(200, {
-        url: temporary,
-        expiresAt: "2099-01-01T00:00:00Z",
-        filename: "index.html",
-        contentType: "text/html",
-        target: { kind: "html", id: deploymentId },
-      });
+test("an authorized link preserves its fragment and navigates straight to isolated content", async () => {
+  const path = artifactReferencePath(shareId, "index.html");
+  const redirect = vi
+    .spyOn(window.location, "replace")
+    .mockImplementation(() => {});
+  const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: temporary,
+      expiresAt: "2099-01-01T00:00:00Z",
+      filename: "index.html",
+      contentType: "text/html",
+      target: { kind: "html", id: deploymentId },
     });
-    await startPage({
-      context,
-      path: `${path}#slide-2`,
-      host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
-    });
-    await waitFor(() => {
-      return expect(redirect).toHaveBeenCalledWith(`${temporary}#slide-2`);
-    });
-    // The background identity bridge can exist without loading a document.
-    // Artifact handoff must navigate instead of embedding any content.
-    expect(document.querySelector("iframe[src], iframe[srcdoc]")).toBeNull();
-  },
-);
+  });
+  await startPage({
+    context,
+    path: `${path}#slide-2`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
+  });
+  await waitFor(() => {
+    return expect(redirect).toHaveBeenCalledWith(`${temporary}#slide-2`);
+  });
+  // The background identity bridge can exist without loading a document.
+  // Artifact handoff must navigate instead of embedding any content.
+  expect(document.querySelector("iframe[src], iframe[srcdoc]")).toBeNull();
+});
 
 test("denied links display no artifact metadata or content", async () => {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {

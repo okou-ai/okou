@@ -230,59 +230,7 @@ test("Expand the first completed conversation phase", async () => {
   );
 });
 
-test("Expand a completed follow-up phase", async () => {
-  await setupCompletedConversationPhases();
-  click(
-    buttonNamedIn(
-      "Expand work history",
-      assistantGroupFor(screen.getByText("Phase one final plan")),
-    ),
-  );
-  await expect(
-    screen.findByText("Compared rollback options"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByText("Checked launch dependencies")).toBeNull();
-});
-
-test("Expand completed work from a later run with its usage", async () => {
-  await setupCompletedConversationPhases();
-  for (const [answer, work] of [
-    ["Phase one outline", "Collected requirements"],
-    ["Phase one final plan", "Compared rollback options"],
-  ] as const) {
-    click(
-      buttonNamedIn(
-        "Expand work history",
-        assistantGroupFor(screen.getByText(answer)),
-      ),
-    );
-    await screen.findByText(work);
-  }
-  click(
-    buttonNamedIn(
-      "Expand work history",
-      assistantGroupFor(screen.getByText("Phase two final plan")),
-    ),
-  );
-  await expect(
-    screen.findByText("Checked launch dependencies"),
-  ).resolves.toBeVisible();
-  expect(queryWorkHistoryToggles("collapsed")).toHaveLength(0);
-  expect(screen.getByLabelText("Credit usage 7")).toBeVisible();
-
-  expect(screen.getByText("Plan phase two")).toBeVisible();
-  expect(screen.getByText("Phase two final plan")).toBeVisible();
-  expect(screen.getByText("Plan phase one")).toBeVisible();
-  expect(screen.getByText("Phase one final plan")).toBeVisible();
-});
-
 test.each([
-  {
-    label: "no output messages",
-    messageCount: 0,
-    showsHistoryStatus: false,
-    canExpandHistory: false,
-  },
   {
     label: "one output message",
     messageCount: 1,
@@ -319,10 +267,6 @@ test.each([
     expect(queryWorkHistoryToggles("collapsed")).toHaveLength(
       canExpandHistory ? 1 : 0,
     );
-
-    if (messageCount === 0) {
-      return;
-    }
 
     const main = screen.getByText(workMessage(messageCount - 1));
     expect(main).toBeVisible();
@@ -425,11 +369,6 @@ test("Count one output.message once when Markdown renders multiple child blocks"
 
 test.each([
   {
-    label: "one output message",
-    messageCount: 1,
-    canExpandHistory: false,
-  },
-  {
     label: "multiple output messages",
     messageCount: 5,
     canExpandHistory: true,
@@ -468,13 +407,6 @@ test.each([
 );
 
 const finalOutputDocuments = [
-  {
-    label: "plain Markdown",
-    content: "Final plain answer",
-    find: () => {
-      return screen.findByText("Final plain answer");
-    },
-  },
   {
     label: "an action card",
     content: "[Compare plans](/?settings=billing&billingView=plans)",

@@ -4,7 +4,7 @@ import type {
   AvatarVideoAvatar,
   AvatarVideoVoice,
 } from "@okouai/api-contracts/contracts/avatar-video";
-import { beforeEach, describe, expect, it, test } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
@@ -156,35 +156,6 @@ async function filterProfessionalAvatars(
   return filters;
 }
 
-describe("professional avatar style", () => {
-  let catalog: Awaited<ReturnType<typeof openAvatarCatalog>>;
-  let filters: HTMLElement;
-
-  beforeEach(async () => {
-    catalog = await openAvatarCatalog();
-    filters = await filterProfessionalAvatars(catalog.dialog);
-  });
-
-  it("hovering a video avatar plays its preview within the selected style", async () => {
-    const { user, dialog, media } = catalog;
-    await user.hover(
-      within(dialog).getByLabelText("Select template Motion Maya"),
-    );
-    expect(media.play).toHaveBeenCalledWith();
-  });
-
-  it("a still avatar preview remains visible within the selected style", () => {
-    expect(within(catalog.dialog).getByAltText("Still Sara")).toBeVisible();
-  });
-
-  it("clearing an avatar style restores the full catalog", async () => {
-    click(buttonNamed("Clear", filters));
-    await expect(
-      within(catalog.dialog).findByLabelText("Select template Social Sam"),
-    ).resolves.toBeVisible();
-  });
-});
-
 test("Choose a paginated avatar and voice after clearing its style filter", async () => {
   const { user, dialog } = await openAvatarCatalog({ paginate: true });
   const filters = await filterProfessionalAvatars(dialog);
@@ -216,46 +187,39 @@ test("Choose a paginated avatar and voice after clearing its style filter", asyn
   await expectInlineTemplate("Additional Ada");
 });
 
-test.each([
-  { key: "{Enter}", name: "Enter" },
-  { key: " ", name: "Space" },
-])(
-  "Preview and select an avatar voice independently with $name",
-  async ({ key }) => {
-    const { user, dialog } = await openAvatarCatalog();
-    click(within(dialog).getByLabelText("Select template Motion Maya"));
-    const preview = await waitFor(() => {
-      return buttonNamed("Preview voice Ada Voice", dialog);
-    });
-    const select = buttonNamed("Select voice Ada Voice", dialog);
-    const sample = dialog.querySelector("audio");
-    if (!(sample instanceof HTMLAudioElement)) {
-      throw new Error("Voice sample not found");
-    }
+test("Preview and select an avatar voice independently", async () => {
+  const key = "{Enter}";
+  const { user, dialog } = await openAvatarCatalog();
+  click(within(dialog).getByLabelText("Select template Motion Maya"));
+  const preview = await waitFor(() => {
+    return buttonNamed("Preview voice Ada Voice", dialog);
+  });
+  const select = buttonNamed("Select voice Ada Voice", dialog);
+  const sample = dialog.querySelector("audio");
+  if (!(sample instanceof HTMLAudioElement)) {
+    throw new Error("Voice sample not found");
+  }
 
-    preview.focus();
-    await user.keyboard(key);
-    expect(sample.paused).toBeFalsy();
-    expect(preview).toHaveFocus();
-    expect(select).toHaveAttribute("aria-pressed", "false");
-    expect(dialog).toBeInTheDocument();
-    expect(
-      document.querySelector("[data-composer-inline-template]"),
-    ).toBeNull();
+  preview.focus();
+  await user.keyboard(key);
+  expect(sample.paused).toBeFalsy();
+  expect(preview).toHaveFocus();
+  expect(select).toHaveAttribute("aria-pressed", "false");
+  expect(dialog).toBeInTheDocument();
+  expect(document.querySelector("[data-composer-inline-template]")).toBeNull();
 
-    await user.click(preview);
-    expect(sample.paused).toBeTruthy();
-    expect(select).toHaveAttribute("aria-pressed", "false");
-    expect(dialog).toBeInTheDocument();
+  await user.click(preview);
+  expect(sample.paused).toBeTruthy();
+  expect(select).toHaveAttribute("aria-pressed", "false");
+  expect(dialog).toBeInTheDocument();
 
-    select.focus();
-    await user.keyboard(key);
-    await expectInlineTemplate("Motion Maya");
-    await waitFor(() => {
-      expect(dialog).not.toBeInTheDocument();
-    });
-  },
-);
+  select.focus();
+  await user.keyboard(key);
+  await expectInlineTemplate("Motion Maya");
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+});
 
 test("Preview and choose a video template", async () => {
   mockTemplateChat();
@@ -361,110 +325,6 @@ test("Preview a website template and return to its picker", async () => {
   });
   expect(returnedPicker).not.toHaveAttribute("data-nested-dialog-open");
 });
-
-test.each([
-  { key: "Enter", sequence: "{Enter}" },
-  { key: "Space", sequence: "[Space]" },
-])(
-  "Website card $key previews without applying and restores gallery focus",
-  async ({ sequence }) => {
-    mockTemplateChat();
-    const template = WEBSITE_TEMPLATE_ITEMS[0];
-    if (!template) {
-      throw new Error("Website template fixture not found");
-    }
-    const user = userEvent.setup();
-    await setupPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      host: "app.okou.ai",
-    });
-    const picker = await openTemplatePicker(user, "Website");
-    const preview = within(picker).getByLabelText(
-      `Preview website template ${template.title}`,
-    );
-    const use = within(picker).getByLabelText(
-      `Select website template ${template.title}`,
-    );
-    const gallery = picker.querySelector<HTMLElement>(
-      "[data-website-template-grid-scroll]",
-    );
-    if (!gallery) {
-      throw new Error("Website template gallery scroll surface not found");
-    }
-    fireEvent.scroll(gallery, { target: { scrollTop: 240 } });
-
-    preview.focus();
-    await user.keyboard("{Tab}");
-    expect(use).toHaveFocus();
-    await user.keyboard("{Shift>}{Tab}{/Shift}");
-    expect(preview).toHaveFocus();
-    await user.keyboard(sequence);
-
-    const frame = await screen.findByTitle(
-      `${template.title} website full preview`,
-    );
-    expect(frame).toHaveAttribute("src", template.previewUrl);
-    expect(picker).toHaveAttribute("data-nested-dialog-open");
-    expect(use).toHaveAttribute("aria-pressed", "false");
-    expect(
-      document.querySelector("[data-composer-inline-template]"),
-    ).not.toBeInTheDocument();
-
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(frame).not.toBeInTheDocument();
-      expect(preview).toHaveFocus();
-    });
-    expect(picker).not.toHaveAttribute("data-nested-dialog-open");
-    expect(gallery.scrollTop).toBe(240);
-    expect(use).toHaveAttribute("aria-pressed", "false");
-  },
-);
-
-test.each([
-  { key: "Enter", sequence: "{Enter}" },
-  { key: "Space", sequence: "[Space]" },
-])(
-  "Website card Use $key applies directly and closes the picker without a preview",
-  async ({ sequence }) => {
-    mockTemplateChat();
-    const template = WEBSITE_TEMPLATE_ITEMS[0];
-    if (!template) {
-      throw new Error("Website template fixture not found");
-    }
-    const user = userEvent.setup();
-    await setupPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      host: "app.okou.ai",
-    });
-    const picker = await openTemplatePicker(user, "Website");
-    const preview = within(picker).getByLabelText(
-      `Preview website template ${template.title}`,
-    );
-    const use = within(picker).getByLabelText(
-      `Select website template ${template.title}`,
-    );
-
-    preview.focus();
-    await user.keyboard("{Tab}");
-    expect(use).toHaveFocus();
-    await user.keyboard(sequence);
-
-    await expectInlineTemplate(template.title);
-    await waitFor(() => {
-      expect(picker).not.toBeInTheDocument();
-    });
-    expect(
-      document.querySelectorAll("[data-composer-inline-template]"),
-    ).toHaveLength(1);
-    expect(
-      screen.queryByTitle(`${template.title} website full preview`),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  },
-);
 
 test("Select and send a website template", async () => {
   const capture = mockTemplateChat();

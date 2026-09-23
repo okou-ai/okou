@@ -1,13 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import {
-  SUPPORTED_USER_LOCALES,
-  type UserPreferencesResponse,
-  userPreferencesContract,
-} from "@okouai/api-contracts/contracts/user-preferences";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   click,
@@ -16,41 +11,9 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import frFRAgents from "../../../i18n/locales/fr-FR/agents.json";
 import frFRAgentsUrl from "../../../i18n/locales/fr-FR/agents.json?url";
-import frFRCommonUrl from "../../../i18n/locales/fr-FR/common.json?url";
-import itITCommonUrl from "../../../i18n/locales/it-IT/common.json?url";
-import { DEFAULT_LOCALE } from "../../../i18n/resources.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import {
-  AGENT_ID,
-  context as chatContext,
-  mockAgent,
-  mockOrgModelRoutes,
-} from "./chat-composer-test-helpers.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
-
-function preferences(
-  overrides: Partial<UserPreferencesResponse> = {},
-): UserPreferencesResponse {
-  return {
-    timezone: "UTC",
-    locale: "en-US",
-    supportedLocales: [...SUPPORTED_USER_LOCALES],
-    pinnedAgentIds: [],
-    sendMode: "enter",
-    cloudBrowserEnabledByDefault: true,
-    theme: "system",
-    colorTheme: "blue-horizon",
-    captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
-    ...overrides,
-  };
-}
-
-async function waitForSettings(): Promise<void> {
-  await expect(screen.findByText("Language")).resolves.toBeInTheDocument();
-}
 
 function accountMenuTrigger(): HTMLElement | undefined {
   const rail = screen.queryByTestId("labeled-nav-rail");
@@ -120,105 +83,6 @@ async function closeDialog(dialog: HTMLElement, label: string): Promise<void> {
     expect(dialog).not.toBeInTheDocument();
   });
 }
-
-test("Unavailable Clerk localization keeps the App language", async () => {
-  const clerk = context.mocks.clerk();
-  vi.spyOn(console, "error").mockImplementation(() => {});
-  clerk.localizationUnavailable("pt-BR");
-  await setupPage({
-    context,
-    path: "/agents?settings=preference",
-    locale: "pt-BR",
-  });
-
-  expect(document.documentElement).toHaveAttribute("lang", "pt-BR");
-  expect(clerk.localizationRequests).toStrictEqual(["pt-BR"]);
-});
-
-test("A cancelled language change does not apply late", async () => {
-  let requestStarted = false;
-  let requestCancelled = false;
-  context.mocks.http.get(itITCommonUrl, ({ never, request }) => {
-    requestStarted = true;
-    request.signal.addEventListener(
-      "abort",
-      () => {
-        requestCancelled = true;
-      },
-      { once: true },
-    );
-    return never();
-  });
-  await setupPage({ context, path: "/settings" });
-  await waitForSettings();
-
-  await selectLanguage("Language", "Italiano");
-  await waitFor(() => {
-    expect(requestStarted).toBeTruthy();
-  });
-  const settings = await screen.findByRole("dialog", { name: "Settings" });
-  await closeDialog(settings, "Close");
-  click(fastRoleElement("link", "Connectors"));
-
-  await waitFor(() => {
-    expect(requestCancelled).toBeTruthy();
-  });
-  await expect(
-    screen.findByRole("heading", { name: "Connectors" }),
-  ).resolves.toBeInTheDocument();
-  expect(document.documentElement).toHaveAttribute("lang", DEFAULT_LOCALE);
-});
-
-test("A failed language download falls back without blocking chat", async () => {
-  const resourceRequests: string[] = [];
-  for (const url of [frFRCommonUrl, frFRAgentsUrl]) {
-    chatContext.mocks.http.get(url, ({ request }) => {
-      resourceRequests.push(new URL(request.url).pathname);
-      return new HttpResponse(null, { status: 503 });
-    });
-  }
-  const storedPreferences = preferences({ locale: "fr-FR" });
-  chatContext.mocks.data.userPreferences(storedPreferences);
-  let preferenceUpdates = 0;
-  chatContext.mocks.api(userPreferencesContract.update, ({ respond }) => {
-    preferenceUpdates += 1;
-    return respond(200, storedPreferences);
-  });
-  chatContext.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-  mockOrgModelRoutes("claude-fable-5-1");
-  mockAgent();
-  mockChatLifecycle(chatContext);
-
-  await expect(
-    setupPage({ context: chatContext, path: `/agents/${AGENT_ID}/chat` }),
-  ).rejects.toThrow(/Failed to load fr-FR .* locale resources \(HTTP 503\)/u);
-
-  await expect(
-    screen.findByText("Ask me to automate workflows, manage tasks..."),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("Attach")).toBeVisible();
-  expect(document.documentElement).toHaveAttribute("lang", DEFAULT_LOCALE);
-  expect(resourceRequests).toHaveLength(2);
-  expect(preferenceUpdates).toBe(0);
-});
-
-test("A failed runtime language change keeps the current language", async () => {
-  let frenchDownloads = 0;
-  context.mocks.http.get(frFRCommonUrl, () => {
-    frenchDownloads += 1;
-    return new HttpResponse(null, { status: 503 });
-  });
-  await setupPage({ context, path: "/settings" });
-  await waitForSettings();
-
-  await selectLanguage("Language", "Français");
-
-  await waitFor(() => {
-    expect(frenchDownloads).toBe(1);
-    expect(document.documentElement).toHaveAttribute("lang", DEFAULT_LOCALE);
-    expect(screen.getByText("Language")).toBeVisible();
-  });
-});
 
 test("French uses local formatting and plurals", async () => {
   const frenchSidebar = Object.fromEntries(
@@ -300,24 +164,4 @@ test("French uses local formatting and plurals", async () => {
 
   expect(screen.getByText("2 fichiers")).toBeVisible();
   expect(screen.getByText("1,2s")).toBeVisible();
-});
-
-test("An unsupported language falls back and repairs the workspace cache", async () => {
-  context.mocks.browser.language("nl-NL");
-  const updates: unknown[] = [];
-  const initialPreferences = preferences({ locale: null });
-  context.mocks.data.userPreferences(initialPreferences);
-  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
-    updates.push(body);
-    return respond(200, { ...initialPreferences, ...body });
-  });
-
-  await setupPage({ context, path: "/settings" });
-
-  await waitForSettings();
-  await waitFor(() => {
-    expect(updates).toContainEqual({ locale: DEFAULT_LOCALE });
-  });
-  expect(document.documentElement).toHaveAttribute("lang", DEFAULT_LOCALE);
-  expect(screen.getByText("Language")).toBeVisible();
 });

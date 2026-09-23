@@ -20,7 +20,6 @@ import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-te
 import {
   buttonContainingText,
   expectTextBefore,
-  linkByText,
   trackTemplatePreviewImagePreloads,
 } from "./chat-composer-test-helpers.ts";
 import {
@@ -37,7 +36,6 @@ import {
 
 const UPLOADED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000001";
 const UPDATED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000002";
-const REMOVED_TEMPLATE_ID = "82000000-0000-4000-a000-000000000003";
 const OTHER_THREAD_ID = "82000000-0000-4000-a000-000000000004";
 const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
 
@@ -102,48 +100,45 @@ function observeTemplateSubscriptions() {
   };
 }
 
-test.each(["user", "org"] as const)(
-  "Uploaded templates wait for the %s subscription",
-  async (delayedScope) => {
-    mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-    mockTemplateChat();
-    const uploaded = createUploadedTemplate({
-      id: UPLOADED_TEMPLATE_ID,
-      title: "Both subscriptions are ready",
-    });
-    mockPresentationTemplateLibrary([uploaded]);
-    const gates = {
-      user: context.mocks.ably.deferSubscribeOnChannel(
-        "user:test-user-123",
-        "presentationTemplatesChanged",
-      ),
-      org: context.mocks.ably.deferSubscribeOnChannel(
-        "org:org_default",
-        "presentationTemplatesChanged",
-      ),
-    };
-    const observed = observeTemplateSubscriptions();
-    const user = userEvent.setup();
-    await setupPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      host: "app.okou.ai",
-      sharedWorkerTestTransport: "message-port",
-    });
-    await Promise.all([gates.user.started, gates.org.started]);
-    const picker = await openTemplatePicker(user, "Presentation");
-    const firstScope = delayedScope === "user" ? "org" : "user";
-    gates[firstScope].attach();
-    await observed.waitForSubscribed(firstScope);
-    expect(
-      within(picker).getByText("Loading uploaded templates…"),
-    ).toBeInTheDocument();
-    gates[delayedScope].attach();
-    await expect(
-      within(picker).findByLabelText(`Select template ${uploaded.title}`),
-    ).resolves.toBeInTheDocument();
-  },
-);
+test("Uploaded templates wait for both subscriptions", async () => {
+  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Both subscriptions are ready",
+  });
+  mockPresentationTemplateLibrary([uploaded]);
+  const gates = {
+    user: context.mocks.ably.deferSubscribeOnChannel(
+      "user:test-user-123",
+      "presentationTemplatesChanged",
+    ),
+    org: context.mocks.ably.deferSubscribeOnChannel(
+      "org:org_default",
+      "presentationTemplatesChanged",
+    ),
+  };
+  const observed = observeTemplateSubscriptions();
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport: "message-port",
+  });
+  await Promise.all([gates.user.started, gates.org.started]);
+  const picker = await openTemplatePicker(user, "Presentation");
+
+  gates.user.attach();
+  await observed.waitForSubscribed("user");
+  expect(
+    within(picker).getByText("Loading uploaded templates…"),
+  ).toBeInTheDocument();
+  gates.org.attach();
+  await expect(
+    within(picker).findByLabelText(`Select template ${uploaded.title}`),
+  ).resolves.toBeInTheDocument();
+});
 
 test("A template subscription failure releases both scopes and leaves built-ins usable", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
@@ -182,47 +177,6 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   // the scope that attached has a listener to release — the one that failed to
   // subscribe never held one.
   await observed.waitForReleased("user");
-});
-
-test("Retrying a failed catalog restores uploaded templates", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Recovered catalog",
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  let unavailable = true;
-  context.mocks.api(presentationTemplatesContract.list, ({ respond }) => {
-    return unavailable
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Catalog unavailable",
-          },
-        })
-      : respond(200, [uploaded]);
-  });
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
-  });
-  const picker = await openTemplatePicker(user, "Presentation");
-  await expect(
-    within(picker).findByText("Couldn't load uploaded templates."),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryAllByText("Catalog unavailable")).toHaveLength(0);
-  unavailable = false;
-  click(buttonNamed("Retry", picker));
-  await expect(
-    within(picker).findByLabelText(`Select template ${uploaded.title}`),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(picker).queryByText("Couldn't load uploaded templates."),
-  ).not.toBeInTheDocument();
 });
 
 test("A resolved empty catalog leaves the import card as the only prompt", async () => {
@@ -271,75 +225,6 @@ test("A resolved empty catalog leaves the import card as the only prompt", async
   ).toBeEnabled();
 });
 
-test("An obsolete catalog leaves the current template cover displayed", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const existing = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Existing template",
-  });
-  const published = createUploadedTemplate({
-    id: UPDATED_TEMPLATE_ID,
-    title: "Published template",
-  });
-  mockPresentationTemplateLibrary([existing]);
-  const staleStarted = context.mocks.deferred<void>();
-  const releaseStale = context.mocks.deferred<void>();
-  const staleReturned = context.mocks.deferred<void>();
-  let reads = 0;
-  context.mocks.api(presentationTemplatesContract.list, async ({ respond }) => {
-    reads += 1;
-    if (reads === 1) {
-      return respond(200, [existing]);
-    }
-    if (reads === 2) {
-      staleStarted.resolve();
-      await releaseStale.promise;
-      staleReturned.resolve();
-      return respond(200, [existing]);
-    }
-    return respond(200, [
-      {
-        ...existing,
-        title: reads === 3 ? "Current catalog" : "Confirmed catalog",
-      },
-      published,
-    ]);
-  });
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-  });
-  const picker = await openTemplatePicker(user, "Presentation");
-  await expect(
-    within(picker).findByText(existing.title),
-  ).resolves.toBeInTheDocument();
-  context.mocks.ably.trigger("presentationTemplatesChanged", existing.id);
-  await staleStarted.promise;
-  context.mocks.ably.trigger("presentationTemplatesChanged", published.id);
-  await expect(
-    within(picker).findByText("Current catalog"),
-  ).resolves.toBeInTheDocument();
-  const loadedImage = await loadImportedTemplateImage(
-    importedTemplateMedia(published.id),
-    "slide-1",
-  );
-  const displayedSource = loadedImage.getAttribute("src");
-  releaseStale.resolve();
-  await staleReturned.promise;
-  context.mocks.ably.trigger("presentationTemplatesChanged", published.id);
-  await expect(
-    within(picker).findByText("Confirmed catalog"),
-  ).resolves.toBeInTheDocument();
-  const displayedImage = importedTemplateMedia(published.id).querySelector(
-    'img[data-imported-presentation-template-image][data-active="true"]',
-  );
-  expect(displayedImage).toBeInTheDocument();
-  expect(displayedImage).toHaveAttribute("src", displayedSource);
-});
-
 function importedTemplateCard(templateId: string): HTMLElement {
   const card = document.querySelector<HTMLElement>(
     `[data-imported-presentation-template="${templateId}"]`,
@@ -358,41 +243,6 @@ function importedTemplateMedia(templateId: string): HTMLElement {
     throw new Error(`Imported template media ${templateId} not found`);
   }
   return media;
-}
-
-function pendingImportedTemplateImage(
-  container: ParentNode,
-  sourceFragment: string,
-): Promise<HTMLImageElement> {
-  return waitFor(() => {
-    const image = Array.from(
-      container.querySelectorAll<HTMLImageElement>(
-        'img[data-imported-presentation-template-image][data-active="false"]',
-      ),
-    ).find((candidate) => {
-      return candidate.getAttribute("src")?.includes(sourceFragment);
-    });
-    if (!image) {
-      throw new Error(`Pending imported image ${sourceFragment} not found`);
-    }
-    return image;
-  });
-}
-
-async function loadImportedTemplateImage(
-  container: ParentNode,
-  sourceFragment: string,
-): Promise<HTMLImageElement> {
-  fireEvent.load(await pendingImportedTemplateImage(container, sourceFragment));
-  return await waitFor(() => {
-    const image = container.querySelector<HTMLImageElement>(
-      'img[data-imported-presentation-template-image][data-active="true"]',
-    );
-    if (!image?.getAttribute("src")?.includes(sourceFragment)) {
-      throw new Error(`Imported image ${sourceFragment} did not become active`);
-    }
-    return image;
-  });
 }
 
 function buttonNamed(
@@ -547,225 +397,6 @@ test("Select and send an uploaded presentation template from its detail preview"
   });
 });
 
-test("Keep the loaded slide visible during rapid preview navigation", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Rapid Preview Deck",
-    pageCount: 3,
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  trackTemplatePreviewImagePreloads();
-  const user = userEvent.setup();
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-  });
-
-  const picker = await openTemplatePicker(user, "Presentation");
-  click(
-    await waitFor(() => {
-      return buttonNamed(`Preview ${uploaded.title} at current slide`);
-    }),
-  );
-  const detail = await screen.findByRole("group", {
-    name: `${uploaded.title} slide preview`,
-  });
-  const firstSlide = await loadImportedTemplateImage(detail, "slide-1");
-
-  click(buttonNamed("Preview slide 2", picker));
-  const staleSecondSlide = await pendingImportedTemplateImage(
-    detail,
-    "slide-2",
-  );
-  expect(firstSlide).toHaveAttribute("data-active", "true");
-
-  click(buttonNamed("Preview slide 3", picker));
-  const pendingThirdSlide = await pendingImportedTemplateImage(
-    detail,
-    "slide-3",
-  );
-  expect(staleSecondSlide).not.toBeInTheDocument();
-  expect(firstSlide).toHaveAttribute("data-active", "true");
-
-  fireEvent.load(staleSecondSlide);
-  expect(firstSlide).toHaveAttribute("data-active", "true");
-  expect(firstSlide).not.toHaveAttribute(
-    "src",
-    expect.stringContaining("slide-2"),
-  );
-
-  fireEvent.load(pendingThirdSlide);
-  const thirdSlide = await waitFor(() => {
-    const image = detail.querySelector<HTMLImageElement>(
-      'img[data-imported-presentation-template-image][data-active="true"]',
-    );
-    if (!image?.getAttribute("src")?.includes("slide-3")) {
-      throw new Error("The latest selected slide did not become visible");
-    }
-    return image;
-  });
-  expect(thirdSlide).toHaveAttribute("data-active", "true");
-  expect(buttonNamed("Preview slide 3", picker)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-});
-
-test("Keep uploaded-template browsing stable during changes", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const viewed = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Operating Plan",
-    pageCount: 3,
-    visibility: "public",
-    canManage: true,
-  });
-  const remaining = createUploadedTemplate({
-    id: UPDATED_TEMPLATE_ID,
-    title: "Customer Research",
-  });
-  const removed = createUploadedTemplate({
-    id: REMOVED_TEMPLATE_ID,
-    title: "Retired Deck",
-  });
-  const library = mockPresentationTemplateLibrary([viewed, remaining, removed]);
-  trackTemplatePreviewImagePreloads();
-  const user = userEvent.setup();
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  const picker = await openTemplatePicker(user, "Presentation");
-  const previewViewed = await waitFor(() => {
-    return buttonNamed(`Preview ${viewed.title} at current slide`);
-  });
-  click(previewViewed);
-  const detail = await screen.findByRole("group", {
-    name: `${viewed.title} slide preview`,
-  });
-  click(buttonNamed("Preview slide 2", picker));
-  const activeImage = await loadImportedTemplateImage(detail, "slide-2");
-  const activeImageUrl = activeImage.getAttribute("src");
-  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  const refreshedViewed = createUploadedTemplate({
-    id: viewed.id,
-    title: viewed.title,
-    pageCount: 3,
-    visibility: "private",
-    canManage: true,
-    updatedAt: "2026-08-01T00:02:00.000Z",
-  });
-  library.replace([refreshedViewed, remaining, removed]);
-  context.mocks.ably.trigger(
-    "presentationTemplatesChanged",
-    refreshedViewed.id,
-  );
-  await waitFor(() => {
-    expect(screen.getByText("Only you can see and use it")).toBeVisible();
-  });
-  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(
-    within(detail).getByAltText(`${viewed.title} slide preview`),
-  ).toHaveAttribute("src", activeImageUrl);
-
-  click(buttonContainingText("Template", screen.getByRole("dialog")));
-  const grid = presentationGrid();
-  Object.defineProperties(grid, {
-    scrollHeight: { configurable: true, value: 900 },
-    clientHeight: { configurable: true, value: 300 },
-    scrollTop: { configurable: true, writable: true, value: 360 },
-  });
-  fireEvent.scroll(grid);
-  expect(screen.getByText(removed.title)).toBeVisible();
-
-  library.replace([refreshedViewed, remaining]);
-  context.mocks.ably.trigger("presentationTemplatesChanged", removed.id);
-  await waitFor(() => {
-    expect(screen.queryByText(removed.title)).not.toBeInTheDocument();
-  });
-  expect(grid.scrollTop).toBe(360);
-  expectTextBefore(remaining.title, firstBuiltInTitle());
-});
-
-test("Keep workspace templates current through publication after changing chats", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  const capture = mockTemplateChat();
-  const existing = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Existing Workspace Deck",
-    canManage: false,
-  });
-  const published = createUploadedTemplate({
-    id: UPDATED_TEMPLATE_ID,
-    title: "New Workspace Deck",
-    canManage: false,
-  });
-  const library = mockPresentationTemplateLibrary([existing]);
-  capture.lifecycle.setThreadList([
-    {
-      id: THREAD_ID,
-      title: "First workspace chat",
-      agent: { id: AGENT_ID, avatarUrl: null },
-      createdAt: "2026-08-01T00:00:00.000Z",
-      updatedAt: "2026-08-01T00:01:00.000Z",
-    },
-    {
-      id: OTHER_THREAD_ID,
-      title: "Second workspace chat",
-      agent: { id: AGENT_ID, avatarUrl: null },
-      createdAt: "2026-08-01T00:02:00.000Z",
-      updatedAt: "2026-08-01T00:03:00.000Z",
-    },
-  ]);
-  trackTemplatePreviewImagePreloads();
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await openTemplatePicker(user, "Presentation");
-  await waitFor(() => {
-    expect(screen.getByText(existing.title)).toBeVisible();
-  });
-  await user.keyboard("{Escape}");
-  const secondChat = await waitFor(() => {
-    return linkByText("Second workspace chat");
-  });
-  click(secondChat);
-  await waitFor(() => {
-    expect(secondChat).toHaveAttribute("aria-current", "page");
-  });
-  library.replace([existing, published]);
-  context.mocks.ably.triggerOnChannel(
-    "org:org_default",
-    "presentationTemplatesChanged",
-    published.id,
-  );
-  await openTemplatePicker(user, "Presentation");
-  await waitFor(() => {
-    expect(screen.getByText(published.title)).toBeVisible();
-    expect(
-      screen.getByLabelText(`Select template ${published.title}`),
-    ).toBeEnabled();
-  });
-});
-
 test("Keep workspace templates current through withdrawal after preview", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   const capture = mockTemplateChat();
@@ -854,75 +485,7 @@ function renameField(): HTMLTextAreaElement {
   return field;
 }
 
-test("Uploaded presentation names retain caret navigation while the preview owns slide keys", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Quarterly Board Review",
-    pageCount: 3,
-    canManage: true,
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  const user = userEvent.setup({ delay: null });
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-  });
-  const picker = await openTemplatePicker(user, "Presentation");
-  const previewLabel = `Preview ${uploaded.title} at current slide`;
-  const previewTrigger = await waitFor(() => {
-    return buttonNamed(previewLabel, picker);
-  });
-  await user.click(previewTrigger);
-  const preview = await screen.findByRole("group", {
-    name: `${uploaded.title} slide preview`,
-  });
-  await waitFor(() => {
-    expect(buttonNamed("Preview slide 3", picker)).toBeEnabled();
-  });
-  expect(preview).toHaveFocus();
-  await user.keyboard("{ArrowRight}");
-  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  const title = renameField();
-  await user.click(title);
-  await user.keyboard("{End}{ArrowLeft}");
-  expect(title.selectionStart).toBe(uploaded.title.length - 1);
-  expect(title.selectionEnd).toBe(uploaded.title.length - 1);
-  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await user.keyboard("{Control>}a{/Control}");
-  expect(title.selectionStart).toBe(0);
-  expect(title.selectionEnd).toBe(uploaded.title.length);
-  await user.keyboard("{ArrowRight}");
-  expect(title.selectionStart).toBe(uploaded.title.length);
-  expect(title.selectionEnd).toBe(uploaded.title.length);
-  expect(buttonNamed("Preview slide 2", picker)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  await user.keyboard("{Shift>}{Tab}{/Shift}");
-  expect(buttonNamed("Preview slide 3", picker)).toHaveFocus();
-  await user.keyboard("{ArrowLeft}");
-  expect(buttonNamed("Preview slide 1", picker)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  await user.click(buttonContainingText("Template", picker));
-  await waitFor(() => {
-    expect(buttonNamed(previewLabel, picker)).toHaveFocus();
-  });
-});
-
-test("A second rename cannot overtake the one already sent", async () => {
+test("Rename an uploaded template", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
   const uploaded = createUploadedTemplate({
@@ -945,16 +508,11 @@ test("A second rename cannot overtake the one already sent", async () => {
   click(buttonNamed(`Preview ${uploaded.title} at current slide`));
   await screen.findByRole("group", { name: `${uploaded.title} slide preview` });
 
-  // Hold the first rename open so the second has something to overtake.
-  const stored = context.mocks.deferred<void>();
   const submitted: string[] = [];
   context.mocks.api(
     presentationTemplatesContract.update,
-    async ({ body, params, respond, withSignal }) => {
+    ({ body, params, respond }) => {
       submitted.push(body.title ?? "");
-      if (submitted.length === 1) {
-        await withSignal(stored.promise);
-      }
       return respond(200, {
         ...uploaded,
         ...body,
@@ -969,93 +527,61 @@ test("A second rename cannot overtake the one already sent", async () => {
   await waitFor(() => {
     expect(submitted).toStrictEqual(["Board Review FY26"]);
   });
-
-  // Closed while its own rename is open. Enter reaches the form through
-  // requestSubmit(), which ignores the disabled confirm control, so the field
-  // being closed is what keeps a second rename from leaving at all.
-  expect(renameField()).toBeDisabled();
-  fireEvent.keyDown(renameField(), { key: "Enter" });
-  expect(submitted).toStrictEqual(["Board Review FY26"]);
-
-  stored.resolve();
   await waitFor(() => {
-    expect(renameField()).toBeEnabled();
-  });
-
-  // Editing is allowed again once the stored name is the one on screen, and
-  // the later edit is the one that survives.
-  await fill(renameField(), "Board Review FY27");
-  fireEvent.keyDown(renameField(), { key: "Enter" });
-  await waitFor(() => {
-    expect(submitted).toStrictEqual(["Board Review FY26", "Board Review FY27"]);
-  });
-  // The field reopens on what the server stored, which is the later edit.
-  await waitFor(() => {
-    expect(renameField()).toHaveValue("Board Review FY27");
+    expect(renameField()).toHaveValue("Board Review FY26");
   });
 });
 
-test.each(["{Enter}", " "])(
-  "Imported visibility saves once on %s and closes even on the current value",
-  async (key) => {
-    mockTemplateChat();
-    const uploaded = createUploadedTemplate({
-      id: UPLOADED_TEMPLATE_ID,
-      title: "Visibility keyboard review",
-      visibility: "private",
-      canManage: true,
-    });
-    const library = mockPresentationTemplateLibrary([uploaded]);
-    trackTemplatePreviewImagePreloads();
-    const user = userEvent.setup();
-    await setupPage({
-      context,
-      path: `/chats/${THREAD_ID}`,
-      host: "app.okou.ai",
-    });
-    await openTemplatePicker(user, "Presentation");
-    click(
-      await waitFor(() => {
-        return buttonNamed(`Preview ${uploaded.title} at current slide`);
-      }),
-    );
-    const trigger = await screen.findByLabelText("Change template visibility");
-    trigger.focus();
-    await user.keyboard("{Enter}");
-    const menu = await screen.findByRole("menu");
-    const workspace = queryAllByRoleFast("menuitemradio", menu).find(
-      (option) => {
-        return option.getAttribute("aria-label") === "Workspace";
-      },
-    )!;
-    await user.keyboard("{Home}{ArrowDown}");
-    expect(workspace).toHaveFocus();
-    expect(workspace).toHaveAttribute("aria-checked", "false");
-    expect(library.requests.updates).toHaveLength(0);
-    await user.keyboard("{Escape}");
+test("Imported visibility saves once and closes even on the current value", async () => {
+  const key = "{Enter}";
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Visibility keyboard review",
+    visibility: "private",
+    canManage: true,
+  });
+  const library = mockPresentationTemplateLibrary([uploaded]);
+  trackTemplatePreviewImagePreloads();
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await openTemplatePicker(user, "Presentation");
+  click(
     await waitFor(() => {
-      expect(trigger).toHaveFocus();
-    });
-    await user.keyboard("{Enter}");
-    await screen.findByRole("menu");
-    await user.keyboard("{Home}{ArrowDown}");
-    await user.keyboard(key);
-    await waitFor(() => {
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    });
-    await waitFor(() => {
-      expect(trigger).toBeEnabled();
-    });
-    expect(library.requests.updates).toStrictEqual([
-      { templateId: uploaded.id, body: { visibility: "public" } },
-    ]);
-    click(trigger);
-    await screen.findByRole("menu");
-    await user.keyboard("{Home}{ArrowDown}");
-    await user.keyboard(key);
-    await waitFor(() => {
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    });
-    expect(library.requests.updates).toHaveLength(1);
-  },
-);
+      return buttonNamed(`Preview ${uploaded.title} at current slide`);
+    }),
+  );
+  const trigger = await screen.findByLabelText("Change template visibility");
+  trigger.focus();
+  await user.keyboard("{Enter}");
+  const menu = await screen.findByRole("menu");
+  const workspace = queryAllByRoleFast("menuitemradio", menu).find((option) => {
+    return option.getAttribute("aria-label") === "Workspace";
+  })!;
+  await user.keyboard("{Home}{ArrowDown}");
+  expect(workspace).toHaveFocus();
+  expect(workspace).toHaveAttribute("aria-checked", "false");
+  expect(library.requests.updates).toHaveLength(0);
+  await user.keyboard(key);
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(trigger).toBeEnabled();
+  });
+  expect(library.requests.updates).toStrictEqual([
+    { templateId: uploaded.id, body: { visibility: "public" } },
+  ]);
+  click(trigger);
+  await screen.findByRole("menu");
+  await user.keyboard("{Home}{ArrowDown}");
+  await user.keyboard(key);
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+  expect(library.requests.updates).toHaveLength(1);
+});

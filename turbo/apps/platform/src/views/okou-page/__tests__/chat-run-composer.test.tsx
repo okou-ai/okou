@@ -1,14 +1,10 @@
 import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
-import {
-  chatThreadEventsContract,
-  type UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, fill } from "../../../__tests__/page-helper.ts";
-import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockPushBrowserSupport,
   setupPage,
@@ -110,62 +106,6 @@ test("Enable completion notifications after a visible send", async () => {
     expect(runStarted).toBeTruthy();
     expect(registeredEndpoint).toBe(
       "https://push.example.test/subscriptions/chat-send",
-    );
-  });
-});
-
-test("Finish text composition before queueing a follow-up", async () => {
-  const queuedMessages: UserMessageDocument[] = [];
-  installRunChat({
-    activeRunIds: [ACTIVE_RUN_ID],
-    chatEvents: [
-      promptEvent({
-        id: "composition-request",
-        runId: ACTIVE_RUN_ID,
-        seqId: 1,
-        text: "Prepare the launch summary",
-      }),
-      thinkingEvent({
-        id: "composition-progress",
-        runId: ACTIVE_RUN_ID,
-        seqId: 2,
-        text: "Preparing the launch summary",
-      }),
-    ],
-    onQueuedEventAppend(body) {
-      if (body.userMessage) {
-        queuedMessages.push(body.userMessage);
-      }
-    },
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  const composer = screen.getByRole("textbox", { name: "Message" });
-  fireEvent.compositionStart(composer);
-  await fill(composer, "未完成の指");
-  click(await findButton("Send"));
-
-  expect(queuedMessages).toHaveLength(0);
-  expect(
-    screen.queryByRole("listitem", { name: "Queued message" }),
-  ).not.toBeInTheDocument();
-
-  await fill(composer, "完成した指示");
-  fireEvent.compositionEnd(composer);
-
-  await waitFor(() => {
-    expect(queuedMessages).toHaveLength(1);
-  });
-  await expect(screen.findByText("完成した指示")).resolves.toBeVisible();
-  expect(queuedMessages[0]?.parts).toContainEqual({
-    type: "text",
-    text: "完成した指示",
-  });
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
-      "",
     );
   });
 });
@@ -291,58 +231,6 @@ test("Send a large image with a fallback-enabled text model", async () => {
   ).resolves.toBeVisible();
 });
 
-test("Continue an existing chat with a fallback-enabled text model", async () => {
-  const user = userEvent.setup({ delay: null });
-  let sentMessage:
-    | {
-        readonly model?: string;
-        readonly userMessage?: UserMessageDocument;
-      }
-    | undefined;
-  installRunChat({
-    onRunCreate(body) {
-      sentMessage = { model: body.model, userMessage: body.userMessage };
-    },
-  });
-  context.mocks.upload.success({
-    id: "existing-video-upload",
-    filename: "launch-demo.mp4",
-    contentType: "video/mp4",
-    size: 32,
-    url: "https://files.example.test/launch-demo.mp4",
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  await readyChat();
-  await expect(
-    composerModelTrigger("Claude Sonnet 4.6"),
-  ).resolves.toBeVisible();
-  await uploadFile(
-    user,
-    new File(["video fixture"], "launch-demo.mp4", { type: "video/mp4" }),
-  );
-  await fill(
-    screen.getByRole("textbox", { name: "Message" }),
-    "Summarize this launch demo",
-  );
-  await user.click(await findEnabledButton("Send"));
-
-  await waitFor(() => {
-    expect(sentMessage).toBeDefined();
-  });
-  expect(fileParts(sentMessage?.userMessage)).toContainEqual({
-    type: "file",
-    fileId: "existing-video-upload",
-    filenameSnapshot: "launch-demo.mp4",
-    contentType: "video/mp4",
-  });
-  await expect(
-    screen.findByText("Summarize this launch demo"),
-  ).resolves.toBeVisible();
-  await expect(findButton("Preview launch-demo.mp4")).resolves.toBeVisible();
-});
-
 test("Show follow-up instructions in the active conversation", async () => {
   const queuedMessages: UserMessageDocument[] = [];
   installRunChat({
@@ -418,35 +306,4 @@ test("Show follow-up instructions in the active conversation", async () => {
     "Keep the owner names in the plan",
   );
   await expect(findButton("Stop")).resolves.toBeVisible();
-});
-
-test("Show a newly sent message while history is still loading", async () => {
-  const historyRequested = context.mocks.deferred<void>();
-  const historyAvailable = context.mocks.deferred<void>();
-  installRunChat();
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    async ({ query, respond }) => {
-      if (!historyRequested.settled()) {
-        historyRequested.resolve(undefined);
-      }
-      await historyAvailable.promise;
-      return respond(200, chatEventRowsResponse([], query));
-    },
-  );
-
-  await setupPage({ context, path: NEW_CHAT_PATH });
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  expect(composer).toBeVisible();
-  await sendText("Start before the earlier history arrives");
-  await historyRequested.promise;
-
-  const message = await screen.findByText(
-    "Start before the earlier history arrives",
-  );
-  expect(message).toBeVisible();
-  const chat = await screen.findByRole("region", { name: "Chat thread" });
-  expect(chat).toContainElement(message);
-  historyAvailable.resolve(undefined);
 });

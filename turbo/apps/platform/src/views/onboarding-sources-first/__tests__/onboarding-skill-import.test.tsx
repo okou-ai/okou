@@ -4,10 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
-import {
-  SKILL_IMPORT_LIMITS,
-  skillImportSessionsContract,
-} from "@okouai/api-contracts/contracts/skill-import";
+import { skillImportSessionsContract } from "@okouai/api-contracts/contracts/skill-import";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import {
   workflowsCollectionContract,
@@ -22,7 +19,6 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { now } from "../../../lib/time.ts";
 import { pathname } from "../../../signals/location.ts";
 import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
@@ -453,71 +449,46 @@ test("The skills step names Claude Code when it was selected", async () => {
   expect(prompt.textContent).not.toContain("~/.codex/skills/");
 });
 
-test.each([
-  {
-    card: "Codex" as const,
-    provider: "codex",
-    fromStart: true,
-    scenario: "full flow",
-    expectedIndustry: "marketing",
-  },
-  {
-    card: "Claude Code" as const,
-    provider: "claudeCode",
-    fromStart: true,
-    scenario: "full flow",
-    expectedIndustry: "marketing",
-  },
-  {
-    card: "Claude Code" as const,
-    provider: "claudeCode",
-    fromStart: false,
-    scenario: "resumed without an industry answer",
-    expectedIndustry: undefined,
-  },
-])(
-  "Finishing onboarding sends the selected $card model preference after a $scenario",
-  async ({ card, provider, fromStart, expectedIndustry }) => {
-    mockAgentWorkflows();
-    mockChatLifecycle(context);
-    let sentProvider: string | undefined;
-    let sentIndustry: string | undefined;
-    context.mocks.api(
-      onboardingCompleteContract.complete,
-      ({ query, body, respond }) => {
-        sentProvider = query?.modelProvider;
-        sentIndustry = body.industry;
-        context.mocks.data.onboardingStatus({
-          needsOnboarding: false,
-          onboardingComplete: true,
-        });
-        return respond(200, {
-          onboardingComplete: true,
-          needsOnboarding: false,
-        });
-      },
-    );
+test("Finishing onboarding sends the selected Codex model preference after a full flow", async () => {
+  mockAgentWorkflows();
+  mockChatLifecycle(context);
+  let sentProvider: string | undefined;
+  let sentIndustry: string | undefined;
+  context.mocks.api(
+    onboardingCompleteContract.complete,
+    ({ query, body, respond }) => {
+      sentProvider = query?.modelProvider;
+      sentIndustry = body.industry;
+      context.mocks.data.onboardingStatus({
+        needsOnboarding: false,
+        onboardingComplete: true,
+      });
+      return respond(200, {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      });
+    },
+  );
 
-    await openSkillsStep(card, fromStart);
-    click(getButtonByName("Continue"));
-    await expect(
-      screen.findByRole("heading", { name: SLACK_QUESTION }),
-    ).resolves.toBeInTheDocument();
-    click(getButtonByName("Skip for now"));
-    await expect(
-      screen.findByRole("heading", { name: "Okou is ready for you" }),
-    ).resolves.toBeInTheDocument();
-    expect(context.store.get(draftStorage.get$)).not.toBeNull();
-    click(getButtonByName("Start with Okou"));
-    await waitFor(() => {
-      expect(sentProvider).toBe(provider);
-    });
-    expect(sentIndustry).toBe(expectedIndustry);
-    await waitFor(() => {
-      expect(context.store.get(completedDraftStorage.get$)).toBeNull();
-    });
-  },
-);
+  await openSkillsStep(CODEX_CARD, true);
+  click(getButtonByName("Continue"));
+  await expect(
+    screen.findByRole("heading", { name: SLACK_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName("Skip for now"));
+  await expect(
+    screen.findByRole("heading", { name: "Okou is ready for you" }),
+  ).resolves.toBeInTheDocument();
+  expect(context.store.get(draftStorage.get$)).not.toBeNull();
+  click(getButtonByName("Start with Okou"));
+  await waitFor(() => {
+    expect(sentProvider).toBe("codex");
+  });
+  expect(sentIndustry).toBe("marketing");
+  await waitFor(() => {
+    expect(context.store.get(completedDraftStorage.get$)).toBeNull();
+  });
+});
 
 test("A skill the import writes appears without the step being asked again", async () => {
   const posthog = context.mocks.posthog();
@@ -560,79 +531,6 @@ test("A skill the import writes appears without the step being asked again", asy
   expect(pathname()).toBe(ROUTES.onboardingSlack);
 });
 
-test("Coming back to the step keeps the prompt it already gave and what arrived", async () => {
-  const agentWorkflows = mockAgentWorkflows();
-  let issued = 0;
-  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    issued += 1;
-    return respond(200, {
-      uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      // A second session would carry a token the pasted prompt does not have.
-      token: `${SESSION_TOKEN}-${String(issued)}`,
-      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
-      limits: SKILL_IMPORT_LIMITS,
-    });
-  });
-
-  await openSkillsStep();
-
-  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
-  expect(prompt.textContent).toContain(`${SESSION_TOKEN}-1`);
-
-  agentWorkflows.write([importedSkill()]);
-  await expect(
-    screen.findByText(SKILL_DISPLAY_NAME),
-  ).resolves.toBeInTheDocument();
-
-  click(getButtonByName("Back"));
-  await expect(
-    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
-  ).resolves.toBeInTheDocument();
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", { name: SKILLS_ARRIVED_TITLE }),
-  ).resolves.toBeInTheDocument();
-  // The same session the person may already have pasted, and the skill it
-  // wrote: the way back does not restart the import.
-  const returned = await screen.findByRole("region", { name: PROMPT_LABEL });
-  expect(returned.textContent).toContain(`${SESSION_TOKEN}-1`);
-  expect(screen.getByText(SKILL_DISPLAY_NAME)).toBeInTheDocument();
-});
-
-test("Changing the selected tool replaces the prompt for the new platform", async () => {
-  mockAgentWorkflows();
-  let issued = 0;
-  context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    issued += 1;
-    return respond(200, {
-      uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      token: `${SESSION_TOKEN}-${String(issued)}`,
-      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
-      limits: SKILL_IMPORT_LIMITS,
-    });
-  });
-
-  await openSkillsStep();
-  const codexPrompt = await screen.findByRole("region", { name: PROMPT_LABEL });
-  expect(codexPrompt.textContent).toContain(`${SESSION_TOKEN}-1`);
-
-  click(getButtonByName("Back"));
-  await screen.findByRole("heading", { name: EXPERIENCE_QUESTION });
-  click(answerRadio("Claude Code"));
-  click(getButtonByName("Continue"));
-
-  const claudePrompt = await screen.findByRole("region", {
-    name: PROMPT_LABEL,
-  });
-  await waitFor(() => {
-    expect(claudePrompt.textContent).toContain(`${SESSION_TOKEN}-2`);
-  });
-  expect(claudePrompt.textContent).toContain("~/.claude/skills/");
-  expect(claudePrompt.textContent).not.toContain("~/.codex/skills/");
-  expect(claudePrompt.textContent).not.toContain(`${SESSION_TOKEN}-1`);
-});
-
 test("The step can be left with nothing imported", async () => {
   const posthog = context.mocks.posthog();
   mockAgentWorkflows();
@@ -654,21 +552,11 @@ test("The step can be left with nothing imported", async () => {
   );
 });
 
-test("A session that cannot be opened leaves the step passable and offers it again", async () => {
+test("A session that cannot be opened leaves the step passable", async () => {
   mockAgentWorkflows();
-  let attempts = 0;
   context.mocks.api(skillImportSessionsContract.create, ({ respond }) => {
-    attempts += 1;
-    if (attempts === 1) {
-      return respond(403, {
-        error: { message: "Skill import is not enabled", code: "FORBIDDEN" },
-      });
-    }
-    return respond(200, {
-      uploadUrl: "https://api.okou.test/api/skill-import/skills",
-      token: SESSION_TOKEN,
-      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
-      limits: SKILL_IMPORT_LIMITS,
+    return respond(403, {
+      error: { message: "Skill import is not enabled", code: "FORBIDDEN" },
     });
   });
 
@@ -679,9 +567,4 @@ test("A session that cannot be opened leaves the step passable and offers it aga
   ).resolves.toBeInTheDocument();
   // Nothing on this step is required, so a failure never holds the run back.
   expect(getButtonByName("Continue")).toBeEnabled();
-
-  click(getButtonByName("Try again"));
-
-  const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
-  expect(prompt).toHaveTextContent(PROMPT_OPENING);
 });

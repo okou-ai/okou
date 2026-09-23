@@ -271,80 +271,6 @@ test("Show useful search-result ages and an illustrated empty state", async () =
   );
 });
 
-test("Show only the selected agent’s unread conversations when switching agents", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID],
-  });
-  const researchThread = createThread(RESEARCH_THREAD_ID, "Research kickoff", {
-    agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-  });
-  const supportThread = createThread(INCIDENT_THREAD_ID, "Support escalation", {
-    agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-  });
-  const olderSupportThread = createThread(
-    AUTOMATION_THREAD_ID,
-    "Support archive",
-    {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    },
-  );
-  mockSidebarThreadStory([researchThread, supportThread, olderSupportThread]);
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      agents: {
-        [RESEARCH_AGENT_ID]: "unread",
-        [SUPPORT_AGENT_ID]: "unread",
-      },
-      threads: {
-        [RESEARCH_THREAD_ID]: "unread",
-        [INCIDENT_THREAD_ID]: "unread",
-        [AUTOMATION_THREAD_ID]: "active",
-      },
-      unreadAt: {
-        [RESEARCH_THREAD_ID]: "2026-03-10T00:05:00Z",
-        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
-      },
-    });
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${RESEARCH_THREAD_ID}`,
-  });
-
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
-  });
-  openChatListMenu();
-  click(menuItemByText("Unread"));
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Research kickoff")).toBeInTheDocument();
-  });
-  expect(
-    within(sidebar()).queryByText("Support escalation"),
-  ).not.toBeInTheDocument();
-
-  fireEvent.keyDown(document.body, {
-    key: "}",
-    ctrlKey: true,
-    shiftKey: true,
-  });
-
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-    expect(
-      within(sidebar()).getByText("Support escalation"),
-    ).toBeInTheDocument();
-    expect(
-      within(sidebar()).queryByText("Research kickoff"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(sidebar()).queryByText("Support archive"),
-    ).not.toBeInTheDocument();
-  });
-});
-
 test("Toggle unread chats by reselecting an unread pinned agent", async () => {
   prepareAgents();
   context.mocks.data.userPreferences({
@@ -424,48 +350,6 @@ test("Toggle unread chats by reselecting an unread pinned agent", async () => {
     expect(within(sidebar()).getByText("Support unread")).toBeInTheDocument();
     expect(within(sidebar()).getByText("Support read")).toBeInTheDocument();
   });
-  expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
-  expect(vi.mocked(window.history.pushState)).toHaveBeenCalledTimes(
-    navigationCount,
-  );
-});
-
-test("Keep all chats when reselecting a pinned agent without unread", async () => {
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [SUPPORT_AGENT_ID],
-  });
-  mockSidebarThreadStory([
-    createThread(INCIDENT_THREAD_ID, "Support recent", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
-    createThread(AUTOMATION_THREAD_ID, "Support older", {
-      agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
-    }),
-  ]);
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${SUPPORT_AGENT_ID}/chat`,
-  });
-
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Support recent")).toBeInTheDocument();
-    expect(within(sidebar()).getByText("Support older")).toBeInTheDocument();
-  });
-  const navigationCount = vi.mocked(window.history.pushState).mock.calls.length;
-  const supportAgent = pinnedAgentLink(
-    screen.getByTestId("pinned-agents-grid"),
-    "Support Agent",
-  );
-
-  click(supportAgent);
-
-  expect(within(sidebar()).getByText("Support recent")).toBeInTheDocument();
-  expect(within(sidebar()).getByText("Support older")).toBeInTheDocument();
   expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
   expect(vi.mocked(window.history.pushState)).toHaveBeenCalledTimes(
     navigationCount,

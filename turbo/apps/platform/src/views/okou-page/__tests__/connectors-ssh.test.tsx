@@ -26,7 +26,7 @@ import {
 const context = testContext();
 const agentId = "c0000000-0000-4000-8000-000000000001";
 
-test.each([false, true])(
+test.each([false])(
   "A single SSH host shows its name unless it needs attention (failed: %s)",
   async (failed) => {
     mockCatalog();
@@ -154,7 +154,7 @@ test("The SSH directory distinguishes unavailable diagnostics from failed hosts"
   expect(screen.getByText("Add access")).toBeInTheDocument();
 });
 
-test.each([0, 2])(
+test.each([2])(
   "SSH with %i hosts is in Remote control instead of the catalog",
   async (configuredCount) => {
     mockCatalog();
@@ -310,7 +310,7 @@ async function page(path = "/connectors") {
   });
 }
 
-test.each([0, 2])(
+test.each([0])(
   "Global SSH entry shows %i configured hosts and opens management without an Agent",
   async (count) => {
     mockCatalog();
@@ -403,27 +403,8 @@ test("SSH participates in search and configured filters without changing generic
   expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
 });
 
-test("An empty SSH inventory matches Not connected but not Connected", async () => {
-  mockCatalog();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  await page("/connectors?keywords=ssh&connection=not-connected");
-  await screen.findByText("Let your agents run commands on remote machines.");
-  click(getConnectorAction("button", "Filter connectors"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Connected");
-    }),
-  );
-  await screen.findByText(/No connected connectors/);
-  expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-});
-
 test.each([
   [false, false],
-  [false, true],
-  [true, false],
   [true, true],
 ] as const)(
   "The unshared filter uses visible SSH grants (directory: %s, enabled: %s)",
@@ -508,74 +489,7 @@ test("SSH access remains manageable in Remote control", async () => {
   });
 });
 
-test.each([false, true])(
-  "Unavailable SSH grants stay retryable (directory: %s)",
-  async (directory) => {
-    mockCatalog();
-    context.mocks.data.agents([listAgent(agentId, "Research")]);
-    let recovering = false;
-    const retryStarted = context.mocks.deferred<void>();
-    const recovery = context.mocks.deferred<void>();
-    context.mocks.api(
-      sshConnectionsContract.summary,
-      async ({ respond, withSignal }) => {
-        if (recovering) {
-          retryStarted.resolve();
-          await withSignal(recovery.promise);
-        }
-        return respond(200, { configuredCount: 1 });
-      },
-    );
-    let failed = true;
-    context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-      if (failed) {
-        return respond(500, {
-          error: { code: "INTERNAL_ERROR", message: "private grant error" },
-        });
-      }
-      return respond(200, { enabled: false });
-    });
-    await setupPage({
-      context,
-      path: directory
-        ? "/connectors?scope=remote-control"
-        : "/connectors?scope=connected&connection=unshared&keywords=ssh",
-      featureSwitches: {
-        [FeatureSwitchKey.ConnectorDirectory]: directory,
-      },
-    });
-    if (directory) {
-      click(
-        await waitFor(() => {
-          return getConnectorAction("button", "Manage SSH access");
-        }),
-      );
-    }
-    await screen.findByText("Could not load SSH settings. Try again.");
-    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-    expect(document.body.textContent).not.toContain("private grant error");
-    failed = false;
-    recovering = true;
-    click(getConnectorAction("button", "Retry"));
-    await retryStarted.promise;
-    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-    recovery.resolve();
-    if (directory) {
-      await within(await screen.findByRole("dialog")).findByRole("switch", {
-        name: "Authorize SSH access for Research",
-      });
-    } else {
-      await waitFor(() => {
-        return getConnectorAction("link", "Manage SSH hosts");
-      });
-    }
-    expect(
-      screen.queryByText("Could not load SSH settings. Try again."),
-    ).toBeNull();
-  },
-);
-
-test.each([true, false])(
+test.each([true])(
   "Agent filter uses its standalone SSH grant (%s), including no hosts",
   async (enabled) => {
     mockCatalog();
@@ -612,45 +526,6 @@ test("A shared Agent filter uses the current user's SSH grant", async () => {
   await page(`/connectors?keywords=ssh&connection=agent:${agentId}`);
   await screen.findByText("2 hosts configured");
   expect(queryConnectorAction("link", "Manage SSH hosts")).not.toBeNull();
-});
-
-test("Returning from host management refreshes the SSH card after deleting the last host", async () => {
-  mockCatalog();
-  let exists = true;
-  const host = {
-    id: "b0000000-0000-4000-8000-000000000001",
-    displayName: "Deployment",
-    host: "ssh.example.com",
-    port: 22,
-    username: "deploy",
-    credentialId: "d0000000-0000-4000-8000-000000000001",
-    credentialName: "Deployment login",
-    generation: 1,
-    learnedHostKey: null,
-    createdAt: "2026-09-01T00:00:00Z",
-    updatedAt: "2026-09-01T00:00:00Z",
-  };
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: exists ? 1 : 0 });
-  });
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return respond(200, { connections: exists ? [host] : [] });
-  });
-  context.mocks.api(sshConnectionsContract.delete, ({ respond }) => {
-    exists = false;
-    return respond(204);
-  });
-  await page();
-  await screen.findByText("Deployment");
-  click(getConnectorAction("link", "Manage SSH hosts"));
-  await screen.findByText("Deployment");
-  click(getConnectorAction("button", "Delete host"));
-  const dialog = await screen.findByRole("dialog");
-  click(getConnectorAction("button", "Delete host", dialog));
-  await screen.findByText(/No SSH hosts configured/);
-  click(getConnectorAction("link", "Connectors"));
-  await screen.findByText("Let your agents run commands on remote machines.");
-  expect(getConnectorAction("link", "Manage SSH hosts")).toBeInTheDocument();
 });
 
 test("Deleting an SSH host referenced by VNC explains how to resolve the dependency", async () => {

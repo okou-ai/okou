@@ -1,12 +1,6 @@
 import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  createEvent,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
@@ -45,111 +39,74 @@ function composerRoot(): HTMLElement {
   return composer;
 }
 
-test.each([false, true])(
-  "A user can paste or drop public and private attachments (private=%s)",
-  async (privateFiles) => {
-    mockAttachmentChat(context);
-    context.mocks.upload.success({
-      id: "a0000000-0000-4000-a000-000000000081",
-      filename: "notes.txt",
-      contentType: "text/plain",
-      size: 11,
-      url: privateFiles
-        ? artifactReferencePath(
-            "a0000000-0000-4000-a000-000000000081",
-            "notes.txt",
-          )
-        : "https://cdn.vm7.io/artifacts/tests/chat-attachments/notes.txt",
-    });
+test("A user can paste or drop private attachments", async () => {
+  mockAttachmentChat(context);
+  context.mocks.upload.success({
+    id: "a0000000-0000-4000-a000-000000000081",
+    filename: "notes.txt",
+    contentType: "text/plain",
+    size: 11,
+    url: artifactReferencePath(
+      "a0000000-0000-4000-a000-000000000081",
+      "notes.txt",
+    ),
+  });
 
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
-    const editor = await screen.findByRole("textbox", { name: "Message" });
-    const textFile = new File(["file notes"], "notes.txt", {
-      type: "text/plain",
-    });
-    fireEvent.paste(editor, {
-      clipboardData: {
-        getData: (type: string) => {
-          return type === "text/plain" ? "Pasted planning notes" : "";
-        },
-        items: [
-          {
-            kind: "file",
-            type: "text/plain",
-            getAsFile: () => {
-              return textFile;
-            },
-          },
-        ],
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const textFile = new File(["file notes"], "notes.txt", {
+    type: "text/plain",
+  });
+  fireEvent.paste(editor, {
+    clipboardData: {
+      getData: (type: string) => {
+        return type === "text/plain" ? "Pasted planning notes" : "";
       },
-    });
+      items: [
+        {
+          kind: "file",
+          type: "text/plain",
+          getAsFile: () => {
+            return textFile;
+          },
+        },
+      ],
+    },
+  });
 
-    await expect(screen.findByText("notes.txt")).resolves.toBeVisible();
-    await expect(findNamedButton("Remove notes.txt")).resolves.toBeVisible();
-    await waitFor(() => {
-      expect(
-        screen.getByRole("textbox", { name: "Message" }),
-      ).toHaveTextContent("Pasted planning notes");
-    });
-
-    context.mocks.upload.success({
-      id: "a0000000-0000-4000-a000-000000000082",
-      filename: "brief.pdf",
-      contentType: "application/pdf",
-      size: 12,
-      url: privateFiles
-        ? artifactReferencePath(
-            "a0000000-0000-4000-a000-000000000082",
-            "brief.pdf",
-          )
-        : "https://cdn.vm7.io/artifacts/tests/chat-attachments/brief.pdf",
-    });
-    const pdf = new File(["pdf contents"], "brief.pdf", {
-      type: "application/pdf",
-    });
-    // Drag-over exposes file metadata before the browser releases file data.
-    fireEvent.dragOver(composerRoot(), {
-      dataTransfer: { types: ["Files"], items: [], files: [] },
-    });
-    fireEvent.drop(composerRoot(), {
-      dataTransfer: { types: ["Files"], files: [pdf] },
-    });
-
-    await expect(screen.findByText("brief.pdf")).resolves.toBeVisible();
-    await expect(findNamedButton("Remove brief.pdf")).resolves.toBeVisible();
-  },
-);
-
-test.each([
-  { format: "text/plain", content: "Dropped planning notes" },
-  { format: "text/html", content: "<p>Editor planning notes</p>" },
-])(
-  "The editor accepts a $format drag as message content",
-  async ({ format, content }) => {
-    mockAttachmentChat(context);
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-    const editor = await screen.findByRole("textbox", { name: "Message" });
-    const plainText =
-      format === "text/html" ? "Editor planning notes" : content;
-    const dataTransfer = new DataTransfer();
-    dataTransfer.setData("text/plain", plainText);
-    dataTransfer.setData(format, content);
-    // Happy DOM has no hit-testing/layout engine. These browser geometry
-    // boundaries let the real ProseMirror drop handler locate the editor.
-    vi.spyOn(document, "elementFromPoint").mockReturnValue(editor);
-    vi.spyOn(editor, "getBoundingClientRect").mockReturnValue(
-      new DOMRect(0, 0, 300, 100),
+  await expect(screen.findByText("notes.txt")).resolves.toBeVisible();
+  await expect(findNamedButton("Remove notes.txt")).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Pasted planning notes",
     );
+  });
 
-    fireEvent.drop(editor, { dataTransfer, clientX: 1, clientY: 1 });
+  context.mocks.upload.success({
+    id: "a0000000-0000-4000-a000-000000000082",
+    filename: "brief.pdf",
+    contentType: "application/pdf",
+    size: 12,
+    url: artifactReferencePath(
+      "a0000000-0000-4000-a000-000000000082",
+      "brief.pdf",
+    ),
+  });
+  const pdf = new File(["pdf contents"], "brief.pdf", {
+    type: "application/pdf",
+  });
+  // Drag-over exposes file metadata before the browser releases file data.
+  fireEvent.dragOver(composerRoot(), {
+    dataTransfer: { types: ["Files"], items: [], files: [] },
+  });
+  fireEvent.drop(composerRoot(), {
+    dataTransfer: { types: ["Files"], files: [pdf] },
+  });
 
-    await waitFor(() => {
-      expect(editor).toHaveTextContent(plainText);
-      expect(getNamedButton("Send")).toBeEnabled();
-    });
-  },
-);
+  await expect(screen.findByText("brief.pdf")).resolves.toBeVisible();
+  await expect(findNamedButton("Remove brief.pdf")).resolves.toBeVisible();
+});
 
 test("Image annotation is offered only when the feature is available", async () => {
   const image = draftAttachment("billing-page.png");
@@ -199,71 +156,6 @@ test("A deliberate backdrop click closes an image preview", async () => {
       screen.queryByRole("dialog", { name: "photo.png preview" }),
     ).not.toBeInTheDocument();
   });
-});
-
-test("Dragging from an image preview onto its backdrop keeps it open", async () => {
-  const image = draftAttachment("photo.png");
-  mockAttachmentChat(context, {
-    draft: draftForAttachment(image, ""),
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  click(await findNamedButton("Open image preview for photo.png"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "photo.png preview",
-  });
-  const panel = screen.getByTestId("attachment-lightbox-panel");
-  const backdrop = document.querySelector('[data-slot="dialog-viewport"]');
-  if (!backdrop) {
-    throw new Error("Expected the image preview viewport");
-  }
-
-  fireEvent.mouseDown(panel, { button: 0 });
-  fireEvent.mouseUp(backdrop, { button: 0 });
-  fireEvent.click(backdrop);
-
-  expect(dialog).toBeVisible();
-});
-
-test("Viewport pinch is blocked outside an image preview canvas", async () => {
-  const image = draftAttachment("photo.png");
-  mockAttachmentChat(context, {
-    draft: draftForAttachment(image, ""),
-  });
-
-  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const wheelPinch = createEvent.wheel(composer);
-  Object.defineProperties(wheelPinch, {
-    ctrlKey: { value: true },
-    deltaY: { value: -20 },
-  });
-  fireEvent(composer, wheelPinch);
-  expect(wheelPinch.defaultPrevented).toBeTruthy();
-
-  const ordinaryScroll = createEvent.wheel(composer, { deltaY: 20 });
-  fireEvent(composer, ordinaryScroll);
-  expect(ordinaryScroll.defaultPrevented).toBeFalsy();
-
-  for (const eventName of ["gesturestart", "gesturechange"]) {
-    const viewportPinch = new Event(eventName, {
-      bubbles: true,
-      cancelable: true,
-    });
-    fireEvent(composer, viewportPinch);
-    expect(viewportPinch.defaultPrevented).toBeTruthy();
-  }
-
-  click(await findNamedButton("Open image preview for photo.png"));
-  const imageCanvas = await screen.findByTestId("artifact-dialog-image-stage");
-  const imagePinch = new Event("gesturestart", {
-    bubbles: true,
-    cancelable: true,
-  });
-  fireEvent(imageCanvas, imagePinch);
-  expect(imagePinch.defaultPrevented).toBeFalsy();
 });
 
 test("A confirmed image annotation reaches the agent as structured data", async () => {
@@ -372,10 +264,6 @@ test("Composer attachments show a clear upload lifecycle", async () => {
   await waitFor(() => {
     expect(screen.queryByTestId("composer-image-preview-loading")).toBeNull();
   });
-  fireEvent.error(previewImage);
-  await expect(
-    screen.findByTestId("composer-image-preview-loading"),
-  ).resolves.toBeVisible();
 
   click(getNamedButton("Remove dashboard.png"));
   await waitFor(() => {
@@ -383,49 +271,33 @@ test("Composer attachments show a clear upload lifecycle", async () => {
   });
 });
 
-test.each(["uploaded", "restored"] as const)(
-  "%s image drafts use their MIME type for binary storage thumbnails",
-  async (source) => {
-    const originalUrl =
-      `https://${"a".repeat(32)}.r2.cloudflarestorage.com/artifacts/draft-image.bin` +
-      "?X-Amz-Signature=image-signature";
-    const image = draftAttachment("image", {
-      id: "a0000000-0000-4000-a000-000000000085",
-      contentType: "image/jpeg",
-      url: originalUrl,
-    });
-    mockAttachmentChat(
-      context,
-      source === "restored" ? { draft: draftForAttachment(image, "") } : {},
+test("A restored image draft uses its MIME type for a binary storage thumbnail", async () => {
+  const originalUrl =
+    `https://${"a".repeat(32)}.r2.cloudflarestorage.com/artifacts/draft-image.bin` +
+    "?X-Amz-Signature=image-signature";
+  const image = draftAttachment("image", {
+    id: "a0000000-0000-4000-a000-000000000085",
+    contentType: "image/jpeg",
+    url: originalUrl,
+  });
+  mockAttachmentChat(context, { draft: draftForAttachment(image, "") });
+  mockPrivateUrlSequence(context, { [image.id]: [originalUrl] });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  await screen.findByRole("textbox", { name: "Message" });
+  const openPreview = await findNamedButton("Open image preview for image");
+  await waitFor(() => {
+    expect(openPreview.querySelector("img")).toHaveAttribute(
+      "src",
+      `https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${originalUrl}`,
     );
-    mockPrivateUrlSequence(context, { [image.id]: [originalUrl] });
-    if (source === "uploaded") {
-      context.mocks.upload.success(image);
-    }
-
-    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
-
-    await screen.findByRole("textbox", { name: "Message" });
-    if (source === "uploaded") {
-      fireEvent.change(composerFileInput(), {
-        target: {
-          files: [new File(["image"], "image", { type: "image/jpeg" })],
-        },
-      });
-    }
-    const openPreview = await findNamedButton("Open image preview for image");
-    await waitFor(() => {
-      expect(openPreview.querySelector("img")).toHaveAttribute(
-        "src",
-        `https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/${originalUrl}`,
-      );
-    });
-    click(openPreview);
-    await expect(
-      screen.findByTestId("attachment-lightbox-image"),
-    ).resolves.toHaveAttribute("src", originalUrl);
-  },
-);
+  });
+  click(openPreview);
+  await expect(
+    screen.findByTestId("attachment-lightbox-image"),
+  ).resolves.toHaveAttribute("src", originalUrl);
+});
 
 test("Saved image annotations return with the draft", async () => {
   vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(

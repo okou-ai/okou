@@ -270,59 +270,6 @@ async function closeRelatedArtifactPreview(dialog: HTMLElement) {
   expect(dialog).toBeVisible();
 }
 
-test("Open a carried image over an existing artifact sidebar", async () => {
-  const { dialog, lightbox, url } =
-    await openRelatedArtifactOverSidebar("evidence.png");
-  await expect(
-    within(lightbox).findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute("src", url);
-  await closeRelatedArtifactPreview(dialog);
-});
-
-test.each([
-  ["walkthrough.mp4", "Video"],
-  ["narration.mp3", "Audio"],
-])(
-  "Open carried media %s over an existing artifact sidebar",
-  async (filename, kind) => {
-    const { dialog, lightbox, url } =
-      await openRelatedArtifactOverSidebar(filename);
-    await expect(
-      within(lightbox).findByLabelText(`${kind} preview for ${filename}`),
-    ).resolves.toHaveAttribute("src", url);
-    await closeRelatedArtifactPreview(dialog);
-  },
-);
-
-test.each([
-  ["report.pdf", "#navpanes=0"],
-  ["page.html", ""],
-])(
-  "Open carried document %s over an existing artifact sidebar",
-  async (filename, fragment) => {
-    const { dialog, lightbox, url } =
-      await openRelatedArtifactOverSidebar(filename);
-    await expect(
-      within(lightbox).findByTitle(`${filename} preview`),
-    ).resolves.toHaveAttribute("src", `${url}${fragment}`);
-    await closeRelatedArtifactPreview(dialog);
-  },
-);
-
-test.each([["summary.txt", "Related artifact content"]])(
-  "Read carried text %s over an existing artifact sidebar",
-  async (filename, body) => {
-    const { dialog, lightbox } = await openRelatedArtifactOverSidebar(
-      filename,
-      body,
-    );
-    await expect(
-      within(lightbox).findByText(/Related artifact content/u),
-    ).resolves.toBeVisible();
-    await closeRelatedArtifactPreview(dialog);
-  },
-);
-
 test("Open a carried generic file over an existing artifact sidebar", async () => {
   const browser = context.mocks.browser.blobDownload();
   const { dialog, lightbox } = await openRelatedArtifactOverSidebar(

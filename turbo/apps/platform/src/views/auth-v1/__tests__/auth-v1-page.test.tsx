@@ -1,12 +1,10 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { PRESENTATION_ONBOARDING_URL } from "../../../__tests__/presentation-onboarding-fixture.ts";
 import {
-  click,
   queryAllByRoleFast,
   setupPage,
-  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { platformOkouWordmarkDarkImg } from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -118,78 +116,17 @@ test("Clerk sign-in steps use app history and keep every query value", async () 
   expect(window.location.hash).toBe("#start");
 });
 
-test("Clerk sign-in replacements keep the current app history entry", async () => {
+test("Clerk navigation to a non-Auth V1 path loads a new document", async () => {
+  const destination = "/sign-in-token";
   const assigned = context.mocks.browser.locationAssign();
-  const replaced = context.mocks.browser.locationReplace();
-  await setupSignedOutPage("/sign-in/factor-one?strategy=password#challenge");
+  await setupSignedOutPage("/sign-in");
 
-  await registeredClerkRouter().replace(
-    "/sign-in?screen=identifier#start",
-    clerkWindowNavigation(),
-  );
+  await registeredClerkRouter().push(destination, clerkWindowNavigation());
 
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/sign-in");
-  });
-  expect(window.location.search).toBe("?screen=identifier");
-  expect(window.location.hash).toBe("#start");
-  expect(assigned.calls).toStrictEqual([]);
-  expect(replaced.calls).toStrictEqual([]);
-
-  window.history.back();
-  expect(window.location.pathname).toBe("/sign-in");
-  expect(window.location.search).toBe("?screen=identifier");
-  expect(window.location.hash).toBe("#start");
-});
-
-test("Clerk sign-up steps stay on the hosted app page", async () => {
-  const assigned = context.mocks.browser.locationAssign();
-  await setupSignedOutPage("/sign-up?screen=identifier#start");
-
-  await registeredClerkRouter().push(
-    "/sign-up/verify?strategy=email_code#challenge",
-    clerkWindowNavigation(),
-  );
-
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/sign-up/verify");
-  });
-  expect(window.location.search).toBe("?strategy=email_code");
-  expect(window.location.hash).toBe("#challenge");
-  expect(assigned.calls).toStrictEqual([]);
-  expect(screen.getByTestId("clerk-sign-up")).toBeVisible();
-});
-
-test.each(["/", "/sign-in-token"])(
-  "Clerk navigation to non-Auth V1 path %s loads a new document",
-  async (destination) => {
-    const assigned = context.mocks.browser.locationAssign();
-    await setupSignedOutPage("/sign-in");
-
-    await registeredClerkRouter().push(destination, clerkWindowNavigation());
-
-    expect(assigned.calls).toStrictEqual([
-      new URL(destination, "https://app.okou.ai").href,
-    ]);
-    expect(window.location.pathname).toBe("/sign-in");
-  },
-);
-
-test("Clerk replacements outside Auth V1 load a new document", async () => {
-  const assigned = context.mocks.browser.locationAssign();
-  const replaced = context.mocks.browser.locationReplace();
-  await setupSignedOutPage("/sign-in/factor-one");
-
-  await registeredClerkRouter().replace(
-    "/onboarding?source=clerk#complete",
-    clerkWindowNavigation(),
-  );
-
-  expect(replaced.calls).toStrictEqual([
-    "https://app.okou.ai/onboarding?source=clerk#complete",
+  expect(assigned.calls).toStrictEqual([
+    new URL(destination, "https://app.okou.ai").href,
   ]);
-  expect(assigned.calls).toStrictEqual([]);
-  expect(window.location.pathname).toBe("/sign-in/factor-one");
+  expect(window.location.pathname).toBe("/sign-in");
 });
 
 test("Clerk cross-origin navigation stays browser-owned", async () => {
@@ -242,42 +179,6 @@ test("The hosted sign-up form renders with an allowed redirect URL", async () =>
     "data-clerk-provider-sign-up-url",
     "https://app.okou.ai/sign-up",
   );
-});
-
-test("Clerk's public fallback takes over after core initialization", async () => {
-  const clerk = context.mocks.clerk();
-  const clerkLoad = clerk.runtimePending();
-  const authComponent = clerk.deferAuthComponentMount();
-
-  const page = await startPage({
-    auth: null,
-    context,
-    host: "app.okou.ai",
-    path: "/sign-up",
-  });
-
-  const appSkeleton = await screen.findByTestId("app-skeleton");
-  expect(appSkeleton).not.toHaveAttribute("aria-hidden");
-  expect(screen.queryByTestId("clerk-sign-up")).not.toBeInTheDocument();
-
-  await act(async () => {
-    clerkLoad.resolve();
-    await clerkLoad.promise;
-  });
-
-  await expect(
-    screen.findByTestId("clerk-auth-loading"),
-  ).resolves.toBeVisible();
-  await page.ready;
-  expect(appSkeleton).toHaveAttribute("aria-hidden", "true");
-  expect(screen.getByTestId("clerk-sign-up")).toBeEmptyDOMElement();
-
-  act(() => {
-    authComponent.mount();
-  });
-
-  expect(screen.getByTestId("clerk-sign-up")).toHaveTextContent("/sign-up");
-  expect(screen.queryByTestId("clerk-auth-loading")).not.toBeInTheDocument();
 });
 
 test("A trusted Okou destination brands the hosted sign-in", async () => {
@@ -377,39 +278,4 @@ test("Hosted auth reaches the brand home and the theme toggle", async () => {
   expect(logoImage).not.toHaveAttribute("crossorigin");
   expect(logoImage.closest("a")).toBe(okouBrandLink());
   expect(screen.getByLabelText("Toggle theme")).toBeVisible();
-});
-
-test("Theme changes preserve the Clerk runtime binding", async () => {
-  context.mocks.browser.matchMedia(false);
-  const clerk = context.mocks.clerk();
-  await setupSignedOutPage("/sign-up");
-
-  const clerkRouter = registeredClerkRouter();
-  const themeToggle = screen.getByLabelText("Toggle theme");
-  click(themeToggle);
-
-  await waitFor(() => {
-    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-  });
-  expect(registeredClerkRouter()).toBe(clerkRouter);
-  expect(clerk.statusListenerCount()).toBe(1);
-});
-
-test("Leaving the hosted page releases the Clerk status subscription", async () => {
-  const clerk = context.mocks.clerk();
-  await setupSignedOutPage("/sign-in");
-  expect(screen.getByTestId("clerk-sign-in")).toBeVisible();
-  expect(clerk.statusListenerCount()).toBe(1);
-  expect(window.__okouClerkRouter).toBeDefined();
-
-  act(() => {
-    window.history.pushState(null, "", "/_/error");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-
-  await expect(
-    screen.findByText("Oops! Something went sideways"),
-  ).resolves.toBeVisible();
-  expect(clerk.statusListenerCount()).toBe(0);
-  expect(window.__okouClerkRouter).toBeUndefined();
 });

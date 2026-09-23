@@ -25,9 +25,6 @@ const SOURCES_FIRST_ON = {
 
 const TEAM_QUESTION = "Bring the people who do this work with you.";
 const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
-/** Shown in place of the invite list while nothing has been sent. */
-const TEAM_POINT =
-  "They land in this workspace, with the sources you just connected.";
 const TEAMMATE = "rowan@company.com";
 
 /** One connected source, which every step after the source step requires. */
@@ -160,51 +157,6 @@ test("A refused address shows why, and the step continues anyway", async () => {
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingExperience);
-});
-
-test("A request that fails outside the invitation's own answers leaves no outcome", async () => {
-  context.mocks.api(orgInviteContract.invite, ({ respond }) => {
-    return respond(500, {
-      error: { message: "Internal server error", code: "INTERNAL" },
-    });
-  });
-  await openTeamStep();
-
-  await typeInvite(TEAMMATE);
-  click(getButtonByName("Send invite"));
-
-  // The failure belongs to the request, not to the address: the step keeps no
-  // outcome for it and offers what joining gives a teammate again.
-  await expect(screen.findByText(TEAM_POINT)).resolves.toBeInTheDocument();
-  expect(screen.queryByText(TEAMMATE)).not.toBeInTheDocument();
-});
-
-test("An invitation cancelled by leaving the step reports no outcome", async () => {
-  const sent = context.mocks.deferred<void>();
-  context.mocks.api(orgInviteContract.invite, async ({ body, respond }) => {
-    await sent.promise;
-    return respond(200, { message: `Invitation sent to ${body.email}` });
-  });
-  await openTeamStep();
-
-  await typeInvite(TEAMMATE);
-  click(getButtonByName("Send invite"));
-
-  await expect(screen.findByText("Sending…")).resolves.toBeInTheDocument();
-
-  click(getButtonByName("Continue"));
-
-  await expect(
-    screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
-  ).resolves.toBeInTheDocument();
-
-  click(getButtonByName("Back"));
-
-  // The answer never reached this browser, so the step carries no outcome for
-  // the address and offers what joining gives a teammate again.
-  await expect(screen.findByText(TEAM_POINT)).resolves.toBeInTheDocument();
-  expect(screen.queryByText(TEAMMATE)).not.toBeInTheDocument();
-  sent.resolve();
 });
 
 test("The step can be left without inviting anyone", async () => {

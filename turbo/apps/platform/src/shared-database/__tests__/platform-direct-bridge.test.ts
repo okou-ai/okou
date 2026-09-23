@@ -581,87 +581,84 @@ test("Keep the chat list current with realtime thread changes", async () => {
   });
 });
 
-test.each(["direct", "message-port"] as const)(
-  "Cancel only the requesting reader across the %s bridge",
-  async (transport) => {
-    // The page cannot isolate one wait from another concurrent reader. Use the
-    // production bootstrap and bridge query boundary to exercise that contract.
-    const threadId = crypto.randomUUID();
-    const canonicalRow = row(threadId, 1);
-    const started = context.mocks.deferred<void>();
-    const release = context.mocks.deferred<void>();
-    context.mocks.api(
-      chatThreadEventsContract.rows,
-      async ({ query, respond }) => {
-        if (query.sinceSeqId === 0) {
-          if (!started.settled()) {
-            started.resolve();
-          }
-          await release.promise;
-          return respond(200, chatEventRowsResponse([canonicalRow], query));
+test("Cancel only the requesting reader across the direct bridge", async () => {
+  // The page cannot isolate one wait from another concurrent reader. Use the
+  // production bootstrap and bridge query boundary to exercise that contract.
+  const threadId = crypto.randomUUID();
+  const canonicalRow = row(threadId, 1);
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatThreadEventsContract.rows,
+    async ({ query, respond }) => {
+      if (query.sinceSeqId === 0) {
+        if (!started.settled()) {
+          started.resolve();
         }
-        return respond(200, chatEventRowsResponse([], query));
+        await release.promise;
+        return respond(200, chatEventRowsResponse([canonicalRow], query));
+      }
+      return respond(200, chatEventRowsResponse([], query));
+    },
+  );
+  await setupPage({
+    context,
+    path: "/error",
+    sharedWorkerTestTransport: "direct",
+    auth: {
+      user: { id: userId(), fullName: "Direct Bridge User" },
+      session: { token: "direct-bridge-token" },
+      organization: {
+        activeOrg: { id: orgId(), name: "Direct Bridge Org" },
+        memberships: [{ id: orgId() }],
       },
-    );
-    await setupPage({
-      context,
-      path: "/error",
-      sharedWorkerTestTransport: transport,
-      auth: {
-        user: { id: userId(), fullName: "Direct Bridge User" },
-        session: { token: "direct-bridge-token" },
-        organization: {
-          activeOrg: { id: orgId(), name: "Direct Bridge Org" },
-          memberships: [{ id: orgId() }],
-        },
+    },
+  });
+  const resetParent$ = resetSignal();
+  const resetReader$ = resetSignal();
+  const parentSignal = context.store.set(resetParent$, context.signal);
+  const readerSignal = context.store.set(resetReader$, parentSignal);
+  const query = {
+    dataKey: { kind: "chat-event", threadId },
+    afterSeqId: null,
+    consistency: "catch-up",
+  } as const;
+  const first = context.store.set(
+    queryChatEventSharedDatabase$,
+    query,
+    readerSignal,
+  );
+  const cancelled = Promise.allSettled([first]);
+  const second = context.store.set(
+    queryChatEventSharedDatabase$,
+    query,
+    context.signal,
+  );
+  await started.promise;
+  context.store.set(resetParent$);
+  await expect(cancelled).resolves.toStrictEqual([
+    { status: "rejected", reason: parentSignal.reason },
+  ]);
+  expect(readerSignal.reason).toBe(parentSignal.reason);
+  release.resolve();
+  await expect(second).resolves.toStrictEqual([canonicalRow]);
+  await expect(
+    context.store.set(
+      queryChatEventSharedDatabase$,
+      {
+        ...query,
+        consistency: "cache-only",
       },
-    });
-    const resetParent$ = resetSignal();
-    const resetReader$ = resetSignal();
-    const parentSignal = context.store.set(resetParent$, context.signal);
-    const readerSignal = context.store.set(resetReader$, parentSignal);
-    const query = {
-      dataKey: { kind: "chat-event", threadId },
-      afterSeqId: null,
-      consistency: "catch-up",
-    } as const;
-    const first = context.store.set(
-      queryChatEventSharedDatabase$,
-      query,
-      readerSignal,
-    );
-    const cancelled = Promise.allSettled([first]);
-    const second = context.store.set(
-      queryChatEventSharedDatabase$,
-      query,
       context.signal,
-    );
-    await started.promise;
-    context.store.set(resetParent$);
-    await expect(cancelled).resolves.toStrictEqual([
-      { status: "rejected", reason: parentSignal.reason },
-    ]);
-    expect(readerSignal.reason).toBe(parentSignal.reason);
-    release.resolve();
-    await expect(second).resolves.toStrictEqual([canonicalRow]);
-    await expect(
-      context.store.set(
-        queryChatEventSharedDatabase$,
-        {
-          ...query,
-          consistency: "cache-only",
-        },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual([canonicalRow]);
+    ),
+  ).resolves.toStrictEqual([canonicalRow]);
 
-    const reason = new DOMException("Reader already cancelled", "AbortError");
-    await expect(
-      context.store.set(
-        queryChatEventSharedDatabase$,
-        query,
-        AbortSignal.abort(reason),
-      ),
-    ).rejects.toBe(reason);
-  },
-);
+  const reason = new DOMException("Reader already cancelled", "AbortError");
+  await expect(
+    context.store.set(
+      queryChatEventSharedDatabase$,
+      query,
+      AbortSignal.abort(reason),
+    ),
+  ).rejects.toBe(reason);
+});

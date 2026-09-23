@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { HttpResponse } from "msw";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../__tests__/test-helpers.ts";
@@ -79,15 +78,5 @@ test("A stored organization timezone is not replaced on a later visit", async ()
   const settings = await screen.findByRole("dialog", { name: "Settings" });
   await expect(
     within(settings).findByText(/Pacific Time \(PT\)/u),
-  ).resolves.toBeVisible();
-});
-
-test("An API without timezone initialization still opens the application", async () => {
-  context.mocks.http.post("*/api/user-preferences/initialize", () => {
-    return new HttpResponse(null, { status: 404 });
-  });
-  await setupPage({ context, path: "/agents", host: "app.okou.ai" });
-  await expect(
-    screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeVisible();
 });

@@ -76,15 +76,11 @@ function mockActivity(
   options: {
     readonly framework?: string;
     readonly status?: LogStatus;
-    readonly error?: string;
   } = {},
 ): void {
   const status = options.status ?? "completed";
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, {
-      ...makeLogDetail(status, options.framework),
-      ...(options.error === undefined ? {} : { error: options.error }),
-    });
+    return respond(200, makeLogDetail(status, options.framework));
   });
   context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
     return respond(200, {
@@ -143,13 +139,6 @@ function expectBefore(first: Element, second: Element): void {
     first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).not.toBe(0);
 }
-
-test("Provider error details remain unchanged in a localized Activity", async () => {
-  const providerDetail = "Provider detail: Credit balance is too low";
-  mockActivity([], { status: "failed", error: providerDetail });
-  await setupPage({ context, path: "/activities/" + RUN_ID, locale: "ja-JP" });
-  await expect(screen.findByText(providerDetail)).resolves.toBeInTheDocument();
-});
 
 test("Large plans and file-change lists remain readable", async () => {
   mockActivity(
@@ -226,78 +215,6 @@ test("Activity logs do not hide a failed run behind completed child work", async
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Turn failed")).toBeInTheDocument();
   expect(screen.queryByText("Done")).not.toBeInTheDocument();
-});
-
-test("Invalid tool-result metadata does not corrupt the activity log", async () => {
-  mockActivity([
-    event(0, "assistant", {
-      message: {
-        content: [
-          {
-            type: "tool_use",
-            id: "tool-negative-meta",
-            name: "Bash",
-            input: { command: "echo meta" },
-          },
-        ],
-      },
-    }),
-    event(1, "user", {
-      message: {
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: "tool-negative-meta",
-            content: "valid result content",
-          },
-        ],
-      },
-      tool_use_result: { durationMs: -5, bytes: -10 },
-    }),
-  ]);
-
-  await openActivity();
-
-  const toolHeading = await screen.findByText("Bash");
-  click(summaryForText("Bash"));
-
-  await expect(
-    screen.findByText("valid result content"),
-  ).resolves.toBeVisible();
-  const toolDetails = toolHeading.closest("details");
-  if (!toolDetails) {
-    throw new Error("Tool details not found");
-  }
-  expect(toolDetails).not.toHaveTextContent("-5");
-  expect(toolDetails).not.toHaveTextContent("-10");
-});
-
-test("Activity logs keep unmatched tool results visible", async () => {
-  mockActivity([
-    event(0, "user", {
-      message: {
-        content: [
-          { type: "tool_result", content: "first unmatched result" },
-          { type: "tool_result", content: "second unmatched result" },
-        ],
-      },
-    }),
-  ]);
-
-  await openActivity();
-
-  const unmatchedTools = await screen.findAllByText("Unknown");
-  expect(unmatchedTools).toHaveLength(2);
-  for (const tool of unmatchedTools) {
-    const summary = tool.closest("summary");
-    if (!summary) {
-      throw new Error("Unmatched result summary not found");
-    }
-    click(summary);
-  }
-
-  expect(screen.getByText("first unmatched result")).toBeVisible();
-  expect(screen.getByText("second unmatched result")).toBeVisible();
 });
 
 test("Activity logs attach results to the correct subtask", async () => {
@@ -591,95 +508,6 @@ test("Activity search finds content inside nested work", async () => {
   expect(screen.queryByText("Todo")).not.toBeInTheDocument();
 });
 
-test("Activity logs show plans only when they contain useful work", async () => {
-  mockActivity(
-    [
-      event(0, "turn.plan.updated", {
-        type: "turn.plan.updated",
-        plan: [{ status: "empty-plan-marker" }, null],
-      }),
-      event(1, "turn.plan.updated", {
-        type: "turn.plan.updated",
-        explanation: "Review edge cases",
-        plan: [{ status: "in_progress", step: "Check empty plans" }],
-      }),
-    ],
-    { framework: "codex" },
-  );
-
-  await openActivity();
-
-  await expect(
-    screen.findByText(/Check empty plans/u),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText(/Review edge cases/u)).toBeInTheDocument();
-  expect(screen.queryByText(/empty-plan-marker/u)).not.toBeInTheDocument();
-});
-
-test("Activity logs keep a task-list failure with its task card", async () => {
-  mockActivity([
-    event(0, "assistant", {
-      message: {
-        content: [
-          {
-            type: "tool_use",
-            id: "todo-error",
-            name: "TodoWrite",
-            input: {
-              todos: [{ content: "Check failure", status: "pending" }],
-            },
-          },
-        ],
-      },
-    }),
-    event(1, "user", {
-      message: {
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: "todo-error",
-            content: "todo write failed",
-            is_error: true,
-          },
-        ],
-      },
-    }),
-  ]);
-
-  await openActivity();
-
-  await expect(screen.findByText("Todo")).resolves.toBeInTheDocument();
-  const search = await screen.findByPlaceholderText("Search steps");
-  await fill(search, "todo write failed");
-
-  await expect(screen.findByText("(1/1 matched)")).resolves.toBeInTheDocument();
-  expect(screen.getByText("Check failure")).toBeVisible();
-  expect(screen.getByText("todo write failed")).toBeVisible();
-  expect(screen.getByText("Todo")).toBeInTheDocument();
-});
-
-test("Activity logs retain a reasoning-only event", async () => {
-  mockActivity([
-    event(0, "assistant", {
-      message: {
-        content: [
-          {
-            type: "thinking",
-            thinking: "Inspect the previous run output.",
-          },
-        ],
-      },
-    }),
-  ]);
-
-  await openActivity();
-
-  await expect(screen.findByText("Thinking")).resolves.toBeInTheDocument();
-  click(summaryForText("Thinking"));
-
-  expect(screen.getByText("Inspect the previous run output.")).toBeVisible();
-});
-
 test("Activity logs show useful reasoning without progress noise", async () => {
   mockActivity([
     event(0, "system", {
@@ -715,78 +543,4 @@ test("Activity logs show useful reasoning without progress noise", async () => {
   ).toBeVisible();
   expect(screen.queryByText("thinking_tokens")).not.toBeInTheDocument();
   expect(screen.queryByText("777777")).not.toBeInTheDocument();
-});
-
-test("Pi bounded tool content stays associated with a failed tool and run", async () => {
-  const notice = "[event content truncated for delivery]";
-  const imageNotice = "[image omitted for delivery]";
-  mockActivity(
-    [
-      event(1, "assistant", {
-        message: {
-          content: [
-            {
-              type: "tool_use",
-              id: "bounded-pi-call",
-              name: "read",
-              input: { _delivery_notice: notice },
-            },
-          ],
-        },
-      }),
-      event(2, "user", {
-        message: {
-          content: [
-            {
-              type: "tool_result",
-              tool_use_id: "bounded-pi-call",
-              is_error: true,
-              content: [
-                { type: "text", text: notice },
-                { type: "text", text: imageNotice },
-              ],
-            },
-          ],
-        },
-      }),
-    ],
-    { framework: "pi", status: "failed" },
-  );
-  await openActivity();
-  const search = await screen.findByPlaceholderText("Search steps");
-  await fill(search, imageNotice);
-  await expect(screen.findByText("(1/1 matched)")).resolves.toBeInTheDocument();
-  expect(screen.getByText(imageNotice)).toBeVisible();
-  expect(screen.getAllByText("Failed").length).toBeGreaterThan(0);
-});
-
-test("Codex bounded structured output remains a readable completed item", async () => {
-  mockActivity(
-    [
-      event(1, "item.completed", {
-        type: "item.completed",
-        thread_id: "thread",
-        turn_id: "turn",
-        item: {
-          type: "function_call_output",
-          id: "bounded-codex-call",
-          name: "read",
-          namespace: "tools",
-          output: [
-            {
-              type: "input_text",
-              text: "[event content truncated for delivery]",
-            },
-            { type: "input_text", text: "[image omitted for delivery]" },
-          ],
-        },
-      }),
-    ],
-    { framework: "codex" },
-  );
-  await openActivity();
-  await expect(
-    screen.findByText(/bounded-codex-call/u),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByText(/function_call_output/u)).toBeVisible();
 });

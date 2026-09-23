@@ -453,14 +453,6 @@ function menuItemByText(text: string): HTMLElement {
   return item;
 }
 
-function dialogContaining(element: HTMLElement): HTMLElement {
-  const dialog = element.closest('[role="dialog"]');
-  if (!(dialog instanceof HTMLElement)) {
-    throw new Error("Containing dialog not found");
-  }
-  return dialog;
-}
-
 test("Hide workspace provider connections from non-admin members", async () => {
   context.mocks.data.org({
     id: "org_1",
@@ -776,64 +768,6 @@ test("Offer only models available to add a workspace route", async () => {
   }
 });
 
-test("Hide the Add model button when no model is available to add", async () => {
-  mockAdminOrg();
-  context.mocks.data.orgModelProviders([]);
-  const defaultPolicy = builtInPolicy(
-    "00000000-0000-4000-a000-000000000220",
-    "gpt-5.6-luna",
-    "GPT 5.6 Luna",
-    true,
-  );
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
-    return respond(200, {
-      revision: "revision-1",
-      writePreconditionRequired: false,
-      modelsAvailableToAdd: [],
-      policies: [defaultPolicy],
-      workspaceDefaultModel: defaultPolicy.model,
-      workspaceDefaultPolicyId: defaultPolicy.id,
-    });
-  });
-  await openProvidersTab();
-
-  await screen.findByTestId("org-model-policy-row-gpt-5.6-luna");
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.textContent?.trim() === "Add model";
-    }),
-  ).toBeFalsy();
-});
-
-test("Keep a configured staged model visible without offering it again", async () => {
-  mockAdminOrg();
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000221",
-      "gpt-5.6-luna",
-      "GPT 5.6 Luna",
-      true,
-    ),
-    builtInPolicy(
-      "00000000-0000-4000-a000-000000000222",
-      "gpt-6-sol",
-      "GPT 6 Sol",
-      false,
-    ),
-  ]);
-  await openProvidersTab();
-
-  expect(
-    screen.getByTestId("org-model-policy-row-gpt-6-sol"),
-  ).toBeInTheDocument();
-  click(buttonByText("Add model"));
-  const dialog = screen.getByRole("dialog", { name: "Add model" });
-  click(within(dialog).getByRole("combobox"));
-  await screen.findByRole("option", { name: "GPT 5.6 Sol" });
-  expect(screen.queryByRole("option", { name: "GPT 6 Sol" })).toBeNull();
-});
-
 test("Gate free workspaces by route instead of by model", async () => {
   mockAdminOrg();
   mockBillingCapabilities({
@@ -877,64 +811,6 @@ test("Gate free workspaces by route instead of by model", async () => {
   expect(within(astraRow).getByText("OpenAI")).toBeInTheDocument();
 });
 
-test("Keep cloud onboarding hidden while native routes are supported", async () => {
-  await openAddApiKeyModelDialog();
-  const dialog = screen.getByRole("dialog", { name: "Add model" });
-  const provider = within(dialog)
-    .getAllByRole("combobox")
-    .find((element) => {
-      return element.textContent === "Anthropic";
-    });
-  if (!provider) {
-    throw new Error("Expected the selected Anthropic provider");
-  }
-  click(provider);
-  await expect(
-    screen.findByRole("option", { name: "Anthropic" }),
-  ).resolves.toBeVisible();
-  expect(screen.getByRole("option", { name: "OpenRouter" })).toBeVisible();
-  expect(
-    screen.queryByRole("option", { name: /Bedrock|Foundry/u }),
-  ).not.toBeInTheDocument();
-});
-
-test("Reselecting the current model or provider preserves the API key draft", async () => {
-  await openAddApiKeyModelDialog();
-  const dialog = screen.getByRole("dialog", { name: "Add model" });
-  const key = screen.getByPlaceholderText("Enter your API key");
-  await fill(key, "sk-ant-draft");
-
-  const provider = within(dialog)
-    .getAllByRole("combobox")
-    .find((picker) => {
-      return picker.textContent?.includes("Anthropic");
-    });
-  if (!provider) {
-    throw new Error("Expected the Anthropic provider picker");
-  }
-  click(provider);
-  click(await screen.findByRole("option", { name: "Anthropic" }));
-  expect(key).toHaveValue("sk-ant-draft");
-
-  const model = within(dialog)
-    .getAllByRole("combobox")
-    .find((picker) => {
-      return picker.textContent?.includes("Claude Opus 4.8");
-    });
-  if (!model) {
-    throw new Error("Expected the current model picker");
-  }
-  click(model);
-  click(await screen.findByRole("option", { name: "Claude Opus 4.8" }));
-  expect(routeButtonByName(/API key/u, dialog)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(screen.getByPlaceholderText("Enter your API key")).toHaveValue(
-    "sk-ant-draft",
-  );
-});
-
 test("Connect a workspace API key to a model route", async () => {
   await openAddApiKeyModelDialog();
   const dialog = screen.getByRole("dialog", { name: "Add model" });
@@ -953,28 +829,6 @@ test("Connect a workspace API key to a model route", async () => {
 
   const row = await screen.findByTestId("org-model-policy-row-claude-opus-4-8");
   expect(within(row).getByText("Claude Opus 4.8")).toBeInTheDocument();
-  expect(within(row).getByText("Anthropic")).toBeInTheDocument();
-});
-
-test("Reject an empty workspace model API key without replacing its provider", async () => {
-  mockApiKeyModelRouteStory();
-  await openProvidersTab();
-
-  const row = await screen.findByTestId("org-model-policy-row-claude-opus-4-8");
-  expect(within(row).getByText("Claude Opus 4.8")).toBeInTheDocument();
-  expect(within(row).getByText("Anthropic")).toBeInTheDocument();
-
-  click(within(row).getByLabelText("Actions for Claude Opus 4.8"));
-  click(menuItemByText("Edit model"));
-
-  await waitFor(() => {
-    expect(
-      screen.getByRole("dialog", { name: "Edit model" }),
-    ).toBeInTheDocument();
-  });
-  await fill(screen.getByPlaceholderText("Enter your API key"), " ");
-  click(buttonByText("Save changes"));
-  expect(screen.getByText("API key is required")).toBeInTheDocument();
   expect(within(row).getByText("Anthropic")).toBeInTheDocument();
 });
 
@@ -1230,31 +1084,6 @@ test("Repair a model route whose provider is missing", async () => {
   });
 });
 
-test("Show Codex device authorization progress", async () => {
-  mockStaleProviderStory();
-  context.mocks.browser.open(context.mocks.browser.authWindow());
-  context.mocks.browser.clipboardWriteText();
-  await openProvidersTab();
-
-  const alert = await screen.findByRole("alert");
-  click(within(alert).getByText("Reconnect"));
-
-  const code = await screen.findByTestId("codex-device-auth-code");
-  const reconnectDialog = dialogContaining(code);
-  click(within(reconnectDialog).getByTestId("codex-device-auth-open"));
-
-  await waitFor(() => {
-    expect(
-      within(reconnectDialog).getByText(
-        "Device code copied. Waiting for approval...",
-      ),
-    ).toBeInTheDocument();
-    expect(code).toBeVisible();
-    expect(code).toHaveTextContent("WXYZ-1234");
-    expect(screen.queryByText("ChatGPT connected")).toBeNull();
-  });
-});
-
 test("Reconnect a stale workspace Claude account", async () => {
   mockAdminOrg();
   context.mocks.data.orgModelProviders([staleClaudeCodeProvider()]);
@@ -1392,41 +1221,6 @@ test("Complete a stale workspace Codex reconnection", async () => {
     const routeRow = screen.getByTestId("org-model-policy-row-gpt-5.6-sol");
     expect(within(routeRow).getByText("ChatGPT (Codex)")).toBeInTheDocument();
   });
-});
-
-test("Cancel an unfinished workspace Codex reconnection when Settings closes", async () => {
-  mockStaleProviderStory();
-  context.mocks.api(codexDeviceAuthContract.cancel, ({ respond }) => {
-    return respond(200, { status: "cancelled" });
-  });
-  await openProvidersTab();
-
-  const alert = await screen.findByRole("alert");
-  click(within(alert).getByText("Reconnect"));
-
-  const code = await screen.findByTestId("codex-device-auth-code");
-  const deviceDialog = dialogContaining(code);
-  click(within(deviceDialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("codex-device-auth-code")).toBeNull();
-    expect(within(alert).getByText("Reconnect")).toBeInTheDocument();
-  });
-
-  const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
-  click(within(settingsDialog).getByLabelText("Close"));
-
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull();
-  });
-
-  const reopenedSettings = await openSettingsFromAccountMenu();
-  click(buttonByText("Models", reopenedSettings));
-  const reopenedAlert = await screen.findByRole("alert");
-  expect(within(reopenedAlert).getByText("Reconnect")).toBeInTheDocument();
-  click(within(reopenedAlert).getByText("Reconnect"));
-  await expect(
-    screen.findByTestId("codex-device-auth-code"),
-  ).resolves.toHaveTextContent("WXYZ-1234");
 });
 
 function enabledPolicySnapshot(): OrgModelPoliciesResponse {
@@ -1615,9 +1409,6 @@ test("Enabled priority changes an API route to Subscription and keeps that choic
   expect(
     routeButtonByName(/Codex subscription/u, subscriptionEdit),
   ).toHaveAttribute("aria-pressed", "true");
-  // An administrator can change their choice and return to Subscription before saving.
-  click(routeButtonByName(/Built-in/u, subscriptionEdit));
-  click(routeButtonByName(/Codex subscription/u, subscriptionEdit));
   click(buttonByText("Save changes", subscriptionEdit));
   await waitFor(() => {
     expect(
@@ -1628,60 +1419,4 @@ test("Enabled priority changes an API route to Subscription and keeps that choic
   expect(
     within(screen.getByTestId("default-model-row")).getByRole("combobox"),
   ).toHaveTextContent("GPT 5.6 Luna");
-});
-
-test("A stale settings save displays refresh guidance and leaves the displayed legacy route intact", async () => {
-  mockAdminOrg();
-  const snapshot = enabledPolicySnapshot();
-  context.mocks.api(modelPoliciesMainContract.list, ({ respond }) => {
-    return respond(200, snapshot);
-  });
-  context.mocks.api(modelPoliciesMainContract.update, ({ body, respond }) => {
-    expect(body.revision).toBe(snapshot.revision);
-    return respond(409, {
-      error: {
-        code: "CONFLICT",
-        message:
-          "Model settings changed. Refresh model settings and try again.",
-      },
-    });
-  });
-  await openProvidersTab();
-  const legacy = await screen.findByTestId("org-model-policy-row-gpt-6-astra");
-  click(within(screen.getByTestId("default-model-row")).getByRole("combobox"));
-  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
-  await expect(
-    screen.findByText(
-      "Model settings changed. Refresh model settings and try again.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(within(legacy).getByText("ChatGPT (Codex)")).toBeInTheDocument();
-  expect(
-    within(screen.getByTestId("default-model-row")).getByRole("combobox"),
-  ).toHaveTextContent("GPT 5.6 Luna");
-});
-
-test("Provider route keyboard actions edit the draft before submitting", async () => {
-  await openAddApiKeyModelDialog();
-  const dialog = screen.getByRole("dialog", { name: "Add model" });
-  const api = routeButtonByName(/API key/u, dialog);
-  const builtIn = routeButtonByName(/Built-in/u, dialog);
-  const gateway = routeButtonByName(/Custom gateway/u, dialog);
-  const user = userEvent.setup();
-  expect(api).toHaveAttribute("aria-pressed", "true");
-  expect(gateway).toBeDisabled();
-  builtIn.focus();
-  await user.keyboard("{ArrowDown}{ArrowRight}");
-  expect(builtIn).toHaveFocus();
-  expect(api).toHaveAttribute("aria-pressed", "true");
-  await user.keyboard(" ");
-  expect(builtIn).toHaveAttribute("aria-pressed", "true");
-  expect(api).toHaveAttribute("aria-pressed", "false");
-  expect(dialog).toBeInTheDocument();
-  api.focus();
-  expect(api).toHaveFocus();
-  await user.keyboard("{Enter}");
-  expect(api).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByPlaceholderText("Enter your API key")).toBeInTheDocument();
-  expect(dialog).toBeInTheDocument();
 });

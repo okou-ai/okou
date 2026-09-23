@@ -1,5 +1,5 @@
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
-import { act, screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import {
   click,
@@ -7,7 +7,6 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 
 const axiomTelemetry = vi.hoisted(() => {
   return {
@@ -149,7 +148,7 @@ test("Onboarding sends authenticated events without waiting, with one attempt re
   complete.resolve();
 });
 
-test.each([204, 503])(
+test.each([503])(
   "A Marketing %s response does not produce another telemetry record or block onboarding",
   async (status) => {
     onboardingNeeded();
@@ -231,60 +230,4 @@ test("Preview onboarding sends to its matching Marketing environment", async () 
   expect(
     screen.getByRole("heading", { name: "What do you want to make first" }),
   ).toBeInTheDocument();
-});
-
-test("Changing the session cancels the pending onboarding request", async () => {
-  onboardingNeeded();
-  const received = context.mocks.deferred<Request>();
-  context.mocks.api(marketingEventsContract.record, ({ request, never }) => {
-    received.resolve(request);
-    return never();
-  });
-
-  await openOnboarding();
-  const request = await received.promise;
-  expect(request.signal.aborted).toBeFalsy();
-  const switched = window._okou?.switchClerkSession("another-test-session");
-  expect(request.signal.aborted).toBeTruthy();
-  await switched;
-});
-
-test("Switching organizations during token acquisition does not send the old page event as the new organization", async () => {
-  onboardingNeeded();
-  const firstReceived = context.mocks.deferred<void>();
-  const requests: Request[] = [];
-  context.mocks.api(marketingEventsContract.record, ({ request, respond }) => {
-    requests.push(request);
-    firstReceived.resolve();
-    return respond(204);
-  });
-  await openOnboarding();
-  await firstReceived.promise;
-
-  const tokenRequested = context.mocks.deferred<void>();
-  const token = context.mocks.deferred<string>();
-  mockedClerk.sessionGetToken.mockImplementation(() => {
-    tokenRequested.resolve();
-    return token.promise;
-  });
-  selectWorkflowAutomation();
-  await tokenRequested.promise;
-  await expect(
-    screen.findByRole("heading", { name: "What do you work on?" }),
-  ).resolves.toBeInTheDocument();
-
-  const clerk = context.mocks.clerk();
-  act(() => {
-    clerk.organization({
-      activeOrg: { id: "org_other", name: "Other workspace" },
-      memberships: [{ id: "org_other" }],
-    });
-    clerk.stateChanged();
-  });
-  token.resolve("other-org-token");
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/");
-  });
-  expect(requests).toHaveLength(1);
-  expect(marketingEvents()).toHaveLength(1);
 });

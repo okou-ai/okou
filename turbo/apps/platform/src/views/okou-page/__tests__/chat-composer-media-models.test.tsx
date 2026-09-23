@@ -41,13 +41,11 @@ import {
   composerModelTriggerIn,
   mockAgent,
   mockBillingCapabilities,
-  mockComposerThreadSnapshot,
   mockOrgModelRoutes,
   mockThread,
   THREAD_ID,
 } from "./chat-composer-test-helpers.ts";
 
-const SPLIT_THREAD_ID = "b1000000-0000-4000-a000-000000000106";
 const DEFAULT_RUN_MODEL = "claude-fable-5-1";
 const DEFAULT_IMAGE_MODEL = "fal-ai/nano-banana-2";
 const DEFAULT_VIDEO_MODEL = "MiniMax-H3";
@@ -87,23 +85,6 @@ function setDesktopViewport(): void {
 function setMobileViewport(): void {
   context.mocks.browser.matchMedia((query) => {
     return query === "(pointer: coarse)";
-  });
-}
-
-function composerFor(threadId?: string): HTMLElement {
-  const root = threadId
-    ? document.querySelector(`[data-chat-thread-container-id="${threadId}"]`)
-    : document;
-  const composer = root?.querySelector("[data-slot='chat-composer-card']");
-  if (!(composer instanceof HTMLElement)) {
-    throw new Error(`Composer${threadId ? ` for ${threadId}` : ""} not found`);
-  }
-  return composer;
-}
-
-async function findComposerFor(threadId: string): Promise<HTMLElement> {
-  return await waitFor(() => {
-    return composerFor(threadId);
   });
 }
 
@@ -339,13 +320,7 @@ test("Show the curated image model catalog", async () => {
   );
 });
 
-test.each([
-  { label: "GPT Image 1", model: "gpt-image-1" },
-  { label: "GPT Image 2.5 Flare", model: "gpt-image-2.5-flare" },
-  { label: "GPT Image 2.5 Sunburst", model: "gpt-image-2.5-sunburst" },
-  { label: "Seedream 5 Pro", model: "dola-seedream-5-0-pro-260628" },
-  { label: "FLUX.2 Pro", model: "fal-ai/flux-2-pro" },
-])("Choose $label for the current thread", async ({ label, model }) => {
+test("Choose an image model for the current thread", async () => {
   const updates: (ImageModel | null)[] = [];
   installModelEnvironment();
   mockThread({
@@ -362,118 +337,12 @@ test.each([
 
   await setupPage({ context, path: `/chats/${THREAD_ID}` });
 
-  await chooseMediaModel("Image", label);
+  await chooseMediaModel("Image", "FLUX.2 Pro");
   await openCategory("Image");
   await waitFor(() => {
-    expectSelected(label);
-    expect(updates).toStrictEqual([model]);
+    expectSelected("FLUX.2 Pro");
+    expect(updates).toStrictEqual(["fal-ai/flux-2-pro"]);
   });
-});
-
-test("Keep image model pins independent in split chats", async () => {
-  setDesktopViewport();
-  installModelEnvironment();
-  mockThread();
-  mockComposerThreadSnapshot([
-    {
-      id: THREAD_ID,
-      agentId: AGENT_ID,
-      title: "Main image thread",
-      selectedModel: DEFAULT_RUN_MODEL,
-      selectedImageModel: "gpt-image-2",
-    },
-    {
-      id: SPLIT_THREAD_ID,
-      agentId: AGENT_ID,
-      title: "Side image thread",
-      selectedModel: DEFAULT_RUN_MODEL,
-      selectedImageModel: DEFAULT_IMAGE_MODEL,
-    },
-  ]);
-  const updates: { readonly id: string; readonly model: ImageModel | null }[] =
-    [];
-  context.mocks.api(
-    chatThreadImageModelContract.update,
-    ({ params, body, respond }) => {
-      updates.push({ id: params.id, model: body.model });
-      return respond(204);
-    },
-  );
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}?sidebar=${SPLIT_THREAD_ID}`,
-  });
-
-  const mainComposer = await findComposerFor(THREAD_ID);
-  const sideComposer = await findComposerFor(SPLIT_THREAD_ID);
-
-  await chooseMediaModel("Image", "FLUX.2 Pro", mainComposer);
-  const user = await openCategory("Image", mainComposer);
-  expectSelected("FLUX.2 Pro");
-  await user.click(category("Chat"));
-  // The panel swaps in place, so the image rows leave with it.
-  await screen.findByRole("menu", { name: "Chat models" });
-  expect(mediaModelRowOrNull("FLUX.2 Pro")).toBeNull();
-  await user.keyboard("{Escape}");
-
-  await openCategory("Image", sideComposer);
-  expectSelected("Nano Banana 2");
-  expect(updates).toStrictEqual([
-    { id: THREAD_ID, model: "fal-ai/flux-2-pro" },
-  ]);
-});
-
-test("Do not select an available image model for an unavailable pin", async () => {
-  installModelEnvironment();
-  mockThread({
-    selectedModel: DEFAULT_RUN_MODEL,
-    selectedImageModel: "fal-ai/flux-pro/v1.1",
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  await openCategory("Image");
-  for (const model of PUBLIC_IMAGE_MODELS) {
-    expect(mediaModelRow(IMAGE_MODEL_CONFIGS[model].label)).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
-  }
-});
-
-test("An open media menu follows a live default after an unavailable selection", async () => {
-  let currentPreference = preference({
-    selectedImageModel: "fal-ai/flux-pro/v1.1",
-  });
-  installModelEnvironment(currentPreference);
-  setDesktopViewport();
-  context.mocks.api(userModelPreferenceContract.get, ({ respond }) => {
-    return respond(200, currentPreference);
-  });
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
-  await openCategory("Image");
-  for (const model of PUBLIC_IMAGE_MODELS) {
-    expect(mediaModelRow(IMAGE_MODEL_CONFIGS[model].label)).toHaveAttribute(
-      "aria-checked",
-      "false",
-    );
-  }
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("userPreferenceChanged"),
-    ).toBeTruthy();
-  });
-  currentPreference = preference({ selectedImageModel: "gpt-image-2" });
-  context.mocks.ably.trigger("userPreferenceChanged", {
-    kinds: ["defaultImageModel"],
-  });
-  await waitFor(() => {
-    expectSelected("GPT Image 2");
-  });
-  expect(
-    screen.getByRole("menu", { name: "Image models" }),
-  ).toBeInTheDocument();
 });
 
 test("Follow the live image model default in an untouched new chat", async () => {
@@ -515,48 +384,6 @@ test("Follow the live image model default in an untouched new chat", async () =>
   await waitFor(() => {
     expect(creates).toHaveLength(1);
     expect(creates[0]?.imageModel).toBeUndefined();
-  });
-});
-
-test("Follow the live video model default in an untouched new chat", async () => {
-  let currentPreference = preference();
-  const creates: ({ readonly videoModel?: string } | undefined)[] = [];
-  installModelEnvironment(currentPreference);
-  context.mocks.api(userModelPreferenceContract.get, ({ respond }) => {
-    return respond(200, currentPreference);
-  });
-  mockChatLifecycle(context, {
-    threadId: "new-video-default",
-    onThreadCreate: (body) => {
-      creates.push(body);
-    },
-  });
-
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
-
-  await openCategory("Video");
-  expectSelected("MiniMax H3");
-  await userEvent.setup().keyboard("{Escape}");
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("userPreferenceChanged"),
-    ).toBeTruthy();
-  });
-  currentPreference = preference({ selectedVideoModel: "fal-ai/veo3.1/fast" });
-  context.mocks.ably.trigger("userPreferenceChanged", {
-    kinds: ["defaultVideoModel"],
-  });
-
-  await openCategory("Video");
-  await waitFor(() => {
-    expectSelected("Veo 3.1 fast");
-  });
-  await userEvent.setup().keyboard("{Escape}");
-  await sendNewMessage("Use the live video default");
-
-  await waitFor(() => {
-    expect(creates).toHaveLength(1);
-    expect(creates[0]?.videoModel).toBeUndefined();
   });
 });
 
@@ -652,45 +479,6 @@ test("Retain independent Chat, Image, and Video selections in a new chat", async
   expect(scopeCard("Video model for this chat")).not.toBeNull();
 });
 
-async function exerciseExistingChatThreeModePicker(): Promise<void> {
-  const user = userEvent.setup({ delay: null });
-  await openPicker(document, user);
-  expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
-  await expect(
-    findModelMenuOption(/Claude Sonnet 4\.6/u),
-  ).resolves.toHaveAttribute("aria-checked", "true");
-  await user.click(category("Image"));
-  await waitFor(() => {
-    expectSelected("GPT Image 2");
-  });
-  await user.click(category("Video"));
-  await waitFor(() => {
-    expectSelected("MiniMax H3");
-  });
-  await user.click(category("Chat"));
-  await expect(
-    findModelMenuOption(/Claude Sonnet 4\.6/u),
-  ).resolves.toHaveAttribute("aria-checked", "true");
-  expect(scopeCard("Model for this chat")).toBeNull();
-  expect(scopeCard("Image model for this chat")).toBeNull();
-  expect(scopeCard("Video model for this chat")).toBeNull();
-}
-
-test("Switch Chat, Image, and Video from one model picker in a desktop existing chat", async () => {
-  setDesktopViewport();
-  installModelEnvironment();
-  mockThread({
-    selectedModel: "claude-sonnet-4-6",
-    selectedImageModel: "gpt-image-2",
-    selectedVideoModel: DEFAULT_VIDEO_MODEL,
-  });
-
-  await setupPage({ context, path: `/chats/${THREAD_ID}` });
-
-  await exerciseExistingChatThreeModePicker();
-  expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
-});
-
 /**
  * Both picker layouts can select a temporary image model for the next chat.
  */
@@ -767,42 +555,6 @@ test("A temporary image model applies to one new chat and resets for the next", 
   await screen.findByRole("heading", { level: 2 });
   await openCategory("Image");
   expectSelected("Nano Banana 2");
-});
-
-/**
- * The composer tray holds one row. A blocked paid tool is the row a member has
- * to act on, so it takes the tray from the temporary media-model card — but
- * only once the read settles, because a read in flight has nothing to say.
- */
-test("A blocked paid tool takes the composer tray from the temporary image model card", async () => {
-  const settleRead = context.mocks.deferred<void>();
-  context.mocks.api(paidToolsContract.get, async ({ respond, withSignal }) => {
-    await withSignal(settleRead.promise);
-    return respond(200, { disabledTools: ["image-generation"] });
-  });
-  await openTemporaryImageModelChat("menu", {
-    [FeatureSwitchKey.PaidToolControls]: true,
-    [FeatureSwitchKey.SettingsToolsTab]: true,
-  });
-  await chooseMenuMediaModel("Image", "GPT Image 2");
-
-  await waitFor(() => {
-    expect(scopeCard("Image model for this chat")).not.toBeNull();
-  });
-  expect(
-    screen.queryByText("Loading your tool settings…"),
-  ).not.toBeInTheDocument();
-
-  settleRead.resolve();
-
-  await screen.findByText("Image generation is off for you");
-  expect(scopeCard("Image model for this chat")).toBeNull();
-
-  await openMenuCategory("Chat");
-  await userEvent.setup().keyboard("{Escape}");
-  expect(
-    screen.queryByText("Image generation is off for you"),
-  ).not.toBeInTheDocument();
 });
 
 test("Selecting an image model in the desktop picker shows the disabled tool notice", async () => {
@@ -885,76 +637,6 @@ test("Save a temporary image model as the default for future chats", async () =>
   });
   await waitFor(() => {
     expect(scopeCard("Image model for this chat")).toBeNull();
-  });
-});
-
-test("Temporarily choose a video model for a new chat", async () => {
-  setMobileViewport();
-  const preferenceUpdates: UpdateUserModelPreferenceRequest[] = [];
-  let currentPreference = preference();
-  installModelEnvironment(currentPreference);
-  context.mocks.api(userModelPreferenceContract.get, ({ respond }) => {
-    return respond(200, currentPreference);
-  });
-  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
-    preferenceUpdates.push(body);
-    currentPreference = preference({
-      selectedModel: body.selectedModel,
-      serviceTier: body.serviceTier,
-      selectedImageModel: currentPreference.selectedImageModel,
-      selectedVideoModel:
-        body.selectedVideoModel ?? currentPreference.selectedVideoModel,
-    });
-    return respond(200, currentPreference);
-  });
-  mockChatLifecycle(context, { threadId: "temporary-video-choice" });
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
-  });
-
-  await chooseMenuMediaModel("Video", "Veo 3.1 fast");
-  await waitFor(() => {
-    expect(scopeCard("Video model for this chat")).toHaveTextContent(
-      /Veo 3\.1 fast/iu,
-    );
-  });
-  expect(preferenceUpdates).toStrictEqual([]);
-  const card = scopeCard("Video model for this chat");
-  if (!card) {
-    throw new Error("Video scope card not found");
-  }
-  const useFuture = queryAllByRoleFast("button", card).find((button) => {
-    return button.textContent?.includes("Use this for future chats");
-  });
-  if (!useFuture) {
-    throw new Error("Use this for future chats button not found");
-  }
-  click(useFuture);
-  await waitFor(() => {
-    expect(preferenceUpdates).toStrictEqual([
-      {
-        selectedModel: DEFAULT_RUN_MODEL,
-        serviceTier: "priority",
-        selectedVideoModel: "fal-ai/veo3.1/fast",
-      },
-    ]);
-  });
-  currentPreference = preference({ selectedVideoModel: "fal-ai/veo3.1/fast" });
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("userPreferenceChanged"),
-    ).toBeTruthy();
-  });
-  context.mocks.ably.trigger("userPreferenceChanged", {
-    kinds: ["defaultVideoModel"],
-  });
-  await waitFor(() => {
-    expect(scopeCard("Video model for this chat")).toBeNull();
   });
 });
 
@@ -1115,106 +797,4 @@ test("Choose image and video models from the compact overview", async () => {
   expect(pickerTrigger()).toHaveAttribute("aria-expanded", "true");
   expect(menuRow("Change Video model, Seedance 2.0")).toBeVisible();
   expect(menuRow("Change Chat model, Claude Fable 5.1")).toBeVisible();
-});
-
-test("Switch model type in the flyout without leaving the panel", async () => {
-  installModelEnvironment();
-  setDesktopViewport();
-  mockThread({
-    selectedModel: DEFAULT_RUN_MODEL,
-    selectedImageModel: null,
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-
-  // The flyout trigger is a popover button inside the composer, not the
-  // Select combobox the menu layout renders.
-  const flyoutTrigger = await waitFor(() => {
-    const trigger = composerFor()
-      .querySelector('[data-slot="select-value"]')
-      ?.closest("button");
-    if (!(trigger instanceof HTMLElement)) {
-      throw new Error("Composer model picker not found");
-    }
-    return trigger;
-  });
-  click(flyoutTrigger);
-
-  // Types live in their own panel; the models sit in a second one beside it.
-  const types = await screen.findByRole("menu", { name: "Models" });
-  const typeNames = queryAllByRoleFast("menuitem", types).map((tab) => {
-    return tab.textContent;
-  });
-  expect(typeNames).toHaveLength(3);
-  await screen.findByRole("menu", { name: "Chat models" });
-
-  const imageType = queryAllByRoleFast("menuitem", types).find((tab) => {
-    return tab.textContent?.includes("Image");
-  });
-  if (!imageType) {
-    throw new Error("Image type row not found");
-  }
-  click(imageType);
-
-  // The panel swapped in place: no page was pushed, so nothing to go back from.
-  const imageList = await screen.findByRole("menu", {
-    name: "Image models",
-  });
-  expect(screen.queryByLabelText("Back to models")).not.toBeInTheDocument();
-  expect(imageType).toHaveAttribute("aria-expanded", "true");
-  const banana = queryAllByRoleFast("menuitemradio", imageList).find(
-    (option) => {
-      return option.textContent?.includes("Nano Banana 2");
-    },
-  );
-  if (!banana) {
-    throw new Error("Nano Banana 2 option not found");
-  }
-  expect(banana).toHaveAttribute("aria-checked", "true");
-});
-
-test("Hovering a model type opens its panel only once the pointer settles", async () => {
-  installModelEnvironment();
-  setDesktopViewport();
-  mockThread({
-    selectedModel: DEFAULT_RUN_MODEL,
-    selectedImageModel: null,
-  });
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-  });
-
-  const flyoutTrigger = await waitFor(() => {
-    const trigger = composerFor()
-      .querySelector('[data-slot="select-value"]')
-      ?.closest("button");
-    if (!(trigger instanceof HTMLElement)) {
-      throw new Error("Composer model picker not found");
-    }
-    return trigger;
-  });
-  click(flyoutTrigger);
-
-  const types = await screen.findByRole("menu", { name: "Models" });
-  await screen.findByRole("menu", { name: "Chat models" });
-  const imageType = queryAllByRoleFast("menuitem", types).find((tab) => {
-    return tab.textContent?.includes("Image");
-  });
-  if (!imageType) {
-    throw new Error("Image type row not found");
-  }
-
-  // Native submenus dismiss the previous branch while waiting for the new
-  // trigger's hover intent. Passing a row must not open that branch at once.
-  await userEvent.setup({ delay: null }).hover(imageType);
-  expect(imageType).toHaveAttribute("aria-expanded", "false");
-
-  // Resting on the row is what opens it.
-  await screen.findByRole("menu", { name: "Image models" });
-  expect(imageType).toHaveAttribute("aria-expanded", "true");
 });

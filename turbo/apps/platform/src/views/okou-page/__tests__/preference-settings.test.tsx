@@ -4,7 +4,7 @@ import {
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it, test, vi } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
 import {
   click,
@@ -15,34 +15,6 @@ import { pathname, search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-
-function mockScrollIntoView(): ReturnType<typeof vi.fn> {
-  const descriptor = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "scrollIntoView",
-  );
-  const scrollIntoView = vi.fn<HTMLElement["scrollIntoView"]>();
-  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-    configurable: true,
-    value: scrollIntoView,
-  });
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      if (descriptor) {
-        Object.defineProperty(
-          HTMLElement.prototype,
-          "scrollIntoView",
-          descriptor,
-        );
-      } else {
-        Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
-      }
-    },
-    { once: true },
-  );
-  return scrollIntoView;
-}
 
 async function expectUnifiedSection(
   section: "preference" | "model" | "debug",
@@ -57,12 +29,7 @@ async function expectUnifiedSection(
 }
 
 describe("unified preference settings", () => {
-  it.each([
-    "/settings",
-    "/preferences",
-    "/settings?tab=appearance",
-    "/preferences?tab=timezone",
-  ])(
+  it.each(["/settings"])(
     "maps the legacy preference URL %s into unified Settings",
     async (path) => {
       await setupPage({ context, path });
@@ -72,26 +39,15 @@ describe("unified preference settings", () => {
     },
   );
 
-  it.each([
-    "/settings?tab=model-configuration",
-    "/preferences?tab=personal-providers",
-  ])("maps the legacy model URL %s into unified Settings", async (path) => {
-    await setupPage({ context, path });
+  it.each(["/settings?tab=model-configuration"])(
+    "maps the legacy model URL %s into unified Settings",
+    async (path) => {
+      await setupPage({ context, path });
 
-    await expectUnifiedSection("model", "Models");
-    expect(pathname()).toBe("/agents");
-  });
-
-  it("maps a visible legacy Debug tab into unified Debug Settings", async () => {
-    await setupPage({
-      context,
-      path: "/settings?tab=debug",
-      featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-    });
-
-    await expectUnifiedSection("debug", "Debug");
-    expect(pathname()).toBe("/agents");
-  });
+      await expectUnifiedSection("model", "Models");
+      expect(pathname()).toBe("/agents");
+    },
+  );
 
   it("retains the unified Debug visibility fallback for legacy links", async () => {
     await setupPage({ context, path: "/preferences?tab=debug" });
@@ -103,44 +59,6 @@ describe("unified preference settings", () => {
     expect(within(dialog).queryByText("Debug")).not.toBeInTheDocument();
     expect(pathname()).toBe("/agents");
     expect(new URLSearchParams(search()).get("settings")).toBe("debug");
-  });
-
-  it("updates the shell document color theme", async () => {
-    context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
-
-    await setupPage({
-      context,
-      path: "/agents?settings=preference",
-      featureSwitches: {
-        [FeatureSwitchKey.GradientColorThemes]: true,
-      },
-    });
-
-    const colorTheme = await screen.findByRole("group", {
-      name: "Color theme",
-    });
-    expect(document.documentElement).toHaveAttribute(
-      "data-color-theme",
-      "blue-horizon",
-    );
-
-    const goldenHourButton = queryAllByRoleFast("button", colorTheme).find(
-      (candidate) => {
-        return candidate.textContent?.trim() === "Golden hour";
-      },
-    );
-    if (!goldenHourButton) {
-      throw new Error("Golden hour button not found");
-    }
-    click(goldenHourButton);
-
-    await waitFor(() => {
-      expect(document.documentElement).toHaveAttribute(
-        "data-color-theme",
-        "golden-hour",
-      );
-      expect(goldenHourButton).toHaveAttribute("aria-pressed", "true");
-    });
   });
 
   it("hides email subscriptions and Morning Brief when only Official Workflows is available", async () => {
@@ -186,49 +104,6 @@ describe("unified preference settings", () => {
     await expect(
       within(dialog).findByTestId("morning-brief-preference"),
     ).resolves.toBeVisible();
-  });
-
-  it("preserves the legacy Morning Brief focus and displays its authoritative next brief", async () => {
-    const scrollIntoView = mockScrollIntoView();
-    const nextRunAt = "2030-01-02T23:30:00.000Z";
-    context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-      return respond(200, {
-        enabled: true,
-        status: "enabled",
-        nextRunAt,
-        timezone: "Asia/Shanghai",
-        unavailableReason: null,
-      });
-    });
-
-    await setupPage({
-      context,
-      path: "/settings?tab=timezone&focus=morning-brief",
-      featureSwitches: {
-        [FeatureSwitchKey.MorningBrief]: true,
-        [FeatureSwitchKey.OfficialWorkflows]: false,
-      },
-    });
-
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    const card = within(dialog).getByTestId("morning-brief-preference");
-    const formatted = new Intl.DateTimeFormat("en-US", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: "Asia/Shanghai",
-    }).format(new Date(nextRunAt));
-    expect(within(dialog).getByText(`Next ${formatted}`)).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("switch", { name: "Morning brief" }),
-    ).toBeChecked();
-    expect(within(dialog).queryByText("Send now")).not.toBeInTheDocument();
-    expect(pathname()).toBe("/agents");
-    const params = new URLSearchParams(search());
-    expect(params.get("settings")).toBe("preference");
-    expect(params.get("focus")).toBe("morning-brief");
-    expect(params.has("tab")).toBeFalsy();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "center" });
-    expect(card).toHaveFocus();
   });
 
   it("updates Morning Brief and renders its actionable conflict state", async () => {

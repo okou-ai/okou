@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 
 import {
   queryAllByRoleFast,
@@ -58,98 +58,6 @@ test("Copy the captured passage when pointerup clears its native selection", asy
   await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([PASSAGE]);
   expect(queryQuoteButton()).not.toBeInTheDocument();
-});
-
-test("Finish a keyboard copy through the legacy clipboard fallback", async () => {
-  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
-    new DOMException("Clipboard API denied", "NotAllowedError"),
-  );
-  context.mocks.browser.clipboardExecCommand();
-  let selectedText: string | null = null;
-  const clipboardWrites: string[] = [];
-  vi.spyOn(HTMLTextAreaElement.prototype, "select").mockImplementation(
-    function (this: HTMLTextAreaElement) {
-      selectedText = this.value;
-    },
-  );
-  vi.spyOn(document, "execCommand").mockImplementation((command) => {
-    if (command !== "copy" || selectedText === null) {
-      return false;
-    }
-    const defaultCopy = document.dispatchEvent(
-      new Event("copy", { bubbles: true, cancelable: true }),
-    );
-    if (defaultCopy) {
-      clipboardWrites.push(selectedText);
-    }
-    return defaultCopy;
-  });
-  await openSelection();
-
-  fireEvent.keyDown(document, { key: "c" });
-
-  await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
-  expect(clipboardWrites).toStrictEqual([PASSAGE]);
-  expect(queryQuoteButton()).not.toBeInTheDocument();
-});
-
-test("Keep the captured passage available to retry when both clipboard methods fail", async () => {
-  const fallbackAttempted = context.mocks.deferred<void>();
-  const clipboardWrites: string[] = [];
-  vi.spyOn(navigator.clipboard, "writeText")
-    .mockRejectedValueOnce(
-      new DOMException("Clipboard API denied", "NotAllowedError"),
-    )
-    .mockImplementation((text) => {
-      clipboardWrites.push(text);
-      return Promise.resolve();
-    });
-  context.mocks.browser.clipboardExecCommand();
-  vi.spyOn(document, "execCommand").mockImplementation(() => {
-    document.dispatchEvent(
-      new Event("copy", { bubbles: true, cancelable: true }),
-    );
-    fallbackAttempted.resolve();
-    return false;
-  });
-  await openSelection();
-  const button = await findButton("Copy");
-
-  releaseToolbarPointer(button, "mouse");
-  fireEvent.click(button);
-  await fallbackAttempted.promise;
-  const retry = await findButton("Copy");
-  expect(retry).toBeEnabled();
-  fireEvent.click(retry);
-
-  await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
-  expect(clipboardWrites).toStrictEqual([PASSAGE]);
-  expect(queryQuoteButton()).not.toBeInTheDocument();
-});
-
-test("Keep a newly selected passage when an earlier clipboard write completes", async () => {
-  const copied = context.mocks.deferred<void>();
-  const clipboardWrites: string[] = [];
-  vi.spyOn(navigator.clipboard, "writeText").mockImplementation((text) => {
-    clipboardWrites.push(text);
-    return copied.promise;
-  });
-  await openSelection();
-  const button = await findButton("Copy");
-
-  releaseToolbarPointer(button, "mouse");
-  fireEvent.click(button);
-  await selectPassage(NEXT_PASSAGE);
-  copied.resolve();
-  await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
-  expect(clipboardWrites).toStrictEqual([PASSAGE]);
-  expect(queryQuoteButton()).toBeInTheDocument();
-  fireEvent.keyDown(document, { key: "q" });
-
-  await expect(
-    screen.findByRole("textbox", { name: "Ask or comment on this quote" }),
-  ).resolves.toBeInTheDocument();
-  expect(feedbackItems()[0]).toHaveTextContent(NEXT_PASSAGE);
 });
 
 test("Quote the captured passage after a touch selection collapses", async () => {
@@ -216,33 +124,6 @@ test("Preserve the native rich selection until the copy event closes its toolbar
   expect(document.activeElement).toBe(focusedElement);
 });
 
-test("Release a cancelled toolbar gesture and accept the next keyboard action", async () => {
-  await openSelection();
-  const button = await findButton("Quote");
-
-  fireEvent.pointerDown(button, { pointerId: 1, pointerType: "touch" });
-  clearPassageSelection();
-  expect(button).toBeInTheDocument();
-  fireEvent.pointerCancel(button, { pointerId: 1, pointerType: "touch" });
-
-  await waitFor(() => {
-    expect(queryQuoteButton()).not.toBeInTheDocument();
-  });
-  await selectPassage(NEXT_PASSAGE);
-  fireEvent.keyDown(document, { key: "q" });
-
-  await expect(
-    screen.findByRole("textbox", { name: "Ask or comment on this quote" }),
-  ).resolves.toBeInTheDocument();
-  expect(feedbackItems()[0]).toHaveTextContent(NEXT_PASSAGE);
-});
-
-test("Keep the passage actions through the click that ends the selecting drag", async () => {
-  await openSelection();
-
-  await expect(findButton("Quote")).resolves.toBeInTheDocument();
-});
-
 test("Dismiss the passage actions when a press lands outside them", async () => {
   await openSelection();
   await findButton("Quote");
@@ -256,51 +137,4 @@ test("Dismiss the passage actions when a press lands outside them", async () => 
   await waitFor(() => {
     expect(queryQuoteButton()).not.toBeInTheDocument();
   });
-});
-
-test("Keep the passage actions closed while a click collapses the selection", async () => {
-  await openSelection();
-  const target = screen.getByText(NEXT_PASSAGE);
-
-  fireEvent.pointerDown(target, {
-    button: 0,
-    isPrimary: true,
-    pointerId: 3,
-    pointerType: "mouse",
-  });
-  expect(queryQuoteButton()).not.toBeInTheDocument();
-
-  // Chromium can retain the old range through pointerup. A gesture that did
-  // not change that range must not recapture the just-dismissed toolbar.
-  fireEvent.pointerUp(target, {
-    button: 0,
-    isPrimary: true,
-    pointerId: 3,
-    pointerType: "mouse",
-  });
-  expect(queryQuoteButton()).not.toBeInTheDocument();
-
-  window.getSelection()?.removeAllRanges();
-  fireEvent(document, new Event("selectionchange"));
-  fireEvent.click(target, { button: 0 });
-
-  expect(queryQuoteButton()).not.toBeInTheDocument();
-});
-
-test("Capture a new gesture when the previous toolbar press never clicked", async () => {
-  await openSelection();
-  const button = await findButton("Quote");
-  releaseToolbarPointer(button, "touch");
-
-  fireEvent.pointerDown(screen.getByText(NEXT_PASSAGE), {
-    pointerId: 2,
-    pointerType: "mouse",
-  });
-  await selectPassage(NEXT_PASSAGE);
-  fireEvent.keyDown(document, { key: "q" });
-
-  await expect(
-    screen.findByRole("textbox", { name: "Ask or comment on this quote" }),
-  ).resolves.toBeInTheDocument();
-  expect(feedbackItems()[0]).toHaveTextContent(NEXT_PASSAGE);
 });

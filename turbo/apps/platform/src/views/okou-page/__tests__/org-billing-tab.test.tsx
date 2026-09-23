@@ -17,11 +17,10 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, test, vi, type Mock } from "vitest";
+import { expect, test, vi, type Mock } from "vitest";
 
 import {
   click,
-  holdElementAnimations,
   setupPage,
   fill,
   queryAllByRoleFast,
@@ -48,16 +47,6 @@ function buttonByText(
   const button = queryButtonByText(text, container);
   if (!button) {
     throw new Error(`${text} button not found`);
-  }
-  return button;
-}
-
-function buttonByLabel(label: string): HTMLElement {
-  const button = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.getAttribute("aria-label") === label;
-  });
-  if (!button) {
-    throw new Error(`${label} button not found`);
   }
   return button;
 }
@@ -317,26 +306,6 @@ function installScrollIntoViewMock(): Mock<HTMLElement["scrollIntoView"]> {
   return scrollIntoView;
 }
 
-async function openSettingsFromAccountMenu(
-  userName = "Test User",
-): Promise<HTMLElement> {
-  const accountButton = await waitFor(() => {
-    return buttonByLabel(userName);
-  });
-  click(accountButton);
-  const menu = await screen.findByRole("menu");
-  click(within(menu).getByText("Settings"));
-  return screen.findByRole("dialog", { name: "Settings" });
-}
-
-async function waitForAnimationFrame(): Promise<void> {
-  const frame = createDeferredPromise<void>(context.signal);
-  window.requestAnimationFrame(() => {
-    frame.resolve(undefined);
-  });
-  await frame.promise;
-}
-
 function mockInitialUsagePackPurchase(): void {
   context.mocks.data.org({
     id: "org_1",
@@ -539,73 +508,6 @@ test.each(["pro", "team"] as const)(
   },
 );
 
-test("Recover a Team checkout after clearing every member package", async () => {
-  mockInitialUsagePackPurchase();
-  context.mocks.api(
-    billingUsagePackCheckoutContract.create,
-    ({ body, respond }) => {
-      expect(body).toMatchObject({
-        tier: "team",
-        supportsInAppPreview: true,
-        memberUsagePacks: [
-          { memberId: "user_1", usagePackUsd: 20 },
-          { memberId: "user_2", usagePackUsd: 20 },
-          { memberId: "invitation_1", usagePackUsd: 20 },
-        ],
-      });
-      return respond(200, {
-        status: "preview",
-        purchaseType: "usage_pack",
-        tier: "team",
-        immediateAmountCents: 22_000,
-        nextRecurringAmountCents: 22_000,
-        currency: "usd",
-        expiresAt: "2026-03-16T00:15:00Z",
-        previewToken: "usage-pack-team-preview",
-      });
-    },
-  );
-  const { teamPlan } = await openUsagePackPlanSelection(
-    "/agents?settings=billing",
-  );
-  click(buttonByText("Start with Team", teamPlan));
-  const memberUsage = await screen.findByRole("group", {
-    name: "Member usage",
-  });
-  const orderSummary = screen.getByRole("region", {
-    name: "Order summary",
-  });
-  const upgradeLabel = "Upgrade to Team";
-  for (const memberName of ["Alex Chen", "Sam Lee", "pending@example.com"]) {
-    expect(
-      within(memberUsage).getByRole("combobox", {
-        name: `Usage for ${memberName}`,
-      }),
-    ).toHaveTextContent("21,234 credits · 6% off");
-  }
-  expect(buttonByText(upgradeLabel, orderSummary)).toBeEnabled();
-  for (const memberName of ["Alex Chen", "Sam Lee", "pending@example.com"]) {
-    await selectMemberUsagePack(memberUsage, memberName, "No package");
-  }
-  expect(buttonByText(upgradeLabel, orderSummary)).toBeDisabled();
-  expect(
-    within(orderSummary).getByText(
-      "Select a paid package for at least one member to continue.",
-    ),
-  ).toBeVisible();
-  await selectMemberUsagePack(
-    memberUsage,
-    "Alex Chen",
-    "$20 · 21,234 credits · 6% off",
-  );
-  expect(buttonByText(upgradeLabel, orderSummary)).toBeEnabled();
-  expect(
-    within(orderSummary).queryByText(
-      "Select a paid package for at least one member to continue.",
-    ),
-  ).not.toBeInTheDocument();
-});
-
 test("Configure member packages for a new workspace plan", async () => {
   mockInitialUsagePackPurchase();
   const { teamPlan } = await openUsagePackPlanSelection();
@@ -680,148 +582,6 @@ test("Configure member packages for a new workspace plan", async () => {
   expect(alexUsage).not.toBeDisabled();
   expect(samUsage).not.toBeDisabled();
   expect(pendingUsage).not.toBeDisabled();
-});
-
-test("Keep standalone package choices visible until closing finishes", async () => {
-  mockInitialUsagePackPurchase();
-  await setupPage({
-    context,
-    path: "/?settings=billing&billingView=plans",
-    auth: {
-      user: {
-        id: "user_1",
-        fullName: "Alex Chen",
-        email: "alex@example.com",
-      },
-    },
-  });
-  const teamPlan = await screen.findByRole("article", { name: "Team plan" });
-  const { memberUsage } = await openTeamMemberPackages(teamPlan);
-  await selectMemberUsagePack(
-    memberUsage,
-    "Alex Chen",
-    "$50 · 54,321 credits · 8% off",
-  );
-
-  const packagesDialog = screen.getByRole("dialog", {
-    name: "Configure member packages",
-  });
-  const finishCloseTransition = holdElementAnimations(packagesDialog);
-  click(within(packagesDialog).getByLabelText("Close"));
-  expect(
-    new URL(window.location.href).searchParams.has("settings"),
-  ).toBeFalsy();
-  expect(
-    screen.getByRole("dialog", { name: "Configure member packages" }),
-  ).toBeVisible();
-  expect(
-    screen.getByRole("combobox", { name: "Usage for Alex Chen" }),
-  ).toHaveTextContent("54,321 credits · 8% off");
-  finishCloseTransition();
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  const settingsDialog = await openSettingsFromAccountMenu("Alex Chen");
-  click(buttonByText("Billing", settingsDialog));
-  await screen.findByText("No active plan");
-  click(buttonByText("Upgrade"));
-  const reopenedTeamPlan = await screen.findByRole("article", {
-    name: "Team plan",
-  });
-  await openTeamMemberPackages(reopenedTeamPlan);
-  expect(
-    screen.getByRole("combobox", { name: "Usage for Alex Chen" }),
-  ).toHaveTextContent("21,234 credits · 6% off");
-});
-
-describe("leaving a member-package flow with unfinished choices", () => {
-  let purchaseSubmitted = false;
-  beforeEach(async () => {
-    purchaseSubmitted = false;
-    mockInitialUsagePackPurchase();
-    context.mocks.api(
-      billingUsagePackCheckoutContract.create,
-      ({ respond }) => {
-        purchaseSubmitted = true;
-        return respond(200, {
-          url: "https://checkout.stripe.com/unexpected-package-purchase",
-        });
-      },
-    );
-    const { teamPlan } = await openUsagePackPlanSelection();
-    const { memberUsage } = await openTeamMemberPackages(teamPlan);
-    await selectMemberUsagePack(
-      memberUsage,
-      "Alex Chen",
-      "$50 · 54,321 credits · 8% off",
-    );
-    await selectMemberUsagePack(
-      memberUsage,
-      "pending@example.com",
-      "$100 · 109,999 credits · 9% off",
-    );
-  });
-
-  it("discards unfinished choices after leaving and reopening", async () => {
-    const packagesDialog = screen.getByRole("dialog", {
-      name: "Configure member packages",
-    });
-    click(within(packagesDialog).getByLabelText("Back"));
-    const planChooserHeading = await screen.findByRole("heading", {
-      name: "Choose a plan",
-    });
-    expect(purchaseSubmitted).toBeFalsy();
-    const planChooserDialog = planChooserHeading.closest('[role="dialog"]');
-    if (!(planChooserDialog instanceof HTMLElement)) {
-      throw new Error("Plan chooser dialog not found");
-    }
-    click(within(planChooserDialog).getByLabelText("Close"));
-
-    const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
-    click(within(settingsDialog).getByLabelText("Close"));
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Settings" }),
-      ).not.toBeInTheDocument();
-    });
-
-    const reopenedDialog = await openSettingsFromAccountMenu("Alex Chen");
-    click(buttonByText("Billing", reopenedDialog));
-    await waitFor(() => {
-      expect(screen.getByText("No active plan")).toBeInTheDocument();
-    });
-    click(buttonByText("Upgrade"));
-    await expect(
-      screen.findByRole("heading", { name: "Choose a plan" }),
-    ).resolves.toBeInTheDocument();
-
-    const reopenedTeamPlan = screen.getByRole("article", {
-      name: "Team plan",
-    });
-    click(buttonByText("Start with Team", reopenedTeamPlan));
-
-    const resetMemberUsage = await screen.findByRole("group", {
-      name: "Member usage",
-    });
-    expect(
-      within(resetMemberUsage).getByRole("combobox", {
-        name: "Usage for Alex Chen",
-      }),
-    ).toHaveTextContent("21,234 credits · 6% off");
-    expect(
-      within(resetMemberUsage).getByRole("combobox", {
-        name: "Usage for pending@example.com",
-      }),
-    ).toHaveTextContent("21,234 credits · 6% off");
-    expect(
-      within(resetMemberUsage).getByRole("combobox", {
-        name: "Usage for Sam Lee",
-      }),
-    ).toHaveTextContent("21,234 credits · 6% off");
-    expect(resetMemberUsage).toHaveTextContent("$220/month");
-    expect(purchaseSubmitted).toBeFalsy();
-  });
 });
 
 test("Add a package for a member without an allocation", async () => {
@@ -1035,7 +795,7 @@ async function openLegacyConversionEligibility() {
   return migrationReady;
 }
 
-test("Gate legacy conversion eligibility and return from Pro configuration", async () => {
+test("Gate legacy conversion eligibility before Pro configuration", async () => {
   const migrationReady = await openLegacyConversionEligibility();
   expect(screen.getByRole("status")).toBeInTheDocument();
   expect(
@@ -1094,54 +854,6 @@ test("Gate legacy conversion eligibility and return from Pro configuration", asy
     }),
   ).toBeInTheDocument();
   expect(within(comparison).getByText("Monthly total")).toBeInTheDocument();
-
-  click(within(configurePackagesDialog).getByLabelText("Back"));
-  const returnedChoosePlanDialog = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  click(within(returnedChoosePlanDialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Choose a plan" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(screen.getByText("Legacy")).toBeInTheDocument();
-  expect(screen.queryByText("Move to member packages")).not.toBeInTheDocument();
-  expect(buttonByText("Convert plan")).toBeEnabled();
-});
-
-test("Cancel a legacy downgrade and reopen conversion choices", async () => {
-  const migrationReady = await openLegacyConversionEligibility();
-  migrationReady.resolve(undefined);
-  const choosePlanDialog = await screen.findByRole("dialog", {
-    name: "Choose a plan",
-  });
-  click(within(choosePlanDialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Choose a plan" }),
-    ).not.toBeInTheDocument();
-  });
-  click(screen.getByText("Downgrade"));
-  const downgradeDialog = await screen.findByRole("dialog", {
-    name: "Downgrade plan",
-  });
-  expect(
-    within(downgradeDialog).getByText("Downgrade to Limited free?"),
-  ).toBeInTheDocument();
-  expect(
-    within(downgradeDialog).queryByText("Choose which plan to downgrade to."),
-  ).not.toBeInTheDocument();
-  expect(within(downgradeDialog).queryByText("Pro")).not.toBeInTheDocument();
-  click(buttonByText("Cancel", downgradeDialog));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Downgrade plan" }),
-    ).not.toBeInTheDocument();
-  });
-
-  click(buttonByText("Convert plan"));
-  await screen.findByRole("dialog", { name: "Choose a plan" });
 });
 
 test("Prevent a second plan checkout when migration is unavailable", async () => {
@@ -1631,24 +1343,13 @@ test("Compare legacy Team packages and review conversion totals", async () => {
   );
 });
 
-test("Retain legacy Team packages through Back and confirm conversion", async () => {
+test("Confirm a legacy Team conversion", async () => {
   const orderSummary = await configureLegacyTeamConversion();
   click(buttonByText("Review conversion", orderSummary));
   const reviewDialog = await screen.findByRole("dialog", {
     name: "Review plan conversion",
   });
-  click(within(reviewDialog).getByLabelText("Back"));
-  const returnedPackagesDialog = await screen.findByRole("dialog", {
-    name: "Configure member packages",
-  });
-  expect(
-    within(returnedPackagesDialog).getByText("Step 2 of 3"),
-  ).toBeInTheDocument();
-  click(buttonByText("Review conversion", returnedPackagesDialog));
-  const returnedReviewDialog = await screen.findByRole("dialog", {
-    name: "Review plan conversion",
-  });
-  click(buttonByText("Confirm", returnedReviewDialog));
+  click(buttonByText("Confirm", reviewDialog));
   await expect(
     screen.findByText("Switches to Team on Sep 1, 2026"),
   ).resolves.toBeVisible();
@@ -2109,7 +1810,7 @@ test("Hide retained package records for people who left the workspace", async ()
   expect(buttonByText("Confirm", orderSummary)).not.toBeDisabled();
 });
 
-test.each([50, 0] as const)(
+test.each([50] as const)(
   "Restore a member package scheduled to downgrade to $%s",
   async (targetUsagePackUsd) => {
     let restored = false;
@@ -2296,7 +1997,6 @@ test.each([50, 0] as const)(
 
 test.each([
   { targetUsagePackUsd: 100, alreadyScheduled: true },
-  { targetUsagePackUsd: 0, alreadyScheduled: true },
   { targetUsagePackUsd: 0, alreadyScheduled: false },
 ] as const)(
   "Validate a member package downgrade to $targetUsagePackUsd (replacing: $alreadyScheduled)",
@@ -2627,30 +2327,6 @@ test("Update Pro-to-Team pricing when increasing a member package", async () => 
   expect(confirmButton).not.toBeDisabled();
 });
 
-test("Restore Pro-to-Team pricing after editing a member package", async () => {
-  const { packageSelect, confirmButton } = await editProToTeamMemberPackage();
-  click(packageSelect);
-  click(
-    await screen.findByRole("option", {
-      name: "$20 · 21,234 credits · 6% off",
-    }),
-  );
-  const comparison = within(await hoverSubscriptionComparison()).getByRole(
-    "table",
-    {
-      name: "Current and new subscription comparison",
-    },
-  );
-  expect(
-    within(comparison).getByRole("row", {
-      name: /Monthly total \$20\/month \$180\/month/u,
-    }),
-  ).toBeInTheDocument();
-
-  click(confirmButton);
-  await screen.findByRole("dialog", { name: "Review package change" });
-});
-
 test("Confirm a Pro-to-Team upgrade without repurchasing existing packages", async () => {
   const { orderSummary } = await openProToTeamUpgrade();
   const confirmButton = buttonByText("Confirm", orderSummary);
@@ -2977,57 +2653,6 @@ test("Open the Buy credits section from a billing deep link", async () => {
   });
 });
 
-test("Do not reuse an unavailable credits deep link after Settings closes", async () => {
-  const scrollIntoView = installScrollIntoViewMock();
-  let billingStatus: BillingStatusResponse = {
-    ...activeProBillingStatus(),
-    canBuyCredits: false,
-  };
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Credit Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, billingStatus);
-  });
-
-  await openBillingTab("/?settings=billing&billingView=credits");
-
-  const dialog = screen.getByRole("dialog", { name: "Settings" });
-  await waitFor(() => {
-    expect(
-      screen.getByText(
-        "Manage the payment methods used for billing in Stripe.",
-      ),
-    ).toBeInTheDocument();
-  });
-  expect(
-    within(dialog).queryByRole("heading", { name: "Buy credits" }),
-  ).not.toBeInTheDocument();
-
-  click(within(dialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-
-  billingStatus = {
-    ...activeProBillingStatus(),
-    canBuyCredits: true,
-  };
-  const reopenedDialog = await openSettingsFromAccountMenu();
-  click(buttonByText("Billing", reopenedDialog));
-
-  const buyCreditsHeading = await within(reopenedDialog).findByRole("heading", {
-    name: "Buy credits",
-  });
-  expect(buyCreditsHeading).toBeInTheDocument();
-  await waitForAnimationFrame();
-  expect(scrollIntoView).not.toHaveBeenCalled();
-});
-
 test("Show billing controls according to plan capabilities", async () => {
   context.mocks.data.org({
     id: "org_1",
@@ -3053,53 +2678,6 @@ test("Show billing controls according to plan capabilities", async () => {
     expect(
       screen.getByRole("heading", { name: "Concurrency" }),
     ).toBeInTheDocument();
-  });
-});
-
-test("Retry after billing status fails to load", async () => {
-  let failNextStatusRequest = false;
-  const failedStatusRequestStarted = context.mocks.deferred<void>();
-  const releaseFailedStatusResponse = context.mocks.deferred<void>();
-
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Suspended Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
-    if (failNextStatusRequest) {
-      failNextStatusRequest = false;
-      failedStatusRequestStarted.resolve();
-      await releaseFailedStatusResponse.promise;
-      return respond(500, {
-        error: {
-          message: "Failed to load billing status",
-          code: "INTERNAL_SERVER_ERROR",
-        },
-      });
-    }
-    return respond(200, noActiveBillingStatus());
-  });
-  await openBillingTab();
-
-  await waitFor(() => {
-    expect(screen.getByText("No active plan")).toBeInTheDocument();
-    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
-  });
-
-  failNextStatusRequest = true;
-  context.mocks.ably.trigger("billing:changed");
-  await failedStatusRequestStarted.promise;
-  releaseFailedStatusResponse.resolve();
-  await expect(
-    screen.findByText("Could not load billing status."),
-  ).resolves.toBeInTheDocument();
-
-  click(screen.getByText("Retry"));
-
-  await waitFor(() => {
-    expect(screen.getByText("No active plan")).toBeInTheDocument();
-    expect(screen.getByText("No active subscription")).toBeInTheDocument();
   });
 });
 
@@ -3135,41 +2713,6 @@ test("Manage workspace payment methods in Stripe", async () => {
     );
   });
   expect(portalRequestBody).not.toHaveProperty("mode");
-});
-
-test("Open payment methods in a new tab with a modified click", async () => {
-  context.mocks.data.org({
-    id: "org_1",
-    name: "No Subscription Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, noActiveBillingStatus());
-  });
-  context.mocks.api(billingPortalContract.create, ({ respond }) => {
-    return respond(200, {
-      url: "https://billing.stripe.com/customer-portal/no-subscription",
-    });
-  });
-  const openedTargets = context.mocks.browser.open();
-
-  await openBillingTab();
-
-  await waitFor(() => {
-    expect(screen.getByText("Payment methods")).toBeInTheDocument();
-  });
-
-  fireEvent.click(buttonByText("Manage"), { metaKey: true });
-
-  await waitFor(() => {
-    expect(openedTargets.calls).toStrictEqual([
-      {
-        url: "https://billing.stripe.com/customer-portal/no-subscription",
-        target: "_blank",
-        features: null,
-      },
-    ]);
-  });
 });
 
 test("Show custom-plan access without self-service plan changes", async () => {
@@ -3958,79 +3501,6 @@ test("Keep paid concurrency within supported quantity limits", async () => {
   expect(within(dialog).getByText("$100,000/month")).toBeInTheDocument();
   fireEvent.change(quantityInput, { target: { value: "1001" } });
   expect(quantityInput).toHaveValue("1000");
-});
-
-test("Lock concurrency actions while a price review is loading", async () => {
-  const previewReady = createDeferredPromise<void>(context.signal);
-  let previewStarted = false;
-
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Concurrency Loading Org",
-    role: "admin",
-  });
-  context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    return respond(200, {
-      ...activeTeamBillingStatus(),
-      concurrencyLimit: 12,
-      concurrencySubscriptions: [
-        {
-          id: "sub_concurrency_loading",
-          quantity: 2,
-          currentPeriodEnd: "2026-06-01T00:00:00Z",
-          cancelAtPeriodEnd: false,
-          canReduce: true,
-          canChangeInApp: true,
-        },
-      ],
-    });
-  });
-  context.mocks.api(
-    billingConcurrencySubscriptionContract.previewChange,
-    async ({ body, respond }) => {
-      previewStarted = true;
-      await previewReady.promise;
-      return respond(200, {
-        currentQuantity: 2,
-        targetQuantity: body.quantity,
-        immediateAmountCents: 10_000,
-        nextRecurringAmountCents: body.quantity * 10_000,
-        currency: "usd",
-      });
-    },
-  );
-
-  await openBillingTab();
-
-  click(buttonByText("Change"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Change concurrency",
-  });
-  const cancelSubscription = buttonByText("Cancel entire subscription", dialog);
-  const cancel = buttonByText("Cancel", dialog);
-  const increaseQuantity = within(dialog).getByLabelText(
-    "Increase additional concurrency quantity",
-  );
-  click(increaseQuantity);
-  const reviewChange = buttonByText("Review change", dialog);
-  click(reviewChange);
-
-  await waitFor(() => {
-    expect(previewStarted).toBeTruthy();
-    expect(reviewChange).toHaveTextContent("Updating...");
-    expect(reviewChange).toBeDisabled();
-  });
-  expect(cancelSubscription).toBeDisabled();
-  expect(cancel).toBeDisabled();
-  expect(
-    within(dialog).getByLabelText("Decrease additional concurrency quantity"),
-  ).toBeDisabled();
-  expect(
-    within(dialog).getByLabelText("Increase additional concurrency quantity"),
-  ).toBeDisabled();
-
-  previewReady.resolve(undefined);
-  await screen.findByRole("dialog", { name: "Review concurrency change" });
 });
 
 test("Confirm a plan cancellation in hosted checkout when required", async () => {

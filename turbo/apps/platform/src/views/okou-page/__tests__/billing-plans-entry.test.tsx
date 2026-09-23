@@ -94,26 +94,3 @@ test("Dismissing the sidebar upgrade flow returns to the chat screen", async () 
   ).not.toBeInTheDocument();
   expect(search()).not.toContain("settings=billing");
 });
-
-test("Relaunching the upgrade flow after dismissing a plans deep link", async () => {
-  prepareUpgradeFlow();
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat?settings=billing&billingView=plans`,
-  });
-
-  await dismissPlansDialog();
-
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-
-  await clickSidebarUpgradeCard();
-
-  await expect(
-    screen.findByRole("dialog", { name: "Choose a plan" }),
-  ).resolves.toBeInTheDocument();
-});

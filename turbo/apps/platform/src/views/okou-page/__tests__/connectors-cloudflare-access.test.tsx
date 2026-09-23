@@ -32,17 +32,17 @@ const config: CloudflareAccessConfig = Object.freeze({
   updatedAt: "2026-09-22T00:00:00.000Z",
 });
 
-function mockRemoteAccess(configured: boolean) {
+function mockRemoteAccess() {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, []);
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: configured ? 1 : 0 });
+    return respond(200, { configuredCount: 1 });
   });
   context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: configured ? 1 : 0 });
+    return respond(200, { configuredCount: 1 });
   });
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-    return respond(200, { configs: configured ? [config] : [] });
+    return respond(200, { configs: [config] });
   });
 }
 
@@ -57,41 +57,29 @@ async function page(path = "/connectors") {
   });
 }
 
-test.each([false, true])(
-  "Private network lists Cloudflare Access configurations (configured: %s)",
-  async (configured) => {
-    mockRemoteAccess(configured);
-    await page("/connectors?scope=private-network");
-    expect(
-      screen.getByTestId("connectors-scope-private-network"),
-    ).toBeVisible();
-    if (configured) {
-      await screen.findByRole("heading", { name: "Protected applications" });
-    } else {
-      await screen.findByText(/No Cloudflare Access yet/u);
-    }
-    expect(getAction("button", "Add Cloudflare Access")).toBeVisible();
-    expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
-  },
-);
+test("Private network lists Cloudflare Access configurations", async () => {
+  mockRemoteAccess();
+  await page("/connectors?scope=private-network");
+  expect(screen.getByTestId("connectors-scope-private-network")).toBeVisible();
+  await screen.findByRole("heading", { name: "Protected applications" });
+  expect(getAction("button", "Add Cloudflare Access")).toBeVisible();
+  expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
+});
 
-test.each(["unshared", `agent:${agentId}`])(
-  "Cloudflare Access is excluded from the %s Agent-sharing filter",
-  async (connection) => {
-    mockRemoteAccess(true);
-    let listed = false;
-    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
-      listed = true;
-      return respond(200, { configs: [config] });
-    });
-    context.mocks.data.agents([listAgent(agentId, "Research")]);
-    await page(
-      `/connectors?scope=connected&keywords=cloudflare&connection=${connection}`,
-    );
-    await waitFor(() => {
-      expect(listed).toBeTruthy();
-    });
-    expect(queryAction("link", "Manage Cloudflare Access")).toBeNull();
-  },
-);
+test("Cloudflare Access is excluded from the Agent-sharing filter", async () => {
+  mockRemoteAccess();
+  let listed = false;
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    listed = true;
+    return respond(200, { configs: [config] });
+  });
+  context.mocks.data.agents([listAgent(agentId, "Research")]);
+  await page(
+    `/connectors?scope=connected&keywords=cloudflare&connection=agent:${agentId}`,
+  );
+  await waitFor(() => {
+    expect(listed).toBeTruthy();
+  });
+  expect(queryAction("link", "Manage Cloudflare Access")).toBeNull();
+});

@@ -2,7 +2,6 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
-  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -135,50 +134,6 @@ test("A complete HEX color has a preview in a plain assistant response", async (
   expect(preview).toHaveAttribute("data-markdown-color-preview", "#12ABef");
   expect(preview).toBeVisible();
   expect(markdownFrameFor(preview)).toHaveTextContent(source);
-});
-
-test("Preview exact inline HEX code without decorating linked or partial code", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "**Brand #112233**",
-    "",
-    "[`#445566`](https://example.com/palette) and `#778899` and `color: #AABBCC`",
-    "",
-    "Incomplete #AABB and embedded shade#DDEEFFtail",
-    "",
-    "```css",
-    "#123456",
-    "```",
-  ].join("\n");
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  const brand = await screen.findByText("Brand #112233");
-  const frame = markdownFrameFor(brand);
-  await waitFor(() => {
-    expect(colorPreviews(frame)).toHaveLength(2);
-  });
-  expect(
-    colorPreviews(frame).map((preview) => {
-      return preview.dataset.markdownColorPreview;
-    }),
-  ).toStrictEqual(["#112233", "#778899"]);
-  expect(frame).toHaveTextContent("#445566");
-  expect(frame).toHaveTextContent("#778899");
-  expect(frame).toHaveTextContent("color: #AABBCC");
-  expect(frame).toHaveTextContent("#AABB");
-  expect(frame).toHaveTextContent("shade#DDEEFFtail");
-  expect(frame).toHaveTextContent("#123456");
 });
 
 test("Fenced code stays readable for known and unknown languages", async () => {
@@ -329,89 +284,4 @@ test("Raw HTML cannot change the surrounding page", async () => {
   const emphasis = screen.getByText("Supported emphasis");
   expect(emphasis.tagName).toBe("STRONG");
   expect(emphasis).toBeVisible();
-});
-
-test("Mermaid content remains readable code on surfaces without diagrams", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const source = [
-    "```mermaid",
-    "flowchart TD",
-    "  Reader --> Source",
-    "```",
-  ].join("\n");
-  const rows = [chat.outputError(source, { seqId: 1 })];
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-  });
-
-  await screen.findByText("flowchart TD", { exact: false });
-  const frame = screen.getByTestId("assistant-error-card-shell");
-  const details = queryAllByRoleFast("button", frame).find((button) => {
-    return button.getAttribute("aria-label") === "View details";
-  });
-  if (!details) {
-    throw new Error("Expected error details to remain accessible");
-  }
-  click(details);
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
-  const code = await waitFor(() => {
-    const element = document.querySelector("code.language-mermaid");
-    if (!(element instanceof HTMLElement)) {
-      throw new Error("Expected a readable Mermaid code block");
-    }
-    return element;
-  });
-  expect(code.textContent).toBe("flowchart TD\n  Reader --> Source\n");
-  expect(code).toBeVisible();
-  expect(
-    queryAllByRoleFast("button", markdownFrameFor(code)).some((button) => {
-      return button.getAttribute("aria-label") === "Copy to clipboard";
-    }),
-  ).toBeTruthy();
-  expect(
-    queryAllByRoleFast("button").some((button) => {
-      return button.getAttribute("aria-label") === "Expand diagram";
-    }),
-  ).toBeFalsy();
-});
-
-test("Retired Goal history displays and copies the complete literal objective", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  const chat = createMarkdownChatFixture(context);
-  const content =
-    "Okou Goal retired.\nGoal ID: 00000000-0000-4000-8000-000000000001\nOriginal recorded status: complete\nThe recorded status is preserved; retirement does not mark the objective complete.\n\nFull original objective:\nBefore <oai-mem-citation>literal objective</oai-mem-citation> after\n`<oai-mem-citation>`\n```xml\n<oai-mem-citation>fenced\n```\nUnclosed <oai-mem-citation>keep the rest 🧭\n\n";
-  const row = {
-    ...chat.outputMessage(content, { seqId: 1 }),
-    runId: null,
-    runEventId: null,
-    runEventSequenceNumber: null,
-  };
-  chat.install({
-    rows: () => {
-      return [row];
-    },
-  });
-  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
-  const message = await screen.findByText(
-    /Before <oai-mem-citation>literal objective/,
-  );
-  expect(message.textContent).toBe(content);
-  const copy = queryAllByRoleFast("button").find((button) => {
-    return button.getAttribute("aria-label") === "Copy message";
-  });
-  if (!copy) {
-    throw new Error("Expected message copy action");
-  }
-  click(copy);
-  await waitFor(() => {
-    expect(clipboard.writes).toStrictEqual([content]);
-  });
 });

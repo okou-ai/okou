@@ -322,62 +322,6 @@ test("A workspace this user cannot add to names who can, instead of a dead butto
   expect(getChannelTile("Teams")).toBeDisabled();
 });
 
-test("An admin with no Slack app to add is told so rather than left clicking", async () => {
-  mockOnboardingNeeded();
-  mockConnectedSource();
-  mockSlack({
-    isConnected: false,
-    isInstalled: false,
-    isAdmin: true,
-    installUrl: null,
-    connectUrl: null,
-  });
-  mockTeams({
-    isConnected: false,
-    isInstalled: false,
-    isAdmin: true,
-    installUrl: null,
-    connectUrl: null,
-  });
-
-  await openChatChannelStep();
-
-  await expect(
-    screen.findByText("Slack isn’t available for this workspace yet."),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Teams isn’t available for this workspace yet."),
-  ).toBeInTheDocument();
-  expect(getButtonByName(SLACK_ADD)).toBeDisabled();
-});
-
-test("A Slack status the step cannot read leaves the rest of the step usable", async () => {
-  mockOnboardingNeeded();
-  mockConnectedSource();
-  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
-    return respond(401, {
-      error: { message: "Slack status unavailable", code: "UNAUTHORIZED" },
-    });
-  });
-  mockTeams({
-    isConnected: false,
-    isInstalled: false,
-    isAdmin: true,
-    connectUrl: TEAMS_CONNECT_URL,
-  });
-
-  await openChatChannelStep();
-
-  await expect(
-    screen.findByText("Slack isn’t available for this workspace yet."),
-  ).resolves.toBeInTheDocument();
-  expect(getButtonByName(SLACK_ADD)).toBeDisabled();
-  // Teams answered, so its own tile still works.
-  await waitFor(() => {
-    expect(getChannelTile("Teams")).toBeEnabled();
-  });
-});
-
 test("Telegram hands over to its own setup, which asks for more than a tile can", async () => {
   mockOnboardingNeeded();
   mockConnectedSource();

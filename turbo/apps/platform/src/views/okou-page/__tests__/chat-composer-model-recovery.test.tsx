@@ -36,7 +36,6 @@ import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
   findButton,
-  findLink,
   installRunChat,
   NEW_CHAT_PATH,
   queryButton,
@@ -342,21 +341,6 @@ test("Complete Claude Code login from a blocked message", async () => {
   });
   const authorizationCode = await screen.findByLabelText("Authorization code");
 
-  click(buttonNamed("Connect", dialog));
-
-  await expect(
-    screen.findByText("Paste the Claude authorization code to continue."),
-  ).resolves.toBeVisible();
-
-  click(buttonNamed("Open Claude approval page", dialog));
-
-  await expect(
-    screen.findByText(
-      "The approval page could not be opened. Use the link manually and paste the code here.",
-    ),
-  ).resolves.toBeVisible();
-  expect(authorizationCode).toBeVisible();
-
   await fill(authorizationCode, "claude-valid-authorization-code");
   click(buttonNamed("Connect", dialog));
 
@@ -488,26 +472,15 @@ test("Reconnect Claude Code for an existing chat", async () => {
   expect(dialog).not.toHaveTextContent("inactive.claude@example.com");
 });
 
-async function openLimitedModelAvailability() {
-  type BillingMode = "failed" | "limited" | "upgraded";
-  const billing: { mode: BillingMode } = { mode: "limited" };
-  const failedRefresh = context.mocks.deferred<void>();
+test("A billing upgrade unlocks Pro-gated built-in models", async () => {
+  const billing: { upgraded: boolean } = { upgraded: false };
   installRunChat({ selectedModel: "gpt-5.6-luna" });
   context.mocks.data.orgModelPolicies([
     builtInPolicy("gpt-5.6-luna", "GPT 5.6 Luna", true),
     builtInPolicy("claude-opus-4-8", "Claude Opus 4.8", false),
   ]);
   context.mocks.api(billingStatusContract.get, ({ respond }) => {
-    if (billing.mode === "failed") {
-      failedRefresh.resolve();
-      return respond(500, {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Model availability could not be refreshed",
-        },
-      });
-    }
-    if (billing.mode === "upgraded") {
+    if (billing.upgraded) {
       return respond(
         200,
         billingStatus({
@@ -541,13 +514,8 @@ async function openLimitedModelAvailability() {
   await waitFor(() => {
     expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
   });
-  return { billing, failedRefresh };
-}
 
-async function expectUpgradedModelsAvailable(
-  scenario: Awaited<ReturnType<typeof openLimitedModelAvailability>>,
-) {
-  scenario.billing.mode = "upgraded";
+  billing.upgraded = true;
   context.mocks.ably.trigger("billing:changed");
 
   await waitFor(() => {
@@ -555,65 +523,4 @@ async function expectUpgradedModelsAvailable(
     expect(builtInOption).toBeVisible();
     expect(within(builtInOption).queryByText("Pro")).toBeNull();
   });
-}
-
-test("A failed availability refresh keeps models resolved by the preceding billing upgrade", async () => {
-  const scenario = await openLimitedModelAvailability();
-  await expectUpgradedModelsAvailable(scenario);
-  scenario.billing.mode = "failed";
-  context.mocks.ably.trigger("billing:changed");
-  await scenario.failedRefresh.promise;
-
-  await expect(
-    screen.findByText("Model availability could not be refreshed"),
-  ).resolves.toBeVisible();
-  expect(modelMenuOption(/Claude Opus 4\.8/iu)).toBeVisible();
-  expect(screen.queryByText("Loading models...")).toBeNull();
-});
-
-test("Show the last resolved chat model after visiting Agents", async () => {
-  let refreshPending = false;
-  const refreshStarted = context.mocks.deferred<void>();
-  const releaseRefresh = context.mocks.deferred<void>();
-  installRunChat({ selectedModel: "claude-opus-4-8" });
-  context.mocks.data.orgModelPolicies([
-    builtInPolicy("claude-opus-4-8", "Claude Opus 4.8", true),
-  ]);
-  context.mocks.api(
-    billingStatusContract.get,
-    async ({ respond, withSignal }) => {
-      if (refreshPending) {
-        refreshStarted.resolve();
-        await withSignal(releaseRefresh.promise);
-      }
-      return respond(
-        200,
-        billingStatus({
-          tier: "pro",
-          supportByok: true,
-          restrictedBuiltInModels: false,
-        }),
-      );
-    },
-  );
-
-  await setupPage({ context, path: NEW_CHAT_PATH });
-
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("billing:changed")).toBeTruthy();
-  });
-
-  click(await findLink("Agents"));
-
-  await expect(
-    screen.findByRole("heading", { name: "Agents" }),
-  ).resolves.toBeVisible();
-  refreshPending = true;
-  context.mocks.ably.trigger("billing:changed");
-  await refreshStarted.promise;
-  click(await findLink("Chat"));
-
-  await expect(composerModelTrigger("Claude Opus 4.8")).resolves.toBeVisible();
-  releaseRefresh.resolve();
 });

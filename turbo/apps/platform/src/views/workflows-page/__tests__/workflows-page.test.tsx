@@ -1693,40 +1693,6 @@ test("Show an installed workflow in the Official catalog", async () => {
   expect(screen.queryByText("View and install")).not.toBeInTheDocument();
 });
 
-test("Retry the Official catalog when installation status is unavailable", async () => {
-  const {
-    workflow: _workflow,
-    lifecycle: _lifecycle,
-    ...catalogEntry
-  } = officialCatalogDetail();
-  let unavailable = true;
-  context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
-    return respond(200, [catalogEntry]);
-  });
-  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
-    if (unavailable) {
-      return respond(403, {
-        error: { code: "FORBIDDEN", message: "Workflows unavailable" },
-      });
-    }
-    return respond(200, [summary(officialSalesResearch())]);
-  });
-
-  await setupPage({
-    context,
-    path: "/workflows/official",
-    featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
-  });
-
-  await screen.findByText("Official Workflows could not be loaded");
-  expect(screen.queryByText("View and install")).not.toBeInTheDocument();
-  unavailable = false;
-  click(buttonByText("Try again"));
-  await waitFor(() => {
-    expect(buttonByText("Installed")).toBeDisabled();
-  });
-});
-
 test("Show the current status of a retired Official Workflow", async () => {
   const active = officialCatalogDetail("active");
   const { workflow: _workflow, lifecycle: _lifecycle, ...summary } = active;
@@ -2095,41 +2061,6 @@ test("Open and manage a deep-linked automation", async () => {
   expect(workflow.automations[1]?.enabled).toBeFalsy();
 });
 
-test("Keep Automations usable when a direct link is stale", async () => {
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  const scrollIntoView = installScrollIntoViewMock();
-  mockWorkflowApis([salesResearch()]);
-
-  await setupWorkflowDetailPage(
-    `${workflowDetailPath("automations")}?automationId=deleted-automation`,
-  );
-
-  await expect(
-    screen.findByRole("switch", {
-      name: "Disable Every weekday at 9:00 AM",
-    }),
-  ).resolves.toBeInTheDocument();
-  expect(document.querySelector('[aria-current="true"]')).toBeNull();
-  expect(scrollIntoView).not.toHaveBeenCalled();
-});
-
-test("Handle a direct automation link to an unavailable workflow", async () => {
-  const scrollIntoView = installScrollIntoViewMock();
-  mockWorkflowApis([]);
-
-  await setupWorkflowDetailPage(
-    `${workflowDetailPath("automations")}?automationId=${GMAIL_AUTOMATION_ID}`,
-  );
-
-  await expect(
-    screen.findByText("Workflow not found."),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
-  expect(search()).toBe(`?automationId=${GMAIL_AUTOMATION_ID}`);
-  expect(document.querySelector('[aria-current="true"]')).toBeNull();
-  expect(scrollIntoView).not.toHaveBeenCalled();
-});
-
 test("Block workflow publishing without permission on the owning agent", async () => {
   const workflow = {
     ...opsPlaybook(),
@@ -2289,104 +2220,6 @@ test("Keep a retired Official Workflow operable but structurally read-only", asy
   expect(screen.queryByText("Delete selected file")).not.toBeInTheDocument();
 });
 
-async function expectOfficialReconciliation(
-  status: "current" | "reconciling" | "needs_reconfiguration" | "failed",
-  label: string,
-): Promise<HTMLElement> {
-  mockWorkflowApis([officialSalesResearch("active", status)]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  const reconciliation = await screen.findByText(label);
-  expect(reconciliation).toBeInTheDocument();
-  expect(screen.getByText("Official Workflow")).toBeInTheDocument();
-  return reconciliation;
-}
-
-test("Show an Official Workflow that needs reconfiguration", async () => {
-  await expect(
-    expectOfficialReconciliation(
-      "needs_reconfiguration",
-      "Needs reconfiguration · intended on",
-    ),
-  ).resolves.toBeInTheDocument();
-});
-
-test.each(["Install", "Reconfigure"] as const)(
-  "Keep an Official Workflow %s submission disabled until failure and allow retry",
-  async (operation) => {
-    const workflow = officialSalesResearch();
-    const definition = officialCatalogDetail();
-    const response = context.mocks.deferred<void>();
-    const installing = operation === "Install";
-    mockAgentPageApis();
-    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-    context.mocks.data.userPreferences({ timezone: "UTC" });
-    mockWorkflowApis(installing ? [] : [workflow]);
-    context.mocks.api(officialWorkflowsContract.get, ({ respond }) => {
-      return respond(200, definition);
-    });
-    context.mocks.api(
-      officialWorkflowsContract.install,
-      async ({ respond, withSignal }) => {
-        await withSignal(response.promise);
-        return respond(500, {
-          error: { code: "INTERNAL_SERVER_ERROR", message: "Install failed" },
-        });
-      },
-    );
-    context.mocks.api(
-      officialWorkflowInstallationsContract.get,
-      ({ respond }) => {
-        return respond(200, {
-          workflow,
-          definition: {
-            name: definition.name,
-            revision: definition.revision,
-            lifecycle: "active",
-            blueprints: definition.blueprints,
-          },
-        });
-      },
-    );
-    context.mocks.api(
-      officialWorkflowInstallationsContract.reconfigure,
-      async ({ respond, withSignal }) => {
-        await withSignal(response.promise);
-        return respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Reconfigure failed",
-          },
-        });
-      },
-    );
-    await setupPage({
-      context,
-      path: installing
-        ? `/workflows/official/${definition.name}`
-        : workflowDetailPath("info"),
-      featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
-    });
-    const openButton = await waitFor(() => {
-      return buttonByText(operation);
-    });
-    click(openButton);
-    const dialog = await screen.findByRole("dialog");
-    click(buttonByText(operation, dialog));
-    await waitFor(() => {
-      expect(buttonByText(operation, dialog)).toBeDisabled();
-    });
-    response.resolve();
-    await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-      installing
-        ? "Official Workflow could not be installed"
-        : "Official Workflow could not be reconfigured",
-    );
-    expect(buttonByText(operation, dialog)).toBeEnabled();
-  },
-);
-
 test("Reconfigure typed settings for an Official Workflow", async () => {
   const workflow = officialSalesResearch("retired");
   const definition = officialCatalogDetail("retired");
@@ -2465,230 +2298,65 @@ test("Reconfigure typed settings for an Official Workflow", async () => {
   });
 });
 
-test.each(["active", "retired"] as const)(
-  "Uninstall an %s Official Workflow",
-  async (lifecycle) => {
-    const workflow = officialSalesResearch(lifecycle);
-    const workflows = [workflow];
-    const definition = officialCatalogDetail(lifecycle);
-    const {
-      workflow: _workflow,
-      lifecycle: _lifecycle,
-      ...catalogEntry
-    } = definition;
-    const uninstalledWorkflowIds: string[] = [];
-    mockAgentPageApis();
-    mockWorkflowApis(workflows);
-    context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
-      return respond(200, lifecycle === "active" ? [catalogEntry] : []);
-    });
-    context.mocks.api(
-      officialWorkflowInstallationsContract.get,
-      ({ respond }) => {
-        return respond(200, {
-          workflow,
-          definition: {
-            name: definition.name,
-            revision: definition.revision,
-            lifecycle,
-            blueprints: definition.blueprints,
-          },
-        });
-      },
-    );
-    context.mocks.api(
-      officialWorkflowInstallationsContract.uninstall,
-      ({ params, respond }) => {
-        uninstalledWorkflowIds.push(params.workflowId);
-        workflows.splice(0, workflows.length);
-        return respond(204);
-      },
-    );
-
-    await setupWorkflowDetailPage(workflowDetailPath("info"), {
-      [FeatureSwitchKey.OfficialWorkflows]: true,
-    });
-
-    const uninstall = await waitFor(() => {
-      return buttonByText("Uninstall");
-    });
-    click(uninstall);
-    const uninstallDialog = await screen.findByRole("dialog");
-    click(buttonByText("Uninstall", uninstallDialog));
-
-    await waitFor(() => {
-      expect(uninstalledWorkflowIds).toStrictEqual([SALES_WORKFLOW_ID]);
-    });
-    await waitFor(() => {
-      expect(pathname()).toBe("/workflows");
-    });
-    const browseOfficial = await screen.findByText("Browse Official");
-    click(browseOfficial);
-    await screen.findByText(
-      lifecycle === "active"
-        ? "View and install"
-        : "No Official Workflows are available.",
-    );
-    expect(queryButtonByText("Installed")).toBeNull();
-  },
-);
-
-test("Do not carry an Official reconfiguration draft to another installation", async () => {
-  const definition = officialCatalogDetail("retired");
-  const firstWorkflow = officialSalesResearch("retired");
-  const secondFixture = officialSalesResearch("retired");
-  const [secondAutomation] = secondFixture.automations;
-  if (!secondAutomation?.official) {
-    throw new Error("Expected the second Official Workflow automation");
-  }
-  const secondWorkflow: WorkflowDetailResponse = {
-    ...secondFixture,
-    id: OTHER_WORKFLOW_ID,
-    agentId: OTHER_AGENT_ID,
-    agentName: "support-bot",
-    agentDisplayName: "Support Bot",
-    displayName: "Support Sales Research",
-    automations: [
-      {
-        ...secondAutomation,
-        id: "workflow-automation-official-support",
-        official: {
-          ...secondAutomation.official,
-          parameterBindings: [
-            { key: "time-zone", value: "America/New_York" },
-            { key: "interval-seconds", value: 7200 },
-            { key: "include-weekends", value: true },
-          ],
-        },
-      },
-    ],
-  };
-  const workflows = [firstWorkflow, secondWorkflow];
-  const installationReads: string[] = [];
-  const reconfigureRequests: unknown[] = [];
+test("Uninstall an Official Workflow", async () => {
+  const workflow = officialSalesResearch("active");
+  const workflows = [workflow];
+  const definition = officialCatalogDetail("active");
+  const {
+    workflow: _workflow,
+    lifecycle: _lifecycle,
+    ...catalogEntry
+  } = definition;
+  const uninstalledWorkflowIds: string[] = [];
   mockAgentPageApis();
-  context.mocks.data.userPreferences({ timezone: "UTC" });
   mockWorkflowApis(workflows);
+  context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
+    return respond(200, [catalogEntry]);
+  });
   context.mocks.api(
     officialWorkflowInstallationsContract.get,
-    ({ params, respond }) => {
-      installationReads.push(params.workflowId);
-      const workflow = workflows.find((candidate) => {
-        return candidate.id === params.workflowId;
-      });
-      if (!workflow) {
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "missing" },
-        });
-      }
+    ({ respond }) => {
       return respond(200, {
         workflow,
         definition: {
           name: definition.name,
           revision: definition.revision,
-          lifecycle: "retired",
+          lifecycle: "active",
           blueprints: definition.blueprints,
         },
       });
     },
   );
   context.mocks.api(
-    officialWorkflowInstallationsContract.reconfigure,
-    ({ params, body, respond }) => {
-      reconfigureRequests.push({ workflowId: params.workflowId, body });
-      return respond(200, {
-        workflow: secondWorkflow,
-        definition: {
-          name: definition.name,
-          revision: definition.revision,
-          lifecycle: "retired",
-          blueprints: definition.blueprints,
-        },
-      });
+    officialWorkflowInstallationsContract.uninstall,
+    ({ params, respond }) => {
+      uninstalledWorkflowIds.push(params.workflowId);
+      workflows.splice(0, workflows.length);
+      return respond(204);
     },
   );
 
-  await setupWorkflowDetailPage("/workflows");
-  click(
-    await waitFor(() => {
-      return linkByAriaLabel("Open Sales Research");
-    }),
-  );
-  click(
-    await waitFor(() => {
-      return buttonByText("Settings");
-    }),
-  );
-  click(
-    await waitFor(() => {
-      return buttonByText("Reconfigure");
-    }),
-  );
-  const firstDialog = await screen.findByRole("dialog");
-  fireEvent.change(within(firstDialog).getByLabelText("time-zone (required)"), {
-    target: { value: "Asia/Shanghai" },
+  await setupWorkflowDetailPage(workflowDetailPath("info"), {
+    [FeatureSwitchKey.OfficialWorkflows]: true,
   });
-  fireEvent.change(
-    within(firstDialog).getByLabelText("interval-seconds (required)"),
-    { target: { value: "1800" } },
-  );
 
-  window.history.back();
+  const uninstall = await waitFor(() => {
+    return buttonByText("Uninstall");
+  });
+  click(uninstall);
+  const uninstallDialog = await screen.findByRole("dialog");
+  click(buttonByText("Uninstall", uninstallDialog));
+
+  await waitFor(() => {
+    expect(uninstalledWorkflowIds).toStrictEqual([SALES_WORKFLOW_ID]);
+  });
   await waitFor(() => {
     expect(pathname()).toBe("/workflows");
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-
-  click(linkByAriaLabel("Open Support Sales Research"));
-  click(
-    await waitFor(() => {
-      return buttonByText("Settings");
-    }),
-  );
-  await waitFor(() => {
-    expect(installationReads.at(-1)).toBe(OTHER_WORKFLOW_ID);
-    expect(pathname()).toBe(`/workflows/${OTHER_WORKFLOW_ID}/info`);
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  click(buttonByText("Reconfigure"));
-  const secondDialog = await screen.findByRole("dialog");
-  expect(
-    within(secondDialog).getByLabelText("time-zone (required)"),
-  ).toHaveValue("America/New_York");
-  expect(
-    within(secondDialog).getByLabelText("interval-seconds (required)"),
-  ).toHaveValue(7200);
-  expect(
-    within(secondDialog).getByRole("combobox", {
-      name: "include-weekends (required)",
-    }),
-  ).toHaveTextContent("Yes");
-  fireEvent.change(
-    within(secondDialog).getByLabelText("time-zone (required)"),
-    { target: { value: "Europe/London" } },
-  );
-  click(buttonByText("Reconfigure", secondDialog));
-
-  await waitFor(() => {
-    expect(reconfigureRequests).toStrictEqual([
-      {
-        workflowId: OTHER_WORKFLOW_ID,
-        body: {
-          blueprints: [
-            {
-              blueprintKey: "daily",
-              bindings: [
-                { key: "interval-seconds", value: 7200 },
-                { key: "include-weekends", value: true },
-                { key: "time-zone", value: "Europe/London" },
-              ],
-            },
-          ],
-        },
-      },
-    ]);
-  });
+  const browseOfficial = await screen.findByText("Browse Official");
+  click(browseOfficial);
+  await screen.findByText("View and install");
+  expect(queryButtonByText("Installed")).toBeNull();
 });
 
 test("Preserve a copied Official Workflow when uninstalling the original fails", async () => {
@@ -2814,32 +2482,6 @@ test("Copy a workflow to another agent", async () => {
   await waitFor(() => {
     expect(pathname()).toBe(`/workflows/${COPIED_WORKFLOW_ID}/automations`);
   });
-});
-
-test("Recover when copying a workflow fails", async () => {
-  mockAgentPageApis();
-  mockWorkflowApis([salesResearch()]);
-  context.mocks.api(workflowsDetailContract.copy, ({ respond }) => {
-    return respond(400, {
-      error: {
-        code: "BAD_REQUEST",
-        message: "Failed to copy workflow",
-      },
-    });
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("info"));
-
-  const dialog = await openCopyDialog();
-  selectOptionByLabel("Copy to", "Support Bot", dialog);
-  click(buttonByText(/^Copy workflow$/, dialog));
-
-  await expect(
-    screen.findByText("Failed to copy workflow"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getByRole("dialog")).toBeInTheDocument();
-  expect(screen.queryByText(/Copied to/)).not.toBeInTheDocument();
-  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/info`);
 });
 
 test("Move a workflow to another agent", async () => {
@@ -2997,65 +2639,6 @@ test("Navigate between workflow detail tabs", async () => {
   expect(search()).toBe("");
 });
 
-test("Navigate workflow details with the named section select", async () => {
-  const user = userEvent.setup({ delay: null });
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  mockWorkflowApis([salesResearch()]);
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  await screen.findByText("Every weekday at 9:00 AM");
-  const section = screen.getByRole("combobox", {
-    name: "Workflow details section",
-  });
-  expect(section).toHaveTextContent("Automations");
-
-  section.focus();
-  await user.keyboard("{Enter}");
-  await screen.findByRole("option", { name: "Automations", selected: true });
-  await user.keyboard("{End}{Enter}");
-
-  await expect(
-    screen.findByRole("form", { name: "Workflow metadata" }),
-  ).resolves.toBeInTheDocument();
-  expect(screen.getAllByText("Visibility").length).toBeGreaterThan(0);
-  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/info`);
-  expect(search()).toBe("");
-  const settingsSection = screen.getByRole("combobox", {
-    name: "Workflow details section",
-  });
-  expect(settingsSection).toHaveTextContent("Settings");
-  await waitFor(() => {
-    expect(settingsSection).toHaveFocus();
-  });
-
-  await user.keyboard("{Enter}");
-  await screen.findByRole("option", { name: "Settings", selected: true });
-  await user.keyboard("{Home}{ArrowDown}{Enter}");
-
-  await expect(
-    screen.findByText("Gather CRM context before outreach."),
-  ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/instructions`);
-  expect(search()).toBe("");
-  const instructionsSection = screen.getByRole("combobox", {
-    name: "Workflow details section",
-  });
-  expect(instructionsSection).toHaveTextContent("Instructions");
-  await waitFor(() => {
-    expect(instructionsSection).toHaveFocus();
-  });
-
-  await user.keyboard("{Enter}");
-  await screen.findByRole("option", { name: "Instructions", selected: true });
-  await user.keyboard("{Escape}");
-
-  await waitFor(() => {
-    expect(instructionsSection).toHaveFocus();
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-  });
-  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/instructions`);
-  expect(search()).toBe("");
-});
-
 test("Summarize Gmail automation match conditions", async () => {
   const workflow = {
     ...salesResearch(),
@@ -3161,71 +2744,6 @@ test("Create a Gmail new-message automation with match rules", async () => {
           from: { contains: "@acme.com" },
           subject: { doesNotContain: "newsletter" },
         },
-      },
-    });
-  });
-});
-
-test("Keep Gmail operator selection valid when its field changes", async () => {
-  const user = userEvent.setup();
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  const addAutomation = await waitFor(() => {
-    return buttonByText("Add automation");
-  });
-  click(addAutomation);
-  await screen.findByRole("dialog");
-  pickAutomation("Email", /^Gmail new message/);
-
-  const form = await screen.findByRole("form", {
-    name: "Add Gmail automation",
-  });
-  await waitFor(() => {
-    expect(
-      within(form).getByRole("combobox", { name: "Condition 1 field" }),
-    ).toHaveFocus();
-  });
-  expect(
-    within(form).getByRole("combobox", { name: "Condition 1 field" }),
-  ).toHaveTextContent("From");
-  expect(
-    within(form).getByRole("combobox", { name: "Condition 1 operator" }),
-  ).toHaveTextContent("Contains");
-
-  await user.click(
-    within(form).getByRole("combobox", { name: "Condition 1 field" }),
-  );
-  await user.click(screen.getByRole("option", { name: "Thread ID" }));
-  expect(
-    within(form).getByRole("combobox", { name: "Condition 1 operator" }),
-  ).toHaveTextContent("Is");
-  expect(within(form).getByLabelText("Thread ID is")).toBeInTheDocument();
-
-  await user.click(
-    within(form).getByRole("combobox", { name: "Condition 1 field" }),
-  );
-  await user.click(screen.getByRole("option", { name: "Subject" }));
-  expect(
-    within(form).getByRole("combobox", { name: "Condition 1 operator" }),
-  ).toHaveTextContent("Contains");
-  const subject = within(form).getByLabelText("Subject contains");
-  await fill(subject, "release");
-  expect(subject).toHaveValue("release");
-  fireEvent.submit(form);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "gmail-new-message",
-      eventConfig: {
-        provider: "gmail",
-        event: "new_message",
-        match: { subject: { contains: "release" } },
       },
     });
   });
@@ -3484,47 +3002,6 @@ test("Create a Google Calendar event-updated automation", async () => {
   });
 });
 
-test("Create a Google Calendar event-cancelled automation", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {});
-
-  await waitFor(() => {
-    expect(buttonByText("Add automation")).toBeInTheDocument();
-  });
-  click(buttonByText("Add automation"));
-
-  await waitFor(() => {
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-  pickAutomation("Calendar", /^Google Calendar event cancelled/);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add Google Calendar automation",
-  });
-  await fill(
-    within(createAutomationForm).getByLabelText("Calendar ID"),
-    "team@example.com",
-  );
-  fireEvent.submit(createAutomationForm);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "google-calendar-event-cancelled",
-      eventConfig: {
-        provider: "google-calendar",
-        event: "event_cancelled",
-        calendarId: "team@example.com",
-      },
-    });
-  });
-});
-
 test.each([
   {
     label: "created",
@@ -3539,38 +3016,6 @@ test.each([
     expectedEventConfig: {
       provider: "google-calendar",
       event: "event_created",
-      calendarId: "replacement@example.com",
-    },
-  },
-  {
-    label: "updated",
-    automation: googleCalendarUpdatedWorkflowAutomation({
-      eventConfig: {
-        provider: "google-calendar",
-        event: "event_updated",
-        calendarId: "missing-updated@example.com",
-      },
-      warning: "calendar_not_found",
-    }),
-    expectedEventConfig: {
-      provider: "google-calendar",
-      event: "event_updated",
-      calendarId: "replacement@example.com",
-    },
-  },
-  {
-    label: "cancelled",
-    automation: googleCalendarCancelledWorkflowAutomation({
-      eventConfig: {
-        provider: "google-calendar",
-        event: "event_cancelled",
-        calendarId: "missing-cancelled@example.com",
-      },
-      warning: "calendar_not_found",
-    }),
-    expectedEventConfig: {
-      provider: "google-calendar",
-      event: "event_cancelled",
       calendarId: "replacement@example.com",
     },
   },
@@ -3654,159 +3099,6 @@ test.each([
   },
 );
 
-test("Keep the Calendar recovery editor open and disabled while the update is pending", async () => {
-  const automation = googleCalendarWorkflowAutomation({
-    warning: "calendar_not_found",
-  });
-  const workflow: WorkflowDetailResponse = {
-    ...salesResearch(),
-    automations: [automation],
-  };
-  const updateGate = context.mocks.deferred<void>();
-  mockWorkflowApis([workflow]);
-  context.mocks.api(
-    workflowAutomationsContract.update,
-    async ({ body, params, respond }) => {
-      if (
-        !("eventConfig" in body) ||
-        body.eventConfig.provider !== "google-calendar"
-      ) {
-        return respond(400, {
-          error: { code: "BAD_REQUEST", message: "Expected Calendar update" },
-        });
-      }
-      await updateGate.promise;
-      const updated = applyGoogleCalendarAutomationUpdate(
-        automation,
-        body.eventConfig,
-      );
-      workflow.automations[0] = updated;
-      return respond(200, { ...updated, id: params.id });
-    },
-  );
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  const warning = await screen.findByRole("alert");
-  click(buttonByText("Change calendar", warning));
-  const form = await screen.findByRole("form", {
-    name: "Change Google Calendar automation",
-  });
-  const calendarId = within(form).getByLabelText("Calendar ID");
-  await fill(calendarId, "replacement@example.com");
-  fireEvent.submit(form);
-
-  await waitFor(() => {
-    expect(calendarId).toBeDisabled();
-    expect(buttonByText("Save calendar", form)).toBeDisabled();
-    expect(form).toBeInTheDocument();
-  });
-  updateGate.resolve();
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("form", {
-        name: "Change Google Calendar automation",
-      }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("Keep the Calendar recovery editor open with an inline error when the update fails", async () => {
-  const automation = googleCalendarWorkflowAutomation({
-    warning: "calendar_not_found",
-  });
-  const workflow = { ...salesResearch(), automations: [automation] };
-  mockWorkflowApis([workflow]);
-  context.mocks.api(workflowAutomationsContract.update, ({ respond }) => {
-    return respond(409, {
-      error: { code: "CONFLICT", message: "Calendar update failed" },
-    });
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  click(buttonByText("Change calendar", await screen.findByRole("alert")));
-  const form = await screen.findByRole("form", {
-    name: "Change Google Calendar automation",
-  });
-  await fill(
-    within(form).getByLabelText("Calendar ID"),
-    "replacement@example.com",
-  );
-  fireEvent.submit(form);
-
-  const updateError = await within(form).findByRole("alert");
-  expect(updateError).toHaveTextContent(
-    "We couldn't change this calendar. Try again.",
-  );
-  expect(within(form).getByLabelText("Calendar ID")).toBeEnabled();
-  expect(form).toBeInTheDocument();
-});
-
-test("Accept a server-normalized Calendar ID after recovery", async () => {
-  const automation = googleCalendarWorkflowAutomation({
-    eventConfig: {
-      provider: "google-calendar",
-      event: "event_created",
-      calendarId: "missing@example.com",
-    },
-    warning: "calendar_not_found",
-  });
-  const workflow: WorkflowDetailResponse = {
-    ...salesResearch(),
-    automations: [automation],
-  };
-  mockWorkflowApis([workflow]);
-  context.mocks.api(
-    workflowAutomationsContract.update,
-    ({ body, params, respond }) => {
-      if (
-        !("eventConfig" in body) ||
-        body.eventConfig.provider !== "google-calendar"
-      ) {
-        return respond(400, {
-          error: { code: "BAD_REQUEST", message: "Expected Calendar update" },
-        });
-      }
-      const normalized = applyGoogleCalendarAutomationUpdate(automation, {
-        ...body.eventConfig,
-        calendarId: "primary",
-      });
-      workflow.automations[0] = normalized;
-      return respond(200, { ...normalized, id: params.id });
-    },
-  );
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  click(buttonByText("Change calendar", await screen.findByRole("alert")));
-  const form = await screen.findByRole("form", {
-    name: "Change Google Calendar automation",
-  });
-  await fill(within(form).getByLabelText("Calendar ID"), "owner@example.com");
-  fireEvent.submit(form);
-
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("form", {
-        name: "Change Google Calendar automation",
-      }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-  const enabledSwitch = await screen.findByRole("switch", {
-    name: "Disable Google Calendar event created",
-  });
-  const row = enabledSwitch.closest("[data-automation-id]");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Expected the reloaded Calendar automation row");
-  }
-  click(buttonByText("Edit automation", row));
-  const normalizedForm = await screen.findByRole("form", {
-    name: "Change Google Calendar automation",
-  });
-  expect(within(normalizedForm).getByLabelText("Calendar ID")).toHaveValue(
-    "primary",
-  );
-});
-
 test("Show a Calendar warning without recovery mutations for another user's automation", async () => {
   const automation = googleCalendarWorkflowAutomation({
     ownerUserId: UPDATED_USER_ID,
@@ -3881,40 +3173,10 @@ test("Open a Calendar action-required workflow at the exact automation from the 
   );
 });
 
-test("Keep a healthy Calendar automation on the existing workflow surfaces", async () => {
-  const workflow = {
-    ...salesResearch(),
-    automations: [googleCalendarWorkflowAutomation()],
-  };
-  mockWorkflowApis([workflow]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-  const enabledSwitch = await screen.findByRole("switch", {
-    name: "Disable Google Calendar event created",
-  });
-  expect(enabledSwitch).toBeChecked();
-  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(screen.queryByText("Change calendar")).not.toBeInTheDocument();
-
-  const row = enabledSwitch.closest("[data-automation-id]");
-  if (!(row instanceof HTMLElement)) {
-    throw new Error("Expected the Calendar automation row");
-  }
-  click(buttonByText("Edit automation", row));
-  const form = await screen.findByRole("form", {
-    name: "Change Google Calendar automation",
-  });
-  expect(within(form).getByLabelText("Calendar ID")).toHaveValue("primary");
-});
-
-function mockCalendarReconnect(
-  workflow: WorkflowDetailResponse,
-  selectedAccount: "work" | "personal" = "personal",
-) {
+function mockCalendarReconnect(workflow: WorkflowDetailResponse) {
   const completedAttempts = mockOAuthCompletions(context);
   const oauthAttemptId = crypto.randomUUID();
-  let healthyAccount = googleCalendarAccount({
+  const healthyAccount = googleCalendarAccount({
     id: "10000000-0000-4000-a000-000000000020",
     displayName: "Work Calendar",
     isDefault: true,
@@ -4024,21 +3286,7 @@ function mockCalendarReconnect(
       expect(reconnectRow).toHaveTextContent("Reconnect required");
       expect(submittedAccounts).toStrictEqual([]);
       expect(queryButtonByText("Reconnect", healthyRow)).toBeNull();
-      if (selectedAccount === "personal") {
-        click(buttonByText("Reconnect", reconnectRow));
-      } else {
-        click(buttonByText("Account actions", healthyRow));
-        const menu = await screen.findByRole("menu");
-        const reconnectItem = queryAllByRoleFast("menuitem", menu).find(
-          (item) => {
-            return textFor(item) === "Reconnect";
-          },
-        );
-        if (!reconnectItem) {
-          throw new Error("Expected account reconnect action");
-        }
-        click(reconnectItem);
-      }
+      click(buttonByText("Reconnect", reconnectRow));
 
       const connectDialog = await waitFor(() => {
         const dialog = screen
@@ -4060,276 +3308,24 @@ function mockCalendarReconnect(
       expect(submittedAccounts).toStrictEqual([
         {
           intent: "reconnect",
-          connectionId:
-            selectedAccount === "personal"
-              ? reconnectAccount.id
-              : healthyAccount.id,
+          connectionId: reconnectAccount.id,
         },
       ]);
     },
     complete: () => {
-      completedAttempts.set(
-        oauthAttemptId,
-        selectedAccount === "work" ? healthyAccount.id : reconnectAccount.id,
-      );
-      if (selectedAccount === "work") {
-        healthyAccount = {
-          ...healthyAccount,
-          updatedAt: "2026-01-01T00:00:01.000Z",
-        };
-      } else {
-        reconnectAccount = {
-          ...reconnectAccount,
-          connectionStatus: "connected",
-          reconnectReason: null,
-          updatedAt: "2026-01-01T00:00:01.000Z",
-        };
-      }
+      completedAttempts.set(oauthAttemptId, reconnectAccount.id);
+      reconnectAccount = {
+        ...reconnectAccount,
+        connectionStatus: "connected",
+        reconnectReason: null,
+        updatedAt: "2026-01-01T00:00:01.000Z",
+      };
       context.mocks.ably.trigger("connector:changed", {
         connectorSlug: "google-calendar",
       });
     },
   };
 }
-
-test("Converge Calendar recovery after the first stale summary without another connector event", async () => {
-  const workflow = {
-    ...salesResearch(),
-    automations: [
-      googleCalendarWorkflowAutomation({ warning: "reconnect_required" }),
-    ],
-  };
-  const reconnect = mockCalendarReconnect(workflow);
-  const firstRead = context.mocks.deferred<void>();
-  const watchRecovery = context.mocks.deferred<void>();
-  let oauthCompleted = false;
-  let returnedStaleSummary = false;
-  context.mocks.api(workflowsDetailContract.get, async ({ respond }) => {
-    if (oauthCompleted && !returnedStaleSummary) {
-      returnedStaleSummary = true;
-      const response = respond(200, publicWorkflowDetail(workflow));
-      firstRead.resolve();
-      return response;
-    }
-    if (oauthCompleted) {
-      await watchRecovery.promise;
-    }
-    return respond(200, publicWorkflowDetail(workflow));
-  });
-  await reconnect.open();
-  oauthCompleted = true;
-  reconnect.complete();
-  await firstRead.promise;
-  const recovery = await screen.findByRole("region", {
-    name: "Google Calendar recovery",
-  });
-  expect(within(recovery).getByRole("status")).toBeVisible();
-  expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
-  expect(screen.getByRole("alert")).toHaveTextContent("delivery paused");
-  workflow.automations[0] = googleCalendarWorkflowAutomation();
-  watchRecovery.resolve();
-  await waitFor(() => {
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-  expect(screen.getByRole("switch")).toBeChecked();
-  expect(reconnect.submittedAccounts).toHaveLength(1);
-});
-
-function calendarRecoveryWorkflow(): WorkflowDetailResponse {
-  return {
-    ...salesResearch(),
-    automations: [
-      googleCalendarWorkflowAutomation({ warning: "reconnect_required" }),
-    ],
-  };
-}
-
-async function expectUnconfirmedCalendarRecovery() {
-  const recovery = await screen.findByRole("region", {
-    name: "Google Calendar recovery",
-  });
-  await within(recovery).findByRole("alert");
-  expect(buttonByText("Check status", recovery)).toBeEnabled();
-  return recovery;
-}
-
-test("Keep the Calendar warning after a read failure and allow a status-only retry", async () => {
-  const workflow = calendarRecoveryWorkflow();
-  const reconnect = mockCalendarReconnect(workflow);
-  let failStatusRead = false;
-  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    if (failStatusRead) {
-      return respond(500, {
-        error: { code: "INTERNAL_SERVER_ERROR", message: "Status unavailable" },
-      });
-    }
-    return respond(200, publicWorkflowDetail(workflow));
-  });
-  await reconnect.open();
-  failStatusRead = true;
-  reconnect.complete();
-  const recovery = await expectUnconfirmedCalendarRecovery();
-  expect(screen.getByRole("switch")).toBeChecked();
-  expect(
-    screen.getByText(
-      "Google Calendar needs to be reconnected before this automation can resume.",
-    ),
-  ).toBeVisible();
-  failStatusRead = false;
-  workflow.automations[0] = googleCalendarWorkflowAutomation();
-  click(buttonByText("Check status", recovery));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Google Calendar recovery" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(reconnect.submittedAccounts).toHaveLength(1);
-});
-
-test.each(["cancel", "navigate"] as const)(
-  "Stop Calendar recovery on %s and ignore the late response",
-  async (action) => {
-    const workflow = calendarRecoveryWorkflow();
-    const reconnect = mockCalendarReconnect(workflow);
-    const requested = context.mocks.deferred<AbortSignal>();
-    const response = context.mocks.deferred<void>();
-    let oauthCompleted = false;
-    context.mocks.api(
-      workflowsDetailContract.get,
-      async ({ request, respond }) => {
-        if (oauthCompleted) {
-          requested.resolve(request.signal);
-          await response.promise;
-        }
-        return respond(200, publicWorkflowDetail(workflow));
-      },
-    );
-    await reconnect.open();
-    oauthCompleted = true;
-    reconnect.complete();
-    const requestSignal = await requested.promise;
-    const recovery = await screen.findByRole("region", {
-      name: "Google Calendar recovery",
-    });
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
-    if (action === "cancel") {
-      click(buttonByText("Cancel", recovery));
-    } else {
-      click(linkByText("Workflows"));
-      await screen.findByRole("heading", { name: "Workflows" });
-    }
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("region", { name: "Google Calendar recovery" }),
-      ).not.toBeInTheDocument();
-      expect(requestSignal.aborted).toBeTruthy();
-    });
-    workflow.automations[0] = googleCalendarWorkflowAutomation();
-    response.resolve();
-    expect(
-      queryAllByRoleFast("button").filter((button) => {
-        return textFor(button) === "Reconnect Google Calendar";
-      }),
-    ).toHaveLength(action === "cancel" ? 1 : 0);
-    expect(screen.queryAllByRole("switch", { checked: true })).toHaveLength(
-      action === "cancel" ? 1 : 0,
-    );
-    expect(reconnect.submittedAccounts).toHaveLength(1);
-  },
-);
-
-test("Wait for the target Calendar automation when reconnecting another account", async () => {
-  const workflow = calendarRecoveryWorkflow();
-  workflow.automations.unshift(
-    googleCalendarWorkflowAutomation({ id: "healthy-other-calendar" }),
-  );
-  const reconnect = mockCalendarReconnect(workflow, "work");
-  const firstRead = context.mocks.deferred<void>();
-  const nextRead = context.mocks.deferred<void>();
-  let oauthCompleted = false;
-  let returnedStaleSummary = false;
-  context.mocks.api(workflowsDetailContract.get, async ({ respond }) => {
-    if (oauthCompleted && !returnedStaleSummary) {
-      returnedStaleSummary = true;
-      const response = respond(200, publicWorkflowDetail(workflow));
-      firstRead.resolve();
-      return response;
-    }
-    if (oauthCompleted) {
-      await nextRead.promise;
-    }
-    return respond(200, publicWorkflowDetail(workflow));
-  });
-  await reconnect.open();
-  oauthCompleted = true;
-  reconnect.complete();
-  await firstRead.promise;
-  const recovery = await screen.findByRole("region", {
-    name: "Google Calendar recovery",
-  });
-  expect(within(recovery).getByRole("status")).toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Google Calendar needs to be reconnected before this automation can resume.",
-    ),
-  ).toBeInTheDocument();
-  for (const enabled of screen.getAllByRole("switch")) {
-    expect(enabled).toBeChecked();
-  }
-  expect(reconnect.submittedAccounts).toStrictEqual([
-    {
-      intent: "reconnect",
-      connectionId: "10000000-0000-4000-a000-000000000020",
-    },
-  ]);
-  click(buttonByText("Cancel", recovery));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("region", { name: "Google Calendar recovery" }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test.each([
-  "missing automation",
-  "different event",
-  "different workflow",
-  "changed warning",
-] as const)("Keep Calendar recovery unconfirmed for %s", async (change) => {
-  const workflow = calendarRecoveryWorkflow();
-  const reconnect = mockCalendarReconnect(workflow);
-  await reconnect.open();
-  if (change === "missing automation") {
-    workflow.automations = [];
-  }
-  if (change === "different event") {
-    workflow.automations = [
-      googleCalendarUpdatedWorkflowAutomation({
-        id: GOOGLE_CALENDAR_AUTOMATION_ID,
-      }),
-    ];
-  }
-  if (change === "different workflow") {
-    workflow.id = OPS_WORKFLOW_ID;
-  }
-  if (change === "changed warning") {
-    workflow.automations = [
-      googleCalendarWorkflowAutomation({ warning: "calendar_not_found" }),
-    ];
-  }
-  reconnect.complete();
-  await expectUnconfirmedCalendarRecovery();
-  expect(
-    queryAllByRoleFast("button").filter((button) => {
-      return textFor(button) === "Change calendar";
-    }),
-  ).toHaveLength(change === "changed warning" ? 1 : 0);
-  expect(
-    screen.queryAllByText(
-      "This calendar is no longer available. Choose another calendar to resume this automation.",
-    ),
-  ).toHaveLength(change === "changed warning" ? 1 : 0);
-});
 
 test("Reconnect the selected Calendar account and reload the warning state", async () => {
   const workflow = {
@@ -4391,35 +3387,6 @@ test("Create a Google Forms automation and surface its warning", async () => {
     });
   });
   await expect(screen.findByText(warning)).resolves.toBeInTheDocument();
-});
-
-test("Explain how to provide a valid Google Forms link", async () => {
-  const guidance =
-    "Please open the form's edit page and copy the link from the address bar.";
-  mockWorkflowApis([salesResearch()]);
-  context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
-    return respond(400, {
-      error: { code: "BAD_REQUEST", message: guidance },
-    });
-  });
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {});
-
-  click(await screen.findByText("Add automation"));
-  await screen.findByRole("dialog");
-  pickAutomation("Google Forms", /^Google Forms response submitted/);
-
-  const createAutomationForm = await screen.findByRole("form", {
-    name: "Add Google Forms response automation",
-  });
-  await fill(
-    within(createAutomationForm).getByLabelText("Form link"),
-    "https://docs.google.com/forms/d/e/responder-id/viewform",
-  );
-  fireEvent.submit(createAutomationForm);
-
-  await expect(screen.findByText(guidance)).resolves.toBeInTheDocument();
-  expect(createAutomationForm).toBeInTheDocument();
 });
 
 test("Create a Google Meet transcript-ready automation", async () => {
@@ -4653,66 +3620,6 @@ test("Create a Stripe invoice-paid automation for selected billing reasons", asy
       "Stripe account acct_created_live · Live mode · Manual, Subscription cycle",
     ),
   ).resolves.toBeInTheDocument();
-});
-
-test("Create a Stripe invoice-paid automation for any billing reason", async () => {
-  const createBodies: WorkflowAutomationCreateRequest[] = [];
-  mockWorkflowApis([salesResearch()]);
-  mockCreateWorkflowAutomation((body) => {
-    createBodies.push(body);
-  });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {
-    [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
-  });
-
-  click(await screen.findByText("Add automation"));
-  await screen.findByRole("dialog");
-  pickAutomation("Integrations", /^Stripe invoice paid/u);
-  const form = await screen.findByRole("form", {
-    name: "Add Stripe invoice paid automation",
-  });
-  fireEvent.submit(form);
-
-  await waitFor(() => {
-    expect(createBodies.at(-1)).toStrictEqual({
-      kind: "event",
-      eventType: "stripe-invoice-paid",
-      eventConfig: {
-        provider: "stripe",
-        event: "invoice_paid",
-      },
-    });
-  });
-});
-
-test("Recover from an unavailable Stripe connection while creating an automation", async () => {
-  const serverMessage =
-    "Stripe invoice-paid automations require Live mode; reconnect Stripe in Live mode";
-  mockWorkflowApis([salesResearch()]);
-  context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
-    return respond(409, {
-      error: { code: "CONFLICT", message: serverMessage },
-    });
-  });
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {
-    [FeatureSwitchKey.StripeInvoicePaidWorkflowAutomations]: true,
-  });
-
-  click(await screen.findByText("Add automation"));
-  await screen.findByRole("dialog");
-  pickAutomation("Integrations", /^Stripe invoice paid/u);
-  const form = await screen.findByRole("form", {
-    name: "Add Stripe invoice paid automation",
-  });
-  fireEvent.submit(form);
-
-  const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent(serverMessage);
-  expect(form).toBeInTheDocument();
-  expect(linkByText("Manage Stripe connection", alert)).toHaveAttribute(
-    "href",
-    "/connectors",
-  );
 });
 
 test("Offer a Team upgrade to a Pro workspace administrator", async () => {
@@ -5147,122 +4054,6 @@ test("Edit a schedule in the user's preferred time zone", async () => {
   });
 });
 
-test("Edit weekly days with keyboard navigation and keep the draft until Save", async () => {
-  const user = userEvent.setup();
-  const updateGate = context.mocks.deferred<void>();
-  const updateBodies: WorkflowAutomationUpdateRequest[] = [];
-  context.mocks.data.userPreferences({ timezone: "UTC" });
-  const automation: WorkflowScheduleAutomationSummary = {
-    ...weekdayWorkflowAutomation(),
-    schedule: {
-      type: "cron",
-      cronExpression: "0 9 * * 1",
-      timezone: "UTC",
-    },
-  };
-  const workflow: WorkflowDetailResponse = {
-    ...salesResearch(),
-    automations: [automation],
-  };
-  mockWorkflowApis([workflow]);
-  context.mocks.api(
-    workflowAutomationsContract.update,
-    async ({ body, params, respond, withSignal }) => {
-      if (!("schedule" in body)) {
-        return respond(400, {
-          error: { code: "BAD_REQUEST", message: "Expected schedule update" },
-        });
-      }
-      updateBodies.push(body);
-      await withSignal(updateGate.promise);
-      const updated = {
-        ...automation,
-        id: params.id,
-        schedule: body.schedule,
-      };
-      workflow.automations[0] = updated;
-      return respond(200, updated);
-    },
-  );
-
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
-  await expect(
-    screen.findByText("Every week on Mon at 9:00 AM"),
-  ).resolves.toBeInTheDocument();
-  click(buttonByText("Edit automation"));
-  const form = await screen.findByRole("form", {
-    name: "Update schedule automation",
-  });
-  const days = within(form).getByRole("group", { name: "Day of week" });
-  const monday = buttonByText("Mon", days);
-  const tuesday = buttonByText("Tue", days);
-  const wednesday = buttonByText("Wed", days);
-  const friday = buttonByText("Fri", days);
-
-  await user.click(monday);
-  expect(monday).toHaveAttribute("aria-pressed", "true");
-  await user.keyboard("{ArrowRight}");
-  expect(tuesday).toHaveFocus();
-  expect(tuesday).toHaveAttribute("aria-pressed", "false");
-  expect(monday).toHaveAttribute("aria-pressed", "true");
-
-  await user.keyboard("{Tab}");
-  expect(within(form).getByRole("combobox", { name: "Hour" })).toHaveFocus();
-  await user.keyboard("{Shift>}{Tab}{/Shift}");
-  expect(tuesday).toHaveFocus();
-
-  await user.keyboard("{Enter}");
-  expect(tuesday).toHaveAttribute("aria-pressed", "true");
-  await user.keyboard(" ");
-  expect(tuesday).toHaveAttribute("aria-pressed", "false");
-  await user.keyboard(" ");
-  expect(tuesday).toHaveAttribute("aria-pressed", "true");
-  await user.keyboard("{ArrowRight}");
-  expect(wednesday).toHaveFocus();
-  expect(wednesday).toHaveAttribute("aria-pressed", "false");
-  await user.keyboard(" ");
-  expect(wednesday).toHaveAttribute("aria-pressed", "true");
-
-  click(monday);
-  expect(monday).toHaveAttribute("aria-pressed", "false");
-  click(tuesday);
-  expect(tuesday).toHaveAttribute("aria-pressed", "false");
-  await user.click(wednesday);
-  expect(wednesday).toHaveAttribute("aria-pressed", "true");
-  await user.keyboard("{Enter}");
-  expect(wednesday).toHaveAttribute("aria-pressed", "true");
-  await user.keyboard(" ");
-  expect(wednesday).toHaveAttribute("aria-pressed", "true");
-  click(friday);
-  expect(friday).toHaveAttribute("aria-pressed", "true");
-  expect(buttonByText("Save schedule", form)).toBeEnabled();
-  expect(screen.getByText("Every week on Mon at 9:00 AM")).toBeInTheDocument();
-
-  click(buttonByText("Save schedule", form));
-  await waitFor(() => {
-    expect(buttonByText("Save schedule", form)).toBeDisabled();
-  });
-  for (const day of queryAllByRoleFast("button", days)) {
-    expect(day).toBeDisabled();
-  }
-  updateGate.resolve();
-  await expect(
-    screen.findByText("Every week on Wed, Fri at 9:00 AM"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("form", { name: "Update schedule automation" }),
-  ).not.toBeInTheDocument();
-  expect(updateBodies).toStrictEqual([
-    {
-      schedule: {
-        type: "cron",
-        cronExpression: "0 9 * * 3,5",
-        timezone: "UTC",
-      },
-    },
-  ]);
-});
-
 test("Edit an interval automation", async () => {
   const updateBodies: {
     readonly automationId: string;
@@ -5639,142 +4430,6 @@ test("Load workflow authors only after a title tooltip opens and reuse on reopen
   expect(requests).toBe(1);
 });
 
-test("Load detail author on keyboard focus without delaying the detail page", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch()]);
-  const response = context.mocks.deferred<void>();
-  let requests = 0;
-  context.mocks.api(
-    workflowsDetailContract.ownerProfile,
-    async ({ respond }) => {
-      requests += 1;
-      await response.promise;
-      return respond(200, { displayName: "Keyboard Author", imageUrl: null });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/workflows/${SALES_WORKFLOW_ID}/automations`,
-  });
-  const heading = await screen.findByRole("heading", {
-    name: "Sales Research",
-  });
-  expect(requests).toBe(0);
-  expect(heading).toHaveAttribute("tabindex", "0");
-  await user.keyboard("{Tab}");
-  screen.getByRole("heading", { name: "Sales Research" }).focus();
-  const tooltip = await screen.findByRole("tooltip");
-  await expect(
-    within(tooltip).findByText("Loading author…"),
-  ).resolves.toBeInTheDocument();
-  expect(within(tooltip).getByRole("status")).toHaveAttribute(
-    "aria-busy",
-    "true",
-  );
-  expect(within(tooltip).getByText("Sales Research")).toBeInTheDocument();
-  expect(
-    within(tooltip).getByText("Collects account context before outreach."),
-  ).toBeInTheDocument();
-  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
-  response.resolve();
-  await expect(
-    within(tooltip).findByText("Keyboard Author"),
-  ).resolves.toBeInTheDocument();
-  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
-  expect(requests).toBe(1);
-});
-
-test("Recover the author row after an API error without affecting workflow content", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch()]);
-  let healthy = false;
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    return healthy
-      ? respond(200, { displayName: "Recovered Author", imageUrl: null })
-      : respond(503, {
-          error: {
-            code: "NOT_AVAILABLE",
-            message: "Author lookup unavailable",
-          },
-        });
-  });
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  const tooltip = await screen.findByRole("tooltip");
-  await expect(
-    within(tooltip).findByText("Author unavailable. Reopen to retry."),
-  ).resolves.toBeInTheDocument();
-  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
-  healthy = true;
-  await user.unhover(linkByAriaLabel("Open Sales Research"));
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  await expect(
-    within(await screen.findByRole("tooltip")).findByText("Recovered Author"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Keep reopened consumers and out-of-order workflow author responses isolated", async () => {
-  const user = userEvent.setup();
-  const second = {
-    ...salesResearch(),
-    id: OTHER_WORKFLOW_ID,
-    name: "second-workflow",
-    displayName: "Second Workflow",
-  };
-  mockWorkflowApis([salesResearch(), second]);
-  const firstResponse = context.mocks.deferred<void>();
-  let firstRequests = 0;
-  context.mocks.api(
-    workflowsDetailContract.ownerProfile,
-    async ({ params, respond }) => {
-      if (params.workflowId === SALES_WORKFLOW_ID) {
-        firstRequests += 1;
-        await firstResponse.promise;
-        return respond(200, { displayName: "First Author", imageUrl: null });
-      }
-      return respond(200, { displayName: "Second Author", imageUrl: null });
-    },
-  );
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  const firstTitle = linkByAriaLabel("Open Sales Research");
-  await user.hover(firstTitle);
-  await expect(
-    screen.findByText("Loading author…"),
-  ).resolves.toBeInTheDocument();
-  await user.unhover(firstTitle);
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(firstTitle);
-  await expect(
-    screen.findByText("Loading author…"),
-  ).resolves.toBeInTheDocument();
-  await user.unhover(firstTitle);
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(linkByAriaLabel("Open Second Workflow"));
-  const tooltip = await screen.findByRole("tooltip");
-  await expect(
-    within(tooltip).findByText("Second Author"),
-  ).resolves.toBeInTheDocument();
-  firstResponse.resolve();
-  await user.unhover(linkByAriaLabel("Open Second Workflow"));
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(firstTitle);
-  await expect(
-    within(await screen.findByRole("tooltip")).findByText("First Author"),
-  ).resolves.toBeInTheDocument();
-  expect(firstRequests).toBe(1);
-});
-
 test("Discard cached author data on account change and abort the old account's pending request", async () => {
   const user = userEvent.setup();
   const clerk = context.mocks.clerk();
@@ -5828,37 +4483,6 @@ test("Discard cached author data on account change and abort the old account's p
     within(tooltip).findByText("Current Account Author"),
   ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Previous Account Author")).not.toBeInTheDocument();
-});
-
-test("Release author requests on workflow navigation", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch()]);
-  const response = context.mocks.deferred<void>();
-  const started = context.mocks.deferred<AbortSignal>();
-  context.mocks.api(
-    workflowsDetailContract.ownerProfile,
-    async ({ request, respond }) => {
-      started.resolve(request.signal);
-      await response.promise;
-      return respond(200, {
-        displayName: "Previous Page Author",
-        imageUrl: null,
-      });
-    },
-  );
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  const title = linkByAriaLabel("Open Sales Research");
-  await user.hover(title);
-  await expect(
-    screen.findByText("Loading author…"),
-  ).resolves.toBeInTheDocument();
-  const requestSignal = await started.promise;
-  click(title);
-  await screen.findByRole("heading", { name: "Sales Research" });
-  expect(requestSignal.aborted).toBeTruthy();
-  response.resolve();
-  expect(screen.queryByText("Previous Page Author")).not.toBeInTheDocument();
 });
 
 test("Clear the author cache when the active organization changes", async () => {

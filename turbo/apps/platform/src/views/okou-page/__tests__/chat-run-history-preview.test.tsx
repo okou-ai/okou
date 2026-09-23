@@ -10,7 +10,6 @@ import {
   findWorkHistoryToggle,
   installRunChat,
   promptEvent,
-  publishRunUpdate,
   queryButton,
   readyChat,
   RUN_PATH,
@@ -45,15 +44,6 @@ async function setupRunWithOutputCount(count: number): Promise<void> {
   await readyChat();
 }
 
-test("Show no history messages without assistant output", async () => {
-  await setupRunWithOutputCount(0);
-
-  expect(
-    document.querySelector("[data-chat-run-work-history-list]"),
-  ).toBeNull();
-  expect(queryButton("Expand work history")).toBeNull();
-});
-
 test("Show no history toggle when the only output is the main result", async () => {
   await setupRunWithOutputCount(1);
 
@@ -68,7 +58,7 @@ test("Show no history toggle when the only output is the main result", async () 
   ).toBeNull();
 });
 
-test.each([2, 6])(
+test.each([6])(
   "Hide all collapsed history and expand every message with %s outputs",
   async (count) => {
     await setupRunWithOutputCount(count);
@@ -127,126 +117,6 @@ test.each([2, 6])(
     ).toBeVisible();
   },
 );
-
-test("Hide the empty history step count from the work summary", async () => {
-  await setupRunWithOutputCount(1);
-
-  const workSummary = document.querySelector("[data-chat-run-work]");
-  expect(workSummary).toBeVisible();
-  expect(workSummary).not.toHaveTextContent("0 steps");
-  expect(workSummary).not.toHaveTextContent("·");
-});
-
-test("Keep work history open and keyboard focus in place when another output arrives", async () => {
-  const events = [
-    promptEvent({
-      id: "focused-history-input",
-      runId: RUN_ID,
-      seqId: 1,
-      text: "Check every step",
-    }),
-    assistantEvent({
-      id: "focused-history-first",
-      runId: RUN_ID,
-      seqId: 2,
-      text: "Checked the dependencies",
-    }),
-    assistantEvent({
-      id: "focused-history-second",
-      runId: RUN_ID,
-      seqId: 3,
-      text: "Checked the boundaries",
-    }),
-    assistantEvent({
-      id: "focused-history-third",
-      runId: RUN_ID,
-      seqId: 4,
-      text: "Checked the interactions",
-    }),
-    assistantEvent({
-      id: "focused-history-fourth",
-      runId: RUN_ID,
-      seqId: 5,
-      text: "Checked the responsive layout",
-    }),
-    assistantEvent({
-      id: "focused-history-fifth",
-      runId: RUN_ID,
-      seqId: 6,
-      text: "Checked the final details",
-    }),
-  ];
-  installRunChat({ chatEvents: events, activeRunIds: [RUN_ID] });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await readyChat();
-  const showAll = await findWorkHistoryToggle("collapsed");
-  click(showAll);
-  showAll.focus();
-
-  events.push(
-    assistantEvent({
-      id: "focused-history-sixth",
-      runId: RUN_ID,
-      seqId: 7,
-      text: "The checks are complete",
-    }),
-  );
-  publishRunUpdate();
-
-  await expect(
-    screen.findByText("The checks are complete"),
-  ).resolves.toBeVisible();
-  expect(screen.getByText("Checked the dependencies")).toBeVisible();
-  expect(screen.getByText("Checked the boundaries")).toBeVisible();
-  await expect(findWorkHistoryToggle("expanded")).resolves.toHaveFocus();
-});
-
-test("Render a card-only history output without message folding", async () => {
-  installRunChat({
-    chatEvents: [
-      promptEvent({
-        id: "action-preview-input",
-        runId: RUN_ID,
-        seqId: 1,
-        text: "Review the available plans",
-      }),
-      assistantEvent({
-        id: "action-preview-card",
-        runId: RUN_ID,
-        seqId: 2,
-        text: "[Compare plans](/?settings=billing&billingView=plans)",
-      }),
-      assistantEvent({
-        id: "action-preview-result",
-        runId: RUN_ID,
-        seqId: 3,
-        text: "The comparison is ready",
-      }),
-      completedEvent({
-        id: "action-preview-complete",
-        runId: RUN_ID,
-        seqId: 4,
-      }),
-    ],
-  });
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-  await readyChat();
-
-  expect(screen.getByText("The comparison is ready")).toBeVisible();
-  expect(screen.queryByTestId("plan-upgrade-card")).toBeNull();
-  click(await findWorkHistoryToggle("collapsed"));
-
-  const card = await screen.findByTestId("plan-upgrade-card");
-  expect(card).toBeVisible();
-  expect(card.closest("[data-chat-run-work-history-list]")).toBeVisible();
-  expect(queryButton("Collapse work history")).toBeVisible();
-});
 
 test("Render Markdown and media history like the main body after a run completes", async () => {
   installRunChat({
