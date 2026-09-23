@@ -1201,13 +1201,15 @@ test("Redeem a Claude Code subscription reset from the account row", async () =>
     name: "Reset Claude Code usage?",
   });
   expect(within(confirmDialog).getByText(/3 resets left/u)).toBeInTheDocument();
-  click(
-    within(confirmDialog)
-      .getAllByRole("button")
-      .filter((button) => {
-        return button.textContent === "Reset usage";
-      })[0]!,
+  const resetButton = queryAllByRoleFast("button", confirmDialog).find(
+    (button) => {
+      return button.textContent === "Reset usage";
+    },
   );
+  if (!resetButton) {
+    throw new Error("Reset usage button not found");
+  }
+  click(resetButton);
 
   await expect(
     screen.findByText("Claude Code usage reset"),
