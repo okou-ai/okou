@@ -165,7 +165,7 @@ test("The mobile chat-list menu closes on Escape and returns focus before the si
     "Open chat list menu",
   );
   await user.click(menuTrigger);
-  expect(await screen.findByRole("menu")).toBeInTheDocument();
+  await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
 
   await user.keyboard("{Escape}");
   await waitFor(() => {
