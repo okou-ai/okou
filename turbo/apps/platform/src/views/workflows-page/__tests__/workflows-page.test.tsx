@@ -1091,39 +1091,6 @@ function mockDeleteWorkflow(
   );
 }
 
-function mockConnectedAutomationConnectors(): void {
-  context.mocks.data.connectors([
-    {
-      id: "10000000-0000-4000-a000-000000000001",
-      slug: "slack",
-      authMethod: "oauth",
-      externalId: "slack-workspace",
-      externalUsername: "workspace",
-      externalEmail: null,
-      oauthScopes: [],
-      connectionStatus: "connected",
-      reconnectReason: null,
-      tokenExpiresAt: null,
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:00Z",
-    },
-    {
-      id: "10000000-0000-4000-a000-000000000002",
-      slug: "gmail",
-      authMethod: "oauth",
-      externalId: "gmail-user",
-      externalUsername: "user@example.com",
-      externalEmail: "user@example.com",
-      oauthScopes: ["https://www.googleapis.com/auth/gmail.modify"],
-      connectionStatus: "connected",
-      reconnectReason: null,
-      tokenExpiresAt: null,
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:00Z",
-    },
-  ]);
-}
-
 function mockConfiguredEventAutomation(
   body: Extract<WorkflowAutomationCreateRequest, { readonly kind: "event" }>,
 ): WorkflowAutomationSummary {
