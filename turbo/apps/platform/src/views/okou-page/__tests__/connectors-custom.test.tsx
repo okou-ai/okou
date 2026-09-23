@@ -629,6 +629,8 @@ test("Custom connector access rows keep independent save progress", async () => 
 });
 
 test("Manage agent access and permissions for a custom connector", async () => {
+  const user = userEvent.setup({ delay: null });
+  const save = context.mocks.deferred<void>();
   const connector = customConnector({
     connected: true,
     missingRequiredFields: [],
@@ -677,8 +679,9 @@ test("Manage agent access and permissions for a custom connector", async () => {
   );
   context.mocks.api(
     agentCustomConnectorsContract.update,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond, withSignal }) => {
       updates.push({ agentId: params.id, body });
+      await withSignal(save.promise);
       const next = body.operation === "remove" ? [] : body.grants;
       const grants = { grants: next };
       access.set(params.id, grants);
@@ -711,7 +714,19 @@ test("Manage agent access and permissions for a custom connector", async () => {
   });
   expect(within(drawer).getByText("messages:send-as-user")).toBeInTheDocument();
   click(getConnectorAction("button", "Allow", drawer));
+  expect(getConnectorAction("button", "Allow", drawer)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(updates).toHaveLength(0);
   click(getConnectorAction("button", "Apply", drawer));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Saving...", drawer)).toBeDisabled();
+  });
+  expect(getConnectorAction("button", "Allow", drawer)).toBeDisabled();
+  expect(getConnectorAction("button", "Deny", drawer)).toBeDisabled();
+  expect(getConnectorAction("button", "Cancel", drawer)).toBeDisabled();
+  save.resolve();
   await waitFor(() => {
     expect(
       getConnectorSwitch("Revoke Acme Search access for Support", dialog),
@@ -721,6 +736,15 @@ test("Manage agent access and permissions for a custom connector", async () => {
         "connector-card-agent-access",
       ),
     ).toHaveTextContent("Used by Support");
+  });
+  expect(updates.at(-1)?.body).toStrictEqual({
+    grants: [
+      {
+        customConnectorId: connector.id,
+        permissionNames: ["messages:send-as-user"],
+      },
+    ],
+    operation: "add",
   });
 
   click(
@@ -738,7 +762,18 @@ test("Manage agent access and permissions for a custom connector", async () => {
   expect(
     within(editedDrawer).getByText("messages:send-as-user"),
   ).toBeInTheDocument();
-  click(getConnectorAction("button", "Deny", editedDrawer));
+  const allow = getConnectorAction("button", "Allow", editedDrawer);
+  allow.focus();
+  await user.keyboard("{Enter}{Tab}");
+  expect(getConnectorAction("button", "Deny", editedDrawer)).toHaveFocus();
+  expect(getConnectorAction("button", "Apply", editedDrawer)).toBeDisabled();
+  await user.keyboard(" ");
+  expect(getConnectorAction("button", "Deny", editedDrawer)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(getConnectorAction("button", "Apply", editedDrawer)).toBeEnabled();
+  expect(updates).toHaveLength(1);
   click(getConnectorAction("button", "Apply", editedDrawer));
   await waitFor(() => {
     expect(updates.at(-1)?.body).toStrictEqual({

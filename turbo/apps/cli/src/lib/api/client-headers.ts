@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_CLI,
@@ -29,6 +30,7 @@ export function createCliClientHeaderInjector(options: {
     headers.set(CLIENT_TYPE_HEADER, CLIENT_TYPE_CLI);
     headers.set(CLIENT_SESSION_ID_HEADER, clientSessionId);
     headers.set(CLIENT_REQUEST_ID_HEADER, createUuid());
+    headers.set(CHAT_THREAD_SNAPSHOT_R2_HEADER, "1");
   };
 }
 

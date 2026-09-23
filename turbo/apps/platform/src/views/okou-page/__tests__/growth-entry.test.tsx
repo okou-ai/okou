@@ -82,12 +82,6 @@ function slackStatus(options: {
       options.installed && !options.connected
         ? "https://slack.com/oauth/v2/authorize?client_id=growth-connect"
         : null,
-    environment: {
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    },
   };
 }
 

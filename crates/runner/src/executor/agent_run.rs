@@ -53,7 +53,7 @@ use super::session_history_download::{
 };
 use super::session_restore::{
     FreshSessionRestorePlan, MaterializedResumeSession, SessionRestoreDiagnostics,
-    plan_fresh_session_restore, restore_session,
+    plan_fresh_session_restore, restore_session, restored_session_identity_from_context,
 };
 use super::telemetry::{RunnerSpawnTiming, record_api_startup_boundaries};
 use super::workspace_session_history_materializer::{
@@ -454,7 +454,7 @@ async fn verify_restored_session_identity_for_reuse(
     context: &ExecutionContext,
     identity: RestoredSessionIdentity,
 ) -> Result<RestoredSessionIdentity, SessionHistoryIdentityReason> {
-    let Some(requested_identity) = RestoredSessionIdentity::from_context(context) else {
+    let Some(requested_identity) = restored_session_identity_from_context(context) else {
         return Err(SessionHistoryIdentityReason::VerifyRequestMissing);
     };
     if identity != requested_identity {

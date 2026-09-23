@@ -59,12 +59,6 @@ function slackInstalled(): SlackOrgStatus {
     workspaceName: "Quest Workspace",
     installUrl: null,
     connectUrl: null,
-    environment: {
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    },
   };
 }
 

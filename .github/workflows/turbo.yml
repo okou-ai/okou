@@ -1932,7 +1932,8 @@ jobs:
   cli-e2e-02-playwright:
     name: cli-e2e-02-playwright
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Leave room to clean up test accounts and upload failure screenshots/traces.
+    timeout-minutes: 10
     concurrency:
       group: cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}
       cancel-in-progress: true

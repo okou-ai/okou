@@ -1,8 +1,11 @@
 [package]
 name = "runner-host"
-version = "0.1.3"
+version = "0.1.4"
 edition.workspace = true
 description = "Runner host filesystem, process, lock, path, and logging primitives"
+
+[features]
+test-support = ["tokio/net", "tokio/signal"]
 
 [dependencies]
 runner-types.workspace = true
@@ -23,7 +26,7 @@ uuid = { workspace = true, features = ["serde", "std", "v4"] }
 futures-util = { workspace = true, features = ["async-await"] }
 serde_json = { workspace = true, features = ["std"] }
 tempfile = { workspace = true, features = ["getrandom"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["net", "signal", "test-util"] }
 
 [lints]
 workspace = true

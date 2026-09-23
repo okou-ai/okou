@@ -62,9 +62,13 @@ export function PurchaseConfirmDialogShell({
       }}
     >
       <DialogContent smMaxWidth={420}>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+        <DialogHeader className="min-w-0 pr-8">
+          <DialogTitle className="break-words leading-tight">
+            {title}
+          </DialogTitle>
+          <DialogDescription className="break-words">
+            {description}
+          </DialogDescription>
         </DialogHeader>
 
         {children}
@@ -73,14 +77,20 @@ export function PurchaseConfirmDialogShell({
           <p className="text-sm text-destructive">{errorMessage}</p>
         )}
 
-        <DialogFooter>
-          <Button variant="outline" disabled={confirming} onClick={close}>
+        <DialogFooter className="min-w-0">
+          <Button
+            variant="outline"
+            disabled={confirming}
+            onClick={close}
+            className="h-auto min-h-9 w-full min-w-0 whitespace-normal break-words py-2 text-center sm:w-auto"
+          >
             {t(($) => {
               return $.billing.common.cancel;
             })}
           </Button>
           <Button
             disabled={confirming}
+            className="h-auto min-h-9 w-full min-w-0 whitespace-normal break-words py-2 text-center sm:w-auto"
             onClick={() => {
               detach(confirm(pageSignal), Reason.DomCallback);
             }}

@@ -9,13 +9,11 @@ import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { readThreadSessionBinding } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   openRouterBodySchema,
-  assistantMessages,
   userMessages,
   assistantEvent,
 } from "./helpers/chat-events-fixture";

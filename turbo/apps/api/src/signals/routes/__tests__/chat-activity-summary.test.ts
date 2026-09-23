@@ -14,7 +14,6 @@ import {
   advanceRunActivityClockFixture,
   holdRunActivityFixture,
   holdRunActivityParentFixture,
-  expireRunActivityRetentionFixture,
   deleteRunActivitySnapshotFixture,
   cancelRunActivityWaiterFixture,
   readRunActivityBookkeepingFixture,

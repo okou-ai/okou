@@ -51,6 +51,7 @@ function currentConnectionQuery(
       encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
       encryptedPassphrase: sshCredentials.encryptedPassphrase,
       accessId: sshConnections.cloudflareAccessId,
+      needsRebind: sshConnections.needsRebind,
       access: {
         id: cloudflareAccessConfigs.id,
         generation: cloudflareAccessConfigs.generation,
@@ -104,7 +105,13 @@ function currentConnectionQuery(
       and(
         eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
         eq(cloudflareAccessConfigs.orgId, agentRuns.orgId),
-        eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+        or(
+          eq(cloudflareAccessConfigs.scope, "organization"),
+          and(
+            eq(cloudflareAccessConfigs.scope, "personal"),
+            eq(cloudflareAccessConfigs.userId, agentRuns.userId),
+          ),
+        ),
       ),
     )
     .where(
@@ -136,6 +143,9 @@ async function currentConnection(
   if (!row) {
     return null;
   }
+  if (row.needsRebind) {
+    return null;
+  }
   if (row.accessId === null) {
     return row;
   }
@@ -153,7 +163,13 @@ async function currentConnection(
         and(
           eq(cloudflareAccessConfigs.id, row.accessId),
           eq(cloudflareAccessConfigs.orgId, row.orgId),
-          eq(cloudflareAccessConfigs.userId, row.userId),
+          or(
+            eq(cloudflareAccessConfigs.scope, "organization"),
+            and(
+              eq(cloudflareAccessConfigs.scope, "personal"),
+              eq(cloudflareAccessConfigs.userId, row.userId),
+            ),
+          ),
           eq(cloudflareAccessConfigs.generation, row.access.generation),
         ),
       )

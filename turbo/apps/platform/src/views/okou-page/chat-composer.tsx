@@ -58,7 +58,7 @@ import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import {
-  customTemplateCatalog$,
+  loadCustomTemplateCatalog$,
   resetCustomTemplatePicker$,
   resetCustomTemplatePickerView$,
 } from "../../signals/okou-page/custom-template-library.ts";
@@ -934,11 +934,15 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
     <div
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
-      onMouseEnter={(event) => {
-        startVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "touch") {
+          startVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
-      onMouseLeave={(event) => {
-        resetVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "touch") {
+          resetVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
     >
       <video
@@ -973,6 +977,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       />
       <IconTooltipButton
         type="button"
+        data-template-preview-id={`video:${item.id}`}
         aria-label={t(
           ($) => {
             return $.artifacts.templates.playVideo;
@@ -983,8 +988,6 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         )}
         className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/0 text-white opacity-100 transition-colors duration-200 hover:bg-black/25 focus-visible:bg-black/25 focus-visible:outline-none peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:!opacity-0"
         onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
           startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
@@ -1018,6 +1021,7 @@ function VideoTemplateCard({
       <div
         className={cn(
           TEMPLATE_TILE_SELECTION_FRAME,
+          TEMPLATE_TILE_PREVIEW_FOCUS,
           selected && TEMPLATE_TILE_SELECTED,
         )}
       >
@@ -5213,20 +5217,6 @@ function ImportedPresentationTemplateLibraryStatus({
   );
 }
 
-/** The catalog behind a `custom` selection's chip. Empty until it loads. */
-function useCustomTemplateCatalog(): readonly UserTemplateCatalogEntry[] {
-  const loadable = useLoadable(customTemplateCatalog$);
-  return loadable.state === "hasData" ? loadable.data : [];
-}
-
-function useImportedPresentationTemplates(
-  signals: ComposerSignals,
-): readonly PresentationTemplateSummary[] {
-  return useImportedPresentationTemplatePickerItems(signals).map((item) => {
-    return item.template;
-  });
-}
-
 function ComposerPresentationSuggestion({
   title,
   children,
@@ -8774,24 +8764,54 @@ function useComposerTemplatePicker(
   signals: ComposerSignals,
 ): ComposerTemplatePicker {
   const insertTemplate = useSet(signals.template.insertTemplate$);
-  const importedTemplates = useImportedPresentationTemplates(signals);
-  const customTemplates = useCustomTemplateCatalog();
+  const loadImportedTemplates = useSet(
+    signals.template.loadImportedPresentationTemplates$,
+  );
+  const loadCustomTemplates = useSet(loadCustomTemplateCatalog$);
   const notifyDraftChanged = useComposerDraftChange(signals);
+  const pageSignal = useGet(pageSignal$);
+  const insert = (
+    value: GenerationTemplateRequest,
+    attachment: ComposerTemplateAttachment | undefined,
+  ) => {
+    if (!attachment) {
+      return;
+    }
+    insertTemplate(value, attachment);
+    notifyDraftChanged();
+  };
   return {
     onChange(value) {
       if (!value) {
         return;
       }
-      const attachment = selectedComposerTemplateAttachment(
-        value,
-        importedTemplates,
-        customTemplates,
-      );
-      if (!attachment) {
+      // Built-in templates resolve without a catalog. Uploaded and custom ones
+      // read theirs only now, so rendering the composer never requests them.
+      const builtIn = selectedComposerTemplateAttachment(value);
+      if (
+        builtIn ||
+        (value.type !== "custom" && value.type !== "presentation")
+      ) {
+        insert(value, builtIn);
         return;
       }
-      insertTemplate(value, attachment);
-      notifyDraftChanged();
+      detach(
+        (async () => {
+          const attachment =
+            value.type === "custom"
+              ? selectedComposerTemplateAttachment(
+                  value,
+                  [],
+                  await loadCustomTemplates(pageSignal),
+                )
+              : selectedComposerTemplateAttachment(
+                  value,
+                  await loadImportedTemplates(pageSignal),
+                );
+          insert(value, attachment);
+        })(),
+        Reason.DomCallback,
+      );
     },
   };
 }

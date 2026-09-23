@@ -62,6 +62,10 @@ grep -Fq 'testMatch: "smoke.spec.ts"' "$PLAYWRIGHT_CONFIG" ||
 if [[ "$(grep -Fc 'testMatch:' "$PLAYWRIGHT_CONFIG")" -ne 1 ]]; then
   fail "Playwright must keep only one product spec"
 fi
+grep -Fq 'screenshot: "only-on-failure"' "$PLAYWRIGHT_CONFIG" ||
+  fail "Playwright smoke must retain screenshots on failure"
+grep -Fq 'trace: "retain-on-failure"' "$PLAYWRIGHT_CONFIG" ||
+  fail "Playwright smoke must retain traces on failure"
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
 fi

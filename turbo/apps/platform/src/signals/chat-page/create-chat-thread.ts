@@ -2239,12 +2239,9 @@ interface MarkThreadReadDeps {
 /**
  * The newest instant this open thread has to be read through.
  *
- * A Run leaves a terminal event in the local projection, so its timestamp is
- * available without asking the server. A native Morning Brief delivery has no
- * Run and no terminal event at all, so its unread state only exists in the
- * server watermark. Taking the later of the two covers a thread whose only
- * unread is native, a second native delivery arriving while the thread is
- * open, and a Run finishing after a native delivery.
+ * A Run leaves a terminal event in the local projection. The server may have
+ * observed a newer terminal event than the local projection, so read through
+ * the later of the two timestamps.
  */
 function createUnreadThroughAt$(
   threadId: string,
@@ -4023,6 +4020,7 @@ export function createChatPanelSignals(
     threadId,
     messages.scroll,
     messagePipeline.allChatGroups$,
+    feedback.close$,
   );
   const locator = createChatConversationLocatorSignals({
     threadId,

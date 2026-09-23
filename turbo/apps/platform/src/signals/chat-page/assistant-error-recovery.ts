@@ -33,45 +33,47 @@ type AssistantErrorRecoveryKind =
   | "usage-limit"
   | "model-capacity"
   | "model-unavailable"
+  | "provider-retryable"
+  | "provider-settings"
+  | "new-chat-required"
+  | "input-too-large"
+  | "output-token-limit"
+  | "terms-acceptance-required"
+  | "safety-policy-refusal"
   | "execution-timeout"
   | "autonomy-budget-exhausted";
-type ProviderAssistantErrorRecoveryKind = Exclude<
-  AssistantErrorRecoveryKind,
-  "execution-timeout" | "autonomy-budget-exhausted"
->;
 type AssistantErrorRecoveryScope = "framework" | "model";
 type AssistantErrorRecoveryWindow =
   | "five-hour"
   | "weekly"
   | "model"
   | "unknown";
+type SubscriptionResetWindow = Exclude<
+  AssistantErrorRecoveryWindow,
+  "model" | "unknown"
+>;
 
-interface ClassifiedAssistantErrorBase {
+interface ClassifiedAssistantError {
   readonly sourceEventId: string;
   readonly runId?: string;
   readonly source?: GetRunResponse["source"];
+  readonly failureReason: KnownRunFailureReason | null;
   readonly providerMessage: string;
+  readonly kind: AssistantErrorRecoveryKind;
+  readonly framework: ModelProviderFramework | null;
   readonly scope: AssistantErrorRecoveryScope;
   readonly limitWindow: AssistantErrorRecoveryWindow | null;
   readonly retryLabel: string | null;
   readonly failedModel: SupportedRunModel | null;
 }
 
-type ClassifiedAssistantError = ClassifiedAssistantErrorBase &
-  (
-    | {
-        readonly kind: "execution-timeout" | "autonomy-budget-exhausted";
-        readonly framework: null;
-      }
-    | {
-        readonly kind: ProviderAssistantErrorRecoveryKind;
-        readonly framework: ModelProviderFramework;
-      }
-  );
-
 export type AssistantErrorRecovery = ClassifiedAssistantError & {
   readonly accountLabel: string | null;
   readonly retryAt: string | null;
+  readonly resetWindows: readonly {
+    readonly limitWindow: SubscriptionResetWindow;
+    readonly resetAt: string | null;
+  }[];
   readonly actions: {
     readonly tryAgain: {
       readonly notBefore: string | null;
@@ -86,7 +88,7 @@ export type AssistantErrorRecovery = ClassifiedAssistantError & {
 
 interface SubscriptionReset {
   readonly resetAt: string | null;
-  readonly limitWindow: AssistantErrorRecoveryWindow;
+  readonly limitWindow: SubscriptionResetWindow;
 }
 
 const CONTINUE_PROMPT = "continue";
@@ -141,6 +143,11 @@ function classifyExecutionTimeout(
 ): ClassifiedAssistantError {
   return {
     sourceEventId: event.id,
+    failureReason:
+      event.eventType === "run.failed" &&
+      event.failureReason === "execution_timeout"
+        ? event.failureReason
+        : null,
     providerMessage: error,
     kind: "execution-timeout",
     framework: null,
@@ -166,6 +173,7 @@ function classifyAssistantErrorFromText(
   if (normalized.toUpperCase() === "AUTONOMY_BUDGET_EXHAUSTED") {
     return {
       sourceEventId: event.id,
+      failureReason: null,
       providerMessage: error,
       kind: "autonomy-budget-exhausted",
       framework: null,
@@ -179,6 +187,7 @@ function classifyAssistantErrorFromText(
   if (unsupportedModel !== undefined) {
     return {
       sourceEventId: event.id,
+      failureReason: null,
       providerMessage: error,
       kind: "model-unavailable",
       framework: "codex",
@@ -194,6 +203,7 @@ function classifyAssistantErrorFromText(
   if (isCodexModelCapacity(normalized)) {
     return {
       sourceEventId: event.id,
+      failureReason: null,
       providerMessage: error,
       kind: "model-capacity",
       framework: "codex",
@@ -207,6 +217,7 @@ function classifyAssistantErrorFromText(
   if (isClaudeModelCapacity(normalized)) {
     return {
       sourceEventId: event.id,
+      failureReason: null,
       providerMessage: error,
       kind: "model-capacity",
       framework: "claude-code",
@@ -221,6 +232,7 @@ function classifyAssistantErrorFromText(
     const modelScoped = /\busage limit for\b/iu.test(normalized);
     return {
       sourceEventId: event.id,
+      failureReason: null,
       providerMessage: error,
       kind: "usage-limit",
       framework: "codex",
@@ -235,6 +247,7 @@ function classifyAssistantErrorFromText(
     const limitWindow = claudeLimitWindow(normalized) ?? "unknown";
     return {
       sourceEventId: event.id,
+      failureReason: null,
       providerMessage: error,
       kind: "usage-limit",
       framework: "claude-code",
@@ -249,33 +262,38 @@ function classifyAssistantErrorFromText(
 }
 
 const STRUCTURED_RECOVERY_KIND = Object.freeze({
-  session_history_limit: null,
-  guest_root_filesystem_full: null,
+  session_history_limit: "new-chat-required",
+  guest_root_filesystem_full: "provider-retryable",
   execution_timeout: "execution-timeout",
   insufficient_credits: null,
-  provider_insufficient_credits: null,
-  invalid_api_key: null,
-  invalid_credentials: null,
-  terms_acceptance_required: null,
-  context_window_exceeded: null,
-  input_too_large: null,
-  output_token_limit: null,
-  provider_rate_limited: null,
+  provider_insufficient_credits: "provider-settings",
+  invalid_api_key: "provider-settings",
+  invalid_credentials: "provider-settings",
+  terms_acceptance_required: "terms-acceptance-required",
+  context_window_exceeded: "new-chat-required",
+  input_too_large: "input-too-large",
+  output_token_limit: "output-token-limit",
+  provider_rate_limited: "provider-retryable",
   provider_overloaded: "model-capacity",
-  provider_stream_timeout: null,
-  provider_queue_timeout: null,
-  codex_access_program_unavailable: null,
-  provider_server_error: null,
-  response_connection_lost: null,
-  safety_policy_refusal: null,
-  reconnect_required: null,
+  provider_stream_timeout: "provider-retryable",
+  provider_queue_timeout: "provider-retryable",
+  codex_access_program_unavailable: "provider-retryable",
+  provider_server_error: "provider-retryable",
+  response_connection_lost: "provider-retryable",
+  safety_policy_refusal: "safety-policy-refusal",
+  reconnect_required: "provider-settings",
   unsupported_model: "model-unavailable",
   usage_limit: "usage-limit",
 } satisfies Record<KnownRunFailureReason, AssistantErrorRecoveryKind | null>);
 
+interface StructuredRecovery {
+  readonly failureReason: KnownRunFailureReason;
+  readonly kind: AssistantErrorRecoveryKind | null;
+}
+
 function structuredRecoveryKind(
   event: EnrichedChatEvent,
-): (typeof STRUCTURED_RECOVERY_KIND)[KnownRunFailureReason] | undefined {
+): StructuredRecovery | null | undefined {
   if (event.eventType !== "run.failed" || event.failureReason === undefined) {
     return undefined;
   }
@@ -286,49 +304,47 @@ function structuredRecoveryKind(
   if (!knownReason.success) {
     return null;
   }
-  return STRUCTURED_RECOVERY_KIND[knownReason.data];
+  return {
+    failureReason: knownReason.data,
+    kind: STRUCTURED_RECOVERY_KIND[knownReason.data],
+  };
 }
 
 function structuredRecoveryFrameworkFromMessage(
-  kind: ProviderAssistantErrorRecoveryKind,
+  kind: AssistantErrorRecoveryKind,
   error: string,
 ): ModelProviderFramework | null {
   const normalized = normalizedProviderMessage(error);
-  switch (kind) {
-    case "subscription-error": {
-      return null;
+  if (kind === "model-capacity") {
+    if (isCodexModelCapacity(normalized)) {
+      return getFrameworkForType("openai-api-key");
     }
-    case "model-capacity": {
-      if (isCodexModelCapacity(normalized)) {
-        return getFrameworkForType("openai-api-key");
-      }
-      if (isClaudeModelCapacity(normalized)) {
-        return getFrameworkForType("anthropic-api-key");
-      }
-      return null;
-    }
-    case "model-unavailable": {
-      return getCodexChatGptAccountUnsupportedModel(error) === undefined
-        ? null
-        : getFrameworkForType("openai-api-key");
-    }
-    case "usage-limit": {
-      if (/you(?:'|’)ve hit your usage limit\b/iu.test(normalized)) {
-        return getFrameworkForType("openai-api-key");
-      }
-      if (isClaudeUsageLimit(normalized)) {
-        return getFrameworkForType("anthropic-api-key");
-      }
-      return null;
+    if (isClaudeModelCapacity(normalized)) {
+      return getFrameworkForType("anthropic-api-key");
     }
   }
+  if (kind === "model-unavailable") {
+    return getCodexChatGptAccountUnsupportedModel(error) === undefined
+      ? null
+      : getFrameworkForType("openai-api-key");
+  }
+  if (kind === "usage-limit") {
+    if (/you(?:'|’)ve hit your usage limit\b/iu.test(normalized)) {
+      return getFrameworkForType("openai-api-key");
+    }
+    if (isClaudeUsageLimit(normalized)) {
+      return getFrameworkForType("anthropic-api-key");
+    }
+  }
+  return null;
 }
 
 function classifyStructuredAssistantError(
   event: EnrichedChatEvent,
   error: string,
-  kind: ProviderAssistantErrorRecoveryKind,
-  framework: ModelProviderFramework,
+  failureReason: KnownRunFailureReason,
+  kind: AssistantErrorRecoveryKind,
+  framework: ModelProviderFramework | null,
 ): ClassifiedAssistantError {
   const normalized = normalizedProviderMessage(error);
   const unsupportedModel = getCodexChatGptAccountUnsupportedModel(error);
@@ -352,6 +368,7 @@ function classifyStructuredAssistantError(
 
   return {
     sourceEventId: event.id,
+    failureReason,
     providerMessage: error,
     kind,
     framework,
@@ -414,56 +431,66 @@ function latestAssistantErrorCandidate(groups: readonly ChatEventGroup[]): {
   return { event, error: event.error };
 }
 
-function exhaustedUsageWindow(provider: ModelProviderResponse): {
-  readonly limitWindow: "five-hour" | "weekly";
-  readonly resetAt: string | null;
-} | null {
+function exhaustedUsageWindows(
+  provider: ModelProviderResponse,
+): readonly SubscriptionReset[] {
   const usage = provider.subscriptionUsage;
   if (!usage) {
-    return null;
+    return [];
   }
   const windows = [
     { limitWindow: "five-hour" as const, value: usage.fiveHour },
     { limitWindow: "weekly" as const, value: usage.weekly },
   ];
-  const exhausted = windows.find(({ value }) => {
-    return (
+  return windows.flatMap(({ limitWindow, value }) => {
+    const exhausted =
       value !== null &&
       (value.remainingPercent === 0 ||
-        (value.usedPercent !== null && value.usedPercent >= 100))
-    );
+        (value.usedPercent !== null && value.usedPercent >= 100));
+    return exhausted ? [{ limitWindow, resetAt: value.resetAt ?? null }] : [];
   });
-  return exhausted
-    ? {
-        limitWindow: exhausted.limitWindow,
-        resetAt: exhausted.value?.resetAt ?? null,
-      }
-    : null;
 }
 
-function providerSubscriptionReset(
+function providerSubscriptionResets(
   provider: ModelProviderResponse | undefined,
   limitWindow: AssistantErrorRecoveryWindow | null,
-): SubscriptionReset | null {
+): readonly SubscriptionReset[] {
   if (!provider) {
-    return null;
+    return [];
   }
   if (limitWindow === "five-hour") {
-    return {
-      limitWindow,
-      resetAt: provider.subscriptionUsage?.fiveHour?.resetAt ?? null,
-    };
+    return [
+      {
+        limitWindow,
+        resetAt: provider.subscriptionUsage?.fiveHour?.resetAt ?? null,
+      },
+    ];
   }
   if (limitWindow === "weekly") {
-    return {
-      limitWindow,
-      resetAt: provider.subscriptionUsage?.weekly?.resetAt ?? null,
-    };
+    return [
+      {
+        limitWindow,
+        resetAt: provider.subscriptionUsage?.weekly?.resetAt ?? null,
+      },
+    ];
   }
-  if (limitWindow === "unknown") {
-    return exhaustedUsageWindow(provider);
+  return limitWindow === "unknown" ? exhaustedUsageWindows(provider) : [];
+}
+
+function latestKnownResetAt(
+  resets: readonly SubscriptionReset[],
+): string | null {
+  let latest: { readonly value: string; readonly time: number } | null = null;
+  for (const reset of resets) {
+    if (!reset.resetAt) {
+      continue;
+    }
+    const time = new Date(reset.resetAt).getTime();
+    if (!Number.isNaN(time) && (latest === null || time > latest.time)) {
+      latest = { value: reset.resetAt, time };
+    }
   }
-  return null;
+  return latest?.value ?? null;
 }
 
 function runSourceFramework(
@@ -511,6 +538,7 @@ function historicalSubscriptionError(
     sourceEventId: event.id,
     ...(event.runId ? { runId: event.runId } : {}),
     source,
+    failureReason: null,
     kind: "subscription-error",
     providerMessage: error,
     framework: getFrameworkForType(source.providerType),
@@ -553,21 +581,21 @@ function createClassifiedAssistantErrorComputed(
         candidate.event,
         candidate.error,
       );
-    } else if (structuredKind === "execution-timeout") {
+    } else if (structuredKind.kind === null) {
+      classified = null;
+    } else if (structuredKind.kind === "execution-timeout") {
       classified = classifyExecutionTimeout(candidate.event, candidate.error);
     } else {
       const frameworkFromMessage = structuredRecoveryFrameworkFromMessage(
-        structuredKind,
+        structuredKind.kind,
         candidate.error,
       );
       const framework = runSourceFramework(source) ?? frameworkFromMessage;
-      if (framework === null) {
-        return null;
-      }
       classified = classifyStructuredAssistantError(
         candidate.event,
         candidate.error,
-        structuredKind,
+        structuredKind.failureReason,
+        structuredKind.kind,
         framework,
       );
     }
@@ -578,18 +606,16 @@ function createClassifiedAssistantErrorComputed(
         source,
       );
     }
-    const historicalClassified: ClassifiedAssistantError =
-      classified.framework === null
-        ? classified
-        : {
-            ...classified,
-            framework: runSourceFramework(source) ?? classified.framework,
-          };
+    const sourceFramework = runSourceFramework(source);
+    const classifiedWithSource = sourceFramework
+      ? { ...classified, framework: sourceFramework }
+      : classified;
     return {
-      ...historicalClassified,
+      ...classifiedWithSource,
       ...(runId ? { runId } : {}),
       ...(source ? { source } : {}),
-      ...(classified.kind === "model-unavailable" &&
+      ...((classified.kind === "model-unavailable" ||
+        classified.kind === "usage-limit") &&
       source?.model &&
       isSupportedRunModel(source.model)
         ? { failedModel: source.model }
@@ -601,9 +627,12 @@ function createClassifiedAssistantErrorComputed(
 function recoveryForExactAccount(
   classified: ClassifiedAssistantError,
   provider: ModelProviderResponse | undefined,
-): Pick<AssistantErrorRecovery, "accountLabel" | "limitWindow" | "retryAt"> &
+): Pick<
+  AssistantErrorRecovery,
+  "accountLabel" | "limitWindow" | "resetWindows" | "retryAt"
+> &
   Pick<AssistantErrorRecovery["actions"], "resetAndTryAgain"> {
-  const subscriptionReset = providerSubscriptionReset(
+  const resetWindows = providerSubscriptionResets(
     provider,
     classified.limitWindow,
   );
@@ -625,37 +654,43 @@ function recoveryForExactAccount(
       : null;
   return {
     accountLabel: provider?.accountEmail ?? provider?.workspaceName ?? null,
-    retryAt: subscriptionReset?.resetAt ?? null,
-    limitWindow: subscriptionReset?.limitWindow ?? classified.limitWindow,
+    retryAt: latestKnownResetAt(resetWindows),
+    resetWindows,
+    limitWindow:
+      resetWindows.length === 1
+        ? resetWindows[0].limitWindow
+        : classified.limitWindow,
     resetAndTryAgain,
   };
 }
 
 /**
- * An unsupported model stays unsupported, so this one kind withholds retry
- * until the thread points somewhere else. What decides it is the selection the
- * continue run would actually use — `sendContinueMessage$` reads the same
- * thread selection the card's picker writes — rather than whether that picker
- * was the control that changed it: a thread already pointing elsewhere when the
- * card mounts is just as retryable, and moving the composer back onto the
- * rejected model has to withdraw the action again.
- *
- * A thread with no explicit selection counts as unchanged. The continue run
- * would re-resolve the same default that just failed, so retrying there only
- * spends another run on the same rejection.
- *
- * An unidentified `failedModel` is the opposite case: there is nothing to
- * compare, and the picker has no model to exclude either, so withholding retry
- * would restore the dead end this recovery exists to remove.
+ * Permanent failures never offer a blind retry. An unsupported model becomes
+ * retryable only after the thread points at another model. The command reads
+ * that same thread selection, so the card cannot immediately spend another run
+ * on the unchanged route. A usage limit keeps its retry: the card shows when
+ * each window resets, and whether another model avoids the limit depends on the
+ * account the run routes through, which the card cannot decide.
  */
 function tryAgainAction(
   classified: ClassifiedAssistantError,
   retryAt: string | null,
   selectedModel: string | null,
 ): AssistantErrorRecovery["actions"]["tryAgain"] {
+  if (
+    classified.kind === "provider-settings" ||
+    classified.kind === "new-chat-required" ||
+    classified.kind === "input-too-large" ||
+    classified.kind === "terms-acceptance-required" ||
+    classified.kind === "safety-policy-refusal"
+  ) {
+    return null;
+  }
+
   if (classified.kind !== "model-unavailable") {
     return { notBefore: retryAt };
   }
+
   const replaced =
     isSupportedRunModel(selectedModel) &&
     selectedModel !== classified.failedModel;
@@ -686,8 +721,11 @@ function createAssistantErrorRecoveryComputed(
       const providerType =
         classified.framework === "codex"
           ? "codex-oauth-token"
-          : "claude-code-oauth-token";
+          : classified.framework === "claude-code"
+            ? "claude-code-oauth-token"
+            : null;
       const usesSubscription =
+        providerType !== null &&
         source?.credentialScope === "member" &&
         source.providerType === providerType;
       provider =
@@ -704,6 +742,7 @@ function createAssistantErrorRecoveryComputed(
       accountLabel: recovery.accountLabel,
       limitWindow: recovery.limitWindow,
       retryAt: recovery.retryAt,
+      resetWindows: recovery.resetWindows,
       actions: {
         tryAgain: tryAgainAction(
           classified,

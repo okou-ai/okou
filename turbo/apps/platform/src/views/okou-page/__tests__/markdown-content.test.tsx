@@ -352,7 +352,8 @@ test("Mermaid content remains readable code on surfaces without diagrams", async
     host: "app.okou.ai",
   });
 
-  await screen.findByText("flowchart TD", { exact: false });
+  await screen.findByText("This run couldn't finish");
+  expect(screen.queryByText("flowchart TD", { exact: false })).toBeNull();
   const frame = screen.getByTestId("assistant-error-card-shell");
   const details = queryAllByRoleFast("button", frame).find((button) => {
     return button.getAttribute("aria-label") === "View details";
