@@ -137,9 +137,14 @@ const catchUpChatEventThrottle$ = computed((get) => {
   );
 });
 
-/** Globally serialize ChatEvent catch-up with leading and trailing throttle. */
-const catchUpChatEvent$ = command(({ get, set }): Promise<void> => {
-  return set(get(catchUpChatEventThrottle$), get(rootSignal$));
+/** Start globally serialized ChatEvent warming without blocking its trigger. */
+const startChatEventWarming$ = command(({ get, set }): void => {
+  const signal = get(rootSignal$);
+  detach(
+    set(get(catchUpChatEventThrottle$), signal),
+    Reason.Daemon,
+    "chat event warming",
+  );
 });
 
 /**
@@ -259,11 +264,21 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
         : topic === "threadListChanged"
           ? { kind: "chat-thread-event" }
           : null;
+    if (dataKey?.kind === "chat-event") {
+      // A native delivery has no Run terminal event. Refresh its server unread
+      // watermark before the tab handles the message-created invalidation.
+      set(reloadWorkerComputed$, "chat-thread-indicators");
+    }
     if (dataKey) {
       set(broadcastSharedDatabaseWorkerMessage$, {
         type: "invalidate",
         dataKey,
       });
+    }
+    if (dataKey?.kind === "chat-event") {
+      // Dispatch the exact thread invalidation before the broader cache warm.
+      // Warming is detached and throttled, so it cannot hold this payload loop.
+      set(startChatEventWarming$);
     }
     return false;
   },
@@ -314,8 +329,6 @@ const reloadWorkerChatIndicatorsFromRealtime$ = command(
   async ({ set }, signal: AbortSignal): Promise<boolean> => {
     await set(refreshWorkerChatIndicators$, signal);
     set(reloadComputedForConnections$, "chat-thread-indicators");
-    // Notify tabs before optional warming can delay or fail this refresh.
-    await set(catchUpChatEvent$);
     signal.throwIfAborted();
     return false;
   },
@@ -326,7 +339,6 @@ const reloadWorkerChatIndicatorsFromReadCursor$ = command(
     await set(refreshWorkerChatIndicators$, signal);
     set(forwardChatThreadReadCursorUpdated$, payload);
     set(reloadComputedForConnections$, "chat-thread-indicators");
-    await set(catchUpChatEvent$);
     signal.throwIfAborted();
     return false;
   },

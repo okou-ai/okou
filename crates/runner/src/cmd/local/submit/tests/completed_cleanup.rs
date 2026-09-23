@@ -5,8 +5,8 @@ use super::support::{
     TEST_SUBMIT_RENDEZVOUS_TIMEOUT, run_submit_and_write_result, submit_args_for_test,
     submit_queue_entry, wait_for_job_and_write_result, write_queue_job_file,
 };
-use crate::local_queue::{self, JobResponse};
 use runner_host::paths::HomePaths;
+use runner_provider::local_queue::{self, JobResponse};
 use runner_types::ids::RunId;
 
 #[tokio::test]

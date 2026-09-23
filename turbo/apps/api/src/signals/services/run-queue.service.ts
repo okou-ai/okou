@@ -39,6 +39,7 @@ import {
   loadOrgConcurrencyState,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
+import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import type { Tx } from "../../lib/db-types";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import { writeRunMetadataInTransaction } from "./agent-run-metadata-write.service";
@@ -47,7 +48,10 @@ import {
   requirePiApiFirstTurnExecutionContext,
 } from "./pi-api-first-turn-config";
 import { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import { checkOrgCreditsForRunAdmissionInTransaction } from "./run-admission.service";
+import {
+  checkOrgCreditsForRunAdmissionInTransaction,
+  isFreePlanForCreditAdmission,
+} from "./run-admission.service";
 import {
   COMPUTE_CLOSURE_ERROR,
   transitionAgentRunsToTerminal,
@@ -451,12 +455,17 @@ async function promoteAdmittedQueuedRun(
   payload: QueuedRunnerJobPayload,
 ): Promise<PromotionResult> {
   const promotedAt = now();
+  const builtInModel = isBuiltInModelProviderType(lockedRun.modelProvider);
+  const capabilities = builtInModel
+    ? await loadOrgPlanCapabilities(tx, lockedRun.orgId, { forUpdate: true })
+    : null;
   const [updated] = await tx
     .update(agentRuns)
     .set({
       status: "pending",
       lastHeartbeatAt: new Date(promotedAt),
-      creditAdmitted: isBuiltInModelProviderType(lockedRun.modelProvider),
+      creditAdmitted:
+        builtInModel && isFreePlanForCreditAdmission(capabilities?.planKey),
       runnerGroup: payload.runnerGroup,
     })
     .where(

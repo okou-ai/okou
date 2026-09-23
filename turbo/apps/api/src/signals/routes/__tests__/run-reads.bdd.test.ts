@@ -7,7 +7,6 @@ import {
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
   SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
 } from "@okouai/api-contracts/contracts/runners";
-import { delay } from "signal-timers";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -97,10 +96,6 @@ async function createClaudeAgent(
 
 function sandboxHeaders(token: string): { readonly authorization: string } {
   return { authorization: `Bearer ${token}` };
-}
-
-async function waitForTimestampBoundary(): Promise<void> {
-  await delay(30, { signal: context.signal });
 }
 
 function s3CommandKey(command: unknown): string | undefined {
@@ -3572,20 +3567,32 @@ describe("RUN-04/OPS-01: agent run logs", () => {
 
   it("filters run logs from an exact time boundary", async () => {
     const { actor, agentOne } = await setupRunLogFixture();
-    const beforeBoundaryRun = await api.createRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "since boundary hidden run",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.requestCancelRun(actor, beforeBoundaryRun.runId, [200]);
-    const sinceBoundary = now();
-    await waitForTimestampBoundary();
-    const sinceBoundaryRun = await api.createRun(actor, {
-      agentId: agentOne.agentId,
-      prompt: "since boundary visible run",
-      modelProvider: "anthropic-api-key",
-    });
-    await api.requestCancelRun(actor, sinceBoundaryRun.runId, [200]);
+    const beforeBoundaryAt = now();
+    const beforeBoundaryRun = await withMockNowForTest(
+      beforeBoundaryAt,
+      async () => {
+        const run = await api.createRun(actor, {
+          agentId: agentOne.agentId,
+          prompt: "since boundary hidden run",
+          modelProvider: "anthropic-api-key",
+        });
+        await api.requestCancelRun(actor, run.runId, [200]);
+        return run;
+      },
+    );
+    const sinceBoundary = beforeBoundaryAt + 1;
+    const sinceBoundaryRun = await withMockNowForTest(
+      sinceBoundary,
+      async () => {
+        const run = await api.createRun(actor, {
+          agentId: agentOne.agentId,
+          prompt: "since boundary visible run",
+          modelProvider: "anthropic-api-key",
+        });
+        await api.requestCancelRun(actor, run.runId, [200]);
+        return run;
+      },
+    );
 
     const sinceFiltered = await reads.requestListLogs(
       actor,

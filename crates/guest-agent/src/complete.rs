@@ -15,7 +15,7 @@
 //! immediate local submission can safely depend on reuse. See the [runner timing
 //! contract] on `JobProvider::completion_report_timing` for the provider distinction.
 //!
-//! [runner timing contract]: https://github.com/okou-ai/okou/blob/main/crates/runner/src/provider/mod.rs
+//! [runner timing contract]: https://github.com/okou-ai/okou/blob/main/crates/runner-provider/src/provider/mod.rs
 //!
 //! Checkpoint-bearing completion uses the checkpoint retry budget and returns
 //! failures to the caller. Checkpoint-less cancellation fallback remains

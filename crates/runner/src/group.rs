@@ -12,7 +12,7 @@ use crate::error::{RunnerError, RunnerResult};
 /// name from the user (CLI flags, YAML config) so the error wording
 /// stays consistent.
 pub fn validate_or_err(name: &str) -> RunnerResult<()> {
-    if !crate::org_name::is_valid(name) {
+    if !runner_types::org_name::is_valid(name) {
         return Err(RunnerError::Config(format!(
             "invalid group name: {name} (must be org/name format, lowercase alphanumeric + hyphens)"
         )));

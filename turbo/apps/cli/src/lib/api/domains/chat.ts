@@ -12,6 +12,7 @@ import {
   type ChatThreadServiceTier,
   type ChatThreadMetadata,
   type ChatThreadSnapshotProjection,
+  type Indicators,
   type ChatSearchResponse,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -27,11 +28,6 @@ export interface ChatThreadSnapshot {
   readonly chatThreads: readonly ChatThreadSnapshotProjection[];
   readonly latestEventId: string | null;
   readonly latestSeqId: number | null;
-}
-
-interface ChatThreadUnread {
-  readonly threadId: string;
-  readonly unreadAt: string;
 }
 
 export type ChatThreadEvent = ApiChatThreadEvent;
@@ -156,18 +152,14 @@ export async function listChatThreadEvents(options: {
   handleError(result, "Failed to list chat thread events");
 }
 
-export async function listChatThreadUnreads(options: {
-  agentId: string;
-}): Promise<readonly ChatThreadUnread[]> {
+export async function getChatIndicators(): Promise<Indicators> {
   const config = await getClientConfig();
   const client = initClient(chatThreadsContract, config);
-  const result = await client.unreads({
-    query: { agentId: options.agentId },
-  });
+  const result = await client.indicators();
   if (result.status === 200) {
-    return result.body.unreads;
+    return result.body;
   }
-  handleError(result, "Failed to list unread chat threads");
+  handleError(result, "Failed to get chat indicators");
 }
 
 export async function createChatThread(options: {

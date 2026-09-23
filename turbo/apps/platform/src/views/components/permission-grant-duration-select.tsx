@@ -27,14 +27,36 @@ export function PermissionGrantDurationSelect({
   className?: string;
 }) {
   const { t } = useTranslation();
+  const items = USER_PERMISSION_GRANT_EXPIRES_IN_OPTIONS.map((value) => {
+    const label =
+      value === "1h"
+        ? t(($) => {
+            return $.authorization.permission.durationOptions.oneHour;
+          })
+        : value === "24h"
+          ? t(($) => {
+              return $.authorization.permission.durationOptions.twentyFourHours;
+            })
+          : value === "7d"
+            ? t(($) => {
+                return $.authorization.permission.durationOptions.sevenDays;
+              })
+            : t(($) => {
+                return $.authorization.permission.durationOptions.always;
+              });
+    return { value, label };
+  });
   return (
     <Select
+      items={items}
       value={value}
-      onValueChange={(nextValue) => {
+      onValueChange={(nextValue, details) => {
         const parsed = parseUserPermissionGrantExpiresIn(nextValue);
-        if (parsed) {
-          onValueChange(parsed);
+        if (!parsed) {
+          details.cancel();
+          return;
         }
+        onValueChange(parsed);
       }}
       disabled={disabled}
     >
@@ -45,28 +67,10 @@ export function PermissionGrantDurationSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {USER_PERMISSION_GRANT_EXPIRES_IN_OPTIONS.map((option) => {
-          const label =
-            option === "1h"
-              ? t(($) => {
-                  return $.authorization.permission.durationOptions.oneHour;
-                })
-              : option === "24h"
-                ? t(($) => {
-                    return $.authorization.permission.durationOptions
-                      .twentyFourHours;
-                  })
-                : option === "7d"
-                  ? t(($) => {
-                      return $.authorization.permission.durationOptions
-                        .sevenDays;
-                    })
-                  : t(($) => {
-                      return $.authorization.permission.durationOptions.always;
-                    });
+        {items.map((item) => {
           return (
-            <SelectItem key={option} value={option}>
-              {label}
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
             </SelectItem>
           );
         })}

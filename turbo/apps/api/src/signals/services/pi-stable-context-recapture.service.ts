@@ -91,13 +91,8 @@ function featurePromptInputs(
   featureContext: FeatureSwitchContext,
 ): PiStableContextPromptInputs {
   return {
-    ...previous,
     privateArtifactsEnabled: isFeatureEnabled(
       FeatureSwitchKey.PrivateArtifacts,
-      featureContext,
-    ),
-    runUsageEnabled: isFeatureEnabled(
-      FeatureSwitchKey.RunUsage,
       featureContext,
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, featureContext),
@@ -115,6 +110,8 @@ function featurePromptInputs(
       featureContext,
     ),
     customConnectorMcpEnabled: true,
+    triggerSource: previous.triggerSource,
+    cloudBrowserEnabled: previous.cloudBrowserEnabled,
   };
 }
 

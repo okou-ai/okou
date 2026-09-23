@@ -628,6 +628,14 @@ describe("workflows", () => {
     const owner = user({ orgRole: "org:admin" });
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
     await enableWorkflowRuns(owner);
+    if (!owner.orgId) {
+      throw new Error("Expected a workflow owner organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: member.userId, orgId: owner.orgId, orgRole: "org:member" },
+      { [FeatureSwitchKey.PiLoop]: false },
+    );
     const publicAgent = await createAgent(owner, {
       displayName: "Public Workflow Agent",
       visibility: "public",
@@ -3100,11 +3108,12 @@ describe("workflow owner profile cancellation and capacity", () => {
       const { owner, workflow, agent } = await ownerProfileFixture();
       // Construct the large fixture through production APIs before exercising
       // cache behavior. The measured TTL starts after fixture creation.
-      // Keep the capacity cohort spread across independent public agents.
+      // Keep the capacity cohort spread across every public agent allowed for
+      // the organization so their independent writes do not serialize.
       const agents = [
         agent,
         ...(await Promise.all(
-          Array.from({ length: 5 }, () => {
+          Array.from({ length: 6 }, () => {
             return createAgent(owner, { visibility: "public" });
           }),
         )),

@@ -122,11 +122,12 @@ async function bootstrapOnboarding(actor: ApiTestUser): Promise<void> {
 async function setActorCredits(
   actor: ApiTestUser,
   credits: number,
+  tier: "free" | "pro" = "pro",
 ): Promise<void> {
   if (!actor.orgId) {
     throw new Error("Scrape test actor must belong to an organization");
   }
-  await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits });
+  await seedOrgMetadata({ orgId: actor.orgId, tier, credits });
 }
 
 async function fundActor(actor: ApiTestUser): Promise<void> {
@@ -141,7 +142,7 @@ async function createAdmittedScrapeRun(actor: ApiTestUser): Promise<string> {
   bdd.acceptAgentStorageWrites();
   runs.configureRunnerGroup();
   await bootstrapOnboarding(actor);
-  await setActorCredits(actor, 1);
+  await setActorCredits(actor, 1, "free");
   const agent = await bdd.createAgent(actor, {
     displayName: "Admitted scrape agent",
     visibility: "private",
@@ -642,7 +643,7 @@ describe("okou scrape route", () => {
     configureProvider();
     const pricing = await createScrapePricingFixture();
     const runId = await createAdmittedScrapeRun(actor);
-    await setActorCredits(actor, 0);
+    await setActorCredits(actor, 0, "free");
     server.use(
       http.post(FIRECRAWL_SCRAPE_URL, () => {
         return HttpResponse.json({
@@ -690,7 +691,7 @@ describe("okou scrape route", () => {
     }
     await seedOrgMetadata({
       orgId: actor.orgId,
-      tier: "pro",
+      tier: "free",
       credits: 0,
     });
     await upsertOrgPlanEntitlementFixture({

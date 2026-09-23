@@ -321,6 +321,110 @@ test("Preview a website template and return to its picker", async () => {
   expect(returnedPicker).not.toHaveAttribute("data-nested-dialog-open");
 });
 
+test.each([
+  { key: "Enter", sequence: "{Enter}" },
+  { key: "Space", sequence: "[Space]" },
+])(
+  "Website card $key previews without applying and restores gallery focus",
+  async ({ sequence }) => {
+    mockTemplateChat();
+    const template = WEBSITE_TEMPLATE_ITEMS[0];
+    if (!template) {
+      throw new Error("Website template fixture not found");
+    }
+    const user = userEvent.setup();
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      host: "app.okou.ai",
+    });
+    const picker = await openTemplatePicker(user, "Website");
+    const preview = within(picker).getByLabelText(
+      `Preview website template ${template.title}`,
+    );
+    const use = within(picker).getByLabelText(
+      `Select website template ${template.title}`,
+    );
+    const gallery = picker.querySelector<HTMLElement>(
+      "[data-website-template-grid-scroll]",
+    );
+    if (!gallery) {
+      throw new Error("Website template gallery scroll surface not found");
+    }
+    fireEvent.scroll(gallery, { target: { scrollTop: 240 } });
+
+    preview.focus();
+    await user.keyboard("{Tab}");
+    expect(use).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(preview).toHaveFocus();
+    await user.keyboard(sequence);
+
+    const frame = await screen.findByTitle(
+      `${template.title} website full preview`,
+    );
+    expect(frame).toHaveAttribute("src", template.previewUrl);
+    expect(picker).toHaveAttribute("data-nested-dialog-open");
+    expect(use).toHaveAttribute("aria-pressed", "false");
+    expect(
+      document.querySelector("[data-composer-inline-template]"),
+    ).not.toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(frame).not.toBeInTheDocument();
+      expect(preview).toHaveFocus();
+    });
+    expect(picker).not.toHaveAttribute("data-nested-dialog-open");
+    expect(gallery.scrollTop).toBe(240);
+    expect(use).toHaveAttribute("aria-pressed", "false");
+  },
+);
+
+test.each([
+  { key: "Enter", sequence: "{Enter}" },
+  { key: "Space", sequence: "[Space]" },
+])(
+  "Website card Use $key applies directly and closes the picker without a preview",
+  async ({ sequence }) => {
+    mockTemplateChat();
+    const template = WEBSITE_TEMPLATE_ITEMS[0];
+    if (!template) {
+      throw new Error("Website template fixture not found");
+    }
+    const user = userEvent.setup();
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      host: "app.okou.ai",
+    });
+    const picker = await openTemplatePicker(user, "Website");
+    const preview = within(picker).getByLabelText(
+      `Preview website template ${template.title}`,
+    );
+    const use = within(picker).getByLabelText(
+      `Select website template ${template.title}`,
+    );
+
+    preview.focus();
+    await user.keyboard("{Tab}");
+    expect(use).toHaveFocus();
+    await user.keyboard(sequence);
+
+    await expectInlineTemplate(template.title);
+    await waitFor(() => {
+      expect(picker).not.toBeInTheDocument();
+    });
+    expect(
+      document.querySelectorAll("[data-composer-inline-template]"),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByTitle(`${template.title} website full preview`),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  },
+);
+
 test("Select and send a website template", async () => {
   const capture = mockTemplateChat();
   const template = WEBSITE_TEMPLATE_ITEMS[0];

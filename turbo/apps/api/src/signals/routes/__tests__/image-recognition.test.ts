@@ -143,7 +143,7 @@ async function seedAdmittedImageRecognitionActor(): Promise<ImageRecognitionActo
   api.configureRunnerGroup();
   const completed = await bdd.completeOnboarding(actor);
   expect(completed.status).toBe(200);
-  await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 1 });
+  await seedOrgMetadata({ orgId: actor.orgId, tier: "free", credits: 1 });
   const agent = await bdd.createAgent(actor, {
     displayName: "Admitted recognition agent",
     visibility: "private",
@@ -1137,7 +1137,7 @@ describe("POST /api/image-recognition", () => {
     );
     const actor = await seedAdmittedImageRecognitionActor();
     const pricing = await createConfiguredImageRecognitionPricing();
-    await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 0 });
+    await seedOrgMetadata({ orgId: actor.orgId, tier: "free", credits: 0 });
     const fileId = randomUUID();
     setStoredObjects([
       { userId: actor.userId, id: fileId, filename: "screen.png", size: 1024 },

@@ -53,7 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
-    description: "Show personal paid-tool controls in Settings",
+    description: "Enable personal paid-tool controls",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.SettingsToolsTab]: {
+    maintainer: "ethan@okou.ai",
+    description: "Show the Tools tab in Settings",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -62,13 +68,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
     enabled: false,
-  },
-  [FeatureSwitchKey.RunUsage]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
@@ -304,6 +303,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Select the platform-funded simple-morning-brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -349,14 +349,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Run owned chat threads with the official Pi runtime, streamed session output, native session persistence, and shared memory learning across interactive and automation turns.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.PiMemory]: {
     maintainer: "lancy@okou.ai",
     description:
-      "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
+      "Extract, consolidate, and recall memory for Pi threads in the staff organization.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.OpenRouterUsRouting]: {
     maintainer: "liangyou@okou.ai",
@@ -445,10 +445,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.PersonalSubscriptionPriority]: {
-    maintainer: "lancy@okou.ai",
+  [FeatureSwitchKey.ClaudeCodeUsageReset]: {
+    maintainer: "ethan@okou.ai",
     description:
-      "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
+      "Offer manual usage-window resets for personal Claude Code subscriptions, matching the Codex reset action.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -484,7 +484,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:
-      "Shelf-based connector browsing in the chat composer and on the connectors page: a Discover/Your connectors scope segment with one filter each (category and agent), category shelves and chips, per-connector detail, and keyboard navigation.",
+      "Shelf-based connector browsing with Discover, Connected, Remote control, Private network, and Custom scopes on the connectors page, plus connector discovery in the chat composer.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -500,11 +500,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ChatUnreadOnlyShortcut]: {
-    maintainer: "ethan@okou.ai",
-    description: "Toggle the chat list's unread-only filter with Mod+Shift+U.",
-    enabled: true,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
@@ -561,14 +556,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: {
     maintainer: "ming@okou.ai",
     description:
-      "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
+      "Replace the make-something onboarding with the source-first flow: choose an industry, connect a work source, invite, AI experience, Slack, and a tailored starting prompt.",
     enabled: false,
-  },
-  [FeatureSwitchKey.OptimisticMessageSpinner]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show a spinner beside a user message the server has not confirmed yet",
-    enabled: true,
   },
 };
 

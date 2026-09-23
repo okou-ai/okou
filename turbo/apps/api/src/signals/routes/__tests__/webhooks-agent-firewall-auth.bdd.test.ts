@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import { HttpResponse, http } from "msw";
-import { delay } from "signal-timers";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -1718,8 +1717,22 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
       refreshToken: "refresh-1",
       expiresIn: -60,
     });
-    fw.mockTestOauthTokenRefresh(async () => {
-      await delay(300, { signal: context.signal });
+    fw.mockTestOauthTokenRefresh(async (request) => {
+      // The provider keeps the response open until the caller cancels its own
+      // request. This exercises the real refresh deadline without a sleep.
+      const aborted = createDeferredPromise<void>(context.signal);
+      if (request.signal.aborted) {
+        aborted.resolve(undefined);
+      } else {
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve(undefined);
+          },
+          { once: true },
+        );
+      }
+      await aborted.promise;
       return fw.oauthTokenResponse({
         accessToken: "too-late",
         expiresIn: 3600,

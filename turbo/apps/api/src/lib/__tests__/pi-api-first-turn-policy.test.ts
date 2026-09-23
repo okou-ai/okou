@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   decideApiFirstTurnCommit,
-  decideApiFirstTurnHistory,
+  decideApiFirstTurnEligibility,
   decideApiFirstTurnRecovery,
   decideApiFirstTurnTerminal,
   normalizedApiFirstTurnFailure,
@@ -14,21 +14,22 @@ import {
 // lock races, effects and usage remain covered through chat-events BDD.
 describe("Pi API-first transition precedence", () => {
   it.each([
+    { resumeSession: null, expected: "api" },
     {
-      rawSize: 16 * 1024 * 1024,
-      encodedSize: 16 * 1024 * 1024,
-      expected: "api",
+      resumeSession: { historyRef: { hash: "a".repeat(64) } },
+      expected: "sandbox",
     },
-    { rawSize: 16 * 1024 * 1024 + 1, encodedSize: 1, expected: "sandbox" },
-    { rawSize: 1, encodedSize: 16 * 1024 * 1024 + 1, expected: "sandbox" },
-  ])(
-    "selects history from raw=$rawSize encoded=$encodedSize",
-    ({ rawSize, encodedSize, expected }) => {
-      expect(decideApiFirstTurnHistory({ rawSize, encodedSize })).toBe(
-        expected,
-      );
+    {
+      resumeSession: { sessionHistory: "native Pi JSONL" },
+      expected: "sandbox",
     },
-  );
+  ])("routes $resumeSession to $expected", ({ resumeSession, expected }) => {
+    expect(
+      decideApiFirstTurnEligibility({
+        hasResumeSession: resumeSession !== null,
+      }),
+    ).toBe(expected);
+  });
   it.each([
     {
       pendingTools: false,

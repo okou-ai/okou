@@ -6,6 +6,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { badRequestMessage } from "../../lib/error";
 import { env } from "../../lib/env";
+import { nowDate } from "../../lib/time";
 import { db$, type ReadonlyDb } from "../external/db";
 import {
   generateHostedSitesPresignedGetUrl,
@@ -13,6 +14,7 @@ import {
 } from "../external/s3";
 import { safeUriComponentDecode, safeUrlParse } from "../utils";
 import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
+import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { resolveArtifactFileReference } from "./private-artifact-storage.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
 
@@ -211,11 +213,27 @@ export const resolveProviderReferenceUrls$ = command(
             "Artifact reference is not available to the current user and organization",
           );
         }
-        resolved.push(
-          await get(
-            generatePresignedGetUrl(object.bucket, object.key, undefined, true),
-          ),
-        );
+        const fetchUrl = object.isPrivate
+          ? (
+              await set(
+                resolveArtifactPreviewUrl$,
+                {
+                  bucket: object.bucket,
+                  key: object.key,
+                  signingDate: nowDate(),
+                },
+                signal,
+              )
+            ).url
+          : await get(
+              generatePresignedGetUrl(
+                object.bucket,
+                object.key,
+                undefined,
+                true,
+              ),
+            );
+        resolved.push(fetchUrl);
         signal.throwIfAborted();
         continue;
       }

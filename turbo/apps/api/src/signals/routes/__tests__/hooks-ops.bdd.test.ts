@@ -201,7 +201,7 @@ describe("OPS-01: feature switch routes", () => {
         headers: headersFor(owner),
         body: {
           switches: {
-            [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
+            [FeatureSwitchKey.LarkIntegration]: true,
             [FeatureSwitchKey.PiLoop]: false,
             [FeatureSwitchKey.Dummy]: false,
           },
@@ -210,7 +210,7 @@ describe("OPS-01: feature switch routes", () => {
       [200],
     );
     expect(
-      ownerUpdate.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+      ownerUpdate.body.switches[FeatureSwitchKey.LarkIntegration],
     ).toBeTruthy();
     expect(ownerUpdate.body.switches[FeatureSwitchKey.PiLoop]).toBeFalsy();
     expect(ownerUpdate.body.switches[FeatureSwitchKey.Dummy]).toBeFalsy();
@@ -220,7 +220,7 @@ describe("OPS-01: feature switch routes", () => {
       [200],
     );
     expect(
-      peerRead.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+      peerRead.body.switches[FeatureSwitchKey.LarkIntegration],
     ).toBeTruthy();
     expect(peerRead.body.switches[FeatureSwitchKey.PiLoop]).toBeUndefined();
     expect(peerRead.body.switches[FeatureSwitchKey.Dummy]).toBeUndefined();
@@ -230,7 +230,7 @@ describe("OPS-01: feature switch routes", () => {
       [200],
     );
     expect(
-      outsiderRead.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+      outsiderRead.body.switches[FeatureSwitchKey.LarkIntegration],
     ).toBeUndefined();
     expect(outsiderRead.body.switches[FeatureSwitchKey.PiLoop]).toBeUndefined();
 
@@ -239,7 +239,7 @@ describe("OPS-01: feature switch routes", () => {
         headers: headersFor(peer),
         body: {
           switches: {
-            [FeatureSwitchKey.PersonalSubscriptionPriority]: false,
+            [FeatureSwitchKey.LarkIntegration]: false,
             [FeatureSwitchKey.PiLoop]: true,
           },
         },
@@ -247,7 +247,7 @@ describe("OPS-01: feature switch routes", () => {
       [200],
     );
     expect(
-      peerUpdate.body.switches[FeatureSwitchKey.PersonalSubscriptionPriority],
+      peerUpdate.body.switches[FeatureSwitchKey.LarkIntegration],
     ).toBeFalsy();
     expect(peerUpdate.body.switches[FeatureSwitchKey.PiLoop]).toBeTruthy();
     expect(peerUpdate.body.switches[FeatureSwitchKey.Dummy]).toBeUndefined();
@@ -257,9 +257,7 @@ describe("OPS-01: feature switch routes", () => {
       [200],
     );
     expect(
-      ownerReadAfterPeerUpdate.body.switches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
+      ownerReadAfterPeerUpdate.body.switches[FeatureSwitchKey.LarkIntegration],
     ).toBeFalsy();
     expect(
       ownerReadAfterPeerUpdate.body.switches[FeatureSwitchKey.PiLoop],
@@ -279,9 +277,7 @@ describe("OPS-01: feature switch routes", () => {
       [200],
     );
     expect(
-      peerReadAfterDelete.body.switches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
+      peerReadAfterDelete.body.switches[FeatureSwitchKey.LarkIntegration],
     ).toBeUndefined();
     expect(
       peerReadAfterDelete.body.switches[FeatureSwitchKey.PiLoop],

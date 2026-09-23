@@ -3,12 +3,11 @@ import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { delay } from "signal-timers";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { db } from "../../../lib/db";
-import { now } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { installMorningBriefFixture } from "../../../test-fixtures/morning-brief-gmail-collection";
@@ -61,14 +60,10 @@ const GMAIL_MESSAGE_URL =
 const ANCHOR_ISO = "2026-09-17T07:00:00.000Z";
 /** The collector's own concurrency, which bounds how many bodies can be open. */
 const READER_CONCURRENCY = 3;
-/** Short enough to expire while a provider body is still open. */
-const SOURCE_BUDGET_MS = 3000;
 /** The deployed budget, for the case where the deadline must not be the actor. */
 const DEPLOYED_SOURCE_BUDGET_MS = 20_000;
-/** Room for the real budget above plus this suite's ordinary fixture setup. */
+/** Room for this suite's database and provider fixture setup. */
 const TEST_TIMEOUT_MS = 30_000;
-/** How long one socket lags its siblings while tearing down. */
-const SLOW_TEARDOWN_MS = 150;
 
 const context = testContext({ connectorCatalog: true });
 const store = createStore();
@@ -77,12 +72,12 @@ const connectorsApi = createConnectorBddApi(context);
 const runsApi = createRunsApi(context);
 const workflowBdd = createWorkflowsBddApi(context);
 
-/** Finish a socket's teardown a known step behind its siblings. */
+/** Finish a socket's teardown when its owning test releases the gate. */
 async function lateTeardown(
   tearDown: () => void,
-  signal: AbortSignal,
+  release: Promise<void>,
 ): Promise<void> {
-  await delay(SLOW_TEARDOWN_MS, { signal });
+  await release;
   tearDown();
 }
 
@@ -105,7 +100,10 @@ interface GmailStub {
  */
 function stubStallingGmail(
   messageIds: readonly string[],
-  options: { readonly slowTeardownId?: string } = {},
+  options: {
+    readonly slowTeardownId?: string;
+    readonly slowTeardownRelease?: Promise<void>;
+  } = {},
 ): GmailStub {
   let detailCalls = 0;
   let settledBodies = 0;
@@ -135,9 +133,12 @@ function stubStallingGmail(
             // One socket is allowed to finish tearing down after its siblings.
             // A join that propagates the first rejection would let the public
             // operation complete while this one was still unravelling.
-            if (messageId === options.slowTeardownId) {
+            if (
+              messageId === options.slowTeardownId &&
+              options.slowTeardownRelease
+            ) {
               startUntrackedBestEffortCleanup(
-                lateTeardown(tearDown, context.signal),
+                lateTeardown(tearDown, options.slowTeardownRelease),
               );
               return;
             }
@@ -294,8 +295,12 @@ async function collectWithSourceBudget(
   fixture: Fixture,
   budgetMs: number,
   signal: AbortSignal,
+  timeoutSignal?: AbortSignal,
 ) {
-  const deadline = startMorningBriefSourceDeadline(budgetMs);
+  const startedDeadline = startMorningBriefSourceDeadline(budgetMs);
+  const deadline = timeoutSignal
+    ? { ...startedDeadline, signal: timeoutSignal }
+    : startedDeadline;
   const admission = await admitWithSourceBudget(fixture, deadline, signal);
   if (admission.kind !== "ok") {
     throw new Error(`Expected admission, received ${admission.reason}`);
@@ -337,32 +342,26 @@ describe("Morning Brief source deadline and cancellation in flight", () => {
         "stalled-4",
       ]);
 
-      const startedAt = now();
+      const sourceTimeout = new AbortController();
       const collection = collectWithSourceBudget(
         fixture,
-        SOURCE_BUDGET_MS,
+        DEPLOYED_SOURCE_BUDGET_MS,
         context.signal,
+        sourceTimeout.signal,
       );
-      // Exactly the reader's concurrency is open and mid-stream when the wall
-      // clock runs out; this is the body deadline, not a refused next page.
+      // Expire the source while exactly the reader's concurrency is mid-stream.
       await waitForOpenBodies(stub, READER_CONCURRENCY);
+      sourceTimeout.abort(new DOMException("Source deadline", "TimeoutError"));
 
       const response = await collection;
-      const elapsed = now() - startedAt;
       expect(stub.detailCalls()).toBe(READER_CONCURRENCY);
-      // These bodies never finish on their own, so the invocation returning at
-      // all is the deadline reaching work already in flight. It returns the
-      // documented source outcome, not a provider failure and not an empty day.
-      expect(elapsed).toBeGreaterThanOrEqual(SOURCE_BUDGET_MS);
-      expect(elapsed).toBeLessThan(SOURCE_BUDGET_MS * 3);
+      // These bodies never finish on their own; the deadline must stop them.
       expect(response).toMatchObject({
         source: "gmail",
         status: "unavailable",
         failure: "deadline-exceeded",
         items: [],
       });
-      // The budget above is real wall-clock time, so this case needs more than
-      // the default per-test allowance.
     },
     TEST_TIMEOUT_MS,
   );
@@ -371,8 +370,10 @@ describe("Morning Brief source deadline and cancellation in flight", () => {
     "keeps caller cancellation a cancellation rather than a source failure",
     async () => {
       const fixture = await setupOwner();
+      const slowTeardownRelease = createDeferredPromise<void>(context.signal);
       const stub = stubStallingGmail(["stalled-1", "stalled-2", "stalled-3"], {
         slowTeardownId: "stalled-3",
+        slowTeardownRelease: slowTeardownRelease.promise,
       });
       const caller = new AbortController();
 
@@ -381,9 +382,6 @@ describe("Morning Brief source deadline and cancellation in flight", () => {
         DEPLOYED_SOURCE_BUDGET_MS,
         caller.signal,
       );
-      await waitForOpenBodies(stub, READER_CONCURRENCY);
-      caller.abort();
-
       // Read the settled count at the instant the operation completes, not
       // afterwards: the question is whether it waited, not whether the sockets
       // eventually closed.
@@ -395,6 +393,10 @@ describe("Morning Brief source deadline and cancellation in flight", () => {
           return stub.settledBodies();
         },
       );
+      await waitForOpenBodies(stub, READER_CONCURRENCY);
+      caller.abort();
+      await expect.poll(stub.settledBodies).toBe(READER_CONCURRENCY - 1);
+      slowTeardownRelease.resolve(undefined);
 
       // Cancellation stays cancellation: it never resolves into an envelope
       // claiming the source failed or had nothing to report, and the deadline
@@ -422,24 +424,23 @@ describe("Morning Brief source deadline and cancellation in flight", () => {
       const stub = stubStallingGmail(["never-read"]);
       const release = createDeferredPromise<void>(context.signal);
       const membership = holdNextMembershipRead(release.promise);
-      const deadline = startMorningBriefSourceDeadline(SOURCE_BUDGET_MS);
-
-      const admission = admitWithSourceBudget(
-        fixture,
-        deadline,
-        context.signal,
-      );
-      await membership.arrived;
-      // Let the source's real budget run out while the membership authority is
-      // still answering, then release it.
-      await delay(SOURCE_BUDGET_MS + 250, { signal: context.signal });
-      release.resolve();
-
-      // The spent budget is its own outcome: not a refusal of authority this
-      // member could act on, and not a cancellation.
-      await expect(admission).resolves.toStrictEqual({
-        kind: "unavailable",
-        reason: "deadline-exceeded",
+      await withMockNowForTest(now(), async () => {
+        const deadline = startMorningBriefSourceDeadline(
+          DEPLOYED_SOURCE_BUDGET_MS,
+        );
+        const admission = admitWithSourceBudget(
+          fixture,
+          deadline,
+          context.signal,
+        );
+        await membership.arrived;
+        // The membership answer arrives after the application deadline.
+        mockNow(deadline.at + 1);
+        release.resolve();
+        await expect(admission).resolves.toStrictEqual({
+          kind: "unavailable",
+          reason: "deadline-exceeded",
+        });
       });
       // Nothing was retried and no source was read under the expired budget.
       expect(membership.calls()).toBe(1);

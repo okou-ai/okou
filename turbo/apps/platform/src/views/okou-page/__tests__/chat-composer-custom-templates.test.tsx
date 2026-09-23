@@ -1205,7 +1205,7 @@ function renameField(): HTMLElement {
 async function shareWithOrganization(): Promise<void> {
   click(buttonByName("Change")!);
   const organization = await waitFor(() => {
-    const option = queryAllByRoleFast("radio").find((candidate) => {
+    const option = queryAllByRoleFast("menuitemradio").find((candidate) => {
       return candidate.textContent?.startsWith("Organization");
     });
     if (!option) {
@@ -1688,3 +1688,64 @@ test("Uploading stays in Presentation while the switch is off", async () => {
     ).not.toBeNull();
   });
 });
+
+test.each(["{Enter}", " "])(
+  "Custom visibility saves only on explicit %s and restores focus",
+  async (key) => {
+    let updates = 0;
+    mockCustomTemplateStore([customTemplate()], {
+      update: () => {
+        updates += 1;
+      },
+    });
+    const { dialog } = await openCustomPanel();
+    await openDetail(dialog, "Q3 board review");
+    const trigger = buttonByName("Change")!;
+    const user = userEvent.setup();
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu");
+    const options = queryAllByRoleFast("menuitemradio", menu);
+    const privateOption = options.find((option) => {
+      return option.getAttribute("aria-label") === "Private";
+    })!;
+    const organization = options.find((option) => {
+      return option.getAttribute("aria-label") === "Organization";
+    })!;
+    await user.keyboard("{Home}{ArrowDown}");
+    expect(organization).toHaveFocus();
+    expect(privateOption).toHaveAttribute("aria-checked", "true");
+    expect(organization).toHaveAccessibleDescription(
+      "Anyone in this organization can use it",
+    );
+    expect(updates).toBe(0);
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
+    expect(updates).toBe(0);
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await user.keyboard("{Home}{ArrowDown}");
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    expect(updates).toBe(1);
+    await expect(
+      screen.findByText("Anyone in this organization can use it"),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await user.keyboard("{Home}{ArrowDown}");
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    expect(updates).toBe(1);
+    expect(dialog).toBeInTheDocument();
+  },
+);

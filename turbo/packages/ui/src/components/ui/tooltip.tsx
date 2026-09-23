@@ -7,28 +7,14 @@ import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 import { resolveCollisionPadding } from "../../lib/safe-area";
 
-interface TooltipProviderProps extends Omit<
-  TooltipPrimitive.Provider.Props,
-  "delay" | "timeout"
-> {
-  delay?: number;
-  delayDuration?: number;
-  skipDelayDuration?: number;
-  timeout?: number;
-}
-
 function TooltipProvider({
-  delay,
-  delayDuration,
-  skipDelayDuration,
-  timeout,
+  delay = 0,
   ...props
-}: TooltipProviderProps) {
+}: TooltipPrimitive.Provider.Props) {
   return (
     <TooltipPrimitive.Provider
       data-slot="tooltip-provider"
-      delay={delay ?? delayDuration ?? 0}
-      timeout={timeout ?? skipDelayDuration}
+      delay={delay}
       {...props}
     />
   );
@@ -80,7 +66,6 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
       positionMethod = "fixed",
       side = "top",
       sideOffset = 4,
-      style,
       ...props
     },
     ref,
@@ -102,24 +87,9 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
             data-slot="tooltip-content"
             className={cn(
               anchoredPopupTransitionClassName,
-              "max-w-xs overflow-hidden rounded-md px-2 py-1 text-xs data-instant:transition-none",
+              "max-w-xs overflow-hidden rounded-md bg-[var(--tooltip-bg,#1a1a1a)] px-2 py-1 text-xs text-[hsl(var(--on-filled))] data-instant:transition-none",
               className,
             )}
-            style={
-              typeof style === "function"
-                ? (state) => {
-                    return {
-                      backgroundColor: "var(--tooltip-bg, #1a1a1a)",
-                      color: "hsl(var(--on-filled))",
-                      ...style(state),
-                    };
-                  }
-                : {
-                    backgroundColor: "var(--tooltip-bg, #1a1a1a)",
-                    color: "hsl(var(--on-filled))",
-                    ...style,
-                  }
-            }
             {...props}
           >
             {children}

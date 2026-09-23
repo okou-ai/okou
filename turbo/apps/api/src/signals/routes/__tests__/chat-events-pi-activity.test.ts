@@ -825,7 +825,7 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await waitForRunStatus(actor, failedHandoff.runId, "failed");
     await flushWaitUntilForTest();
-    expect(modelCalls).toBe(2);
+    expect(modelCalls).toBe(1);
     expect(checkpointObjects.has(failedManifestKey)).toBeFalsy();
     const lateFailedH2 = await webhooks.requestAgentComplete(
       {
@@ -857,7 +857,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(2);
+    expect(modelCalls).toBe(1);
 
     if (!canonicalConversation.agent_session_id) {
       throw new Error("Expected the completed Pi run to own an AgentSession");
@@ -870,7 +870,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
     expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
     expect(explicitResumeClaim.resumeSession).toBeNull();
-    expect(modelCalls).toBe(2);
+    expect(modelCalls).toBe(1);
     await api.requestCancelRun(actor, explicitResume.runId, [200]);
     await waitForRunStatus(actor, explicitResume.runId, "cancelled");
 
@@ -915,7 +915,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(3);
+    expect(modelCalls).toBe(1);
 
     const racedHandoff = await withOpenRouterRoute(async () => {
       return await sendChatRun(actor, {
@@ -976,7 +976,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(4);
+    expect(modelCalls).toBe(1);
 
     const retry = await withOpenRouterRoute(async () => {
       return await sendChatRun(actor, {
@@ -1003,7 +1003,7 @@ describe("CHAT-02: model-first provider policies", () => {
       sessionId: run.threadId,
       sha256: h2Hash,
     });
-    expect(modelCalls).toBe(5);
+    expect(modelCalls).toBe(1);
     const timedOutClaim = await claimChatRun(runnerGroup, retry.runId);
     await timeoutRunWithoutCallbacksFixture({ runId: retry.runId });
     await waitForRunStatus(actor, retry.runId, "timeout");
@@ -1033,7 +1033,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(5);
+    expect(modelCalls).toBe(1);
 
     const reportedFailureHandoff = await withOpenRouterRoute(async () => {
       return await sendChatRun(actor, {
@@ -1082,7 +1082,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(
       readThreadSessionConversation(context, run.threadId),
     ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(6);
+    expect(modelCalls).toBe(1);
 
     const conversationClear = await holdThreadSessionConversationClearFixture({
       threadId: run.threadId,

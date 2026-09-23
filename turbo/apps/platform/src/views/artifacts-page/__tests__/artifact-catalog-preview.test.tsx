@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -338,39 +339,51 @@ test("Opening an unpreviewable binary downloads it with the correct filename", a
   });
 });
 
-test("Opening a text artifact shows its content on demand", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [artifact({ title: "launch-plan.txt" })],
-      nextCursor: null,
+test.each(["pointer", "Enter", "Space"] as const)(
+  "Opening a text artifact with %s shows its content on demand",
+  async (activation) => {
+    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+      return respond(200, {
+        artifacts: [artifact({ title: "launch-plan.txt" })],
+        nextCursor: null,
+      });
     });
-  });
-  context.mocks.http.get(
-    "https://artifacts.example.com/launch-plan.txt",
-    () => {
-      return HttpResponse.text("launch plan");
-    },
-  );
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      ...artifact({ title: "launch-plan.txt" }),
-      kind: "file",
-      file: {
-        id: "f0000000-0000-4000-a000-000000000001",
-        filename: "launch-plan.txt",
-        contentType: "text/plain",
-        size: 1024,
-        url: "https://artifacts.example.com/launch-plan.txt",
-        previewImageUrl: null,
+    context.mocks.http.get(
+      "https://artifacts.example.com/launch-plan.txt",
+      () => {
+        return HttpResponse.text("launch plan");
       },
+    );
+    context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+      return respond(200, {
+        ...artifact({ title: "launch-plan.txt" }),
+        kind: "file",
+        file: {
+          id: "f0000000-0000-4000-a000-000000000001",
+          filename: "launch-plan.txt",
+          contentType: "text/plain",
+          size: 1024,
+          url: "https://artifacts.example.com/launch-plan.txt",
+          previewImageUrl: null,
+        },
+      });
     });
-  });
 
-  await setupArtifactCatalogPage(context, { path: "/artifacts?tab=file" });
+    await setupArtifactCatalogPage(context, { path: "/artifacts?tab=file" });
 
-  const textArtifact = await findArtifactAction("launch-plan.txt");
-  expect(screen.queryByText("launch plan")).not.toBeInTheDocument();
-  click(textArtifact);
+    const textArtifact = await findArtifactAction("launch-plan.txt");
+    const user = userEvent.setup({ delay: null });
+    textArtifact.focus();
+    if (activation === "Space") {
+      await user.keyboard("[Space>]");
+    }
+    expect(screen.queryByText("launch plan")).not.toBeInTheDocument();
+    if (activation === "pointer") {
+      click(textArtifact);
+    } else {
+      await user.keyboard(activation === "Space" ? "[/Space]" : "{Enter}");
+    }
 
-  await expect(screen.findByText("launch plan")).resolves.toBeInTheDocument();
-});
+    await expect(screen.findByText("launch plan")).resolves.toBeInTheDocument();
+  },
+);

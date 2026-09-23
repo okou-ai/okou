@@ -89,8 +89,6 @@ on:
         required: false
       OKOU_MACHINE_SECRET_KEY:
         required: false
-      OKOU_MAPS_GOOGLE_MAPS_TOKEN:
-        required: false
       OKOU_SCRAPE_FIRECRAWL_TOKEN:
         required: false
       OKOU_SEO_DATAFORSEO_LOGIN:
@@ -2723,7 +2721,11 @@ jobs:
 
           # Fresh Clerk organizations bootstrap onto limited-free-1, so the
           # deterministic runner policy must stay within that plan's catalog.
-          payload="$(jq -nc '{
+          # The model policy write precondition is mandatory, so send the
+          # revision this read observed.
+          revision="$(curl -fsS "${headers[@]}" "${E2E_API_URL}/api/model-policies" | jq -er '.revision')"
+          payload="$(jq -nc --arg revision "$revision" '{
+            revision: $revision,
             policies: [
               {model: "deepseek-v4-flash", isDefault: true, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null},
               {model: "gpt-5.6-luna", isDefault: false, defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}
@@ -2732,6 +2734,11 @@ jobs:
 
           curl -fsS "${headers[@]}" -X PUT -d "$payload" "${E2E_API_URL}/api/model-policies" >/dev/null
           curl -fsS "${headers[@]}" -X PUT -d '{"selectedModel":null,"serviceTier":null}' "${E2E_API_URL}/api/user-model-preference" >/dev/null
+          curl -fsS "${headers[@]}" \
+            -X POST \
+            -d '{"switches":{"piLoop":false}}' \
+            "${E2E_API_URL}/api/feature-switches" \
+            | jq -e '.effectiveSwitches.piLoop == false' >/dev/null
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap runner mock model provider
@@ -2779,6 +2786,7 @@ jobs:
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
           policy_payload=$(jq -c --arg providerId "$provider_id" '
             {
+              revision,
               policies: [
                 .policies[] |
                   {
@@ -2806,9 +2814,9 @@ jobs:
 
           curl -fsS "${headers[@]}" \
             -X POST \
-            -d '{"switches":{"_realAgentInPreview":true}}' \
+            -d '{"switches":{"_realAgentInPreview":true,"piLoop":false}}' \
             "${api_url}/api/feature-switches" \
-            | jq -e '.effectiveSwitches._realAgentInPreview == true' \
+            | jq -e '.effectiveSwitches._realAgentInPreview == true and .effectiveSwitches.piLoop == false' \
             >/dev/null
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -2826,9 +2834,13 @@ jobs:
             headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
           fi
 
+          revision=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies" | jq -er '.revision')
+          policy_payload=$(jq -nc --arg revision "$revision" --argjson policies \
+            '[{"model":"gpt-5.6-luna","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]' \
+            '{revision: $revision, policies: $policies}')
           curl -fsS "${headers[@]}" \
             -X PUT \
-            -d '{"policies":[{"model":"gpt-5.6-luna","isDefault":true,"defaultProviderType":"built-in","credentialScope":"org","modelProviderId":null}]}' \
+            -d "$policy_payload" \
             "${api_url}/api/model-policies" \
             >/dev/null
 
@@ -2858,6 +2870,7 @@ jobs:
           policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
           policy_payload=$(jq -c --arg model "$claude_model" '
             {
+              revision,
               policies: (
                 [.policies[] |
                   select(.model != $model) |

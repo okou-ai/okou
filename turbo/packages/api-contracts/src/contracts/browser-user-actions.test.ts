@@ -108,6 +108,14 @@ describe("Browser user-action contracts", () => {
     };
     expect(browserUserActionResponseSchema.parse(safe)).toStrictEqual(safe);
     expect(
+      browserUserActionResponseSchema.parse({
+        ...safe,
+        state: "succeeded",
+        completedAt: "2026-09-23T05:00:00.000Z",
+        callbackDelivered: true,
+      }).callbackDelivered,
+    ).toBe(true);
+    expect(
       browserUserActionResponseSchema.safeParse({
         ...safe,
         pageTargetId: "target",

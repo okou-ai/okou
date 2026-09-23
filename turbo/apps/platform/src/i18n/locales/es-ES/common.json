@@ -1491,20 +1491,7 @@
             "title": "Trabaja con {{assistantName}} donde tu equipo ya habla"
           },
           "workflow": {
-            "browse": "Ver plantillas",
-            "confirm": "Enséñame una",
             "description": "Convierte un trabajo que repites en un flujo que el equipo puede ejecutar.",
-            "prompt": "Cada lunes por la mañana, mira qué publicaron mis competidores la semana pasada, agrúpalo por temas y dame una tabla comparativa.",
-            "promptConfirm": "Enviárselo a {{assistantName}}",
-            "promptDescription": "Envíaselo a {{assistantName}} tal cual, o cambia antes la redacción.",
-            "promptOutcome": "Lee las fuentes, agrupa lo que encuentra y responde con la tabla. Si el resultado está bien, te ofrece guardar esa ejecución como flujo.",
-            "promptTitle": "Pídelo como se lo pedirías a un compañero",
-            "stepRun": "Ejecútala una vez",
-            "stepRunDescription": "Ves el trabajo terminado antes de comprometerte con nada.",
-            "stepSave": "Guárdala y dale un horario",
-            "stepSaveDescription": "Se ejecuta sin que nadie lo pida, y cualquier compañero puede lanzarla también.",
-            "stepTemplate": "Empieza por una plantilla",
-            "stepTemplateDescription": "Elige una cercana a tu trabajo en lugar de partir de una página en blanco.",
             "title": "Una buena ejecución se convierte en algo que el equipo conserva"
           }
         },
@@ -1552,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Racha de {{amount}} días",
-        "title": "Primeros pasos",
+        "title": "Consigue más créditos",
         "toGo": "Faltan {{amount}}",
         "workflow": {
           "action": "Crear",
@@ -1583,7 +1570,6 @@
         "enteredChat": "{{userName}} ha entrado en el chat.",
         "goodToSeeYou": "Me alegro de verte, {{userName}}.",
         "knewYouWouldCome": "Sabía que volverías, {{userName}}.",
-        "letsRoll": "{{agentName}} está listo, {{userName}}. Vamos.",
         "makeTodayCount": "Aprovechemos el día de hoy, {{userName}}.",
         "newIdeas": "¿Nuevas ideas hoy, {{userName}}?",
         "readyToBuild": "¿Listo para construir, {{userName}}?",
@@ -1765,6 +1751,11 @@
       "upgradeToRun": "Actualizar a Pro para ejecutar {{assistantName}}",
       "upgradeWorkspace": "Actualizar el espacio de trabajo"
     },
+    "browserAction": {
+      "documentTitle": "Acción del navegador",
+      "loading": "Cargando solicitud del navegador",
+      "unavailableDescription": "Esta solicitud del navegador no es válida o ya no está disponible."
+    },
     "browserInput": {
       "applyFailed": "No se pudo añadir la información. Tus datos siguen aquí. Inténtalo de nuevo.",
       "applying": "Añadiendo información",
@@ -1782,12 +1773,10 @@
       "delivered": "Agente notificado",
       "deliveredDescription": "El agente ya puede continuar.",
       "description": "Introduce la información solicitada para este sitio.",
-      "documentTitle": "Entrada del navegador",
       "expired": "Solicitud caducada",
       "expiredDescription": "El navegador se cerró o esta solicitud ya no está activa.",
       "loadFailed": "No se pudo cargar esta solicitud",
       "loadFailedDescription": "Inténtalo de nuevo en un momento.",
-      "loading": "Cargando entrada del navegador",
       "loadingDescription": "Comprobando esta solicitud…",
       "open": "Introducir información",
       "optional": "(Opcional)",
@@ -1800,9 +1789,33 @@
       "submitting": "Añadiendo…",
       "title": "Introducir información en el navegador",
       "unavailable": "Solicitud no disponible",
-      "unavailableDescription": "Esta solicitud de entrada del navegador no es válida o ya no está disponible.",
       "uncertain": "Comprueba el navegador",
       "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que lo compruebe antes de volver a intentarlo."
+    },
+    "browserInteraction": {
+      "applying": "Completando la interacción con el navegador",
+      "applyingDescription": "El navegador está finalizando esta solicitud.",
+      "callbackFailed": "No se notificó al agente. Vuelve a pulsar Continuar.",
+      "cancel": "Cancelar",
+      "cancelFailed": "No se pudo cancelar esta solicitud. Inténtalo de nuevo.",
+      "cancelled": "Solicitud cancelada",
+      "cancelledDescription": "La entrega del navegador se canceló. Continúa para notificar al agente.",
+      "cancelling": "Cancelando…",
+      "completed": "Interacción con el navegador completada",
+      "completedDescription": "Tu interacción con el navegador quedó registrada. Continúa para notificar al agente.",
+      "completeFailed": "No se pudo completar esta solicitud. Inténtalo de nuevo.",
+      "completing": "Completando…",
+      "continue": "Continuar",
+      "continuing": "Continuando…",
+      "delivered": "Agente notificado",
+      "deliveredDescription": "El agente ya puede continuar.",
+      "description": "Abre el navegador, completa este paso y selecciona Hecho.",
+      "done": "Hecho",
+      "stale": "El navegador ya no está disponible",
+      "staleDescription": "Pide al agente que cree una nueva solicitud.",
+      "title": "Toma el control del navegador",
+      "uncertain": "Comprueba el navegador",
+      "uncertainDescription": "Es posible que la interacción se haya completado. Pide al agente que lo compruebe antes de volver a intentarlo."
     },
     "cards": {
       "viewDetails": "Ver detalles"
@@ -1850,14 +1863,10 @@
       "authorizationDescription": "Selecciona un host de escritorio para las próximas ejecuciones de esta conversación.",
       "checkingCompatibility": "Comprobación de compatibilidad",
       "cloudBrowser": "Navegador en la nube",
-      "connectHost": "Conectar {{hostName}}",
       "connectMyComputer": "Conectar mi ordenador",
       "dialogDescription": "Así {{desktopProductName}} puede funcionar en tu navegador y en aplicaciones, incluso en aquellos sin conector como LinkedIn o Reddit.",
       "dialogTitle": "Permite que {{desktopProductName}} use tu ordenador",
-      "disableCloudBrowser": "Desactivar el navegador de la nube",
-      "disconnectHost": "Desconectar {{hostName}}",
       "downloadMacos": "Descargar para macOS",
-      "enableCloudBrowser": "Activar el navegador en la nube",
       "hosts": "Hosts para el uso de ordenadores",
       "macosRequirement": "Requiere un Mac Apple Silicon con macOS 14 o más reciente. No se soportan Macs Intel.",
       "noOnlineComputers": "No hay ordenadores en línea",
@@ -2005,9 +2014,13 @@
       "title": "Reenviar a"
     },
     "homeTasks": {
+      "empty": "Aún no hay tareas sugeridas",
       "existingThread": "Continuar chat",
+      "exploreWorkflow": "Explorar flujo de trabajo",
       "heading": "Retomado de tu trabajo reciente",
-      "newThread": "Chat nuevo"
+      "newTasksAvailable": "Hay nuevas tareas",
+      "newThread": "Chat nuevo",
+      "reload": "Recargar tareas"
     },
     "mail": {
       "bcc": "BCC",
@@ -2966,6 +2979,52 @@
       "open": "Abrir flujo de trabajo {{title}}"
     }
   },
+  "cloudflareAccess": {
+    "add": "Añadir Cloudflare Access",
+    "cancel": "Cancelar",
+    "changed": "Este Cloudflare Access cambió mientras lo editabas. Revisa los últimos ajustes antes de guardar.",
+    "clientId": "ID de cliente del Service Token",
+    "clientIdPlaceholder": "Pega el Client ID del Service Token",
+    "clientSecret": "Secreto de cliente del Service Token",
+    "clientSecretPlaceholder": "Pega el Client Secret del Service Token",
+    "configuration": "Cloudflare Access",
+    "createNew": "Crear nuevo Cloudflare Access",
+    "delete": "Eliminar Cloudflare Access",
+    "deleteHelp": "¿Eliminar este Cloudflare Access sin uso? El Service Token guardado no se podrá recuperar.",
+    "description": "Accede a aplicaciones protegidas con tokens de servicio de Cloudflare Access.",
+    "edit": "Editar Cloudflare Access",
+    "empty": "Aún no hay Cloudflare Access. Añade un token de servicio para acceder a aplicaciones protegidas.",
+    "failed": "No se pudo guardar el cambio de Cloudflare Access. Inténtalo de nuevo.",
+    "inUse": "Un host utiliza este Cloudflare Access. Revisa los hosts afectados y cambia su configuración o elimínalos primero.",
+    "inUseHelp": "Selecciona otro Cloudflare Access para estos hosts, cámbialos explícitamente a Directa o elimínalos antes de eliminar este.",
+    "invalidInput": "Algunos ajustes de Cloudflare Access no son válidos. Revisa los campos e inténtalo de nuevo.",
+    "keepChanges": "Aplicar mis cambios a esta versión",
+    "latest": "Últimos ajustes guardados",
+    "loadFailed": "No se pudo cargar Cloudflare Access. Inténtalo de nuevo.",
+    "loading": "Cargando Cloudflare Access…",
+    "manage": "Gestionar Cloudflare Access",
+    "missing": "Este Cloudflare Access ya no está disponible. Selecciona otro o crea uno.",
+    "name": "Nombre",
+    "namePlaceholder": "p. ej., Acceso a producción",
+    "replace": "Reemplazar Service Token",
+    "resourceIdConflict": "No se puede usar este ID de recurso. Cierra y vuelve a abrir el formulario para intentarlo de nuevo.",
+    "retry": "Reintentar",
+    "reviewHelp": "Tu borrador se conserva. Confirma los últimos ajustes guardados antes de aplicar tus cambios.",
+    "revisionExhausted": "Esta configuración ya no se puede actualizar. Crea una nueva.",
+    "save": "Guardar",
+    "saveUncertain": "No pudimos confirmar si se guardaron los cambios. Reintenta el mismo guardado, o cierra y revisa la lista antes de añadirlos de nuevo.",
+    "select": "Selecciona Cloudflare Access",
+    "summary_one": "{{count}} Cloudflare Access configurado",
+    "summary_many": "{{count}} Cloudflare Access configurados",
+    "summary_other": "{{count}} Cloudflare Access configurados",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Accede a aplicaciones protegidas con tokens de servicio de Cloudflare Access.",
+    "unavailable": "Cloudflare Access no está disponible para esta cuenta.",
+    "unused": "Ningún host las utiliza",
+    "usedBy_one": "Usada por {{count}} host:",
+    "usedBy_many": "Usada por {{count}} hosts:",
+    "usedBy_other": "Usada por {{count}} hosts:"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{action}} el acceso de {{connector}} para {{agent}}",
@@ -3193,12 +3252,19 @@
       "noConnectorsAlt": "Sin conectores",
       "otherCategory": "Otro",
       "remoteAccess": "Acceso remoto",
+      "remoteControl": {
+        "connections": "Conexiones",
+        "credentials": "Credenciales",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Ámbito de conectores",
         "attention": "Requiere atención",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descubrir",
+        "privateNetwork": "Red privada",
+        "remoteControl": "Control remoto",
         "searchConnected": "Buscar conectores conectados",
         "searchCustom": "Buscar conectores personalizados"
       },
@@ -6023,6 +6089,7 @@
         "personal": "Personal",
         "workspace": "Espacio de trabajo"
       },
+      "sectionNavigation": "Sección de configuración",
       "sections": {
         "billing": {
           "description": "Gestiona tu plan y método de pago.",
@@ -6051,6 +6118,9 @@
         "preference": {
           "description": "Personaliza cómo se ve y se comporta la app.",
           "title": "Preferencias"
+        },
+        "tools": {
+          "title": "Herramientas"
         },
         "usage": {
           "balanceDescription": "Lo que le queda a tu equipo para gastar.",
@@ -6332,7 +6402,7 @@
         "workspaceDescription": "Disponible para todos en este espacio de trabajo."
       },
       "reset": {
-        "confirmDescription": "Usa un restablecimiento de Codex para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
+        "confirmDescription": "Usa un restablecimiento de {{provider}} para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
         "progress": "Restableciendo...",
         "remaining_one": "Queda {{value}} restablecimiento",
         "remaining_many": "Quedan {{value}} restablecimientos",
@@ -6342,7 +6412,7 @@
         "remainingWithExpiry_one": "Queda {{value}} restablecimiento · vence {{expiry}}",
         "remainingWithExpiry_many": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
         "remainingWithExpiry_other": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
-        "title": "¿Restablecer el uso de Codex?"
+        "title": "¿Restablecer el uso de {{provider}}?"
       },
       "stale": {
         "claudeExpired": "Tu sesión de Claude Code ha caducado. Vuelve a conectarla para continuar.",
@@ -6359,9 +6429,9 @@
         "accountSwitched": "Cuenta activa cambiada",
         "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configuración del proveedor de modelos actualizada",
-        "reset": "Uso de Codex restablecido",
-        "resetUnavailable": "No hay reinicios de uso de Codex disponibles",
-        "resetUnneeded": "No es necesario restablecer el uso de Codex ahora"
+        "reset": "Uso de {{provider}} restablecido",
+        "resetUnavailable": "No hay reinicios de uso de {{provider}} disponibles",
+        "resetUnneeded": "No es necesario restablecer el uso de {{provider}} ahora"
       },
       "usage": {
         "inDays": "en {{days}}d",
@@ -6849,40 +6919,15 @@
     "chooseFile": "Elegir archivo",
     "choosePrivateKeyFile": "Elegir archivo de clave privada",
     "cloudflare": {
-      "add": "Añadir Cloudflare Access",
-      "changed": "Este Cloudflare Access cambió mientras lo editabas. Revisa los últimos ajustes antes de guardar.",
-      "clientId": "ID de cliente del Service Token",
-      "clientSecret": "Secreto de cliente del Service Token",
-      "configuration": "Cloudflare Access",
-      "createNew": "Crear nuevo Cloudflare Access",
-      "delete": "Eliminar Cloudflare Access",
-      "deleteHelp": "¿Eliminar este Cloudflare Access sin uso? El Service Token guardado no se podrá recuperar.",
       "direct": "Directa",
-      "edit": "Editar Cloudflare Access",
-      "empty": "Aún no hay Cloudflare Access. Añade un Service Token para conectar hosts SSH protegidos.",
-      "inUse": "Un host utiliza este Cloudflare Access. Revisa los hosts afectados y cambia su configuración o elimínalos primero.",
-      "inUseHelp": "Selecciona otro Cloudflare Access para estos hosts, cámbialos explícitamente a Directa o elimínalos antes de eliminar este.",
       "keepChanges": "Aplicar mis cambios a esta versión",
       "latest": "Últimos ajustes guardados",
-      "loadFailed": "No se pudo cargar Cloudflare Access. Inténtalo de nuevo.",
-      "loading": "Cargando Cloudflare Access…",
-      "missing": "Este Cloudflare Access ya no está disponible. Selecciona otro o crea uno.",
       "mode": "Conexión",
-      "name": "Nombre",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nombre de host publicado",
-      "replace": "Reemplazar Service Token",
       "reviewHelp": "Tu borrador se conserva. Confirma los últimos ajustes guardados antes de aplicar tus cambios.",
-      "select": "Selecciona Cloudflare Access",
-      "summary_one": "{{count}} Cloudflare Access configurado",
-      "summary_many": "{{count}} Cloudflare Access configurados",
-      "summary_other": "{{count}} Cloudflare Access configurados",
       "title": "Cloudflare Access",
-      "tokenHelp": "Usa un Service Token permitido por la política Service Auth de tu aplicación SSH. Es independiente de tus credenciales SSH.",
-      "unavailable": "Cloudflare Access no está disponible para esta cuenta.",
-      "usedBy_one": "Usada por {{count}} host:",
-      "usedBy_many": "Usada por {{count}} hosts:",
-      "usedBy_other": "Usada por {{count}} hosts:"
+      "unavailable": "Cloudflare Access no está disponible para esta cuenta."
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access no estableció un túnel SSH. Revisa el nombre de host publicado y el enrutamiento del Tunnel.",
@@ -6943,6 +6988,7 @@
       "credentialInUse": "Estas credenciales están en uso. Asigna otras a sus hosts o elimina esos hosts primero.",
       "credentialUnavailable": "Estas credenciales SSH ya no están disponibles. Selecciona otras o crea unas nuevas.",
       "failed": "No se pudo guardar el cambio SSH. Inténtalo de nuevo.",
+      "hostInUse": "Este host SSH se usa en una ruta VNC. Selecciona otro host SSH para esas rutas VNC, cámbialas explícitamente a Directa o elimínalas antes de borrar este host.",
       "hostUnavailable": "Este host SSH ya no está disponible. Vuelve a la lista y elige un host existente.",
       "invalidHost": "Introduce un nombre de host o una dirección IP sin esquema de URL, ruta ni espacios.",
       "invalidInput": "Algunos ajustes SSH no son válidos. Revisa los campos e inténtalo de nuevo.",
@@ -6963,9 +7009,6 @@
     "notLearned": "Aún no se ha guardado la clave del host",
     "passphrase": "Frase de contraseña (opcional)",
     "placeholders": {
-      "accessName": "p. ej., Acceso a producción",
-      "clientId": "Pega el Client ID del Service Token",
-      "clientSecret": "Pega el Client Secret del Service Token",
       "credentialName": "p. ej., Acceso de despliegue",
       "displayName": "p. ej., Servidor de producción",
       "host": "p. ej., ssh.example.com",
@@ -7166,6 +7209,9 @@
       "caHint": "Pega los certificados públicos de CA que emitieron el certificado del servidor",
       "custom": "Autoridades de certificación personalizadas",
       "profileLabel": "Perfil de seguridad",
+      "serverName": "Identidad del certificado TLS",
+      "serverNameHelp": "Opcional. Déjalo vacío para verificar el certificado con el host de destino RFB. Defínelo solo si el certificado usa otro nombre DNS.",
+      "serverNameHint": "p. ej., desktop.internal.example.com",
       "system": "Autoridades de certificación del sistema",
       "title": "Confianza en el certificado del servidor",
       "x509Plain": "Usuario y contraseña cifrados (X509Plain)",
@@ -7177,6 +7223,22 @@
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
     "title": "Acceso remoto VNC",
+    "transport": {
+      "destination": "Destino RFB",
+      "destinationHelp": "En las rutas SSH, se accede a este host y puerto desde el servidor SSH seleccionado, no directamente desde el Runner.",
+      "direct": "Directa desde Runner",
+      "empty": "No hay hosts SSH guardados. Añade uno en la configuración de SSH antes de usar esta ruta.",
+      "loadFailed": "No se pudieron cargar los hosts SSH guardados.",
+      "loading": "Cargando hosts SSH guardados…",
+      "select": "Selecciona un host SSH guardado",
+      "selectionUnavailable": "El host SSH seleccionado ya no está disponible. Selecciona otro o cambia explícitamente a Directa.",
+      "ssh": "Mediante un host SSH guardado",
+      "sshConnection": "Host SSH",
+      "sshHelp": "SSH protege el tramo entre Runner y el servidor SSH. Ese servidor debe poder acceder al destino RFB. El Agent necesita acceso VNC y SSH.",
+      "title": "Ruta de conexión",
+      "unavailable": "La configuración SSH no está disponible para esta cuenta.",
+      "via": "Host SSH:"
+    },
     "unavailable": "VNC no está disponible en este espacio de trabajo."
   },
   "workflows": {
@@ -7762,6 +7824,7 @@
       },
       "notFound": "Flujo de trabajo no encontrado.",
       "refineWith": "Refinar con {{agent}}",
+      "sectionNavigation": "Sección de detalles del flujo de trabajo",
       "shadow": {
         "end": "Este flujo de trabajo queda reemplazado por la regla de prioridad de otro con el mismo slug.",
         "resolvesTo": "actualmente se resuelve como"

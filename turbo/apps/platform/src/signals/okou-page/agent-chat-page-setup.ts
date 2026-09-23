@@ -13,7 +13,11 @@ import { currentAgentId$, defaultAgentId$, agents$ } from "../agent.ts";
 import { setChatAgentId$ } from "../agent-chat.ts";
 import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
-import { reloadTagline$, resetChatPageModelSelection$ } from "./chat-page.ts";
+import {
+  releaseChatGreetingVisit$,
+  resetChatPageModelSelection$,
+  startChatGreetingVisit$,
+} from "./chat-page.ts";
 import { ensureAgentDraft$, type EnsuredAgentDraft } from "./agent-draft.ts";
 import {
   agentChatComposerSignals$,
@@ -22,7 +26,10 @@ import {
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
 import { setupAgentChatKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
-import { subscribeHomeTaskRecommendations$ } from "./home-task-recommendations.ts";
+import {
+  enterHomeTaskRecommendations$,
+  subscribeHomeTaskRecommendations$,
+} from "./home-task-recommendations.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -37,9 +44,10 @@ export const setupAgentChatPage$ = command(
     set(setChatAgentId$, agentId);
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
+    set(enterHomeTaskRecommendations$);
     set(get(agentChatComposerSignals$).voice.setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
-    set(reloadTagline$);
+    const firstGreetingVisit = set(startChatGreetingVisit$);
     set(resetChatPageModelSelection$);
     set(updatePage$, createElement(AgentChatPage), "sidebar");
 
@@ -51,6 +59,9 @@ export const setupAgentChatPage$ = command(
       return candidate.agentId === agentId;
     });
     if (!agent) {
+      if (firstGreetingVisit) {
+        set(releaseChatGreetingVisit$);
+      }
       // The URL names an agent this user cannot reach: it was deleted, it
       // belongs to another organization, or it is private to someone else.
       // Recover onto a usable surface the way the home route already does,

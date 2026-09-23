@@ -25,7 +25,6 @@ import {
   chatThreadArtifacts,
   chatThreadDetail,
   chatThreadDraftIds,
-  chatThreadUnreads,
 } from "../services/chat-thread.service";
 import { chatSearch } from "../services/chat-search.service";
 import {
@@ -309,21 +308,6 @@ const listChatThreadDraftsInner$ = computed(async (get) => {
   };
 });
 
-const listChatThreadUnreadsInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const query = get(queryOf(chatThreadsContract.unreads));
-
-  const unreads = await get(
-    chatThreadUnreads({
-      userId: auth.userId,
-      orgId: auth.orgId,
-      agentId: query.agentId,
-    }),
-  );
-
-  return { status: 200 as const, body: { unreads: [...unreads] } };
-});
-
 const listChatThreadArtifactsInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(authContext$);
@@ -379,7 +363,11 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadsContract.indicators,
     handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-thread:read",
+      },
       listChatIndicatorsInner$,
     ),
   },
@@ -408,17 +396,6 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   {
     route: chatThreadsContract.drafts,
     handler: authRoute({}, listChatThreadDraftsInner$),
-  },
-  {
-    route: chatThreadsContract.unreads,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        requiredCapability: "chat-thread:read",
-      },
-      listChatThreadUnreadsInner$,
-    ),
   },
   {
     route: chatThreadByIdContract.get,

@@ -327,6 +327,7 @@ export function mockThread(options?: {
         options?.activeRunIds && options.activeRunIds.length > 0
           ? { [THREAD_ID]: "active" }
           : {},
+      unreadAt: {},
     });
   });
   context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {

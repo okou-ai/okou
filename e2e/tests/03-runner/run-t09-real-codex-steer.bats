@@ -41,7 +41,7 @@ run_real_codex_steer() {
         "$RUNNER_AGENT_ID" \
         "$initial_prompt" \
         "$steer_prompt" \
-        "gpt-5.6-luna" \
+        "gpt-6-luna" \
         "$expected_output" \
         150)" || return 1
     run_id="$(jq -er '.runId' <<< "$steer_result")" || return 1

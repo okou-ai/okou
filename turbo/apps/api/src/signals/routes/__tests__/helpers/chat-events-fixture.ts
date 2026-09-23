@@ -8,6 +8,7 @@ import { readCanonicalAgentNameFixture } from "../../../../test-fixtures/canonic
 import { createStoragesBddApi } from "./api-bdd-storages";
 import { storageTextFile } from "./api-bdd-storage-files";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
+import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import {
   chatEventsContract,
   chatThreadsContract,
@@ -1668,7 +1669,24 @@ export function createChatEventsFixture(context: TestContext) {
     readonly usagePricingResolution: UsagePricingFixture["resolution"];
   }): Promise<void> {
     const sessionKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${args.run.runId}/session.jsonl`;
-    const h0 = args.checkpointObjects.get(sessionKey);
+    let h0 = args.checkpointObjects.get(sessionKey);
+    if (!h0) {
+      const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${args.run.runId}/manifest.json`;
+      const manifestBytes = args.checkpointObjects.get(manifestKey);
+      if (manifestBytes) {
+        const manifest = piApiFirstTurnManifestSchema.parse(
+          JSON.parse(manifestBytes.toString("utf8")),
+        );
+        if (manifest.schemaVersion === 4) {
+          const objectKey = new URL(manifest.history.url).searchParams.get(
+            "object",
+          );
+          if (objectKey) {
+            h0 = args.checkpointObjects.get(objectKey);
+          }
+        }
+      }
+    }
     if (!h0) {
       throw new Error("Expected authoritative sandbox-first H0");
     }

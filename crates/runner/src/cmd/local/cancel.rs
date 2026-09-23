@@ -9,8 +9,8 @@ use std::process::ExitCode;
 use clap::Args;
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::local_queue;
 use runner_host::paths::HomePaths;
+use runner_provider::local_queue;
 use runner_types::ids::RunId;
 
 #[derive(Args)]

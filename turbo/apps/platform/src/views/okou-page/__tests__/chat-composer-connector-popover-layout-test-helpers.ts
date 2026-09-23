@@ -15,6 +15,7 @@ interface RectInput {
 
 interface ConnectorPopoverLayoutOptions {
   readonly trigger: RectInput;
+  readonly popupHeight: number;
   readonly viewport: {
     readonly height: number;
     readonly width: number;
@@ -93,38 +94,17 @@ function builtinConnectorList(element: HTMLElement): boolean {
   );
 }
 
-function connectorRowCount(popup: HTMLElement): number {
-  return popup.querySelectorAll('[role="listitem"]').length;
-}
-
-function connectorListHeight(popup: HTMLElement): number {
-  const fixedHeight = requestedPopupHeight(popup);
-  if (fixedHeight !== null) {
-    return Math.min(
-      CONNECTOR_LIST_MAX_HEIGHT,
-      fixedHeight - CONNECTOR_POPOVER_CHROME_HEIGHT,
-    );
-  }
+// Happy DOM does not load the App's utility stylesheet. Supply the measured
+// popup geometry as fixture data instead of depending on inline style syntax.
+function connectorListHeight(options: ConnectorPopoverLayoutOptions): number {
   return Math.min(
-    connectorRowCount(popup) * CONNECTOR_ROW_HEIGHT,
     CONNECTOR_LIST_MAX_HEIGHT,
+    options.popupHeight - CONNECTOR_POPOVER_CHROME_HEIGHT,
   );
 }
 
-function requestedPopupHeight(popup: HTMLElement): number | null {
-  const height = popup.style.height;
-  return height.endsWith("rem") ? Number.parseFloat(height) * 16 : null;
-}
-
-function connectorPopupHeight(
-  popup: HTMLElement,
-  viewportHeight: number,
-): number {
-  const fixedHeight = requestedPopupHeight(popup);
-  if (fixedHeight !== null) {
-    return Math.min(fixedHeight, viewportHeight);
-  }
-  return CONNECTOR_POPOVER_CHROME_HEIGHT + connectorListHeight(popup);
+function connectorPopupHeight(options: ConnectorPopoverLayoutOptions): number {
+  return Math.min(options.popupHeight, options.viewport.height);
 }
 
 function connectorPopupRect(
@@ -132,7 +112,7 @@ function connectorPopupRect(
   options: ConnectorPopoverLayoutOptions,
 ): DOMRect {
   const { trigger } = options;
-  const height = connectorPopupHeight(popup, options.viewport.height);
+  const height = connectorPopupHeight(options);
   switch (popup.dataset.side) {
     case "bottom": {
       return domRect({
@@ -248,11 +228,11 @@ export function mockConnectorPopoverLayout(
       const popup =
         connectorPopup(this) ?? connectorPositionerPopup(this) ?? null;
       if (popup) {
-        return connectorPopupHeight(popup, options.viewport.height);
+        return connectorPopupHeight(options);
       }
       if (builtinConnectorList(this)) {
         const parentPopup = this.closest<HTMLElement>('[role="dialog"]');
-        return parentPopup ? connectorListHeight(parentPopup) : 0;
+        return parentPopup ? connectorListHeight(options) : 0;
       }
       return offsetHeightDescriptor?.get?.call(this) ?? 0;
     },
@@ -270,7 +250,7 @@ export function mockConnectorPopoverLayout(
     get(this: HTMLElement): number {
       if (builtinConnectorList(this)) {
         const parentPopup = this.closest<HTMLElement>('[role="dialog"]');
-        return parentPopup ? connectorListHeight(parentPopup) : 0;
+        return parentPopup ? connectorListHeight(options) : 0;
       }
       return clientHeightDescriptor?.get?.call(this) ?? 0;
     },
@@ -307,7 +287,7 @@ export function mockConnectorPopoverLayout(
             x: popupRect.x,
             y: popupRect.y + 40,
             width: popupRect.width,
-            height: connectorListHeight(parentPopup),
+            height: connectorListHeight(options),
           });
         }
       }

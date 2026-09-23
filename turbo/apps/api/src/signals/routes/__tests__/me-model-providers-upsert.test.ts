@@ -1080,6 +1080,76 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(usageCalls).toBe(3);
   });
 
+  it("keeps the stored Codex provider on an upstream usage outage", async () => {
+    const fixture = uniqueOrgUser("zmmp-codex-usage-unavailable");
+    await enablePersonalModelProviderAccounts(fixture);
+    let usageCalls = 0;
+    let refreshCalls = 0;
+    server.use(
+      http.post("https://auth.openai.com/oauth/token", () => {
+        refreshCalls += 1;
+        return HttpResponse.error();
+      }),
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        usageCalls += 1;
+        if (usageCalls <= 2) {
+          return HttpResponse.json(
+            { error: "service_unavailable" },
+            { status: 503 },
+          );
+        }
+        return HttpResponse.json(codexUsageResponse());
+      }),
+    );
+
+    const client = setupApp({
+      context,
+      routes: personalModelProvidersMainTestRoutes,
+    })(personalModelProvidersMainContract);
+    const connected = await accept(
+      client.upsert({
+        body: {
+          type: "codex-oauth-token",
+          authMethod: "auth_json",
+          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [201],
+    );
+
+    const unavailable = await accept(
+      client.list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(unavailable.body.modelProviders[0]).toMatchObject({
+      id: connected.body.provider.id,
+      type: "codex-oauth-token",
+      needsReconnect: false,
+      lastRefreshErrorCode: null,
+    });
+    expect(
+      unavailable.body.modelProviders[0]?.subscriptionUsage,
+    ).toBeUndefined();
+    // The outage is handled, so it must not be reported as a fault or be
+    // mistaken for an expired token.
+    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+    expect(refreshCalls).toBe(0);
+
+    const recovered = await accept(
+      client.list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(recovered.body.modelProviders[0]).toMatchObject({
+      id: connected.body.provider.id,
+      subscriptionUsage: {
+        fiveHour: { usedPercent: 25 },
+        weekly: { usedPercent: 40 },
+      },
+    });
+    expect(usageCalls).toBe(3);
+  });
+
   it("returns 400 CODEX_AUTH_JSON_SHAPE_INVALID on malformed JSON", async () => {
     const fixture = uniqueOrgUser("zmmp-codex-malformed");
     mocks.clerk.session(fixture.userId, fixture.orgId);

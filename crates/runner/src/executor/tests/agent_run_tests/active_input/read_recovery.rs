@@ -9,7 +9,6 @@ use tracing_subscriber::prelude::*;
 
 use super::read_backoff::{observe, retry_delay};
 use super::{DELIVERY_ID, EVENT_ID, api_active_input_source};
-use crate::active_input::ActiveInputNotifications;
 use crate::axiom_layer::{init_with_base_url, with_ingest_filter};
 use crate::error::RunnerResult;
 use crate::executor::agent_run::{AgentExecutionResult, RunControls, RunStart, run_in_sandbox};
@@ -18,6 +17,7 @@ use crate::executor::tests::support::{
     test_executor_config, test_telemetry,
 };
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
+use runner_provider::ActiveInputNotifications;
 use runner_types::ids::RunId;
 use runner_types::types::SandboxReuseResult;
 

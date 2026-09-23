@@ -71,7 +71,10 @@ function normalizedText(element: Element): string {
 }
 
 function matchesAccessibleName(element: HTMLElement, name: string): boolean {
-  const text = normalizedText(element);
+  // A sidebar chat link appends screen-reader-only state text after its title,
+  // so a running or unread chat is still addressed by its title alone.
+  const title = element.querySelector('[data-slot="sidebar-thread-title"]');
+  const text = normalizedText(title ?? element);
   return (
     element.getAttribute("aria-label") === name ||
     text === name ||

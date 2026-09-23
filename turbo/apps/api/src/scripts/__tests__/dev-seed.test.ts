@@ -126,6 +126,21 @@ describe("buildBuiltInModelKeys", () => {
 });
 
 describe("usage pricing", () => {
+  it("seeds the Claude Opus 5.5 public token schedule", () => {
+    expect(
+      USAGE_PRICING.filter((row) => {
+        return row.kind === "model" && row.provider === "claude-opus-5-5";
+      }).map((row) => {
+        return [row.category, row.unitPrice, row.unitSize];
+      }),
+    ).toStrictEqual([
+      ["tokens.input", 4000, 1_000_000],
+      ["tokens.output", 20_000, 1_000_000],
+      ["tokens.cache_read", 200, 1_000_000],
+      ["tokens.cache_creation", 5000, 1_000_000],
+    ]);
+  });
+
   it.each([
     ["okou-1.0", "gpt-5.6-luna"],
     ["okou-1.0-pro", "gpt-5.6-sol"],

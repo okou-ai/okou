@@ -348,8 +348,31 @@ export function listS3Objects(
   bucket: string,
   prefix: string,
 ): Computed<Promise<readonly S3Object[]>> {
+  return listS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, prefix);
+}
+
+/** Hosted sites hold their own credentials, so `s3ClientForBucket` does not
+ * reach them. This is the hosted-bucket listing counterpart to
+ * `deleteArtifactSnapshotObjects(..., hosted: true, ...)`.
+ */
+export function listHostedSitesObjectsUnderPrefix(
+  bucket: string,
+  prefix: string,
+): Computed<Promise<readonly S3Object[]>> {
+  return listS3ObjectsWithClient(
+    hostedSitesS3Client$,
+    bucket,
+    boundedListPrefix(prefix),
+  );
+}
+
+function listS3ObjectsWithClient(
+  client$: Computed<S3Client>,
+  bucket: string,
+  prefix: string,
+): Computed<Promise<readonly S3Object[]>> {
   return computed(async (get): Promise<readonly S3Object[]> => {
-    const client = get(s3ClientForBucket(bucket));
+    const client = get(client$);
     const objects: S3Object[] = [];
     let continuationToken: string | undefined;
 
@@ -417,12 +440,18 @@ export function listS3ObjectsPage(
   });
 }
 
+/** A prefix that cannot match a sibling whose name merely starts the same way:
+ * `site-1` must not reach `site-10`.
+ */
+function boundedListPrefix(prefix: string): string {
+  return prefix.endsWith("/") ? prefix : `${prefix}/`;
+}
+
 export function listS3ObjectsUnderPrefix(
   bucket: string,
   prefix: string,
 ): Computed<Promise<readonly S3Object[]>> {
-  const boundedPrefix = prefix.endsWith("/") ? prefix : `${prefix}/`;
-  return listS3Objects(bucket, boundedPrefix);
+  return listS3Objects(bucket, boundedListPrefix(prefix));
 }
 
 export function deleteS3Objects(

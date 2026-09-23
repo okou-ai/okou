@@ -81,6 +81,7 @@
       "description": "エージェント「{{agentId}}」が存在しないか、アクセス権がありません。",
       "title": "エージェントが見つかりません"
     },
+    "sectionNavigation": "エージェント詳細セクション",
     "tabs": {
       "authorization": "アクセス権限",
       "instructions": "指示",

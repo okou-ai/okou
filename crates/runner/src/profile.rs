@@ -12,7 +12,7 @@ pub struct ProfileDef {
     pub workspace_disk_mb: u32,
 }
 
-pub const DEFAULT_PROFILE: &str = "vm0/default";
+pub use runner_types::profile_name::DEFAULT_PROFILE;
 
 /// Return the profile definition for a given profile name.
 pub fn get(name: &str) -> RunnerResult<&'static ProfileDef> {
@@ -37,7 +37,7 @@ pub fn get(name: &str) -> RunnerResult<&'static ProfileDef> {
 /// name from the user (CLI flags, YAML config) so the error wording
 /// stays consistent.
 pub fn validate_or_err(name: &str) -> RunnerResult<()> {
-    if !crate::org_name::is_valid(name) {
+    if !runner_types::org_name::is_valid(name) {
         return Err(RunnerError::Config(format!(
             "invalid profile name: {name} (must be org/name format, lowercase alphanumeric + hyphens)"
         )));

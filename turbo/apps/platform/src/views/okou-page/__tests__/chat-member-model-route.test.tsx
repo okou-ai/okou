@@ -95,9 +95,6 @@ test.each(
     await setupPage({
       context,
       path: NEW_CHAT_PATH,
-      featureSwitches: {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      },
     });
     const trigger = await waitFor(() => {
       // Wait for the requested menu while feature switches load.
@@ -159,7 +156,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PiLoop]: true,
     },
   });
@@ -288,6 +284,7 @@ test("Refreshes the account target on explicit reconnect after a remote account 
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [
         {
           ...currentPolicy,
@@ -344,7 +341,6 @@ test("Refreshes the account target on explicit reconnect after a remote account 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
     },
   });

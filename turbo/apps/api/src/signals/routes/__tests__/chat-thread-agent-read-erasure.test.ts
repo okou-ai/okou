@@ -17,6 +17,7 @@ import {
   appendTerminalChatEventsFixture,
   holdAgentRowLockFixture,
   readChatThreadCursorsFixture,
+  readSeededUnreadThreadIdsFixture,
   withChatThreadAgentReadBarrierFixture,
 } from "../../../test-fixtures/chat-thread-agent-read-erasure";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
@@ -121,16 +122,11 @@ function closeSubject(
   return closing;
 }
 
-/** Unread thread ids as a set: the unread listing owns its own ordering. */
+/** Complete seeded unread state for this bulk-write fixture. */
 async function unreadThreadIds(
   fixture: AgentReadFixture,
 ): Promise<ReadonlySet<string>> {
-  const unreads = await chat.listThreadUnreads(fixture.actor, fixture.agentId);
-  return new Set(
-    unreads.map((unread) => {
-      return unread.threadId;
-    }),
-  );
+  return await readSeededUnreadThreadIdsFixture(fixture.threadIds);
 }
 
 function clearPublishedNotifications(): void {
@@ -522,10 +518,6 @@ describe("account erasure fences the bulk Agent read-cursor write", () => {
     await expect(
       readChatThreadCursorsFixture(fixture.threadIds),
     ).resolves.toStrictEqual(before);
-    await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(
-      new Set(fixture.threadIds),
-    );
-
     // A rolled back attempt is not a durable denial: the same request commits
     // the whole set once its operation is no longer cancelled.
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);

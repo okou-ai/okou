@@ -155,7 +155,7 @@ test("The SSH directory distinguishes unavailable diagnostics from failed hosts"
 });
 
 test.each([0, 2])(
-  "SSH with %i hosts ends the catalog and respects its category filter",
+  "SSH with %i hosts is in Remote control instead of the catalog",
   async (configuredCount) => {
     mockCatalog();
     mockPublicConnectorStatus(
@@ -197,13 +197,9 @@ test.each([0, 2])(
       },
     });
     await screen.findByTestId("connector-shelf-communication-collaboration");
-    await screen.findByRole("heading", { name: "Remote access" });
-    // Custom is a scope of its own, so the catalog ends with Remote access.
+    expect(screen.queryByRole("heading", { name: "Remote access" })).toBeNull();
     expect(screen.queryByText("Acme Search")).toBeNull();
-    expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
-      "href",
-      configuredCount === 0 ? "/connectors/ssh?add=1" : "/connectors/ssh",
-    );
+    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
     click(getConnectorAction("button", "Filter connectors"));
     const menu = await screen.findByRole("menu");
     const communication = queryAllByRoleFast("menuitem", menu).find((item) => {
@@ -218,15 +214,18 @@ test.each([0, 2])(
     // are gone.
     await screen.findByTestId("connector-category-grid");
     expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-    click(getConnectorAction("button", "Filter connectors"));
-    const categoryMenu = await screen.findByRole("menu");
-    click(getConnectorAction("menuitem", "Remote access", categoryMenu));
-    await screen.findByRole("heading", { name: "Remote access" });
-    expect(queryConnectorAction("link", "Manage SSH hosts")).not.toBeNull();
-    expect(screen.queryByTestId("connector-category-grid")).toBeNull();
-    click(getConnectorAction("button", "Discover"));
+    click(screen.getByTestId("connectors-scope-remote-control"));
+    await waitFor(() => {
+      return getConnectorAction("button", "Add host");
+    });
+    expect(
+      screen.getByTestId("connectors-scope-remote-control"),
+    ).toHaveTextContent(
+      configuredCount === 0 ? "Remote control" : "Remote control2",
+    );
+    click(screen.getByTestId("connectors-scope-discover"));
     await screen.findByTestId("connector-shelf-communication-collaboration");
-    expect(getConnectorAction("link", "Manage SSH hosts")).toBeInTheDocument();
+    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
   },
 );
 
@@ -371,7 +370,7 @@ test.each([0, 1, 2])(
       screen.getByTestId("connector-category-remote-access"),
     ).toContainElement(entry);
     expect(
-      screen.getByText("Connect 1 services for your agents to use."),
+      screen.getByText("Connect 2 services for your agents to use."),
     ).toBeInTheDocument();
     click(entry);
     await screen.findByRole("heading", { name: "SSH remote access" });
@@ -460,22 +459,20 @@ test.each([
         [FeatureSwitchKey.ConnectorDirectory]: directory,
       },
     });
-    if (enabled) {
-      await screen.findByText(
-        directory
-          ? /Every connector is shared with an agent/u
-          : 'No connectors matching "ssh"',
-      );
+    if (directory) {
+      await screen.findByText(/Every connector is shared with an agent/u);
+    } else if (enabled) {
+      await screen.findByText('No connectors matching "ssh"');
     } else {
       await screen.findByText("1 host configured");
     }
     expect(queryConnectorAction("link", "Manage SSH hosts") !== null).toBe(
-      !enabled,
+      !directory && !enabled,
     );
   },
 );
 
-test("A changed SSH grant is reflected when switching directory filters", async () => {
+test("SSH access remains manageable in Remote control", async () => {
   mockCatalog();
   context.mocks.data.agents([listAgent(agentId, "Research")]);
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
@@ -491,13 +488,16 @@ test("A changed SSH grant is reflected when switching directory filters", async 
   });
   await setupPage({
     context,
-    path: "/connectors?scope=connected&keywords=ssh",
+    path: "/connectors?scope=remote-control",
     featureSwitches: {
       [FeatureSwitchKey.ConnectorDirectory]: true,
     },
   });
-  await screen.findByText("1 host configured");
-  click(screen.getByTestId("connector-card-agent-access"));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("button", "Manage SSH access");
+    }),
+  );
   const dialog = await screen.findByRole("dialog");
   click(
     await within(dialog).findByRole("switch", {
@@ -511,29 +511,21 @@ test("A changed SSH grant is reflected when switching directory filters", async 
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
-  click(getConnectorAction("button", "Filter connectors"));
-  click(
-    await waitFor(() => {
-      return getConnectorAction("menuitem", "Not shared with any agent");
-    }),
-  );
-  await screen.findByText(/Every connector is shared with an agent/u);
+  click(screen.getByTestId("connectors-scope-connected"));
   expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
-  click(getConnectorAction("button", "Filter connectors"));
+  click(screen.getByTestId("connectors-scope-remote-control"));
   click(
     await waitFor(() => {
-      return getConnectorAction("menuitem", "All agents");
+      return getConnectorAction("button", "Manage SSH access");
     }),
   );
-  await expect(
-    waitFor(() => {
-      return getConnectorAction("link", "Manage SSH hosts");
-    }),
-  ).resolves.toBeInTheDocument();
+  await within(await screen.findByRole("dialog")).findByRole("switch", {
+    name: "Revoke SSH access for Research",
+  });
 });
 
 test.each([false, true])(
-  "Unavailable SSH grants stay retryable under the unshared filter (directory: %s)",
+  "Unavailable SSH grants stay retryable (directory: %s)",
   async (directory) => {
     mockCatalog();
     context.mocks.data.agents([listAgent(agentId, "Research")]);
@@ -561,11 +553,20 @@ test.each([false, true])(
     });
     await setupPage({
       context,
-      path: "/connectors?scope=connected&connection=unshared&keywords=ssh",
+      path: directory
+        ? "/connectors?scope=remote-control"
+        : "/connectors?scope=connected&connection=unshared&keywords=ssh",
       featureSwitches: {
         [FeatureSwitchKey.ConnectorDirectory]: directory,
       },
     });
+    if (directory) {
+      click(
+        await waitFor(() => {
+          return getConnectorAction("button", "Manage SSH access");
+        }),
+      );
+    }
     await screen.findByText("Could not load SSH settings. Try again.");
     expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
     expect(document.body.textContent).not.toContain("private grant error");
@@ -575,11 +576,15 @@ test.each([false, true])(
     await retryStarted.promise;
     expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
     recovery.resolve();
-    await expect(
-      waitFor(() => {
+    if (directory) {
+      await within(await screen.findByRole("dialog")).findByRole("switch", {
+        name: "Authorize SSH access for Research",
+      });
+    } else {
+      await waitFor(() => {
         return getConnectorAction("link", "Manage SSH hosts");
-      }),
-    ).resolves.toBeInTheDocument();
+      });
+    }
     expect(
       screen.queryByText("Could not load SSH settings. Try again."),
     ).toBeNull();
@@ -662,4 +667,46 @@ test("Returning from host management refreshes the SSH card after deleting the l
   click(getConnectorAction("link", "Connectors"));
   await screen.findByText("Let your agents run commands on remote machines.");
   expect(getConnectorAction("link", "Manage SSH hosts")).toBeInTheDocument();
+});
+
+test("Deleting an SSH host referenced by VNC explains how to resolve the dependency", async () => {
+  mockCatalog();
+  const host = {
+    id: "b0000000-0000-4000-8000-000000000001",
+    displayName: "VNC gateway",
+    host: "gateway.example.com",
+    port: 22,
+    username: "deploy",
+    credentialId: "d0000000-0000-4000-8000-000000000001",
+    credentialName: "Gateway login",
+    generation: 1,
+    learnedHostKey: null,
+    createdAt: "2026-09-01T00:00:00Z",
+    updatedAt: "2026-09-01T00:00:00Z",
+  };
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 1 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [host] });
+  });
+  context.mocks.api(sshConnectionsContract.delete, ({ respond }) => {
+    return respond(409, {
+      error: {
+        code: "SSH_CONNECTION_IN_USE",
+        message: "private dependency detail",
+      },
+    });
+  });
+  await page("/connectors/ssh");
+  await screen.findByText(host.displayName);
+  click(getConnectorAction("button", "Delete host"));
+  const dialog = await screen.findByRole("dialog", { name: "Delete host" });
+  click(getConnectorAction("button", "Delete host", dialog));
+  await within(dialog).findByText(/This SSH host is used by a VNC route/u);
+  expect(
+    within(dialog).getByText(/switch them explicitly to Direct/u),
+  ).toBeInTheDocument();
+  expect(document.body.textContent).not.toContain("private dependency detail");
+  expect(dialog).toBeInTheDocument();
 });

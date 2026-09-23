@@ -80,6 +80,7 @@ import {
 import {
   captureActivePersonalModelProviderAccount,
   isPersonalSubscriptionProviderType,
+  type CapturedPersonalSubscriptionAccount,
 } from "./model-provider-account.service";
 import { piStableContextVariantDigest } from "./pi-stable-context.service";
 import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
@@ -431,7 +432,6 @@ function buildStableAgentPrompt(args: {
   readonly agent: AgentRunRecord;
   readonly triggerSource: TriggerSource;
   readonly cloudBrowserEnabled: boolean | undefined;
-  readonly runUsageEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -447,7 +447,6 @@ function buildStableAgentPrompt(args: {
       privateArtifactsEnabled: args.privateArtifactsEnabled,
       triggerSource: args.triggerSource,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
-      runUsageEnabled: args.runUsageEnabled,
       bankingEnabled: args.bankingEnabled,
       vncEnabled: args.vncEnabled,
       larkEnabled: args.larkEnabled,
@@ -762,6 +761,7 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly command: AnyCreateAgentRunCommandArgs;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
 
 interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
@@ -905,6 +905,7 @@ interface BuildCreateAgentRunArgsInput {
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
 
 function emptyStablePrompt(): PiStableContextPromptProjection {
@@ -940,10 +941,6 @@ function buildStableRunPromptContext(args: BuildCreateAgentRunArgsInput): {
   const promptInputs = {
     privateArtifactsEnabled: isFeatureEnabled(
       FeatureSwitchKey.PrivateArtifacts,
-      args.featureSwitchContext,
-    ),
-    runUsageEnabled: isFeatureEnabled(
-      FeatureSwitchKey.RunUsage,
       args.featureSwitchContext,
     ),
     bankingEnabled: isFeatureEnabled(
@@ -1088,6 +1085,12 @@ function buildCreateAgentRunArgs(
     modelProviderId: command.modelProviderId ?? agentModelProviderId,
     modelProviderCredentialScope: command.modelProviderCredentialScope,
     modelProviderType: command.body.modelProvider,
+    ...(args.capturedPersonalSubscriptionAccount
+      ? {
+          capturedPersonalSubscriptionAccount:
+            args.capturedPersonalSubscriptionAccount,
+        }
+      : {}),
     selectedModelOverride: command.selectedModelOverride ?? agentSelectedModel,
     ...(command.builtInModelRuntimeRoute
       ? { builtInModelRuntimeRoute: command.builtInModelRuntimeRoute }
@@ -1204,6 +1207,12 @@ async function captureSubscriptionAccount(
   }
   return {
     ...input,
+    capturedPersonalSubscriptionAccount: {
+      id: account.id,
+      orgId: account.orgId,
+      userId: account.userId,
+      type: pin.modelProvider,
+    },
     command: {
       ...command,
       modelProviderId: account.id,

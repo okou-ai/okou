@@ -15,6 +15,7 @@ import { Sidebar } from "./sidebar.tsx";
 import {
   AutomationMenuButton,
   ChatThreadHeaderTitle,
+  SettledChatThreadActions,
 } from "./chat-thread-page.tsx";
 import { currentChatAgent$ } from "../../signals/agent-chat.ts";
 import {
@@ -272,15 +273,23 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadHeaderActions];
   const thread = useCurrentThread();
   if (headerActionsEnabled && activeId === "chat" && thread) {
-    return <MobileChatThreadActions thread={thread} />;
+    return (
+      <SettledChatThreadActions thread={thread}>
+        <MobileChatThreadActions thread={thread} />
+      </SettledChatThreadActions>
+    );
   }
   const inChatRoute = isChatRoute(activeId);
   const showInviteFallback = inChatRoute && activeId !== "chat";
   return (
     <>
-      {inChatRoute && <MobileShareButtonLeaf />}
-      {inChatRoute && <MobileAutomationButtonLeaf />}
-      {inChatRoute && <MobileArtifactsButtonLeaf />}
+      {inChatRoute && thread && (
+        <SettledChatThreadActions thread={thread}>
+          <MobileShareButtonLeaf />
+          <MobileAutomationButtonLeaf />
+          <MobileArtifactsButtonLeaf />
+        </SettledChatThreadActions>
+      )}
       {showInviteFallback && <InviteButtonLeaf />}
     </>
   );

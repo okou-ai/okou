@@ -20,17 +20,24 @@ export const TEMPLATE_CARD_SHADOW =
   "shadow-[0_2px_12px_hsl(220_12%_50%/0.04),0_0_0_0.5px_hsl(220_12%_50%/0.02)]";
 
 /**
- * Gallery tile. Hover feedback comes from the scrim and the Use pill alone —
- * the card already carries a hairline border, so a hover ring only doubled it.
- * The ring is reserved for the selected state, offset so it is drawn outside
- * the card and keeps a gap from the artwork.
+ * Selection owns a real border; focus owns the ring. Keep the existing media
+ * hairline and clipping box so thumbnails and captions retain their geometry.
+ * A border on the frame's non-interactive overlay covers that hairline when
+ * selected, without reducing the artwork or adding a second visible boundary.
+ * Its emphasis width is constant, including while transparent. The tile wrapper
+ * owns the local stacking context; the overlay sits with the existing controls.
  */
-export const TEMPLATE_TILE_WRAPPER = "group/tile relative cursor-pointer";
-export const TEMPLATE_TILE_RING =
-  "rounded-xl ring-offset-1 ring-offset-card transition-shadow duration-150";
-export const TEMPLATE_TILE_RING_SELECTED = "ring-1 ring-primary";
+export const TEMPLATE_TILE_WRAPPER =
+  "group/tile relative isolate cursor-pointer";
+export const TEMPLATE_TILE_SELECTION_FRAME =
+  "relative rounded-xl after:pointer-events-none after:absolute after:inset-0 after:z-20 after:rounded-xl after:border-(length:--border-width-emphasis) after:border-transparent";
+export const TEMPLATE_TILE_SELECTED = "after:border-primary";
+// Draw preview focus outside the selection border, triggered only by the real
+// preview button. Use buttons keep their own focus ring.
+export const TEMPLATE_TILE_PREVIEW_FOCUS =
+  "has-[[data-template-preview-id]:focus-visible]:ring-2 has-[[data-template-preview-id]:focus-visible]:ring-ring has-[[data-template-preview-id]:focus-visible]:ring-offset-1 ring-offset-card";
 export const TEMPLATE_TILE_MEDIA =
-  "relative overflow-hidden border border-border bg-muted";
+  "relative overflow-hidden rounded-xl border border-border bg-muted";
 export const TEMPLATE_TILE_SCRIM =
   "pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-14 bg-gradient-to-t from-black/45 to-transparent opacity-0 transition-opacity group-hover/tile:opacity-100 group-focus-visible/tile:opacity-100";
 export const TEMPLATE_TILE_USE =

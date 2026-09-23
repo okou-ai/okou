@@ -31,7 +31,9 @@ jq -e \
     and (.versions | type == "object")
     and (.versions.cli | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
     and (.versions.piAgentRuntime | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$"))
-    and (.versions.piSdk | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+\\+okou\\.[0-9a-f]{12}$"))' \
+    and (.versions.piSdk | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+\\+okou\\.[0-9a-f]{12}$"))
+    and (.sessionConstruction | type == "object")
+    and (.sessionConstruction.digest | type == "string" and test("^[0-9a-f]{64}$"))' \
   "$artifact_dir/manifest.json" >/dev/null
 
 package_sha256="$(sha256sum "$artifact_dir/package.tgz" | cut -d ' ' -f 1)"
