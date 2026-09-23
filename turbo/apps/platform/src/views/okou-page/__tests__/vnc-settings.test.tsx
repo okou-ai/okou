@@ -572,7 +572,9 @@ test("Apple DH host editor requires SSH loopback and omits X509 trust", async ()
   await fill(within(dialog).getByLabelText("Username"), "operator");
   await fill(within(dialog).getByLabelText("Password"), "secret");
   click(getAction("button", "Save", dialog));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   expect(requests).toStrictEqual([
     {
       id: expect.any(String),

@@ -346,7 +346,9 @@ export function VncTransportFields({
         return $.vnc.transport.ssh;
       }),
     },
-  ].filter((item) => editor.profile !== "apple_dh" || item.value === "ssh");
+  ].filter((item) => {
+    return editor.profile !== "apple_dh" || item.value === "ssh";
+  });
   return (
     <fieldset className="grid min-w-0 gap-3">
       <legend className="mb-1 text-sm font-semibold">

@@ -562,6 +562,7 @@ describe("private Runner VNC authority", () => {
         transportType: "ssh" as const,
       },
     ];
+    await api.grantSsh(f, false);
     const kms = useSecretKmsProbe();
     await expect(api.resolve(target)).resolves.toStrictEqual({
       outcome: "unsupported_profile",
