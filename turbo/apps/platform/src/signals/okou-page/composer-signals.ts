@@ -609,7 +609,6 @@ export function createComposerSignals(
   const agentId$ = computed((): string => {
     return options.agentId;
   });
-  const feedback = createComposerFeedbackModel();
   const temporaryModelNoticeEnabled$ =
     createTemporaryModelNoticeEnabled(options);
   const ui = createComposerUiSignals();
@@ -623,7 +622,7 @@ export function createComposerSignals(
         ? { feedbackPlaceholder: forwardFeedbackPlaceholder }
         : {}),
     },
-    feedback,
+    createComposerFeedbackModel(),
   );
   const create = createComposerCreateSignals(workflowComposer, ui, {
     image: options.imageModel !== undefined,
