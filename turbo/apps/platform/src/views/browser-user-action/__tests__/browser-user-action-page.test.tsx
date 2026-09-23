@@ -18,6 +18,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -67,6 +68,17 @@ function action(
       },
     },
   };
+}
+
+function mockPendingPreflight() {
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    ({ params, body, respond }) => {
+      expect(params.requestToken).toBe(REQUEST_TOKEN);
+      expect(body).toStrictEqual({});
+      return respond(200, action("pending"));
+    },
+  );
 }
 
 function directAction(
@@ -138,6 +150,7 @@ test("The standalone route reuses the native browser input form", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action(state));
   });
+  mockPendingPreflight();
   context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
     expect(body.values).toStrictEqual([
       { key: "email", value: "owner@example.test" },
@@ -159,6 +172,9 @@ test("The standalone route reuses the native browser input form", async () => {
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
+  expect(screen.queryByRole("form")).toBeNull();
+  await screen.findByText("Enter information");
+  click(button("Enter information"));
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
@@ -179,6 +195,75 @@ test("The standalone route reuses the native browser input form", async () => {
   });
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(document.title).toContain("Browser action");
+});
+
+test("Standalone entry waits for preflight and retries a transient failure without exposing fields", async () => {
+  const entered = createDeferredPromise<void>(context.signal);
+  const release = createDeferredPromise<void>(context.signal);
+  let attempts = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("pending"));
+  });
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    async ({ body, respond }) => {
+      expect(body).toStrictEqual({});
+      attempts += 1;
+      if (attempts === 1) {
+        entered.resolve(undefined);
+        await release.promise;
+        return respond(503, {
+          error: {
+            code: "BROWSER_UNAVAILABLE",
+            message: "Browser unavailable",
+          },
+        });
+      }
+      return respond(200, action("pending"));
+    },
+  );
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByText("Enter information");
+  click(button("Enter information"));
+  await entered.promise;
+  expect(screen.queryByRole("form")).toBeNull();
+  expect(screen.getByText("Checking this request…")).toBeVisible();
+  release.resolve(undefined);
+  await screen.findByText("Retry");
+  click(button("Retry"));
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  expect(attempts).toBe(2);
+});
+
+test("Standalone preflight makes a confirmed changed target stale before showing fields", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(state));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    state = "stale";
+    return respond(200, action(state));
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByText("Enter information");
+  click(button("Enter information"));
+  await expect(screen.findByText("Fields changed")).resolves.toBeVisible();
+  expect(screen.queryByRole("form")).toBeNull();
+  expect(
+    screen.getByText("Ask the agent to create a new request."),
+  ).toBeVisible();
 });
 
 test("A terminal standalone action retries only its stable callback", async () => {
@@ -414,6 +499,7 @@ test("A failed callback retries without repeating the Browser mutation", async (
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action(state));
   });
+  mockPendingPreflight();
   context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
     expect(state).toBe("pending");
     expect(body.values).toStrictEqual([
@@ -441,6 +527,8 @@ test("A failed callback retries without repeating the Browser mutation", async (
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
+  await screen.findByText("Enter information");
+  click(button("Enter information"));
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
@@ -462,6 +550,7 @@ test("A transient apply failure keeps the draft for an explicit retry", async ()
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action(state));
   });
+  mockPendingPreflight();
   context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
     expect(body.values).toStrictEqual([
       { key: "email", value: "owner@example.test" },
@@ -486,6 +575,8 @@ test("A transient apply failure keeps the draft for an explicit retry", async ()
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
+  await screen.findByText("Enter information");
+  click(button("Enter information"));
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
