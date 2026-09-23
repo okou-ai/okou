@@ -897,60 +897,76 @@ async function reconcilePendingArtifactCatalog(
 }
 
 /** Bounded, explicit recovery for pending files, independent of catalog reads. */
-export const reconcileArtifactCatalogFiles$ = command(
-  async (
-    { set },
-    signal: AbortSignal,
-  ): Promise<{ processed: number; failed: number }> => {
-    const db = set(writeDb$);
-    const pendingRows = await db
-      .select({
-        fileId: artifactCatalogPendingFiles.fileId,
-        revision: sql`xmin::text`.mapWith(pgTextDecoder),
-      })
-      .from(artifactCatalogPendingFiles)
-      .orderBy(
-        asc(artifactCatalogPendingFiles.queuedAt),
-        asc(artifactCatalogPendingFiles.fileId),
-      )
-      .limit(ARTIFACT_CATALOG_WORKER_BATCH_SIZE);
-    signal.throwIfAborted();
-    const deadline = monotonicNow() + ARTIFACT_CATALOG_WORKER_BUDGET_MS;
-    let processed = 0;
-    let failed = 0;
-    for (const pending of pendingRows) {
-      if (monotonicNow() >= deadline) {
-        break;
-      }
-      signal.throwIfAborted();
-      const result = await settle(
-        syncArtifactCatalogFile(db, pending.fileId, signal),
-        signal,
-      );
-      signal.throwIfAborted();
-      if (result.ok) {
-        processed += 1;
-      } else {
-        failed += 1;
-        L.warn("Artifact catalog reconciliation failed", {
-          fileId: pending.fileId,
-          error: result.error,
-        });
-      }
-      // A missing hosted-site dependency keeps the task durable. Move that
-      // task behind the rest of the queue so it cannot starve valid files.
-      await db
-        .update(artifactCatalogPendingFiles)
-        .set({ queuedAt: sql`clock_timestamp()` })
-        .where(
-          and(
-            eq(artifactCatalogPendingFiles.fileId, pending.fileId),
-            sql`xmin::text = ${pending.revision}`,
-          ),
-        );
-      signal.throwIfAborted();
+async function reconcileArtifactCatalogFiles(
+  db: Db,
+  signal: AbortSignal,
+  fileIds?: readonly string[],
+): Promise<{ processed: number; failed: number }> {
+  const pendingRows = await db
+    .select({
+      fileId: artifactCatalogPendingFiles.fileId,
+      revision: sql`xmin::text`.mapWith(pgTextDecoder),
+    })
+    .from(artifactCatalogPendingFiles)
+    .where(
+      fileIds === undefined
+        ? undefined
+        : inArray(artifactCatalogPendingFiles.fileId, fileIds),
+    )
+    .orderBy(
+      asc(artifactCatalogPendingFiles.queuedAt),
+      asc(artifactCatalogPendingFiles.fileId),
+    )
+    .limit(ARTIFACT_CATALOG_WORKER_BATCH_SIZE);
+  signal.throwIfAborted();
+  const deadline = monotonicNow() + ARTIFACT_CATALOG_WORKER_BUDGET_MS;
+  let processed = 0;
+  let failed = 0;
+  for (const pending of pendingRows) {
+    if (monotonicNow() >= deadline) {
+      break;
     }
-    return { processed, failed };
+    signal.throwIfAborted();
+    const result = await settle(
+      syncArtifactCatalogFile(db, pending.fileId, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (result.ok) {
+      processed += 1;
+    } else {
+      failed += 1;
+      L.warn("Artifact catalog reconciliation failed", {
+        fileId: pending.fileId,
+        error: result.error,
+      });
+    }
+    // A missing hosted-site dependency keeps the task durable. Move that
+    // task behind the rest of the queue so it cannot starve valid files.
+    await db
+      .update(artifactCatalogPendingFiles)
+      .set({ queuedAt: sql`clock_timestamp()` })
+      .where(
+        and(
+          eq(artifactCatalogPendingFiles.fileId, pending.fileId),
+          sql`xmin::text = ${pending.revision}`,
+        ),
+      );
+    signal.throwIfAborted();
+  }
+  return { processed, failed };
+}
+
+export const reconcileArtifactCatalogFiles$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    return await reconcileArtifactCatalogFiles(set(writeDb$), signal);
+  },
+);
+
+/** Test-only scope for exercising the production worker without global scans. */
+export const reconcileArtifactCatalogFilesForIds$ = command(
+  async ({ set }, fileIds: readonly string[], signal: AbortSignal) => {
+    return await reconcileArtifactCatalogFiles(set(writeDb$), signal, fileIds);
   },
 );
 
