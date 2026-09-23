@@ -6559,7 +6559,8 @@ describe("INT-02: Telegram integration", () => {
     );
     expect(memberUpdate.body).toStrictEqual({
       error: {
-        message: "Only the bot owner or an org admin can change the default agent",
+        message:
+          "Only the bot owner or an org admin can change the default agent",
         code: "FORBIDDEN",
       },
     });
