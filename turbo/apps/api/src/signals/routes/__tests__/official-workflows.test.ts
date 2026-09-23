@@ -4022,7 +4022,7 @@ async function prepareBriefMember({
 
 describe("Morning Brief default onboarding", () => {
   it("enrolls a member whose timezone was saved before enrollment was recorded", async () => {
-    const { actor } = await prepareBriefMember();
+    const { actor, createdAt } = await prepareBriefMember();
     await connectBriefSource(actor);
     const device = createAuthDeviceApiActions(context);
     const started = await device.startCliDevice();
@@ -4037,6 +4037,7 @@ describe("Morning Brief default onboarding", () => {
       timezone: "Asia/Shanghai",
     });
 
+    mockBriefMemberships([{ actor, createdAt }]);
     await tickBriefEnrollment(actor);
     expect((await readBriefPreference(actor)).body).toMatchObject({
       enabled: true,
@@ -4113,6 +4114,8 @@ describe("Morning Brief default onboarding", () => {
       );
 
       await deliverClerkOrganizationCreated(actor, createdAt);
+    });
+    await withMockNowForTest(startedAt + 120_000, async () => {
       await tickBriefEnrollment(actor);
       expect(membershipReads).toHaveBeenCalledTimes(2);
       expect((await readBriefPreference(actor)).body).toMatchObject({
@@ -4340,7 +4343,7 @@ describe("Morning Brief default onboarding", () => {
 
   it.each([
     { timezone: "Asia/Shanghai", status: "enabled", installations: 1 },
-    { timezone: undefined, status: "preparing", installations: 0 },
+    { timezone: undefined, status: "enabled", installations: 1 },
   ])(
     "recovers an interrupted membership check to $status after its five-minute claim expires",
     async ({ timezone, status, installations }) => {
@@ -4369,7 +4372,7 @@ describe("Morning Brief default onboarding", () => {
         expect((await readBriefPreference(actor)).body).toMatchObject({
           enabled: true,
           status: "preparing",
-          timezone: timezone ?? null,
+          timezone: timezone ?? "America/Los_Angeles",
         });
       });
       mockBriefMemberships([{ actor, createdAt }]);
@@ -4607,7 +4610,7 @@ describe("Morning Brief default onboarding", () => {
         mockBriefMemberships([]);
       }
       if (qualification !== "unstarted") {
-        await tickBriefEnrollment(actor);
+        await initializeBriefMember(actor);
         expect(membershipReads).toHaveBeenCalledTimes(1);
       }
       await deliverClerkOrganizationMembershipDeleted(actor);
@@ -4715,6 +4718,7 @@ describe("Morning Brief default onboarding", () => {
     const membershipReads =
       context.mocks.clerk.organizations.getOrganizationMembershipList;
     membershipReads.mockClear();
+    const startedAt = now();
     await initializeBriefMember(actor, "Asia/Shanghai");
     expect(membershipReads).toHaveBeenCalledTimes(1);
     await tickBriefEnrollment(actor);
@@ -4722,7 +4726,9 @@ describe("Morning Brief default onboarding", () => {
     expect(membershipReads).toHaveBeenCalledTimes(1);
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
     await setMorningBriefEnabled(actor, true);
-    await tickBriefEnrollment(actor);
+    await withMockNowForTest(startedAt + 120_000, async () => {
+      await tickBriefEnrollment(actor);
+    });
     expect(membershipReads).toHaveBeenCalledTimes(2);
     const [installed] = await listMorningBriefInstallations(actor);
     if (!installed) {

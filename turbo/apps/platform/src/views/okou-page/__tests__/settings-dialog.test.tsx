@@ -277,7 +277,9 @@ test.each([
       return respond(200, createPreferences(serverLocale));
     });
     mockMissingLocaleInitialization(
-      () => createPreferences(serverLocale),
+      () => {
+        return createPreferences(serverLocale);
+      },
       (locale) => {
         serverLocale = locale;
       },
@@ -322,7 +324,9 @@ test("Persist English when an initial locale hint is outside the API handshake",
     return respond(200, createPreferences(serverLocale, supportedLocales));
   });
   mockMissingLocaleInitialization(
-    () => createPreferences(serverLocale, supportedLocales),
+    () => {
+      return createPreferences(serverLocale, supportedLocales);
+    },
     (locale) => {
       serverLocale = locale;
     },
@@ -358,7 +362,9 @@ test("Keep settings usable and persist English when automatic locale assets fail
     return respond(200, createPreferences(serverLocale));
   });
   mockMissingLocaleInitialization(
-    () => createPreferences(serverLocale),
+    () => {
+      return createPreferences(serverLocale);
+    },
     (locale) => {
       serverLocale = locale;
     },
@@ -551,7 +557,9 @@ test("Reject a stale language that the workspace does not support", async () => 
     return respond(200, createPreferences(serverLocale, ["en-US", "pt-BR"]));
   });
   mockMissingLocaleInitialization(
-    () => createPreferences(serverLocale, ["en-US", "pt-BR"]),
+    () => {
+      return createPreferences(serverLocale, ["en-US", "pt-BR"]);
+    },
     (locale) => {
       serverLocale = locale;
       submittedLocales.push(locale);
