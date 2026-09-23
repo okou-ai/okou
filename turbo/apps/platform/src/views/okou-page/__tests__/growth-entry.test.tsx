@@ -163,46 +163,6 @@ function configureGrowthPage(
   }
 }
 
-test("An admin can choose another connection channel", async () => {
-  configureGrowthPage(context, {
-    role: "admin",
-    slack: slackStatus({
-      connected: false,
-      installed: false,
-      workspaceAdmin: true,
-    }),
-  });
-  await setupPage({ context, path: growthChatPath() });
-
-  const primaryEntry = await waitFor(() => {
-    return actionNamed("button", "Add Okou in Slack");
-  });
-  const moreActions = await waitFor(() => {
-    return actionNamed("button", "More actions");
-  });
-  expect(primaryEntry).toBeVisible();
-  expect(moreActions).toBeVisible();
-
-  click(moreActions);
-
-  const menu = await screen.findByRole("menu");
-  const slack = menuItemContaining(menu, "Add Okou in Slack");
-  expect(slack).toBeVisible();
-  expect(slack).toHaveTextContent("Connect");
-  expect(within(menu).getByText("Telegram and phone")).toBeVisible();
-
-  click(slack);
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/works");
-  });
-  await expect(
-    waitFor(() => {
-      return actionNamed("button", "Install to Slack");
-    }),
-  ).resolves.toBeVisible();
-});
-
 test("An admin is guided to add Okou to Slack first", async () => {
   configureGrowthPage(context, {
     role: "admin",

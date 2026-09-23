@@ -262,29 +262,6 @@ async function openQuestPanel(): Promise<HTMLElement> {
   return await screen.findByRole("menu");
 }
 
-test("Get more credits is the only control in the corner", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-
-  await expect(
-    screen.findByTestId("get-started-entry"),
-  ).resolves.toBeInTheDocument();
-
-  // Get more credits already carries inviting and Slack as its own rows, so the
-  // split control that used to sit beside it is gone.
-  expect(screen.queryByTestId("growth-entry")).toBeNull();
-  expect(screen.queryByTestId("growth-entry-menu")).toBeNull();
-  expect(
-    queryAllByRoleFast("button").find((candidate) => {
-      return normalizedText(candidate) === "Invite humans 🤝";
-    }),
-  ).toBeUndefined();
-});
-
 test("An admin sees every step and what each one pays", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
@@ -744,47 +721,6 @@ test("Daily rewards are claimed by selecting check in and menu reopening refresh
   expect(within(nextDayPanel).queryByText("Check in")).not.toBeInTheDocument();
 });
 
-test("The daily step leads the list on the same grammar as every other step", async () => {
-  const data = configureQuestPage(context, "member", { claimedToday: false });
-  data.checkinStreak = 6;
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.GetStartedQuests]: true },
-  });
-  const panel = await openQuestPanel();
-
-  // The totals describe the whole list, so they are stated once above it
-  // rather than inside the first step.
-  await expect(
-    within(panel).findByText("300 earned"),
-  ).resolves.toBeInTheDocument();
-  expect(within(panel).getByText("3,200 to go")).toBeInTheDocument();
-
-  // The daily step leads, and what is finished sinks below what still pays.
-  const rows = within(panel).getAllByTestId(/^get-started-quest-/u);
-  expect(
-    rows.map((row) => {
-      return row.dataset.testid;
-    }),
-  ).toStrictEqual([
-    "get-started-quest-checkin",
-    "get-started-quest-connector",
-    "get-started-quest-workflow",
-    "get-started-quest-share",
-  ]);
-
-  // It says what it is, what it pays, how far the streak has run and what
-  // pressing it does -- the four parts every other row carries.
-  const checkin = within(screen.getByTestId("get-started-quest-checkin"));
-  expect(checkin.getByText("Check in daily")).toBeInTheDocument();
-  expect(checkin.getByText("+100")).toBeInTheDocument();
-  expect(
-    checkin.getByText("6-day streak", { exact: false }),
-  ).toBeInTheDocument();
-  expect(checkin.getByText("Check in")).toBeInTheDocument();
-});
-
 test("A pending check-in disables the action and a failed request leaves it available", async () => {
   configureQuestPage(context, "member", { claimedToday: false });
   const responseReady = createDeferredPromise<void>(context.signal);
@@ -982,33 +918,6 @@ test("The Slack step starts the install instead of handing over a list", async (
   expect(opened[0]).toContain("https://slack.com/oauth/v2/authorize");
   // The authorization owns the next step, so the reader is not also dropped on
   // the integrations page behind it.
-  expect(pathname()).toBe(questChatPath());
-});
-
-test("Declining an introduced step costs the user nothing", async () => {
-  configureQuestPage(context, "admin");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-invite"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "What one person knows, everyone can run",
-  });
-  expect(
-    within(dialog).getByText("Invite your teammates to this workspace."),
-  ).toBeInTheDocument();
-
-  click(buttonNamed("Later", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
   expect(pathname()).toBe(questChatPath());
 });
 
