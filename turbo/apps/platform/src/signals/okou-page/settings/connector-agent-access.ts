@@ -30,7 +30,8 @@ export const connectorAgentAccess$ = computed(
       return result.body;
     }
 
-    // During API/App rollout, an older API may not have the bulk endpoint yet.
+    // New App -> old API: remove this 404 bridge after older APIs are no longer
+    // serving or retained as rollback targets (tracked by #36330).
     const visibleAgents = await get(agents$);
     const builtinClient = createClient(userBuiltinConnectorsContract);
     const customClient = createClient(agentCustomConnectorsContract);
