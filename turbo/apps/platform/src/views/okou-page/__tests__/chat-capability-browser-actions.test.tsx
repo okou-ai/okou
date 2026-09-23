@@ -682,6 +682,34 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
   expect(buttonsByName("Continue")).toHaveLength(0);
 });
 
+test("A mounted transcript card rechecks callback delivery on page return", async () => {
+  let delivered = false;
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, {
+      ...browserInputAction("succeeded"),
+      callbackDelivered: delivered,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  await findButton("Continue");
+
+  delivered = true;
+  window.dispatchEvent(new Event("focus"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(buttonsByName("Continue")).toHaveLength(0);
+});
+
 test("A freshly mounted direct-interaction card reads accepted cancellation delivery", async () => {
   installCapabilityChat({
     events: completedConversation(

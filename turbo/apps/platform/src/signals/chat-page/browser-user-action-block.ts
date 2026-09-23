@@ -78,6 +78,10 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
+  readonly resumeRef$: Command<
+    (() => void) | undefined,
+    [HTMLDivElement | null]
+  >;
   readonly formRef$: Command<
     (() => void) | undefined,
     [HTMLFormElement | null]
@@ -730,6 +734,23 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
+  const resumeRef$ = onRef(
+    command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      const refresh = () => {
+        set(requestSignals.refresh$);
+      };
+      window.addEventListener("focus", refresh, { signal });
+      document.addEventListener(
+        "visibilitychange",
+        () => {
+          if (document.visibilityState === "visible") {
+            refresh();
+          }
+        },
+        { signal },
+      );
+    }),
+  );
   const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals(
@@ -742,6 +763,7 @@ export function createBrowserUserActionSignals(
   return {
     ...descriptor,
     ...requestSignals,
+    resumeRef$,
     ...entrySignals,
     ...draftSignals,
     ...mutationSignals,

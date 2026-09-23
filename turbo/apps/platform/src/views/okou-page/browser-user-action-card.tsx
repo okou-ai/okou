@@ -15,7 +15,7 @@ import {
   MousePointerClick,
   XCircle,
 } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent, ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -33,14 +33,17 @@ export type BrowserUserActionCardVariant = "inline" | "standalone";
 
 function BrowserActionSurface({
   children,
+  resumeRef,
   variant,
 }: {
   readonly children: ReactNode;
+  readonly resumeRef?: Ref<HTMLDivElement>;
   readonly variant: BrowserUserActionCardVariant;
 }) {
   return (
     <ChatCard
       data-testid="browser-user-action-card"
+      ref={resumeRef}
       className={
         variant === "standalone"
           ? "w-full p-5 sm:p-6"
@@ -974,6 +977,7 @@ export function BrowserUserActionCard({
   const pageSignal = useGet(pageSignal$);
   const requestLoadable = useLoadable(signals.request$);
   const refresh = useSet(signals.refresh$);
+  const resumeRef = useSet(signals.resumeRef$);
   const locallyDelivered = useGet(signals.callbackDelivered$);
   const callbackFailed = useGet(signals.callbackFailed$);
   const busy = useGet(signals.busy$);
@@ -983,6 +987,12 @@ export function BrowserUserActionCard({
     (requestLoadable.state === "hasData" &&
       requestLoadable.data.kind === "action" &&
       requestLoadable.data.action.callbackDelivered === true);
+  const needsDeliveryRefresh =
+    requestLoadable.state === "hasData" &&
+    requestLoadable.data.kind === "action" &&
+    (requestLoadable.data.action.state === "succeeded" ||
+      requestLoadable.data.action.state === "cancelled") &&
+    !callbackDelivered;
 
   let content: ReactNode;
   if (requestLoadable.state === "loading") {
@@ -1086,7 +1096,12 @@ export function BrowserUserActionCard({
   }
 
   return (
-    <BrowserActionSurface variant={variant}>{content}</BrowserActionSurface>
+    <BrowserActionSurface
+      variant={variant}
+      resumeRef={needsDeliveryRefresh ? resumeRef : undefined}
+    >
+      {content}
+    </BrowserActionSurface>
   );
 }
 
