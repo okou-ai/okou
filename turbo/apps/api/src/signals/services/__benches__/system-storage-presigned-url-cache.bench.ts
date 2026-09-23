@@ -489,11 +489,29 @@ test("deduplicated lookup routes by both raw and unique request counts", async (
   if (await prefetchFixture(repeatedFixture(fixture, 129))) {
     throw new Error("Expected fallback above 128 raw requests");
   }
-  if (
-    await prefetchFixture(
-      benchFixture(52, `storage-cache-unique-${randomUUID()}`),
-    )
-  ) {
+  const uniqueFixture = benchFixture(
+    52,
+    `storage-cache-unique-${randomUUID()}`,
+  );
+  if (await prefetchFixture(uniqueFixture)) {
     throw new Error("Expected fallback above 51 unique cache pairs");
+  }
+  const sharedObjectKey = "storage-cache-shared-object-key";
+  const versionedFixture: BenchFixture = {
+    ...uniqueFixture,
+    systemRequests: uniqueFixture.systemRequests.map((request) => {
+      return { ...request, objectKey: sharedObjectKey };
+    }),
+    workflowSkillRequests: uniqueFixture.workflowSkillRequests.map(
+      (request) => {
+        return { ...request, objectKey: sharedObjectKey };
+      },
+    ),
+    readOnlyRequests: uniqueFixture.readOnlyRequests.map((request) => {
+      return { ...request, objectKey: sharedObjectKey };
+    }),
+  };
+  if (await prefetchFixture(versionedFixture)) {
+    throw new Error("Expected fallback for 52 versions of one object key");
   }
 });

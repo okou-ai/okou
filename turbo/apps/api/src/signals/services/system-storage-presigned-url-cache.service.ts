@@ -183,6 +183,7 @@ type StorageManifestPrefetchCountBucket =
 type StorageManifestPrefetchDecision =
   | "insufficient_groups"
   | "over_request_limit"
+  | "over_object_key_lower_bound"
   | "no_pairs"
   | "over_unique_pair_limit"
   | "mixed_lookup_selected";
@@ -844,6 +845,29 @@ function storageManifestPresignedUrlCacheLookupPairs(
   return { pairs, cacheKeysByRequest };
 }
 
+function storageManifestExceedsObjectKeyLowerBound(
+  input: StorageManifestPresignedUrlCachePrefetchInput,
+): boolean {
+  // Distinct object keys cannot map to the same cache key, so this can reject
+  // oversized batches before computing every SHA-256 cache key.
+  const objectKeys = new Set<string>();
+  for (const requests of [
+    input.systemRequests,
+    input.workflowSkillRequests,
+    input.readOnlyRequests,
+  ]) {
+    for (const request of requests) {
+      objectKeys.add(request.objectKey);
+      if (
+        objectKeys.size > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function prefetchStorageManifestPresignedUrlCacheRows(args: {
   readonly db: Db;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
@@ -869,6 +893,18 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       recordStorageManifestPrefetchDecision({
         observation: args.observation,
         decision: "over_request_limit",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+      });
+      return undefined;
+    }
+    if (
+      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS &&
+      storageManifestExceedsObjectKeyLowerBound(args.input)
+    ) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "over_object_key_lower_bound",
         requestedCount,
         logicalLookupCount: args.input.logicalLookupCount,
       });
