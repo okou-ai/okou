@@ -8,6 +8,30 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.664.1](https://github.com/okou-ai/okou/compare/api-v1.664.0...api-v1.664.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **api:** hide claude code reset entry when no reset is left ([#36387](https://github.com/okou-ai/okou/issues/36387)) ([0269a3a](https://github.com/okou-ai/okou/commit/0269a3aeebc489df5b4151b2cd3e4d27c6527827))
+* **connector-check:** support aws firewall diagnostics ([#36324](https://github.com/okou-ai/okou/issues/36324)) ([f7149e3](https://github.com/okou-ai/okou/commit/f7149e311fe55bc099268a108c207d18a8a39e47))
+
+
+### Performance Improvements
+
+* **api:** load connector catalog per slug for startup reads ([#36384](https://github.com/okou-ai/okou/issues/36384)) ([394946b](https://github.com/okou-ai/okou/commit/394946b57d1f65e8806972d8f74183fdb5cbb695))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.1
+    * @okouai/connectors bumped to 3.15.2
+    * @okouai/core bumped to 8.704.1
+    * @okouai/db bumped to 1.291.1
+    * @okouai/pi-agent-runtime bumped to 1.40.1
+
 ## [1.664.0](https://github.com/okou-ai/okou/compare/api-v1.663.1...api-v1.664.0) (2026-09-23)
 
 
