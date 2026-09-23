@@ -3130,8 +3130,6 @@ test("keeps a seeded Claude identity shared after a type-wide disconnect and rec
   await runs.requestCancelRun(f.actor, runId, [200]);
 });
 
-describe("canonical preparation identity", () => {});
-
 describe("personal priority over organization API", () => {
   it.each([
     {

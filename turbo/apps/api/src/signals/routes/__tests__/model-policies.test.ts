@@ -2698,7 +2698,10 @@ describe("conditional policy writes and persisted repair boundaries", () => {
     await accept(
       apiClient().update({
         headers: authHeaders(),
-        body: { policies: [retainedPolicy, makeBuiltInPolicy("gpt-6-astra")] },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: [retainedPolicy, makeBuiltInPolicy("gpt-6-astra")],
+        },
       }),
       [200],
     );
