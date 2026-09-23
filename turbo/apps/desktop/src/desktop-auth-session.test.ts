@@ -86,6 +86,13 @@ function createSession(
   return { session, windows, replies, completed, changes, refreshes };
 }
 
+function sessionToken(expiresInSeconds: number, label: string): string {
+  const payload = Buffer.from(
+    JSON.stringify({ exp: Math.floor(Date.now() / 1_000) + expiresInSeconds }),
+  ).toString("base64url");
+  return `header.${payload}.${label}`;
+}
+
 function identityHandlers(
   options: { userId?: string; orgId?: string; observed?: string[] } = {},
 ) {
@@ -286,6 +293,102 @@ describe("Okou App session authority", () => {
     expect(session.getCachedToken()).toBe("restored");
     expect(session.canRestoreSession()).toBe(true);
     expect(refreshes.some((event) => event.phase === "failed")).toBe(false);
+  });
+
+  it.each(["status", "protected request"] as const)(
+    "renews a near-expiry bearer before the next %s without sending the old token",
+    async (request) => {
+      const { session, replies, windows } = createSession();
+      const observed: string[] = [];
+      identityHandlers({ userId: "same-user", observed });
+      const old = sessionToken(10, "old");
+      const fresh = sessionToken(60, "fresh");
+      replies.push(Promise.resolve(old), Promise.resolve(fresh));
+      await session.getAuthState();
+      observed.length = 0;
+      server.use(
+        http.get(`${api}/api/protected`, ({ request: incoming }) => {
+          observed.push(`protected:${incoming.headers.get("authorization")}`);
+          return new HttpResponse(null, { status: 200 });
+        }),
+      );
+
+      if (request === "status") {
+        expect((await session.getAuthState()).status).toBe("signed_in");
+      } else {
+        expect(
+          (await session.fetchWithSessionAuth(new URL(`${api}/api/protected`)))
+            .status,
+        ).toBe(200);
+      }
+      expect(observed).toEqual([
+        `me:Bearer ${fresh}`,
+        `org:Bearer ${fresh}`,
+        ...(request === "status" ? [] : [`protected:Bearer ${fresh}`]),
+      ]);
+      expect(windows).toHaveLength(2);
+      expect(session.getCachedToken()).toBe(fresh);
+    },
+  );
+
+  it("reuses a bearer with sufficient lifetime remaining", async () => {
+    const { session, replies, windows } = createSession();
+    const observed: string[] = [];
+    identityHandlers({ userId: "same-user", observed });
+    const token = sessionToken(45, "valid");
+    replies.push(Promise.resolve(token));
+    await session.getAuthState();
+    observed.length = 0;
+
+    expect((await session.getAuthState()).status).toBe("signed_in");
+    expect(observed).toEqual([`me:Bearer ${token}`, `org:Bearer ${token}`]);
+    expect(windows).toHaveLength(1);
+  });
+
+  it("does not deliver a pending request to a different identity during proactive renewal", async () => {
+    const { session, replies, windows } = createSession();
+    const old = sessionToken(10, "old");
+    const fresh = sessionToken(60, "fresh");
+    const reply = deferred<string | null>();
+    replies.push(Promise.resolve(old), reply.promise);
+    const requests: string[] = [];
+    server.use(
+      http.get(`${api}/api/auth/me`, ({ request }) => {
+        const changed =
+          request.headers.get("authorization") === `Bearer ${fresh}`;
+        return HttpResponse.json({
+          userId: changed ? "new-user" : "old-user",
+          email: "app@example.test",
+          orgId: changed ? "new-org" : "old-org",
+        });
+      }),
+      http.get(`${api}/api/org`, ({ request }) =>
+        HttpResponse.json({
+          id:
+            request.headers.get("authorization") === `Bearer ${fresh}`
+              ? "new-org"
+              : "old-org",
+          name: "Workspace",
+        }),
+      ),
+      http.get(`${api}/api/protected`, ({ request }) => {
+        requests.push(request.headers.get("authorization") ?? "missing");
+        return new HttpResponse(null, { status: 200 });
+      }),
+    );
+    await session.getAuthState();
+    const first = session.fetchWithSessionAuth(new URL(`${api}/api/protected`));
+    const second = session.fetchWithSessionAuth(
+      new URL(`${api}/api/protected`),
+    );
+    expect(windows).toHaveLength(2);
+    reply.resolve(fresh);
+    expect((await first).status).toBe(401);
+    expect((await second).status).toBe(401);
+    expect(requests).toEqual([]);
+    expect((await session.getAuthState()).user).toMatchObject({
+      userId: "new-user",
+    });
   });
 
   it("does one bounded App refresh after 401 without a cookie-only retry", async () => {

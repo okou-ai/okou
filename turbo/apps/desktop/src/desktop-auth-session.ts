@@ -27,6 +27,29 @@ const INTERACTIVE_WINDOW_TIMEOUT_MS = 10 * 60_000;
  * so it owns a network-shaped budget instead of whatever the window left over.
  */
 const IDENTITY_VALIDATION_TIMEOUT_MS = 30_000;
+// Leave room for the hidden auth window and the identity validation round trips.
+const TOKEN_REFRESH_MARGIN_SECONDS = 15;
+
+function tokenExpiresSoon(token: string): boolean {
+  try {
+    // The unverified claim is only a refresh hint. API validation remains the
+    // authority for the user and workspace, and 401 remains the fallback.
+    const payload: unknown = JSON.parse(
+      Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+    );
+    if (typeof payload !== "object" || payload === null || !("exp" in payload))
+      return false;
+    const expiresAt = payload.exp;
+    return (
+      typeof expiresAt === "number" &&
+      Number.isSafeInteger(expiresAt) &&
+      Date.now() / 1_000 + TOKEN_REFRESH_MARGIN_SECONDS >= expiresAt
+    );
+  } catch {
+    // Non-JWT tokens retain the server-authoritative 401 recovery path.
+    return false;
+  }
+}
 
 type RunAuthWindow = (
   request: DesktopAuthWindowRequest,
@@ -130,6 +153,8 @@ export class DesktopAuthSession {
   private token: string | null = null;
   private lifetime = new AbortController();
   private appState: DesktopAuthState = signedOutDesktopAuthState();
+  // Retain the initiating identity for requests that join an in-flight refresh.
+  private refreshingFrom: DesktopAuthState | null = null;
   private readonly tokenRefresh = singleFlight(() => this.refreshToken());
   private pendingCallback: DesktopAuthCallback | null = null;
   private signingIn = false;
@@ -187,7 +212,7 @@ export class DesktopAuthSession {
     readonly forceRefresh?: boolean;
   }): Promise<string | null> {
     if (this.signingIn) return null;
-    if (!options?.forceRefresh && this.token) {
+    if (!options?.forceRefresh && this.token && !tokenExpiresSoon(this.token)) {
       return this.token;
     }
     if (!this.restoreEnabled || this.restorePaused) {
@@ -247,6 +272,7 @@ export class DesktopAuthSession {
     this.authority = null;
     this.token = null;
     this.appState = signedOutDesktopAuthState();
+    this.refreshingFrom = null;
     this.tokenRefresh.clear();
     this.pendingCallback = null;
     this.signingIn = false;
@@ -319,6 +345,8 @@ export class DesktopAuthSession {
     visible: boolean,
   ): Promise<string | null> {
     const previousState = this.appState;
+    this.refreshingFrom =
+      previousState.status === "signed_in" ? previousState : null;
     let deniedBySession = false;
     let failureCause: unknown = null;
     this.lifetime.abort();
@@ -398,6 +426,7 @@ export class DesktopAuthSession {
       throw error;
     } finally {
       if (this.lifetime === lifetime) {
+        this.refreshingFrom = null;
         if (!this.token) {
           // Notify renderer/tray subscribers, and keep their reads from
           // reopening a failed hidden restore. An authoritative denial waits
@@ -528,7 +557,7 @@ export class DesktopAuthSession {
   }
 
   private async getAppAuthState(): Promise<DesktopAuthState> {
-    if (!this.token) {
+    if (!this.token || tokenExpiresSoon(this.token)) {
       await this.getToken();
       return this.appState;
     }
@@ -556,11 +585,18 @@ export class DesktopAuthSession {
     init?: RequestInit,
     options?: DesktopAuthRequestOptions,
   ): Promise<Response> {
+    const previousState = this.refreshingFrom ?? this.appState;
     const token = await this.getToken();
-    if (!token || token !== this.token)
+    if (
+      !token ||
+      token !== this.token ||
+      (previousState.status === "signed_in" &&
+        (this.appState.status !== "signed_in" ||
+          previousState.user.userId !== this.appState.user.userId ||
+          previousState.organization?.id !== this.appState.organization?.id))
+    )
       return new Response(null, { status: 401 });
     const lifetime = this.lifetime;
-    const previousState = this.appState;
     const response = await this.appRequest(
       requestUrl,
       token,
