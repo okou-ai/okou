@@ -856,6 +856,7 @@ describe("GET /api/home-task-recommendations", () => {
     const nextClaim = await fixture.claimChatRun(runnerGroup, nextRun.runId);
     await fixture.completeChatRunOk(nextRun.runId, nextClaim.sandboxHeaders);
     await flushWaitUntilForTest();
+    const callsBeforeFailure = textCalls;
     writerOutputIsInvalid = true;
     const failedRefresh = await refresh({
       userId: actor.userId,
@@ -883,7 +884,7 @@ describe("GET /api/home-task-recommendations", () => {
         },
       ],
     });
-    expect(textCalls).toBe(2);
+    expect(textCalls).toBe(callsBeforeFailure + 1);
 
     const callsBeforeCooldownRetry = textCalls;
     const cooldownRefresh = await refresh({
@@ -907,7 +908,7 @@ describe("GET /api/home-task-recommendations", () => {
       agentId,
     });
     expect(recoveredRefresh.body).toMatchObject({ unchanged: 1, failed: 0 });
-    expect(textCalls).toBe(3);
+    expect(textCalls).toBe(callsBeforeCooldownRetry + 1);
 
     // The demand row, Agent and thread still exist locally, but Clerk is the
     // current organization authority. Neither the read nor a later cron may
@@ -933,6 +934,6 @@ describe("GET /api/home-task-recommendations", () => {
       agentId,
     });
     expect(revokedRefresh.body).toMatchObject({ removed: 1, failed: 0 });
-    expect(textCalls).toBe(3);
+    expect(textCalls).toBe(callsBeforeCooldownRetry + 1);
   });
 });

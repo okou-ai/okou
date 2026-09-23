@@ -15,7 +15,7 @@ import { apiClient$ } from "../api-client.ts";
 import { ensureDraft$ } from "../chat-page/create-chat-thread.ts";
 import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { setAblyInvalidationLoop$, setAblyPayloadLoop$ } from "../realtime.ts";
+import { setAblyPayloadLoop$ } from "../realtime.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { rootSignal$ } from "../root-signal.ts";
@@ -30,6 +30,7 @@ const pendingRevision$ = state<{
   readonly revision?: string;
 } | null>(null);
 const removedAgentId$ = state<string | null>(null);
+const gmailSuspendedAgentId$ = state<string | null>(null);
 
 export const homeTaskRecommendationsPendingRevision$ = computed((get) => {
   return get(pendingRevision$);
@@ -37,6 +38,10 @@ export const homeTaskRecommendationsPendingRevision$ = computed((get) => {
 
 export const homeTaskRecommendationsRemovedAgentId$ = computed((get) => {
   return get(removedAgentId$);
+});
+
+export const homeTaskRecommendationsGmailSuspendedAgentId$ = computed((get) => {
+  return get(gmailSuspendedAgentId$);
 });
 
 /** Synchronous display fence: stale async results never survive invalidation. */
@@ -97,6 +102,7 @@ export const enterHomeTaskRecommendations$ = command(({ set }): void => {
   set(invalidateHomeTaskRecommendations$);
   set(pendingRevision$, null);
   set(removedAgentId$, null);
+  set(gmailSuspendedAgentId$, null);
 });
 
 export const reloadHomeTaskRecommendations$ = command(
@@ -108,14 +114,22 @@ export const reloadHomeTaskRecommendations$ = command(
     if (
       latest &&
       get(pendingRevision$) === pendingAtStart &&
-      pendingAtStart?.agentId === latest.agentId &&
-      (pendingAtStart.revision === undefined ||
-        pendingAtStart.revision === latest.contentRevision)
+      pendingAtStart?.agentId === latest.agentId
     ) {
+      // GET is the authoritative, permission-filtered snapshot. Its revision
+      // may differ from the cron's unfiltered revision after Gmail revocation.
       set(pendingRevision$, null);
+      set(gmailSuspendedAgentId$, null);
     }
   },
 );
+
+const suspendGmailCards$ = command(({ set }, agentId: string): void => {
+  // The event does not say whether authority expanded or was revoked. Hide
+  // Gmail-derived copy immediately and let the next explicit read revalidate it.
+  set(gmailSuspendedAgentId$, agentId);
+  set(pendingRevision$, { agentId });
+});
 
 const recordHomeTaskRecommendationsPush$ = command(
   async (
@@ -134,6 +148,10 @@ const recordHomeTaskRecommendationsPush$ = command(
       if (parsed.data.removed) {
         set(removedAgentId$, currentAgentId);
         set(pendingRevision$, null);
+      } else if (parsed.data.revision === undefined) {
+        // An unversioned notification means this Agent's connector scope
+        // changed; it may have revoked access to cached Gmail evidence.
+        set(suspendGmailCards$, currentAgentId);
       } else {
         set(pendingRevision$, {
           agentId: currentAgentId,
@@ -145,11 +163,34 @@ const recordHomeTaskRecommendationsPush$ = command(
   },
 );
 
-const reloadHomeTaskRecommendationsAfterConnectorChange$ = command(
-  ({ set }, payload: unknown): boolean => {
+const recordHomeTaskConnectorChange$ = command(
+  async (
+    { get, set },
+    payload: unknown,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
     const parsed = connectorChangedPayloadSchema.safeParse(payload);
     if (parsed.success && parsed.data.connectorSlug === "gmail") {
-      set(invalidateHomeTaskRecommendations$);
+      const agentId = await get(currentChatAgentId$);
+      signal.throwIfAborted();
+      if (agentId) {
+        set(suspendGmailCards$, agentId);
+      }
+    }
+    return false;
+  },
+);
+
+const recordHomeTaskPermissionChange$ = command(
+  async (
+    { get, set },
+    _payload: unknown,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const agentId = await get(currentChatAgentId$);
+    signal.throwIfAborted();
+    if (agentId) {
+      set(suspendGmailCards$, agentId);
     }
     return false;
   },
@@ -162,24 +203,15 @@ const renewHomeTaskRecommendationDemand$ = command(
     if (!agentId) {
       return;
     }
-    const client = get(apiClient$)(homeTaskRecommendationsContract);
-    const result = await accept(
-      client.touch({ query: { agentId }, fetchOptions: { signal } }),
-      [204, 404],
+    await accept(
+      get(apiClient$)(homeTaskRecommendationsContract).touch({
+        query: { agentId },
+        fetchOptions: { signal },
+      }),
+      [204],
       undefined,
       { showErrorToast: false },
     );
-    signal.throwIfAborted();
-    // An older API deployment has no touch route. Its read route still renews
-    // demand, and this background fallback does not change the displayed set.
-    if (result.status === 404) {
-      await accept(
-        client.list({ query: { agentId }, fetchOptions: { signal } }),
-        [200, 401, 403],
-        undefined,
-        { showErrorToast: false },
-      );
-    }
   },
 );
 
@@ -206,15 +238,15 @@ export const subscribeHomeTaskRecommendations$ = command(
       setAblyPayloadLoop$,
       {
         topic: "connector:changed",
-        loopCommand$: reloadHomeTaskRecommendationsAfterConnectorChange$,
+        loopCommand$: recordHomeTaskConnectorChange$,
       },
       signal,
     );
     set(
-      setAblyInvalidationLoop$,
+      setAblyPayloadLoop$,
       {
         topic: "connectorPermissionUpdated",
-        invalidations: [invalidateHomeTaskRecommendations$],
+        loopCommand$: recordHomeTaskPermissionChange$,
       },
       signal,
     );
@@ -251,7 +283,6 @@ export const startHomeTaskRecommendation$ = command(
     signal.throwIfAborted();
     if (args.recommendation.purpose === "workflow") {
       // Navigation aborts the page signal; the root-owned send must finish.
-      // eslint-disable-next-line ccstate/signal-check-await
       await set(
         sendNewThread$,
         {
@@ -263,6 +294,7 @@ export const startHomeTaskRecommendation$ = command(
         },
         get(rootSignal$),
       );
+      signal.throwIfAborted();
       return;
     }
     if (args.recommendation.target.kind === "existing-thread") {

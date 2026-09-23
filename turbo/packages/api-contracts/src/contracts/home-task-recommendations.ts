@@ -43,7 +43,7 @@ export const homeTaskRecommendationSchema = z.object({
   /** Jev's normalized 0-100 judgement of how ready this task is to start. */
   actionability: z.number().int().min(0).max(100),
   /** A workflow suggestion asks the Agent to assess repeated work. */
-  purpose: z.enum(["task", "workflow"]).default("task"),
+  purpose: z.enum(["task", "workflow"]),
   /** Whether this task starts fresh or continues one visible Agent thread. */
   target: homeTaskRecommendationTargetSchema,
   /** Connector slugs the task expects to use; display only. */
@@ -63,11 +63,8 @@ export const homeTaskRecommendationsResponseSchema = z.object({
   generatedAt: z.string().datetime().nullable(),
   /** Milliseconds until the cron may attempt the next generation. */
   refreshAfterMs: z.number().int().nonnegative(),
-  /** Stable for identical visible cards; optional for older API deployments. */
-  revision: z
-    .string()
-    .regex(/^[0-9a-f]{64}$/)
-    .optional(),
+  /** Stable for identical visible cards. */
+  revision: z.string().regex(/^[0-9a-f]{64}$/),
   recommendations: z
     .array(homeTaskRecommendationSchema)
     .max(HOME_TASK_RECOMMENDATION_LIMIT),
@@ -100,7 +97,6 @@ export const homeTaskRecommendationsContract = c.router({
       204: z.undefined(),
       401: apiErrorSchema,
       403: apiErrorSchema,
-      404: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Renew home page task recommendation refresh demand",

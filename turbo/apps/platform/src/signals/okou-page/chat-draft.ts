@@ -961,6 +961,150 @@ function createDraftLifecycleSignals({
   return { clear$, seed$ };
 }
 
+function mergeRecommendationDocument(
+  localDocument: UserMessageDocument,
+  restored: RestoredDraftState,
+): UserMessageDocument | null {
+  const remoteDocument: UserMessageDocument | null =
+    restored.userMessage ??
+    (restored.content.length > 0
+      ? {
+          version: 1,
+          parts: [{ type: "text", text: restored.content }],
+        }
+      : null);
+  if (remoteDocument) {
+    return {
+      version: 1,
+      parts: [
+        ...localDocument.parts,
+        { type: "text", text: "\n\n" },
+        ...remoteDocument.parts,
+      ],
+    };
+  }
+  return restored.attachments.length > 0 ? localDocument : null;
+}
+
+function createRecommendationHandoffSignals({
+  draftInput,
+  draftDocument,
+  internalGenerationTemplate$,
+  internalAttachments$,
+  clear$,
+  seed$,
+}: {
+  draftInput: ReturnType<typeof createDraftInputSignals>;
+  draftDocument: ReturnType<typeof createDraftDocumentSignals>;
+  internalGenerationTemplate$: State<GenerationTemplateRequest | undefined>;
+  internalAttachments$: State<ChatAttachment[]>;
+  clear$: Command<void, []>;
+  seed$: Command<Promise<boolean>, [DraftSeed, AbortSignal]>;
+}) {
+  const recommendationHandoffState$ = state<{
+    readonly needsRemoteMerge: boolean;
+  } | null>(null);
+  const recommendationHandoff$ = computed((get) => {
+    return get(recommendationHandoffState$);
+  });
+  const clearWithRecommendationHandoff$ = command(({ set }) => {
+    set(clear$);
+    set(recommendationHandoffState$, null);
+  });
+  const prependRecommendation$ = command(({ get, set }, value: string) => {
+    const text = value.trim();
+    if (!text) {
+      return;
+    }
+    const hadLocalDraft =
+      get(draftInput.hasLocalInput$) ||
+      get(internalGenerationTemplate$) !== undefined ||
+      get(internalAttachments$).length > 0;
+    const currentDocument =
+      set(draftDocument.readEditorDocument$)?.toMessageDocument() ??
+      set(draftDocument.peekRestoredUserMessage$);
+    if (currentDocument && !get(draftInput.hasMountedSyncTarget$)) {
+      // An unmounted editor can still hold a structured draft. Keep its
+      // mentions and template parts when the recommendation is prefixed.
+      set(draftDocument.setRestoredUserMessage$, {
+        version: 1,
+        parts: [
+          { type: "text", text: `${text}\n\n` },
+          ...currentDocument.parts,
+        ],
+      });
+    }
+    set(draftInput.prependInput$, text);
+    const prior = get(recommendationHandoffState$);
+    set(recommendationHandoffState$, {
+      needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
+    });
+  });
+  const finishRecommendationHandoff$ = command(
+    async (
+      { get, set },
+      restored: RestoredDraftState | null,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const handoff = get(recommendationHandoffState$);
+      if (!handoff) {
+        return false;
+      }
+      // Claim before awaiting attachment reconciliation so concurrent page
+      // setup and click handlers cannot merge the same remote draft twice.
+      set(recommendationHandoffState$, null);
+      return await onRejection(
+        async () => {
+          if (handoff.needsRemoteMerge && restored) {
+            const localInput = get(draftInput.input$);
+            const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
+              set(draftDocument.readEditorDocument$)?.toMessageDocument() ?? {
+                version: 1 as const,
+                parts: [{ type: "text" as const, text: localInput }],
+              };
+            const mergedDocument = mergeRecommendationDocument(
+              localDocument,
+              restored,
+            );
+            const mergedContent = mergedDocument
+              ? messageDocumentToPrompt(mergedDocument)
+              : null;
+            if (mergedDocument && mergedContent !== null) {
+              await set(
+                seed$,
+                {
+                  content: mergedContent,
+                  userMessage: mergedDocument,
+                  generationTemplate: get(internalGenerationTemplate$),
+                  attachments: [
+                    ...get(internalAttachments$),
+                    ...restored.attachments.map(createRestoredAttachment),
+                  ],
+                },
+                signal,
+              );
+            }
+          }
+          signal.throwIfAborted();
+          return true;
+        },
+        () => {
+          if (get(recommendationHandoffState$) === null) {
+            set(recommendationHandoffState$, handoff);
+          }
+        },
+      );
+    },
+  );
+
+  return {
+    recommendationHandoff$,
+    clearWithRecommendationHandoff$,
+    prependRecommendation$,
+    finishRecommendationHandoff$,
+  };
+}
+
 export function createDraftSignals(): DraftSignals {
   const draftInput = createDraftInputSignals();
   const draftDocument = createDraftDocumentSignals();
@@ -1060,117 +1204,19 @@ export function createDraftSignals(): DraftSignals {
     reconcileRestoredAttachments$,
   });
 
-  const recommendationHandoffState$ = state<{
-    readonly needsRemoteMerge: boolean;
-  } | null>(null);
-  const recommendationHandoff$ = computed((get) => {
-    return get(recommendationHandoffState$);
+  const {
+    recommendationHandoff$,
+    clearWithRecommendationHandoff$,
+    prependRecommendation$,
+    finishRecommendationHandoff$,
+  } = createRecommendationHandoffSignals({
+    draftInput,
+    draftDocument,
+    internalGenerationTemplate$,
+    internalAttachments$,
+    clear$,
+    seed$,
   });
-  const clearWithRecommendationHandoff$ = command(({ set }) => {
-    set(clear$);
-    set(recommendationHandoffState$, null);
-  });
-  const prependRecommendation$ = command(({ get, set }, value: string) => {
-    const text = value.trim();
-    if (!text) {
-      return;
-    }
-    const hadLocalDraft =
-      get(draftInput.hasLocalInput$) ||
-      get(internalGenerationTemplate$) !== undefined ||
-      get(internalAttachments$).length > 0;
-    const currentDocument =
-      set(draftDocument.readEditorDocument$)?.toMessageDocument() ??
-      set(draftDocument.peekRestoredUserMessage$);
-    if (currentDocument && !get(draftInput.hasMountedSyncTarget$)) {
-      // An unmounted editor can still hold a structured draft. Keep its
-      // mentions and template parts when the recommendation is prefixed.
-      set(draftDocument.setRestoredUserMessage$, {
-        version: 1,
-        parts: [
-          { type: "text", text: `${text}\n\n` },
-          ...currentDocument.parts,
-        ],
-      });
-    }
-    set(draftInput.prependInput$, text);
-    const prior = get(recommendationHandoffState$);
-    set(recommendationHandoffState$, {
-      needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
-    });
-  });
-  const finishRecommendationHandoff$ = command(
-    async (
-      { get, set },
-      restored: RestoredDraftState | null,
-      signal: AbortSignal,
-    ): Promise<boolean> => {
-      const handoff = get(recommendationHandoffState$);
-      if (!handoff) {
-        return false;
-      }
-      // Claim before awaiting attachment reconciliation so concurrent page
-      // setup and click handlers cannot merge the same remote draft twice.
-      set(recommendationHandoffState$, null);
-      return await onRejection(
-        async () => {
-          if (handoff.needsRemoteMerge && restored) {
-            const localInput = get(draftInput.input$);
-            const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
-              set(draftDocument.readEditorDocument$)?.toMessageDocument() ?? {
-                version: 1 as const,
-                parts: [{ type: "text" as const, text: localInput }],
-              };
-            const remoteDocument: UserMessageDocument | null =
-              restored.userMessage ??
-              (restored.content.length > 0
-                ? {
-                    version: 1,
-                    parts: [{ type: "text", text: restored.content }],
-                  }
-                : null);
-            const mergedDocument: UserMessageDocument | null = remoteDocument
-              ? {
-                  version: 1,
-                  parts: [
-                    ...localDocument.parts,
-                    { type: "text", text: "\n\n" },
-                    ...remoteDocument.parts,
-                  ],
-                }
-              : restored.attachments.length > 0
-                ? localDocument
-                : null;
-            const mergedContent = mergedDocument
-              ? messageDocumentToPrompt(mergedDocument)
-              : null;
-            if (mergedDocument && mergedContent !== null) {
-              await set(
-                seed$,
-                {
-                  content: mergedContent,
-                  userMessage: mergedDocument,
-                  generationTemplate: get(internalGenerationTemplate$),
-                  attachments: [
-                    ...get(internalAttachments$),
-                    ...restored.attachments.map(createRestoredAttachment),
-                  ],
-                },
-                signal,
-              );
-            }
-          }
-          signal.throwIfAborted();
-          return true;
-        },
-        () => {
-          if (get(recommendationHandoffState$) === null) {
-            set(recommendationHandoffState$, handoff);
-          }
-        },
-      );
-    },
-  );
 
   return {
     ...draftInput,

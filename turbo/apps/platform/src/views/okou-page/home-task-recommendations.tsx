@@ -15,6 +15,7 @@ import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import {
   homeTaskRecommendations$,
   homeTaskRecommendationsEnabled$,
+  homeTaskRecommendationsGmailSuspendedAgentId$,
   homeTaskRecommendationsPendingRevision$,
   homeTaskRecommendationsRemovedAgentId$,
   homeTaskRecommendationsRevision$,
@@ -161,6 +162,9 @@ export function HomeTaskRecommendations({
   const revision = useGet(homeTaskRecommendationsRevision$);
   const pendingRevision = useGet(homeTaskRecommendationsPendingRevision$);
   const removedAgentId = useGet(homeTaskRecommendationsRemovedAgentId$);
+  const gmailSuspendedAgentId = useGet(
+    homeTaskRecommendationsGmailSuspendedAgentId$,
+  );
   const start = useSet(startHomeTaskRecommendation$);
   const reload = useSet(reloadHomeTaskRecommendations$);
   const loadable = useLoadable(homeTaskRecommendations$);
@@ -173,6 +177,14 @@ export function HomeTaskRecommendations({
   const visibleSet =
     set?.revision === revision && set.agentId === agentId ? set : null;
   const loading = loadable.state === "loading" && visibleSet === null;
+  const visibleRecommendations = visibleSet?.recommendations.filter(
+    (recommendation) => {
+      return (
+        gmailSuspendedAgentId !== agentId ||
+        !recommendation.connectors.includes("gmail")
+      );
+    },
+  );
   const hasNewTasks =
     pendingRevision?.agentId === agentId &&
     (pendingRevision.revision === undefined ||
@@ -233,7 +245,7 @@ export function HomeTaskRecommendations({
           ? [0, 1, 2].map((index) => {
               return <RecommendationCardSkeleton key={index} />;
             })
-          : visibleSet?.recommendations.map((recommendation) => {
+          : visibleRecommendations?.map((recommendation) => {
               return (
                 <RecommendationCard
                   key={recommendation.id}
@@ -243,7 +255,7 @@ export function HomeTaskRecommendations({
               );
             })}
       </div>
-      {!loading && visibleSet?.recommendations.length === 0 ? (
+      {!loading && visibleRecommendations?.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           {t(($) => {
             return $.chat.homeTasks.empty;
