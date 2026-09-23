@@ -328,10 +328,10 @@ test("Review personal subscription identity and usage", async () => {
 
 test("Organize personal subscriptions in accessible provider tables", async () => {
   const { accountA, rowA } = await setupPersonalSubscriptionIdentityReview();
-  const claudeTable = screen.getByRole("table", { name: "Claude Code OAuth" });
+  const claudeTable = screen.getByRole("table", { name: "Claude" });
   const codexTable = screen.getByRole("table", { name: "ChatGPT (Codex)" });
   const claudeHeading = screen.getByRole("heading", {
-    name: "Claude Code OAuth",
+    name: "Claude",
   });
   const codexHeading = screen.getByRole("heading", { name: "ChatGPT (Codex)" });
   for (const [table, heading] of [
@@ -368,7 +368,7 @@ test("Offer personal subscription providers from one add-account menu", async ()
   click(addAccountButton);
   const addAccountMenu = await screen.findByRole("menu");
   expect(
-    within(addAccountMenu).getByText("Claude Code OAuth"),
+    within(addAccountMenu).getByText("Claude"),
   ).toBeInTheDocument();
   expect(
     within(addAccountMenu).getByText("ChatGPT (Codex)"),
@@ -699,7 +699,7 @@ test("Offer Pro when personal subscription providers are unavailable", async () 
   const codexRow = await screen.findByTestId("oauth-card-codex-oauth-token");
   const claudeUpgrade = connectButtonInRow(
     claudeCodeRow,
-    "Upgrade Pro to use Claude Code OAuth",
+    "Upgrade Pro to use Claude",
   );
   expect(claudeUpgrade).toHaveTextContent("Upgrade Pro to use");
   expect(
@@ -773,13 +773,13 @@ test("Start and close personal Claude login from the account menu", async () => 
   }
   click(addAccountButton);
   const addAccountMenu = await screen.findByRole("menu");
-  click(within(addAccountMenu).getByText("Claude Code OAuth"));
+  click(within(addAccountMenu).getByText("Claude"));
 
   const authorizationCodeInputs = await screen.findAllByTestId(
     "claude-code-device-auth-code",
   );
   expect(authorizationCodeInputs).not.toHaveLength(0);
-  expect(screen.getAllByText("Connect Claude Code")).not.toHaveLength(0);
+  expect(screen.getAllByText("Connect Claude")).not.toHaveLength(0);
   closeClaudeCodeDialogs();
   await waitFor(() => {
     expect(
@@ -823,7 +823,7 @@ test("Connect a personal Claude subscription", async () => {
   );
   const connectButton = connectButtonInRow(
     claudeCodeRow,
-    "Connect Claude Code OAuth",
+    "Connect Claude",
   );
   click(connectButton);
 
@@ -833,7 +833,7 @@ test("Connect a personal Claude subscription", async () => {
   click(within(deviceAuthDialog).getByTestId("claude-code-device-auth-submit"));
 
   await waitFor(() => {
-    expect(screen.getByText("Claude Code connected")).toBeInTheDocument();
+    expect(screen.getByText("Claude connected")).toBeInTheDocument();
     expect(
       within(claudeCodeRow).getByText("Connected (Pro)"),
     ).toBeInTheDocument();
