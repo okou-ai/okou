@@ -2285,6 +2285,7 @@ describe("Morning Brief preference", () => {
       timezone: "Asia/Shanghai",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
 
     const enabledResponses = await Promise.all([
@@ -2392,6 +2393,7 @@ describe("Morning Brief preference", () => {
       timezone: "Asia/Shanghai",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
 
     const reenabled = await accept(
@@ -2919,6 +2921,7 @@ describe("Morning Brief native preference projection", () => {
       timezone: "Asia/Shanghai",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
     const projectedPause = await readBriefPreference(actor);
     expect(projectedPause.body).toStrictEqual(paused.body);
@@ -3005,6 +3008,7 @@ describe("Morning Brief native preference projection", () => {
       timezone: "America/New_York",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
   });
 
@@ -3149,6 +3153,7 @@ describe("Morning Brief native preference projection", () => {
       timezone: "America/New_York",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
   });
 
@@ -3313,6 +3318,7 @@ describe("Morning Brief native preference projection", () => {
       timezone: "Asia/Shanghai",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
     // The failed copy never became the user's answer, never turned a committed
     // choice into an error, and never replayed the legacy mutation.
@@ -3408,6 +3414,7 @@ describe("Morning Brief native preference projection", () => {
       timezone: "Asia/Shanghai",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
     const settled = await readBriefPreference(actor);
     expect(settled.body).toStrictEqual({
@@ -3417,6 +3424,7 @@ describe("Morning Brief native preference projection", () => {
       timezone: "America/New_York",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
     await expectChoiceSurvivesImplementationSwitch(actor, settled.body);
   });
@@ -3470,6 +3478,7 @@ describe("Morning Brief native preference projection", () => {
       timezone: "America/New_York",
       unavailableReason: null,
       lastRun: null,
+      lastDeliveredAt: null,
     });
     const settled = await readBriefPreference(actor);
     expect(settled.body).toStrictEqual(paused.body);
