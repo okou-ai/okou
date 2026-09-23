@@ -6682,47 +6682,89 @@ function UserMessageAttachments({
   );
 }
 
+function RunLogsAction({ runId }: { runId: string }) {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider delay={300}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              pathname="/activities/:activityRunId"
+              options={{ pathParams: { activityRunId: runId } }}
+              aria-label={t(($) => {
+                return $.chat.run.viewLogs;
+              })}
+              className={cn(
+                buttonVariants({
+                  variant: "quiet",
+                  size: "icon-xs",
+                  iconSize: "sm",
+                }),
+                "text-muted-foreground/60",
+              )}
+            >
+              <ChartLine />
+            </Link>
+          }
+        />
+        <TooltipContent side="bottom">
+          {t(($) => {
+            return $.chat.run.viewActivityLogs;
+          })}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 // The row below a user message is part of that message's frame, not a thing the
 // copy button brings with it. It stays even when there is no button to show —
 // a message nobody can copy, or a mode that offers no per-message action — so
 // the burst spacing that is measured against it does not collapse.
 function UserMessageActions({
   showCopy,
+  runId,
   onCopy,
 }: {
   showCopy: boolean;
+  runId: string | undefined;
   onCopy: () => Promise<boolean>;
 }) {
   const { t } = useTranslation();
+  const showActivityLogs = useGet(featureSwitch$)[FeatureSwitchKey.OkouDebug];
   return (
     <div
       data-chat-user-message-actions
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
       {showCopy ? (
-        <CopyButton
-          copyAction={onCopy}
-          render={({ onClick, ref }, { copied }) => {
-            return (
-              <Button
-                ref={ref}
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                iconSize="sm"
-                showTooltip
-                onClick={onClick}
-                className="text-muted-foreground/60"
-                aria-label={t(($) => {
-                  return $.chat.actions.copyMessage;
-                })}
-              >
-                {copied ? <Check /> : <Copy />}
-              </Button>
-            );
-          }}
-        />
+        <span className="[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+          <CopyButton
+            copyAction={onCopy}
+            render={({ onClick, ref }, { copied }) => {
+              return (
+                <Button
+                  ref={ref}
+                  type="button"
+                  variant="quiet"
+                  size="icon-xs"
+                  iconSize="sm"
+                  showTooltip
+                  onClick={onClick}
+                  className="text-muted-foreground/60"
+                  aria-label={t(($) => {
+                    return $.chat.actions.copyMessage;
+                  })}
+                >
+                  {copied ? <Check /> : <Copy />}
+                </Button>
+              );
+            }}
+          />
+        </span>
       ) : null}
+      {showActivityLogs && runId && <RunLogsAction runId={runId} />}
     </div>
   );
 }
@@ -7851,6 +7893,7 @@ function PagedUserMessage({
                   still pulled up by the height this row holds. */}
               <UserMessageActions
                 showCopy={canCopy && sharingPhase === "idle"}
+                runId={sharingPhase === "idle" ? inputEvent?.runId : undefined}
                 onCopy={handleCopy}
               />
             </>
@@ -8614,40 +8657,7 @@ function PagedGroupPrimaryActions({
       )}
       data-testid="chat-event-actions"
     >
-      {showActivityLogs && firstRunId && (
-        <TooltipProvider delay={300}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Link
-                  pathname="/activities/:activityRunId"
-                  options={{
-                    pathParams: { activityRunId: firstRunId },
-                  }}
-                  aria-label={t(($) => {
-                    return $.chat.run.viewLogs;
-                  })}
-                  className={cn(
-                    buttonVariants({
-                      variant: "quiet",
-                      size: "icon-xs",
-                      iconSize: "sm",
-                    }),
-                    "text-muted-foreground/60",
-                  )}
-                >
-                  <ChartLine />
-                </Link>
-              }
-            />
-            <TooltipContent side="bottom">
-              {t(($) => {
-                return $.chat.run.viewActivityLogs;
-              })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
+      {showActivityLogs && firstRunId && <RunLogsAction runId={firstRunId} />}
       {showActivityLogs && firstRunId && (
         <RunLangfuseAction thread={thread} runId={firstRunId} />
       )}
