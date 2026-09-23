@@ -166,6 +166,8 @@ function PresentationTemplateCard({
 }) {
   const { t } = useTranslation();
   const imageUrl = template.previewImages[0] ?? template.previewImage;
+  // Positioned selection paints above the non-positioned cover and caption;
+  // the later positioned Preview button paints above selection by tree order.
   return (
     <article
       className={cn(
@@ -175,7 +177,7 @@ function PresentationTemplateCard({
     >
       <button
         type="button"
-        className="absolute inset-0 z-10 rounded-xl"
+        className="absolute inset-0 rounded-xl"
         aria-label={t(
           ($) => {
             return $.onboarding.templatePicker.presentation.selectTemplate;
@@ -195,7 +197,7 @@ function PresentationTemplateCard({
       </div>
       <IconTooltipButton
         type="button"
-        className="absolute right-1.5 top-1.5 z-20 inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border border-border bg-background opacity-0 shadow-sm group-hover:opacity-100 group-focus-within:opacity-100"
+        className="absolute right-1.5 top-1.5 inline-flex h-[26px] w-[26px] items-center justify-center rounded-md border border-border bg-background opacity-0 shadow-sm group-hover:opacity-100 group-focus-within:opacity-100"
         aria-label={t(
           ($) => {
             return $.onboarding.templatePicker.presentation.viewTemplate;
