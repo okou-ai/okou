@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { testContext } from "../../../__tests__/test-context";
 import { now } from "../../../lib/time";
@@ -7,7 +6,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -34,17 +32,6 @@ async function onlyCreatedThreadId(actor: ApiTestUser): Promise<string> {
     throw new Error("Expected one created thread");
   }
   return threadId;
-}
-
-async function enable(actor: ApiTestUser, value = true): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    { [FeatureSwitchKey.WelcomeThread]: value },
-  );
 }
 
 function membershipEvent(actor: ApiTestUser): void {
@@ -105,8 +92,6 @@ describe("automatic welcome thread delivery", () => {
   it("delivers one welcome thread to an invited member", async () => {
     const admin = await establishedWorkspace();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    await enable(member);
-
     await deliverMembershipCreated(member);
 
     const threadId = await onlyCreatedThreadId(member);
@@ -125,9 +110,6 @@ describe("automatic welcome thread delivery", () => {
       orgId: admin.orgId,
       orgRole: "org:member",
     });
-    await enable(firstMember);
-    await enable(secondMember);
-
     await deliverMembershipCreated(firstMember);
     await deliverMembershipCreated(secondMember);
 
@@ -154,9 +136,6 @@ describe("automatic welcome thread delivery", () => {
       orgId: secondAdmin.orgId,
       orgRole: "org:member",
     });
-    await enable(firstMembership);
-    await enable(secondMembership);
-
     await deliverMembershipCreated(firstMembership);
     await deliverMembershipCreated(secondMembership);
 
@@ -185,7 +164,6 @@ describe("automatic welcome thread delivery", () => {
     async ({ deliver }) => {
       const creator = bdd.user();
       bdd.acceptAgentStorageWrites();
-      await enable(creator);
       // `organization.created` carries no membership side effects at all, so
       // the only trigger that can reach this creator is the moment bootstrap
       // publishes the workspace default agent.
@@ -206,8 +184,6 @@ describe("automatic welcome thread delivery", () => {
   it("keeps one thread across a redelivered event and two concurrent deliveries", async () => {
     const admin = await establishedWorkspace();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    await enable(member);
-
     // Two deliveries in flight at once.
     membershipEvent(member);
     membershipEvent(member);
@@ -228,22 +204,8 @@ describe("automatic welcome thread delivery", () => {
     ).resolves.toMatchObject({ id: threadId });
   });
 
-  it("creates nothing when the switch is disabled for the workspace", async () => {
-    const admin = await establishedWorkspace();
-    const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    // The switch is on for everyone now, so an override is the only way a
-    // recipient can still be opted out of the welcome.
-    await enable(member, false);
-
-    await deliverMembershipCreated(member);
-
-    await expect(createdThreadIds(member)).resolves.toStrictEqual([]);
-  });
-
   it("abandons the invocation when the workspace default agent is not ready", async () => {
     const member = bdd.user({ orgRole: "org:member" });
-    await enable(member);
-
     // A member never triggers workspace bootstrap, so no default agent can
     // appear for this workspace and nothing is scheduled to look again.
     await deliverMembershipCreated(member);
@@ -256,7 +218,6 @@ describe("automatic welcome thread delivery", () => {
   it("never delivers again after the recipient deletes the thread", async () => {
     const admin = await establishedWorkspace();
     const member = bdd.user({ orgId: admin.orgId, orgRole: "org:member" });
-    await enable(member);
     await deliverMembershipCreated(member);
     const threadId = await onlyCreatedThreadId(member);
     await chat.requestDeleteThread(member, threadId, [204]);

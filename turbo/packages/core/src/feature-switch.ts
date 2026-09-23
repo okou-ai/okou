@@ -69,12 +69,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
     enabled: false,
   },
-  [FeatureSwitchKey.WelcomeThread]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Deliver a welcome conversation with fixed examples to every member joining a workspace",
-    enabled: true,
-  },
   [FeatureSwitchKey.ThreadActivitySummary]: {
     maintainer: "lancy@okou.ai",
     description:
