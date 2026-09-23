@@ -667,6 +667,43 @@ function decisionApiRoutingIdentity(
   );
 }
 
+function awsPathIdentity(path: string): readonly unknown[] | null {
+  const segments = splitPathSegments(path).map((segment) => {
+    const parsed = parseSegment(segment);
+    if (parsed.kind === "error") return null;
+    return parsed.kind === "literal"
+      ? ["literal", parsed.value]
+      : ["param", parsed.prefix, parsed.suffix, parsed.greedy];
+  });
+  return segments.includes(null) ? null : segments;
+}
+
+function compareAwsIdentityKey(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function awsRuleIdentity(rule: DecisionRule): string | null {
+  const predicates = rule.awsPredicates;
+  if (predicates === undefined) return null;
+  const pathIdentity = awsPathIdentity(rule.path);
+  if (pathIdentity === null) return null;
+  const requirements = (rule.awsQueryRequirements ?? [])
+    .map(({ key, value }) => {
+      return [key, value ?? null] as const;
+    })
+    .sort(([left], [right]) => {
+      return compareAwsIdentityKey(left, right);
+    });
+  return JSON.stringify([
+    rule.method,
+    pathIdentity,
+    requirements,
+    [...predicates.entries()].sort(([left], [right]) => {
+      return compareAwsIdentityKey(left, right);
+    }),
+  ]);
+}
+
 function awsQuerySelectorSignature(rule: DecisionRule): string | null {
   const predicates = rule.awsPredicates;
   const service = predicates?.get("sigv4");
@@ -677,25 +714,8 @@ function awsQuerySelectorSignature(rule: DecisionRule): string | null {
   ) {
     return null;
   }
-
-  const pathIdentity = splitPathSegments(rule.path).map((segment) => {
-    const parsed = parseSegment(segment);
-    if (parsed.kind === "error") return null;
-    return parsed.kind === "literal"
-      ? { kind: "literal", value: parsed.value }
-      : {
-          kind: "param",
-          prefix: parsed.prefix,
-          suffix: parsed.suffix,
-          greedy: parsed.greedy,
-        };
-  });
-  if (
-    pathIdentity.some((segment) => {
-      return segment === null;
-    })
-  )
-    return null;
+  const pathIdentity = awsPathIdentity(rule.path);
+  if (pathIdentity === null) return null;
   return JSON.stringify([rule.method, pathIdentity, service]);
 }
 
@@ -2243,6 +2263,74 @@ function conflictingSelectedApiDecision(
   };
 }
 
+function blockedAwsRuleAliases(
+  collection: FirewallMatchCollection,
+  evaluableApiOrders: ReadonlySet<number>,
+  networkPolicies: CompiledNetworkPolicies,
+): ReadonlyMap<number, ReadonlyMap<string, readonly string[]>> {
+  // Runner denies a matched AWS rule when another permission with the same
+  // semantic rule identity is blocked in this API. The identity is scoped to
+  // the selected best-specificity matches, not unrelated overlapping rules.
+  const blockedAwsAliases = new Map<number, Map<string, string[]>>();
+  for (const { apiMatch, rule } of collection.ruleMatches) {
+    if (!evaluableApiOrders.has(apiMatch.order)) continue;
+    const policy = networkPolicies.policies.get(apiMatch.firewall.name);
+    if (!policy?.blockedPermissions.has(rule.permission)) continue;
+    const identity = awsRuleIdentity(rule);
+    if (identity === null) continue;
+    const byIdentity = blockedAwsAliases.get(apiMatch.order) ?? new Map();
+    const permissions = byIdentity.get(identity) ?? [];
+    permissions.push(rule.permission);
+    byIdentity.set(identity, permissions);
+    blockedAwsAliases.set(apiMatch.order, byIdentity);
+  }
+  return blockedAwsAliases;
+}
+
+function reduceDecisionRuleMatches(
+  state: FirewallDecisionState,
+  collection: FirewallMatchCollection,
+  evaluableApiOrders: ReadonlySet<number>,
+  networkPolicies: CompiledNetworkPolicies,
+): void {
+  const blockedAwsAliases = blockedAwsRuleAliases(
+    collection,
+    evaluableApiOrders,
+    networkPolicies,
+  );
+  for (const ruleMatch of collection.ruleMatches) {
+    const { apiMatch, rule } = ruleMatch;
+    if (!evaluableApiOrders.has(apiMatch.order)) continue;
+    const policy = networkPolicies.policies.get(apiMatch.firewall.name);
+    if (!acceptRuleSpecificity(state, rule.specificity)) continue;
+    const identity = awsRuleIdentity(rule);
+    const blockedAliases =
+      identity === null
+        ? undefined
+        : blockedAwsAliases.get(apiMatch.order)?.get(identity);
+    if (blockedAliases !== undefined) {
+      for (const permission of blockedAliases) {
+        recordDeniedRule(state, apiMatch.blockMatch, permission);
+      }
+      continue;
+    }
+    if (
+      policy !== undefined &&
+      policy.blockedPermissions.has(rule.permission)
+    ) {
+      recordDeniedRule(state, apiMatch.blockMatch, rule.permission);
+      continue;
+    }
+    state.allowedMatch ??= {
+      firewallName: apiMatch.baseMatch.firewallName,
+      base: apiMatch.baseMatch.allowBase,
+      relativePath: apiMatch.baseMatch.relativePath,
+      permission: rule.permission,
+      rule: rule.raw,
+    };
+  }
+}
+
 function reduceSelectedOwner(
   collection: FirewallMatchCollection,
   selectedName: string | null,
@@ -2273,26 +2361,12 @@ function reduceSelectedOwner(
     evaluableApiOrders.add(apiMatch.order);
   }
 
-  for (const ruleMatch of collection.ruleMatches) {
-    const { apiMatch, rule } = ruleMatch;
-    if (!evaluableApiOrders.has(apiMatch.order)) continue;
-    const policy = networkPolicies.policies.get(apiMatch.firewall.name);
-    if (!acceptRuleSpecificity(state, rule.specificity)) continue;
-    if (
-      policy !== undefined &&
-      policy.blockedPermissions.has(rule.permission)
-    ) {
-      recordDeniedRule(state, apiMatch.blockMatch, rule.permission);
-      continue;
-    }
-    state.allowedMatch ??= {
-      firewallName: apiMatch.baseMatch.firewallName,
-      base: apiMatch.baseMatch.allowBase,
-      relativePath: apiMatch.baseMatch.relativePath,
-      permission: rule.permission,
-      rule: rule.raw,
-    };
-  }
+  reduceDecisionRuleMatches(
+    state,
+    collection,
+    evaluableApiOrders,
+    networkPolicies,
+  );
 
   return resolveFirewallDecision(state, networkPolicies);
 }
