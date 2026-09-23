@@ -6431,9 +6431,9 @@
         "accountSwitched": "Compte actif changé",
         "disconnected": "{{provider}} déconnecté",
         "policiesUpdated": "Paramètres du fournisseur de modèle mis à jour",
-        "reset": "Utilisation de Codex réinitialisée",
-        "resetUnavailable": "Aucune réinitialisation d'utilisation de Codex disponible",
-        "resetUnneeded": "L'utilisation de Codex n'a pas besoin d'être réinitialisée pour le moment"
+        "reset": "Utilisation de {{provider}} réinitialisée",
+        "resetUnavailable": "Aucune réinitialisation d'utilisation de {{provider}} disponible",
+        "resetUnneeded": "L'utilisation de {{provider}} n'a pas besoin d'être réinitialisée pour le moment"
       },
       "usage": {
         "inDays": "dans {{days}}j",

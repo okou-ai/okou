@@ -6354,9 +6354,9 @@
         "accountSwitched": "Akun aktif diganti",
         "disconnected": "{{provider}} terputus",
         "policiesUpdated": "Pengaturan provider model diperbarui",
-        "reset": "Penggunaan Codex direset",
-        "resetUnavailable": "Tidak ada reset penggunaan Codex yang tersedia",
-        "resetUnneeded": "Penggunaan Codex tidak perlu direset saat ini"
+        "reset": "Penggunaan {{provider}} direset",
+        "resetUnavailable": "Tidak ada reset penggunaan {{provider}} yang tersedia",
+        "resetUnneeded": "Penggunaan {{provider}} tidak perlu direset saat ini"
       },
       "usage": {
         "inDays": "dalam {{days}}d",

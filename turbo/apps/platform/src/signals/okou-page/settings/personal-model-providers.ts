@@ -89,6 +89,21 @@ export const setPersonalAccountDisconnectDialog$ = command(
   },
 );
 
+/**
+ * Display name for a subscription whose usage can be reset. The reset copy is
+ * shared by every such provider, so the name is a parameter rather than a
+ * separate string per provider.
+ */
+export function subscriptionResetProviderLabel(
+  type: ModelProviderType,
+): string {
+  return i18n.t(($) => {
+    return type === "codex-oauth-token"
+      ? $.settings.accountMenu.subscriptions.providers.codex
+      : $.settings.accountMenu.subscriptions.providers.claudeCode;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Derived state
 // ---------------------------------------------------------------------------
@@ -175,36 +190,49 @@ export const deletePersonalOAuthCredentialAccount$ = command(
 const runPersonalCodexSubscriptionUsageReset$ = command(
   async (
     { set },
-    request: () => Promise<ResetPersonalModelProviderSubscriptionUsageResponse>,
+    args: {
+      readonly type: ModelProviderType;
+      readonly request: () => Promise<ResetPersonalModelProviderSubscriptionUsageResponse>;
+    },
     signal: AbortSignal,
   ) => {
+    const provider = subscriptionResetProviderLabel(args.type);
     const promise = (async () => {
-      const result = await request();
+      const result = await args.request();
       signal.throwIfAborted();
 
       switch (result.outcome) {
         case "reset":
         case "alreadyRedeemed": {
           toast.success(
-            i18n.t(($) => {
-              return $.settings.models.toasts.reset;
-            }),
+            i18n.t(
+              ($) => {
+                return $.settings.models.toasts.reset;
+              },
+              { provider },
+            ),
           );
           break;
         }
         case "nothingToReset": {
           toast.info(
-            i18n.t(($) => {
-              return $.settings.models.toasts.resetUnneeded;
-            }),
+            i18n.t(
+              ($) => {
+                return $.settings.models.toasts.resetUnneeded;
+              },
+              { provider },
+            ),
           );
           break;
         }
         case "noCredit": {
           toast.error(
-            i18n.t(($) => {
-              return $.settings.models.toasts.resetUnavailable;
-            }),
+            i18n.t(
+              ($) => {
+                return $.settings.models.toasts.resetUnavailable;
+              },
+              { provider },
+            ),
           );
           break;
         }
@@ -227,12 +255,15 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
   ({ set }, type: ModelProviderType, signal: AbortSignal) => {
     return set(
       runPersonalCodexSubscriptionUsageReset$,
-      () => {
-        return set(
-          resetPersonalCodexSubscriptionUsageRequest$,
-          { type, idempotencyKey: crypto.randomUUID() },
-          signal,
-        );
+      {
+        type,
+        request: () => {
+          return set(
+            resetPersonalCodexSubscriptionUsageRequest$,
+            { type, idempotencyKey: crypto.randomUUID() },
+            signal,
+          );
+        },
       },
       signal,
     );
@@ -242,18 +273,29 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
 export const resetPersonalCodexAccountSubscriptionUsage$ = command(
   (
     { set },
-    target: string | { readonly id: string; readonly runId: string },
+    target: {
+      readonly type: ModelProviderType;
+      readonly account:
+        | string
+        | { readonly id: string; readonly runId: string };
+    },
     signal: AbortSignal,
   ) => {
-    const args = typeof target === "string" ? { id: target } : target;
+    const account =
+      typeof target.account === "string"
+        ? { id: target.account }
+        : target.account;
     return set(
       runPersonalCodexSubscriptionUsageReset$,
-      () => {
-        return set(
-          resetPersonalCodexAccountSubscriptionUsageRequest$,
-          { ...args, idempotencyKey: crypto.randomUUID() },
-          signal,
-        );
+      {
+        type: target.type,
+        request: () => {
+          return set(
+            resetPersonalCodexAccountSubscriptionUsageRequest$,
+            { ...account, idempotencyKey: crypto.randomUUID() },
+            signal,
+          );
+        },
       },
       signal,
     );

@@ -6354,9 +6354,9 @@
         "accountSwitched": "활성 계정이 변경되었습니다",
         "disconnected": "{{provider}} 연결 해제됨",
         "policiesUpdated": "모델 공급자 설정이 업데이트되었습니다.",
-        "reset": "Codex 사용량이 재설정되었습니다.",
-        "resetUnavailable": "사용 가능한 Codex 사용량 재설정이 없습니다.",
-        "resetUnneeded": "현재 Codex 사용량 재설정이 필요하지 않습니다."
+        "reset": "{{provider}} 사용량이 재설정되었습니다.",
+        "resetUnavailable": "사용 가능한 {{provider}} 사용량 재설정이 없습니다.",
+        "resetUnneeded": "현재 {{provider}} 사용량 재설정이 필요하지 않습니다."
       },
       "usage": {
         "inDays": "{{days}}일 후",

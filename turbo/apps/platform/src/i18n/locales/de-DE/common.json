@@ -6369,9 +6369,9 @@
         "accountSwitched": "Aktives Konto gewechselt",
         "disconnected": "{{provider}} getrennt",
         "policiesUpdated": "Modellanbietereinstellungen aktualisiert",
-        "reset": "Codex-Nutzung zurückgesetzt",
-        "resetUnavailable": "Es sind keine Codex-Nutzungs-Resets verfügbar",
-        "resetUnneeded": "Die Codex-Nutzung muss derzeit nicht zurückgesetzt werden"
+        "reset": "{{provider}}-Nutzung zurückgesetzt",
+        "resetUnavailable": "Es sind keine {{provider}}-Nutzungs-Resets verfügbar",
+        "resetUnneeded": "Die {{provider}}-Nutzung muss derzeit nicht zurückgesetzt werden"
       },
       "usage": {
         "inDays": "in {{days}} T.",

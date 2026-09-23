@@ -22,7 +22,7 @@ const RESET_URL = `https://api.anthropic.com/api/organizations/${ORGANIZATION_UU
 
 interface Grant {
   readonly id: string;
-  readonly resets_left: number;
+  readonly resets_left?: number;
   readonly ends_at?: string | null;
   readonly paused?: boolean;
 }
@@ -171,6 +171,16 @@ describe("Claude Code subscription reset", () => {
     const owner = await fixture();
 
     expect((await owner.list())?.subscriptionResetCredits).toBe(1);
+  });
+
+  it("drops a malformed grant without counting the rest as spent", async () => {
+    upstream({
+      grants: [{ id: "grant-malformed" }, { id: "grant-open", resets_left: 2 }],
+      nextGrantId: "grant-open",
+    });
+    const owner = await fixture();
+
+    expect((await owner.list())?.subscriptionResetCredits).toBe(2);
   });
 
   it("redeems the grant upstream nominated", async () => {

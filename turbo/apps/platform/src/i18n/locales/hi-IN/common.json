@@ -6369,9 +6369,9 @@
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
         "disconnected": "{{provider}} डिस्कनेक्ट हो गया",
         "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",
-        "reset": "Codex उपयोग रीसेट",
-        "resetUnavailable": "कोई Codex उपयोग रीसेट उपलब्ध नहीं है",
-        "resetUnneeded": "Codex उपयोग को अभी रीसेट की आवश्यकता नहीं है"
+        "reset": "{{provider}} उपयोग रीसेट",
+        "resetUnavailable": "कोई {{provider}} उपयोग रीसेट उपलब्ध नहीं है",
+        "resetUnneeded": "{{provider}} उपयोग को अभी रीसेट की आवश्यकता नहीं है"
       },
       "usage": {
         "inDays": "{{days}}d में",

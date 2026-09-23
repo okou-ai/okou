@@ -56,7 +56,9 @@ const usageRateLimitsSchema = z
 const resetGrantSchema = z
   .object({
     id: z.string(),
-    resets_left: z.number().int().nonnegative().nullable().optional(),
+    // Upstream always states the remaining count; a grant without it is
+    // malformed and is dropped rather than counted as spent.
+    resets_left: z.number().int().nonnegative(),
     ends_at: z.string().nullable().optional(),
     paused: z.boolean().nullable().optional(),
   })
@@ -365,10 +367,10 @@ function resetGrantsFromUsage(usage: UsageResponse): ClaudeCodeResetGrants {
   // A paused grant still exists upstream but cannot be redeemed, so it is left
   // out of the count the UI offers to spend.
   const redeemable = grants.filter((grant) => {
-    return !grant.paused && (grant.resets_left ?? 0) > 0;
+    return !grant.paused && grant.resets_left > 0;
   });
   const credits = redeemable.reduce((total, grant) => {
-    return total + (grant.resets_left ?? 0);
+    return total + grant.resets_left;
   }, 0);
 
   const expiries = redeemable

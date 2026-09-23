@@ -6354,9 +6354,9 @@
         "accountSwitched": "使用するアカウントを切り替えました",
         "disconnected": "{{provider}} が切断されました",
         "policiesUpdated": "モデルプロバイダーの設定が更新されました",
-        "reset": "Codex 使用量のリセット",
-        "resetUnavailable": "Codex 使用状況のリセットは利用できません",
-        "resetUnneeded": "Codex の使用状況は現時点ではリセットする必要はありません"
+        "reset": "{{provider}} 使用量のリセット",
+        "resetUnavailable": "{{provider}} 使用状況のリセットは利用できません",
+        "resetUnneeded": "{{provider}} の使用状況は現時点ではリセットする必要はありません"
       },
       "usage": {
         "inDays": "{{days}}日後",

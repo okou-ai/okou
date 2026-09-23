@@ -985,7 +985,10 @@ function CodexResetDialogController({
     const resetPromise =
       mode === "account"
         ? resetDialog.accountId
-          ? resetCodexAccount(resetDialog.accountId, pageSignal)
+          ? resetCodexAccount(
+              { type: resetDialog.type, account: resetDialog.accountId },
+              pageSignal,
+            )
           : null
         : resetCodexSubscriptionUsage(resetDialog.type, pageSignal);
     if (!resetPromise) {
