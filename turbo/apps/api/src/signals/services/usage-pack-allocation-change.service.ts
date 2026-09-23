@@ -2611,6 +2611,35 @@ async function commitReflectedUsagePackChanges(
         updatedAt,
       );
 
+      if (
+        change.kind === "upgrade" &&
+        change.subscriptionChangeId &&
+        change.stripeScheduleId
+      ) {
+        // The paid upgrade replaces an older downgrade for this member. Retire
+        // the old row before this one becomes applied; the partial unique index
+        // permits only one scheduled/applied change per member.
+        await tx
+          .update(usagePackAllocationChanges)
+          .set({
+            status: "failed",
+            failureReason: "scheduled_change_superseded",
+            completedAt: updatedAt,
+            updatedAt,
+          })
+          .where(
+            and(
+              eq(usagePackAllocationChanges.orgId, change.orgId),
+              eq(usagePackAllocationChanges.userId, change.userId),
+              eq(usagePackAllocationChanges.status, "scheduled"),
+              eq(
+                usagePackAllocationChanges.stripeScheduleId,
+                change.stripeScheduleId,
+              ),
+            ),
+          );
+      }
+
       const completed = change.kind !== "addition" && change.kind !== "upgrade";
       await tx
         .update(usagePackAllocationChanges)
@@ -2747,7 +2776,7 @@ export async function reconcileUsagePackAllocationChangeSubscription(
   const reflected = changesReflectedBySubscription(context, subscription);
   const period = usagePackItemPeriod(subscription);
   const appliedUpgrade = reflected.find((change) => {
-    return change.kind === "upgrade";
+    return change.kind === "upgrade" && change.subscriptionChangeId === null;
   });
   if (appliedUpgrade) {
     await refreshScheduledChangesForUpgrade(
@@ -2907,7 +2936,10 @@ function upgradeRefundInvoiceSource(
     return (
       invoiceLineIsProration(line) &&
       amount !== null &&
-      ((priceId === change.sourceStripePriceId && amount <= 0) ||
+      // Stripe can reprice the entire quantity for a shared source Price.
+      // Its positive line for members retaining that Price must offset the
+      // negative line for the old aggregate quantity.
+      (priceId === change.sourceStripePriceId ||
         (priceId === change.targetStripePriceId && amount >= 0)) &&
       line.period.start === change.prorationTimestamp
     );
@@ -2917,7 +2949,10 @@ function upgradeRefundInvoiceSource(
   });
   const sourceLine = change.sourceStripePriceId
     ? matchingLines.find((line) => {
-        return invoiceLinePriceId(line) === change.sourceStripePriceId;
+        return (
+          invoiceLinePriceId(line) === change.sourceStripePriceId &&
+          (invoiceLineAmount(line) ?? 0) <= 0
+        );
       })
     : undefined;
   if (!targetLine || (change.sourceStripePriceId && !sourceLine)) {
