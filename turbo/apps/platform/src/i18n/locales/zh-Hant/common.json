@@ -4229,6 +4229,7 @@
       "documentTitles": {
         "experience": "你的AI使用經驗",
         "industry": "選擇你的領域",
+        "profile": "你的使用者輪廓",
         "ready": "Okou已就緒",
         "skills": "匯入你的技能",
         "slack": "把Okou新增到Slack",
@@ -4290,6 +4291,17 @@
       "industry": {
         "copy": "Okou會據此挑選你的第一個任務，以及從哪些資料來源開始。",
         "title": "你主要做哪類工作？"
+      },
+      "profile": {
+        "communicationStyle": "你的溝通方式",
+        "copy": "根據你連結的帳號，初步了解你的工作。",
+        "failed": "暫時無法產生使用者輪廓。你可以重試或繼續。",
+        "heading": "你的使用者輪廓",
+        "loading": "正在根據你連結的工作內容產生使用者輪廓…",
+        "priorities": "可能關注的重點",
+        "professionalIdentity": "你的工作",
+        "retry": "重試",
+        "title": "這是我們對你的初步了解"
       },
       "skills": {
         "copied": "已複製",

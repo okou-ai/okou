@@ -903,6 +903,7 @@ export {
   onboardingRecommendationLocaleSchema,
   onboardingRecommendationSchema,
   onboardingRecommendationStatusSchema,
+  onboardingUserProfileSchema,
   onboardingStatusContract,
   onboardingStatusResponseSchema,
   type OnboardingCompleteContract,
@@ -910,6 +911,7 @@ export {
   type OnboardingRecommendationConnectorSlug,
   type OnboardingRecommendationContract,
   type OnboardingRecommendationStatus,
+  type OnboardingUserProfile,
   type OnboardingStatusContract,
   type OnboardingStatusResponse,
 } from "./onboarding";

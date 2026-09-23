@@ -48,6 +48,7 @@ const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
 const SKILLS_QUESTION = "Bring the skills you already wrote.";
 const SKILLS_ARRIVED_TITLE = "Your skills are in Okou";
 const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const PROFILE_TITLE = "Here's what we've learned about you";
 const CODEX_CARD = "Codex";
 const PROMPT_LABEL = "Skill import prompt";
 /** The prompt's own opening line, as the user's agent would read it. */
@@ -491,6 +492,8 @@ test.each([
 
     await openSkillsStep(card, fromStart);
     click(getButtonByName("Continue"));
+    await screen.findByRole("heading", { name: PROFILE_TITLE });
+    click(getButtonByName("Continue"));
     await expect(
       screen.findByRole("heading", { name: SLACK_QUESTION }),
     ).resolves.toBeInTheDocument();
@@ -543,6 +546,9 @@ test("A skill the import writes appears without the step being asked again", asy
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_NAME);
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_DISPLAY_NAME);
 
+  click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
   click(getButtonByName("Continue"));
 
   await expect(
@@ -602,6 +608,9 @@ test("The step can be left with nothing imported", async () => {
   ).resolves.toBeInTheDocument();
 
   click(getButtonByName("Skip for now"));
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
+  click(getButtonByName("Continue"));
 
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),

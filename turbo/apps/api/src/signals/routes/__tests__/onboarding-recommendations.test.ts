@@ -249,6 +249,13 @@ describe("onboarding recommendations", () => {
                   outcome: "Three priority drafts ready for review",
                   prompt:
                     "Review my recent Gmail workload and draft the replies that need attention.",
+                  profile: {
+                    overview:
+                      "Your inbox shows a steady flow of work that needs follow-up.",
+                    professionalIdentity: [],
+                    communicationStyle: [],
+                    priorities: ["Keep up with important replies"],
+                  },
                 }),
               },
             },
@@ -289,6 +296,13 @@ describe("onboarding recommendations", () => {
         outcome: "Three priority drafts ready for review",
         prompt:
           "Review my recent Gmail workload and draft the replies that need attention.",
+        profile: {
+          overview:
+            "Your inbox shows a steady flow of work that needs follow-up.",
+          professionalIdentity: [],
+          communicationStyle: [],
+          priorities: ["Keep up with important replies"],
+        },
       },
     });
     expect(githubReads).toBe(1);
@@ -317,6 +331,7 @@ describe("onboarding recommendations", () => {
       unavailableSourceSlugs: ["github"],
     });
     expect(modelRequest).toContain("[email]");
+    expect(modelRequest).toContain('"profile"');
     expect(modelRequest).toContain("[link]");
     expect(modelRequest).not.toContain("alice@example.com");
     expect(modelRequest).not.toContain("private.example.test");

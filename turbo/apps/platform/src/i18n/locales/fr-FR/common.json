@@ -4299,6 +4299,7 @@
       "documentTitles": {
         "experience": "Votre expérience de l'IA",
         "industry": "Choisir votre domaine",
+        "profile": "Votre profil",
         "ready": "Okou est prêt",
         "skills": "Importer vos skills",
         "slack": "Ajouter Okou à Slack",
@@ -4360,6 +4361,17 @@
       "industry": {
         "copy": "Okou s'en sert pour choisir votre première tâche et les sources dont elle part.",
         "title": "Quel type de travail faites-vous ?"
+      },
+      "profile": {
+        "communicationStyle": "Votre façon de communiquer",
+        "copy": "Un premier aperçu de votre travail à partir des comptes connectés.",
+        "failed": "Nous ne pouvons pas créer votre profil pour le moment. Réessayez ou continuez.",
+        "heading": "Votre profil",
+        "loading": "Création de votre profil à partir de vos comptes connectés…",
+        "priorities": "Priorités possibles",
+        "professionalIdentity": "Votre travail",
+        "retry": "Réessayer",
+        "title": "Voici ce que nous avons appris sur vous"
       },
       "skills": {
         "copied": "Copié",
