@@ -5565,90 +5565,108 @@ function structuredFailureTitle(reason: KnownRunFailureReason): string {
   return STRUCTURED_FAILURE_TITLES[reason]();
 }
 
+type StructuredFailureDescription = (t: TFunction<"common">) => string;
+
+const FAILURE_DESCRIPTIONS = Object.freeze({
+  newChat: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.newChatDescription;
+    });
+  },
+  filesystemFull: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.filesystemFullDescription;
+    });
+  },
+  timeout: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.timeoutDescription;
+    });
+  },
+  providerBalance: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.providerBalanceDescription;
+    });
+  },
+  providerConnection: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.providerConnectionDescription;
+    });
+  },
+  terms: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.termsDescription;
+    });
+  },
+  inputTooLarge: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.inputTooLargeDescription;
+    });
+  },
+  outputLimit: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.outputLimitDescription;
+    });
+  },
+  capacity: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.capacityDescription;
+    });
+  },
+  accessProgram: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.accessProgramDescription;
+    });
+  },
+  safety: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.safetyDescription;
+    });
+  },
+  unavailable: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.unavailableDescription;
+    });
+  },
+  usage: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.usageDescription;
+    });
+  },
+});
+
+const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
+  session_history_limit: FAILURE_DESCRIPTIONS.newChat,
+  guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
+  execution_timeout: FAILURE_DESCRIPTIONS.timeout,
+  insufficient_credits: () => {
+    return "";
+  },
+  provider_insufficient_credits: FAILURE_DESCRIPTIONS.providerBalance,
+  invalid_api_key: FAILURE_DESCRIPTIONS.providerConnection,
+  invalid_credentials: FAILURE_DESCRIPTIONS.providerConnection,
+  terms_acceptance_required: FAILURE_DESCRIPTIONS.terms,
+  context_window_exceeded: FAILURE_DESCRIPTIONS.newChat,
+  input_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
+  output_token_limit: FAILURE_DESCRIPTIONS.outputLimit,
+  provider_rate_limited: FAILURE_DESCRIPTIONS.capacity,
+  provider_overloaded: FAILURE_DESCRIPTIONS.capacity,
+  provider_stream_timeout: FAILURE_DESCRIPTIONS.capacity,
+  provider_queue_timeout: FAILURE_DESCRIPTIONS.capacity,
+  codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
+  provider_server_error: FAILURE_DESCRIPTIONS.capacity,
+  response_connection_lost: FAILURE_DESCRIPTIONS.capacity,
+  safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
+  reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
+  unsupported_model: FAILURE_DESCRIPTIONS.unavailable,
+  usage_limit: FAILURE_DESCRIPTIONS.usage,
+} satisfies Record<KnownRunFailureReason, StructuredFailureDescription>);
+
 function structuredFailureDescription(
   reason: KnownRunFailureReason,
   t: TFunction<"common">,
 ): string {
-  if (
-    reason === "session_history_limit" ||
-    reason === "context_window_exceeded"
-  ) {
-    return t(($) => {
-      return $.chat.errors.recovery.newChatDescription;
-    });
-  }
-  if (reason === "guest_root_filesystem_full") {
-    return t(($) => {
-      return $.chat.errors.recovery.filesystemFullDescription;
-    });
-  }
-  if (reason === "execution_timeout") {
-    return t(($) => {
-      return $.chat.errors.recovery.timeoutDescription;
-    });
-  }
-  if (reason === "provider_insufficient_credits") {
-    return t(($) => {
-      return $.chat.errors.recovery.providerBalanceDescription;
-    });
-  }
-  if (
-    reason === "invalid_api_key" ||
-    reason === "invalid_credentials" ||
-    reason === "reconnect_required"
-  ) {
-    return t(($) => {
-      return $.chat.errors.recovery.providerConnectionDescription;
-    });
-  }
-  if (reason === "terms_acceptance_required") {
-    return t(($) => {
-      return $.chat.errors.recovery.termsDescription;
-    });
-  }
-  if (reason === "input_too_large") {
-    return t(($) => {
-      return $.chat.errors.recovery.inputTooLargeDescription;
-    });
-  }
-  if (reason === "output_token_limit") {
-    return t(($) => {
-      return $.chat.errors.recovery.outputLimitDescription;
-    });
-  }
-  if (
-    reason === "provider_rate_limited" ||
-    reason === "provider_overloaded" ||
-    reason === "provider_stream_timeout" ||
-    reason === "provider_queue_timeout" ||
-    reason === "provider_server_error" ||
-    reason === "response_connection_lost"
-  ) {
-    return t(($) => {
-      return $.chat.errors.recovery.capacityDescription;
-    });
-  }
-  if (reason === "codex_access_program_unavailable") {
-    return t(($) => {
-      return $.chat.errors.recovery.accessProgramDescription;
-    });
-  }
-  if (reason === "safety_policy_refusal") {
-    return t(($) => {
-      return $.chat.errors.recovery.safetyDescription;
-    });
-  }
-  if (reason === "unsupported_model") {
-    return t(($) => {
-      return $.chat.errors.recovery.unavailableDescription;
-    });
-  }
-  if (reason === "usage_limit") {
-    return t(($) => {
-      return $.chat.errors.recovery.usageDescription;
-    });
-  }
-  return "";
+  return STRUCTURED_FAILURE_DESCRIPTIONS[reason](t);
 }
 
 function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {

@@ -320,9 +320,9 @@ test.each(STRUCTURED_FAILURE_CASES)(
     const description = within(card).queryByTestId(
       "assistant-error-description",
     );
-    if (failureReason !== "insufficient_credits") {
-      expect(description).toHaveTextContent(/\S/u);
-    }
+    expect(Boolean(description?.textContent?.trim())).toBe(
+      failureReason !== "insufficient_credits",
+    );
     expect(
       description?.classList.contains("line-clamp-2") ?? false,
     ).toBeFalsy();
