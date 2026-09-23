@@ -5,6 +5,7 @@ import {
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import {
   chatThreadEventsContract,
   chatThreadMetadataContract,
@@ -298,6 +299,23 @@ export function installActiveChatBoundaries(
   });
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     return respond(200, { hosts: [...(options.hosts ?? [])] });
+  });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: [],
+      customConnectors: [],
+      accountSummaries: [],
+      computerUseHosts: (options.hosts ?? []).map((host) => {
+        return {
+          id: host.id,
+          hostName: host.hostName ?? host.displayName,
+          displayName: host.displayName,
+          lastSeenAt: host.lastSeenAt,
+          status: host.status,
+        };
+      }),
+      cloudBrowserEnabledByDefault: true,
+    });
   });
   context.mocks.api(chatThreadEventsContract.snapshot, ({ respond }) => {
     return respond(404, {

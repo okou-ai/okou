@@ -331,6 +331,7 @@ describe("CHAT-02: model-first provider policies", () => {
       "You are currently running inside: Web",
     );
     expect(terraInstructions).toContain("okou web download-file -h");
+    expect(terraInstructions).toContain("Run commands with: `okou <command>`");
     expect(terraInstructions).not.toMatch(/auto.?memory/iu);
     const terraStorageManifest = expectCanonicalStorageManifest(
       claimed.claim.storageManifest,

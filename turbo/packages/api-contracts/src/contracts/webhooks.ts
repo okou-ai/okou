@@ -876,6 +876,12 @@ export const webhookHeartbeatContract = c.router({
     responses: {
       200: z.object({
         ok: z.boolean(),
+        typingRefreshIntervalSeconds: z
+          .number()
+          .int()
+          .min(3)
+          .max(10)
+          .optional(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,

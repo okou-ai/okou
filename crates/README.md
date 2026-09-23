@@ -11,6 +11,7 @@ control and RPC services, shared contracts, and developer/test support.
 | runner-host              | Runner host filesystem, process, lock, path and logging primitives                                    |
 | runner-network           | Runner proxy, DNS, CA, network log capture and bounded upload                                         |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
+| runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |
 | runner-storage           | Storage planning, archive delivery, host archive cache and R2 template cache                         |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                |
@@ -53,6 +54,7 @@ the privileged workspace helper rejects malformed records and empty tables.
 ```text
 Runner -> runner-provider -> runner-host -> runner-types
 Runner -> runner-network  -> runner-host -> runner-types
+Runner -> runner-remote   -> runner-network, runner-provider, runner-host, runner-types
 Runner -> runner-storage  -> runner-host -> runner-types
 Runner -> guest-control-client -> guest-control-server (guest-init child)
 Guest  -> runner-rpc-client    -> Runner service endpoint

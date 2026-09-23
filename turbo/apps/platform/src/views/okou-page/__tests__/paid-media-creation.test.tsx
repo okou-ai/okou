@@ -95,6 +95,30 @@ test("Explicit image creation remains blocked when the settings rollout is off",
   expect(editor).toHaveTextContent("Create a launch scene");
 });
 
+test("Discard exits a blocked Image task without clearing the draft", async () => {
+  mockTemplateChat();
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  const editor = await setupComposer(true, true);
+  await fill(editor, "Create a launch scene");
+  click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
+
+  await screen.findByText("Image generation is off for you");
+  expect(button("Discard")).toBeInTheDocument();
+  click(button("Discard"));
+
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Image generation is off for you"),
+    ).not.toBeInTheDocument();
+  });
+  expect(editor).toHaveTextContent("Create a launch scene");
+  expect(
+    screen.getByRole("group", { name: "Choose a task" }),
+  ).toBeInTheDocument();
+});
+
 test("An image creation notice opens settings and a confirmed save restores creation", async () => {
   const capture = mockTemplateChat();
   const disabled = new Set(["image-generation"]);

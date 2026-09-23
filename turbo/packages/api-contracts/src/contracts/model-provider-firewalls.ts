@@ -268,6 +268,22 @@ export const MODEL_PROVIDER_FIREWALL_CONFIGS = {
         ],
       },
       {
+        base: "https://chatgpt.com/backend-api/wham/accounts/check",
+        auth: {
+          headers: {
+            Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
+            "ChatGPT-Account-ID": "${{ secrets.CHATGPT_ACCOUNT_ID }}",
+          },
+        },
+        permissions: [
+          {
+            name: "codex:workspace-routing",
+            description: "Discover the selected ChatGPT workspace route.",
+            rules: ["GET /"],
+          },
+        ],
+      },
+      {
         base: "https://auth.openai.com",
         auth: { headers: {} },
         permissions: [],

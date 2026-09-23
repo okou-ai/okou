@@ -1727,7 +1727,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.98.1"
+version = "0.98.2"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3448,9 +3448,8 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.2"
+version = "0.213.3"
 dependencies = [
- "ably-subscriber",
  "api-contracts",
  "async-trait",
  "aws-sdk-s3",
@@ -3482,23 +3481,16 @@ dependencies = [
  "log",
  "nbd-cow",
  "nix",
- "pkcs5",
- "pkcs8",
- "png",
- "rcgen",
  "reqwest",
- "rfb-client",
- "rsa",
  "runner-host",
  "runner-network",
  "runner-provider",
+ "runner-remote",
  "runner-rpc-client",
  "runner-rpc-proto",
  "runner-storage",
  "runner-types",
- "russh",
  "rustix",
- "rustls",
  "sandbox",
  "sandbox-firecracker",
  "sandbox-mock",
@@ -3512,8 +3504,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "tokio-rustls",
- "tokio-tungstenite",
  "tokio-util",
  "tower-layer",
  "tower-service",
@@ -3525,9 +3515,7 @@ dependencies = [
  "unicode-normalization",
  "url",
  "uuid",
- "webpki-roots",
  "which",
- "zeroize",
  "zstd",
 ]
 
@@ -3615,6 +3603,59 @@ dependencies = [
  "tracing-test-support",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "runner-remote"
+version = "0.1.1"
+dependencies = [
+ "ably-subscriber",
+ "api-contracts",
+ "async-trait",
+ "base64 0.23.1",
+ "bytes",
+ "chrono",
+ "futures-util",
+ "guest-control-client",
+ "guest-control-proto",
+ "hex",
+ "httpmock",
+ "libc",
+ "log",
+ "nix",
+ "pkcs5",
+ "pkcs8",
+ "png",
+ "rcgen",
+ "reqwest",
+ "rfb-client",
+ "rsa",
+ "runner-host",
+ "runner-network",
+ "runner-provider",
+ "runner-rpc-client",
+ "runner-rpc-proto",
+ "runner-types",
+ "russh",
+ "rustls",
+ "sandbox",
+ "sandbox-mock",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tokio-util",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+ "tracing-test-support",
+ "uuid",
+ "webpki-roots",
+ "zeroize",
 ]
 
 [[package]]
