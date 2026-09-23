@@ -14,6 +14,32 @@ import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { connectorActionResolver } from "../services/connector-action-resolver.service";
 
+async function availableBuiltinSlugs(
+  rows: readonly { connectorSlug: string }[],
+  resolve: (slug: string) => Promise<boolean>,
+  signal: AbortSignal,
+): Promise<Set<string>> {
+  const available = new Set<string>();
+  for (const slug of new Set(
+    rows.map((row) => {
+      return row.connectorSlug;
+    }),
+  )) {
+    if (await resolve(slug)) {
+      available.add(slug);
+    }
+    signal.throwIfAborted();
+  }
+  return available;
+}
+
+function toBuiltinAccessRow(row: { connectorSlug: string; agentId: string }) {
+  return {
+    connectorSlug: connectorSlugSchema.parse(row.connectorSlug),
+    agentId: row.agentId,
+  };
+}
+
 const getConnectorAgentAccess$ = command(
   async ({ get }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -111,24 +137,19 @@ const getConnectorAgentAccess$ = command(
     const resolver =
       builtinRows.length > 0 ? await get(connectorActionResolver()) : null;
     signal.throwIfAborted();
-    const availableSlugs = new Set<string>();
-    if (resolver) {
-      for (const slug of new Set(
-        builtinRows.map((row) => {
-          return row.connectorSlug;
-        }),
-      )) {
-        const connectorSlug = connectorSlugSchema.parse(slug);
-        const resolved = await resolver.resolveSlug({
-          connectorSlug,
-          requireExecutable: true,
-        });
-        signal.throwIfAborted();
-        if (resolved.ok) {
-          availableSlugs.add(slug);
-        }
-      }
-    }
+    const availableSlugs = resolver
+      ? await availableBuiltinSlugs(
+          builtinRows,
+          async (slug) => {
+            const resolved = await resolver.resolveSlug({
+              connectorSlug: connectorSlugSchema.parse(slug),
+              requireExecutable: true,
+            });
+            return resolved.ok;
+          },
+          signal,
+        )
+      : new Set<string>();
 
     return {
       status: 200 as const,
@@ -140,12 +161,7 @@ const getConnectorAgentAccess$ = command(
           .filter((row) => {
             return availableSlugs.has(row.connectorSlug);
           })
-          .map((row) => {
-            return {
-              connectorSlug: connectorSlugSchema.parse(row.connectorSlug),
-              agentId: row.agentId,
-            };
-          }),
+          .map(toBuiltinAccessRow),
         custom: customRows.map((row) => {
           return {
             connectorId: row.connectorId,
