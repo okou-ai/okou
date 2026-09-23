@@ -395,9 +395,30 @@ async function completeNativeToolHandoff({
     })
     .toBe(true);
   await flushWaitUntilForTest();
-  expect(JSON.stringify(requests[1]?.body)).toContain("image/png");
-  expect(JSON.stringify(requests[1]?.body)).toContain(activeInput);
-  expect(JSON.stringify(requests[1]?.body)).toContain("route-bound-signature");
+  const resumedManifestBytes = objects.get(
+    `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${resumed.runId}/manifest.json`,
+  );
+  if (!resumedManifestBytes) {
+    throw new Error("Expected resumed native manifest");
+  }
+  const resumedManifest = piApiFirstTurnManifestSchema.parse(
+    JSON.parse(resumedManifestBytes.toString("utf8")),
+  );
+  expect(resumedManifest).toMatchObject({
+    schemaVersion: 4,
+    mode: "sandbox-first",
+    baseSession: { sessionId: run.threadId, sha256: hash },
+  });
+  if (resumedManifest.schemaVersion !== 4) {
+    throw new Error("Expected referenced native tool history");
+  }
+  expect(new URL(resumedManifest.history.url).searchParams.get("object")).toBe(
+    `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.blob`,
+  );
+  expect(h2).toContain("image/png");
+  expect(h2).toContain(activeInput);
+  expect(h2).toContain("route-bound-signature");
+  expect(requests).toHaveLength(1);
   await cancelChatRun(actor, resumed.runId);
 }
 
@@ -434,7 +455,7 @@ describe("shared native Pi route activation", () => {
       if (model === "deepseek-v4.1-flash") {
         configureNativeCliArtifact();
       }
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       const { providerId } = await upsertOrgModelProvider(actor, {
         type,
         secret: "selected-deepseek-key",
@@ -452,7 +473,7 @@ describe("shared native Pi route activation", () => {
         [FeatureSwitchKey.PiLoop]: true,
       });
       mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
+      const objects = mockPiCheckpointObjectStore();
       const requests: unknown[] = [];
       server.use(
         http.post(url, async ({ request }) => {
@@ -478,17 +499,36 @@ describe("shared native Pi route activation", () => {
         threadId: first.threadId,
         prompt: "continue with the same history",
       });
-      await waitForRunStatus(actor, second.runId, "completed");
-      await flushWaitUntilForTest();
-      expect(requests).toHaveLength(2);
+      const secondManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
+      await expect
+        .poll(() => {
+          return objects.has(secondManifestKey);
+        })
+        .toBe(true);
+      const secondManifestBytes = objects.get(secondManifestKey);
+      if (!secondManifestBytes) {
+        throw new Error("Expected resumed DeepSeek manifest");
+      }
+      const secondManifest = piApiFirstTurnManifestSchema.parse(
+        JSON.parse(secondManifestBytes.toString("utf8")),
+      );
+      expect(secondManifest).toMatchObject({
+        schemaVersion: 4,
+        mode: "sandbox-first",
+        baseSession: { sessionId: first.threadId, sha256: expect.any(String) },
+      });
+      expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({
         model: getProviderRuntimeModel(type, model),
       });
-      expect(JSON.stringify(requests[1])).toContain(
-        "remember the selected DeepSeek route",
-      );
       await expectNoBuiltInModelUsage(first.runId);
       await expectNoBuiltInModelUsage(second.runId);
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
+      expect(secondClaim.claim).toMatchObject({
+        piSessionId: first.threadId,
+        piModelConfig: { route: type },
+      });
+      await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
     },
     90_000,
   );
@@ -500,7 +540,7 @@ describe("shared native Pi route activation", () => {
   it.each(piNativeCatalogModelSchema.options.filter(isPiNativeModel))(
     "runs built-in %s API-first with native billing and exact session continuation",
     async (model) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       configureNativeCliArtifact();
       await configureBuiltInPiModel(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
@@ -552,30 +592,34 @@ describe("shared native Pi route activation", () => {
         },
         pricing,
       );
-      await waitForRunStatus(actor, second.runId, "completed");
       await flushWaitUntilForTest();
-      expect(requests).toHaveLength(2);
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
+      await completeSandboxFirstPiRun({
+        actor,
+        answer: "Native Claude sandbox continuation",
+        checkpointObjects: objects,
+        claim: secondClaim,
+        prompt: "continue the native session",
+        run: second,
+        nativeModel: model,
+        usagePricingResolution: pricing,
+      });
+      expect(requests).toHaveLength(1);
       expect(requests[0]).toMatchObject({ model });
       expect(JSON.stringify(requests[0])).toContain('"effort":"low"');
-      expect(JSON.stringify(requests[1])).toContain(
-        `"effort":"${nextEffort === "extra" ? "xhigh" : "high"}"`,
-      );
       await expect(
         chat.readThreadMetadata(actor, first.threadId),
       ).resolves.toMatchObject({
         modelSettings: { [model]: { effort: nextEffort } },
       });
-      expect(JSON.stringify(requests[1])).toContain(
-        "retain this Claude native preference",
-      );
-      expect(JSON.stringify(requests[1])).toContain("route-bound-signature");
+      await expectPiApiUsage(first.runId, model, "", {
+        input: 5,
+        output: 3,
+        cacheRead: 3,
+        cacheCreation: 2,
+      });
+      await expectNoBuiltInModelUsage(second.runId);
       for (const run of [first, second]) {
-        await expectPiApiUsage(run.runId, model, "", {
-          input: 5,
-          output: 3,
-          cacheRead: 3,
-          cacheCreation: 2,
-        });
         await api.requestClaimRunnerJob(true, run.runId, [404], {
           capabilities: { piModelConfigGenerations: [4] },
         });
@@ -836,9 +880,7 @@ describe("shared native Pi route activation", () => {
       });
       expect(terminal).toHaveLength(1);
       await expectNoBuiltInModelUsage(run.runId);
-      expect(requests).toHaveLength(
-        type === "custom-anthropic-messages" ? 2 : 1,
-      );
+      expect(requests).toHaveLength(1);
     },
     90_000,
   );
@@ -1009,7 +1051,7 @@ describe("shared native Pi route activation", () => {
               },
             },
       );
-      expect(requests).toBe(2);
+      expect(requests).toBe(1);
       await expectNoBuiltInModelUsage(second.runId);
       await cancelChatRun(actor, second.runId, sandboxHeaders);
     },
