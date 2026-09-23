@@ -80,14 +80,9 @@ describe("isFeatureEnabled", () => {
     ).toBe(false);
   });
 
-  it("keeps Pi memory off for everyone until an explicit override enables it", () => {
+  it("enables Pi memory for staff and honors explicit overrides", () => {
     const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: staffOrgId },
-      { orgId: staffOrgId, userId: "staff-user", email: "lancy@okou.ai" },
-    ]) {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(isFeatureEnabled(FeatureSwitchKey.PiMemory, context)).toBe(false);
       expect(
         isFeatureEnabled(FeatureSwitchKey.PiMemory, {
@@ -96,6 +91,14 @@ describe("isFeatureEnabled", () => {
         }),
       ).toBe(true);
     }
+    const staff = { orgId: staffOrgId, userId: "staff-user" };
+    expect(isFeatureEnabled(FeatureSwitchKey.PiMemory, staff)).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.PiMemory, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.PiMemory]: false },
+      }),
+    ).toBe(false);
     // PiLoop selects the runtime and stays independent of PiMemory.
     expect(
       isFeatureEnabled(FeatureSwitchKey.PiLoop, {
@@ -106,8 +109,8 @@ describe("isFeatureEnabled", () => {
     expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PiMemory]).toEqual({
       maintainer: "lancy@okou.ai",
       description:
-        "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
-      rolloutStage: "alpha",
+        "Extract, consolidate, and recall memory for Pi threads in the staff organization.",
+      rolloutStage: "beta",
     });
   });
 
@@ -514,7 +517,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.SettingsToolsTab]).toBe(true);
@@ -556,12 +559,11 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 
-  it("enables Pi memory only for the user whose override says so", () => {
+  it("enables Pi memory for staff colleagues unless they opt out", () => {
     const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
     const testerStates = getAllFeatureStates({
       orgId: staffOrgId,
       userId: "pi-memory-tester",
-      overrides: { [FeatureSwitchKey.PiMemory]: true },
     });
     expect(testerStates[FeatureSwitchKey.PiMemory]).toBe(true);
     expect(testerStates[FeatureSwitchKey.PiLoop]).toBe(true);
@@ -570,8 +572,15 @@ describe("getAllFeatureStates", () => {
       orgId: staffOrgId,
       userId: "pi-memory-colleague",
     });
-    expect(colleagueStates[FeatureSwitchKey.PiMemory]).toBe(false);
+    expect(colleagueStates[FeatureSwitchKey.PiMemory]).toBe(true);
     expect(colleagueStates[FeatureSwitchKey.PiLoop]).toBe(true);
+
+    const optedOutStates = getAllFeatureStates({
+      orgId: staffOrgId,
+      userId: "pi-memory-colleague",
+      overrides: { [FeatureSwitchKey.PiMemory]: false },
+    });
+    expect(optedOutStates[FeatureSwitchKey.PiMemory]).toBe(false);
   });
 
   it("should enable custom templates for Bingjie by email outside the staff org", () => {
