@@ -59,6 +59,25 @@ deletes coexist with the old triggers because deleting an absent catalog row is
 idempotent. The direct hosted-site and account-erasure paths need their own
 source-scoped cleanup before the delete triggers can be retired.
 
+## Artifact and chat trigger retirement (proposed; not deployed)
+
+Draft PR #36416 proposes removing the eleven triggers named in #33749 and their
+six unreferenced functions. Its migration is a **contract step**, not an API
+expand step. It cannot ship while any serving API instance or supported rollback
+binary still relies on trigger-owned catalog writes/deletes, chat event seq or
+snapshot cursor derivation, append-only rejection, or computer-host/browser
+normalization. An old API against the contracted schema is not supported.
+
+Before making that PR mergeable, confirm the explicit API paths from #36258,
+#36294, #36301, #36304 and this PR have deployed to **all** serving instances,
+close the API rollback floor below those changes, and record deployment/rollback
+evidence in the PR. Verify the migration and its permanent inventory against a
+replayed database, plus API no-trigger integration coverage for ordinary file
+writes and deletion cascades, hosted-site/presentation deletion, chat event and
+snapshot concurrency/retries, and computer host selection on create/update.
+Do not infer production readiness from a merged commit or a passing isolated
+test. Preserve the shipped historical SQL migrations.
+
 This document focuses on three independently deployed surfaces that have
 cross-version API or persisted-state compatibility boundaries:
 

@@ -890,6 +890,13 @@
       "when": 1790160222955,
       "tag": "1204_chat_thread_snapshot_r2_pointer",
       "breakpoints": true
+    },
+    {
+      "idx": 1205,
+      "version": "7",
+      "when": 1790175456027,
+      "tag": "1205_retire_artifact_chat_triggers",
+      "breakpoints": true
     }
   ]
 }

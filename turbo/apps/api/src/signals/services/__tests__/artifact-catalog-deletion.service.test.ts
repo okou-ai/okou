@@ -6,8 +6,10 @@ import {
   artifactCatalogPendingFiles,
   artifacts,
   imageArtifacts,
+  presentationArtifacts,
   videoArtifacts,
 } from "@okouai/db/schema/artifact";
+import { hostedSites } from "@okouai/db/schema/hosted-site";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -17,7 +19,10 @@ import { expect, onTestFinished, test } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
-import { deleteArtifactCatalogForRunIds } from "../artifact-catalog-deletion.service";
+import {
+  deleteArtifactCatalogForHostedSiteId,
+  deleteArtifactCatalogForRunIds,
+} from "../artifact-catalog-deletion.service";
 import { queueArtifactCatalogFile } from "../artifact-catalog.service";
 import { deleteLockedRuns } from "../conversation-history-deletion.service";
 
@@ -45,6 +50,8 @@ async function harness() {
   for (const table of [
     "agent_sessions",
     "agent_runs",
+    "hosted_sites",
+    "presentation_artifacts",
     "run_uploaded_files",
     "image_artifacts",
     "video_artifacts",
@@ -59,6 +66,8 @@ async function harness() {
     ADD FOREIGN KEY (session_id) REFERENCES agent_sessions(id) ON DELETE CASCADE`);
   await db.execute(sql`ALTER TABLE run_uploaded_files
     ADD FOREIGN KEY (run_id) REFERENCES agent_runs(id) ON DELETE CASCADE`);
+  await db.execute(sql`ALTER TABLE presentation_artifacts
+    ADD FOREIGN KEY (hosted_site_id) REFERENCES hosted_sites(id) ON DELETE CASCADE`);
   await db.execute(sql`ALTER TABLE image_artifacts
     ADD FOREIGN KEY (file_id) REFERENCES run_uploaded_files(id) ON DELETE CASCADE`);
   await db.execute(sql`ALTER TABLE video_artifacts
@@ -152,7 +161,44 @@ async function harness() {
     return { runId: run.id, fileId: file.id };
   }
 
-  return { db, seed };
+  async function seedHostedSite(suffix: string) {
+    const [site] = await db
+      .insert(hostedSites)
+      .values({
+        orgId: `org_catalog_${suffix}`,
+        userId: `user_catalog_${suffix}`,
+        slug: `catalog-${suffix}`,
+        publicSlug: `catalog-${suffix}`,
+        publicBrand: "vm0",
+      })
+      .returning({ id: hostedSites.id });
+    if (!site) {
+      throw new Error("Expected a hosted site");
+    }
+    const [presentation] = await db
+      .insert(presentationArtifacts)
+      .values({ hostedSiteId: site.id })
+      .returning({ id: presentationArtifacts.id });
+    if (!presentation) {
+      throw new Error("Expected a presentation");
+    }
+    await db.insert(artifacts).values(
+      [
+        { kind: "hosted-site" as const, entityId: site.id },
+        { kind: "presentation" as const, entityId: presentation.id },
+      ].map((entry) => ({
+        ...entry,
+        orgId: `org_catalog_${suffix}`,
+        authorUserId: `user_catalog_${suffix}`,
+        logicalKey: `${entry.kind}:${suffix}`,
+        projectionCreatedAt: nowDate(),
+        title: suffix,
+      })),
+    );
+    return { siteId: site.id, presentationId: presentation.id };
+  }
+
+  return { db, seed, seedHostedSite };
 }
 
 test("removes file and generated media catalog rows before a Run cascade without triggers", async () => {
@@ -246,6 +292,68 @@ test("can repeat catalog cleanup while the locked Run and file still exist", asy
   });
 });
 
+test("removes hosted-site and presentation catalog rows before source deletion without triggers", async () => {
+  const { db, seedHostedSite } = await harness();
+  const target = await seedHostedSite("site_target");
+  const survivor = await seedHostedSite("site_survivor");
+
+  await db.transaction(async (tx) => {
+    await deleteArtifactCatalogForHostedSiteId(tx, target.siteId);
+    await tx.delete(hostedSites).where(eq(hostedSites.id, target.siteId));
+  });
+
+  await expect(
+    db.select().from(artifacts).where(eq(artifacts.entityId, target.siteId)),
+  ).resolves.toHaveLength(0);
+  await expect(
+    db
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.entityId, target.presentationId)),
+  ).resolves.toHaveLength(0);
+  await expect(
+    db
+      .select()
+      .from(presentationArtifacts)
+      .where(eq(presentationArtifacts.id, target.presentationId)),
+  ).resolves.toHaveLength(0);
+  await expect(
+    db.select().from(artifacts).where(eq(artifacts.entityId, survivor.siteId)),
+  ).resolves.toHaveLength(1);
+  await expect(
+    db
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.entityId, survivor.presentationId)),
+  ).resolves.toHaveLength(1);
+});
+
+test("rolls hosted-site catalog cleanup back with source deletion", async () => {
+  const { db, seedHostedSite } = await harness();
+  const target = await seedHostedSite("site_rollback");
+
+  await expect(
+    db.transaction(async (tx) => {
+      await deleteArtifactCatalogForHostedSiteId(tx, target.siteId);
+      await tx.delete(hostedSites).where(eq(hostedSites.id, target.siteId));
+      throw new Error("rollback");
+    }),
+  ).rejects.toThrow("rollback");
+
+  await expect(
+    db.select().from(hostedSites).where(eq(hostedSites.id, target.siteId)),
+  ).resolves.toHaveLength(1);
+  await expect(
+    db.select().from(artifacts).where(eq(artifacts.entityId, target.siteId)),
+  ).resolves.toHaveLength(1);
+  await expect(
+    db
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.entityId, target.presentationId)),
+  ).resolves.toHaveLength(1);
+});
+
 test("keeps the catalog handoff in step with file changes without triggers", async () => {
   const { db, seed } = await harness();
   const target = await seed("handoff", { catalog: false, url: null });
@@ -266,7 +374,7 @@ test("keeps the catalog handoff in step with file changes without triggers", asy
       })
       .from(artifactCatalogPendingFiles)
       .where(eq(artifactCatalogPendingFiles.fileId, target.fileId)),
-  ).resolves.toEqual([
+  ).resolves.toStrictEqual([
     { orgId: "org_catalog_handoff", authorUserId: "user_catalog_handoff" },
   ]);
 
@@ -287,7 +395,9 @@ test("keeps the catalog handoff in step with file changes without triggers", asy
       })
       .from(artifactCatalogPendingFiles)
       .where(eq(artifactCatalogPendingFiles.fileId, target.fileId)),
-  ).resolves.toEqual([{ orgId: changedOrgId, authorUserId: changedUserId }]);
+  ).resolves.toStrictEqual([
+    { orgId: changedOrgId, authorUserId: changedUserId },
+  ]);
 
   await db.insert(artifacts).values({
     kind: "file",
@@ -353,7 +463,7 @@ test("rolls back file publication and catalog handoff together without triggers"
       .select({ url: runUploadedFiles.url })
       .from(runUploadedFiles)
       .where(eq(runUploadedFiles.id, target.fileId)),
-  ).resolves.toEqual([{ url: null }]);
+  ).resolves.toStrictEqual([{ url: null }]);
   await expect(
     db
       .select()

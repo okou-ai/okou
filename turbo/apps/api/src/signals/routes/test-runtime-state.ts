@@ -60,6 +60,7 @@ import { usagePackPurchaseSerializationSchemaAvailable } from "../services/usage
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
 import { writeRunMetadata } from "../services/agent-run-metadata-write.service";
 import { saveRunSummary } from "../services/run-summary.service";
+import { queueArtifactCatalogFile } from "../services/artifact-catalog.service";
 import { reconcileSocialKitDownloads$ } from "../services/socialkit-download.service";
 import { steerRunNearTimeBudgetForTest } from "../services/cron-steer-run-time-budget.service";
 import {
@@ -1544,63 +1545,41 @@ async function threadSessionStateActionResponse(
   }
 }
 
-type LegacyArtifactCatalogFileAction = Extract<
+type PendingArtifactCatalogFileAction = Extract<
   TestRuntimeStateActionBody,
-  { action: "insert-legacy-artifact-catalog-file" }
+  { action: "seed-pending-artifact-catalog-file" }
 >;
 
-async function insertLegacyArtifactCatalogFile(
+async function seedPendingArtifactCatalogFile(
   db: Db,
-  body: LegacyArtifactCatalogFileAction,
+  body: PendingArtifactCatalogFileAction,
   signal: AbortSignal,
 ) {
-  const [file] = await db
-    .insert(runUploadedFiles)
-    .values({
-      source: "web",
-      externalId: body.url,
-      userId: body.user_id,
-      orgId: body.org_id,
-      filename: body.filename,
-      contentType: "application/zip",
-      sizeBytes: 512,
-      url: body.url,
-      metadata: {},
-    })
-    .returning({ id: runUploadedFiles.id });
+  // Keep the ordinary write-to-queue handoff; skip only the immediate sync so
+  // the public list and scoped worker can exercise a durable recovery backlog.
+  const fileId = await db.transaction(async (tx) => {
+    const [file] = await tx
+      .insert(runUploadedFiles)
+      .values({
+        source: "web",
+        externalId: body.url,
+        userId: body.user_id,
+        orgId: body.org_id,
+        filename: body.filename,
+        contentType: "application/zip",
+        sizeBytes: 512,
+        url: body.url,
+        metadata: {},
+      })
+      .returning({ id: runUploadedFiles.id });
+    if (!file) {
+      throw new Error("Failed to seed a pending artifact catalog file");
+    }
+    await queueArtifactCatalogFile(tx, file.id, signal);
+    return file.id;
+  });
   signal.throwIfAborted();
-  if (!file) {
-    throw new Error("Failed to insert a legacy artifact catalog file");
-  }
-  return {
-    status: 200 as const,
-    body: { ok: true as const, file_id: file.id },
-  };
-}
-
-type PreviousApiComputerAccessAction = Extract<
-  TestRuntimeStateActionBody,
-  { action: "set-computer-use-host-as-previous-api" }
->;
-
-async function setComputerUseHostAsPreviousApi(
-  db: Db,
-  body: PreviousApiComputerAccessAction,
-  signal: AbortSignal,
-) {
-  // The API version immediately before cloud browser shipped updated only
-  // computer_use_host_id. No current production route can reproduce that
-  // mixed-version writer shape.
-  const [updated] = await db
-    .update(chatThreads)
-    .set({ computerUseHostId: body.computer_use_host_id })
-    .where(eq(chatThreads.id, body.thread_id))
-    .returning({ id: chatThreads.id });
-  signal.throwIfAborted();
-  if (!updated) {
-    throw new Error("Expected a chat thread for previous API host update");
-  }
-  return { status: 200 as const, body: { ok: true as const } };
+  return { status: 200 as const, body: { ok: true as const, file_id: fileId } };
 }
 
 type PreviousApiRunnerJobContextProfileAction = Extract<
@@ -1960,8 +1939,7 @@ function isCompatibilityFixtureAction(
     "set-workflow-automation-autonomy-budget",
     "read-workflow-automation-autonomy-state",
     "read-latest-workflow-automation-run",
-    "insert-legacy-artifact-catalog-file",
-    "set-computer-use-host-as-previous-api",
+    "seed-pending-artifact-catalog-file",
     "set-browser-tab-snapshot-as-previous-api",
     "set-runner-job-context-profile-as-previous-api",
     "clear-workflow-automation-event-connector-as-previous-api",
@@ -1978,11 +1956,8 @@ async function compatibilityFixtureActionResponse(
     return await autonomyBudgetFixtureActionResponse(db, body, signal);
   }
   switch (body.action) {
-    case "insert-legacy-artifact-catalog-file": {
-      return await insertLegacyArtifactCatalogFile(db, body, signal);
-    }
-    case "set-computer-use-host-as-previous-api": {
-      return await setComputerUseHostAsPreviousApi(db, body, signal);
+    case "seed-pending-artifact-catalog-file": {
+      return await seedPendingArtifactCatalogFile(db, body, signal);
     }
     case "set-browser-tab-snapshot-as-previous-api": {
       return await setBrowserTabSnapshotAsPreviousApi(db, body, signal);
