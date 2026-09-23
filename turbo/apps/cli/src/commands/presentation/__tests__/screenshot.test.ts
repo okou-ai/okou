@@ -219,6 +219,16 @@ vi.mock("child_process", () => {
   return { execFileSync: vi.fn(fakeExecFileSync) };
 });
 
+const mockDelay = vi.hoisted(() => {
+  return vi.fn();
+});
+
+vi.mock("timers/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("timers/promises")>();
+  mockDelay.mockImplementation(original.setTimeout);
+  return { ...original, setTimeout: mockDelay };
+});
+
 const logSpy = vi.spyOn(console, "log").mockImplementation(() => {
   return undefined;
 });
@@ -372,22 +382,16 @@ describe("okou presentation screenshot", () => {
     const lockDirectory = join(cacheRoot, ".install.lock");
     mkdirSync(lockDirectory, { recursive: true });
 
-    const concurrentInstall = new Promise<void>((resolve) => {
-      setTimeout(() => {
-        fakeLibreOfficePackage(installRoot);
-        fakePopplerPackage(installRoot);
-        writeFileSync(
-          join(installRoot, ".libreoffice-impress.ready"),
-          "ready\n",
-        );
-        writeFileSync(join(installRoot, ".poppler-utils.ready"), "ready\n");
-        rmSync(lockDirectory, { force: true, recursive: true });
-        resolve();
-      }, 25);
+    mockDelay.mockImplementationOnce(() => {
+      fakeLibreOfficePackage(installRoot);
+      fakePopplerPackage(installRoot);
+      writeFileSync(join(installRoot, ".libreoffice-impress.ready"), "ready\n");
+      writeFileSync(join(installRoot, ".poppler-utils.ready"), "ready\n");
+      rmSync(lockDirectory, { force: true, recursive: true });
+      return Promise.resolve();
     });
 
     await run("--input", join(workDir, "deck.pptx"), "--out", outDir);
-    await concurrentInstall;
 
     expect(
       vi.mocked(execFileSync).mock.calls.some((call) => {

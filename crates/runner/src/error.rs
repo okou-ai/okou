@@ -79,6 +79,16 @@ impl From<runner_storage::StorageError> for RunnerError {
     }
 }
 
+impl From<runner_network::NetworkError> for RunnerError {
+    fn from(error: runner_network::NetworkError) -> Self {
+        match error {
+            runner_network::NetworkError::Config(message) => Self::Config(message),
+            runner_network::NetworkError::Internal(message) => Self::Internal(message),
+            runner_network::NetworkError::Io(error) => Self::Io(error),
+        }
+    }
+}
+
 /// Error returned by `service stop` / `service uninstall` when the target
 /// runner has active jobs and the user did not pass `--force`.
 #[derive(Debug)]

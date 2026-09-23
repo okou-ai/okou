@@ -148,6 +148,26 @@ type StorageManifestCacheCountBucket =
   | "9_16"
   | "17_plus";
 
+type StorageManifestPrefetchCountBucket =
+  | "0"
+  | "1"
+  | "2_4"
+  | "5_8"
+  | "9_16"
+  | "17_32"
+  | "33_51"
+  | "52_64"
+  | "65_96"
+  | "97_128"
+  | "129_plus";
+
+type StorageManifestPrefetchDecision =
+  | "insufficient_groups"
+  | "over_request_limit"
+  | "no_pairs"
+  | "over_unique_pair_limit"
+  | "mixed_lookup_selected";
+
 interface StorageManifestCacheObservationStats {
   readonly requestedCount: number;
   uniqueKeyCount: number;
@@ -192,6 +212,43 @@ function storageManifestCacheCountBucket(
     return "9_16";
   }
   return "17_plus";
+}
+
+function storageManifestPrefetchCountBucket(
+  count: number,
+): StorageManifestPrefetchCountBucket {
+  if (count <= 0) {
+    return "0";
+  }
+  if (count === 1) {
+    return "1";
+  }
+  if (count <= 4) {
+    return "2_4";
+  }
+  if (count <= 8) {
+    return "5_8";
+  }
+  if (count <= 16) {
+    return "9_16";
+  }
+  if (count <= 32) {
+    return "17_32";
+  }
+  // Telemetry bucket ranges stay stable if the lookup limit changes.
+  if (count <= 51) {
+    return "33_51";
+  }
+  if (count <= 64) {
+    return "52_64";
+  }
+  if (count <= 96) {
+    return "65_96";
+  }
+  if (count <= 128) {
+    return "97_128";
+  }
+  return "129_plus";
 }
 
 class StorageManifestCacheTiming {
@@ -613,6 +670,40 @@ interface StorageManifestPresignedUrlCacheLookupPair {
   readonly cacheKey: string;
 }
 
+function recordStorageManifestPrefetchDecision(args: {
+  readonly observation:
+    | StorageManifestCacheMixedLookupObservationContext
+    | undefined;
+  readonly decision: StorageManifestPrefetchDecision;
+  readonly requestedCount: number;
+  readonly logicalLookupCount: number;
+  readonly uniquePairCount?: number;
+}): void {
+  if (!args.observation) {
+    return;
+  }
+  args.observation.timing.recordDuration(
+    "api_dispatch_prepare_storage_manifest_cache_prefetch_decision",
+    "nested",
+    0,
+    now(),
+    {
+      storage_manifest_branch: args.observation.branch,
+      storage_manifest_cache_prefetch_decision: args.decision,
+      storage_manifest_cache_prefetch_requested_count_bucket:
+        storageManifestPrefetchCountBucket(args.requestedCount),
+      storage_manifest_cache_logical_lookup_count_bucket:
+        storageManifestCacheCountBucket(args.logicalLookupCount),
+      ...(args.uniquePairCount === undefined
+        ? {}
+        : {
+            storage_manifest_cache_prefetch_unique_pair_count_bucket:
+              storageManifestPrefetchCountBucket(args.uniquePairCount),
+          }),
+    },
+  );
+}
+
 function storageManifestPresignedUrlCacheLookupPairs(
   input: StorageManifestPresignedUrlCachePrefetchInput,
 ): readonly StorageManifestPresignedUrlCacheLookupPair[] {
@@ -660,25 +751,59 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
 }): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
   return computed(async () => {
-    if (args.input.logicalLookupCount < 2) {
-      return undefined;
-    }
     const requestedCount =
       args.input.systemRequests.length +
       args.input.workflowSkillRequests.length +
       args.input.readOnlyRequests.length;
+    if (args.input.logicalLookupCount < 2) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "insufficient_groups",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+      });
+      return undefined;
+    }
     if (
       requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
     ) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "over_request_limit",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+      });
       return undefined;
     }
     const pairs = storageManifestPresignedUrlCacheLookupPairs(args.input);
-    if (
-      pairs.length === 0 ||
-      pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
-    ) {
+    if (pairs.length === 0) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "no_pairs",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+        uniquePairCount: pairs.length,
+      });
       return undefined;
     }
+    if (pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "over_unique_pair_limit",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+        uniquePairCount: pairs.length,
+      });
+      return undefined;
+    }
+
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "mixed_lookup_selected",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+      uniquePairCount: pairs.length,
+    });
 
     const scopes = pairs.map((pair) => {
       return pair.scope;

@@ -12,6 +12,7 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
+import { testArtifactCatalogReconcileRoutes } from "../test-artifact-catalog-reconcile";
 import { sharedThreadRoutes } from "../shared-threads";
 import {
   createBddApi,
@@ -618,6 +619,50 @@ describe("GET /api/artifacts/catalog", () => {
       throw new Error("Expected the reconciled artifact to be a file");
     }
     expect(detail.file).toMatchObject({ id: fileId, url });
+  }, 180_000);
+
+  it("bounds list repair and recovers the remaining backlog through the scoped worker", async () => {
+    const owner = await catalogActor("Artifact catalog backlog owner");
+    const fileIds: string[] = [];
+    for (let index = 0; index < 21; index += 1) {
+      fileIds.push(
+        await insertLegacyCatalogFile({
+          owner,
+          filename: `backlog-${index}.zip`,
+          url: `https://files.okou.test/${randomUUID()}/backlog-${index}.zip`,
+        }),
+      );
+    }
+
+    const firstPage = await chat.listArtifactCatalog(owner.actor);
+    expect(firstPage.artifacts).toHaveLength(20);
+
+    // The previous API writer cannot be invoked through the current routes.
+    // Its trigger leaves durable pending rows; this test-only route limits the
+    // production worker to IDs owned by this case instead of a global scan.
+    const recovery = await createAppWithRoutes({
+      signal: context.signal,
+      routes: testArtifactCatalogReconcileRoutes,
+    }).request("/api/test/artifact-catalog/reconcile", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fileIds }),
+    });
+    expect(recovery.status).toBe(200);
+    await expect(recovery.json()).resolves.toStrictEqual({
+      processed: 1,
+      failed: 0,
+    });
+
+    const recovered = await chat.listArtifactCatalog(owner.actor);
+    expect(recovered.artifacts).toHaveLength(21);
+    expect(
+      new Set(
+        recovered.artifacts.map((artifact) => {
+          return artifact.title;
+        }),
+      ).size,
+    ).toBe(21);
   }, 180_000);
 
   it("removes catalog rows when deleting the backing agent", async () => {

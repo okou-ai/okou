@@ -81,6 +81,7 @@
       "description": "एजेंट \"{{agentId}}\" मौजूद नहीं है या आपके पास उस तक पहुंच नहीं है।",
       "title": "एजेंट नहीं मिला"
     },
+    "sectionNavigation": "एजेंट विवरण अनुभाग",
     "tabs": {
       "authorization": "प्राधिकार",
       "instructions": "निर्देश",

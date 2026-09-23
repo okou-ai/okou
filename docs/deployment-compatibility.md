@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## Artifact catalog API handoff (2026-09-23)
+
+The API now enqueues file catalog work in the same transaction as its ordinary
+upload, private-file completion, canonical publication, and preview writes. An
+awaited immediate sync keeps the usual response path current; the durable row
+lets the bounded reconciliation cron recover when that later sync fails. Catalog
+list requests repair at most 20 caller-owned rows and no longer drain an entire
+backlog. The cron processes at most 100 rows or 20 seconds per tick.
+
+The `run_uploaded_files_queue_artifact_catalog` trigger remains for older API
+instances during this handoff. Both the trigger and new API may enqueue the same
+file; the primary key makes that one pending task. Replayed catalog writes retain
+the existing logical-key conflict and projection ordering rules. New API with
+the old schema is supported, and an API rollback remains supported while the
+trigger exists. Do not remove any of the eleven artifact/chat triggers in this
+release. Their removal requires the remaining file writers, parent-deletion
+paths, event and computer-access writers to use explicit operations, followed
+by evidence that all old API instances and rollback binaries have drained.
+
 This document focuses on three independently deployed surfaces that have
 cross-version API or persisted-state compatibility boundaries:
 
@@ -833,10 +852,13 @@ Compatibility is negotiated per run rather than by deployment order:
   installed manifest. It moves only when code that feeds the constructed
   session changes, in whichever package that code lives, whereas
   `piAgentRuntime` also moves on dependency-only release bumps and therefore
-  forced the `npx` launch after most releases. **The backend does not write it
-  yet**: the reader ships first, and the writer follows in its own release
-  with the reader commit as an API rollback floor, exactly as the runtime
-  version fields were staged above.
+  forced the `npx` launch after most releases. **The backend writes it now**:
+  the reader shipped first in `322efb6d72508e15b90dc788100a776da1485751`
+  (#36142, released as api 1.659.0 in
+  `3ffd0d5086a02cd8328cf60defab7a242b682273`), and the writer followed
+  after that API was promoted. The production rollback resolver enforces this
+  reader as an additional API floor so old strict readers cannot claim queued
+  runs carrying the digest. Retained Runner tags are unaffected.
 - The guest agent execs the installed CLI only on a parity match at or above
   the CLI floor. When the launch config carries
   `requiredPiSessionConstructionDigest`, parity means the installed manifest's
@@ -851,9 +873,10 @@ Compatibility is negotiated per run rather than by deployment order:
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
   `runner_installed_pi_agent_runtime_version`. The optional
-  `piSessionConstructionDigest` member is accepted but not advertised yet;
-  runners send it once every serving backend accepts it, and the backend then
-  records it as `runner_installed_pi_session_construction_digest`.
+  `piSessionConstructionDigest` member is advertised when the installed
+  artifact has a digest. The backend records it as
+  `runner_installed_pi_session_construction_digest`; older installed artifacts
+  omit it.
 - The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
   when the required session-construction digest, or without one the required
   runtime version, differs from what it bundles. A settled-session continuation
@@ -1122,7 +1145,7 @@ CLI changes must ship through the same commit-addressed CLI artifact selection.
 Previously captured contexts retain their package and history reference; new
 contexts select the new reader. Old Runners already support 128 MiB history.
 
-Pi remains staff-only behind `PiLoop`. Rolling the API back below this change
+Pi is enabled by default through `PiLoop`. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 There is no history truncation, migration, or alternate reader for that rollback.
@@ -1365,6 +1388,11 @@ prepared plan and adds no lookup or retained file contents. A missing compressed
 archive still selects its required fill; later plans perform their own positive
 lookup, so GC eviction cannot become a permanent warming exclusion. Unobserved
 positive entries retain the existing background checks.
+When one name/version group also contains an instruction or another archive-required
+target, eligible storage and fresh artifact mounts may still use decoded files.
+The archive continues through its normal delivery path for the other target and
+is not retired while that target requires it. A missing decoded entry can still
+be warmed from an archive hit or fill for a later plan.
 
 Artifact decoded selection has the same fail-closed boundary as storage:
 missing, busy, rejected, conflicting or capacity-ineligible optional cache work

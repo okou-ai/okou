@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   SocialDataJobs = "socialDataJobs",
-  PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
   Dummy = "_dummy",
@@ -53,8 +52,8 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
   PrivateArtifacts = "privateArtifacts",
-  SidebarSubscriptionUsage = "_sidebarSubscriptionUsage",
-  PersonalModelProviderAccounts = "_multipleSubscriptions",
+  SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
+  PersonalModelProviderAccounts = "multipleSubscriptions",
   AgentPhoneEntry = "agentPhoneEntry",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",

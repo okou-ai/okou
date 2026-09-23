@@ -109,6 +109,19 @@ function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
 
+/**
+ * The write precondition is mandatory, so a caller reads before it writes. The
+ * read also seeds a workspace that has never been listed, which is exactly what
+ * a real client does before its first write.
+ */
+async function currentPolicyRevision(): Promise<string> {
+  const current = await accept(
+    apiClient().list({ headers: authHeaders() }),
+    [200],
+  );
+  return current.body.revision;
+}
+
 function useSession(
   fixture: ModelPolicyFixture,
   orgRole: "org:admin" | "org:member" = "org:admin",
@@ -220,6 +233,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(addable.body), makeBuiltInPolicy(model)],
         },
       }),
@@ -247,7 +261,10 @@ describe("GET/PUT /api/model-policies", () => {
     const preserved = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: toUpdate(listedAfterDisable.body) },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: toUpdate(listedAfterDisable.body),
+        },
       }),
       [200],
     );
@@ -292,6 +309,7 @@ describe("GET/PUT /api/model-policies", () => {
         client.update({
           headers: authHeaders(),
           body: {
+            revision: await currentPolicyRevision(),
             policies: [
               ...toUpdate(initial.body),
               makeBuiltInPolicy(stagedModel),
@@ -320,7 +338,10 @@ describe("GET/PUT /api/model-policies", () => {
     const replaced = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: [makeBuiltInPolicy("gpt-5.6-luna", true)] },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: [makeBuiltInPolicy("gpt-5.6-luna", true)],
+        },
       }),
       [200],
     );
@@ -330,6 +351,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             makeBuiltInPolicy("gpt-5.6-luna", true),
             makeBuiltInPolicy("gpt-6-luna"),
@@ -362,6 +384,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(initial.body), makeBuiltInPolicy("gpt-6-sol")],
         },
       }),
@@ -398,6 +421,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: toUpdate(existing.body).map((policy) => {
             return { ...policy, isDefault: policy.model === "gpt-6-sol" };
           }),
@@ -411,6 +435,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: toUpdate(promoted.body)
             .filter((policy) => {
               return policy.model !== "gpt-6-sol";
@@ -432,6 +457,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(removed.body), makeBuiltInPolicy("gpt-6-sol")],
         },
       }),
@@ -459,6 +485,7 @@ describe("GET/PUT /api/model-policies", () => {
         client.update({
           headers: authHeaders(),
           body: {
+            revision: await currentPolicyRevision(),
             policies: [
               ...toUpdate(existing.body),
               makeBuiltInPolicy(retiredModel),
@@ -492,6 +519,7 @@ describe("GET/PUT /api/model-policies", () => {
           client.update({
             headers: authHeaders(),
             body: {
+              revision: await currentPolicyRevision(),
               policies: [
                 ...toUpdate(existing.body),
                 makeBuiltInPolicy(activeModel),
@@ -609,7 +637,10 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: [makeBuiltInPolicy(model, true)] },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: [makeBuiltInPolicy(model, true)],
+        },
       }),
       [200],
     );
@@ -698,7 +729,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -750,6 +781,7 @@ describe("GET/PUT /api/model-policies", () => {
         client.update({
           headers: authHeaders(),
           body: {
+            revision: await currentPolicyRevision(),
             policies: [makeBuiltInPolicy(previousDefaultModel, true)],
           },
         }),
@@ -823,7 +855,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await apiClient().update({
       headers: authHeaders(),
-      body: { policies: [] },
+      body: { revision: await currentPolicyRevision(), policies: [] },
     });
 
     expect(response.status).toBe(403);
@@ -855,7 +887,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -894,7 +926,7 @@ describe("GET/PUT /api/model-policies", () => {
     const updateResponse = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -947,7 +979,7 @@ describe("GET/PUT /api/model-policies", () => {
     await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1000,7 +1032,7 @@ describe("GET/PUT /api/model-policies", () => {
     await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1034,7 +1066,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1051,17 +1083,16 @@ describe("GET/PUT /api/model-policies", () => {
   });
 
   it("rejects restricted policy writes for limited-free-1 workspaces", async () => {
-    const fixture = await seedFixture();
-    await makeLimitedFreeWorkspace(fixture);
-    useSession(fixture);
+    // A caller must read before it writes, and that read seeds the workspace's
+    // grandfathered rows. The rejection therefore applies to the restricted
+    // model this write adds on top of them, not to the seeded set itself.
+    const { stored } = await listSeededLimitedFreePolicies();
 
     const response = await apiClient().update({
       headers: authHeaders(),
       body: {
-        policies: [
-          makeBuiltInPolicy("deepseek-v4-pro", true),
-          makeBuiltInPolicy("gpt-6-astra"),
-        ],
+        revision: await currentPolicyRevision(),
+        policies: [...toUpdate(stored), makeBuiltInPolicy("gpt-6-astra", true)],
       },
     });
     const afterRejected = await accept(
@@ -1104,6 +1135,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             {
               ...makeBuiltInPolicy("gpt-6-astra"),
@@ -1139,6 +1171,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             ...toUpdate(stored),
             {
@@ -1188,6 +1221,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: toUpdate(stored).map((policy) => {
             return { ...policy, isDefault: policy.model === "gpt-6-astra" };
           }),
@@ -1213,6 +1247,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: toUpdate(stored).map((policy) => {
             return policy.model === "gpt-6-astra"
               ? {
@@ -1232,6 +1267,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: toUpdate(routed.body).map((policy) => {
             return policy.model === "gpt-6-astra"
               ? makeBuiltInPolicy("gpt-6-astra")
@@ -1263,6 +1299,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [...toUpdate(stored), makeBuiltInPolicy("gpt-5.6-sol")],
         },
       }),
@@ -1294,6 +1331,7 @@ describe("GET/PUT /api/model-policies", () => {
       client.update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             ...toUpdate(listResponse.body),
             makeBuiltInPolicy("claude-sonnet-4-6"),
@@ -1337,7 +1375,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1406,7 +1444,7 @@ describe("GET/PUT /api/model-policies", () => {
     const updated = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1439,7 +1477,10 @@ describe("GET/PUT /api/model-policies", () => {
     const roundTripped = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: previousClientPolicies },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: previousClientPolicies,
+        },
       }),
       [200],
     );
@@ -1469,7 +1510,10 @@ describe("GET/PUT /api/model-policies", () => {
     const cleared = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: clearedPolicies },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: clearedPolicies,
+        },
       }),
       [200],
     );
@@ -1515,7 +1559,7 @@ describe("GET/PUT /api/model-policies", () => {
       const response = await accept(
         client.update({
           headers: authHeaders(),
-          body: { policies: updates },
+          body: { revision: await currentPolicyRevision(), policies: updates },
         }),
         [200],
       );
@@ -1558,7 +1602,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1577,6 +1621,17 @@ describe("GET/PUT /api/model-policies", () => {
   it("stores priority with a GPT 5.6 user model preference", async () => {
     const fixture = await seedFixture();
     useSession(fixture);
+    // The member projection is always present now, so the priority tier is
+    // validated against the effective route rather than against a merely valid
+    // organization route. A fresh workspace bootstraps onto limited-free-1,
+    // whose plan restricts Built-in models, so give it a plan that admits the
+    // route and a runtime route to resolve.
+    await seedOrgMetadata({
+      orgId: fixture.orgId,
+      tier: "pro",
+      credits: 1_000_000,
+    });
+    await seedBuiltInModelCandidateKeys(context, "gpt-5.6-sol");
     const client = apiClient();
     const preferenceClient = setupApp({
       context,
@@ -1593,7 +1648,7 @@ describe("GET/PUT /api/model-policies", () => {
     await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -1623,6 +1678,7 @@ describe("GET/PUT /api/model-policies", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             {
               model: "gpt-5.6-sol",
@@ -1640,9 +1696,6 @@ describe("GET/PUT /api/model-policies", () => {
     await providers.deleteOrgModelProvider(fixture, "openai-api-key", [204]);
     // Plan state is infrastructure-owned; subscriptions require a BYOK plan.
     await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-    });
     useSession(fixture);
     const preferences = setupApp({
       context,
@@ -2025,7 +2078,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await accept(
       client.update({
         headers: authHeaders(),
-        body: { policies: updates },
+        body: { revision: await currentPolicyRevision(), policies: updates },
       }),
       [200],
     );
@@ -2070,7 +2123,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2107,7 +2160,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2141,7 +2194,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2167,6 +2220,7 @@ describe("GET/PUT /api/model-policies", () => {
     const response = await client.update({
       headers: authHeaders(),
       body: {
+        revision: await currentPolicyRevision(),
         policies: [
           duplicatedPolicy,
           { ...duplicatedPolicy, isDefault: false },
@@ -2198,7 +2252,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await client.update({
       headers: authHeaders(),
-      body: { policies: updates },
+      body: { revision: await currentPolicyRevision(), policies: updates },
     });
 
     expect(response.status).toBe(400);
@@ -2243,6 +2297,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await putRawModelPolicies(
       JSON.stringify({
+        revision: await currentPolicyRevision(),
         policies: [
           {
             model: "claude-haiku-4-5",
@@ -2267,7 +2322,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     const response = await apiClient().update({
       headers: authHeaders(),
-      body: { policies: [] },
+      body: { revision: await currentPolicyRevision(), policies: [] },
     });
 
     expect(response.status).toBe(400);
@@ -2314,6 +2369,7 @@ test.each([
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             {
               model: "claude-sonnet-4-6",
@@ -2334,13 +2390,6 @@ test.each([
 );
 
 describe("conditional organization model policy writes", () => {
-  async function enablePriority(fixture: ModelPolicyFixture) {
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-    });
-    useSession(fixture);
-  }
-
   it("rejects missing and stale snapshots without erasing another admin's model or preference", async () => {
     const fixture = seedFixture();
     useSession(fixture);
@@ -2353,6 +2402,7 @@ describe("conditional organization model policy writes", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             makeBuiltInPolicy("gpt-5.6-luna", true),
             makeBuiltInPolicy("gpt-6-astra"),
@@ -2361,7 +2411,7 @@ describe("conditional organization model policy writes", () => {
       }),
       [200],
     );
-    await enablePriority(fixture);
+    useSession(fixture);
     const first = await accept(
       apiClient().list({ headers: authHeaders() }),
       [200],
@@ -2482,6 +2532,7 @@ describe("conditional organization model policy writes", () => {
         apiClient().update({
           headers: authHeaders(),
           body: {
+            revision: await currentPolicyRevision(),
             policies: [
               makeBuiltInPolicy("gpt-5.6-luna", true),
               {
@@ -2505,7 +2556,7 @@ describe("conditional organization model policy writes", () => {
         }),
         [200],
       );
-      await enablePriority(fixture);
+      useSession(fixture);
       const read = await accept(
         apiClient().list({ headers: authHeaders() }),
         [200],
@@ -2615,6 +2666,7 @@ describe("conditional organization model policy writes", () => {
       apiClient().update({
         headers: authHeaders(),
         body: {
+          revision: await currentPolicyRevision(),
           policies: [
             makeBuiltInPolicy("gpt-5.6-luna", true),
             makeBuiltInPolicy("gpt-6-astra"),
@@ -2634,7 +2686,7 @@ describe("conditional organization model policy writes", () => {
       }),
       [200],
     );
-    await enablePriority(fixture);
+    useSession(fixture);
     const snapshot = await accept(
       apiClient().list({ headers: authHeaders() }),
       [200],
@@ -2707,7 +2759,10 @@ describe("conditional policy writes and persisted repair boundaries", () => {
     await accept(
       apiClient().update({
         headers: authHeaders(),
-        body: { policies: [retainedPolicy, makeBuiltInPolicy("gpt-6-astra")] },
+        body: {
+          revision: await currentPolicyRevision(),
+          policies: [retainedPolicy, makeBuiltInPolicy("gpt-6-astra")],
+        },
       }),
       [200],
     );
@@ -2722,9 +2777,6 @@ describe("conditional policy writes and persisted repair boundaries", () => {
       }),
       [200],
     );
-    await updateFeatureSwitchesForUser(context, fixture, {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-    });
     useSession(fixture);
     const snapshot = await accept(
       apiClient().list({ headers: authHeaders() }),
@@ -2788,6 +2840,7 @@ describe("conditional policy writes and persisted repair boundaries", () => {
         apiClient().update({
           headers: authHeaders(),
           body: {
+            revision: await currentPolicyRevision(),
             policies: [
               makeBuiltInPolicy("gpt-5.6-luna", true),
               makeBuiltInPolicy("gpt-6-astra"),
@@ -2807,9 +2860,6 @@ describe("conditional policy writes and persisted repair boundaries", () => {
         }),
         [200],
       );
-      await updateFeatureSwitchesForUser(context, fixture, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
-      });
       useSession(fixture);
       const previous = await accept(
         apiClient().list({ headers: authHeaders() }),

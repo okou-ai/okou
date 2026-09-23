@@ -163,7 +163,10 @@ const serpCommand = new Command()
     ),
   )
   .addOption(
-    new Option("--language <code>", "Search language code")
+    new Option(
+      "--language <code>",
+      "Engine-specific DataForSEO language code (see Languages below)",
+    )
       .default(SEO_DEFAULT_LANGUAGE_CODE)
       .argParser(parseLanguage),
   )
@@ -189,6 +192,15 @@ Compatibility:
   bing         desktop, mobile
   google_maps  desktop, mobile
   google_news  desktop only
+
+Languages:
+  Use the exact DataForSEO language_code for the selected engine, including
+  region and case (for example, zh-CN). The default is en.
+  Common codes in both provider lists: en, es, fr, de, ja, ko, zh-CN, zh-TW.
+  Published full language lists (provider CSV, 2026-04-06):
+    google, google_maps, google_news: https://cdn.dataforseo.com/v3/languages/languages_serp_google_2026_04_06.csv
+    bing: https://cdn.dataforseo.com/v3/languages/languages_serp_bing_2026_04_06.csv
+  Latest provider reference: https://docs.dataforseo.com/v3/serp-se-languages/
 
 Examples:
   okou seo serp "best ai agents" --json

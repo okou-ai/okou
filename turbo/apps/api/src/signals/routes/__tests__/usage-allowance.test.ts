@@ -67,6 +67,7 @@ interface AllowanceEntitlementArgs {
 async function builtInAllowanceActor(args: {
   readonly credits: number;
   readonly allowance?: AllowanceEntitlementArgs;
+  readonly tier?: "free" | "limited-free-1" | "pro" | "team" | "custom";
 }): Promise<{
   readonly actor: ApiTestUser;
   readonly orgId: string;
@@ -84,7 +85,11 @@ async function builtInAllowanceActor(args: {
   api.configureRunnerGroup();
   const completed = await bdd.completeOnboarding(actor);
   expect(completed.status).toBe(200);
-  await seedOrgMetadata({ orgId, tier: "pro", credits: args.credits });
+  await seedOrgMetadata({
+    orgId,
+    tier: args.tier ?? "pro",
+    credits: args.credits,
+  });
   if (args.allowance) {
     await seedAllowanceEntitlement(actor, orgId, args.allowance);
   }
@@ -218,7 +223,128 @@ async function readVisibleUsageCredits(actor: ApiTestUser): Promise<number> {
   return response.body.totalCredits;
 }
 
+async function exhaustRunCredits(
+  actor: ApiTestUser,
+  runId: string,
+): Promise<void> {
+  await recordPendingUsage({
+    actor,
+    runId,
+    provider: usageProvider(),
+    quantity: 1,
+  });
+  await processOrgUsageEvents(actor);
+  await expect(readOrgCredits(actor)).resolves.toBe(0);
+}
+
+async function billableFirewallAuthStatus(
+  actor: ApiTestUser,
+  runId: string,
+): Promise<200 | 402> {
+  const api = createRunsApi(context);
+  const client = setupApp({
+    context,
+    routes: webhooksAgentFirewallAuthRoutes,
+  })(webhookFirewallAuthContract);
+  const response = await accept(
+    client.resolve({
+      headers: {
+        authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
+      },
+      body: {
+        encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
+        authHeaders: { Authorization: "Bearer static-token" },
+        firewallBillable: true,
+      },
+    }),
+    [200, 402],
+  );
+  if (response.status === 402) {
+    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+  }
+  return response.status;
+}
+
+const runCreditExhaustionCases = [
+  ["free", 200],
+  ["limited-free-1", 200],
+  ["pro", 402],
+  ["team", 402],
+  ["custom", 402],
+] as const;
+
 describe("Usage Allowance", () => {
+  it.each(runCreditExhaustionCases)(
+    "allows or denies a direct built-in run after exhaustion on %s",
+    async (tier, expectedFirewallStatus) => {
+      const { actor, agentId } = await builtInAllowanceActor({
+        tier,
+        credits: 1,
+      });
+      const run = await createBuiltInRun(actor, agentId, "direct built-in run");
+      expect(run.status).toBe("pending");
+      await exhaustRunCredits(actor, run.runId);
+      await expect(billableFirewallAuthStatus(actor, run.runId)).resolves.toBe(
+        expectedFirewallStatus,
+      );
+    },
+  );
+
+  it.each(runCreditExhaustionCases)(
+    "allows or denies a promoted built-in run after exhaustion on %s",
+    async (tier, expectedFirewallStatus) => {
+      mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+      const { actor, agentId } = await builtInAllowanceActor({
+        tier,
+        credits: 1,
+      });
+      const api = createRunsApi(context);
+      const first = await createBuiltInRun(actor, agentId, "active run");
+      const queued = await createBuiltInRun(
+        actor,
+        agentId,
+        "queued built-in run",
+      );
+      expect(queued.status).toBe("queued");
+      await api.requestCancelRun(actor, first.runId, [200]);
+      await flushWaitUntilForTest();
+      await expect
+        .poll(async () => {
+          return (await api.readRun(actor, queued.runId)).status;
+        })
+        .toBe("pending");
+      await exhaustRunCredits(actor, queued.runId);
+      await expect(
+        billableFirewallAuthStatus(actor, queued.runId),
+      ).resolves.toBe(expectedFirewallStatus);
+    },
+  );
+
+  it("uses the current plan when promoting a previously free queued run", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, orgId, agentId } = await builtInAllowanceActor({
+      tier: "free",
+      credits: 1,
+    });
+    const api = createRunsApi(context);
+    const first = await createBuiltInRun(actor, agentId, "free active run");
+    const queued = await createBuiltInRun(actor, agentId, "free queued run");
+    expect(queued.status).toBe("queued");
+    await seedOrgMetadata({ orgId, tier: "pro", credits: 1 });
+
+    await api.requestCancelRun(actor, first.runId, [200]);
+    await flushWaitUntilForTest();
+    await expect
+      .poll(async () => {
+        return (await api.readRun(actor, queued.runId)).status;
+      })
+      .toBe("pending");
+    await exhaustRunCredits(actor, queued.runId);
+    await expect(billableFirewallAuthStatus(actor, queued.runId)).resolves.toBe(
+      402,
+    );
+  });
+
   it("applies usage allowance before legacy org credits", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: 10,
@@ -504,6 +630,7 @@ describe("Usage Allowance", () => {
   it("keeps billable firewall auth available to an admitted run after exhaustion", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: 0,
+      tier: "free",
       allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
     });
     const api = createRunsApi(context);
@@ -610,6 +737,7 @@ describe("Usage Allowance", () => {
   it("does not let built-in credit admission bypass workspace suspension", async () => {
     const { actor, orgId, agentId } = await builtInAllowanceActor({
       credits: 1,
+      tier: "free",
     });
     const api = createRunsApi(context);
     const run = await createBuiltInRun(
@@ -617,7 +745,7 @@ describe("Usage Allowance", () => {
       agentId,
       "admitted before suspension",
     );
-    await seedOrgMetadata({ orgId, tier: "pro", credits: 1 });
+    await seedOrgMetadata({ orgId, tier: "free", credits: 1 });
     await upsertOrgPlanEntitlementFixture({ orgId, status: "suspended" });
     const client = setupApp({
       context,

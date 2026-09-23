@@ -1974,9 +1974,13 @@
       "title": "轉發到"
     },
     "homeTasks": {
+      "empty": "暫時沒有推薦任務",
       "existingThread": "繼續聊天",
+      "exploreWorkflow": "探索工作流程",
       "heading": "從近期工作中提取",
-      "newThread": "新增聊天"
+      "newTasksAvailable": "有新任務可查看",
+      "newThread": "新增聊天",
+      "reload": "重新載入任務"
     },
     "mail": {
       "bcc": "密送",
@@ -6008,6 +6012,7 @@
         "personal": "個人",
         "workspace": "工作區"
       },
+      "sectionNavigation": "設定欄目",
       "sections": {
         "billing": {
           "description": "管理你的套餐和支付方式。",
@@ -7721,6 +7726,7 @@
       },
       "notFound": "未找到該工作流。",
       "refineWith": "用{{agent}}最佳化",
+      "sectionNavigation": "工作流詳情欄目",
       "shadow": {
         "end": "（對你生效）。這個工作流因識別符號相同的優先順序規則被遮蔽。",
         "resolvesTo": "當前指向"

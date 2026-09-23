@@ -1974,9 +1974,13 @@
       "title": "転送先"
     },
     "homeTasks": {
+      "empty": "おすすめのタスクはまだありません",
       "existingThread": "チャットを続ける",
+      "exploreWorkflow": "ワークフローを検討",
       "heading": "最近の作業から選んだタスク",
-      "newThread": "新しいチャット"
+      "newTasksAvailable": "新しいタスクがあります",
+      "newThread": "新しいチャット",
+      "reload": "タスクを再読み込み"
     },
     "mail": {
       "bcc": "BCC",
@@ -6008,6 +6012,7 @@
         "personal": "個人的な",
         "workspace": "ワークスペース"
       },
+      "sectionNavigation": "設定セクション",
       "sections": {
         "billing": {
           "description": "プランと支払い方法を管理します。",
@@ -7721,6 +7726,7 @@
       },
       "notFound": "ワークフローが見つかりません。",
       "refineWith": "{{agent}} で絞り込む",
+      "sectionNavigation": "ワークフロー詳細セクション",
       "shadow": {
         "end": "あなたのために。このワークフローは、同じスラッグの優先順位ルールによってシャドウされます。",
         "resolvesTo": "現在は次のように解決されます"

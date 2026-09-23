@@ -67,7 +67,7 @@ describe("Pi preparation phase observations", () => {
     await measurePiPreparation(observer, "activation_authorize", () => {
       return Promise.resolve("authorized");
     });
-    // The second step is skipped, as native-input/large-history transfer and an
+    // The second step is skipped, as native-input/resume-history transfer and an
     // earlier failure skip it in production. A zero-duration placeholder would
     // make reconstruction read a skipped step as a step that cost nothing, so
     // the phase must be absent entirely.

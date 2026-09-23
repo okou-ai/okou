@@ -1981,9 +1981,13 @@
       "title": "Forward to"
     },
     "homeTasks": {
+      "empty": "No suggestions yet",
       "existingThread": "Continue chat",
+      "exploreWorkflow": "Explore workflow",
       "heading": "Picked up from your recent work",
-      "newThread": "New chat"
+      "newTasksAvailable": "New tasks available",
+      "newThread": "New chat",
+      "reload": "Reload tasks"
     },
     "mail": {
       "bcc": "bcc",
@@ -6014,6 +6018,7 @@
         "personal": "Personal",
         "workspace": "Workspace"
       },
+      "sectionNavigation": "Settings section",
       "sections": {
         "billing": {
           "description": "Manage your plan and payment method.",
@@ -7732,6 +7737,7 @@
       },
       "notFound": "Workflow not found.",
       "refineWith": "Refine with {{agent}}",
+      "sectionNavigation": "Workflow details section",
       "shadow": {
         "end": "for you. This workflow is shadowed by the same-slug priority rule.",
         "resolvesTo": "currently resolves to"

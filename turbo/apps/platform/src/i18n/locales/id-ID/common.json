@@ -1974,9 +1974,13 @@
       "title": "Teruskan ke"
     },
     "homeTasks": {
+      "empty": "Belum ada saran tugas",
       "existingThread": "Lanjutkan chat",
+      "exploreWorkflow": "Jelajahi alur kerja",
       "heading": "Diambil dari pekerjaan terbaru Anda",
-      "newThread": "Chat baru"
+      "newTasksAvailable": "Tugas baru tersedia",
+      "newThread": "Chat baru",
+      "reload": "Muat ulang tugas"
     },
     "mail": {
       "bcc": "bcc",
@@ -6008,6 +6012,7 @@
         "personal": "Pribadi",
         "workspace": "Ruang kerja"
       },
+      "sectionNavigation": "Bagian setelan",
       "sections": {
         "billing": {
           "description": "Kelola paket dan metode pembayaran Anda.",
@@ -7721,6 +7726,7 @@
       },
       "notFound": "Alur kerja tidak ditemukan.",
       "refineWith": "Perhalus dengan {{agent}}",
+      "sectionNavigation": "Bagian detail alur kerja",
       "shadow": {
         "end": "untuk Anda. Alur kerja ini dibayangi oleh aturan prioritas slug yang sama.",
         "resolvesTo": "saat ini mengarah ke"

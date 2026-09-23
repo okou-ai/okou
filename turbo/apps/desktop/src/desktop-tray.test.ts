@@ -333,25 +333,29 @@ describe("desktop tray", () => {
 
   it("keeps animating during the command gap window", async () => {
     let runningCommand = true;
-    const startedAt = Date.now();
-    const controller = installController(() =>
-      computerUseState("online", { runningCommand }),
-    );
-    const tray = installedTray();
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    try {
+      const controller = installController(() =>
+        computerUseState("online", { runningCommand }),
+      );
+      const tray = installedTray();
 
-    runningCommand = false;
-    controller.refresh();
+      runningCommand = false;
+      controller.refresh();
 
-    expect(tray.image.path).toBe(runningIconPath);
+      expect(tray.image.path).toBe(runningIconPath);
+      expect((await tray.nextImage).path).toBe(runningIconPath);
 
-    let image = tray.image;
-    while (image.path === runningIconPath) {
-      expect(image.templateImage).toBe(false);
-      image = await tray.nextImage;
+      now.mockReturnValue(14_999);
+      controller.refresh();
+      expect(tray.image.path).toBe(runningIconPath);
+
+      now.mockReturnValue(15_000);
+      controller.refresh();
+      expect(tray.image.path).toBe(iconPath);
+      expect(tray.image.templateImage).toBe(true);
+    } finally {
+      now.mockRestore();
     }
-
-    expect(image.path).toBe(iconPath);
-    expect(image.templateImage).toBe(true);
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(15_000);
-  }, 20_000); // Exercise the production 15-second linger with real timers.
+  });
 });

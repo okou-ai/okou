@@ -7,8 +7,9 @@ control and RPC services, shared contracts, and developer/test support.
 
 | Crate                    | Responsibility                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| runner                   | Host-side run orchestration, sandbox lifecycle, proxy, images and operational CLI                     |
+| runner                   | Host-side run orchestration, sandbox lifecycle, images and operational CLI                            |
 | runner-host              | Runner host filesystem, process, lock, path and logging primitives                                    |
+| runner-network           | Runner proxy, DNS, CA, network log capture and bounded upload                                         |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-storage           | Storage planning, archive delivery, host archive cache and R2 template cache                         |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
@@ -51,6 +52,7 @@ the privileged workspace helper rejects malformed records and empty tables.
 
 ```text
 Runner -> runner-provider -> runner-host -> runner-types
+Runner -> runner-network  -> runner-host -> runner-types
 Runner -> runner-storage  -> runner-host -> runner-types
 Runner -> guest-control-client -> guest-control-server (guest-init child)
 Guest  -> runner-rpc-client    -> Runner service endpoint

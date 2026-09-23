@@ -115,6 +115,10 @@ describe("okou generate image-batch command", () => {
 
     let activeRequests = 0;
     let maximumActiveRequests = 0;
+    let releaseFirstWave!: () => void;
+    const firstWave = new Promise<void>((resolve) => {
+      releaseFirstWave = resolve;
+    });
     const attempts = new Map<string, number>();
     const requests = new Map<string, CapturedImageRequest>();
     server.use(
@@ -125,9 +129,10 @@ describe("okou generate image-batch command", () => {
         attempts.set(body.prompt, attempt);
         activeRequests += 1;
         maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
-        await new Promise((resolvePromise) => {
-          setTimeout(resolvePromise, 30);
-        });
+        if (activeRequests === 3) {
+          releaseFirstWave();
+        }
+        await firstWave;
         activeRequests -= 1;
 
         if (body.prompt === "Dog running through grass" && attempt === 1) {

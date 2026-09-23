@@ -4,7 +4,7 @@ This document covers the #34012 identity foundation, its #34098/#34111/#34164 re
 
 ## Effective member routing (B)
 
-With the existing organization-scoped `PersonalSubscriptionPriority` enabled, a new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. The switch keeps `enabled: false` with the existing `STAFF_ORG_ID_HASHES` allowlist: staff workspaces default on and external workspaces default off. Explicit organization overrides under `__org__` still win; individual overrides cannot bypass its organization scope. Account UI availability (`_multipleSubscriptions`) remains independent. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
+A new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. This was gated by the organization-scoped `PersonalSubscriptionPriority` switch; that switch has been removed and the behavior is now unconditional for every workspace, with no per-organization opt-out and no rollout allowlist. Account UI availability (`multipleSubscriptions`) remains independent. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
 
 `effective-model-route.service.ts` is the shared database-only leaf for model selection and the optional member projection. It validates logical model and policy structure, then chooses a logical personal candidate or the configured organization route. Missing nullable custom provider/surface references and mappings matter only when that organization route is selected. Unknown discriminators and contradictory policy structure remain errors. A chosen personal route never returns null because of subscription failure, so persisted-model reconciliation cannot turn reconnect, refresh, quota, KMS or provider errors into another model or paid API.
 
@@ -14,9 +14,9 @@ Chat, thread defaults/updates, queued messages promoted to a new run, linked int
 
 Effective provider selection precedes executor, session and model credit/billing decisions. Claude API/Pi to personal Claude Code can rotate the canonical session without changing the logical model. Changing accounts within the same Codex executor/family retains session continuity. Supported Codex Pi/Fast/non-Pi behavior and the unsupported native Claude subscription Pi boundary remain in their existing owners. Existing transient Pi recovery can hand the same captured personal source to Sandbox; it cannot choose another account, organization API, model, or Built-in model charge.
 
-The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is omitted while priority is off. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
+The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is now always present for a real member; it was omitted while the priority switch was off, and `isMemberModelPolicyConfigurable` still keeps its `routeStatus` fallback for an older API that omits it. Because the projection is always present, member-facing decisions that consult it — including the Codex priority service tier — are now judged on the effective route's availability rather than on a merely valid organization route. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
 
-Organization Subscription policies retain their required subscription route and missing-connection guidance under either switch state; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the actual serving-writer, historical-context and executable rollback prerequisites. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes and the retained switch are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
+Organization Subscription policies retain their required subscription route and missing-connection guidance; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The historical mirror bridge remains tied to real independently deployed writers and admitted contexts, not to B's gated response shape. #34010 owns the actual serving-writer, historical-context and executable rollback prerequisites. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
 
 ## Launch consumers and policy writes (C)
 
@@ -38,9 +38,10 @@ notices contain no account metadata and do not request upstream usage.
 
 Policy GET returns an opaque `revision` over the persisted administrative rows,
 independently of the requesting member. Settings submit that revision with the
-array they actually read. Priority-enabled PUT rejects missing or stale
-preconditions with a refresh/upgrade conflict before lazy seed/default repair
-or policy/preference changes. With a current revision, an eligible admin can
+array they actually read. PUT rejects a missing or stale precondition with a
+refresh/upgrade conflict before lazy seed/default repair or policy/preference
+changes; this is unconditional now that the priority switch is gone, so every
+writer sends the revision it read. With a current revision, an eligible admin can
 add a Subscription route, change an API route to Subscription, or edit an
 existing Subscription choice. Provider choices remain independent of the
 precondition requirement, with model/plan/provider validation unchanged. The API-key-create flow reads a
@@ -52,8 +53,9 @@ parents, surfaces, and policy rows before comparing its revision, protecting
 the snapshot against FK deletion through commit. Normal runtime selection does
 not take this lock when no repair is needed. Validation inside the transaction
 uses local data and does not acquire A's credential lifecycle lock or perform
-upstream calls. Existing feature-off Turbo setup PUTs remain supported; C does
-not enable Priority for those callers or change Actions definitions.
+upstream calls. The Turbo runner bootstrap steps that previously wrote
+policies without a precondition now read the current revision first, because
+the feature-off path they relied on no longer exists.
 
 The canonical rollback resolver requires accepted B merge
 `8a5e1299b4d26bd114ccec017b84b7a83fb4a164` in addition to all prior floors and
@@ -109,13 +111,13 @@ target. R1 still owns closure of old writers and the real historical-context
 drain. The digest provides recovery provenance, not permission to bypass those
 activation gates.
 
-Every newly admitted personal Claude/Codex subscription run captures a concrete `model_provider_accounts.id`, independently of `_multipleSubscriptions`. Capture may overlap the first read-only thread session/prompt observation. Both branches are joined before environment preparation or any other captured-account consumer, and only thread-owned body, prompt, session-resolution and browser fields are composed onto the captured command. Post-authorization work remains capture-gated. A stale thread snapshot reruns only thread observation; it does not recapture or change the fixed account/model pin. The final admission transaction takes the existing organization admission lock, locks its existing thread/session rows, and then takes the provider auth-state lock. It revalidates the captured connected account and writes the same ID to run metadata/model pin and execution-context model-provider `sourceId`. Removal winning that race produces an explicit subscription admission failure; it never selects a sibling account, organization API key, or other model.
+Every newly admitted personal Claude/Codex subscription run captures a concrete `model_provider_accounts.id`, independently of `multipleSubscriptions`. Capture may overlap the first read-only thread session/prompt observation. Both branches are joined before environment preparation or any other captured-account consumer, and only thread-owned body, prompt, session-resolution and browser fields are composed onto the captured command. Post-authorization work remains capture-gated. A stale thread snapshot reruns only thread observation; it does not recapture or change the fixed account/model pin. The final admission transaction takes the existing organization admission lock, locks its existing thread/session rows, and then takes the provider auth-state lock. It revalidates the captured connected account and writes the same ID to run metadata/model pin and execution-context model-provider `sourceId`. Removal winning that race produces an explicit subscription admission failure; it never selects a sibling account, organization API key, or other model.
 
 This scheduling change adds no query statement and leaves successful-path query counts unchanged. If capture fails, the already-started thread branch may complete its existing bounded read-only session and prompt queries before the request returns the capture conflict. That speculative branch performs no write, post-authorization work, proof, admission, durable queue publication or spawn. Capture conflict, rejection and abort priority remain explicit, and every started branch is settled before the request returns.
 
 Account rows own encrypted credentials. Refresh and verified same-upstream-identity reconnection update those shared credentials under the existing auth-state lock; rotating refresh tokens are never copied per run. Codex uses its upstream account ID. Claude uses account/organization UUIDs when provided by the existing profile endpoint, with the existing stored email/workspace identity for older OAuth connections. A legacy Claude token without recorded identity is checked using that token before a replacement; an unavailable identity is left unchanged rather than inferred from the new active account.
 
-A different verified upstream identity selects/creates a different account row. `PersonalSubscriptionPriority` controls whether the replaced account is retained for existing runs; with it disabled the replaced account is hard-deleted and those runs receive existing subscription guidance. Duplicate reconnection reuses the matching identity; retention of another identity referenced by an admitted run remains controlled by the priority switch. Ordinary disconnect hides the account from listing, selection, activation, reset/usage and reconnect by the old ID. A fresh authenticated connection to the same upstream identity can restore that row and its shared refresh state.
+A different verified upstream identity selects/creates a different account row. The replaced account is always retained while an admitted run still references it; the hard-delete path that applied while the priority switch was off no longer exists. Duplicate reconnection reuses the matching identity. Ordinary disconnect hides the account from listing, selection, activation, reset/usage and reconnect by the old ID. A fresh authenticated connection to the same upstream identity can restore that row and its shared refresh state.
 
 Disconnected rows and their encrypted secrets survive only while an exact `(runId, orgId, userId, accountId)` reference is `queued`, `pending` or `running`. Runtime firewall and supported Pi credential reads/refreshes must prove that reference. The logical parent survives only to own retained rows; the last connected account removes the singleton mirror after detaching its cascading foreign key. Retained-only parents are hidden and never lazily reseeded.
 
@@ -142,7 +144,7 @@ The repair adds no schema, request, persisted-payload or credential format. Exis
 
 ## Preparation, activation and rollback gates
 
-`PersonalSubscriptionPriority` is organization consistent, defaults to false for everyone (including staff), and has no automatic allowlist. This PR writes new exact bindings with the flag off. Ordinary disconnect and identity retirement remain destructive until the controller explicitly enables retention. Canonical connections preserve identity with the switch off: replacement deletes A and selects a different B record instead of mutating A into B. `_multipleSubscriptions` continues to control only its existing UI surface.
+`PersonalSubscriptionPriority` has been removed: the behavior below is permanent for every organization and there is no switch left to disable it. #34012 wrote its new exact bindings with the flag off and #34453 ran it as a staff-only default in between; retention is now always active, so ordinary disconnect and identity retirement keep a replaced account while an exact `queued`, `pending` or `running` reference survives. Canonical connections preserve identity: replacement deletes A and selects a different B record instead of mutating A into B. `multipleSubscriptions` continues to control only its existing UI surface. Rollback is a code revert, not a configuration change.
 
 The migration adds only nullable `disconnected_at`. Apply the additive migration before the new API serves traffic. The previous API can read the expanded schema; existing logical rows, mirrors, encrypted secret format and auth-state locks remain compatible. During mixed versions the old singleton writer and sourceId-less reader still exist. The current sourceId-less refresh writer synchronizes active concrete token and expiry/reconnect state under the same lock. Preparation is not the activation gate: old API writers can still perform the previous mutable/destructive operations.
 
@@ -167,8 +169,9 @@ This request-scoped bridge coordinates the published account store with real
 singleton-only server writers. It is active independently of the account UI and
 priority switches because account seeding/capture already runs with both off.
 It adds no schema, migration, backfill, trigger, credential history, per-run
-secret copy, or eager production repair. Retention remains gated by
-`PersonalSubscriptionPriority`, default-off including staff.
+secret copy, or eager production repair. Retention was gated by
+`PersonalSubscriptionPriority` when this bridge shipped; that switch is gone and
+retention is now unconditional.
 
 ### Supported producer audit
 

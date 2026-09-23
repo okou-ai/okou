@@ -495,6 +495,8 @@ jobs:
           OUTPUT_DIR: okou-cli-artifact
           ARTIFACT_REQUIRED: "false"
           WAIT_SECONDS: "600"
+          CHECK_PUBLISHER_STATUS: "true"
+          GH_TOKEN: ${{ github.token }}
         run: .github/scripts/download-okou-cli-artifact.sh
 
       - name: Build runner image on all metal hosts

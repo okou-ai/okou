@@ -41,7 +41,10 @@ import {
   artifactObjectMetadata,
   type ArtifactObjectLocation,
 } from "./artifact-storage.service";
-import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
+import {
+  queueArtifactCatalogFile,
+  syncArtifactCatalogForFile$,
+} from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 import { sourceForRun } from "./run-uploaded-files.service";
 import {
@@ -1426,16 +1429,19 @@ export const materializeCanonicalPublishedAsset$ = command(
       return { ok: false, code: error.code, message: error.message };
     }
 
-    await db
-      .update(runUploadedFiles)
-      .set({
-        url,
-        sizeBytes: head.contentLength,
-        materializationStatus: "ready",
-        materializationError: null,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(runUploadedFiles.id, asset.id));
+    await db.transaction(async (tx) => {
+      await tx
+        .update(runUploadedFiles)
+        .set({
+          url,
+          sizeBytes: head.contentLength,
+          materializationStatus: "ready",
+          materializationError: null,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(runUploadedFiles.id, asset.id));
+      await queueArtifactCatalogFile(tx, asset.id, signal);
+    });
     signal.throwIfAborted();
     await set(syncArtifactCatalogForFile$, asset.id, signal);
     await publishArtifactsChangedForRun(db, args.runId, signal);

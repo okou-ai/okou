@@ -438,6 +438,46 @@ describe("Pi memory Phase 2 job transitions", () => {
     });
   });
 
+  it("reopens only terminal jobs from the retired mixed-source policy", async () => {
+    const scope = await createPhase2TestScope("legacy-mixed-recovery");
+    await insertPhase2Candidates(scope, [{ piSessionId: "mixed-history" }]);
+    await insertPendingPhase2Job(scope);
+    await db()
+      .update(piMemoryPhase2Jobs)
+      .set({
+        status: "terminal_failure",
+        retryCount: 3,
+        lastErrorClass: "mixed_source_credentials",
+      })
+      .where(eq(piMemoryPhase2Jobs.memoryStorageId, scope.memoryStorageId));
+    const claimed = await claimPiMemoryPhase2Job(db(), {
+      currentTime: NOW,
+      scope,
+    });
+    expect(claimed).not.toBeNull();
+    await expect(readPhase2Job(scope)).resolves.toMatchObject({
+      status: "leased",
+      retryCount: 0,
+      lastErrorClass: null,
+    });
+    if (!claimed) {
+      throw new Error("Expected legacy job to reopen");
+    }
+    await failPiMemoryPhase2Job(db(), {
+      ...scope,
+      leaseToken: claimed.leaseToken,
+      claimedRevision: claimed.claimedRevision,
+      claimedBaseVersionId: claimed.baseVersion.versionId,
+      currentTime: new Date(NOW.getTime() + 1),
+      errorClass: "credential_unavailable",
+    });
+    await expect(readPhase2Job(scope)).resolves.toMatchObject({
+      status: "retryable_failure",
+      retryCount: 1,
+      lastErrorClass: "credential_unavailable",
+    });
+  });
+
   it("rejects every wrong or expired fence without changing job or markers", async () => {
     const scope = await createPhase2TestScope("rejected-fences");
     const [sourceHistoryHash] = await insertPhase2Candidates(scope, [

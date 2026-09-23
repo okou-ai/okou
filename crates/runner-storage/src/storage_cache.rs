@@ -1479,11 +1479,15 @@ impl FreshArchiveDelivery {
     }
 }
 
-/// Cold cache work selected during storage planning but not yet started.
+/// Background cache work selected during cache population after guest staging
+/// outcomes are known, but not yet started. Depending on those outcomes, the
+/// selected actions may fill a missing archive, warm the extracted-file cache
+/// from an archive hit, or retire a redundant archive after an extracted-file hit.
 ///
-/// Before [`Self::start`], this value owns archive URLs but no HTTP client,
-/// task, cache lock, or file, so dropping it on a pre-spawn failure requires
-/// no asynchronous cleanup.
+/// Before [`Self::start`], this value holds selection data, including archive
+/// URLs and optional decoded-cache handles. Creating it does not start an HTTP
+/// request or task, acquire a cache lock, or open a file, so dropping it on a
+/// pre-spawn failure requires no asynchronous cleanup for this deferred work.
 #[must_use = "deferred storage cache fill must be started after agent spawn or explicitly dropped"]
 pub struct DeferredBackgroundFill {
     groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
@@ -1689,7 +1693,7 @@ async fn prepare_decoded_storage(
             .iter()
             .map(|group| {
                 group.targets.first().and_then(|target| {
-                    is_decoded_download_group(group, plan)
+                    has_decoded_download_target(group, plan)
                         .then_some((target.name.as_str(), target.version.as_str()))
                 })
             })
@@ -1706,15 +1710,14 @@ async fn prepare_decoded_storage(
             RunnerError::Internal(format!("lookup extracted storage cache: {error}"))
         })?;
         for (group, files) in batch.iter_mut().zip(ready) {
-            let decoded_eligible = is_decoded_download_group(group, plan);
             group.decoded_ready_observed = files.is_some();
             let decoded_reused = reuse_decoded(plan, group, files)?;
-            if group
-                .targets
-                .iter()
-                .any(|target| target.handle.is_artifact())
-                && (!decoded_eligible || (group.decoded_ready_observed && !decoded_reused))
-            {
+            if group.targets.iter().any(|target| {
+                target.handle.is_artifact()
+                    && !plan.has_decoded(target.handle)
+                    && (!plan.is_decoded_download(target.handle)
+                        || (group.decoded_ready_observed && !decoded_reused))
+            }) {
                 telemetry.record(
                     STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE,
                     Duration::ZERO,
@@ -1736,16 +1739,26 @@ fn reuse_decoded(
     let Some(files) = files else {
         return Ok(false);
     };
-    // Check mounts only on a ready hit. Misses keep ordinary delivery.
-    let Some(mounts) = group
+    // An archive may still be required by another target sharing this key,
+    // such as an instruction storage. Admit its ordinary targets without
+    // changing archive delivery for that other consumer.
+    let eligible = group
         .targets
+        .iter()
+        .filter(|target| plan.is_decoded_download(target.handle))
+        .collect::<Vec<_>>();
+    if eligible.is_empty() {
+        return Ok(false);
+    }
+    // Check mounts only on a ready hit. Misses keep ordinary delivery.
+    let Some(mounts) = eligible
         .iter()
         .map(|target| plan.decoded_mount(target.handle).map(str::to_owned))
         .collect::<Option<Vec<_>>>()
     else {
         return Ok(false);
     };
-    for target in &group.targets {
+    for target in &eligible {
         if !plan.decoded_entry_fits(target.handle)? {
             return Ok(false);
         }
@@ -2195,25 +2208,8 @@ async fn stage_joined_processed_group(
     Ok(())
 }
 
-/// Resolves eligible archive sources against the runner-side cache.
-///
-/// Warm hits are staged into the guest over vsock, and their sources in
-/// `plan` are rewritten to guest-local `file://` URLs before this function
-/// returns. Sources without a usable warm hit keep their original remote URLs
-/// for the current guest download. Eligible cold misses may be returned as
-/// deferred fill work for future runs; this function does not start those
-/// remote fill requests.
-///
-/// # Returns
-///
-/// Returns `Ok(Some(...))` when a [`DeferredBackgroundFill`] was selected. The
-/// caller must retain it through pre-spawn setup and call
-/// [`DeferredBackgroundFill::start`] only after the agent process has spawned;
-/// an earlier failure deliberately drops it without starting work. Returns
-/// `Ok(None)` when no deferred fill work was selected.
-///
-/// Reuse, repair, empty, instruction, cleanup, and guest-work semantics remain
-/// owned by [`StoragePlan`].
+/// Test-only wrapper for [`populate_cache_with_fresh_delivery`] without fresh
+/// delivery or a decoded cache.
 #[cfg(test)]
 pub async fn populate_cache(
     plan: &mut StoragePlan,
@@ -2224,6 +2220,25 @@ pub async fn populate_cache(
     populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None, None).await
 }
 
+/// Resolves eligible archive sources against the runner-side cache.
+///
+/// Warm hits are staged into the guest over vsock, and their sources in
+/// `plan` are rewritten to guest-local `file://` URLs before this function
+/// returns. Sources without a usable warm hit keep their original remote URLs
+/// for the current guest download. After classifying and staging outcomes, this
+/// function may select deferred archive fill, extracted-file cache warming, or
+/// redundant archive retirement; it does not start that work.
+///
+/// # Returns
+///
+/// Returns `Ok(Some(...))` when a [`DeferredBackgroundFill`] was selected. The
+/// caller must retain it through pre-spawn setup and call
+/// [`DeferredBackgroundFill::start`] only after the agent process has spawned;
+/// an earlier failure deliberately drops it without starting work. Returns
+/// `Ok(None)` when no deferred work was selected.
+///
+/// Reuse, repair, empty, instruction, cleanup, and guest-work semantics remain
+/// owned by [`StoragePlan`].
 pub async fn populate_cache_with_fresh_delivery(
     plan: &mut StoragePlan,
     sandbox: &dyn Sandbox,
@@ -2349,7 +2364,7 @@ pub async fn populate_cache_with_fresh_delivery(
     stage_metrics.record_total(telemetry);
     let outcomes = stage_result?;
 
-    record_passthrough_summary(&outcomes, telemetry);
+    record_passthrough_summary(&outcomes, plan, telemetry);
     let deferred =
         defer_background_fill_groups(&outcomes, home.clone(), decoded.cloned(), plan, telemetry);
     for (group, outcome) in outcomes {
@@ -2365,12 +2380,11 @@ fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
         .map(|target| (target.name.clone(), target.version.clone()))
 }
 
-fn is_decoded_download_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
-    !group.targets.is_empty()
-        && group
-            .targets
-            .iter()
-            .all(|target| plan.is_decoded_download(target.handle))
+fn has_decoded_download_target(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
+    group
+        .targets
+        .iter()
+        .any(|target| plan.is_decoded_download(target.handle))
 }
 
 fn group_has_decoded(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
@@ -2393,7 +2407,7 @@ fn defer_background_fill_groups(
         .filter_map(|(group, outcome)| {
             let decoded = decoded
                 .as_ref()
-                .filter(|_| is_decoded_download_group(group, plan));
+                .filter(|_| has_decoded_download_target(group, plan));
             let action = if matches!(outcome, TargetOutcome::Decoded) {
                 if !group
                     .targets
@@ -3945,7 +3959,11 @@ fn apply_group_outcome(
     telemetry: &mut JobTelemetry,
 ) {
     for target in &group.targets {
-        apply_outcome(plan, target, outcome, telemetry);
+        if plan.has_decoded(target.handle) {
+            apply_outcome(plan, target, &TargetOutcome::Decoded, telemetry);
+        } else {
+            apply_outcome(plan, target, outcome, telemetry);
+        }
     }
 }
 
@@ -4019,11 +4037,18 @@ struct PassthroughSummary {
 
 fn record_passthrough_summary(
     outcomes: &[(CacheTargetGroup, TargetOutcome)],
+    plan: &StoragePlan,
     telemetry: &mut JobTelemetry,
 ) {
     let mut summary = PassthroughSummary::default();
     for (group, outcome) in outcomes {
-        add_passthrough_summary(&mut summary, outcome, group.targets.len());
+        for target in &group.targets {
+            if plan.has_decoded(target.handle) {
+                add_passthrough_summary(&mut summary, &TargetOutcome::Decoded, 1);
+            } else {
+                add_passthrough_summary(&mut summary, outcome, 1);
+            }
+        }
     }
 
     telemetry.record(

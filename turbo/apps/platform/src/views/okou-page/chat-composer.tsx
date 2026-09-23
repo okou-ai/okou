@@ -183,8 +183,9 @@ import {
   TEMPLATE_TILE_CAPTION,
   TEMPLATE_TILE_MEDIA,
   TEMPLATE_TILE_NAME,
-  TEMPLATE_TILE_RING,
-  TEMPLATE_TILE_RING_SELECTED,
+  TEMPLATE_TILE_PREVIEW_FOCUS,
+  TEMPLATE_TILE_SELECTED,
+  TEMPLATE_TILE_SELECTION_FRAME,
   TEMPLATE_TILE_SCRIM,
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
@@ -1015,57 +1016,57 @@ function VideoTemplateCard({
     <div className={TEMPLATE_TILE_WRAPPER}>
       <div
         className={cn(
-          TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
-          "aspect-[16/9]",
-          selected && TEMPLATE_TILE_RING_SELECTED,
+          TEMPLATE_TILE_SELECTION_FRAME,
+          selected && TEMPLATE_TILE_SELECTED,
         )}
       >
-        <VideoTemplatePreview item={item} />
-        {selected ? (
-          <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check size={14} />
-          </span>
-        ) : null}
-        <button
-          type="button"
-          aria-label={
-            requiresPro
-              ? t(
-                  ($) => {
-                    return $.artifacts.templates.viewVideoPlans;
-                  },
-                  {
-                    title: item.title,
-                  },
-                )
-              : t(
-                  ($) => {
-                    return $.artifacts.templates.selectVideo;
-                  },
-                  {
-                    title: item.title,
-                  },
-                )
-          }
-          aria-pressed={requiresPro ? undefined : selected}
-          onClick={() => {
-            onSelect(item);
-          }}
-          className={cn(
-            TEMPLATE_TILE_USE,
-            requiresPro && "inline-flex items-center gap-1 !opacity-100",
-          )}
-        >
-          {requiresPro ? <Lock size={12} aria-hidden="true" /> : null}
-          {requiresPro
-            ? t(($) => {
-                return $.artifacts.templates.needPro;
-              })
-            : t(($) => {
-                return $.artifacts.templates.use;
-              })}
-        </button>
+        <div className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}>
+          <VideoTemplatePreview item={item} />
+          {selected ? (
+            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check size={14} />
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label={
+              requiresPro
+                ? t(
+                    ($) => {
+                      return $.artifacts.templates.viewVideoPlans;
+                    },
+                    {
+                      title: item.title,
+                    },
+                  )
+                : t(
+                    ($) => {
+                      return $.artifacts.templates.selectVideo;
+                    },
+                    {
+                      title: item.title,
+                    },
+                  )
+            }
+            aria-pressed={requiresPro ? undefined : selected}
+            onClick={() => {
+              onSelect(item);
+            }}
+            className={cn(
+              TEMPLATE_TILE_USE,
+              requiresPro && "inline-flex items-center gap-1 !opacity-100",
+            )}
+          >
+            {requiresPro ? <Lock size={12} aria-hidden="true" /> : null}
+            {requiresPro
+              ? t(($) => {
+                  return $.artifacts.templates.needPro;
+                })
+              : t(($) => {
+                  return $.artifacts.templates.use;
+                })}
+          </button>
+        </div>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
         <p className={TEMPLATE_TILE_NAME}>{item.title}</p>
@@ -1124,8 +1125,7 @@ function WebsiteTemplateCard({
     <div
       className={cn(
         TEMPLATE_TILE_WRAPPER,
-        TEMPLATE_TILE_RING,
-        "isolate cursor-zoom-in has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-ring",
+        "rounded-xl cursor-zoom-in ring-offset-1 ring-offset-card has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-ring",
       )}
     >
       <button
@@ -1143,70 +1143,70 @@ function WebsiteTemplateCard({
       />
       <div
         className={cn(
-          TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
-          "aspect-[16/9]",
-          selected && TEMPLATE_TILE_RING_SELECTED,
+          TEMPLATE_TILE_SELECTION_FRAME,
+          selected && TEMPLATE_TILE_SELECTED,
         )}
       >
-        <img
-          alt={t(
-            ($) => {
-              return $.artifacts.templates.websitePreview;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          title={t(
-            ($) => {
-              return $.artifacts.templates.websitePreview;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          src={previewImageUrl}
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-          draggable={false}
-          className="pointer-events-none h-full w-full bg-background object-cover"
-        />
-        <div
-          className={cn(
-            TEMPLATE_TILE_SCRIM,
-            "group-has-[:focus-visible]/tile:opacity-100",
-          )}
-        />
-        {selected ? (
-          <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check size={14} />
-          </span>
-        ) : null}
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.artifacts.templates.selectWebsite;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          aria-pressed={selected}
-          onClick={() => {
-            onSelect(item);
-          }}
-          className={cn(
-            TEMPLATE_TILE_USE,
-            "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
-          )}
-        >
-          {t(($) => {
-            return $.artifacts.templates.use;
-          })}
-        </button>
+        <div className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}>
+          <img
+            alt={t(
+              ($) => {
+                return $.artifacts.templates.websitePreview;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            title={t(
+              ($) => {
+                return $.artifacts.templates.websitePreview;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            src={previewImageUrl}
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            draggable={false}
+            className="pointer-events-none h-full w-full bg-background object-cover"
+          />
+          <div
+            className={cn(
+              TEMPLATE_TILE_SCRIM,
+              "group-has-[:focus-visible]/tile:opacity-100",
+            )}
+          />
+          {selected ? (
+            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check size={14} />
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.selectWebsite;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            aria-pressed={selected}
+            onClick={() => {
+              onSelect(item);
+            }}
+            className={cn(
+              TEMPLATE_TILE_USE,
+              "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
+            )}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </button>
+        </div>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
         <p className={TEMPLATE_TILE_NAME}>{item.title}</p>
@@ -1322,10 +1322,9 @@ function WorkflowTemplateCard({
   return (
     <div
       className={cn(
-        "group/tile flex flex-col border border-border bg-card p-4",
+        "group/tile flex flex-col rounded-xl border border-border bg-card p-4",
         TEMPLATE_CARD_SHADOW,
-        TEMPLATE_TILE_RING,
-        selected && TEMPLATE_TILE_RING_SELECTED,
+        selected && "border-primary",
       )}
     >
       <p className="text-sm font-semibold text-foreground">{copy.title}</p>
@@ -2490,7 +2489,7 @@ function TemplatePreview({
                 title: item.title,
               },
             )}
-            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
             onClick={() => {
               onPreview(item, slideIndex);
             }}
@@ -2937,46 +2936,48 @@ function PptCard({
       <div className={TEMPLATE_TILE_WRAPPER}>
         <div
           className={cn(
-            TEMPLATE_TILE_MEDIA,
-            TEMPLATE_TILE_RING,
-            selected && TEMPLATE_TILE_RING_SELECTED,
+            TEMPLATE_TILE_SELECTION_FRAME,
+            TEMPLATE_TILE_PREVIEW_FOCUS,
+            selected && TEMPLATE_TILE_SELECTED,
           )}
         >
-          <TemplatePreview
-            item={item}
-            onPreview={onPreview}
-            signals={signals}
-            theme={selectedTheme}
-          />
-          <div className={TEMPLATE_TILE_SCRIM} />
-          {selected ? (
-            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Check size={14} />
-            </span>
-          ) : null}
-          <button
-            type="button"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.selectTemplate;
-              },
-              {
-                title: item.title,
-              },
-            )}
-            aria-pressed={selected}
-            onClick={() => {
-              onSelect(
-                item,
-                presentationTemplateColorSystemId(selectedTheme.id),
-              );
-            }}
-            className={TEMPLATE_TILE_USE}
-          >
-            {t(($) => {
-              return $.artifacts.templates.use;
-            })}
-          </button>
+          <div className={TEMPLATE_TILE_MEDIA}>
+            <TemplatePreview
+              item={item}
+              onPreview={onPreview}
+              signals={signals}
+              theme={selectedTheme}
+            />
+            <div className={TEMPLATE_TILE_SCRIM} />
+            {selected ? (
+              <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <Check size={14} />
+              </span>
+            ) : null}
+            <button
+              type="button"
+              aria-label={t(
+                ($) => {
+                  return $.artifacts.templates.selectTemplate;
+                },
+                {
+                  title: item.title,
+                },
+              )}
+              aria-pressed={selected}
+              onClick={() => {
+                onSelect(
+                  item,
+                  presentationTemplateColorSystemId(selectedTheme.id),
+                );
+              }}
+              className={TEMPLATE_TILE_USE}
+            >
+              {t(($) => {
+                return $.artifacts.templates.use;
+              })}
+            </button>
+          </div>
         </div>
         <div className={TEMPLATE_TILE_CAPTION}>
           <TooltipTrigger
@@ -3462,128 +3463,134 @@ function IllustrationTemplateCard({
 
   return (
     <div
-      data-illustration-template-card=""
       className={cn(
-        "group/tile mb-4 break-inside-avoid overflow-hidden border border-border bg-card",
-        TEMPLATE_CARD_SHADOW,
-        TEMPLATE_TILE_RING,
-        selected && TEMPLATE_TILE_RING_SELECTED,
+        "isolate mb-4 break-inside-avoid",
+        TEMPLATE_TILE_SELECTION_FRAME,
+        selected && TEMPLATE_TILE_SELECTED,
       )}
     >
-      <IllustrationTemplateHero
-        item={item}
-        images={images}
-        activeIndex={safeIndex}
-        priority={priority}
-        source={heroSource}
-        onVariantChange={onVariantChange}
-        runtime={runtime}
-      />
-      {hasMultipleVariants && (
-        <div
-          data-illustration-variant-strip=""
-          className="flex items-center gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {images.map((image, index) => {
-            const active = index === safeIndex;
-            const thumbnailImage = r2ImageTransformUrl(
-              image,
-              ILLUSTRATION_VARIANT_THUMB_SIZE,
-            );
-            return (
-              <button
-                key={image}
-                type="button"
-                aria-label={t(
-                  ($) => {
-                    return $.artifacts.templates.showVariant;
-                  },
-                  {
-                    variantNumber: index + 1,
-                  },
-                )}
-                aria-pressed={active}
-                className={cn(
-                  "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  active ? "border-primary" : "border-border",
-                )}
-                onFocus={() => {
-                  preloadIllustrationPreviewImage(
-                    runtime,
-                    illustrationHeroImageUrl(image),
-                  );
-                }}
-                onMouseEnter={() => {
-                  preloadIllustrationPreviewImage(
-                    runtime,
-                    illustrationHeroImageUrl(image),
-                  );
-                }}
-                onClick={(event) => {
-                  selectIllustrationVariant({
-                    card: event.currentTarget.closest<HTMLElement>(
-                      "[data-illustration-template-card]",
-                    ),
-                    index,
-                    item,
-                    onVariantChange,
-                    runtime,
-                  });
-                  const scrollDirection = active
-                    ? activeIllustrationThumbnailScrollDirection(
-                        event.currentTarget,
-                      )
-                    : index > safeIndex
-                      ? 1
-                      : -1;
-                  if (scrollDirection !== null) {
-                    scrollIllustrationThumbnailIntoView(
-                      event.currentTarget,
-                      scrollDirection,
+      <div
+        data-illustration-template-card=""
+        className={cn(
+          "group/tile overflow-hidden rounded-xl border border-border bg-card",
+          TEMPLATE_CARD_SHADOW,
+        )}
+      >
+        <IllustrationTemplateHero
+          item={item}
+          images={images}
+          activeIndex={safeIndex}
+          priority={priority}
+          source={heroSource}
+          onVariantChange={onVariantChange}
+          runtime={runtime}
+        />
+        {hasMultipleVariants && (
+          <div
+            data-illustration-variant-strip=""
+            className="flex items-center gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {images.map((image, index) => {
+              const active = index === safeIndex;
+              const thumbnailImage = r2ImageTransformUrl(
+                image,
+                ILLUSTRATION_VARIANT_THUMB_SIZE,
+              );
+              return (
+                <button
+                  key={image}
+                  type="button"
+                  aria-label={t(
+                    ($) => {
+                      return $.artifacts.templates.showVariant;
+                    },
+                    {
+                      variantNumber: index + 1,
+                    },
+                  )}
+                  aria-pressed={active}
+                  className={cn(
+                    "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active ? "border-primary" : "border-border",
+                  )}
+                  onFocus={() => {
+                    preloadIllustrationPreviewImage(
+                      runtime,
+                      illustrationHeroImageUrl(image),
                     );
-                  }
-                }}
-              >
-                <img
-                  src={thumbnailImage}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              </button>
-            );
-          })}
+                  }}
+                  onMouseEnter={() => {
+                    preloadIllustrationPreviewImage(
+                      runtime,
+                      illustrationHeroImageUrl(image),
+                    );
+                  }}
+                  onClick={(event) => {
+                    selectIllustrationVariant({
+                      card: event.currentTarget.closest<HTMLElement>(
+                        "[data-illustration-template-card]",
+                      ),
+                      index,
+                      item,
+                      onVariantChange,
+                      runtime,
+                    });
+                    const scrollDirection = active
+                      ? activeIllustrationThumbnailScrollDirection(
+                          event.currentTarget,
+                        )
+                      : index > safeIndex
+                        ? 1
+                        : -1;
+                    if (scrollDirection !== null) {
+                      scrollIllustrationThumbnailIntoView(
+                        event.currentTarget,
+                        scrollDirection,
+                      );
+                    }
+                  }}
+                >
+                  <img
+                    src={thumbnailImage}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+          <p className="min-w-0 truncate text-sm font-semibold text-foreground">
+            {item.title}
+          </p>
+          <button
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.selectTemplate;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            aria-pressed={selected}
+            onClick={() => {
+              onSelect(item);
+            }}
+            className={cn(
+              "h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              selected
+                ? "border-primary/40 bg-primary/10 text-selected-foreground"
+                : "border-border bg-background text-foreground hover:bg-state-hover",
+            )}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </button>
         </div>
-      )}
-      <div className="flex items-center justify-between gap-3 px-3.5 py-3">
-        <p className="min-w-0 truncate text-sm font-semibold text-foreground">
-          {item.title}
-        </p>
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.artifacts.templates.selectTemplate;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          aria-pressed={selected}
-          onClick={() => {
-            onSelect(item);
-          }}
-          className={cn(
-            "h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            selected
-              ? "border-primary/40 bg-primary/10 text-selected-foreground"
-              : "border-border bg-background text-foreground hover:bg-state-hover",
-          )}
-        >
-          {t(($) => {
-            return $.artifacts.templates.use;
-          })}
-        </button>
       </div>
     </div>
   );
@@ -3931,7 +3938,6 @@ function PptImportCard({
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
           "block aspect-video bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
           compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
@@ -4040,7 +4046,7 @@ function ImportedPptCardMediaControls({
               },
               { title: template.title },
             )}
-            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
             onClick={onPreview}
           />
         }
@@ -4289,47 +4295,50 @@ function ImportedPptCardMedia({
 }) {
   return (
     <div
-      data-imported-presentation-template-media=""
       className={cn(
-        TEMPLATE_TILE_MEDIA,
-        TEMPLATE_TILE_RING,
-        "aspect-[16/9]",
-        selected && TEMPLATE_TILE_RING_SELECTED,
+        TEMPLATE_TILE_SELECTION_FRAME,
+        TEMPLATE_TILE_PREVIEW_FOCUS,
+        selected && TEMPLATE_TILE_SELECTED,
       )}
-      onMouseEnter={() => {
-        onRequestDetail();
-        onHover(0);
-      }}
-      onMouseMove={(event) => {
-        const nextIndex = importedPresentationTemplateSlideIndex(
-          event,
-          slideCount,
-        );
-        if (nextIndex !== null && nextIndex !== activeSlideIndex) {
-          onHover(nextIndex);
-        }
-      }}
-      onMouseLeave={() => {
-        onHover(null);
-      }}
     >
-      <ImportedPptImage
-        imageSignals={imageSignals}
-        label={label}
-        loading="eager"
-        fetchPriority="high"
-        size={TEMPLATE_CARD_PREVIEW_SIZE}
-        placeholder={<ImageIcon size={24} aria-hidden="true" />}
-        className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-      />
-      <ImportedPptCardMediaControls
-        template={template}
-        selected={selected}
-        loading={loading}
-        onPreview={onPreview}
-        previewRef={previewRef}
-        onSelect={onSelect}
-      />
+      <div
+        data-imported-presentation-template-media=""
+        className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}
+        onMouseEnter={() => {
+          onRequestDetail();
+          onHover(0);
+        }}
+        onMouseMove={(event) => {
+          const nextIndex = importedPresentationTemplateSlideIndex(
+            event,
+            slideCount,
+          );
+          if (nextIndex !== null && nextIndex !== activeSlideIndex) {
+            onHover(nextIndex);
+          }
+        }}
+        onMouseLeave={() => {
+          onHover(null);
+        }}
+      >
+        <ImportedPptImage
+          imageSignals={imageSignals}
+          label={label}
+          loading="eager"
+          fetchPriority="high"
+          size={TEMPLATE_CARD_PREVIEW_SIZE}
+          placeholder={<ImageIcon size={24} aria-hidden="true" />}
+          className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
+        />
+        <ImportedPptCardMediaControls
+          template={template}
+          selected={selected}
+          loading={loading}
+          onPreview={onPreview}
+          previewRef={previewRef}
+          onSelect={onSelect}
+        />
+      </div>
     </div>
   );
 }
@@ -5236,7 +5245,6 @@ function ComposerPresentationSuggestion({
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
           "block aspect-video group-hover/tile:opacity-90",
         )}
       >

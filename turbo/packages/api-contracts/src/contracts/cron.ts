@@ -366,6 +366,22 @@ export const cronCompactChatThreadSnapshotsContract = c.router({
   },
 });
 
+export const cronReconcileArtifactCatalogContract = c.router({
+  reconcile: {
+    method: "GET",
+    path: "/api/cron/reconcile-artifact-catalog",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        processed: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Reconcile a bounded batch of pending artifact catalog files",
+  },
+});
+
 export const cronProjectChatEventSearchContract = c.router({
   project: {
     method: "GET",

@@ -9,7 +9,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
@@ -432,17 +432,15 @@ describe("CHAT-02: model-first provider policies", () => {
         prompt: "reuse the routing receipt facts",
       });
     });
-    // The second plan read is final admission. Stable-context materialization
-    // no longer repeats the switch read, because this send hands its
-    // request-scoped feature-switch context to run preparation. Routing owns
-    // only the single policy read and never loads personal account metadata on
-    // this organization path.
+    // The second plan read is final admission. The existing thread reuses
+    // its request-scoped policy and feature-switch reads; member routing
+    // loads personal metadata and accounts once to check for a preferred route.
     expect(captured.receipt).toStrictEqual({
       planReads: 2,
       policyReads: 1,
       featureSwitchReads: 1,
-      personalMetadataReads: 0,
-      personalAccountReads: 0,
+      personalMetadataReads: 1,
+      personalAccountReads: 1,
     });
     await cancelChatRun(actor, captured.result.runId);
   }, 90_000);
@@ -924,7 +922,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     const pricing = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
+    const checkpointObjects = mockPiCheckpointObjectStore();
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-link");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
     mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
@@ -979,7 +977,12 @@ describe("CHAT-02: model-first provider policies", () => {
       pricing,
     );
     await flushWaitUntilForTest();
-    expect((await api.readRun(actor, untraced.runId)).status).toBe("completed");
+    expect(
+      checkpointObjects.has(
+        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${untraced.runId}/manifest.json`,
+      ),
+    ).toBeTruthy();
+    expect((await api.readRun(actor, untraced.runId)).status).toBe("pending");
     await expect(
       api.readRun(actor, untraced.runId),
     ).resolves.not.toHaveProperty("langfuseTraceUrl");
@@ -997,6 +1000,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(api.readRun(actor, traced.runId)).resolves.not.toHaveProperty(
       "langfuseTraceUrl",
     );
+    await cancelChatRun(actor, untraced.runId);
   });
 
   it("relays admitted run traces with platform credentials after runner claim", async () => {
@@ -1819,6 +1823,9 @@ describe("CHAT-02: model-first provider policies", () => {
       cliAgentType: "codex",
     });
 
+    // A connected personal Codex subscription takes priority over an
+    // organization API route for the same model.
+    await misc.deletePersonalModelProvider(actor, "codex-oauth-token", [204]);
     await api.updateOrgModelPolicies(actor, [
       {
         model: "gpt-5.6-luna",

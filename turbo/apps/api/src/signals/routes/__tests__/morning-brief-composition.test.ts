@@ -599,6 +599,9 @@ type PacedBody = Record<string, unknown> | unknown[];
 
 /**
  * Double GitHub so every read answers `200` after a fixed real delay.
+ * This is the narrow #35594 lint exception: #35737's regression depends on
+ * successful reads crossing the real AbortSignal deadline. Replace this pacing
+ * when the route can accept a test-controlled deadline signal.
  *
  * Production saw twenty GitHub reads return `200` and the source still finish
  * as a failure with zero items, because the budget — not the provider — ended
