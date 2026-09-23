@@ -1327,7 +1327,7 @@ describe("native Morning Brief cron", () => {
     });
   });
 
-  it("commits a native Settings pause with the retained rollback choice", async () => {
+  it("preserves a native Settings pause after rollback", async () => {
     const f = await fixture();
     scriptSlack();
     scriptProviders();
@@ -1355,6 +1355,32 @@ describe("native Morning Brief cron", () => {
       enabled: false,
       nextRunAt: null,
     });
+
+    await updateFeatureSwitchesForUser(
+      context,
+      { orgId: f.orgId, userId: f.userId },
+      { [FeatureSwitchKey.SimpleMorningBrief]: false },
+    );
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await accept(tick(f), [200]);
+      if ((await readNativeSchedule(f))?.phase === "legacy") {
+        break;
+      }
+    }
+
+    await expect(readNativeSchedule(f)).resolves.toMatchObject({
+      enabled: false,
+      phase: "legacy",
+      legacyAutomationId: f.automationId,
+      nextRunAt: null,
+      scheduleOwner: null,
+    });
+    await expect(readLegacyAutomation(f.automationId)).resolves.toMatchObject({
+      enabled: false,
+      officialIntendedEnabled: false,
+      nextRunAt: null,
+    });
+    await expect(readNativeOccurrences(f)).resolves.toHaveLength(0);
   });
 
   it("does not contact the provider twice for the same slot across ticks", async () => {
