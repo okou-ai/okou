@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import {
   claimErasureWork,
@@ -548,6 +548,155 @@ describe("dormant relational sweep", () => {
     }
     return { job, sealed };
   }
+
+  it("releases only deleted conversation and candidate blob retains", async () => {
+    const mine = account("blob-owner");
+    const theirs = account("blob-survivor");
+    const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
+    const historyHash = randomBytes(32).toString("hex");
+    const candidateHash = randomBytes(32).toString("hex");
+    const ownStorage = randomUUID();
+    const theirStorage = randomUUID();
+    const ownSession = randomUUID();
+    const theirSession = randomUUID();
+    const ownRun = randomUUID();
+    const theirRun = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM pi_memory_stage1_candidates
+        WHERE memory_storage_id IN (${ownStorage}, ${theirStorage})`);
+      await db.execute(sql`DELETE FROM conversations
+        WHERE run_id IN (${ownRun}, ${theirRun})`);
+      await db.execute(sql`DELETE FROM agent_runs
+        WHERE id IN (${ownRun}, ${theirRun})`);
+      await db.execute(sql`DELETE FROM agent_sessions
+        WHERE id IN (${ownSession}, ${theirSession})`);
+      await db.execute(sql`DELETE FROM storages
+        WHERE id IN (${ownStorage}, ${theirStorage})`);
+      await db.execute(sql`DELETE FROM blobs
+        WHERE hash IN (${historyHash}, ${candidateHash})`);
+    });
+    await db.execute(sql`INSERT INTO blobs
+      (hash, raw_size, encoding, encoded_size, ref_count)
+      VALUES (${historyHash}, 1, 'raw', 1, 2),
+             (${candidateHash}, 1, 'raw', 1, 2)`);
+    await db.execute(sql`INSERT INTO storages
+      (id, user_id, org_id, name, s3_prefix)
+      VALUES (${ownStorage}, ${mine}, ${orgId}, 'memory', ${`storage/${ownStorage}`}),
+             (${theirStorage}, ${theirs}, ${orgId}, 'memory', ${`storage/${theirStorage}`})`);
+    await db.execute(sql`INSERT INTO pi_memory_stage1_candidates
+      (memory_storage_id, org_id, user_id, pi_session_id, source_run_id,
+       source_history_hash, source_completed_at, eligible_at)
+      VALUES (${ownStorage}, ${orgId}, ${mine}, 'mine', ${ownRun},
+              ${candidateHash}, now(), now()),
+             (${theirStorage}, ${orgId}, ${theirs}, 'theirs', ${theirRun},
+              ${candidateHash}, now(), now())`);
+    await db.execute(sql`INSERT INTO agent_sessions (id, user_id, org_id)
+      VALUES (${ownSession}, ${mine}, ${orgId}),
+             (${theirSession}, ${theirs}, ${orgId})`);
+    await db.execute(sql`INSERT INTO agent_runs
+      (id, user_id, org_id, session_id, status, prompt)
+      VALUES (${ownRun}, ${mine}, ${orgId}, ${ownSession}, 'completed', ''),
+             (${theirRun}, ${theirs}, ${orgId}, ${theirSession}, 'completed', '')`);
+    await db.execute(sql`INSERT INTO conversations
+      (run_id, cli_agent_type, cli_agent_session_id, cli_agent_session_history_hash)
+      VALUES (${ownRun}, 'pi', 'mine', ${historyHash}),
+             (${theirRun}, 'pi', 'theirs', ${historyHash})`);
+
+    const plan = await planRelationalErasure(db);
+    const candidateRoot = plan.order.find((root) => {
+      return root.table === "pi_memory_stage1_candidates";
+    });
+    expect(candidateRoot).toBeDefined();
+    // Force the dangerous but FK-valid order: storage cascades candidates
+    // before the generic loop could inspect them. Capture must not depend on
+    // the catalogue's incidental root order.
+    await drive(mine, {
+      ...plan,
+      order: [
+        ...plan.order.filter((root) => {
+          return root.table !== "pi_memory_stage1_candidates";
+        }),
+        ...(candidateRoot ? [candidateRoot] : []),
+      ],
+      unattributableDescendants: [],
+    });
+
+    const rows = await db.execute(sql`SELECT hash, ref_count
+      FROM blobs WHERE hash IN (${historyHash}, ${candidateHash})`);
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows).toStrictEqual(
+      expect.arrayContaining([
+        { hash: historyHash, ref_count: 1 },
+        { hash: candidateHash, ref_count: 1 },
+      ]),
+    );
+    const survivor = await db.execute(sql`SELECT
+      (SELECT count(*)::int FROM conversations WHERE run_id = ${theirRun}) AS conversations,
+      (SELECT count(*)::int FROM pi_memory_stage1_candidates
+       WHERE memory_storage_id = ${theirStorage}) AS candidates`);
+    expect(survivor.rows).toStrictEqual([{ conversations: 1, candidates: 1 }]);
+  });
+
+  it("rolls back the sweep when a blob retain cannot be released", async () => {
+    const mine = account("missing-blob-retain");
+    const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
+    const storageId = randomUUID();
+    const hash = randomBytes(32).toString("hex");
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM pi_memory_stage1_candidates
+        WHERE memory_storage_id = ${storageId}`);
+      await db.execute(sql`DELETE FROM storages WHERE id = ${storageId}`);
+      await db.execute(sql`DELETE FROM blobs WHERE hash = ${hash}`);
+    });
+    await db.execute(sql`INSERT INTO blobs
+      (hash, raw_size, encoding, encoded_size, ref_count)
+      VALUES (${hash}, 1, 'raw', 1, 0)`);
+    await db.execute(sql`INSERT INTO storages
+      (id, user_id, org_id, name, s3_prefix)
+      VALUES (${storageId}, ${mine}, ${orgId}, 'memory', ${`storage/${storageId}`})`);
+    await db.execute(sql`INSERT INTO pi_memory_stage1_candidates
+      (memory_storage_id, org_id, user_id, pi_session_id, source_run_id,
+       source_history_hash, source_completed_at, eligible_at)
+      VALUES (${storageId}, ${orgId}, ${mine}, 'mine', ${randomUUID()},
+              ${hash}, now(), now())`);
+
+    const plan = await planRelationalErasure(db);
+    const runnable = {
+      ...plan,
+      unattributableDescendants: [],
+    };
+    const handler = createRelationalErasureCollector(db, runnable);
+    const { job } = await sealedJob(
+      mine,
+      RELATIONAL_ERASURE_COLLECTOR_VERSION,
+    );
+    const [collector] = await claimErasureWork(db, job.id, "inventory");
+    if (!collector) {
+      throw new Error("Missing relational inventory lease");
+    }
+    await executeErasureWork(db, collector, handler, context.signal);
+    const sealed = await seal(job.id, job);
+    const claimed = await claimErasureWork(db, job.id, "verification");
+    const eraser = claimed.find((lease) => {
+      return lease.item.itemKey !== lease.item.sinkId;
+    });
+    if (!eraser) {
+      throw new Error("Missing relational erase lease");
+    }
+    await expect(
+      executeErasureWork(db, eraser, handler, context.signal),
+    ).rejects.toThrow(
+      "Conversation history reference accounting failed: missing or insufficient blob references",
+    );
+    const retained = await db.execute(sql`SELECT
+      (SELECT count(*)::int FROM storages WHERE id = ${storageId}) AS storages,
+      (SELECT count(*)::int FROM pi_memory_stage1_candidates
+       WHERE memory_storage_id = ${storageId}) AS candidates`);
+    expect(retained.rows).toStrictEqual([{ storages: 1, candidates: 1 }]);
+    await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
+      "account_erasure:work_unresolved",
+    );
+  });
 
   it("deletes a thread the account created under a surviving member's Agent", async () => {
     const mine = account("mine");

@@ -15,6 +15,7 @@ import {
 
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
+import { releaseDeletedConversationReferences } from "./conversation-history-deletion.service";
 import {
   ACCOUNT_OWNERSHIP_INVENTORY,
   DESCENDANT_REACH,
@@ -845,7 +846,7 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "0a4f9d63-2b17-45c8-9e0a-7f31c6d8b204";
+  "8069b08a-6eea-4a0d-b5e8-f5bdf66eecfb";
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
@@ -933,6 +934,13 @@ export async function sweepRelationalErasure(
       }),
     );
     let deleted = 0;
+    const blobReferences = new Map<string, number>();
+    let deletedConversations = 0;
+    const retainRemovedHash = (hash: string | null): void => {
+      if (hash !== null) {
+        blobReferences.set(hash, (blobReferences.get(hash) ?? 0) + 1);
+      }
+    };
     // Descendants first, every one of them, before any root is deleted. A
     // path joins upwards through rows that must still be there, and a path
     // longer than one hop passes through an intermediate owned by a different
@@ -948,6 +956,24 @@ export async function sweepRelationalErasure(
       }
       // Swept through the key explicitly, not left to a cascade: a declared
       // descendant whose key is `NO ACTION` would otherwise stay behind.
+      if (path.child === "conversations") {
+        // A conversation owns one content-addressed blob retain. Capture the
+        // actually deleted hashes in the same transaction; a later retry sees
+        // no rows and cannot double-release a shared blob.
+        const removed = await executeRawRows(
+          tx,
+          sql`DELETE FROM conversations
+              WHERE ${descendantPredicate(path, predicate)}
+              RETURNING cli_agent_session_history_hash AS hash`,
+          z.object({ hash: z.string().nullable() }),
+        );
+        deleted += removed.length;
+        deletedConversations += removed.length;
+        for (const row of removed) {
+          retainRemovedHash(row.hash);
+        }
+        continue;
+      }
       deleted +=
         (
           await tx.execute(
@@ -956,7 +982,31 @@ export async function sweepRelationalErasure(
           )
         ).rowCount ?? 0;
     }
+    // Delete candidate roots before storage roots. The storage FK cascades, so
+    // leaving candidate deletion to the generic root order could make the
+    // candidate rows vanish before their blob hashes are returned. Their
+    // descendants are already gone, and candidates have no incoming blocking
+    // root FK; the refcount update still waits until after all root deletion.
+    const candidateRoot = owned.find((root) => {
+      return root.table === "pi_memory_stage1_candidates";
+    });
+    if (candidateRoot) {
+      const removed = await executeRawRows(
+        tx,
+        sql`DELETE FROM pi_memory_stage1_candidates
+            WHERE ${candidateRoot.predicate}
+            RETURNING source_history_hash AS hash`,
+        z.object({ hash: z.string() }),
+      );
+      deleted += removed.length;
+      for (const row of removed) {
+        retainRemovedHash(row.hash);
+      }
+    }
     for (const root of owned) {
+      if (root.table === "pi_memory_stage1_candidates") {
+        continue;
+      }
       deleted +=
         (
           await tx.execute(
@@ -964,6 +1014,12 @@ export async function sweepRelationalErasure(
                 WHERE ${root.predicate}`,
           )
         ).rowCount ?? 0;
+    }
+    if (blobReferences.size > 0) {
+      await releaseDeletedConversationReferences(tx, {
+        references: blobReferences,
+        deletedConversations,
+      });
     }
     return deleted;
   });
