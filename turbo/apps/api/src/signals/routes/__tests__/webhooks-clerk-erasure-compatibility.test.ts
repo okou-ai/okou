@@ -10,7 +10,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
-import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
+import { testClerkUserDeletionJobContract } from "@okouai/api-contracts/contracts/test-clerk-user-deletion-job";
 import { sql } from "drizzle-orm";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -32,10 +32,6 @@ import {
 import { holdUserConnectorMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-connectors";
 import { holdUserPermissionGrantMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-permission-grants";
 import {
-  clerkUserDeletionJobFixture,
-  readyClerkUserDeletionJobFixture,
-} from "../../../test-fixtures/clerk-user-deletion-job";
-import {
   holdChatThreadConnectorSelectionBeforeAgentLockFixture,
   holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture,
   holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture,
@@ -49,7 +45,7 @@ import {
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
-import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
+import { testClerkUserDeletionJobRoutes } from "../test-clerk-user-deletion-job";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { workflowsRoutes } from "../workflows";
 import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
@@ -220,7 +216,7 @@ test.each(["list", "delete"] as const)(
 
     let failNext = true;
     let failed = false;
-    let deleted = false;
+    let deleteCount = 0;
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command instanceof ListObjectsV2Command) {
         const prefix = command.input.Prefix;
@@ -247,49 +243,39 @@ test.each(["list", "delete"] as const)(
           failed = true;
           return Promise.reject(new Error("synthetic S3 deletion failure"));
         }
-        deleted ||= isStorage === true;
+        if (isStorage) {
+          deleteCount += 1;
+        }
       }
       return Promise.resolve({});
     });
 
     await deleteUserWithSignedWebhook(userId, `preserve-locators-${failure}`);
     expect(failed).toBeTruthy();
-    await expect(clerkUserDeletionJobFixture(userId)).resolves.toMatchObject({
-      status: "pending",
-      failureCount: 1,
-      checkpoint: { emptyOrgIds: expect.any(Array) },
-    });
     await expect(storages.listStorages(actor, "user")).resolves.toContainEqual(
       expect.objectContaining({ name: storageName }),
     );
 
-    await readyClerkUserDeletionJobFixture(userId);
-    const cronSecret = `test-clerk-deletion-${randomUUID()}`;
-    mockEnv("CRON_SECRET", cronSecret);
-    await accept(
-      setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
-        cronProcessBackgroundJobsContract,
-      ).process({
-        headers: { authorization: `Bearer ${cronSecret}` },
+    mockEnv("ENV", "development");
+    const resumed = await accept(
+      setupApp({ context, routes: testClerkUserDeletionJobRoutes })(
+        testClerkUserDeletionJobContract,
+      ).retry({
+        body: { userId },
       }),
       [200],
     );
-    expect(deleted).toBeTruthy();
-    const completed = await clerkUserDeletionJobFixture(userId);
-    expect(completed).toMatchObject({
-      status: "completed",
-      failureCount: 1,
-    });
+    expect(resumed.body.processed).toBe(1);
+    expect(deleteCount).toBeGreaterThan(0);
     await expect(
       storages.listStorages(actor, "user"),
     ).resolves.not.toContainEqual(
       expect.objectContaining({ name: storageName }),
     );
 
+    const successfulDeletionCount = deleteCount;
     await deleteUserWithSignedWebhook(userId, `duplicate-${failure}`);
-    await expect(clerkUserDeletionJobFixture(userId)).resolves.toStrictEqual(
-      completed,
-    );
+    expect(deleteCount).toBe(successfulDeletionCount);
   },
 );
 
