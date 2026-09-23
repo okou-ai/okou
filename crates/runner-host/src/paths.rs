@@ -25,6 +25,7 @@ use crate::error::HostResult;
 use runner_types::ids::RunId;
 
 const WORKSPACE_IMAGE_CACHE_KEY_DOMAIN: &[u8] = b"workspace-image-cache:v1\0";
+pub(crate) const RUNNER_HOME_ROOT: &str = "/var/lib/vm0-runner";
 
 /// Short hex digests for storage name and version components, used when
 /// building filesystem paths from untrusted manifest fields.
@@ -164,7 +165,7 @@ pub struct HomePaths {
 impl HomePaths {
     pub fn new() -> HostResult<Self> {
         Ok(Self {
-            root: PathBuf::from("/var/lib/vm0-runner"),
+            root: PathBuf::from(RUNNER_HOME_ROOT),
         })
     }
 
@@ -172,12 +173,44 @@ impl HomePaths {
         Self { root }
     }
 
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Host-wide directories that cannot contain private per-runner state.
+    /// `runners_dir` is excluded because its children are private runner homes.
+    pub(crate) fn shared_subtree_roots(&self) -> [PathBuf; 13] {
+        [
+            self.bin_dir(),
+            self.ca_dir(),
+            self.runner_control_dir(),
+            self.debootstrap_dir(),
+            self.firecracker_root_dir(),
+            self.groups_dir(),
+            self.images_dir(),
+            self.locks_dir(),
+            self.live_runner_instances_dir(),
+            self.logs_dir(),
+            self.mitmproxy_root_dir(),
+            self.storages_dir(),
+            self.workspace_image_cache_dir(),
+        ]
+    }
+
+    fn firecracker_root_dir(&self) -> PathBuf {
+        self.root.join("firecracker")
+    }
+
+    fn mitmproxy_root_dir(&self) -> PathBuf {
+        self.root.join("mitmproxy")
+    }
+
     pub fn bin_dir(&self) -> PathBuf {
         self.root.join("bin")
     }
 
     pub fn firecracker_dir(&self, version: &str) -> PathBuf {
-        self.root.join("firecracker").join(version)
+        self.firecracker_root_dir().join(version)
     }
 
     pub fn firecracker_bin(&self, version: &str) -> PathBuf {
@@ -190,7 +223,7 @@ impl HomePaths {
     }
 
     pub fn mitmproxy_dir(&self, version: &str) -> PathBuf {
-        self.root.join("mitmproxy").join(version)
+        self.mitmproxy_root_dir().join(version)
     }
 
     pub fn mitmdump_bin(&self, version: &str) -> PathBuf {
