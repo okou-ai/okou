@@ -11,10 +11,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
 import { createApp } from "../../../app-factory";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
@@ -74,9 +70,6 @@ const trackConnectedFixture = createFixtureTracker<ConnectedFixture>(
     );
   },
 );
-const trackCatalogOverride = createFixtureTracker<true>(async () => {
-  await installApiTestConnectorCatalog();
-});
 const trackOrgMembershipFixture = createFixtureTracker<OrgMembershipFixture>(
   async (fixture) => {
     await store.set(deleteOrgMembership$, fixture, context.signal);
@@ -476,45 +469,6 @@ describe("POST /api/connectors/diagnostics/check", () => {
   });
 
   it("reports the allowed AWS permission when a different matching alias is denied", async () => {
-    const catalog = {
-      ...API_TEST_CONNECTOR_CATALOG,
-      catalogVersion: `2026-09-24.aws-alias-${randomUUID().slice(0, 8)}`,
-      connectors: API_TEST_CONNECTOR_CATALOG.connectors.map((connector) => {
-        if (
-          connector.slug !== "aws" ||
-          connector.firewall.kind !== "generated"
-        ) {
-          return connector;
-        }
-        return {
-          ...connector,
-          firewall: {
-            ...connector.firewall,
-            config: {
-              ...connector.firewall.config,
-              apis: connector.firewall.config.apis.map((api, index) => {
-                return index === 0
-                  ? {
-                      ...api,
-                      permissions: [
-                        {
-                          name: "sts:get-caller-identity-alias",
-                          rules: [
-                            "POST / AWS action=GetCallerIdentity sigv4=sts",
-                          ],
-                        },
-                        ...(api.permissions ?? []),
-                      ],
-                    }
-                  : api;
-              }),
-            },
-          },
-        };
-      }),
-    };
-    await trackCatalogOverride(Promise.resolve(true));
-    await installApiTestConnectorCatalog({ catalog });
     const actor = bdd.user();
     await seedAdminMembership(actor);
     mockAwsExternalCodeProvider();
