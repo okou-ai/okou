@@ -2,12 +2,17 @@ import {
   computerUseHostsContract,
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import {
   computerUsePermissions,
   mockMacUserAgentData,
@@ -157,11 +162,121 @@ test("Show cloud browser and local computer defaults in a new chat", async () =>
   await openComputerMenu();
   expect(screen.getByText("Cloud browser")).toBeVisible();
   expect(
-    screen.getByRole("switch", { name: "Disable Cloud browser" }),
+    screen.getByRole("switch", { name: "Cloud browser", checked: true }),
   ).toBeChecked();
   expect(
-    screen.getByRole("switch", { name: "Connect Studio Mac" }),
+    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
   ).not.toBeChecked();
+});
+
+test("Choose and clear a computer through its row and switch keyboard controls", async () => {
+  const user = userEvent.setup({ delay: null });
+  installNewComputerChat(
+    [],
+    [
+      computerHost({
+        id: PRIMARY_HOST_ID,
+        displayName: "Studio Mac",
+        status: "online",
+      }),
+      computerHost({
+        id: SECONDARY_HOST_ID,
+        displayName: "Travel Mac",
+        status: "online",
+      }),
+    ],
+  );
+  await setupPage({ context, path: NEW_CHAT_PATH });
+  await readyChat();
+  await openComputerMenu();
+
+  await user.click(screen.getByText("Studio Mac"));
+  const studio = await screen.findByRole("switch", {
+    name: "Studio Mac",
+    checked: true,
+  });
+  expect(studio).toBeChecked();
+  expect(
+    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
+  ).not.toBeChecked();
+
+  await user.click(screen.getByText("Travel Mac"));
+  const travel = await screen.findByRole("switch", {
+    name: "Travel Mac",
+    checked: true,
+  });
+  expect(travel).toBeChecked();
+  expect(
+    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
+  ).not.toBeChecked();
+  expect(travel).toHaveFocus();
+
+  await user.keyboard(" ");
+  expect(travel).not.toBeChecked();
+  await user.keyboard("{Enter}");
+  expect(travel).toBeChecked();
+
+  await user.click(screen.getByText("Cloud browser"));
+  const cloudBrowser = await screen.findByRole("switch", {
+    name: "Cloud browser",
+    checked: true,
+  });
+  expect(cloudBrowser).toBeChecked();
+  expect(travel).not.toBeChecked();
+  expect(cloudBrowser).toHaveFocus();
+  await user.keyboard(" ");
+  expect(cloudBrowser).not.toBeChecked();
+  await user.keyboard("{Enter}");
+  expect(cloudBrowser).toBeChecked();
+  expect(queryButton("Connect my computer")).toBeInTheDocument();
+});
+
+test("Ignore the Cloud browser row while its saved default is loading", async () => {
+  const preferences = context.mocks.deferred<void>();
+  installNewComputerChat([], []);
+  context.mocks.api(
+    userPreferencesContract.get,
+    async ({ respond, withSignal }) => {
+      await withSignal(preferences.promise);
+      return respond(200, {
+        timezone: "UTC",
+        locale: "en-US",
+        supportedLocales: ["en-US"],
+        pinnedAgentIds: [],
+        sendMode: "enter",
+        cloudBrowserEnabledByDefault: true,
+        theme: "system",
+        colorTheme: null,
+        captureNetworkBodiesRemaining: 0,
+        voiceInputModel: null,
+      });
+    },
+  );
+  const page = await startPage({
+    context,
+    path: NEW_CHAT_PATH,
+    featureSwitches: { [FeatureSwitchKey.ChatPreference]: true },
+  });
+  await page.content;
+  await openComputerMenu();
+  const cloudBrowser = await screen.findByRole("switch", {
+    name: "Cloud browser",
+    checked: true,
+  });
+  expect(cloudBrowser).toHaveAttribute("aria-disabled", "true");
+
+  click(screen.getByText("Cloud browser"));
+  preferences.resolve();
+  await page.ready;
+  await waitFor(() => {
+    expect(cloudBrowser).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(cloudBrowser).toBeChecked();
+
+  click(screen.getByText("Cloud browser"));
+  await expect(
+    screen.findByRole("switch", { name: "Cloud browser", checked: false }),
+  ).resolves.not.toBeChecked();
 });
 
 test("Send a new chat with the default cloud browser", async () => {
@@ -188,14 +303,16 @@ test("Start a new chat with Cloud browser disabled", async () => {
   await readyChat();
   await openComputerMenu();
   const cloudBrowser = screen.getByRole("switch", {
-    name: "Disable Cloud browser",
+    name: "Cloud browser",
+    checked: true,
   });
   expect(cloudBrowser).toBeChecked();
 
   await user.click(cloudBrowser);
 
   const disabledCloudBrowser = await screen.findByRole("switch", {
-    name: "Enable Cloud browser",
+    name: "Cloud browser",
+    checked: false,
   });
   expect(disabledCloudBrowser).not.toBeChecked();
 
@@ -223,7 +340,7 @@ test("Use the saved Cloud browser default for an untouched new chat", async () =
   await readyChat();
   await openComputerMenu();
   expect(
-    screen.getByRole("switch", { name: "Enable Cloud browser" }),
+    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
   ).not.toBeChecked();
 
   await sendText("Review the launch notes");
@@ -250,16 +367,17 @@ test("Start a new chat with a selected local computer", async () => {
   await readyChat();
   await openComputerMenu();
   const localComputer = screen.getByRole("switch", {
-    name: "Connect Studio Mac",
+    name: "Studio Mac",
+    checked: false,
   });
 
   await user.click(localComputer);
 
   await expect(
-    screen.findByRole("switch", { name: "Disconnect Studio Mac" }),
+    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
   ).resolves.toBeChecked();
   expect(
-    screen.getByRole("switch", { name: "Enable Cloud browser" }),
+    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
   ).not.toBeChecked();
 
   await sendText("Open the desktop dashboard");
@@ -302,13 +420,14 @@ test("Discover computers that are available for Computer Use", async () => {
   expect(within(hostGroup).queryByText("Travel Mac")).toBeNull();
   expect(screen.getByText("Cloud browser")).toBeVisible();
   const studioSwitch = screen.getByRole("switch", {
-    name: "Connect Studio Mac",
+    name: "Studio Mac",
+    checked: false,
   });
   expect(studioSwitch).not.toBeChecked();
 
   await user.click(studioSwitch);
   await expect(
-    screen.findByRole("switch", { name: "Disconnect Studio Mac" }),
+    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
   ).resolves.toBeChecked();
   hosts = [
     computerHost({
@@ -345,7 +464,7 @@ test("Discover computers that are available for Computer Use", async () => {
 
   await expect(screen.findByText("Travel Mac")).resolves.toBeVisible();
   expect(
-    screen.getByRole("switch", { name: "Connect Travel Mac" }),
+    screen.getByRole("switch", { name: "Travel Mac", checked: false }),
   ).not.toBeChecked();
 
   hosts = null;
@@ -440,7 +559,9 @@ async function connectExistingChatComputer() {
 
   await readyChat();
   await openComputerMenu();
-  await user.click(screen.getByRole("switch", { name: "Connect Studio Mac" }));
+  await user.click(
+    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
+  );
 
   await waitFor(() => {
     expect(updates).toHaveLength(1);
@@ -450,7 +571,7 @@ async function connectExistingChatComputer() {
     cloudBrowserEnabled: false,
   });
   await expect(
-    screen.findByRole("switch", { name: "Disconnect Studio Mac" }),
+    screen.findByRole("switch", { name: "Studio Mac", checked: true }),
   ).resolves.toBeChecked();
   return { user, sends, updates, externalOrder };
 }
@@ -466,7 +587,8 @@ test("Save and retain an existing chat's Computer Use host before sending", asyn
   ]);
   await openComputerMenu();
   const savedHost = await screen.findByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   expect(savedHost).toBeChecked();
 });
@@ -475,7 +597,8 @@ test("Save an existing chat's Computer Use disconnection before sending", async 
   const { user, sends, updates, externalOrder } =
     await connectExistingChatComputer();
   const savedHost = screen.getByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   await user.click(savedHost);
 
@@ -487,7 +610,7 @@ test("Save an existing chat's Computer Use disconnection before sending", async 
     cloudBrowserEnabled: false,
   });
   await expect(
-    screen.findByRole("switch", { name: "Connect Studio Mac" }),
+    screen.findByRole("switch", { name: "Studio Mac", checked: false }),
   ).resolves.not.toBeChecked();
 
   await sendText("Continue without the desktop");

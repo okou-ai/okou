@@ -160,7 +160,12 @@ test.each([2, 3])(
     await waitFor(() => {
       expect(triggerIcons(trigger)).toStrictEqual(icons.slice(0, 2));
     });
-    click(await screen.findByRole("switch", { name: "Disable Cloud browser" }));
+    click(
+      await screen.findByRole("switch", {
+        name: "Cloud browser",
+        checked: true,
+      }),
+    );
     await waitFor(() => {
       expect(triggerIcons(trigger)).toStrictEqual(
         [...icons, "SSH"].slice(0, 3),

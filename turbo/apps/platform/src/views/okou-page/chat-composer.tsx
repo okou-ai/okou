@@ -6740,12 +6740,7 @@ function ComputerUseConnectorMenuSection({
   const { t } = useTranslation();
   return (
     <div className="shrink-0 border-t border-border/50 bg-gray-50 p-1 dark:bg-gray-100">
-      <div
-        onClick={() => {
-          computerUse.onCloudBrowserChange(!computerUse.cloudBrowserEnabled);
-        }}
-        className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover"
-      >
+      <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover">
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
           <Globe size={16} />
         </span>
@@ -6756,31 +6751,17 @@ function ComputerUseConnectorMenuSection({
             })}
           </span>
         </span>
-        <span
-          className="flex shrink-0 items-center"
-          onClick={(event) => {
-            event.stopPropagation();
-          }}
-        >
+        <span className="flex shrink-0 items-center">
           <LoadingSwitch
             checked={computerUse.cloudBrowserEnabled}
             onCheckedChange={onDomEventFn((enabled) => {
               computerUse.onCloudBrowserChange(enabled);
             })}
             loading={computerUse.cloudBrowserLoading}
-            ariaLabel={
-              computerUse.cloudBrowserEnabled
-                ? t(($) => {
-                    return $.chat.computerUse.disableCloudBrowser;
-                  })
-                : t(($) => {
-                    return $.chat.computerUse.enableCloudBrowser;
-                  })
-            }
             size="sm"
           />
         </span>
-      </div>
+      </label>
       <div className="mx-2 my-1 border-t border-border/50" />
       <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
         {t(($) => {
@@ -6810,11 +6791,8 @@ function ComputerUseConnectorMenuSection({
           {computerUse.hosts.map((host) => {
             const checked = computerUse.selectedHostId === host.id;
             return (
-              <div
+              <label
                 key={host.id}
-                onClick={() => {
-                  computerUse.onChange(checked ? null : host.id);
-                }}
                 className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-state-hover"
               >
                 <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
@@ -6832,41 +6810,17 @@ function ComputerUseConnectorMenuSection({
                     </span>
                   )}
                 </span>
-                <span
-                  className="flex shrink-0 items-center"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                  }}
-                >
+                <span className="flex shrink-0 items-center">
                   <LoadingSwitch
                     checked={checked}
                     onCheckedChange={onDomEventFn((nextChecked) => {
                       computerUse.onChange(nextChecked ? host.id : null);
                     })}
                     loading={false}
-                    ariaLabel={
-                      checked
-                        ? t(
-                            ($) => {
-                              return $.chat.computerUse.disconnectHost;
-                            },
-                            {
-                              hostName: host.displayName,
-                            },
-                          )
-                        : t(
-                            ($) => {
-                              return $.chat.computerUse.connectHost;
-                            },
-                            {
-                              hostName: host.displayName,
-                            },
-                          )
-                    }
                     size="sm"
                   />
                 </span>
-              </div>
+              </label>
             );
           })}
         </div>
