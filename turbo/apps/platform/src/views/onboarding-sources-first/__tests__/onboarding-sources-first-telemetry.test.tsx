@@ -1,7 +1,3 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -16,6 +12,10 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockOnboardingConnectorCatalog,
+  onboardingSourceItem,
+} from "./onboarding-catalog-test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 import { mockOAuthCompletions } from "../../okou-page/__tests__/connector-page-test-helpers.ts";
 
@@ -45,73 +45,25 @@ function mockOnboardingNeeded(): void {
   });
 }
 
-function catalogItem(item: {
-  readonly slug: string;
-  readonly label: string;
-  readonly description: string;
-  readonly connected: boolean;
-}): PublicConnectorCatalogStatusItem {
-  return {
-    slug: item.slug,
-    label: item.label,
-    description: item.description,
-    icon: {
-      url: `https://icons.example.test/onboarding-${item.slug}.svg`,
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: item.connected,
-    connectionStatus: item.connected ? "connected" : "not-connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-}
-
 /**
  * One source already connected, so the steps behind the connect requirement
  * are reachable, and one that is not, to connect during the run.
  */
 function mockCatalog(): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [
-        catalogItem({
-          slug: "gmail",
-          label: "Gmail",
-          description: "Mail for your workspace",
-          connected: true,
-        }),
-        catalogItem({
-          slug: "notion",
-          label: "Notion",
-          description: "Shared notes for a team",
-          connected: false,
-        }),
-      ],
-    });
-  });
+  mockOnboardingConnectorCatalog(context, [
+    onboardingSourceItem({
+      slug: "gmail",
+      label: "Gmail",
+      description: "Mail for your workspace",
+      connected: true,
+    }),
+    onboardingSourceItem({
+      slug: "notion",
+      label: "Notion",
+      description: "Shared notes for a team",
+      connected: false,
+    }),
+  ]);
 }
 
 function getButtonByName(name: string): HTMLElement {

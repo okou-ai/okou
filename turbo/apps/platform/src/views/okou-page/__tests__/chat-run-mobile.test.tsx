@@ -1,6 +1,5 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { fill } from "../../../__tests__/page-helper.ts";
 import {
@@ -79,44 +78,6 @@ function installScrollableActiveChat(): void {
     ],
   });
 }
-
-test("Show a complete thinking message before the carousel advances", async () => {
-  const thinkingText =
-    "Preparing the launch checklist\nReviewing the release evidence";
-  installRunChat({
-    activeRunIds: [ACTIVE_RUN_ID],
-    chatEvents: [
-      promptEvent({
-        id: "thinking-lines-request",
-        runId: ACTIVE_RUN_ID,
-        seqId: 1,
-        text: "Show the current progress",
-      }),
-      thinkingEvent({
-        id: "thinking-lines-progress",
-        runId: ACTIVE_RUN_ID,
-        seqId: 2,
-        text: thinkingText,
-      }),
-    ],
-  });
-
-  // The carousel splits the run's own thinking event, which is the producer
-  // an account keeps while thread activity summaries are off.
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
-  });
-
-  await readyChat();
-  await expect(
-    screen.findByLabelText("Preparing the launch checklist"),
-  ).resolves.toBeVisible();
-  expect(
-    screen.queryByText("Reviewing the release evidence"),
-  ).not.toBeInTheDocument();
-});
 
 test("Keep mobile chat gestures predictable in the standalone app", async () => {
   context.mocks.browser.standaloneDisplayMode(true);

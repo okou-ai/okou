@@ -4,7 +4,6 @@ import {
   chatThreadActivitySummaryContract,
   type ActivitySummaryResponse,
 } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
@@ -17,16 +16,12 @@ import {
   publishRunUpdate,
   readyChat,
   RUN_PATH,
-  thinkingEvent,
 } from "./chat-run-test-fixtures.ts";
 
 const RUN_ID = "d0000000-0000-4000-a000-000000000841";
 const NEXT_RUN_ID = "d0000000-0000-4000-a000-000000000842";
 const PREPARATION = "Preparing the launch checklist";
 const ACTIVITY = "Checking the release evidence";
-const featureSwitches = Object.freeze({
-  [FeatureSwitchKey.ThreadActivitySummary]: true,
-});
 
 function summary(
   overrides: Partial<ActivitySummaryResponse> = {},
@@ -53,27 +48,6 @@ function installActiveRun() {
   return events;
 }
 
-test("Feature off retains initial thinking and makes no summary demand", async () => {
-  const events = installActiveRun();
-  events.push(
-    thinkingEvent({
-      id: "old-thinking",
-      runId: RUN_ID,
-      seqId: 2,
-      text: "Preparing the original response",
-    }),
-  );
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
-  });
-
-  await expect(
-    screen.findByLabelText("Preparing the original response"),
-  ).resolves.toBeVisible();
-});
-
 test("A chat event starts demand for the newly active run", async () => {
   const events: ReturnType<typeof promptEvent>[] = [];
   installRunChat({ chatEvents: events, activeRunIds: [RUN_ID] });
@@ -84,7 +58,7 @@ test("A chat event starts demand for the newly active run", async () => {
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
   events.push(
@@ -115,7 +89,7 @@ test("A completed run cannot revive the previous indicator", async () => {
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await firstRequestStarted.promise;
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 
@@ -143,7 +117,7 @@ test("A 403 response clears the displayed summary", async () => {
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
 
   forbidden = true;
@@ -171,7 +145,7 @@ test("A replacement run cannot display the previous run's last result", async ()
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
 
   events.push(

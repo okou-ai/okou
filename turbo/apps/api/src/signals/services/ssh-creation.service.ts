@@ -11,7 +11,7 @@ type Transaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 // serializes requests from different owners, whose owner locks cannot do so.
 export async function checkSshCreationId(
   tx: Transaction,
-  owner: { readonly orgId: string; readonly userId: string },
+  owner: { readonly orgId: string; readonly userId: string | null },
   table:
     | typeof sshConnections
     | typeof sshCredentials

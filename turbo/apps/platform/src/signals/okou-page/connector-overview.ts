@@ -78,6 +78,7 @@ export const connectorOverview$ = computed(async (get) => {
       return {
         slug: connector.slug,
         label: connector.label,
+        description: connector.description,
         icon: connector.icon,
         hasPermissions: connector.permissionSummary.hasPermissions,
       };

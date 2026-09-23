@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "rootfs-usage.py"
+SCRIPT = Path(__file__).resolve().parents[3] / "runner-executor" / "scripts" / "rootfs-usage.py"
 
 
 class RootfsUsageTests(unittest.TestCase):

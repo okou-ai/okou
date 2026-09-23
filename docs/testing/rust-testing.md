@@ -49,6 +49,10 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-lifecycle -- --test-threads=1
 
+# Extracted Runner claimed-run execution and session-history owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-executor -- --test-threads=1
+
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -p shell-quote --lib tests::quoted_words_round_trip_through_posix_shell -- --exact
@@ -193,9 +197,7 @@ fn command_with_test_env(binary: &Path) -> Command {
 }
 ```
 
-For inline runner tests, reuse `run_ignored_child_test` from `crates/runner/src/test_fixtures.rs`. It invokes one exact ignored test in a bounded child process and accepts per-child environment settings and removals.
-Tests owned by the extracted `runner-host` crate use its crate-local equivalent;
-the helper is intentionally not part of the production API.
+For inline runner tests, reuse `run_ignored_child_test` from `crates/runner-host/src/test_fixtures/ignored_child.rs`. It invokes one exact ignored test in a bounded child process and accepts per-child environment settings and removals. The helper is available only through test-support paths, not the production API.
 
 ### Temp Directories
 

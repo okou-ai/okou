@@ -356,10 +356,8 @@ test("Changing user clears retained VNC access in the chat composer", async () =
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
     featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
-  const trigger = await findFastControl("button", "Connectors");
-  click(trigger);
+  click(await findFastControl("button", "Connectors"));
   await screen.findByLabelText("Remove VNC");
-  expect(within(trigger).getByRole("img", { name: "VNC" })).toBeInTheDocument();
   changing = true;
   act(() => {
     clerk.user(
@@ -369,8 +367,10 @@ test("Changing user clears retained VNC access in the chat composer", async () =
     clerk.stateChanged();
   });
   await waitFor(() => {
-    expect(within(trigger).queryByRole("img", { name: "VNC" })).toBeNull();
+    expect(screen.queryByLabelText("Remove VNC")).toBeNull();
   });
+  expect(screen.queryByLabelText("Add VNC")).toBeNull();
   nextOwner.resolve();
-  await screen.findByLabelText("Add VNC");
+  await expect(screen.findByLabelText("Add VNC")).resolves.toBeInTheDocument();
+  expect(screen.queryByLabelText("Remove VNC")).toBeNull();
 });

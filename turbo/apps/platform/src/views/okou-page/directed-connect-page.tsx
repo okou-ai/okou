@@ -44,7 +44,6 @@ import {
   manualGrantInputValuesForMethod,
   type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { hasTokenInputValue } from "../../signals/okou-page/settings/token-input.ts";
 import {
   bestEffort,
@@ -57,6 +56,7 @@ import {
   directedConnectSlug$,
   directedConnectCustomSlug$,
   directedConnectAccountTarget$,
+  directedConnectCatalogItem$,
   directedConnectExactAccount$,
   directedConnectAgentId$,
   directedConnectAgentName$,
@@ -550,14 +550,15 @@ function useDirectedConnectCatalogState(
   connectorSlug: ConnectorSlug | null,
 ): DirectedConnectCatalogState {
   const justConnected = useGet(justConnectedBuiltinSlugs$);
-  const allLoadable = useLastLoadable(connectorCatalogStatus$);
-  const catalogLoaded = allLoadable.state === "hasData";
-  const allData = catalogLoaded ? allLoadable.data.connectors : [];
-  const item = connectorSlug
-    ? allData.find((connector) => {
-        return connector.slug === connectorSlug;
-      })
-    : undefined;
+  const itemLoadable = useLastLoadable(directedConnectCatalogItem$);
+  // The last entry is kept across a reload, never shown for another slug.
+  const catalogLoaded =
+    itemLoadable.state === "hasData" &&
+    (itemLoadable.data === null || itemLoadable.data.slug === connectorSlug);
+  const item =
+    catalogLoaded && connectorSlug
+      ? (itemLoadable.data ?? undefined)
+      : undefined;
   const optimisticallyConnected =
     connectorSlug !== null && justConnected.has(connectorSlug);
   const isConnected = optimisticallyConnected || (item?.connected ?? false);
@@ -565,9 +566,7 @@ function useDirectedConnectCatalogState(
     item,
     isConnected,
     isLoading:
-      connectorSlug !== null &&
-      !optimisticallyConnected &&
-      allLoadable.state === "loading",
+      connectorSlug !== null && !optimisticallyConnected && !catalogLoaded,
     unavailable:
       connectorSlug !== null &&
       catalogLoaded &&

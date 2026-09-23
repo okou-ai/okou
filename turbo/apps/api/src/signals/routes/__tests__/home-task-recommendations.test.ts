@@ -409,6 +409,13 @@ describe("GET /api/home-task-recommendations", () => {
           connectors: ["gmail"],
         },
       ],
+      connectors: [
+        {
+          slug: "gmail",
+          label: expect.any(String),
+          icon: expect.objectContaining({ url: expect.any(String) }),
+        },
+      ],
     });
     expect(gmailListCalls).toBe(1);
     expect(gmailDetailCalls).toBe(1);

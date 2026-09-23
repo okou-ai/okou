@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/get-started";
 import {
   connectorCatalogContract,
+  isOneClickConnectorGrantKind,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -22,6 +23,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
   testContext,
@@ -110,16 +112,35 @@ function catalogItem(
   };
 }
 
-function mockQuestCatalog(): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+/**
+ * The one-click catalog the picker reads. Like the API, it only carries the
+ * connectors that connect in one browser step, projected to their connect
+ * items.
+ */
+function mockOneClickCatalog(
+  items: readonly PublicConnectorCatalogStatusItem[],
+  onRead?: () => void,
+): void {
+  context.mocks.api(connectorCatalogContract.oneClick, ({ respond }) => {
+    onRead?.();
     return respond(200, {
-      connectors: [
-        catalogItem("gmail", "Gmail", "auth-code"),
-        catalogItem("notion", "Notion", "auth-code"),
-        catalogItem("openai", "OpenAI", "manual"),
-      ],
+      connectors: items.flatMap((item) => {
+        return item.authMethods.some((method) => {
+          return isOneClickConnectorGrantKind(method.grantKind);
+        })
+          ? [connectorCatalogConnectItem(item)]
+          : [];
+      }),
     });
   });
+}
+
+function mockQuestCatalog(): void {
+  mockOneClickCatalog([
+    catalogItem("gmail", "Gmail", "auth-code"),
+    catalogItem("notion", "Notion", "auth-code"),
+    catalogItem("openai", "OpenAI", "manual"),
+  ]);
 }
 
 function configureQuestPage(
@@ -771,4 +792,96 @@ test("Checking in confirms the reward instead of closing silently", async () => 
       "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
     ),
   ).toBeInTheDocument();
+});
+
+test("The quest entry leaves the connector catalog unread until the connector step opens", async () => {
+  configureQuestPage(context, "admin");
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, {
+      connectors: [catalogItem("gmail", "Gmail", "auth-code")],
+    });
+  });
+  let oneClickReads = 0;
+  mockOneClickCatalog([catalogItem("gmail", "Gmail", "auth-code")], () => {
+    oneClickReads += 1;
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  // The intro dialog and its connect flow are mounted beside the entry, but
+  // nothing is picked yet, so nothing asks for the catalog.
+  await openQuestPanel();
+  expect(oneClickReads).toBe(0);
+
+  click(screen.getByTestId("get-started-quest-connector"));
+  const picker = await screen.findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(oneClickReads).toBe(1);
+  // The picker lists what the one-click catalog returns; the full catalog
+  // status is never read for it.
+  expect(statusReads).toBe(0);
+});
+
+test("A connector that needs a choice opens its connect dialog from its own catalog entry", async () => {
+  configureQuestPage(context, "admin");
+  // The landing page can independently read a random workflow card's
+  // connectors. Use a fixture slug no other surface reads, so this count
+  // belongs only to the quest's choice flow.
+  const oauth = catalogItem("quest-choice", "Choice connector", "auth-code");
+  const firstMethod = oauth.authMethods[0];
+  if (!firstMethod) {
+    throw new Error("Missing auth method");
+  }
+  // Two browser methods leave nothing to start in one press.
+  const choice: PublicConnectorCatalogStatusItem = {
+    ...oauth,
+    authMethods: [
+      firstMethod,
+      { ...firstMethod, id: "workspace-oauth", label: "Workspace OAuth" },
+    ],
+    singleAuthCodeAuthMethodId: null,
+  };
+  // The slug route would also match the catalog's static paths, so it is
+  // installed before the one-click mock, which then takes precedence there.
+  let choiceReads = 0;
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    if (params.connectorSlug !== choice.slug) {
+      return respond(404, {
+        error: { message: "Connector not found", code: "NOT_FOUND" },
+      });
+    }
+    choiceReads += 1;
+    return respond(200, { connector: choice });
+  });
+  mockOneClickCatalog([choice]);
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const tile = await screen.findByTestId("quest-connector-quest-choice");
+  expect(choiceReads).toBe(0);
+  click(tile);
+
+  // The dialog offers both methods, which only the connector's own full entry
+  // carries.
+  const dialog = await screen.findByRole("dialog", {
+    name: "Choice connector",
+  });
+  expect(within(dialog).getByText("Workspace OAuth")).toBeInTheDocument();
+  expect(choiceReads).toBe(1);
 });

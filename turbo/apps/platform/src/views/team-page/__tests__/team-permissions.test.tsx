@@ -28,6 +28,7 @@ import {
 import {
   RESEARCH_AGENT_ID,
   catalogConnectorFixture,
+  mockConnectorOverview,
   permissionGrantFixture,
   permissionMetadataFixture,
   setupTeamPage,
@@ -66,9 +67,7 @@ function mockPermissionSurface(
   options: PermissionSurfaceOptions,
 ): void {
   let grants = [...(options.initialGrants ?? [])];
-  testContextValue.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [options.connector] });
-  });
+  mockConnectorOverview(testContextValue, [options.connector]);
   testContextValue.mocks.api(
     connectorCatalogContract.permissions,
     ({ respond }) => {

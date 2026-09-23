@@ -435,8 +435,14 @@ test("A successful Feishu callback opens the connected bot", async () => {
     "https://applink.feishu.cn/client/bot/open?appId=cli_test";
   const locationAssign = context.mocks.browser.locationAssign();
   let callbackQuery: unknown;
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [feishuConnectorStatus()] });
+  const catalogReads: string[] = [];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    catalogReads.push(params.connectorSlug);
+    return params.connectorSlug === "lark"
+      ? respond(200, { connector: feishuConnectorStatus() })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
   });
   context.mocks.api(feishuOauthContract.callback, ({ query, respond }) => {
     callbackQuery = query;
@@ -453,10 +459,13 @@ test("A successful Feishu callback opens the connected bot", async () => {
     name: "Connecting Feishu…",
   });
   expect(heading).toBeInTheDocument();
-  const image = document.querySelector<HTMLImageElement>(
-    `img[src="${FEISHU_ICON_URL}"]`,
-  );
-  expect(image).toHaveAttribute("src", FEISHU_ICON_URL);
+  // The page reads the one entry it draws, not the whole catalog.
+  await waitFor(() => {
+    expect(
+      document.querySelector<HTMLImageElement>(`img[src="${FEISHU_ICON_URL}"]`),
+    ).toHaveAttribute("src", FEISHU_ICON_URL);
+  });
+  expect(catalogReads).toStrictEqual(["lark"]);
   await waitFor(() => {
     expect(locationAssign.calls).toStrictEqual([redirectUrl]);
   });

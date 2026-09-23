@@ -1,9 +1,3 @@
-import { http, HttpResponse } from "msw";
-import { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { mockOptionalEnv } from "../../../lib/env";
-import { server } from "../../../mocks/server";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { testChatEventSearchProjectionContract } from "@okouai/api-contracts/contracts/test-chat-event-search-projection";
 import { testChatEventSearchProjectionRoutes } from "../test-chat-event-search-projection";
@@ -365,46 +359,8 @@ test.each(
       }
       return storage(command);
     });
-    if (!actor.orgId) {
-      throw new Error("Expected an organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      {
-        [FeatureSwitchKey.ThreadActivitySummary]: false,
-      },
-    );
-    mockOptionalEnv("OPENROUTER_API_KEY", "archive-thinking-test");
-    server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        async ({ request }) => {
-          const body = z
-            .object({ messages: z.array(z.object({ content: z.string() })) })
-            .parse(await request.json());
-          if (
-            body.messages[0]?.content.includes(
-              "Write user-visible progress copy",
-            )
-          ) {
-            // The external provider finishes after the old archive becomes unavailable.
-            archiveUnavailable = true;
-          }
-          return HttpResponse.json({
-            choices: [
-              {
-                finish_reason: "stop",
-                message: { content: "Preparing this ordinary reply" },
-              },
-            ],
-          });
-        },
-      ),
-    );
     const run = await send(old.threadId);
-    expect(archiveUnavailable).toBeTruthy();
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    archiveUnavailable = true;
     await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
       status: "pending",
     });
@@ -529,16 +485,6 @@ test.each(
       usage: { totalCredits: 7 },
     });
     expect(usages[0]?.runGroupId).toBeUndefined();
-    expect(
-      events.filter((event) => {
-        return event.runEventId === "thinking:initial";
-      }),
-    ).toMatchObject([
-      {
-        eventType: "output.thinking",
-        thinking: "Preparing this ordinary reply",
-      },
-    ]);
   },
   60_000,
 );

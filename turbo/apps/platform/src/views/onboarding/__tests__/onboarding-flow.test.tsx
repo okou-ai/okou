@@ -143,6 +143,35 @@ function setupCustomWorkflowPage(
   });
 }
 
+/**
+ * The catalog as the workflow pages read it. The connector list looks each of
+ * its connectors up by slug: a listed entry is found, any other slug is not.
+ * The workflow connector icons still read the full catalog status, which is
+ * installed after the slug route so `/status` is not taken for a slug.
+ * Returns the slugs looked up.
+ */
+function mockCatalogEntries(
+  connectors: readonly PublicConnectorCatalogStatusItem[],
+): readonly string[] {
+  const reads: string[] = [];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    reads.push(params.connectorSlug);
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
+    });
+    if (!connector) {
+      return respond(404, {
+        error: { message: "Connector not found", code: "NOT_FOUND" },
+      });
+    }
+    return respond(200, { connector });
+  });
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, { connectors: [...connectors] });
+  });
+  return reads;
+}
+
 function mockCatalogItem({
   slug,
   label,
@@ -151,7 +180,7 @@ function mockCatalogItem({
   readonly slug: PublicConnectorCatalogStatusItem["slug"];
   readonly label: string;
   readonly icon: PublicConnectorCatalogStatusItem["icon"];
-}): void {
+}): readonly string[] {
   const connector: PublicConnectorCatalogStatusItem = {
     slug,
     label,
@@ -185,9 +214,7 @@ function mockCatalogItem({
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  return mockCatalogEntries([connector]);
 }
 
 async function openMakePage(): Promise<void> {
@@ -432,7 +459,7 @@ test("A user can identify and switch workspace during onboarding", async () => {
 });
 
 test("Workflow drafts identify required and optional connectors clearly", async () => {
-  mockCatalogItem({
+  const catalogReads = mockCatalogItem({
     slug: "google-cloud",
     label: "Catalog Google Cloud",
     icon: {
@@ -464,6 +491,11 @@ test("Workflow drafts identify required and optional connectors clearly", async 
     throw new Error("Expected GitHub connector row");
   }
   expect(within(optionalRow).getByText(/^Optional\s+·/u)).toBeVisible();
+  // The list looks up only its own connectors, one entry each; GitHub has no
+  // entry here, so its row falls back to the slug.
+  expect(new Set(catalogReads)).toStrictEqual(
+    new Set(["google-cloud", "github"]),
+  );
 
   click(buttonByAriaLabel("Preview workflow details"));
 
@@ -481,9 +513,7 @@ test("Workflow drafts identify required and optional connectors clearly", async 
 
 test("Built-in workflows can start without connector setup", async () => {
   mockOnboardingNeeded();
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [] });
-  });
+  mockCatalogEntries([]);
   await setupPage({
     context,
     path: "/onboarding/workflow-run?choice=workflow&category=marketing&workflow=track-keyword-ranks-ahrefs",
@@ -575,9 +605,7 @@ test("A workflow preview can be selected as the first draft", async () => {
 
 test("Workflow drafts can be created before connectors are connected", async () => {
   mockOnboardingNeeded();
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [] });
-  });
+  mockCatalogEntries([]);
   await setupPage({
     context,
     path: "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=watch-sentry-after-release",

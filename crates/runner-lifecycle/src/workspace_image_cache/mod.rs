@@ -93,9 +93,10 @@ pub use lifecycle::{
     WorkspaceImagePromotionOutcome, WorkspaceSessionHistorySidecarEntryGuard,
     cap_held_workspace_states,
 };
+use types::WorkspaceCacheLockOwner;
 pub use types::{
-    CacheBudget, FsStats, WorkspaceCacheCheckoutResult, WorkspaceCacheLockOwner,
-    WorkspaceCacheTerminalStatus, WorkspaceImageActiveLeaseRequest, WorkspaceImageCacheInspection,
+    CacheBudget, FsStats, WorkspaceCacheCheckoutResult, WorkspaceCacheTerminalStatus,
+    WorkspaceImageActiveLeaseRequest, WorkspaceImageCacheInspection,
     WorkspaceImageCacheInspectionEntry, WorkspaceImageCacheInspectionStatus,
     WorkspaceImageCacheInspectionSummary, WorkspaceImageLeaseIdentity,
     WorkspaceImagePrepareLockPolicy, WorkspaceImagePrepareRequest,

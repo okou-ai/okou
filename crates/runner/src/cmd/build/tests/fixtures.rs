@@ -3,7 +3,7 @@ use super::*;
 use aws_smithy_mocks::{Rule, RuleMode, mock, mock_client};
 use std::sync::Arc;
 
-use crate::test_fixtures::http_body::byte_stream_with_error_after;
+use crate::test_fixtures_http_body::byte_stream_with_error_after;
 
 pub(super) const TEST_TEMPLATE_DISK_BYTES: u64 = 128 * 1024 * 1024;
 

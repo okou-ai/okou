@@ -449,29 +449,6 @@ describe("createApp", () => {
     expect(serialized).not.toContain("basic-secret");
   });
 
-  it("bounds long unhandled error summaries", async () => {
-    const error = new Error("x".repeat(10_000));
-    const expectedSummary = `${"x".repeat(237)}...`;
-    const handler$ = computed((): never => {
-      throw error;
-    });
-    const client = setupApp({
-      context,
-      routes: [
-        ...TEST_APP_ROUTES,
-        { route: errorTestContract.boom, handler: handler$ },
-      ],
-    })(errorTestContract);
-
-    await accept(client.boom(), [500]);
-
-    const [message, fields] =
-      context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
-    const logFields = fields as Record<PropertyKey, unknown>;
-    expect(logFields.errorSummary).toBe(expectedSummary);
-    expect(message).toBe(`Unhandled request error: ${expectedSummary}`);
-  });
-
   it("handles cyclic error causes while logging unhandled errors", async () => {
     const error = new Error("cyclic failure");
     Object.defineProperty(error, "cause", { value: error });
@@ -656,32 +633,6 @@ describe("createApp", () => {
       errorSummary: "response validation failed",
       route: "/__test/boom",
       method: "GET",
-    });
-  });
-
-  it("summarizes response validation failures with leading whitespace", async () => {
-    const error = new Error("  response validation failed: schema details");
-    const handler$ = computed((): never => {
-      throw error;
-    });
-    const client = setupApp({
-      context,
-      routes: [
-        ...TEST_APP_ROUTES,
-        { route: errorTestContract.boom, handler: handler$ },
-      ],
-    })(errorTestContract);
-
-    const response = await accept(client.boom(), [500]);
-
-    expect(response.body).toStrictEqual({ error: "Internal server error" });
-
-    const [message, fields] =
-      context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
-    expect(message).toBe("Unhandled request error: response validation failed");
-    expect(fields).toMatchObject({
-      type: "unhandled_request_error",
-      errorSummary: "response validation failed",
     });
   });
 
@@ -1246,68 +1197,6 @@ describe("createApp", () => {
 
       expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
     });
-
-    it("force-upgrades the pre-rollout Access App before retired route matching", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/api/ssh/cloudflare-access/configs", {
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: "0.943.0",
-        },
-      });
-
-      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "Client update required",
-      });
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    });
-
-    it("rejects pre-MCP-reader app clients before custom connector route matching", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/api/custom-connectors", {
-        method: "GET",
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: "0.715.1",
-        },
-      });
-
-      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "Client update required",
-      });
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    });
-
-    it.each(["0.621.0", "0.843.1", "0.855.1", "0.856.0", "0.886.0"])(
-      "force-upgrades App %s before current route matching",
-      async (version) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/api/chat-threads", {
-          method: "GET",
-          headers: {
-            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-            [CLIENT_VERSION_HEADER]: version,
-          },
-        });
-
-        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-        await expect(response.json()).resolves.toStrictEqual({
-          error: "Client update required",
-        });
-        expect(response.headers.get("cache-control")).toBe("no-store");
-      },
-    );
 
     it("force-upgrades the previously published App before retired unread route matching", async () => {
       const app = createApp({

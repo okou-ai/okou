@@ -24,9 +24,9 @@ import {
   builtinPollingOAuthAuthCodeSlug$,
   type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
+  directedAuthorizeCatalogItem$,
   directedAuthorizeSlug$,
   directedAuthorizeAgentId$,
   directedAuthorizeAgentName$,
@@ -121,14 +121,15 @@ function useDirectedAuthorizeParams(): {
 
 function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
   const justConnected = useGet(justConnectedBuiltinSlugs$);
-  const allLoadable = useLastLoadable(connectorCatalogStatus$);
-  const catalogLoaded = allLoadable.state === "hasData";
-  const allData = catalogLoaded ? allLoadable.data.connectors : [];
-  const item = connectorSlug
-    ? allData.find((connector) => {
-        return connector.slug === connectorSlug;
-      })
-    : undefined;
+  const itemLoadable = useLastLoadable(directedAuthorizeCatalogItem$);
+  // The last entry is kept across a reload, never shown for another slug.
+  const catalogLoaded =
+    itemLoadable.state === "hasData" &&
+    (itemLoadable.data === null || itemLoadable.data.slug === connectorSlug);
+  const item =
+    catalogLoaded && connectorSlug
+      ? (itemLoadable.data ?? undefined)
+      : undefined;
   const isConnected =
     connectorSlug !== null &&
     (justConnected.has(connectorSlug) || item?.connected === true);
@@ -138,7 +139,7 @@ function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
     catalogLoading:
       connectorSlug !== null &&
       !justConnected.has(connectorSlug) &&
-      allLoadable.state === "loading",
+      !catalogLoaded,
     unavailable:
       connectorSlug !== null && catalogLoaded && !item && !isConnected,
   };

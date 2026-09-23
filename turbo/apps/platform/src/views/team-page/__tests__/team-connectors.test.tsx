@@ -1,8 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogStatusItem } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   customConnectorsContract,
   customConnectorByIdContract,
@@ -28,6 +25,7 @@ import {
   agentFixture,
   catalogConnectorFixture,
   deepWikiConnectorFixture,
+  mockConnectorOverview,
   setupTeamPage,
 } from "./team-page-test-helpers.ts";
 
@@ -112,9 +110,7 @@ function mockConnectorSurface(
     ),
   );
 
-  testContextValue.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [...(options.catalog ?? [])] });
-  });
+  mockConnectorOverview(testContextValue, options.catalog ?? []);
   testContextValue.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [...(options.customConnectors ?? [])],

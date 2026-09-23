@@ -211,7 +211,7 @@ test("A fresh standalone action page reads accepted callback delivery", async ()
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(
     queryAllByRoleFast("button", document.body).some((candidate) => {
-      return candidate.textContent?.trim() === "Continue";
+      return candidate.textContent?.trim() === "Notify agent";
     }),
   ).toBeFalsy();
 });
@@ -260,7 +260,7 @@ test("A terminal standalone action retries only its stable callback", async () =
   });
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Continue"));
+  click(button("Notify agent"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -389,12 +389,10 @@ test("A failed callback retries without repeating the Browser mutation", async (
   click(button("Add to browser"));
 
   await waitFor(() => {
-    expect(
-      screen.getByText("The agent wasn't notified. Try Continue again."),
-    ).toBeVisible();
+    expect(screen.getByText("Agent not notified.")).toBeVisible();
   });
   expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
-  click(button("Continue"));
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });

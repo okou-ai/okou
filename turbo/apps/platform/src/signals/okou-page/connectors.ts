@@ -75,7 +75,7 @@ export interface ComposerConnectorUiState {
  */
 export type ConnectorDirectoryTab = "discover" | "custom";
 
-interface ComposerConnectorData {
+export interface ComposerConnectorData {
   readonly overview: ConnectorOverview;
   readonly authorization: ComposerConnectorAuthorizationState;
 }

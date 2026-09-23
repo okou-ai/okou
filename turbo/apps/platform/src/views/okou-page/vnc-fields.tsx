@@ -21,6 +21,7 @@ import {
   VNC_DISPLAY_NAME_MAX_LENGTH,
   VNC_USERNAME_MAX_BYTES,
   VNC_USERNAME_PASSWORD_MAX_BYTES,
+  APPLE_DH_FIELD_MAX_BYTES,
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import {
@@ -45,6 +46,7 @@ export function VncEndpointFields({
   readonly connection: VncConnectionResponse | null;
 }) {
   const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
   return (
     <div className="grid gap-4">
       <label className="grid gap-2 text-sm">
@@ -73,6 +75,11 @@ export function VncEndpointFields({
           name="host"
           required
           maxLength={VNC_HOST_MAX_LENGTH}
+          pattern={
+            editor.profile === "apple_dh"
+              ? String.raw`(127\.0\.0\.1|::1)`
+              : undefined
+          }
           defaultValue={connection?.host ?? ""}
           placeholder={t(($) => {
             return $.vnc.hostHint;
@@ -97,9 +104,13 @@ export function VncEndpointFields({
         />
       </label>
       <p id="vnc-destination-help" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.transport.destinationHelp;
-        })}
+        {editor.profile === "apple_dh"
+          ? t(($) => {
+              return $.vnc.transport.appleDhDestinationHelp;
+            })
+          : t(($) => {
+              return $.vnc.transport.destinationHelp;
+            })}
       </p>
     </div>
   );
@@ -109,7 +120,7 @@ function VncSecurityProfileField({
   profile,
   disabled,
 }: {
-  readonly profile: "x509_vnc" | "x509_plain";
+  readonly profile: "x509_vnc" | "x509_plain" | "apple_dh";
   readonly disabled: boolean;
 }) {
   const { t } = useTranslation();
@@ -127,6 +138,12 @@ function VncSecurityProfileField({
         return $.vnc.security.x509Plain;
       }),
     },
+    {
+      value: "apple_dh",
+      label: t(($) => {
+        return $.vnc.security.appleDh;
+      }),
+    },
   ];
   return (
     <>
@@ -139,7 +156,11 @@ function VncSecurityProfileField({
         items={profileItems}
         value={profile}
         onValueChange={(value, details) => {
-          if (value !== "x509_vnc" && value !== "x509_plain") {
+          if (
+            value !== "x509_vnc" &&
+            value !== "x509_plain" &&
+            value !== "apple_dh"
+          ) {
             details.cancel();
             return;
           }
@@ -161,13 +182,17 @@ function VncSecurityProfileField({
         </SelectContent>
       </Select>
       <p className="text-sm text-muted-foreground">
-        {profile === "x509_vnc"
+        {profile === "apple_dh"
           ? t(($) => {
-              return $.vnc.security.x509VncHelp;
+              return $.vnc.security.appleDhHelp;
             })
-          : t(($) => {
-              return $.vnc.security.x509PlainHelp;
-            })}
+          : profile === "x509_vnc"
+            ? t(($) => {
+                return $.vnc.security.x509VncHelp;
+              })
+            : t(($) => {
+                return $.vnc.security.x509PlainHelp;
+              })}
       </p>
     </>
   );
@@ -321,7 +346,9 @@ export function VncTransportFields({
         return $.vnc.transport.ssh;
       }),
     },
-  ];
+  ].filter((item) => {
+    return editor.profile !== "apple_dh" || item.value === "ssh";
+  });
   return (
     <fieldset className="grid min-w-0 gap-3">
       <legend className="mb-1 text-sm font-semibold">
@@ -333,7 +360,10 @@ export function VncTransportFields({
         items={transportItems}
         value={editor.transport}
         onValueChange={(value, details) => {
-          if (value !== "direct" && value !== "ssh") {
+          if (
+            (value !== "direct" && value !== "ssh") ||
+            (editor.profile === "apple_dh" && value !== "ssh")
+          ) {
             details.cancel();
             return;
           }
@@ -376,7 +406,10 @@ export function VncSecurityFields({
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
   const choose = useSet(chooseVncTrust$);
-  const savedTrust = connection?.security.trust;
+  const savedTrust =
+    connection?.security.type === "apple_dh"
+      ? undefined
+      : connection?.security.trust;
   const trustItems = [
     {
       value: "system",
@@ -394,83 +427,94 @@ export function VncSecurityFields({
   return (
     <div className="grid gap-3">
       <VncSecurityProfileField profile={editor.profile} disabled={disabled} />
-      <label htmlFor="vnc-server-name" className="text-sm">
-        {t(($) => {
-          return $.vnc.security.serverName;
-        })}
-      </label>
-      <Input
-        id="vnc-server-name"
-        name="serverName"
-        maxLength={VNC_HOST_MAX_LENGTH}
-        defaultValue={connection?.security.serverName ?? ""}
-        placeholder={t(($) => {
-          return $.vnc.security.serverNameHint;
-        })}
-        aria-describedby="vnc-server-name-help"
-      />
-      <p id="vnc-server-name-help" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.security.serverNameHelp;
-        })}
-      </p>
-      <label htmlFor="vnc-trust" className="text-sm">
-        {t(($) => {
-          return $.vnc.security.title;
-        })}
-      </label>
-      <Select
-        items={trustItems}
-        value={editor.trust}
-        onValueChange={(value, details) => {
-          if (value !== "system" && value !== "custom_ca") {
-            details.cancel();
-            return;
-          }
-          choose(value);
-        }}
-        disabled={disabled}
-      >
-        <SelectTrigger id="vnc-trust">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {trustItems.map((item) => {
-            return (
-              <SelectItem key={item.value} value={item.value}>
-                {item.label}
-              </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
-      {editor.trust === "custom_ca" && (
-        <div className="grid gap-2 text-sm">
-          <label htmlFor="vnc-ca-bundle">
+      {editor.profile === "apple_dh" ? null : (
+        <>
+          <label htmlFor="vnc-server-name" className="text-sm">
             {t(($) => {
-              return $.vnc.security.caBundle;
+              return $.vnc.security.serverName;
             })}
           </label>
-          <Textarea
-            id="vnc-ca-bundle"
-            name="caBundle"
-            required
-            maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
-            aria-describedby="vnc-ca-help"
+          <Input
+            id="vnc-server-name"
+            name="serverName"
+            maxLength={VNC_HOST_MAX_LENGTH}
             defaultValue={
-              savedTrust?.mode === "custom_ca" ? savedTrust.caBundle : ""
+              connection?.security.type === "apple_dh"
+                ? ""
+                : (connection?.security.serverName ?? "")
             }
             placeholder={t(($) => {
-              return $.vnc.security.caHint;
+              return $.vnc.security.serverNameHint;
             })}
-            className="min-h-32 font-mono text-xs"
+            aria-describedby="vnc-server-name-help"
           />
-          <p id="vnc-ca-help" className="text-muted-foreground">
+          <p
+            id="vnc-server-name-help"
+            className="text-sm text-muted-foreground"
+          >
             {t(($) => {
-              return $.vnc.security.caHelp;
+              return $.vnc.security.serverNameHelp;
             })}
           </p>
-        </div>
+          <label htmlFor="vnc-trust" className="text-sm">
+            {t(($) => {
+              return $.vnc.security.title;
+            })}
+          </label>
+          <Select
+            items={trustItems}
+            value={editor.trust}
+            onValueChange={(value, details) => {
+              if (value !== "system" && value !== "custom_ca") {
+                details.cancel();
+                return;
+              }
+              choose(value);
+            }}
+            disabled={disabled}
+          >
+            <SelectTrigger id="vnc-trust">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {trustItems.map((item) => {
+                return (
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+          {editor.trust === "custom_ca" && (
+            <div className="grid gap-2 text-sm">
+              <label htmlFor="vnc-ca-bundle">
+                {t(($) => {
+                  return $.vnc.security.caBundle;
+                })}
+              </label>
+              <Textarea
+                id="vnc-ca-bundle"
+                name="caBundle"
+                required
+                maxLength={VNC_CA_BUNDLE_MAX_LENGTH}
+                aria-describedby="vnc-ca-help"
+                defaultValue={
+                  savedTrust?.mode === "custom_ca" ? savedTrust.caBundle : ""
+                }
+                placeholder={t(($) => {
+                  return $.vnc.security.caHint;
+                })}
+                className="min-h-32 font-mono text-xs"
+              />
+              <p id="vnc-ca-help" className="text-muted-foreground">
+                {t(($) => {
+                  return $.vnc.security.caHelp;
+                })}
+              </p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -481,7 +525,7 @@ function VncAuthenticationMethodSelector({
   profile,
 }: {
   readonly disabled: boolean;
-  readonly profile: "x509_vnc" | "x509_plain";
+  readonly profile: "x509_vnc" | "x509_plain" | "apple_dh";
 }) {
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
@@ -498,6 +542,12 @@ function VncAuthenticationMethodSelector({
         return $.vnc.credential.usernamePasswordMethod;
       }),
     },
+    {
+      value: "apple_dh",
+      label: t(($) => {
+        return $.vnc.credential.appleDhMethod;
+      }),
+    },
   ];
   return (
     <div className="grid gap-2 text-sm">
@@ -510,7 +560,11 @@ function VncAuthenticationMethodSelector({
         items={profileItems}
         value={profile}
         onValueChange={(value, details) => {
-          if (value !== "x509_vnc" && value !== "x509_plain") {
+          if (
+            value !== "x509_vnc" &&
+            value !== "x509_plain" &&
+            value !== "apple_dh"
+          ) {
             details.cancel();
             return;
           }
@@ -553,9 +607,13 @@ function VncAuthenticationMethod({
           ? t(($) => {
               return $.vnc.credential.method;
             })
-          : t(($) => {
-              return $.vnc.credential.usernamePasswordMethod;
-            })}
+          : method === "apple_dh_username_password"
+            ? t(($) => {
+                return $.vnc.credential.appleDhMethod;
+              })
+            : t(($) => {
+                return $.vnc.credential.usernamePasswordMethod;
+              })}
       </span>
     </div>
   );
@@ -604,7 +662,8 @@ function VncAuthenticationInputs({
   const mountSecret = useSet(mountVncSecret$);
   return (
     <div key={method} className="grid gap-4">
-      {method === "username_password" && (
+      {(method === "username_password" ||
+        method === "apple_dh_username_password") && (
         <div className="grid gap-2 text-sm">
           <label htmlFor="vnc-username">
             {t(($) => {
@@ -615,9 +674,14 @@ function VncAuthenticationInputs({
             id="vnc-username"
             name="username"
             required
-            maxLength={VNC_USERNAME_MAX_BYTES}
+            maxLength={
+              method === "apple_dh_username_password"
+                ? APPLE_DH_FIELD_MAX_BYTES
+                : VNC_USERNAME_MAX_BYTES
+            }
             defaultValue={
-              credential?.authMethod === "username_password"
+              credential?.authMethod === "username_password" ||
+              credential?.authMethod === "apple_dh_username_password"
                 ? credential.username
                 : ""
             }
@@ -627,9 +691,13 @@ function VncAuthenticationInputs({
             })}
           />
           <p id="vnc-username-help" className="text-muted-foreground">
-            {t(($) => {
-              return $.vnc.credential.usernameHelp;
-            })}
+            {method === "apple_dh_username_password"
+              ? t(($) => {
+                  return $.vnc.credential.appleDhFieldHelp;
+                })
+              : t(($) => {
+                  return $.vnc.credential.usernameHelp;
+                })}
           </p>
         </div>
       )}
@@ -654,7 +722,9 @@ function VncAuthenticationInputs({
           maxLength={
             method === "vnc_password"
               ? undefined
-              : VNC_USERNAME_PASSWORD_MAX_BYTES
+              : method === "apple_dh_username_password"
+                ? APPLE_DH_FIELD_MAX_BYTES
+                : VNC_USERNAME_PASSWORD_MAX_BYTES
           }
           pattern={method === "vnc_password" ? "[ -~]{1,8}" : undefined}
           placeholder={
@@ -672,9 +742,13 @@ function VncAuthenticationInputs({
             ? t(($) => {
                 return $.vnc.credential.passwordHelp;
               })
-            : t(($) => {
-                return $.vnc.credential.usernamePasswordHelp;
-              })}
+            : method === "apple_dh_username_password"
+              ? t(($) => {
+                  return $.vnc.credential.appleDhFieldHelp;
+                })
+              : t(($) => {
+                  return $.vnc.credential.usernamePasswordHelp;
+                })}
         </p>
       </div>
     </div>

@@ -16,7 +16,9 @@ import {
   eq,
   exists,
   isNull,
+  lt,
   notExists,
+  or,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -45,6 +47,7 @@ import {
   loadPendingChatQueueEvent,
   lockChatQueueThread,
   pendingChatQueueEventCondition,
+  pendingChatQueueEventConditionFor,
 } from "./chat-event-queue.service";
 import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -431,7 +434,7 @@ function replacementTargetFromQueueHead(
   };
 }
 
-function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
+function queueFirstClaimHeadBase(db: DbTransaction) {
   return db
     .select({
       ...queueFirstReplacementTargetFields,
@@ -450,7 +453,11 @@ function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
     .leftJoin(
       workflowAutomations,
       eq(workflowAutomations.id, chatAutomationContext.automationId),
-    )
+    );
+}
+
+function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
+  return queueFirstClaimHeadBase(db)
     .where(
       and(
         eq(chatEvents.chatThreadId, threadId),
@@ -461,6 +468,56 @@ function queueFirstClaimHeadQuery(db: DbTransaction, threadId: string) {
       chatQueueEventPriority(),
       asc(chatEvents.createdAt),
       asc(chatEvents.id),
+    )
+    .for("update", { of: chatEvents })
+    .limit(1);
+}
+
+/** The association names a candidate; prove it is still the first pending item. */
+function queueFirstExpectedHeadQuery(
+  db: DbTransaction,
+  association: QueueFirstRunAssociation,
+) {
+  const predecessor = alias(chatEvents, "queue_first_predecessor");
+  const earlierInClass = or(
+    lt(predecessor.createdAt, chatEvents.createdAt),
+    and(
+      eq(predecessor.createdAt, chatEvents.createdAt),
+      lt(predecessor.id, chatEvents.id),
+    ),
+  );
+  const precedesCandidate =
+    association.kind === "user_message"
+      ? and(eq(predecessor.eventType, "input.prompt"), earlierInClass)
+      : or(
+          eq(predecessor.eventType, "input.prompt"),
+          and(eq(predecessor.eventType, "input.automation"), earlierInClass),
+        );
+  return queueFirstClaimHeadBase(db)
+    .where(
+      and(
+        eq(chatEvents.chatThreadId, association.threadId),
+        eq(chatEvents.id, association.eventId),
+        eq(
+          chatEvents.eventType,
+          association.kind === "user_message"
+            ? "input.prompt"
+            : "input.automation",
+        ),
+        pendingChatQueueEventCondition(db),
+        notExists(
+          db
+            .select({ id: predecessor.id })
+            .from(predecessor)
+            .where(
+              and(
+                eq(predecessor.chatThreadId, association.threadId),
+                pendingChatQueueEventConditionFor(db, predecessor),
+                precedesCandidate,
+              ),
+            ),
+        ),
+      ),
     )
     .for("update", { of: chatEvents })
     .limit(1);
@@ -554,19 +611,22 @@ async function resolveQueueFirstClaimSnapshot(
 
 async function loadQueueFirstAdmissionProjection(
   db: DbTransaction,
-  args: { readonly admissionTime: number; readonly threadId: string },
+  args: {
+    readonly admissionTime: number;
+    readonly association: QueueFirstRunAssociation;
+  },
 ): Promise<{
   readonly admissionBlocked: boolean;
   readonly head: QueueFirstClaimHead;
 } | null> {
   const head = db
     .$with("queue_first_admission_head")
-    .as(queueFirstClaimHeadQuery(db, args.threadId));
+    .as(queueFirstExpectedHeadQuery(db, args.association));
   const [projection] = await db
     .with(head)
     .select({
       admissionBlocked: sql`${chatThreadAdmissionBlockerCondition(db, {
-        threadId: args.threadId,
+        threadId: args.association.threadId,
         apiStartTime: args.admissionTime,
       })}`.mapWith(pgBooleanDecoder),
       head: {
@@ -583,7 +643,7 @@ async function loadQueueFirstAdmissionProjection(
     })
     .from(chatThreads)
     .leftJoin(head, sql`true`)
-    .where(eq(chatThreads.id, args.threadId))
+    .where(eq(chatThreads.id, args.association.threadId))
     .limit(1);
   return projection ?? null;
 }
@@ -597,9 +657,9 @@ export async function resolveQueueFirstRunAdmission(
   db: DbTransaction,
   args: {
     readonly admissionTime: number;
+    readonly association: QueueFirstRunAssociation;
     readonly sessionSnapshotState: QueueFirstRunSessionSnapshotState;
     readonly threadAlreadyLocked?: true;
-    readonly threadId: string;
     readonly timing: ApiDispatchTimingCollector;
   },
 ): Promise<QueueFirstRunAdmission> {
@@ -614,7 +674,10 @@ export async function resolveQueueFirstRunAdmission(
           "api_dispatch_queue_first_thread_lock_wait",
           "nested",
           async () => {
-            return await lockUserMessageQueueThread(db, args.threadId);
+            return await lockUserMessageQueueThread(
+              db,
+              args.association.threadId,
+            );
           },
         ));
       if (!threadExists) {

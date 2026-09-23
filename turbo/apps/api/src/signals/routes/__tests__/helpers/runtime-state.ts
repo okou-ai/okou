@@ -884,7 +884,7 @@ export async function readThreadSessionConversation(
   return response.thread_session_conversation;
 }
 
-export async function insertLegacyArtifactCatalogFile(
+export async function seedPendingArtifactCatalogFile(
   context: TestContext,
   args: {
     readonly userId: string;
@@ -894,30 +894,16 @@ export async function insertLegacyArtifactCatalogFile(
   },
 ): Promise<string> {
   const response = await postAction(context, {
-    action: "insert-legacy-artifact-catalog-file",
+    action: "seed-pending-artifact-catalog-file",
     user_id: args.userId,
     org_id: args.orgId,
     filename: args.filename,
     url: args.url,
   });
   if (!response.file_id) {
-    throw new Error("insertLegacyArtifactCatalogFile missing file_id");
+    throw new Error("seedPendingArtifactCatalogFile missing file_id");
   }
   return response.file_id;
-}
-
-export async function setComputerUseHostAsPreviousApi(
-  context: TestContext,
-  args: {
-    readonly threadId: string;
-    readonly computerUseHostId: string;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-computer-use-host-as-previous-api",
-    thread_id: args.threadId,
-    computer_use_host_id: args.computerUseHostId,
-  });
 }
 
 export async function setBrowserTabSnapshotAsPreviousApi(

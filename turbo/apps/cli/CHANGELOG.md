@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.357.1](https://github.com/okou-ai/okou/compare/cli-v9.357.0...cli-v9.357.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **connector-check:** support aws firewall diagnostics ([#36324](https://github.com/okou-ai/okou/issues/36324)) ([f7149e3](https://github.com/okou-ai/okou/commit/f7149e311fe55bc099268a108c207d18a8a39e47))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.498.1
+    * @okouai/connectors bumped to 3.15.2
+    * @okouai/core bumped to 8.704.1
+    * @okouai/pi-agent-runtime bumped to 1.40.1
+
 ## [9.357.0](https://github.com/okou-ai/okou/compare/cli-v9.356.2...cli-v9.357.0) (2026-09-23)
 
 

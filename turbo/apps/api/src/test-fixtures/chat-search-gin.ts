@@ -77,10 +77,11 @@ export async function createChatSearchGinFixture() {
   };
 }
 
-/** A real server failure after message writes, before the watermark. The API
- * cannot deliberately stall a backend. Only this owned thread's transaction
- * gets an additional sleep/self-cancel statement; PostgreSQL and Drizzle produce the
- * actual failure and rollback, with no fabricated query results or errors.
+/** A real server failure after message writes, before or at the watermark.
+ * The API cannot deliberately stall a backend. A test-owned watermark row lock
+ * makes the real upsert wait; only this transaction gets a short statement
+ * deadline. PostgreSQL and Drizzle produce the failure and rollback without
+ * fabricated errors.
  */
 export async function withChatSearchStatementFailureFixture<T>(
   chatThreadId: string,
@@ -90,6 +91,7 @@ export async function withChatSearchStatementFailureFixture<T>(
   await closeDbPool();
   const original = Client.prototype.query;
   let injected = false;
+  let serverStatementTimeout = false;
   Client.prototype.query = new Proxy(original, {
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const text = barrierQueryText(queryArgs);
@@ -104,12 +106,35 @@ export async function withChatSearchStatementFailureFixture<T>(
       }
       injected = true;
       return (async () => {
-        await Reflect.apply(target, receiver, [
-          failure === "timeout"
-            ? "SELECT pg_sleep(10)"
-            : "SELECT pg_cancel_backend(pg_backend_pid())",
-        ]);
-        return await Reflect.apply(target, receiver, queryArgs);
+        if (failure === "timeout") {
+          // This transaction already has the production 1s lock timeout and
+          // 5s statement timeout. Shorten only its statement deadline, just
+          // before the real watermark write waits on the test-owned row.
+          await Reflect.apply(target, receiver, [
+            "SET LOCAL statement_timeout = '300ms'",
+          ]);
+        } else {
+          await Reflect.apply(target, receiver, [
+            "SELECT pg_cancel_backend(pg_backend_pid())",
+          ]);
+        }
+        const outcome = await settleIncludingAbort(
+          Reflect.apply(target, receiver, queryArgs) as Promise<unknown>,
+        );
+        if (!outcome.ok) {
+          if (failure === "timeout") {
+            serverStatementTimeout = z
+              .object({
+                code: z.literal("57014"),
+                message: z.literal(
+                  "canceling statement due to statement timeout",
+                ),
+              })
+              .safeParse(outcome.error).success;
+          }
+          throw outcome.error;
+        }
+        return outcome.value;
       })();
     },
   });
@@ -123,7 +148,10 @@ export async function withChatSearchStatementFailureFixture<T>(
     throw closed.error;
   }
   if (!injected) {
-    throw new Error("Owned projection did not reach the timeout fixture");
+    throw new Error("Owned projection did not reach the failure fixture");
+  }
+  if (failure === "timeout" && !serverStatementTimeout) {
+    throw new Error("Owned watermark write did not hit statement_timeout");
   }
   return result.value;
 }

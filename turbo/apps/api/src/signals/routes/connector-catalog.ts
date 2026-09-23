@@ -1,3 +1,4 @@
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -15,6 +16,7 @@ import {
   getPublicConnectorCatalogStatus,
   getPublicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
+  listConnectorCatalogConnectItems,
   listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
@@ -22,7 +24,7 @@ import { builtinConnectorCatalogConnectionList } from "../services/connector-dat
 import { notFound, providerUnavailable } from "../../lib/error";
 import { settle } from "../utils";
 
-const connectorCatalogAuth = {
+export const connectorCatalogAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
   requiredCapability: "connector:read",
@@ -135,6 +137,66 @@ const listConnectorCatalogStatusInner$ = command(
     }
 
     return { status: 200 as const, body: catalog.value };
+  },
+);
+
+/**
+ * Connect items for a connect surface, joined with the caller's connections.
+ * Shared by the one-click picker and the onboarding sources.
+ */
+export const listConnectorCatalogConnectItems$ = command(
+  async (
+    { get, set },
+    filter:
+      | {
+          readonly kind: "slugs";
+          readonly connectorSlugs: readonly ConnectorSlug[];
+        }
+      | { readonly kind: "one-click" },
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    const context = await set(connectorCatalogRequestContext$);
+    signal.throwIfAborted();
+
+    const connectorState = await settleConnectorCatalogRead(
+      get(
+        builtinConnectorCatalogConnectionList({
+          orgId: auth.orgId,
+          userId: auth.userId,
+        }),
+      ),
+      signal,
+    );
+    if (!connectorState.ok) {
+      return connectorCatalogUnavailable();
+    }
+    signal.throwIfAborted();
+
+    const catalog = await settleConnectorCatalogRead(
+      listConnectorCatalogConnectItems({
+        db: context.db,
+        featureStates: context.featureStates,
+        connections: connectorState.value,
+        filter,
+      }),
+      signal,
+    );
+    if (!catalog.ok) {
+      return connectorCatalogUnavailable();
+    }
+
+    return { status: 200 as const, body: catalog.value };
+  },
+);
+
+const listOneClickConnectorCatalogInner$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    return await set(
+      listConnectorCatalogConnectItems$,
+      { kind: "one-click" },
+      signal,
+    );
   },
 );
 
@@ -268,6 +330,13 @@ export const connectorCatalogRoutes: readonly RouteEntry[] = [
   {
     route: connectorCatalogContract.discovery,
     handler: authRoute(connectorCatalogAuth, discoverConnectorCatalogInner$),
+  },
+  {
+    route: connectorCatalogContract.oneClick,
+    handler: authRoute(
+      connectorCatalogAuth,
+      listOneClickConnectorCatalogInner$,
+    ),
   },
   {
     route: connectorCatalogContract.diagnostics,

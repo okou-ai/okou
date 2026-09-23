@@ -1,7 +1,4 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   onboardingCompleteContract,
   onboardingRecommendationContract,
@@ -20,6 +17,10 @@ import { localStorageSignals } from "../../../signals/external/local-storage.ts"
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
+import {
+  mockOnboardingConnectorCatalog,
+  onboardingSourceItem,
+} from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
 const draftStorage = localStorageSignals("onboarding:sources-first-draft");
@@ -69,45 +70,14 @@ function mockCatalog({
 }: {
   connected?: boolean;
 } = {}): void {
-  const connector: PublicConnectorCatalogStatusItem = {
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    icon: {
-      url: "https://icons.example.test/onboarding-gmail.svg",
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected,
-    connectionStatus: connected ? "connected" : "not-connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  mockOnboardingConnectorCatalog(context, [
+    onboardingSourceItem({
+      slug: "gmail",
+      label: "Gmail",
+      description: "Connect Gmail to continue",
+      connected,
+    }),
+  ]);
 }
 
 function getButtonByName(name: string): HTMLElement {
@@ -232,6 +202,12 @@ test("A later step returns to the entry until a source is connected", async () =
 test("Connected account context replaces the static starting prompt", async () => {
   mockMemberOnboardingNeeded();
   mockCatalog({ connected: true });
+  // Installed after the catalog's slug route, so a status read lands here.
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, { connectors: [] });
+  });
   const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7493e";
   const generatedPrompt =
     "Review my recent Gmail workload, group the messages that need a reply, and draft the three most important responses for my approval.";
@@ -305,6 +281,8 @@ test("Connected account context replaces the static starting prompt", async () =
     locale: "en-US",
   });
   expect(pollCount).toBe(2);
+  // Every step reads the onboarding sources, never the full catalog status.
+  expect(statusReads).toBe(0);
 });
 
 test("The profile step shows a skeleton until the shared context result arrives", async () => {

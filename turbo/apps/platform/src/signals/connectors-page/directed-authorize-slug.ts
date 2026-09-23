@@ -14,6 +14,7 @@ import {
   reloadAgentConnectorAuthorizations$,
 } from "../okou-page/agent-connector-authorizations.ts";
 import { resetBuiltinManualGrantForm$ } from "../okou-page/settings/connectors.ts";
+import { connectorCatalogItemForSlug } from "../external/connectors.ts";
 
 /**
  * Connector slug extracted from `/connectors/:connectorSlug/authorize` route params.
@@ -26,6 +27,11 @@ export const directedAuthorizeSlug$ = computed((get): ConnectorSlug | null => {
   );
   return parsed.success ? parsed.data : null;
 });
+
+/** The catalog entry of the connector the page is directed at. */
+export const directedAuthorizeCatalogItem$ = connectorCatalogItemForSlug(
+  directedAuthorizeSlug$,
+);
 
 /**
  * Agent ID extracted from `?agentId=` query parameter.
