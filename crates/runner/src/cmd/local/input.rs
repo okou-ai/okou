@@ -4,12 +4,12 @@ use std::process::ExitCode;
 
 use clap::Args;
 
-use crate::active_input::{
+use crate::error::{RunnerError, RunnerResult};
+use runner_host::paths::HomePaths;
+use runner_provider::local_queue::{self, ActiveInputEntry};
+use runner_provider::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
-use crate::error::{RunnerError, RunnerResult};
-use crate::local_queue::{self, ActiveInputEntry};
-use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 /// The job must have been submitted with --active-input to enable forwarding.
@@ -105,16 +105,6 @@ fn run_input_with_home(args: InputArgs, home: HomePaths) -> RunnerResult<ExitCod
 
     eprintln!("active input {} written for {}", args.sequence, args.run);
     Ok(ExitCode::SUCCESS)
-}
-
-#[cfg(test)]
-pub(crate) fn active_input_publication_locked_for_test() {
-    race_tests::publication_locked_checkpoint();
-}
-
-#[cfg(test)]
-pub(crate) fn active_input_lock_attempt_for_test(file: &std::fs::File) {
-    race_tests::lock_attempt_checkpoint(file);
 }
 
 #[cfg(test)]

@@ -214,6 +214,7 @@ function OAuthAccountGroupsSection() {
               open: true,
               resetCredits: account.subscriptionResetCredits ?? null,
               accountId: account.id,
+              type: account.type,
             });
           }}
         />
@@ -526,17 +527,17 @@ function OAuthAccountTableRow({
         ) : (
           <span className="text-xs text-muted-foreground">—</span>
         )}
-        {account.type === "codex-oauth-token" ? (
+        {account.subscriptionResetCredits === undefined ? null : (
           <CodexResetCreditsButton
             className="ml-auto"
-            resetCredits={account.subscriptionResetCredits ?? null}
+            resetCredits={account.subscriptionResetCredits}
             resetCreditsNextExpiresAt={
               account.subscriptionResetCreditsNextExpiresAt
             }
             resetPending={actionPending}
             onReset={onReset}
           />
-        ) : null}
+        )}
       </div>
       <div
         role="cell"
@@ -866,6 +867,9 @@ function LegacyOAuthCredentialsSection() {
   const openAIStatus = getOpenAIStatus(openAI);
   const actionPending = actionLoadable.state === "loading";
   const codexResetCredits = openAI?.subscriptionResetCredits ?? null;
+  // Undefined means this provider reports no reset grants at all, which is
+  // what hides the action; null only means the count could not be read.
+  const claudeResetCredits = claudeCode?.subscriptionResetCredits;
   const providerActionLabel = supportByok
     ? t(($) => {
         return $.settings.shared.connect;
@@ -874,34 +878,24 @@ function LegacyOAuthCredentialsSection() {
         return $.settings.models.actions.upgradePro;
       });
 
-  const connectClaudeCode = () => {
+  const connectProvider = (
+    provider: ModelProviderResponse | undefined,
+    openDeviceAuthDialog: typeof openClaudeCodeDeviceAuthDialog,
+  ) => {
     if (!supportByok) {
       openBillingPlans();
       return;
     }
-    const args = claudeCode?.needsReconnect
-      ? {
-          mode: "reconnect" as const,
-          modelProviderId: claudeCode.id,
-        }
+    const args = provider?.needsReconnect
+      ? { mode: "reconnect" as const, modelProviderId: provider.id }
       : { mode: "connect" as const };
-    detach(
-      openClaudeCodeDeviceAuthDialog(args, pageSignal),
-      Reason.DomCallback,
-    );
+    detach(openDeviceAuthDialog(args, pageSignal), Reason.DomCallback);
   };
-  const connectOpenAI = () => {
-    if (!supportByok) {
-      openBillingPlans();
-      return;
-    }
-    const args = openAI?.needsReconnect
-      ? {
-          mode: "reconnect" as const,
-          modelProviderId: openAI.id,
-        }
-      : { mode: "connect" as const };
-    detach(openCodexDeviceAuthDialog(args, pageSignal), Reason.DomCallback);
+  const openResetDialog = (
+    type: ModelProviderType,
+    resetCredits: number | null,
+  ) => {
+    setResetDialog({ open: true, resetCredits, accountId: null, type });
   };
 
   return (
@@ -924,12 +918,21 @@ function LegacyOAuthCredentialsSection() {
               actionPending={actionPending}
               actionLabel={providerActionLabel}
               provider={claudeCode}
+              resetCredits={claudeResetCredits}
               status={getOpenAIStatus(claudeCode)}
-              onAction={connectClaudeCode}
+              onAction={() => {
+                connectProvider(claudeCode, openClaudeCodeDeviceAuthDialog);
+              }}
               onDisconnect={() => {
                 detach(
                   disconnectCredential("claude-code-oauth-token", pageSignal),
                   Reason.DomCallback,
+                );
+              }}
+              onOpenReset={() => {
+                openResetDialog(
+                  "claude-code-oauth-token",
+                  claudeResetCredits ?? null,
                 );
               }}
             />
@@ -939,7 +942,9 @@ function LegacyOAuthCredentialsSection() {
               provider={openAI}
               resetCredits={codexResetCredits}
               status={openAIStatus}
-              onAction={connectOpenAI}
+              onAction={() => {
+                connectProvider(openAI, openCodexDeviceAuthDialog);
+              }}
               onDisconnect={() => {
                 detach(
                   disconnectCredential("codex-oauth-token", pageSignal),
@@ -947,11 +952,7 @@ function LegacyOAuthCredentialsSection() {
                 );
               }}
               onOpenReset={() => {
-                setResetDialog({
-                  open: true,
-                  resetCredits: codexResetCredits,
-                  accountId: null,
-                });
+                openResetDialog("codex-oauth-token", codexResetCredits);
               }}
             />
             <CodexResetDialogController
@@ -984,9 +985,12 @@ function CodexResetDialogController({
     const resetPromise =
       mode === "account"
         ? resetDialog.accountId
-          ? resetCodexAccount(resetDialog.accountId, pageSignal)
+          ? resetCodexAccount(
+              { type: resetDialog.type, account: resetDialog.accountId },
+              pageSignal,
+            )
           : null
-        : resetCodexSubscriptionUsage(pageSignal);
+        : resetCodexSubscriptionUsage(resetDialog.type, pageSignal);
     if (!resetPromise) {
       return;
     }
@@ -1005,6 +1009,7 @@ function CodexResetDialogController({
   return (
     <CodexResetUsageDialog
       open={resetDialog.open}
+      providerType={resetDialog.type}
       resetCredits={resetDialog.resetCredits}
       resetting={actionPending}
       onOpenChange={(open) => {
@@ -1022,18 +1027,45 @@ function ClaudeOAuthCredentialRow({
   actionPending,
   actionLabel,
   provider,
+  resetCredits,
   status,
   onAction,
   onDisconnect,
+  onOpenReset,
 }: {
   actionPending: boolean;
   actionLabel: string;
   provider: ModelProviderResponse | undefined;
+  resetCredits: number | null | undefined;
   status: OAuthStatus;
   onAction: () => void;
   onDisconnect: () => void;
+  onOpenReset: () => void;
 }) {
   const { t } = useTranslation();
+  const resetItems =
+    resetCredits === undefined
+      ? []
+      : [
+          {
+            kind: "status" as const,
+            label: formatCodexResetCredits(
+              resetCredits,
+              provider?.subscriptionResetCreditsNextExpiresAt,
+            ),
+          },
+          {
+            kind: "separator" as const,
+          },
+          {
+            label: t(($) => {
+              return $.settings.models.actions.resetUsage;
+            }),
+            disabled: actionPending || resetCredits === 0,
+            onSelect: onOpenReset,
+            opensModal: true,
+          },
+        ];
   return (
     <OAuthCredentialRow
       type="claude-code-oauth-token"
@@ -1049,6 +1081,7 @@ function ClaudeOAuthCredentialRow({
       menuItems={
         provider
           ? [
+              ...resetItems,
               {
                 label: t(($) => {
                   return $.settings.shared.replace;

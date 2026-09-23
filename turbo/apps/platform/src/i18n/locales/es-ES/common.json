@@ -6404,7 +6404,7 @@
         "workspaceDescription": "Disponible para todos en este espacio de trabajo."
       },
       "reset": {
-        "confirmDescription": "Usa un restablecimiento de Codex para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
+        "confirmDescription": "Usa un restablecimiento de {{provider}} para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
         "progress": "Restableciendo...",
         "remaining_one": "Queda {{value}} restablecimiento",
         "remaining_many": "Quedan {{value}} restablecimientos",
@@ -6414,7 +6414,7 @@
         "remainingWithExpiry_one": "Queda {{value}} restablecimiento · vence {{expiry}}",
         "remainingWithExpiry_many": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
         "remainingWithExpiry_other": "Quedan {{value}} restablecimientos · vencen {{expiry}}",
-        "title": "¿Restablecer el uso de Codex?"
+        "title": "¿Restablecer el uso de {{provider}}?"
       },
       "stale": {
         "claudeExpired": "Tu sesión de Claude Code ha caducado. Vuelve a conectarla para continuar.",
@@ -6431,9 +6431,9 @@
         "accountSwitched": "Cuenta activa cambiada",
         "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configuración del proveedor de modelos actualizada",
-        "reset": "Uso de Codex restablecido",
-        "resetUnavailable": "No hay reinicios de uso de Codex disponibles",
-        "resetUnneeded": "No es necesario restablecer el uso de Codex ahora"
+        "reset": "Uso de {{provider}} restablecido",
+        "resetUnavailable": "No hay reinicios de uso de {{provider}} disponibles",
+        "resetUnneeded": "No es necesario restablecer el uso de {{provider}} ahora"
       },
       "usage": {
         "inDays": "en {{days}}d",

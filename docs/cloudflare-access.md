@@ -30,6 +30,7 @@ The SSH host form retains its Cloudflare Access selector and inline creation,
 but configuration management lives only on the standalone page. Both flows read
 and mutate the same canonical state. There is no feature switch, schema migration,
 data copy, separate enabled state, or second set of records. The temporary
-SSH-prefixed API is only a deployment bridge for older Apps; see [deployment
-compatibility](deployment-compatibility.md#cloudflare-access-for-ssh) for its
-removal gate.
+SSH-prefixed API and Access-only `ssh:changed` bridge were retired after the
+canonical consumer was verified in production App `0.944.0`; see [deployment
+compatibility](deployment-compatibility.md#cloudflare-access-for-ssh) for the
+completed rollout boundary.

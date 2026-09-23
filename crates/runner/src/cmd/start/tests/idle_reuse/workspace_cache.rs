@@ -18,13 +18,13 @@ fn reusable_candidate(
     run_id: RunId,
     profile_name: &str,
     reuse_key: &str,
-) -> crate::provider::JobCandidate {
-    crate::provider::JobCandidate::new(run_id, profile_name.to_string())
+) -> runner_provider::JobCandidate {
+    runner_provider::JobCandidate::new(run_id, profile_name.to_string())
         .with_reuse_key(Some(reuse_key.to_string()))
 }
 
 async fn wait_heartbeat_matching_after(
-    handle: &crate::provider::mock::MockProviderHandle,
+    handle: &crate::provider_test_support::MockProviderHandle,
     mut cursor: usize,
     timeout: Duration,
     matches: impl Fn(&HeartbeatState) -> bool,

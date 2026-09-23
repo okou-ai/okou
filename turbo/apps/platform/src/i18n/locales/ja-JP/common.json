@@ -6330,14 +6330,14 @@
         "workspaceDescription": "このワークスペース内の全員が利用できます。"
       },
       "reset": {
-        "confirmDescription": "Codexリセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
+        "confirmDescription": "{{provider}}リセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
         "progress": "リセット中...",
         "remaining_one": "リセット残り{{value}}回",
         "remaining_other": "リセット残り{{value}}回",
         "remainingUnavailable": "残りのリセット回数を取得できません",
         "remainingUnknown": "リセット —",
         "remainingWithExpiry_other": "リセット残り{{value}}回 · 有効期限{{expiry}}",
-        "title": "Codexの使用量をリセットしますか？"
+        "title": "{{provider}}の使用量をリセットしますか？"
       },
       "stale": {
         "claudeExpired": "Claude Codeセッションの有効期限が切れました。続行するには再接続してください。",
@@ -6354,9 +6354,9 @@
         "accountSwitched": "使用するアカウントを切り替えました",
         "disconnected": "{{provider}} が切断されました",
         "policiesUpdated": "モデルプロバイダーの設定が更新されました",
-        "reset": "Codex 使用量のリセット",
-        "resetUnavailable": "Codex 使用状況のリセットは利用できません",
-        "resetUnneeded": "Codex の使用状況は現時点ではリセットする必要はありません"
+        "reset": "{{provider}} 使用量のリセット",
+        "resetUnavailable": "{{provider}} 使用状況のリセットは利用できません",
+        "resetUnneeded": "{{provider}} の使用状況は現時点ではリセットする必要はありません"
       },
       "usage": {
         "inDays": "{{days}}日後",

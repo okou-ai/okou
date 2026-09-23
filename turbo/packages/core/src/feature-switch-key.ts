@@ -86,4 +86,5 @@ export enum FeatureSwitchKey {
   UserMessageLinks = "userMessageLinks",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
+  ClaudeCodeUsageReset = "claudeCodeUsageReset",
 }

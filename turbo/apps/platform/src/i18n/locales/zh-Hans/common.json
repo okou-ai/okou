@@ -6330,14 +6330,14 @@
         "workspaceDescription": "这个工作区的所有人都可以使用。"
       },
       "reset": {
-        "confirmDescription": "消耗一次Codex重置额度，重置当前的用量周期。你还有{{remaining}}。",
+        "confirmDescription": "消耗一次{{provider}}重置额度，重置当前的用量周期。你还有{{remaining}}。",
         "progress": "正在重置…",
         "remaining_one": "还剩{{value}}次重置",
         "remaining_other": "还剩{{value}}次重置",
         "remainingUnavailable": "剩余重置次数不可用",
         "remainingUnknown": "重置 —",
         "remainingWithExpiry_other": "还剩{{value}}次重置 · {{expiry}}过期",
-        "title": "重置Codex用量？"
+        "title": "重置{{provider}}用量？"
       },
       "stale": {
         "claudeExpired": "你的Claude Code会话已过期。请重新连接以继续。",
@@ -6354,9 +6354,9 @@
         "accountSwitched": "已切换当前账号",
         "disconnected": "{{provider}}已断开连接",
         "policiesUpdated": "模型服务商设置已更新",
-        "reset": "Codex用量已重置",
-        "resetUnavailable": "没有可用的Codex用量重置次数",
-        "resetUnneeded": "Codex用量当前不需要重置"
+        "reset": "{{provider}}用量已重置",
+        "resetUnavailable": "没有可用的{{provider}}用量重置次数",
+        "resetUnneeded": "{{provider}}用量当前不需要重置"
       },
       "usage": {
         "inDays": "{{days}}天后",
