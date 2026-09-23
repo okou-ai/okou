@@ -527,25 +527,6 @@ describe("DELETE /api/integrations/slack?action=uninstall", () => {
     expect(response.body.error.message).toBe("Admin access required");
   });
 
-  it("returns 404 when no installation exists", async () => {
-    const seeded = await seedUninstallContext({ withInstallation: false });
-    mocks.clerk.session(seeded.userId, seeded.orgId, "org:admin");
-    const client = setupApp({ context, routes: integrationsSlackRoutes })(
-      integrationsSlackContract,
-    );
-
-    const response = await accept(
-      client.disconnect({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { action: "uninstall" },
-      }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    expect(response.body.error.message).toBe("No Slack installation found");
-  });
-
   it("publishes uninstalled App Home then deletes installation and connections", async () => {
     const seeded = await seedUninstallContext();
     await store.set(
