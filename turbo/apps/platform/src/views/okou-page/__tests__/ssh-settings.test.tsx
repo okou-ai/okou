@@ -7,6 +7,8 @@ import {
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import {
@@ -443,6 +445,65 @@ async function openAddHostPage() {
     }),
   );
 }
+
+test("SSH host settings update the chat default in thread remote access mode", async () => {
+  let enabled = false;
+  let updatedParams: { protocol: string; connectionId: string } | undefined;
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [
+          {
+            connectionId: id,
+            displayName: "Deployment",
+            defaultEnabled: enabled,
+          },
+        ],
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.updateHostDefault,
+    ({ params, body, respond }) => {
+      updatedParams = {
+        protocol: params.protocol,
+        connectionId: params.connectionId,
+      };
+      enabled = body.enabled;
+      return respond(200, {
+        connectionId: id,
+        displayName: "Deployment",
+        defaultEnabled: enabled,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=ssh",
+    auth,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  const toggle = await screen.findByRole("switch", {
+    name: "Enabled by default for chats",
+  });
+  await waitFor(() => {
+    expect(toggle).not.toBeDisabled();
+  });
+  expect(toggle).not.toBeChecked();
+  await userEvent.click(toggle);
+  await waitFor(() => {
+    expect(enabled).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: "Enabled by default for chats" }),
+    ).toBeChecked();
+  });
+  expect(updatedParams).toStrictEqual({ protocol: "ssh", connectionId: id });
+});
 
 test("SSH is managed in Connectors Remote control", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {

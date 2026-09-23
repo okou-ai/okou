@@ -11,6 +11,7 @@ import {
   type VncCredentialResponse,
 } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   act,
   fireEvent,
@@ -155,6 +156,61 @@ async function openAddHostPage() {
     }),
   );
 }
+
+test("VNC host settings update the chat default in thread remote access mode", async () => {
+  mockSettings();
+  let enabled = false;
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: [],
+        vnc: [
+          {
+            connectionId: host.id,
+            displayName: host.displayName,
+            defaultEnabled: enabled,
+          },
+        ],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.updateHostDefault,
+    ({ params, body, respond }) => {
+      expect(params.protocol).toBe("vnc");
+      expect(params.connectionId).toBe(host.id);
+      enabled = body.enabled;
+      return respond(200, {
+        connectionId: host.id,
+        displayName: host.displayName,
+        defaultEnabled: enabled,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&type=vnc",
+    auth,
+    featureSwitches: {
+      [FeatureSwitchKey.VncAccess]: true,
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    },
+  });
+  const toggle = await screen.findByRole("switch", {
+    name: "Enabled by default for chats",
+  });
+  await waitFor(() => {
+    expect(toggle).not.toBeDisabled();
+  });
+  await userEvent.click(toggle);
+  await waitFor(() => {
+    expect(enabled).toBeTruthy();
+    expect(
+      screen.getByRole("switch", { name: "Enabled by default for chats" }),
+    ).toBeChecked();
+  });
+});
 
 async function choose(dialog: HTMLElement, label: string, name: string) {
   await userEvent.click(within(dialog).getByLabelText(label));
