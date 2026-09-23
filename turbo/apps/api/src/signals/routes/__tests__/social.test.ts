@@ -1929,7 +1929,7 @@ describe("managed SocialKit route", () => {
     );
     expectApiError(response.body);
     expect(response.body.error.code).toBe("SOCIALKIT_INVALID_RESPONSE");
-    expect(await credits(actor)).toBe(beforeCredits);
+    await expect(credits(actor)).resolves.toBe(beforeCredits);
   });
 
   it("uses reported comment totals to prevent false completion", async () => {
