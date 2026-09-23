@@ -60,9 +60,8 @@ function ArtifactViewerActions({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const [enterLoadable, enterFullscreen] = useLoadableSet(
-    viewer.fullscreen.enter$,
-  );
+  const entering = useGet(viewer.fullscreen.entering$);
+  const enterFullscreen = useSet(viewer.fullscreen.enter$);
   const enterButtonRef = useSet(viewer.fullscreen.enterButtonRef$);
   const continueUrl = new URL("/", window.location.origin);
   continueUrl.searchParams.set(
@@ -124,7 +123,7 @@ function ArtifactViewerActions({
           size="icon-sm"
           iconSize="md"
           showTooltip
-          disabled={enterLoadable.state === "loading"}
+          disabled={entering}
           aria-label={t(($) => {
             return $.artifacts.actions.enterFullscreen;
           })}

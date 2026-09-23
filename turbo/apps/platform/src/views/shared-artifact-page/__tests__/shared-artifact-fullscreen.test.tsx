@@ -583,6 +583,73 @@ test("leaving the viewer releases its document fullscreen", async () => {
   expect(screen.queryByTitle(`${filename} preview`)).not.toBeInTheDocument();
 });
 
+test.each(["query", "hash"] as const)(
+  "same-path %s history traversal can enter native fullscreen again",
+  async (navigation) => {
+    mockFullscreen("native");
+    mockArtifact();
+    let currentFilename = filename;
+    context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+      return respond(200, {
+        url: previewUrl,
+        expiresAt: "2099-01-01T00:00:00Z",
+        filename: currentFilename,
+        contentType: "text/html",
+        target: { kind: "html", id: artifactId },
+      });
+    });
+    await setupPage({
+      context,
+      path: `${artifactReferencePath(artifactId, filename)}#counter`,
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
+    });
+    await expect(
+      screen.findByTitle(`${filename} preview`),
+    ).resolves.toHaveAttribute("src", previewSrc);
+    click(button("Enter fullscreen"));
+    await waitFor(() => {
+      expect(button("Exit fullscreen")).toHaveFocus();
+    });
+
+    // Updated server metadata is the visible completion boundary for the new
+    // route setup, including query-only navigation whose iframe URL is stable.
+    currentFilename = "updated.html";
+    const nextLocation = new URL(window.location.href);
+    if (navigation === "query") {
+      nextLocation.searchParams.set("view", "reading");
+    } else {
+      nextLocation.hash = "details";
+    }
+    act(() => {
+      window.history.pushState(null, "", nextLocation);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await expect(
+      screen.findByRole("heading", { name: currentFilename }),
+    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(document.fullscreenElement).toBeNull();
+    });
+    expect(screen.getByTitle(`${currentFilename} preview`)).toHaveAttribute(
+      "src",
+      navigation === "hash" ? `${previewUrl}#details` : previewSrc,
+    );
+
+    click(button("Enter fullscreen"));
+    await waitFor(() => {
+      expect(button("Exit fullscreen")).toHaveFocus();
+    });
+    expect(document.fullscreenElement).toContainElement(
+      screen.getByTitle(`${currentFilename} preview`),
+    );
+    click(button("Exit fullscreen"));
+    await waitFor(() => {
+      expect(button("Enter fullscreen")).toHaveFocus();
+    });
+  },
+);
+
 test.each(["accepted", "denied"] as const)(
   "a fullscreen request %s after navigation cannot capture the next route",
   async (result) => {
@@ -622,6 +689,76 @@ test.each(["accepted", "denied"] as const)(
     });
   },
 );
+
+test("same-path history keeps a pending native request owned by its original viewer", async () => {
+  const browser = mockFullscreen("native");
+  browser.deferNextRequest();
+  mockArtifact();
+  let currentFilename = filename;
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: previewUrl,
+      expiresAt: "2099-01-01T00:00:00Z",
+      filename: currentFilename,
+      contentType: "text/html",
+      target: { kind: "html", id: artifactId },
+    });
+  });
+  await setupPage({
+    context,
+    path: `${artifactReferencePath(artifactId, filename)}#counter`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
+  });
+  await expect(
+    screen.findByTitle(`${filename} preview`),
+  ).resolves.toHaveAttribute("src", previewSrc);
+  click(button("Enter fullscreen"));
+  await waitFor(() => {
+    expect(button("Enter fullscreen")).toBeDisabled();
+  });
+
+  currentFilename = "updated.html";
+  const nextLocation = new URL(window.location.href);
+  nextLocation.searchParams.set("view", "reading");
+  act(() => {
+    window.history.pushState(null, "", nextLocation);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(
+    screen.findByRole("heading", { name: currentFilename }),
+  ).resolves.toBeInTheDocument();
+
+  // The new viewer can honor this action with immersive mode while the old
+  // browser request finishes, even though React retains the same layout node.
+  click(button("Enter fullscreen"));
+  await waitFor(() => {
+    expect(button("Exit fullscreen")).toHaveFocus();
+  });
+  act(() => {
+    browser.finishRequest("accepted");
+  });
+  await waitFor(() => {
+    expect(document.fullscreenElement).toBeNull();
+  });
+  expect(button("Exit fullscreen")).toBeEnabled();
+  click(button("Exit fullscreen"));
+  await waitFor(() => {
+    expect(button("Enter fullscreen")).toHaveFocus();
+  });
+
+  click(button("Enter fullscreen"));
+  await waitFor(() => {
+    expect(button("Exit fullscreen")).toHaveFocus();
+  });
+  expect(document.fullscreenElement).toContainElement(
+    screen.getByTitle(`${currentFilename} preview`),
+  );
+  click(button("Exit fullscreen"));
+  await waitFor(() => {
+    expect(button("Enter fullscreen")).toHaveFocus();
+  });
+});
 
 test("repeated pending entry and rapid exit keep later browser events from reopening fullscreen", async () => {
   const browser = mockFullscreen("native");

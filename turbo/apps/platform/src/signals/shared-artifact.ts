@@ -11,6 +11,7 @@ import { i18n } from "../i18n/index.ts";
 import { clerk$ } from "./auth.ts";
 import { apiClient$ } from "./api-client.ts";
 import { pathParams$ } from "./route.ts";
+import { pageVersion$ } from "./page-signal.ts";
 import { updatePage$ } from "./react-router.ts";
 import { hideAppSkeleton$ } from "./app-skeleton.ts";
 import { featureSwitches$ } from "./external/feature-switch.ts";
@@ -24,6 +25,9 @@ import { SharedArtifactPage } from "../views/shared-artifact-page/shared-artifac
 
 const sharedArtifactViewer$ = computed((get) => {
   get(pathParams$);
+  // Same-path history traversal starts a new page lifetime without changing
+  // route params. Its viewer refs must bind to that new lifetime as well.
+  get(pageVersion$);
   return createSharedArtifactViewerSignals();
 });
 

@@ -63,7 +63,11 @@ function measure(page: Page) {
     ) {
       scroll = scroll.parentElement;
     }
-    const hit = (element: Element | null | undefined) => {
+    const [dialogCenter, dialogClose, pageExit] = [
+      dialog,
+      dialog?.querySelector('button[aria-label="Close"]'),
+      document.querySelector('main button[aria-label="Exit fullscreen"]'),
+    ].map((element) => {
       if (!element) return null;
       const rect = element.getBoundingClientRect();
       const x = rect.x + rect.width / 2;
@@ -80,7 +84,7 @@ function measure(page: Page) {
         insideDialog: Boolean(dialog?.contains(target)),
         insideElement: Boolean(element.contains(target)),
       };
-    };
+    });
     const header = document.querySelector("header");
     return {
       path: location.pathname,
@@ -91,23 +95,21 @@ function measure(page: Page) {
       scrollTop: scroll?.scrollTop ?? null,
       triggerTop: trigger?.getBoundingClientRect().top ?? null,
       dialogMode: dialog?.getAttribute("data-mode") ?? null,
-      dialogCenter: hit(dialog),
-      dialogClose: hit(dialog?.querySelector('button[aria-label="Close"]')),
-      pageExit: hit(
-        document.querySelector('main button[aria-label="Exit fullscreen"]'),
-      ),
+      dialogCenter,
+      dialogClose,
+      pageExit,
       dialogContainsFocus: Boolean(dialog?.contains(document.activeElement)),
       focusLabel: document.activeElement?.getAttribute("aria-label") ?? null,
       zoom:
         dialog?.querySelector(
           '[data-testid="artifact-dialog-image-zoom-level"]',
         )?.textContent ?? null,
-      tooltips: Array.from(document.querySelectorAll('[role="tooltip"]')).map(
-        (tooltip) => ({
-          text: tooltip.textContent,
-          nativeContains: Boolean(native?.contains(tooltip)),
-        }),
-      ),
+      tooltips: Array.from(
+        document.querySelectorAll('[data-slot="tooltip-content"]'),
+      ).map((tooltip) => ({
+        text: tooltip.textContent,
+        nativeContains: Boolean(native?.contains(tooltip)),
+      })),
     };
   }, lightbox);
 }
@@ -169,6 +171,7 @@ async function main() {
       const page = await context.newPage();
       const label = `chromium-${viewport.width}`;
       const fixtures = { metadata: 0, markdown: 0 };
+      let filename = "layer-audit.md";
       const snapshots: Array<{
         step: string;
         state: Awaited<ReturnType<typeof measure>>;
@@ -216,6 +219,7 @@ async function main() {
               status: 200,
               headers: {
                 "access-control-allow-origin": appOrigin,
+                "access-control-allow-credentials": "true",
                 "content-type": metadata
                   ? "application/json"
                   : "text/markdown; charset=utf-8",
@@ -224,7 +228,7 @@ async function main() {
                 ? JSON.stringify({
                     url: contentUrl,
                     preview: {
-                      filename: "layer-audit.md",
+                      filename,
                       contentType: "text/markdown",
                     },
                   })
@@ -299,7 +303,7 @@ async function main() {
         await capture("normal-close-focus");
         await enterNative();
         await trigger.hover();
-        await page.mouse.wheel(0, 80);
+        await page.mouse.wheel(0, 30);
         await expect
           .poll(async () => (await measure(page)).scrollTop)
           .toBeGreaterThan(0);
@@ -316,7 +320,9 @@ async function main() {
         await expect(zoom).toHaveText("100%");
         await button(dialog, "Enter fullscreen").hover();
         await expect(
-          page.getByRole("tooltip", { name: "Enter fullscreen", exact: true }),
+          page
+            .locator('[data-slot="tooltip-content"]')
+            .filter({ hasText: "Enter fullscreen" }),
         ).toBeVisible();
         const tooltip = await capture("native-dialog-tooltip");
         assert(
@@ -382,6 +388,23 @@ async function main() {
           await exited();
         }
         await capture("repeated-quick-exit");
+
+        for (const suffix of ["#diagram", "?reading=diagram"]) {
+          await enterNative();
+          filename = `refreshed-${suffix.includes("?") ? "query" : "hash"}.md`;
+          await page.evaluate((nextSuffix) => {
+            history.pushState({}, "", `${location.pathname}${nextSuffix}`);
+            window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+          }, suffix);
+          await expect(
+            page.getByRole("heading", { name: filename }),
+          ).toBeVisible();
+          await exited();
+          await enterNative();
+          await exit.click();
+          await exited();
+        }
+        await capture("same-path-navigation");
 
         await enterNative();
         await open();

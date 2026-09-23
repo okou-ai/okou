@@ -14,7 +14,7 @@ type FullscreenMode = "windowed" | "native" | "immersive";
 
 // A cancelled browser request can outlive its route. Keep the document's native
 // lease until it settles and is released, before another viewer can acquire it.
-const nativeOwner$ = state<HTMLElement | null>(null);
+const nativeOwner$ = state<symbol | null>(null);
 const nativeExit$ = state<Promise<void> | null>(null);
 
 // Cleanup belongs to the native lease, which can outlive the page while a
@@ -23,7 +23,7 @@ const releaseNative$ = command(
   (
     { get, set },
     target: HTMLElement,
-    owner: HTMLElement,
+    owner: symbol,
     signal: AbortSignal,
   ): void | Promise<void> => {
     if (get(nativeOwner$) !== owner) {
@@ -122,6 +122,9 @@ const enterNative$ = command(
 );
 
 export function createArtifactViewerFullscreenSignals() {
+  // A new page lifetime can reuse the same main element while an earlier
+  // uncancellable native request still owns the document.
+  const owner = Symbol("artifact-viewer-fullscreen");
   const internalMode$ = state<FullscreenMode>("windowed");
   const internalContainer$ = state<HTMLElement | null>(null);
   const internalTrigger$ = state<HTMLElement | null>(null);
@@ -187,7 +190,7 @@ export function createArtifactViewerFullscreenSignals() {
     if (!container) {
       return;
     }
-    if (get(internalMode$) !== "windowed" || get(nativeOwner$) === container) {
+    if (get(internalMode$) !== "windowed" || get(nativeOwner$) === owner) {
       return;
     }
     const ownerDocument = container.ownerDocument;
@@ -204,11 +207,11 @@ export function createArtifactViewerFullscreenSignals() {
       return;
     }
     const signal = set(resetEnter$, parentSignal);
-    set(nativeOwner$, container);
+    set(nativeOwner$, owner);
     await withCleanup(
       set(enterNative$, target, internalMode$, close$, signal),
       () => {
-        return set(releaseNative$, target, container, signal);
+        return set(releaseNative$, target, owner, signal);
       },
     );
   });
@@ -221,7 +224,7 @@ export function createArtifactViewerFullscreenSignals() {
       await set(
         releaseNative$,
         container.ownerDocument.documentElement,
-        container,
+        owner,
         signal,
       );
       signal.throwIfAborted();
@@ -233,6 +236,9 @@ export function createArtifactViewerFullscreenSignals() {
     containerRef$,
     enterButtonRef$,
     enter$,
+    entering$: computed((get) => {
+      return get(nativeOwner$) === owner && get(internalMode$) === "windowed";
+    }),
     exit$,
     exitButtonRef$: focusExitButtonRef$,
     fullscreen$: computed((get) => {
