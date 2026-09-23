@@ -626,7 +626,12 @@ export function threadLinkByTitle(
   container: HTMLElement = sidebar(),
 ): HTMLElement {
   const link = queryAllByRoleFast("link", container).find((candidate) => {
-    return candidate.textContent?.replace(/\s+/g, " ").trim() === title;
+    return (
+      candidate
+        .querySelector('[data-slot="sidebar-thread-title"]')
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim() === title
+    );
   });
   if (!link) {
     throw new Error(`${title} thread link not found`);
@@ -639,7 +644,10 @@ export function visibleThreadTitles(
 ): string[] {
   const expected = new Set(expectedTitles);
   return queryAllByRoleFast("link", sidebar()).flatMap((candidate) => {
-    const title = candidate.textContent?.replace(/\s+/g, " ").trim();
+    const title = candidate
+      .querySelector('[data-slot="sidebar-thread-title"]')
+      ?.textContent?.replace(/\s+/g, " ")
+      .trim();
     return title && expected.has(title) ? [title] : [];
   });
 }
