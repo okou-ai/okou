@@ -111,6 +111,7 @@ import { updatePage$ } from "./react-router.ts";
 import { setupLegacySettingsRedirect$ } from "./okou-page/settings/legacy-settings-redirect.ts";
 import { NotFoundPage } from "../views/not-found-page.tsx";
 import { setupSharedArtifact$ } from "./shared-artifact.ts";
+import { setupAccountErasureLocalLifecycle$ } from "./account-erasure-local-lifecycle.ts";
 import { setupSharedThreadPage$ } from "./shared-thread-page/shared-thread-page-setup.ts";
 
 import { setupGlobalKeyboardShortcuts$ } from "./okou-page/nav.ts";
@@ -631,6 +632,9 @@ const completeBootstrap$ = command(
     set(initTheme$, signal);
 
     render();
+
+    await bestEffort(set(setupAccountErasureLocalLifecycle$, signal), signal);
+    signal.throwIfAborted();
 
     // These public protocol pages also run before an embedded Clerk session exists.
     // Hosted Clerk task continuations retain the same ownership via redirect_url.

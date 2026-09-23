@@ -652,13 +652,13 @@ describe("dormant relational sweep", () => {
         return a.id.localeCompare(b.id);
       }),
     );
-    expect(
-      await relationalErasureResidual(
+    await expect(
+      relationalErasureResidual(
         db,
         { subjectKind: "user", subjectId: mine },
         plan,
       ),
-    ).toStrictEqual([]);
+    ).resolves.toStrictEqual([]);
     // The inventory proof may run before its erase sibling. Retry it after
     // the sweep so the gate sees the same sealed revision with no residual.
     await db.execute(sql`

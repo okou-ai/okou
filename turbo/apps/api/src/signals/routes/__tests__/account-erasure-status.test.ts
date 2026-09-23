@@ -49,50 +49,38 @@ test("a pre-deletion owner credential reports only its own committed deletion af
   const capabilityHeaders = {
     authorization: `Bearer ${issued.body.token}`,
   };
-  expect(
-    (
-      await accept(
-        client(context).status({ headers: capabilityHeaders }),
-        [200],
-      )
-    ).body.status,
-  ).toBe("active");
+  const active = await accept(
+    client(context).status({ headers: capabilityHeaders }),
+    [200],
+  );
+  expect(active.body).toStrictEqual({ status: "active", userId: owner });
 
   // No Clerk credential is present on the status request. Another account's
   // deletion decision cannot be learned through this owner's capability.
   await decision(peer);
-  expect(
-    (
-      await accept(
-        client(context).status({ headers: capabilityHeaders }),
-        [200],
-      )
-    ).body.status,
-  ).toBe("active");
+  const afterPeer = await accept(
+    client(context).status({ headers: capabilityHeaders }),
+    [200],
+  );
+  expect(afterPeer.body.status).toBe("active");
   const owned = await decision(owner);
-  expect(
-    (
-      await accept(
-        client(context).status({ headers: capabilityHeaders }),
-        [200],
-      )
-    ).body.status,
-  ).toBe("pending");
+  const pending = await accept(
+    client(context).status({ headers: capabilityHeaders }),
+    [200],
+  );
+  expect(pending.body.status).toBe("pending");
 
   // The fixture models an independently completed B1 job. Reading status
   // does not advance that job.
   await markErasureSubjectVerifiedFixture(owned.jobId);
-  expect(
-    (
-      await accept(
-        client(context).status({ headers: capabilityHeaders }),
-        [200],
-      )
-    ).body.status,
-  ).toBe("complete");
+  const complete = await accept(
+    client(context).status({ headers: capabilityHeaders }),
+    [200],
+  );
+  expect(complete.body.status).toBe("complete");
 });
 
-test("missing, expired, and altered credentials reveal no account status", async () => {
+test("owner credentials survive a dormant client while missing and altered credentials reveal no status", async () => {
   const context = testContext();
   const owner = userId();
   createRouteMocks(context).clerk.session(owner, `org_${randomUUID()}`);
@@ -103,11 +91,12 @@ test("missing, expired, and altered credentials reveal no account status", async
     [200],
   );
   const token = issued.body.token;
-  await withMockNowForTest(Date.parse(issued.body.expiresAt) + 1, async () => {
-    await accept(
+  await withMockNowForTest(Date.parse("2099-01-01T00:00:00Z"), async () => {
+    const later = await accept(
       client(context).status({ headers: { authorization: `Bearer ${token}` } }),
-      [404],
+      [200],
     );
+    expect(later.body).toStrictEqual({ status: "active", userId: owner });
   });
   const changed = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`;
   for (const authorization of [

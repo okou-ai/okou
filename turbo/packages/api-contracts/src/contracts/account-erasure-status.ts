@@ -11,7 +11,7 @@ export const accountErasureStatusContract = c.router({
     path: "/api/account-erasure/status-capability",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ token: z.string(), expiresAt: z.string() }),
+      200: z.object({ token: z.string() }),
       401: apiErrorSchema,
       403: apiErrorSchema,
       500: apiErrorSchema,
@@ -23,7 +23,10 @@ export const accountErasureStatusContract = c.router({
     path: "/api/account-erasure/status",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({ status: z.enum(["active", "pending", "complete"]) }),
+      200: z.object({
+        userId: z.string(),
+        status: z.enum(["active", "pending", "complete"]),
+      }),
       404: apiErrorSchema,
       500: apiErrorSchema,
     },

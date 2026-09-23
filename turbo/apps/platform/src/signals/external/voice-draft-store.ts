@@ -1,7 +1,7 @@
 import { openDB, type DBSchema } from "idb";
 import type { VoiceIoTranscribeContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { observeClientOperation } from "../../lib/client-telemetry.ts";
-import { withCleanup } from "../utils.ts";
+import { jsonParseOr, withCleanup } from "../utils.ts";
 import { encodeVoiceDraftPcmWav } from "../voice-io/voice-draft-pcm.ts";
 import { runIndexedDbTransaction } from "./indexeddb-client.ts";
 
@@ -264,4 +264,48 @@ export async function deleteVoiceDraftRecording(
       return database.close();
     },
   );
+}
+
+/** Remove one account's recordings, including chunks whose draft row is gone. */
+export async function deleteVoiceDraftRecordingsForUser(
+  userId: string,
+): Promise<void> {
+  const database = await openVoiceDraftRecordingDatabase();
+  await withCleanup(
+    (async () => {
+      const transaction = database.transaction(
+        ["drafts", "chunks"],
+        "readwrite",
+      );
+      let draft = await transaction.objectStore("drafts").openCursor();
+      while (draft) {
+        if (voiceDraftKeyBelongsToUser(draft.key, userId)) {
+          await draft.delete();
+        }
+        draft = await draft.continue();
+      }
+      let chunk = await transaction.objectStore("chunks").openCursor();
+      while (chunk) {
+        if (
+          Array.isArray(chunk.key) &&
+          voiceDraftKeyBelongsToUser(chunk.key[0], userId)
+        ) {
+          await chunk.delete();
+        }
+        chunk = await chunk.continue();
+      }
+      await transaction.done;
+    })(),
+    () => {
+      return database.close();
+    },
+  );
+}
+
+function voiceDraftKeyBelongsToUser(key: IDBValidKey, userId: string): boolean {
+  if (typeof key !== "string") {
+    return false;
+  }
+  const parsed = jsonParseOr<unknown>(key, null);
+  return Array.isArray(parsed) && parsed[0] === userId;
 }

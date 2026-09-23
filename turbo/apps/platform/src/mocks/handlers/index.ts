@@ -107,6 +107,7 @@ import {
 } from "./api-user-permission-grants.ts";
 import { apiVoiceIoHandlers } from "./api-voice-io.ts";
 import { apiBuildInfoHandlers } from "./api-build-info.ts";
+import { apiAccountErasureStatusHandlers } from "./api-account-erasure-status.ts";
 import { apiWebFilesHandlers } from "./api-web-files.ts";
 import { localeResourceHandlers } from "./locale-resources.ts";
 import { clerkLocalizationHandlers } from "./clerk-localizations.ts";
@@ -116,6 +117,7 @@ export const handlers = [
   ...clerkLocalizationHandlers,
   ...localeResourceHandlers,
   ...apiBuildInfoHandlers,
+  ...apiAccountErasureStatusHandlers,
   ...apiConnectorsHandlers,
   ...apiOrgHandlers,
   ...apiOrgMembersHandlers,

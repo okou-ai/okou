@@ -9,13 +9,15 @@ import { env } from "../../lib/env";
 import type { ReadonlyDb } from "../external/db";
 import { safeJsonParse } from "../utils";
 
-const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const tokenPayloadSchema = z.strictObject({
   version: z.literal(1),
   userId: z.string().min(1).max(192),
-  expiresAt: z.number().int().positive(),
   nonce: z.string().regex(/^[A-Za-z0-9_-]{22}$/u),
 });
+
+// This read-only capability has no clock expiry: a Desktop partition may be
+// dormant past the Clerk deletion, then reopen years later without a session.
+// The credential reveals only that same account's deletion state.
 
 function signingKey(): Buffer {
   const secret = env("SECRETS_ENCRYPTION_KEY");
@@ -31,31 +33,30 @@ function signature(encoded: string): Buffer {
   return createHmac("sha256", signingKey()).update(encoded).digest();
 }
 
-export function createAccountErasureStatusCapability(
-  userId: string,
-  now: Date,
-): { readonly token: string; readonly expiresAt: string } {
-  const expiresAt = new Date(now.getTime() + TOKEN_TTL_MS);
+export function createAccountErasureStatusCapability(userId: string): {
+  readonly token: string;
+} {
   const payload = tokenPayloadSchema.parse({
     version: 1,
     userId,
-    expiresAt: expiresAt.getTime(),
     nonce: randomBytes(16).toString("base64url"),
   });
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return {
     token: `v1.${encoded}.${signature(encoded).toString("base64url")}`,
-    expiresAt: expiresAt.toISOString(),
   };
 }
 
 export function userIdFromAccountErasureStatusCapability(
   token: string,
-  now: Date,
 ): string | null {
-  if (token.length > 512) return null;
+  if (token.length > 512) {
+    return null;
+  }
   const parts = token.split(".");
-  if (parts.length !== 3 || parts[0] !== "v1") return null;
+  if (parts.length !== 3 || parts[0] !== "v1") {
+    return null;
+  }
   const encoded = parts[1];
   const encodedSignature = parts[2];
   if (
@@ -77,7 +78,7 @@ export function userIdFromAccountErasureStatusCapability(
   const parsed = tokenPayloadSchema.safeParse(
     safeJsonParse(Buffer.from(encoded, "base64url").toString("utf8")),
   );
-  if (!parsed.success || parsed.data.expiresAt <= now.getTime()) {
+  if (!parsed.success) {
     return null;
   }
   return parsed.data.userId;
