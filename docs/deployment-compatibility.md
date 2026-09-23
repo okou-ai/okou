@@ -2505,9 +2505,10 @@ clients below the floor receive `426` before route matching. This floor increase
 is deliberately separate from the release that first published the replacement
 App, because production promotes the API before the App.
 
-Standalone Access mutations now publish only `cloudflare-access:changed`.
-Effective Service Token replacement still invalidates Runner authority for every
-referencing protected host. Actual SSH host writes continue publishing
+Standalone Access create, rename and delete publish only
+`cloudflare-access:changed`. Effective Service Token replacement also publishes
+`ssh:changed` to referencing host owners and invalidates Runner authority for
+every referencing protected host. Actual SSH host writes continue publishing
 `ssh:changed` and invalidating Runner authority; inline Access creation also
 publishes `cloudflare-access:changed` because it changes both resources. Neither
 browser event contains a token, configuration ID or host ID.
@@ -2602,6 +2603,41 @@ or write `needs_rebind=true` until the rebind-capable App is verified live and
 the later App compatibility floor is raised. A rollback to pre-foundation API
 after either new state is written is unsafe without first restoring a compatible
 authority reader; rolling back code does not roll back persisted state.
+
+### Scoped organization Cloudflare Access backend (#36265)
+
+The canonical Access API accepts an explicit `view=scoped` query on list and
+mutations. Without it, the list and mutation responses keep the exact
+personal-only shape expected by the currently deployed App, and organization
+rows cannot be managed through the old request shape. A scoped response adds
+`scope`; organization rows are visible to current members, but only current
+admins may create, rename, rotate or delete them. The discriminator is not an
+authorization credential. Inline SSH Access creation remains personal, while
+members may select same-organization shared rows for their own SSH hosts.
+Shared responses contain only the requesting member's SSH host references.
+Secrets remain write-only.
+
+Effective shared token rotation advances every referencing SSH host generation
+in the same transaction and publishes host-owner Runner/SSH invalidations and
+an organization Access-list signal after commit. The organization signal uses
+the org realtime channel, not a cached member list; the scoped App must
+subscribe to that channel. These notices remain best-effort, so a missed
+notice retains the documented active-Run cache window. Referenced deletion is
+blocked across all members. Personal records still erase with their owner;
+shared records survive a member erasure and are removed with the organization
+after SSH references. This release adds no conversion or `needs_rebind=true`
+writer.
+
+**Activation gate:** migration `1203` must have run in production, and every
+serving API authority reader and SSH Runner must include the #36260 foundation
+before this API begins creating or binding shared rows. The first foundation
+release reported successful migrations and Runner promotion, but its global
+health step was non-blocking; promotion alone is not proof of the entire live
+fleet. Verify actual serving versions before production activation. Once a
+shared row is bound, rolling back to a pre-foundation API or Runner is unsafe
+without first restoring a compatible authority reader. The temporary
+personal-only projection is retired only after #36261's rebind-capable App is
+live and #36262 raises the verified minimum App version.
 
 ## Feishu and Lark integration identity
 

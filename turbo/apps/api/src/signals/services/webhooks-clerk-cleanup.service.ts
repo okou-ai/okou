@@ -12,6 +12,7 @@ import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connecto
 import { builtinConnectorOauthDeviceAuthorizationSessions } from "@okouai/db/schema/connector-oauth-device-authorization-session";
 import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { connectors } from "@okouai/db/schema/connector";
+import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { deviceCodes } from "@okouai/db/schema/device-codes";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
@@ -25,6 +26,8 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
+import { sshConnections } from "@okouai/db/schema/ssh-connection";
+import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
@@ -807,6 +810,16 @@ async function deleteOrgData(
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.orgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
+  // VNC references were removed at the start of organization cleanup. Remove
+  // SSH hosts before their credentials and Access configurations so shared
+  // tokens cannot outlive the organization or violate the restrictive FK.
+  await db.transaction(async (tx) => {
+    await tx.delete(sshConnections).where(eq(sshConnections.orgId, orgId));
+    await tx.delete(sshCredentials).where(eq(sshCredentials.orgId, orgId));
+    await tx
+      .delete(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.orgId, orgId));
+  });
   await deleteConnectorOwnerState(db, { kind: "organization", orgId }, signal);
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.orgId, orgId));

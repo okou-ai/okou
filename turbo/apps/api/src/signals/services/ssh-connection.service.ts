@@ -35,8 +35,8 @@ import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
 import { checkSshCreationId } from "./ssh-creation.service";
 import {
   cloudflareAccessFailure,
-  findCloudflareAccessConfig,
   insertCloudflareAccessConfig,
+  lockCloudflareAccessConfigForBinding,
   prepareCloudflareAccessConfig,
 } from "./cloudflare-access.service";
 import { publishCloudflareAccessMutationInvalidation } from "./cloudflare-access-client-invalidation.service";
@@ -211,7 +211,7 @@ function toSshConnectionResponse(
 }
 
 async function validateAccessBinding(
-  db: Pick<ReadonlyDb, "select">,
+  tx: Transaction,
   owner: { readonly orgId: string; readonly userId: string },
   binding: { readonly configId: string | null; readonly creating: boolean },
   host: string,
@@ -227,7 +227,11 @@ async function validateAccessBinding(
   if (configId === null) {
     return null;
   }
-  const config = await findCloudflareAccessConfig(db, owner, configId);
+  const config = await lockCloudflareAccessConfigForBinding(
+    tx,
+    owner,
+    configId,
+  );
   return config ? null : cloudflareAccessFailure("notFound");
 }
 
@@ -268,7 +272,7 @@ function publishSshConnectionMutationInvalidation(
 }
 
 async function validateAccessTransition(
-  db: Pick<ReadonlyDb, "select">,
+  tx: Transaction,
   args: {
     readonly orgId: string;
     readonly userId: string;
@@ -287,7 +291,7 @@ async function validateAccessTransition(
           ? args.body.transport.configId
           : null;
   const bindingFailure = await validateAccessBinding(
-    db,
+    tx,
     args,
     {
       configId: accessId,
@@ -299,6 +303,52 @@ async function validateAccessTransition(
     port,
   );
   return bindingFailure ?? { ok: true, value: accessId };
+}
+
+async function lockAccessBeforeHostUpdate(
+  tx: Transaction,
+  args: UpdateSshConnectionArgs,
+  preflight: SshConnectionRow,
+): Promise<boolean> {
+  // Rotation locks the configuration before collecting host rows. Take the
+  // same lock before this host's row lock, including for an unchanged binding.
+  const transport = args.body.transport;
+  const targetAccessId =
+    transport === undefined
+      ? preflight.cloudflareAccessId
+      : transport.type === "cloudflare_access" && "configId" in transport
+        ? transport.configId
+        : null;
+  return (
+    targetAccessId === null ||
+    Boolean(
+      await lockCloudflareAccessConfigForBinding(tx, args, targetAccessId),
+    )
+  );
+}
+
+async function lockOwnerHostForUpdate(
+  tx: Transaction,
+  args: UpdateSshConnectionArgs,
+  preflight: SshConnectionRow,
+): Promise<SshConnectionResult<SshConnectionRow>> {
+  await lockSshOwner(tx, args);
+  if (!(await lockAccessBeforeHostUpdate(tx, args, preflight))) {
+    return cloudflareAccessFailure("notFound");
+  }
+  const [current] = await tx
+    .select()
+    .from(sshConnections)
+    .where(
+      and(
+        eq(sshConnections.id, args.connectionId),
+        eq(sshConnections.orgId, args.orgId),
+        eq(sshConnections.userId, args.userId),
+      ),
+    )
+    .limit(1)
+    .for("update");
+  return current ? { ok: true, value: current } : failure("notFound");
 }
 
 async function findOwnerConnection(
@@ -540,22 +590,11 @@ export async function updateSshConnection(
   const result = await args.db.transaction<
     SshConnectionMutationResult<SshConnectionResponse>
   >(async (tx) => {
-    await lockSshOwner(tx, args);
-    const [current] = await tx
-      .select()
-      .from(sshConnections)
-      .where(
-        and(
-          eq(sshConnections.id, args.connectionId),
-          eq(sshConnections.orgId, args.orgId),
-          eq(sshConnections.userId, args.userId),
-        ),
-      )
-      .limit(1)
-      .for("update");
-    if (!current) {
-      return failure("notFound");
+    const locked = await lockOwnerHostForUpdate(tx, args, preflight);
+    if (!locked.ok) {
+      return locked;
     }
+    const current = locked.value;
     const host = canonicalHost?.value ?? current.host;
     const port = args.body.port ?? current.port;
     const binding = await validateAccessTransition(

@@ -293,25 +293,31 @@ const state = () => {
     testSshConnectionStateContract,
   );
 };
-function authenticate(owner: Owner) {
-  mocks.clerk.session(owner.userId, owner.orgId);
+function authenticate(
+  owner: Owner,
+  role: "org:admin" | "org:member" = "org:member",
+) {
+  mocks.clerk.session(owner.userId, owner.orgId, role);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
     data: [
       {
-        role: "org:member",
+        role,
         organization: { id: owner.orgId },
         publicUserData: { userId: owner.userId },
       },
     ],
   });
 }
-function owner(overrides: Partial<Owner> = {}) {
+function owner(
+  overrides: Partial<Owner> = {},
+  role: "org:admin" | "org:member" = "org:member",
+) {
   const result = {
     orgId: `org_access_${randomUUID()}`,
     userId: `user_access_${randomUUID()}`,
     ...overrides,
   };
-  authenticate(result);
+  authenticate(result, role);
   return result;
 }
 async function runtime(owner: Owner, overrides: Partial<RuntimeBody> = {}) {
@@ -416,6 +422,249 @@ async function resolve(f: Awaited<ReturnType<typeof fixture>>) {
 beforeEach(() => {
   mockEnv("OFFICIAL_RUNNER_SECRET", runnerSecret);
   useSecretKmsProbe();
+});
+
+describe("organization Cloudflare Access", () => {
+  const scoped = { view: "scoped" as const };
+
+  it("keeps old App responses personal-only while members can bind shared configurations without seeing other hosts", async () => {
+    const admin = owner({}, "org:admin");
+    const shared = (
+      await accept(
+        configs().create({
+          headers,
+          query: scoped,
+          body: {
+            id: randomUUID(),
+            name: "Shared gateway",
+            scope: "organization",
+            credentials: token,
+          },
+        }),
+        [201],
+      )
+    ).body;
+    expect(shared).toMatchObject({ scope: "organization", sshHosts: [] });
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toStrictEqual([]);
+    const privateConfig = await config("Admin private");
+
+    const first = owner({ orgId: admin.orgId });
+    const firstHost = await host(shared.id);
+    const firstList = (
+      await accept(configs().list({ headers, query: scoped }), [200])
+    ).body.configs;
+    expect(firstList).toMatchObject([
+      {
+        id: shared.id,
+        scope: "organization",
+        sshHosts: [{ id: firstHost.id, displayName: firstHost.displayName }],
+      },
+    ]);
+    expect(JSON.stringify(firstList)).not.toContain(token.clientSecret);
+    expect(
+      firstList.some((entry) => {
+        return entry.id === privateConfig.id;
+      }),
+    ).toBeFalsy();
+
+    const second = owner({ orgId: admin.orgId });
+    const secondList = (
+      await accept(configs().list({ headers, query: scoped }), [200])
+    ).body.configs;
+    expect(secondList).toMatchObject([
+      { id: shared.id, scope: "organization", sshHosts: [] },
+    ]);
+    const secondHost = await host(shared.id);
+    const secondUpdatedList = (
+      await accept(configs().list({ headers, query: scoped }), [200])
+    ).body.configs;
+    expect(secondUpdatedList[0]?.sshHosts).toStrictEqual([
+      { id: secondHost.id, displayName: secondHost.displayName },
+    ]);
+
+    await accept(
+      configs().update({
+        headers,
+        query: scoped,
+        params: { configId: shared.id },
+        body: { expectedRevision: 1, name: "Unauthorized" },
+      }),
+      [403],
+    );
+    await accept(
+      configs().delete({
+        headers,
+        query: scoped,
+        params: { configId: shared.id },
+        body: { expectedRevision: 1 },
+      }),
+      [403],
+    );
+    await accept(
+      configs().update({
+        headers,
+        params: { configId: shared.id },
+        body: { expectedRevision: 1, name: "Old App" },
+      }),
+      [404],
+    );
+    await accept(
+      configs().create({
+        headers,
+        query: scoped,
+        body: {
+          id: randomUUID(),
+          name: "Unauthorized",
+          scope: "organization",
+          credentials: token,
+        },
+      }),
+      [403],
+    );
+
+    owner();
+    expect(
+      (await accept(configs().list({ headers, query: scoped }), [200])).body
+        .configs,
+    ).toStrictEqual([]);
+    await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Foreign host",
+          host: "ssh.example.com",
+          port: 443,
+          credential: {
+            create: {
+              name: "Login",
+              username: "deploy",
+              authentication: { method: "password", password: "secret" },
+            },
+          },
+          transport: { type: "cloudflare_access", configId: shared.id },
+        },
+      }),
+      [404],
+    );
+    expect(first.userId).not.toBe(second.userId);
+  });
+
+  it("rotates every member host and blocks referenced deletion", async () => {
+    const admin = owner({}, "org:admin");
+    const shared = (
+      await accept(
+        configs().create({
+          headers,
+          query: scoped,
+          body: {
+            id: randomUUID(),
+            name: "Shared gateway",
+            scope: "organization",
+            credentials: token,
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const first = owner({ orgId: admin.orgId });
+    const firstRun = await runtime(first, {
+      runnerGroup: `shared-${randomUUID()}`,
+    });
+    const firstHost = await host(shared.id);
+    const second = owner({ orgId: admin.orgId });
+    const secondRun = await runtime(second, {
+      runnerGroup: `shared-${randomUUID()}`,
+    });
+    const secondHost = await host(shared.id);
+    authenticate(admin, "org:admin");
+    await accept(
+      configs().delete({
+        headers,
+        query: scoped,
+        params: { configId: shared.id },
+        body: { expectedRevision: 1 },
+      }),
+      [409],
+    );
+    context.mocks.ably.publish.mockClear();
+    const rotated = await accept(
+      configs().update({
+        headers,
+        query: scoped,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: 1,
+          credentials: { ...token, clientSecret: "rotated-canary" },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body).toMatchObject({
+      scope: "organization",
+      generation: 2,
+      revision: 2,
+      sshHosts: [],
+    });
+    expect(context.mocks.ably.publish.mock.calls).toContainEqual([
+      "cloudflare-access:changed",
+      { orgId: admin.orgId },
+    ]);
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === "ssh:changed";
+      }),
+    ).toHaveLength(2);
+    expect(
+      context.mocks.ably.publish.mock.calls.filter(([topic]) => {
+        return topic === "ssh-authority-invalidated";
+      }),
+    ).toStrictEqual(
+      expect.arrayContaining([
+        [
+          "ssh-authority-invalidated",
+          { runId: firstRun.runId, connectionId: firstHost.id },
+        ],
+        [
+          "ssh-authority-invalidated",
+          { runId: secondRun.runId, connectionId: secondHost.id },
+        ],
+      ]),
+    );
+    authenticate(first);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections[0]
+        ?.generation,
+    ).toBe(firstHost.generation + 1);
+    await accept(
+      connections().delete({ headers, params: { connectionId: firstHost.id } }),
+      [204],
+    );
+    authenticate(second);
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections[0]
+        ?.generation,
+    ).toBe(secondHost.generation + 1);
+    await accept(
+      connections().delete({
+        headers,
+        params: { connectionId: secondHost.id },
+      }),
+      [204],
+    );
+    authenticate(admin, "org:admin");
+    await accept(
+      configs().delete({
+        headers,
+        query: scoped,
+        params: { configId: shared.id },
+        body: { expectedRevision: 2 },
+      }),
+      [204],
+    );
+  });
 });
 
 describe("Cloudflare Access owner configuration", () => {
@@ -1098,7 +1347,7 @@ describe("protected SSH authority", () => {
       context.mocks.ably.publish.mock.calls.filter(([event]) => {
         return event === "ssh:changed";
       }),
-    ).toStrictEqual([]);
+    ).toStrictEqual([["ssh:changed", { orgId: f.orgId }]]);
     expect(context.mocks.ably.publish.mock.calls).toContainEqual([
       "cloudflare-access:changed",
       { orgId: f.orgId },
