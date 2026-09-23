@@ -5862,6 +5862,15 @@ function isLegacyUsageLimitError(
   );
 }
 
+function structuredUsageDescriptionClass(
+  error: string,
+  reason: KnownRunFailureReason,
+): string {
+  return reason === "usage_limit" && isLegacyUsageLimitError(error, undefined)
+    ? USAGE_RECOVERY_DESCRIPTION_CLASS
+    : "";
+}
+
 function assistantErrorFallbackContent(
   error: string,
   failureReason: string | undefined,
@@ -5880,10 +5889,10 @@ function assistantErrorFallbackContent(
       icon: structuredFailureIcon(knownReason.data),
       title: structuredFailureTitle(knownReason.data),
       description: structuredFailureDescription(knownReason.data, t),
-      ...(knownReason.data === "usage_limit" &&
-      isLegacyUsageLimitError(error, undefined)
-        ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
-        : {}),
+      descriptionClassName: structuredUsageDescriptionClass(
+        error,
+        knownReason.data,
+      ),
       reserveActions: structuredFailureHasActions(knownReason.data),
     };
   }
