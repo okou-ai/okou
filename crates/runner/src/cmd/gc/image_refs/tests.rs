@@ -26,7 +26,7 @@ const REFILL_SERVICE_SUFFIXES: [&str; 5] = ["gamma", "alpha", "epsilon", "beta",
 const FAKE_SYSTEMCTL: &str = r#"#!/bin/sh
 printf '%s\n' "$*" >> "$OKOU_RUN_GC_ENABLED_SERVICE_INVOCATIONS"
 
-if [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "refill" ]; then
+if [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "bounded" ] || [ "$OKOU_RUN_GC_ENABLED_SERVICE_SCENARIO" = "refill" ]; then
   invocation="$*"
   printf 'started %s\n' "$invocation" >> "$OKOU_RUN_GC_ENABLED_SERVICE_STATE_DIR/events"
   trap 'printf "finished %s\n" "$invocation" >> "$OKOU_RUN_GC_ENABLED_SERVICE_STATE_DIR/events"' 0
@@ -687,7 +687,6 @@ async fn assert_bounded_enabled_service_discovery(system_dir: &Path) {
         tokio::spawn(async move { enabled_runner_service_config_paths(&system_dir).await });
 
     wait_for_started_enabled_service_queries(&state_dir, ENABLED_SERVICE_QUERY_CONCURRENCY).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
     let first_batch = started_enabled_service_queries(&state_dir);
     assert_eq!(first_batch.len(), ENABLED_SERVICE_QUERY_CONCURRENCY);
     release_enabled_service_queries(&state_dir, &first_batch);
@@ -710,6 +709,7 @@ async fn assert_bounded_enabled_service_discovery(system_dir: &Path) {
         ]
     );
     assert!(!scan.inventory_complete);
+    assert_bounded_query_events(&state_dir, 9);
 }
 
 async fn assert_enabled_service_discovery_refills_before_first_finishes() {
@@ -769,6 +769,10 @@ async fn assert_enabled_service_discovery_refills_before_first_finishes() {
         REFILL_SERVICE_SUFFIXES.map(|suffix| PathBuf::from(format!("/configs/{suffix}.yaml")))
     );
 
+    assert_bounded_query_events(&state_dir, service_names.len() * 2);
+}
+
+fn assert_bounded_query_events(state_dir: &Path, expected_invocations: usize) {
     let events = std::fs::read_to_string(state_dir.join("events")).unwrap();
     let mut active_queries = HashSet::new();
     let mut completed_queries = HashSet::new();
@@ -788,7 +792,7 @@ async fn assert_enabled_service_discovery_refills_before_first_finishes() {
         }
     }
     assert!(active_queries.is_empty());
-    assert_eq!(completed_queries.len(), service_names.len() * 2);
+    assert_eq!(completed_queries.len(), expected_invocations);
     assert_eq!(max_active_queries, ENABLED_SERVICE_QUERY_CONCURRENCY);
 }
 
