@@ -153,8 +153,7 @@
      keyframes stay below in this stylesheet. */
   --animate-thinking-in: okou-thinking-in 0.3s ease-out;
   --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
-  --animate-app-skeleton-bounce: okou-app-skeleton-bounce 2.85s
-    cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+  --animate-app-skeleton-bounce: okou-app-skeleton-bounce 1.2s infinite;
 
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
@@ -650,21 +649,27 @@ body {
   }
 }
 
+/* Match the inline first-paint keyframes in index.html. */
 @keyframes okou-app-skeleton-bounce {
-  0%,
-  8%,
-  67%,
+  0% {
+    transform: none;
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  11% {
+    transform: translateY(-14px) scale(0.93, 1.07);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+  }
+  22% {
+    transform: translateY(0) scale(1.08, 0.9);
+    animation-timing-function: cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  30% {
+    transform: translateY(-4px) scale(0.98, 1.02);
+    animation-timing-function: cubic-bezier(0.32, 0, 0.67, 0);
+  }
+  38%,
   100% {
     transform: none;
-  }
-  21% {
-    transform: translateY(-15px) scale(0.92, 1.08);
-  }
-  35% {
-    transform: translateY(0) scale(1.08, 0.9);
-  }
-  48% {
-    transform: translateY(-5px) scale(0.97, 1.03);
   }
 }
 

@@ -7,17 +7,17 @@ const skeletonGlyphs = [
   },
   {
     id: "k-blue",
-    className: "w-[51px] motion-safe:[animation-delay:170ms]",
+    className: "w-[51px] motion-safe:[animation-delay:80ms]",
     imageClassName: "w-[49px] [background-position:-56px_0]",
   },
   {
     id: "o-green",
-    className: "w-[49px] motion-safe:[animation-delay:340ms]",
+    className: "w-[49px] motion-safe:[animation-delay:160ms]",
     imageClassName: "w-[47px] [background-position:-107px_0]",
   },
   {
     id: "u-pink",
-    className: "w-[56px] motion-safe:[animation-delay:510ms]",
+    className: "w-[56px] motion-safe:[animation-delay:240ms]",
     imageClassName: "w-[55px] [background-position:-156px_0]",
   },
 ] as const;
