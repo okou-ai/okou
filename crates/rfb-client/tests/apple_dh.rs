@@ -259,6 +259,33 @@ async fn dropping_a_stalled_apple_dh_handshake_closes_the_stream() {
 }
 
 #[tokio::test]
+async fn stalled_apple_dh_parameters_expire_and_close_the_stream() {
+    let (client, mut server) = duplex(64);
+    let peer = async move {
+        negotiate(&mut server, &[30]).await;
+        assert_eq!(server.read_u8().await.unwrap(), 30);
+        // The peer withholds generator/length until the client disconnects.
+        let mut byte = [0; 1];
+        assert_eq!(server.read(&mut byte).await.unwrap(), 0);
+    };
+    let caller = authenticate_apple_dh(
+        client,
+        credentials(),
+        Instant::now() + Duration::from_secs(1),
+    );
+    let ((), result) =
+        tokio::time::timeout(Duration::from_secs(5), async { tokio::join!(peer, caller) })
+            .await
+            .unwrap();
+    assert!(matches!(
+        result,
+        Err(Error::AuthenticationDeadlineExceeded {
+            stage: AuthenticationStage::AppleDhAuthentication
+        })
+    ));
+}
+
+#[tokio::test]
 async fn deadline_expires_before_first_io() {
     let (client, _server) = duplex(64);
     let result = authenticate_apple_dh(client, credentials(), Instant::now()).await;
