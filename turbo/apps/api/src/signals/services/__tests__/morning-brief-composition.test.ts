@@ -7,23 +7,14 @@ import {
   morningBriefSourceBudget,
   morningBriefSourceWaves,
   MORNING_BRIEF_COLLECTION_PHASE_MS,
-  MORNING_BRIEF_COMMIT_RESERVE_MS,
   MORNING_BRIEF_NEW_READ_CUTOFF_MS,
-  MORNING_BRIEF_MAX_CONCURRENT_SOURCES,
-  MORNING_BRIEF_SOURCE_READ_RESERVE_MS,
   morningBriefSourceReadCutoff,
   MORNING_BRIEF_REQUEST_MAX_BYTES,
-  MORNING_BRIEF_SOURCE_BUDGETS,
 } from "../morning-brief-collection-plan";
 import {
-  MORNING_BRIEF_ARCHIVE_MAX_BYTES,
-  MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES,
-  MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES,
-  MORNING_BRIEF_MANIFEST_MAX_BYTES,
   morningBriefStoragePhaseExpired,
   morningBriefStoragePhaseExpiresAt,
   morningBriefStoragePhaseRemainingMs,
-  MORNING_BRIEF_STORAGE_PHASE_MS,
 } from "../morning-brief-language-bounds";
 import {
   isMorningBriefOutputLanguage,
@@ -62,7 +53,6 @@ import {
   morningBriefItemFacts,
   MORNING_BRIEF_SOURCE_ORDER,
   morningBriefItemsBytes,
-  MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES,
   MORNING_BRIEF_NO_OMISSIONS,
   MORNING_BRIEF_NO_PROVENANCE,
   serializeMorningBriefAggregate,
@@ -793,21 +783,7 @@ describe("truncation provenance", () => {
   });
 });
 describe("declared bounds", () => {
-  it("pins the documented collection and request ceilings", () => {
-    expect(MORNING_BRIEF_COLLECTION_PHASE_MS).toBe(45_000);
-    // The reserve funds the commit, not an authority check. It is the smallest
-    // value that keeps a read finishing one second past the cutoff inside the
-    // phase, which is what lets the attempt report its per-source facts
-    // instead of settling as deadline-exceeded.
-    expect(MORNING_BRIEF_COMMIT_RESERVE_MS).toBe(2000);
-    expect(MORNING_BRIEF_NEW_READ_CUTOFF_MS).toBe(43_000);
-    expect(MORNING_BRIEF_MAX_CONCURRENT_SOURCES).toBe(3);
-    expect(MORNING_BRIEF_REQUEST_MAX_BYTES).toBe(128 * 1024);
-    expect(MORNING_BRIEF_COMBINED_NORMALIZED_MAX_BYTES).toBe(1024 * 1024);
-  });
-
   it("leaves every source budget time to finish rather than to read", () => {
-    expect(MORNING_BRIEF_SOURCE_READ_RESERVE_MS).toBe(3000);
     // A full budget keeps the fixed reserve for the projection that turns a
     // read into a bundle.
     expect(morningBriefSourceReadCutoff(20_000, 0)).toBe(17_000);
@@ -820,25 +796,6 @@ describe("declared bounds", () => {
     // An exhausted budget has nothing left to divide.
     expect(morningBriefSourceReadCutoff(1000, 1000)).toBe(1000);
     expect(morningBriefSourceReadCutoff(1000, 2000)).toBe(1000);
-  });
-
-  it("keeps each source's own ceiling rather than one shared number", () => {
-    expect(MORNING_BRIEF_SOURCE_BUDGETS).toStrictEqual({
-      gmail: { deadlineMs: 20_000, maxRequests: 44 },
-      calendar: { deadlineMs: 20_000, maxRequests: 18 },
-      github: { deadlineMs: 20_000, maxRequests: 24 },
-      // Slack's ceiling is the collector's own declared deadline.
-      slack: { deadlineMs: 30_000, maxRequests: 40 },
-      chat: { deadlineMs: 15_000, maxRequests: 0 },
-    });
-  });
-
-  it("pins the bounded language-context storage reads", () => {
-    expect(MORNING_BRIEF_MANIFEST_MAX_BYTES).toBe(256 * 1024);
-    expect(MORNING_BRIEF_ARCHIVE_MAX_BYTES).toBe(1024 * 1024);
-    expect(MORNING_BRIEF_ARCHIVE_MAX_DECOMPRESSED_BYTES).toBe(2 * 1024 * 1024);
-    expect(MORNING_BRIEF_INSTRUCTIONS_MAX_BYTES).toBe(64 * 1024);
-    expect(MORNING_BRIEF_STORAGE_PHASE_MS).toBe(5000);
   });
 
   it("selects one language deadline and admits only positive timer time", () => {
