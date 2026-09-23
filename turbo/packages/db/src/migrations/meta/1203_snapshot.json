@@ -1,5 +1,5 @@
 {
-  "id": "531e0764-9d95-49a6-9b67-59e8aa301d01",
+  "id": "e00b016f-5603-4eb0-856d-acf099b93310",
   "prevId": "b1fee8e0-81d3-4d79-8bae-6e971fbdc39b",
   "version": "7",
   "dialect": "postgresql",
@@ -5606,75 +5606,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.blob_upload_intents": {
-      "name": "blob_upload_intents",
-      "schema": "",
-      "columns": {
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "intent_id": {
-          "name": "intent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "blob_upload_intents_expires_at": {
-          "name": "blob_upload_intents_expires_at",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "blob_upload_intents_hash_blobs_hash_fk": {
-          "name": "blob_upload_intents_hash_blobs_hash_fk",
-          "tableFrom": "blob_upload_intents",
-          "tableTo": "blobs",
-          "columnsFrom": [
-            "hash"
-          ],
-          "columnsTo": [
-            "hash"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "blob_upload_intents_hash_intent_id_pk": {
-          "name": "blob_upload_intents_hash_intent_id_pk",
-          "columns": [
-            "hash",
-            "intent_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.blobs": {
       "name": "blobs",
       "schema": "",
@@ -5710,20 +5641,6 @@
           "notNull": true,
           "default": 1
         },
-        "erasure_pending": {
-          "name": "erasure_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "erasure_eligible_at": {
-          "name": "erasure_eligible_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now() + interval '49 hours'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -5753,12 +5670,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "blobs_erasure_pending_zero_refs": {
-          "name": "blobs_erasure_pending_zero_refs",
-          "value": "NOT \"blobs\".\"erasure_pending\" OR \"blobs\".\"ref_count\" = 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.browser_authorization_requests": {
@@ -10011,7 +9923,14 @@
           "name": "user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'personal'"
         },
         "name": {
           "name": "name",
@@ -10106,6 +10025,14 @@
             "org_id",
             "user_id"
           ]
+        },
+        "uq_cloudflare_access_configs_org_id": {
+          "name": "uq_cloudflare_access_configs_org_id",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "org_id"
+          ]
         }
       },
       "policies": {},
@@ -10121,6 +10048,10 @@
         "chk_cloudflare_access_configs_credentials": {
           "name": "chk_cloudflare_access_configs_credentials",
           "value": "char_length(\"cloudflare_access_configs\".\"encrypted_client_id\") > 0 AND char_length(\"cloudflare_access_configs\".\"encrypted_client_secret\") > 0"
+        },
+        "chk_cloudflare_access_configs_scope_owner": {
+          "name": "chk_cloudflare_access_configs_scope_owner",
+          "value": "(\"cloudflare_access_configs\".\"scope\" = 'personal' AND \"cloudflare_access_configs\".\"user_id\" IS NOT NULL) OR (\"cloudflare_access_configs\".\"scope\" = 'organization' AND \"cloudflare_access_configs\".\"user_id\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -30381,6 +30312,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "needs_rebind": {
+          "name": "needs_rebind",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "learned_host_key_algorithm": {
           "name": "learned_host_key_algorithm",
           "type": "varchar(64)",
@@ -30493,19 +30431,17 @@
         }
       },
       "foreignKeys": {
-        "ssh_connections_cloudflare_access_owner_fk": {
-          "name": "ssh_connections_cloudflare_access_owner_fk",
+        "ssh_connections_cloudflare_access_org_fk": {
+          "name": "ssh_connections_cloudflare_access_org_fk",
           "tableFrom": "ssh_connections",
           "tableTo": "cloudflare_access_configs",
           "columnsFrom": [
             "cloudflare_access_id",
-            "org_id",
-            "user_id"
+            "org_id"
           ],
           "columnsTo": [
             "id",
-            "org_id",
-            "user_id"
+            "org_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -30544,7 +30480,11 @@
       "checkConstraints": {
         "chk_ssh_connections_cloudflare_access_destination": {
           "name": "chk_ssh_connections_cloudflare_access_destination",
-          "value": "\"ssh_connections\".\"cloudflare_access_id\" IS NULL OR (\"ssh_connections\".\"port\" = 443 AND \"ssh_connections\".\"host\" ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND \"ssh_connections\".\"host\" !~ '^[0-9.]+$')"
+          "value": "(\"ssh_connections\".\"cloudflare_access_id\" IS NULL AND NOT \"ssh_connections\".\"needs_rebind\") OR (\"ssh_connections\".\"port\" = 443 AND \"ssh_connections\".\"host\" ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND \"ssh_connections\".\"host\" !~ '^[0-9.]+$')"
+        },
+        "chk_ssh_connections_needs_rebind_unbound": {
+          "name": "chk_ssh_connections_needs_rebind_unbound",
+          "value": "NOT \"ssh_connections\".\"needs_rebind\" OR \"ssh_connections\".\"cloudflare_access_id\" IS NULL"
         },
         "chk_ssh_connections_display_name": {
           "name": "chk_ssh_connections_display_name",

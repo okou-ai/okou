@@ -1603,45 +1603,45 @@ describe("codex-oauth-token codex provider", () => {
     expect(hasModelSelection("codex-oauth-token")).toBe(true);
   });
 
-  it("firewall includes Codex, workspace discovery, and auth denial APIs", () => {
+  it("firewall includes the ChatGPT backend API and auth denial APIs", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-    expect(config.apis).toHaveLength(3);
-    expect(config.apis[0]!.base).toBe("https://chatgpt.com/backend-api/codex");
-    expect(config.apis[1]!.base).toBe(
-      "https://chatgpt.com/backend-api/wham/accounts/check",
-    );
-    expect(config.apis[2]!.base).toBe("https://auth.openai.com");
+    expect(config.apis).toHaveLength(2);
+    expect(config.apis[0]!.base).toBe("https://chatgpt.com/backend-api");
+    expect(config.apis[1]!.base).toBe("https://auth.openai.com");
   });
 
-  it("firewall injects Authorization and ChatGPT-Account-ID for both Codex APIs", () => {
+  it("firewall injects Authorization and ChatGPT-Account-ID for the backend API", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-    for (const api of config.apis.slice(0, 2)) {
-      expect(api.auth.headers).toEqual({
-        Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
-        "ChatGPT-Account-ID": "${{ secrets.CHATGPT_ACCOUNT_ID }}",
-      });
-    }
+    expect(config.apis[0]!.auth.headers).toEqual({
+      Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
+      "ChatGPT-Account-ID": "${{ secrets.CHATGPT_ACCOUNT_ID }}",
+    });
   });
 
-  it("firewall allows the entire ChatGPT Codex backend subtree under GET/POST", () => {
+  it("firewall allows the ChatGPT backend API subtree under GET/POST", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
     expect(config.apis[0]!.permissions).toEqual([
       {
         name: "codex:api",
         description:
-          "Access the ChatGPT Codex backend with GET and POST requests.",
+          "Access the ChatGPT backend API with GET and POST requests.",
         rules: ["GET /{path*}", "POST /{path*}"],
       },
     ]);
   });
 
   it.each([
-    ["GET", "/models"],
-    ["GET", "/responses"],
-    ["POST", "/responses"],
-    ["POST", "/responses/compact"],
-    ["GET", "/responses/abc123"],
-    ["POST", "/analytics-events/events"],
+    ["GET", "/codex/models"],
+    ["GET", "/codex/responses"],
+    ["POST", "/codex/responses"],
+    ["POST", "/codex/responses/compact"],
+    ["GET", "/codex/responses/abc123"],
+    ["POST", "/codex/analytics-events/events"],
+    ["GET", "/wham/accounts/check"],
+    ["GET", "/wham/settings/user"],
+    ["GET", "/wham/usage"],
+    ["POST", "/wham/rate-limit-reset-credits/consume"],
+    ["GET", "/future/backend-route"],
   ] as const)("codex:api permission matches %s %s", (method, path) => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
     const fwConfig = { name: config.name, apis: [config.apis[0]!] };
@@ -1651,9 +1651,9 @@ describe("codex-oauth-token codex provider", () => {
   });
 
   it.each([
-    ["DELETE", "/responses/abc123"],
-    ["PUT", "/responses/abc123"],
-    ["PATCH", "/settings"],
+    ["DELETE", "/codex/responses/abc123"],
+    ["PUT", "/codex/responses/abc123"],
+    ["PATCH", "/wham/settings/user"],
   ] as const)(
     "codex:api permission rejects %s %s (method narrowing)",
     (method, path) => {
@@ -1663,11 +1663,11 @@ describe("codex-oauth-token codex provider", () => {
     },
   );
 
-  it("authenticates only the workspace discovery GET", () => {
+  it("authenticates GET and POST throughout the ChatGPT backend API", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
     const policies = {
       [config.name]: {
-        allow: ["codex:workspace-routing"],
+        allow: ["codex:api"],
         deny: [],
         ask: [],
         unknownPolicy: "deny",
@@ -1677,25 +1677,31 @@ describe("codex-oauth-token codex provider", () => {
       return matchFirewallRequestDecision(
         [config],
         method,
-        `https://chatgpt.com/backend-api/wham/${path}`,
+        `https://chatgpt.com${path}`,
         policies,
       );
     };
 
-    expect(decide("GET", "accounts/check")).toMatchObject({
+    expect(decide("GET", "/backend-api/wham/accounts/check")).toMatchObject({
       kind: "allow",
       firewallName: config.name,
-      permission: "codex:workspace-routing",
+      permission: "codex:api",
     });
-    expect(decide("POST", "accounts/check")).toMatchObject({
+    expect(decide("POST", "/backend-api/wham/accounts/check")).toMatchObject({
+      kind: "allow",
+      permission: "codex:api",
+    });
+    expect(decide("GET", "/backend-api/wham/settings/user")).toMatchObject({
+      kind: "allow",
+      permission: "codex:api",
+    });
+    expect(decide("DELETE", "/backend-api/wham/accounts/check")).toMatchObject({
       kind: "block",
       reason: "unknown_endpoint",
     });
-    expect(decide("GET", "accounts/check/extra")).toMatchObject({
-      kind: "block",
-      reason: "unknown_endpoint",
+    expect(decide("GET", "/backend-api-other/wham/accounts/check")).toEqual({
+      kind: "no_match",
     });
-    expect(decide("GET", "settings/user")).toEqual({ kind: "no_match" });
   });
 
   it("firewall denies auth.openai.com via unknown endpoint policy", () => {
@@ -1703,7 +1709,7 @@ describe("codex-oauth-token codex provider", () => {
     expect(config.defaultPolicies).toEqual({
       unknownPolicy: "deny",
     });
-    expect(config.apis[2]!.permissions).toEqual([]);
+    expect(config.apis[1]!.permissions).toEqual([]);
   });
 
   it.each([
@@ -1715,11 +1721,11 @@ describe("codex-oauth-token codex provider", () => {
     (method, path) => {
       // auth.openai.com intentionally exposes no grantable permissions. The
       // deny is delivered by defaultPolicies.unknownPolicy: "deny", so traffic
-      // to auth.openai.com must NOT resolve to any permission name on apis[2].
-      // This pins behavior so a future edit to `apis[2].permissions` breaks the
+      // to auth.openai.com must NOT resolve to any permission name on apis[1].
+      // This pins behavior so a future edit to `apis[1].permissions` breaks the
       // test rather than silently widening auth.openai.com.
       const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-      const fwConfig = { name: config.name, apis: [config.apis[2]!] };
+      const fwConfig = { name: config.name, apis: [config.apis[1]!] };
       expect(findMatchingPermissions(method, path, fwConfig)).toEqual([]);
     },
   );
@@ -1755,7 +1761,7 @@ describe("codex-oauth-token codex provider", () => {
   });
 });
 
-describe("model provider primary firewall inference paths", () => {
+describe("model provider primary firewall bases", () => {
   it.each([
     ["anthropic-api-key", "https://api.anthropic.com/v1/messages"],
     ["claude-code-oauth-token", "https://api.anthropic.com/v1/messages"],
@@ -1763,7 +1769,7 @@ describe("model provider primary firewall inference paths", () => {
     ["deepseek", "https://api.deepseek.com/responses"],
     ["vercel-ai-gateway", "https://ai-gateway.vercel.sh/v1/messages"],
     ["openai-api-key", "https://api.openai.com/v1/responses"],
-    ["codex-oauth-token", "https://chatgpt.com/backend-api/codex"],
+    ["codex-oauth-token", "https://chatgpt.com/backend-api"],
     ["openrouter-codex", "https://openrouter.ai/api/v1/responses"],
     ["vercel-ai-gateway-codex", "https://ai-gateway.vercel.sh/v1/responses"],
   ] as const)("%s firewall base URL is %s", (type, expected) => {

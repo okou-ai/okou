@@ -664,6 +664,9 @@ pub mod runners {
             /// Native wire value claude-fable-5-1.
             #[serde(rename = "claude-fable-5-1")]
             ClaudeFable51,
+            /// Native wire value claude-opus-5-5.
+            #[serde(rename = "claude-opus-5-5")]
+            ClaudeOpus55,
             /// Native wire value claude-opus-5.
             #[serde(rename = "claude-opus-5")]
             ClaudeOpus5,
@@ -814,6 +817,9 @@ pub mod runners {
             /// Native wire value claude-fable-5-1.
             #[serde(rename = "claude-fable-5-1")]
             ClaudeFable51,
+            /// Native wire value claude-opus-5-5.
+            #[serde(rename = "claude-opus-5-5")]
+            ClaudeOpus55,
             /// Native wire value claude-opus-5.
             #[serde(rename = "claude-opus-5")]
             ClaudeOpus5,

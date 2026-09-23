@@ -335,9 +335,26 @@ native-title handling and optional tooltip. Their typography, radius and focus
 styles also share one base definition. Dimensions, icon sizing, transitions and
 disabled appearance remain owned by each styled control. `ToggleButton` keeps
 the native button and `onClick` contract; it does not manage state or change
-group keyboard behavior. Single-value settings keep a selection when the active
-choice is activated again. Use the existing `SegmentControl` for a new radio
-group that needs group-level keyboard navigation.
+group keyboard behavior.
+
+Use `Toggle` inside `ToggleGroup` for filters and multi-select controls whose
+arrow keys move focus without selecting. These are thin Base UI wrappers:
+`ToggleGroup` retains array `value`/`onValueChange`, `multiple`, and event details;
+`Toggle` retains `pressed`/`onPressedChange` and the group composition contract.
+The group owns roving focus; Tab enters/leaves the group and Enter/Space activates
+the focused item. The `filter`, `quiet`, and `primary` variants preserve compact
+filter pills, quiet toolbar choices, and filled schedule choices respectively.
+They share button typography/focus and reuse `buttonVariants` for button-shaped
+choices. Filter rings are inset so horizontal scroll clipping cannot hide focus.
+`ToggleButton` remains the compatible standalone `selected`/`onClick` control;
+do not place it inside a `ToggleGroup` as a substitute for `Toggle`.
+
+Business callers that require one selection reject an empty array while keeping
+their controlled value, including an explicit All value. The generic group must
+still permit empty selections. Permission Allow/Deny controls are explicit
+commands and retain `Button` activation, including reapplying the current policy;
+`ask` and `mixed` do not imply Deny. Use `SegmentControl` for radio groups whose
+selection should follow arrow-key focus.
 
 Both buttons keep `showTooltip` off by default. Enabling it requires an
 `aria-label`, which also supplies the tooltip content; the native `title` is

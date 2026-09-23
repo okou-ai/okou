@@ -1,6 +1,6 @@
 {
-  "id": "60667fc4-0e51-4f20-9d03-bee7a90fb6c2",
-  "prevId": "531e0764-9d95-49a6-9b67-59e8aa301d01",
+  "id": "8ce8952f-c1e1-42da-8e49-118374e02556",
+  "prevId": "e00b016f-5603-4eb0-856d-acf099b93310",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10011,7 +10011,14 @@
           "name": "user_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'personal'"
         },
         "name": {
           "name": "name",
@@ -10106,6 +10113,14 @@
             "org_id",
             "user_id"
           ]
+        },
+        "uq_cloudflare_access_configs_org_id": {
+          "name": "uq_cloudflare_access_configs_org_id",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "org_id"
+          ]
         }
       },
       "policies": {},
@@ -10121,6 +10136,10 @@
         "chk_cloudflare_access_configs_credentials": {
           "name": "chk_cloudflare_access_configs_credentials",
           "value": "char_length(\"cloudflare_access_configs\".\"encrypted_client_id\") > 0 AND char_length(\"cloudflare_access_configs\".\"encrypted_client_secret\") > 0"
+        },
+        "chk_cloudflare_access_configs_scope_owner": {
+          "name": "chk_cloudflare_access_configs_scope_owner",
+          "value": "(\"cloudflare_access_configs\".\"scope\" = 'personal' AND \"cloudflare_access_configs\".\"user_id\" IS NOT NULL) OR (\"cloudflare_access_configs\".\"scope\" = 'organization' AND \"cloudflare_access_configs\".\"user_id\" IS NULL)"
         }
       },
       "isRLSEnabled": false
@@ -13997,22 +14016,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "feishu_chat_ingress_unattributed_idx": {
-          "name": "feishu_chat_ingress_unattributed_idx",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"feishu_chat_ingress\".\"sender_open_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -30445,6 +30448,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "needs_rebind": {
+          "name": "needs_rebind",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "learned_host_key_algorithm": {
           "name": "learned_host_key_algorithm",
           "type": "varchar(64)",
@@ -30557,19 +30567,17 @@
         }
       },
       "foreignKeys": {
-        "ssh_connections_cloudflare_access_owner_fk": {
-          "name": "ssh_connections_cloudflare_access_owner_fk",
+        "ssh_connections_cloudflare_access_org_fk": {
+          "name": "ssh_connections_cloudflare_access_org_fk",
           "tableFrom": "ssh_connections",
           "tableTo": "cloudflare_access_configs",
           "columnsFrom": [
             "cloudflare_access_id",
-            "org_id",
-            "user_id"
+            "org_id"
           ],
           "columnsTo": [
             "id",
-            "org_id",
-            "user_id"
+            "org_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -30608,7 +30616,11 @@
       "checkConstraints": {
         "chk_ssh_connections_cloudflare_access_destination": {
           "name": "chk_ssh_connections_cloudflare_access_destination",
-          "value": "\"ssh_connections\".\"cloudflare_access_id\" IS NULL OR (\"ssh_connections\".\"port\" = 443 AND \"ssh_connections\".\"host\" ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND \"ssh_connections\".\"host\" !~ '^[0-9.]+$')"
+          "value": "(\"ssh_connections\".\"cloudflare_access_id\" IS NULL AND NOT \"ssh_connections\".\"needs_rebind\") OR (\"ssh_connections\".\"port\" = 443 AND \"ssh_connections\".\"host\" ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$' AND \"ssh_connections\".\"host\" !~ '^[0-9.]+$')"
+        },
+        "chk_ssh_connections_needs_rebind_unbound": {
+          "name": "chk_ssh_connections_needs_rebind_unbound",
+          "value": "NOT \"ssh_connections\".\"needs_rebind\" OR \"ssh_connections\".\"cloudflare_access_id\" IS NULL"
         },
         "chk_ssh_connections_display_name": {
           "name": "chk_ssh_connections_display_name",

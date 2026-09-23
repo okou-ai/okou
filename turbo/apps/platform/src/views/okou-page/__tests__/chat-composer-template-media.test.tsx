@@ -216,6 +216,47 @@ test("Choose a paginated avatar and voice after clearing its style filter", asyn
   await expectInlineTemplate("Additional Ada");
 });
 
+test.each([
+  { key: "{Enter}", name: "Enter" },
+  { key: " ", name: "Space" },
+])(
+  "Preview and select an avatar voice independently with $name",
+  async ({ key }) => {
+    const { user, dialog } = await openAvatarCatalog();
+    click(within(dialog).getByLabelText("Select template Motion Maya"));
+    const preview = await waitFor(() => {
+      return buttonNamed("Preview voice Ada Voice", dialog);
+    });
+    const select = buttonNamed("Select voice Ada Voice", dialog);
+    const sample = dialog.querySelector("audio");
+    if (!(sample instanceof HTMLAudioElement)) {
+      throw new Error("Voice sample not found");
+    }
+
+    preview.focus();
+    await user.keyboard(key);
+    expect(sample.paused).toBeFalsy();
+    expect(preview).toHaveFocus();
+    expect(select).toHaveAttribute("aria-pressed", "false");
+    expect(dialog).toBeInTheDocument();
+    expect(
+      document.querySelector("[data-composer-inline-template]"),
+    ).toBeNull();
+
+    await user.click(preview);
+    expect(sample.paused).toBeTruthy();
+    expect(select).toHaveAttribute("aria-pressed", "false");
+    expect(dialog).toBeInTheDocument();
+
+    select.focus();
+    await user.keyboard(key);
+    await expectInlineTemplate("Motion Maya");
+    await waitFor(() => {
+      expect(dialog).not.toBeInTheDocument();
+    });
+  },
+);
+
 test("Preview and choose a video template", async () => {
   mockTemplateChat();
   const media = mockPlayableMedia();

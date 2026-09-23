@@ -114,7 +114,10 @@ function clearConnectorInvalidationMocks(): void {
   context.mocks.ably.publish.mockClear();
 }
 
-function expectCustomConnectorInvalidations(userIds: readonly string[]): void {
+function expectCustomConnectorInvalidations(
+  userIds: readonly string[],
+  agentChange?: { readonly userId: string; readonly agentId: string },
+): void {
   expect(
     context.mocks.ably.channelGet.mock.calls
       .map(([channelName]) => {
@@ -122,16 +125,32 @@ function expectCustomConnectorInvalidations(userIds: readonly string[]): void {
       })
       .sort(),
   ).toStrictEqual(
-    userIds
+    [...userIds, ...(agentChange ? [agentChange.userId] : [])]
       .map((userId) => {
         return `user:${userId}`;
       })
       .sort(),
   );
-  expect(context.mocks.ably.publish).toHaveBeenCalledTimes(userIds.length);
-  for (const call of context.mocks.ably.publish.mock.calls) {
-    expect(call).toStrictEqual(["customConnectorListChanged", null]);
-  }
+  expect(
+    context.mocks.ably.publish.mock.calls
+      .map((call) => {
+        return JSON.stringify(call);
+      })
+      .sort(),
+  ).toStrictEqual(
+    [
+      ...userIds.map(() => {
+        return ["customConnectorListChanged", null];
+      }),
+      ...(agentChange
+        ? [["composerAgentConnectorsChanged", { agentId: agentChange.agentId }]]
+        : []),
+    ]
+      .map((call) => {
+        return JSON.stringify(call);
+      })
+      .sort(),
+  );
 }
 
 function uniqueSlug(prefix: string): string {
@@ -2648,7 +2667,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
         code: "bdd-custom-oauth-code",
         state: oauthState,
       });
-    expectCustomConnectorInvalidations([member.userId]);
+    expectCustomConnectorInvalidations([member.userId], {
+      userId: member.userId,
+      agentId: agent.agentId,
+    });
     expect(callback.body).toStrictEqual({
       status: "success",
       username: null,
@@ -5823,11 +5845,10 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       agentId: agent.agentId,
     });
 
-    expectCustomConnectorInvalidations([
-      admin.userId,
-      member.userId,
-      admin.userId,
-    ]);
+    expectCustomConnectorInvalidations(
+      [admin.userId, member.userId, admin.userId],
+      { userId: admin.userId, agentId: agent.agentId },
+    );
     expect(saved.authorizedAgentId).toBe(agent.agentId);
     expect(saved.connector).toMatchObject({
       displayName: "BDD Proposal API",

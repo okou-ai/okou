@@ -31,6 +31,10 @@ import {
 } from "../bootstrap/source-onboarding-telemetry.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
 import { setLoop, settle } from "../utils.ts";
+import {
+  sourcesFirstDraft$,
+  type SubscriptionProvider,
+} from "./onboarding-sources-first-state.ts";
 
 /** How often the step asks what the user's agent has written so far. */
 const POLL_INTERVAL_MS = 4000;
@@ -57,6 +61,7 @@ export interface SkillImportState {
 
 interface SkillImportSession {
   readonly agentId: string;
+  readonly provider: SubscriptionProvider;
   readonly prompt: string;
   readonly expiresAt: number;
 }
@@ -70,9 +75,10 @@ const internalImported$ = state<readonly WorkflowSummary[]>([]);
 
 export const sourcesFirstSkillImport$ = computed((get): SkillImportState => {
   const session = get(internalSession$);
+  const provider = get(sourcesFirstDraft$).provider;
   const imported = get(internalImported$);
   const copied = get(internalCopied$);
-  if (session) {
+  if (session && session.provider === provider) {
     return { status: "ready", prompt: session.prompt, copied, imported };
   }
   return {
@@ -146,7 +152,12 @@ const listAgentWorkflows$ = command(
 );
 
 const openSkillImportSession$ = command(
-  async ({ get, set }, agentId: string, signal: AbortSignal): Promise<void> => {
+  async (
+    { get, set },
+    agentId: string,
+    provider: SubscriptionProvider,
+    signal: AbortSignal,
+  ): Promise<void> => {
     // A session that can no longer be handed out is dropped first, so a failed
     // replacement cannot leave the step showing a prompt it would refuse. The
     // copy belonged to that session, not to this one.
@@ -161,10 +172,12 @@ const openSkillImportSession$ = command(
     signal.throwIfAborted();
     set(internalSession$, {
       agentId,
+      provider,
       prompt: buildSkillImportPrompt({
         uploadUrl: result.body.uploadUrl,
         token: result.body.token,
         limits: result.body.limits,
+        provider,
       }),
       expiresAt: Date.parse(result.body.expiresAt),
     });
@@ -174,10 +187,12 @@ const openSkillImportSession$ = command(
 function sessionUsable(
   session: SkillImportSession | null,
   agentId: string,
+  provider: SubscriptionProvider,
 ): session is SkillImportSession {
   return (
     session !== null &&
     session.agentId === agentId &&
+    session.provider === provider &&
     session.expiresAt - now() > SESSION_MIN_REMAINING_MS
   );
 }
@@ -188,6 +203,10 @@ const prepareSkillImport$ = command(
     signal.throwIfAborted();
     if (agentId === null) {
       throw new Error("This workspace has no default agent to import into");
+    }
+    const provider = get(sourcesFirstDraft$).provider;
+    if (provider === null) {
+      throw new Error("Select Codex or Claude Code before importing skills");
     }
     if (get(internalBaseline$) === null) {
       const existing = await set(listAgentWorkflows$, agentId, signal);
@@ -201,8 +220,8 @@ const prepareSkillImport$ = command(
         ),
       );
     }
-    if (!sessionUsable(get(internalSession$), agentId)) {
-      await set(openSkillImportSession$, agentId, signal);
+    if (!sessionUsable(get(internalSession$), agentId, provider)) {
+      await set(openSkillImportSession$, agentId, provider, signal);
     }
     return agentId;
   },
@@ -257,7 +276,11 @@ function isRetryablePollError(error: unknown): boolean {
  */
 export const copySkillImportPrompt$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-    const prompt = get(internalSession$)?.prompt;
+    const session = get(internalSession$);
+    const prompt =
+      session?.provider === get(sourcesFirstDraft$).provider
+        ? session?.prompt
+        : undefined;
     if (prompt === undefined) {
       return false;
     }

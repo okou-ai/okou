@@ -35,6 +35,10 @@ export type ConnectorChangedPayload = z.infer<
   typeof connectorChangedPayloadSchema
 >;
 
+export const composerAgentConnectorsChangedPayloadSchema = z
+  .object({ agentId: z.uuid() })
+  .strict();
+
 export const browserSessionChangedPayloadSchema = z
   .object({
     threadId: z.uuid(),
@@ -70,6 +74,7 @@ export const userPreferenceKinds = [
   "defaultModel",
   "defaultVideoModel",
   "defaultImageModel",
+  "cloudBrowserEnabledByDefault",
 ] as const;
 
 export type UserPreferenceKind = (typeof userPreferenceKinds)[number];

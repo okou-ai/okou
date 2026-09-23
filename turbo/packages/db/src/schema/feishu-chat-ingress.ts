@@ -67,9 +67,6 @@ export const feishuChatIngress = pgTable(
         table.installationId,
         table.eventId,
       ),
-      index("feishu_chat_ingress_unattributed_idx")
-        .on(table.id)
-        .where(sql`${table.senderOpenId} IS NULL`),
       index("feishu_chat_ingress_owner_user_id_idx").on(table.ownerUserId),
       check(
         "chk_feishu_chat_ingress_status",

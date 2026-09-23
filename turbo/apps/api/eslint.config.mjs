@@ -604,19 +604,7 @@ export default [
       "src/test-fixtures/**/*.ts",
     ],
     rules: {
-      "ccstate/no-test-delay": [
-        "error",
-        {
-          allowed: [
-            {
-              file: "src/signals/routes/__tests__/morning-brief-composition.test.ts",
-              kinds: ["delay"],
-              reason:
-                "Issue #35737 verifies successful provider reads before a real source deadline; #35594 tracks replacing the pacing with a controlled deadline signal.",
-            },
-          ],
-        },
-      ],
+      "ccstate/no-test-delay": "error",
     },
   },
   {
@@ -784,6 +772,9 @@ export default [
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
+      // A trigger-free private schema proves Run cascade catalog removal and
+      // rollback; route tests already cover the public delete/list behavior.
+      "src/signals/services/__tests__/artifact-catalog-deletion.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.
       "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
       // D explicitly requires immutable billing/compaction snapshot infrastructure.
@@ -983,6 +974,8 @@ export default [
       "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
       // Trigger DDL, transaction snapshots and corrupt ledgers are not HTTP inputs.
       "src/signals/services/__tests__/pi-memory-candidate-accounting.service.test.ts",
+      // Trigger-free Run cascade and transaction rollback are not HTTP inputs.
+      "src/signals/services/__tests__/artifact-catalog-deletion.service.test.ts",
       // #34044 requires real transactions, UTC clock, deletion and old-writer races.
       "src/signals/services/__tests__/pi-memory-stage1-schedule.service.test.ts",
       // D explicitly requires immutable billing/compaction snapshot infrastructure.

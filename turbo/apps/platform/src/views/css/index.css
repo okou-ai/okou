@@ -153,6 +153,8 @@
      keyframes stay below in this stylesheet. */
   --animate-thinking-in: okou-thinking-in 0.3s ease-out;
   --animate-chat-skeleton-reveal: okou-chat-skeleton-reveal 0s 100ms forwards;
+  --animate-app-skeleton-bounce: okou-app-skeleton-bounce 2.85s
+    cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
 
   /* Shimmer sweep for the thinking label, on the same contract. */
   --animate-shimmer: okou-shimmer 3.5s linear infinite;
@@ -645,6 +647,24 @@ body {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes okou-app-skeleton-bounce {
+  0%,
+  8%,
+  67%,
+  100% {
+    transform: none;
+  }
+  21% {
+    transform: translateY(-15px) scale(0.92, 1.08);
+  }
+  35% {
+    transform: translateY(0) scale(1.08, 0.9);
+  }
+  48% {
+    transform: translateY(-5px) scale(0.97, 1.03);
   }
 }
 

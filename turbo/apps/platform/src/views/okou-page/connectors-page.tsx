@@ -12,7 +12,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { Search, Plus, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type {
   PublicConnectorCatalogCategoryMetadata,
@@ -93,6 +92,7 @@ import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import {
   ConnectorCard,
   connectorAccountSummaryStatus,
+  type ConnectorAccountDisplaySummary,
   type ConnectorAccountSummaryStatus,
 } from "./components/settings/connector-card.tsx";
 import {
@@ -133,7 +133,7 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import {
   connectedConnectorsBadge$,
-  connectorAccountSummaryByTarget$,
+  connectorOverviewAccountSummaryByTarget$,
 } from "../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountManagerDialog } from "./components/settings/connector-account-manager-dialog.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
@@ -1811,7 +1811,7 @@ function effectiveConnectorCatalogCount(
 
 interface SettingsConnectorCardProps {
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly accountSummary: ConnectorAccountSummary | undefined;
+  readonly accountSummary: ConnectorAccountDisplaySummary | undefined;
   readonly accountSummaryStatus: ConnectorAccountSummaryStatus;
   readonly busy: boolean;
   readonly connect: ConnectorConnectHandlers;
@@ -1883,7 +1883,7 @@ function ManagedConnectorAccessDialog() {
   const close = useSet(closeConnectorAccessManagement$);
   const catalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
   const accountSummariesLoadable = useLoadable(
-    connectorAccountSummaryByTarget$,
+    connectorOverviewAccountSummaryByTarget$,
   );
   if (!connectorSlug || catalogItemsLoadable.state !== "hasData") {
     return null;
@@ -2177,7 +2177,7 @@ export function ConnectorsPage() {
   );
   const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
   const accountSummariesLoadable = useLoadable(
-    connectorAccountSummaryByTarget$,
+    connectorOverviewAccountSummaryByTarget$,
   );
   const accountSummaryStatus = connectorAccountSummaryStatus(
     accountSummariesLoadable.state,

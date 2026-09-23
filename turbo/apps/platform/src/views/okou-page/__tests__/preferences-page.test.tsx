@@ -9,6 +9,7 @@ import {
   type UpdateUserModelPreferenceRequest,
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -115,6 +116,15 @@ function mockPreferences(
   const updates: UpdateUserPreferencesRequest[] = [];
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, preferences);
+  });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: [],
+      customConnectors: [],
+      accountSummaries: [],
+      computerUseHosts: [],
+      cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
+    });
   });
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     const update = { ...body };

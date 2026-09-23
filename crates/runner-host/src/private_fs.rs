@@ -29,6 +29,7 @@ use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::path::{Component, Path, PathBuf};
 
 use crate::error::{HostError, HostResult};
+use crate::paths::{HomePaths, RUNNER_HOME_ROOT};
 
 const PRIVATE_DIR_MODE: u32 = 0o700;
 const GROUP_OR_OTHER_WRITE_BITS: u32 = 0o022;
@@ -38,41 +39,8 @@ const PRIVATE_FILE_READ_MAX_BYTES: u64 = 64 * 1024;
 /// Maximum number of bytes accepted for a private runner status snapshot.
 pub const PRIVATE_STATUS_FILE_READ_MAX_BYTES: u64 = 1024 * 1024;
 const RESERVED_PRIVATE_DIR_PATHS: &[&str] = &[
-    "/",
-    "/bin",
-    "/boot",
-    "/dev",
-    "/etc",
-    "/home",
-    "/lib",
-    "/lib64",
-    "/opt",
-    "/proc",
-    "/root",
-    "/run",
-    "/sbin",
-    "/srv",
-    "/sys",
-    "/tmp",
-    "/usr",
-    "/var",
-    "/var/lib",
-    "/var/lib/vm0-runner",
-    "/var/lib/vm0-runner/runners",
-];
-const RESERVED_PRIVATE_DIR_SUBTREES: &[&str] = &[
-    "/var/lib/vm0-runner/bin",
-    "/var/lib/vm0-runner/ca",
-    "/var/lib/vm0-runner/debootstrap",
-    "/var/lib/vm0-runner/firecracker",
-    "/var/lib/vm0-runner/groups",
-    "/var/lib/vm0-runner/images",
-    "/var/lib/vm0-runner/locks",
-    "/var/lib/vm0-runner/live-runner-instances",
-    "/var/lib/vm0-runner/logs",
-    "/var/lib/vm0-runner/mitmproxy",
-    "/var/lib/vm0-runner/storages",
-    "/var/lib/vm0-runner/workspace-image-cache",
+    "/", "/bin", "/boot", "/dev", "/etc", "/home", "/lib", "/lib64", "/opt", "/proc", "/root",
+    "/run", "/sbin", "/srv", "/sys", "/tmp", "/usr", "/var", "/var/lib",
 ];
 
 /// Ensure `path` is private runtime state for the current runner process.
@@ -657,12 +625,23 @@ fn reject_reserved_normalized_private_dir_path(
 
 #[cfg(unix)]
 fn is_reserved_normalized_private_dir_path(normalized: &Path) -> bool {
-    RESERVED_PRIVATE_DIR_PATHS
+    if RESERVED_PRIVATE_DIR_PATHS
         .iter()
         .any(|reserved| normalized == Path::new(reserved))
-        || RESERVED_PRIVATE_DIR_SUBTREES
-            .iter()
-            .any(|reserved| normalized.starts_with(Path::new(reserved)))
+    {
+        return true;
+    }
+
+    let home = HomePaths::with_root(PathBuf::from(RUNNER_HOME_ROOT));
+    if !normalized.starts_with(home.root()) {
+        return false;
+    }
+
+    normalized == home.root()
+        || normalized == home.runners_dir()
+        || home
+            .shared_subtree_roots()
+            .any(|shared| normalized.starts_with(shared))
 }
 
 #[cfg(unix)]
@@ -1164,25 +1143,54 @@ mod tests {
 
     #[test]
     fn reserved_private_dir_path_rejects_shared_home_subtrees() {
-        for path in [
-            "/var/lib/vm0-runner/images",
-            "/var/lib/vm0-runner/images/rootfs-hash",
-            "/var/lib/vm0-runner/locks/base-dir.lock",
-            "/var/lib/vm0-runner/ca",
-            "/var/lib/vm0-runner/storages/cache-entry",
-        ] {
-            let error = reject_reserved_private_dir_path(Path::new(path))
-                .expect_err("shared home subtree should be rejected");
+        let home = HomePaths::new().unwrap();
+        let shared_roots = [
+            home.bin_dir(),
+            home.ca_dir(),
+            home.runner_control_dir(),
+            home.debootstrap_dir(),
+            home.root().join("firecracker"),
+            home.firecracker_dir("v1"),
+            home.groups_dir(),
+            home.images_dir(),
+            home.locks_dir(),
+            home.live_runner_instances_dir(),
+            home.logs_dir(),
+            home.root().join("mitmproxy"),
+            home.mitmproxy_dir("v1"),
+            home.storages_dir(),
+            home.workspace_image_cache_dir(),
+        ];
+        for root in shared_roots {
+            for path in [root.clone(), root.join("runner-state")] {
+                let error = reject_reserved_private_dir_path(&path)
+                    .expect_err("shared home subtree should be rejected");
 
-            assert!(
-                error.to_string().contains("reserved system path"),
-                "unexpected error for {path}: {error}"
-            );
+                assert!(
+                    error.to_string().contains("reserved system path"),
+                    "unexpected error for {}: {error}",
+                    path.display()
+                );
+            }
         }
     }
 
     #[test]
+    fn reserved_private_dir_path_rejects_runner_control_dir_and_child() {
+        let control = HomePaths::new().unwrap().runner_control_dir();
+        for path in [control.clone(), control.join("runner-01")] {
+            reject_reserved_private_dir_path(&path)
+                .expect_err("runner control must remain shared state");
+        }
+        reject_reserved_private_dir_path(Path::new("/var/lib/vm0-runner/control-other")).unwrap();
+    }
+
+    #[test]
     fn reserved_private_dir_path_allows_runner_child_dir() {
+        let home = HomePaths::new().unwrap();
+        reject_reserved_private_dir_path(home.root()).expect_err("home root must be reserved");
+        reject_reserved_private_dir_path(&home.runners_dir())
+            .expect_err("runners parent must be reserved");
         reject_reserved_private_dir_path(Path::new("/var/lib/vm0-runner/runners/runner-01"))
             .unwrap();
         reject_reserved_private_dir_path(Path::new("/data/runner-01")).unwrap();

@@ -1,21 +1,21 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorOverview } from "@okouai/api-contracts/contracts/connector-overview";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import {
-  agentCustomConnectorsContract,
-  type AgentCustomConnectorGrant,
-} from "@okouai/api-contracts/contracts/agent-custom-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { accept } from "../../lib/accept.ts";
-import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { apiClient$ } from "../api-client.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
 import { withCleanup } from "../utils.ts";
+import { reloadAgentConnectorAuthorizations$ } from "./agent-connector-authorizations.ts";
 import {
-  agentConnectorAuthorizations,
-  reloadAgentConnectorAuthorizations$,
-} from "./agent-connector-authorizations.ts";
+  composerAgentConnectors,
+  invalidateAgentConnectorAccess$,
+} from "./composer-agent-connectors.ts";
+import { connectorOverview$ } from "./connector-overview.ts";
 import { reloadOnboardingStatus$ } from "./onboarding.ts";
 import type {
   PlatformConnectorCatalogStatusItem,
@@ -25,7 +25,6 @@ import type {
 import { relatedConnectorCatalog } from "../external/connectors.ts";
 import {
   customConnectors$,
-  customConnectorAuthorizationReloadVersion$,
   reloadCustomConnectorAuthorizedAgents$,
 } from "./settings/custom-connectors.ts";
 import {
@@ -33,11 +32,13 @@ import {
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
+import { sshAccessForAgent } from "../ssh.ts";
+import { vncAccessForAgent } from "../vnc-access.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
   readonly enabledConnectorSlugs: readonly ConnectorSlug[];
-  readonly customConnectorGrants: readonly AgentCustomConnectorGrant[];
+  readonly customConnectorIds: readonly string[];
 }
 
 export type ComposerConnectorAuthorizationTarget =
@@ -54,9 +55,12 @@ export type ComposerConnectorAuthorizationTarget =
 export interface ComposerConnectorUiState {
   readonly showAddDialog: boolean;
   readonly selectedConnectorSlug: ConnectorSlug | null;
+  readonly selectedConnector: PlatformConnectorCatalogStatusItem | null;
   readonly selectedCustomConnectorId: string | null;
   readonly addDialogSearch: string;
   readonly popoverSearch: string;
+  readonly popoverOpen: boolean;
+  readonly popoverHasOpened: boolean;
   readonly popoverSortOrder: readonly string[] | null;
   readonly permissionConnectorSlug: ConnectorSlug | null;
   readonly directoryTab: ConnectorDirectoryTab;
@@ -72,23 +76,8 @@ export interface ComposerConnectorUiState {
 export type ConnectorDirectoryTab = "discover" | "custom";
 
 interface ComposerConnectorData {
-  readonly relatedCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
-  readonly customConnectors: readonly CustomConnectorResponse[];
+  readonly overview: ConnectorOverview;
   readonly authorization: ComposerConnectorAuthorizationState;
-  /**
-   * How many connectors each category holds in total. Discovery returns a
-   * slice per category, so the directory needs this to say what a shelf's
-   * closing cell stands for without a second request.
-   */
-  readonly categoryConnectorCounts:
-    | Readonly<Record<string, number>>
-    | undefined;
-  /**
-   * The catalog's own category names. They ride on the same discovery response
-   * as the connectors, so the directory never has to name a category before it
-   * knows what that category is called.
-   */
-  readonly categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined;
 }
 
 export interface ComposerConnectorSignals {
@@ -96,8 +85,17 @@ export interface ComposerConnectorSignals {
   readonly connectorAuthorization$: Computed<
     Promise<ComposerConnectorAuthorizationState>
   >;
+  readonly addDialogCatalog$: Computed<
+    Promise<PublicConnectorCatalogDiscoveryResponse | null>
+  >;
+  readonly addDialogBrowseCatalog$: Computed<
+    Promise<PublicConnectorCatalogDiscoveryResponse | null>
+  >;
   readonly addDialogCatalogItems$: Computed<
     Promise<readonly PlatformConnectorCatalogStatusItem[]>
+  >;
+  readonly addDialogCustomConnectors$: Computed<
+    Promise<readonly CustomConnectorResponse[]>
   >;
   readonly setConnectorAuthorization$: Command<
     Promise<void>,
@@ -116,103 +114,38 @@ export interface ComposerConnectorSignals {
     Promise<readonly PlatformUserPermissionGrant[]>
   >;
   readonly accounts: ComposerConnectorAccountSignals;
+  readonly sshAccess$: Computed<
+    Promise<{
+      readonly identity: string;
+      readonly agentId: string;
+      readonly enabled: boolean;
+    } | null>
+  >;
+  readonly vncAccess$: Computed<
+    Promise<{
+      readonly identity: string;
+      readonly agentId: string;
+      readonly enabled: boolean;
+    } | null>
+  >;
 }
 
 /** Browse reads ask for no keyword; the category, when set, scopes them. */
 const emptyCatalogKeyword$ = computed(() => {
   return "";
 });
-
-const composerRelatedCatalog$ = relatedConnectorCatalog(emptyCatalogKeyword$);
-
-const composerRelatedCatalogItems$ = computed(async (get) => {
-  return (await get(composerRelatedCatalog$)).connectors;
-});
-
-interface AgentCustomConnectorAuthorizationRequestBroker {
-  load(params: {
-    readonly createClient: ApiClientFactory;
-    readonly agentId: string;
-    readonly reloadGeneration: number;
-  }): Promise<readonly AgentCustomConnectorGrant[]>;
-}
-
-interface ResolvedAgentCustomConnectorAuthorizationRequest {
-  readonly key: string;
-  readonly value: readonly AgentCustomConnectorGrant[];
-}
-
-function agentCustomConnectorAuthorizationRequestKey(params: {
-  readonly agentId: string;
-  readonly reloadGeneration: number;
-}): string {
-  return JSON.stringify([params.reloadGeneration, params.agentId]);
-}
-
-function createAgentCustomConnectorAuthorizationRequestBroker(): AgentCustomConnectorAuthorizationRequestBroker {
-  const pendingRequestsByClient = new WeakMap<
-    ApiClientFactory,
-    Map<string, Promise<readonly AgentCustomConnectorGrant[]>>
-  >();
-  const latestRequestedKeyByClient = new WeakMap<ApiClientFactory, string>();
-  const latestResolvedByClient = new WeakMap<
-    ApiClientFactory,
-    ResolvedAgentCustomConnectorAuthorizationRequest
-  >();
-
-  return {
-    load(params) {
-      const key = agentCustomConnectorAuthorizationRequestKey(params);
-      latestRequestedKeyByClient.set(params.createClient, key);
-      const resolved = latestResolvedByClient.get(params.createClient);
-      if (resolved?.key === key) {
-        return Promise.resolve(resolved.value);
-      }
-      let pendingRequests = pendingRequestsByClient.get(params.createClient);
-      if (!pendingRequests) {
-        pendingRequests = new Map();
-        pendingRequestsByClient.set(params.createClient, pendingRequests);
-      }
-      const pendingRequest = pendingRequests.get(key);
-      if (pendingRequest) {
-        return pendingRequest;
-      }
-
-      const load = async (): Promise<readonly AgentCustomConnectorGrant[]> => {
-        const client = params.createClient(agentCustomConnectorsContract);
-        const result = await accept(
-          client.get({ params: { id: params.agentId } }),
-          [200],
-        );
-        const value = result.body.grants;
-        if (latestRequestedKeyByClient.get(params.createClient) === key) {
-          latestResolvedByClient.set(params.createClient, { key, value });
-        }
-        return value;
-      };
-      const sharedRequest = withCleanup(load(), () => {
-        pendingRequests.delete(key);
-        if (pendingRequests.size === 0) {
-          pendingRequestsByClient.delete(params.createClient);
-        }
-      });
-      pendingRequests.set(key, sharedRequest);
-      return sharedRequest;
-    },
-  };
-}
-
-const agentCustomConnectorAuthorizationRequestBroker$ = computed(() => {
-  return createAgentCustomConnectorAuthorizationRequestBroker();
-});
+const browseCatalog$ = relatedConnectorCatalog(emptyCatalogKeyword$);
 
 function initialComposerConnectorUiState(): ComposerConnectorUiState {
   return {
     showAddDialog: false,
     selectedConnectorSlug: null,
+    selectedConnector: null,
     selectedCustomConnectorId: null,
     addDialogSearch: "",
     popoverSearch: "",
+    popoverOpen: false,
+    popoverHasOpened: false,
     popoverSortOrder: null,
     permissionConnectorSlug: null,
     directoryTab: "discover",
@@ -224,25 +157,13 @@ function initialComposerConnectorUiState(): ComposerConnectorUiState {
 function createConnectorAuthorizationSignal(
   agentId: string,
 ): Computed<Promise<ComposerConnectorAuthorizationState>> {
-  const authorizations$ = agentConnectorAuthorizations({ agentId });
-  const customAuthorizations$ = computed(async (get) => {
-    const reloadGeneration = get(customConnectorAuthorizationReloadVersion$);
-    return await get(agentCustomConnectorAuthorizationRequestBroker$).load({
-      createClient: get(apiClient$),
-      agentId,
-      reloadGeneration,
-    });
-  });
-
+  const authorizations$ = composerAgentConnectors(agentId);
   return computed(async (get): Promise<ComposerConnectorAuthorizationState> => {
-    const [authorizations, customConnectorGrants] = await Promise.all([
-      get(authorizations$),
-      get(customAuthorizations$),
-    ]);
+    const authorizations = await get(authorizations$);
     return {
-      agentId: authorizations.agentId,
+      agentId,
       enabledConnectorSlugs: authorizations.enabledConnectorSlugs,
-      customConnectorGrants,
+      customConnectorIds: authorizations.customConnectorIds,
     };
   });
 }
@@ -273,6 +194,7 @@ function createBuiltinConnectorAuthorizationCommand(
         ),
         () => {
           set(reloadAgentConnectorAuthorizations$);
+          set(invalidateAgentConnectorAccess$, agentId);
         },
       );
       signal.throwIfAborted();
@@ -313,6 +235,7 @@ function createCustomConnectorAuthorizationCommand(
         ),
         () => {
           set(reloadCustomConnectorAuthorizedAgents$);
+          set(invalidateAgentConnectorAccess$, agentId);
         },
       );
     },
@@ -398,20 +321,25 @@ export function createComposerConnectorSignals(
   threadId?: string,
 ): ComposerConnectorSignals {
   const ui = createConnectorUiSignals();
+  const sshAccessForAgent$ = sshAccessForAgent(agentId);
+  const vncAccessForAgent$ = vncAccessForAgent(agentId);
+  const sshAccess$ = computed(async (get) => {
+    return get(ui.connectorUiState$).popoverHasOpened
+      ? await get(sshAccessForAgent$)
+      : null;
+  });
+  const vncAccess$ = computed(async (get) => {
+    return get(ui.connectorUiState$).popoverHasOpened
+      ? await get(vncAccessForAgent$)
+      : null;
+  });
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
-    const [catalog, customConnectors, authorization] = await Promise.all([
-      get(composerRelatedCatalog$),
-      get(customConnectors$),
+    const [overview, authorization] = await Promise.all([
+      get(connectorOverview$),
       get(authorization$),
     ]);
-    return {
-      relatedCatalogItems: catalog.connectors,
-      customConnectors,
-      authorization,
-      categoryConnectorCounts: catalog.categoryConnectorCounts,
-      categoryMetadata: catalog.categoryMetadata,
-    };
+    return { overview, authorization };
   });
   const addDialogKeyword$ = computed((get) => {
     return get(ui.connectorUiState$).addDialogSearch;
@@ -430,14 +358,32 @@ export function createComposerConnectorSignals(
     emptyCatalogKeyword$,
     addDialogCategory$,
   );
-  const addDialogCatalogItems$ = computed(async (get) => {
+  const addDialogBrowseCatalog$ = computed(async (get) => {
+    return get(ui.connectorUiState$).showAddDialog
+      ? await get(browseCatalog$)
+      : null;
+  });
+  const addDialogCatalog$ = computed(async (get) => {
+    if (!get(ui.connectorUiState$).showAddDialog) {
+      return null;
+    }
     if (get(addDialogKeyword$).trim()) {
-      return (await get(searchedCatalog$)).connectors;
+      return await get(searchedCatalog$);
     }
     if (get(addDialogCategory$)) {
-      return (await get(categoryCatalog$)).connectors;
+      return await get(categoryCatalog$);
     }
-    return await get(composerRelatedCatalogItems$);
+    return await get(addDialogBrowseCatalog$);
+  });
+  const addDialogCatalogItems$ = computed(async (get) => {
+    return (await get(addDialogCatalog$))?.connectors ?? [];
+  });
+  const addDialogCustomConnectors$ = computed(async (get) => {
+    const uiState = get(ui.connectorUiState$);
+    if (!uiState.showAddDialog && !uiState.selectedCustomConnectorId) {
+      return [];
+    }
+    return await get(customConnectors$);
   });
   const connectorPermissionMetadata$ = computed(async (get) => {
     const connectorSlug = get(ui.connectorUiState$).permissionConnectorSlug;
@@ -455,7 +401,10 @@ export function createComposerConnectorSignals(
   return {
     data$,
     connectorAuthorization$: authorization$,
+    addDialogCatalog$,
+    addDialogBrowseCatalog$,
     addDialogCatalogItems$,
+    addDialogCustomConnectors$,
     setConnectorAuthorization$: createConnectorAuthorizationCommand(
       agentId,
       data$,
@@ -464,5 +413,7 @@ export function createComposerConnectorSignals(
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
     accounts: createComposerConnectorAccountSignals(threadId),
+    sshAccess$,
+    vncAccess$,
   };
 }
