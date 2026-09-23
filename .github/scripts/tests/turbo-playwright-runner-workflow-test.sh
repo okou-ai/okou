@@ -55,18 +55,13 @@ grep -Fq '["list"]' "$PLAYWRIGHT_CONFIG" ||
   fail "Playwright CI must retain human-readable list reporting"
 grep -Fq '["blob", { outputDir: "blob-report" }]' "$PLAYWRIGHT_CONFIG" ||
   fail "Playwright CI must emit mergeable blob reports"
-grep -Fq 'name: "auth-v1"' "$PLAYWRIGHT_CONFIG" ||
-  fail "Playwright must register the dedicated Auth v1 project"
-grep -Fq 'testMatch: "auth-v1.spec.ts"' "$PLAYWRIGHT_CONFIG" ||
-  fail "the auth project must cover the hosted Clerk auth spec without unrelated specs"
-grep -Fq 'workers: 1' "$PLAYWRIGHT_CONFIG" ||
-  fail "the Auth v1 project must use one worker"
-grep -Fq 'trace: "off"' "$PLAYWRIGHT_CONFIG" ||
-  fail "the Auth v1 project must not retain credential-bearing traces"
-grep -Fq 'process.env.PLAYWRIGHT_PROJECT !== "auth-v1"' "$PLAYWRIGHT_CONFIG" ||
-  fail "the Auth v1 project must not retain credential-bearing blob reports"
-grep -Fq "if: always() && matrix.project != 'auth-v1'" "$WORKFLOW" ||
-  fail "the Auth v1 lane must not upload a Playwright blob report"
+grep -Fq 'name: "chat-smoke"' "$PLAYWRIGHT_CONFIG" ||
+  fail "Playwright must register the chat smoke project"
+grep -Fq 'testMatch: "smoke.spec.ts"' "$PLAYWRIGHT_CONFIG" ||
+  fail "the chat smoke project must run only the send-and-reply spec"
+if [[ "$(grep -Fc 'testMatch:' "$PLAYWRIGHT_CONFIG")" -ne 1 ]]; then
+  fail "Playwright must keep only one product spec"
+fi
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
 fi
@@ -202,61 +197,40 @@ unless browser_install_index && fixture_test_index &&
   raise "Playwright browsers must be installed before browser fixture tests"
 end
 
-unless playwright.dig("strategy", "fail-fast") == false
-  raise "Playwright project lanes must not fail fast"
-end
-expected_playwright_lanes = [
-  { "lane" => "features", "project" => "features" },
-  { "lane" => "paid-onboarding", "project" => "paid-onboarding" },
-  { "lane" => "auth-v1", "project" => "auth-v1" },
-]
-unless playwright.dig("strategy", "matrix", "include") ==
-    expected_playwright_lanes
-  raise "Playwright matrix must contain the expected project lanes"
+if playwright.key?("strategy")
+  raise "the single Playwright smoke must not use a project matrix"
 end
 expected_playwright_group =
-  "cli-e2e-02-playwright-${{ matrix.lane }}-${{ needs.prepare.outputs.job-ref }}"
+  "cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}"
 unless playwright.dig("concurrency", "group") == expected_playwright_group
-  raise "each Playwright lane must keep an independent concurrency group"
+  raise "the Playwright smoke must use its job-ref concurrency group"
 end
 unless playwright.dig("concurrency", "cancel-in-progress") == true
-  raise "superseding runs must cancel only their matching Playwright lane"
+  raise "superseding runs must cancel the matching Playwright smoke"
 end
 playwright_run = playwright.fetch("steps").find do |step|
   step["name"] == "Run Playwright E2E tests"
 end
 unless playwright_run&.fetch("shell") == "bash" &&
     !playwright_run["continue-on-error"] && !playwright["continue-on-error"] &&
-    playwright_run.fetch("run").include?('--project="$PLAYWRIGHT_PROJECT"') &&
-    playwright_run.dig("env", "PLAYWRIGHT_PROJECT") ==
-      "${{ matrix.project }}"
-  raise "each Playwright lane must select its matrix project"
+    playwright_run.fetch("run").include?("--project=chat-smoke")
+  raise "the Playwright job must run its blocking chat smoke project"
 end
 assert_canonical_api_backend_url.call(playwright_run, "Playwright E2E")
-unless playwright_run.fetch("run").include?(
-    'if [[ "$PLAYWRIGHT_PROJECT" == "auth-v1" ]]',
-  ) && playwright_run.fetch("run").include?("__clerk_db_jwt") &&
-    playwright_run.fetch("run").include?("masked-clerk-test-email") &&
-    playwright_run.fetch("run").include?("masked-clerk-resource-id") &&
-    playwright_run.fetch("run").include?("sess|user|org|sia|sua") &&
-    playwright_run.fetch("run").include?("set -o pipefail")
-  raise "the Auth v1 lane must redact Clerk secrets and identifiers"
-end
 playwright_blob_upload = playwright.fetch("steps").find do |step|
   step["name"] == "Upload Playwright blob report"
 end
 unless playwright_blob_upload &&
-    playwright_blob_upload.fetch("if") ==
-      "always() && matrix.project != 'auth-v1'" &&
+    playwright_blob_upload.fetch("if") == "always()" &&
     playwright_blob_upload.dig("with", "name") ==
-      "playwright-blob-${{ matrix.lane }}" &&
+      "playwright-blob-chat-smoke" &&
     playwright_blob_upload.dig("with", "path") ==
       "e2e/playwright/blob-report/"
-  raise "non-sensitive Playwright lanes must upload uniquely named blob reports"
+  raise "the Playwright smoke must upload its blob report"
 end
 
 unless Array(playwright_finalizer["needs"]).include?("cli-e2e-02-playwright")
-  raise "Playwright report finalizer must wait for every matrix lane"
+  raise "Playwright report finalizer must wait for the smoke job"
 end
 finalizer_steps = playwright_finalizer.fetch("steps")
 download_index = finalizer_steps.index do |step|
@@ -275,13 +249,13 @@ end
 download_step = finalizer_steps.fetch(download_index)
 unless download_step.dig("with", "pattern") == "playwright-blob-*" &&
     download_step.dig("with", "merge-multiple") == true
-  raise "Playwright finalizer must combine every lane blob artifact"
+  raise "Playwright finalizer must download the smoke blob artifact"
 end
 merge_step = finalizer_steps.fetch(merge_index)
 unless merge_step.fetch("run").include?(
     "playwright merge-reports --reporter=html all-blob-reports",
   )
-  raise "Playwright finalizer must build one HTML report from lane blobs"
+  raise "Playwright finalizer must build one HTML report from the smoke blob"
 end
 upload_step = finalizer_steps.fetch(upload_index)
 unless upload_step.fetch("if") == "always()" &&

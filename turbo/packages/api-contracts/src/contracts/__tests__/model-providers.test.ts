@@ -60,7 +60,10 @@ import {
   modelProviderFrameworkSchema,
   type ModelProviderWriteType,
 } from "../model-providers";
-import { findMatchingPermissions } from "@okouai/connectors/firewall-rule-matcher";
+import {
+  findMatchingPermissions,
+  matchFirewallRequestDecision,
+} from "@okouai/connectors/firewall-rule-matcher";
 import { getModelProviderTypeForSurfaceProtocol } from "../model-provider-gateways";
 import { modelProvidersByTypeContract } from "../model-provider-routes";
 
@@ -1600,19 +1603,24 @@ describe("codex-oauth-token codex provider", () => {
     expect(hasModelSelection("codex-oauth-token")).toBe(true);
   });
 
-  it("firewall entry has both ChatGPT and auth.openai.com APIs", () => {
+  it("firewall includes Codex, workspace discovery, and auth denial APIs", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-    expect(config.apis).toHaveLength(2);
+    expect(config.apis).toHaveLength(3);
     expect(config.apis[0]!.base).toBe("https://chatgpt.com/backend-api/codex");
-    expect(config.apis[1]!.base).toBe("https://auth.openai.com");
+    expect(config.apis[1]!.base).toBe(
+      "https://chatgpt.com/backend-api/wham/accounts/check",
+    );
+    expect(config.apis[2]!.base).toBe("https://auth.openai.com");
   });
 
-  it("firewall injects Authorization and ChatGPT-Account-ID headers", () => {
+  it("firewall injects Authorization and ChatGPT-Account-ID for both Codex APIs", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-    expect(config.apis[0]!.auth.headers).toEqual({
-      Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
-      "ChatGPT-Account-ID": "${{ secrets.CHATGPT_ACCOUNT_ID }}",
-    });
+    for (const api of config.apis.slice(0, 2)) {
+      expect(api.auth.headers).toEqual({
+        Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
+        "ChatGPT-Account-ID": "${{ secrets.CHATGPT_ACCOUNT_ID }}",
+      });
+    }
   });
 
   it("firewall allows the entire ChatGPT Codex backend subtree under GET/POST", () => {
@@ -1655,12 +1663,47 @@ describe("codex-oauth-token codex provider", () => {
     },
   );
 
+  it("authenticates only the workspace discovery GET", () => {
+    const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
+    const policies = {
+      [config.name]: {
+        allow: ["codex:workspace-routing"],
+        deny: [],
+        ask: [],
+        unknownPolicy: "deny",
+      },
+    };
+    const decide = (method: string, path: string) => {
+      return matchFirewallRequestDecision(
+        [config],
+        method,
+        `https://chatgpt.com/backend-api/wham/${path}`,
+        policies,
+      );
+    };
+
+    expect(decide("GET", "accounts/check")).toMatchObject({
+      kind: "allow",
+      firewallName: config.name,
+      permission: "codex:workspace-routing",
+    });
+    expect(decide("POST", "accounts/check")).toMatchObject({
+      kind: "block",
+      reason: "unknown_endpoint",
+    });
+    expect(decide("GET", "accounts/check/extra")).toMatchObject({
+      kind: "block",
+      reason: "unknown_endpoint",
+    });
+    expect(decide("GET", "settings/user")).toEqual({ kind: "no_match" });
+  });
+
   it("firewall denies auth.openai.com via unknown endpoint policy", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
     expect(config.defaultPolicies).toEqual({
       unknownPolicy: "deny",
     });
-    expect(config.apis[1]!.permissions).toEqual([]);
+    expect(config.apis[2]!.permissions).toEqual([]);
   });
 
   it.each([
@@ -1672,11 +1715,11 @@ describe("codex-oauth-token codex provider", () => {
     (method, path) => {
       // auth.openai.com intentionally exposes no grantable permissions. The
       // deny is delivered by defaultPolicies.unknownPolicy: "deny", so traffic
-      // to auth.openai.com must NOT resolve to any permission name on apis[1].
-      // This pins behavior so a future edit to `apis[1].permissions` breaks the
+      // to auth.openai.com must NOT resolve to any permission name on apis[2].
+      // This pins behavior so a future edit to `apis[2].permissions` breaks the
       // test rather than silently widening auth.openai.com.
       const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-      const fwConfig = { name: config.name, apis: [config.apis[1]!] };
+      const fwConfig = { name: config.name, apis: [config.apis[2]!] };
       expect(findMatchingPermissions(method, path, fwConfig)).toEqual([]);
     },
   );

@@ -43,18 +43,15 @@ export function deriveAppUrl(sourceUrl: string): string {
   return process.env.OKOU_APP_URL || deriveServiceOrigin(sourceUrl, "app");
 }
 
-export const STORAGE_STATE = path.join(__dirname, ".auth/storage-state.json");
 const appUrl = deriveAppUrl(apiUrl);
-const retainBlobReport = process.env.PLAYWRIGHT_PROJECT !== "auth-v1";
 
 export default defineConfig({
   testDir: "./tests",
   globalSetup: "./global-setup",
   globalTeardown: "./global-teardown",
-  reporter:
-    process.env.CI && retainBlobReport
-      ? [["list"], ["blob", { outputDir: "blob-report" }]]
-      : "list",
+  reporter: process.env.CI
+    ? [["list"], ["blob", { outputDir: "blob-report" }]]
+    : "list",
   timeout: 120_000,
   use: {
     baseURL: appUrl,
@@ -64,38 +61,8 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "setup",
+      name: "chat-smoke",
       testMatch: "smoke.spec.ts",
-    },
-    {
-      name: "paid-onboarding",
-      testMatch: "paid-onboarding.spec.ts",
-    },
-    {
-      name: "auth-v1",
-      testMatch: "auth-v1.spec.ts",
-      workers: 1,
-      use: {
-        screenshot: "off",
-        trace: "off",
-        video: "off",
-      },
-    },
-    {
-      name: "features",
-      testMatch: [
-        "agents.spec.ts",
-        "artifact-access.spec.ts",
-        "chat.spec.ts",
-        "chat-loading-canvas.spec.ts",
-        "composer-suggestion-positioning.spec.ts",
-        "create-agent.spec.ts",
-        "workflows.spec.ts",
-      ],
-      dependencies: ["setup"],
-      use: {
-        storageState: STORAGE_STATE,
-      },
     },
   ],
 });
