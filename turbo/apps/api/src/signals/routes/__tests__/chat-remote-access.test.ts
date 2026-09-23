@@ -58,8 +58,7 @@ async function ownerWithThread() {
   return { actor: actorWithOrg, agentId: agent.agentId, threadId: thread.id };
 }
 
-async function createSshHost(displayName: string) {
-  const id = randomUUID();
+async function createSshHost(displayName: string, id = randomUUID()) {
   await accept(
     sshClient().create({
       headers,
@@ -241,6 +240,21 @@ describe("chat remote access owner API", () => {
         return host.connectionId;
       }),
     ).toEqual([first]);
+    await createSshHost("Reused host ID", second);
+    const afterReuse = await accept(
+      accessClient().listThreadAccess({
+        headers,
+        params: { threadId: owner.threadId },
+      }),
+      [200],
+    );
+    expect(afterReuse.body.ssh[1]).toMatchObject({
+      connectionId: second,
+      defaultEnabled: false,
+      overrideEnabled: null,
+      enabled: false,
+      source: "default",
+    });
   });
 
   it("keeps the new API gated and gives cross-owner IDs the same not-found result", async () => {
