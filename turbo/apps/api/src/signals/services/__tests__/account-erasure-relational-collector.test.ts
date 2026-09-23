@@ -721,7 +721,7 @@ describe("dormant relational sweep", () => {
     const rollback = new Error("rollback explicit catalog assertion");
     await expect(
       db.transaction(async (tx) => {
-        expect(await deleteErasedArtifactCatalog(tx, mine)).toBe(5);
+        await expect(deleteErasedArtifactCatalog(tx, mine)).resolves.toBe(5);
         const catalogAfterCleanup = await tx.execute(sql`
           SELECT id FROM artifacts WHERE org_id = ${orgId}
         `);
