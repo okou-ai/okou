@@ -782,6 +782,7 @@ test("A blocked paid tool takes the composer tray from the temporary image model
   });
   await openTemporaryImageModelChat("menu", {
     [FeatureSwitchKey.PaidToolControls]: true,
+    [FeatureSwitchKey.SettingsToolsTab]: true,
   });
   await chooseMenuMediaModel("Image", "GPT Image 2");
 
@@ -811,6 +812,7 @@ test("Selecting an image model in the desktop picker shows the disabled tool not
   setDesktopViewport();
   await openTemporaryImageModelChat("flyout", {
     [FeatureSwitchKey.PaidToolControls]: true,
+    [FeatureSwitchKey.SettingsToolsTab]: true,
   });
 
   await chooseMediaModel("Image", "Nano Banana 2");

@@ -53,7 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
-    description: "Show personal paid-tool controls in Settings",
+    description: "Enable personal paid-tool controls",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.SettingsToolsTab]: {
+    maintainer: "ethan@okou.ai",
+    description: "Show the Tools tab in Settings",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
