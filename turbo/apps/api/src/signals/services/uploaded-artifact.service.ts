@@ -11,11 +11,7 @@ import {
 
 import { env } from "../../lib/env";
 import { userFeatureSwitchContext } from "./feature-switches.service";
-import {
-  generateArtifactPreviewUrl,
-  s3ObjectHead,
-  tryListMultipartS3Parts,
-} from "../external/s3";
+import { s3ObjectHead, tryListMultipartS3Parts } from "../external/s3";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
 import {
@@ -29,6 +25,7 @@ import {
   privateArtifactRecord,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
+import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 
 export const allocateUploadedArtifact$ = command(
   async (
@@ -173,24 +170,28 @@ export const materializeUploadedArtifact$ = command(
 );
 
 /** Provider fetch URLs expire; callers persist object.url instead. */
-export function uploadedArtifactFetchUrl(object: {
-  readonly isPrivate: boolean;
-  readonly bucket: string;
-  readonly key: string;
-  readonly url: string;
-}) {
-  return computed(async (get) => {
+export const uploadedArtifactFetchUrl$ = command(
+  async (
+    { set },
+    object: {
+      readonly isPrivate: boolean;
+      readonly bucket: string;
+      readonly key: string;
+      readonly url: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
     if (!object.isPrivate) {
       return object.url;
     }
-    const signed = await get(
-      generateArtifactPreviewUrl(object.bucket, object.key, {
-        signingDate: nowDate(),
-      }),
+    const signed = await set(
+      resolveArtifactPreviewUrl$,
+      { bucket: object.bucket, key: object.key, signingDate: nowDate() },
+      signal,
     );
     return signed.url;
-  });
-}
+  },
+);
 
 export const resolveUploadedMultipart$ = command(
   async (
