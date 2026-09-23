@@ -498,6 +498,11 @@ describe("Morning Brief native delivery", () => {
     await expect(
       chat.listThreadUnreads(actor, f.agentId),
     ).resolves.toStrictEqual([unread]);
+    await expect(chat.listIndicators(actor)).resolves.toStrictEqual({
+      agents: { [f.agentId]: "unread" },
+      threads: { [unread.threadId]: "unread" },
+      unreadAt: { [unread.threadId]: unread.unreadAt },
+    });
     await expect(
       chat.markThreadRead(actor, response.body.delivery.chatThreadId),
     ).resolves.toStrictEqual({

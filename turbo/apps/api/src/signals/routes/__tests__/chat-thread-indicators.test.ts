@@ -5,6 +5,9 @@ import {
   type ChatEvent,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentSessions } from "@okouai/db/schema/agent-session";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +17,8 @@ import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { writeDb$ } from "../../external/db";
+import { normalizeRunMetadata } from "../../services/agent-run-metadata-write.service";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -239,5 +244,56 @@ describe("GET /api/indicators", () => {
       threads: { [ownerUnread.threadId]: "unread" },
       unreadAt: { [ownerUnread.threadId]: ownerUnread.unreadAt },
     });
+  });
+
+  it("returns at most the 50 most recent active threads", async () => {
+    const actor = bdd.user();
+    const agentId = await createEntitledAgent(actor, "Bounded active agent");
+    const db = store.set(writeDb$);
+    const [session] = await db
+      .insert(agentSessions)
+      .values({ userId: actor.userId, orgId: orgIdOf(actor), agentId })
+      .returning({ id: agentSessions.id });
+    if (!session) {
+      throw new Error("Expected an Agent session");
+    }
+    const threadIds = Array.from({ length: 51 }, () => {
+      return randomUUID();
+    });
+    await db.insert(chatThreads).values(
+      threadIds.map((id) => {
+        return { id, userId: actor.userId, agentId };
+      }),
+    );
+    const startedAt = now();
+    await db.insert(agentRuns).values(
+      threadIds.map((chatThreadId, index) => {
+        return {
+          userId: actor.userId,
+          orgId: orgIdOf(actor),
+          sessionId: session.id,
+          status: "running",
+          prompt: `active indicator ${index}`,
+          createdAt: new Date(startedAt + index * 1000),
+          ...normalizeRunMetadata({ triggerSource: "test", chatThreadId }),
+        };
+      }),
+    );
+    await seedMembership(actor);
+    const headers = {
+      authorization: `Bearer ${okouToken({
+        actor,
+        capabilities: ["chat-thread:read"],
+      })}`,
+    };
+
+    const indicators = await accept(client().indicators({ headers }), [200]);
+    expect(indicators.body.agents).toStrictEqual({ [agentId]: "active" });
+    expect(Object.keys(indicators.body.threads)).toHaveLength(50);
+    expect(indicators.body.threads).not.toHaveProperty(threadIds[0]);
+    for (const threadId of threadIds.slice(1)) {
+      expect(indicators.body.threads[threadId]).toBe("active");
+    }
+    expect(indicators.body.unreadAt).toStrictEqual({});
   });
 });
