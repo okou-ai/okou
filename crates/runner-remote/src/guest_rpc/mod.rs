@@ -22,10 +22,10 @@ const RUN_REQUEST_CAPACITY: usize = 8;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Clone)]
-pub(crate) struct Runtime {
-    pub(crate) ssh: Option<Arc<ssh::SshRuntime>>,
-    pub(crate) vnc: Option<Arc<vnc::VncRuntime>>,
-    pub(crate) usage: Option<run_usage::Runtime>,
+pub struct Runtime {
+    pub ssh: Option<Arc<ssh::SshRuntime>>,
+    pub vnc: Option<Arc<vnc::VncRuntime>>,
+    pub usage: Option<run_usage::Runtime>,
 }
 
 /// The stream and permit move together into a consumer. Host work may retain
@@ -42,7 +42,7 @@ pub(crate) struct Request {
 }
 
 impl Runtime {
-    pub(crate) fn install(
+    pub fn install(
         &self,
         sandbox: &dyn Sandbox,
         context: &ExecutionContext,
@@ -303,7 +303,7 @@ async fn reject(accepted: AcceptedGuestRpc, cancel: &CancellationToken) {
     .await;
 }
 
-pub(crate) struct Run {
+pub struct Run {
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
     ssh: Option<Arc<ssh::Run>>,
@@ -326,7 +326,7 @@ impl Run {
         }
     }
 
-    pub(crate) async fn shutdown(mut self) {
+    pub async fn shutdown(mut self) {
         self.close();
         if let Some(task) = self.task.take() {
             let _ = task.await;

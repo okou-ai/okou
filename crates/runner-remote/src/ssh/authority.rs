@@ -10,13 +10,14 @@ use zeroize::Zeroizing;
 use super::{FailureReason, keys::SigningKey};
 use runner_types::ids::RunId;
 
-use crate::http::HttpClient;
+use crate::RemoteApiRequestFactory;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use std::sync::Arc;
 
 const MAX_API_BYTES: usize = 512 * 1024;
 
 pub(super) struct Authority {
-    http: HttpClient,
+    http: Arc<dyn RemoteApiRequestFactory>,
     transport: reqwest::Client,
     token: Zeroizing<String>,
     identity: RunnerProcessIdentity,
@@ -98,14 +99,13 @@ impl Authority {
         let report = async {
             let request = self
                 .http
-                .request_resolved_route(
+                .json_request(
                     routes::observations::route(routes::observations::Params {
                         run_id: &run.to_string(),
                     }),
                     &self.token,
+                    &serde_json::to_value(&body).ok()?,
                 )
-                .json(&body)
-                .build()
                 .ok()?;
             let response = self.transport.execute(request).await.ok()?;
             response.status().is_success().then_some(())
@@ -120,7 +120,7 @@ impl Authority {
     }
 
     pub(super) fn new(
-        http: HttpClient,
+        http: Arc<dyn RemoteApiRequestFactory>,
         token: String,
         identity: RunnerProcessIdentity,
     ) -> Result<Self, FailureReason> {
@@ -142,11 +142,10 @@ impl Authority {
         route: api_contracts::ResolvedRoute,
         body: &impl Serialize,
     ) -> Result<T, FailureReason> {
+        let body = serde_json::to_value(body).map_err(|_| FailureReason::AuthorityFailure)?;
         let request = self
             .http
-            .request_resolved_route(route, &self.token)
-            .json(body)
-            .build()
+            .json_request(route, &self.token, &body)
             .map_err(|_| FailureReason::AuthorityFailure)?;
         let mut response = self
             .transport
