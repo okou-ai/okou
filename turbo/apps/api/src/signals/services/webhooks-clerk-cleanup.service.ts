@@ -43,7 +43,17 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { command, computed, type Computed } from "ccstate";
-import { and, count, eq, inArray, isNotNull, like, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  inArray,
+  isNotNull,
+  like,
+  or,
+  sql,
+} from "drizzle-orm";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -811,9 +821,15 @@ async function deleteOrgData(
     .where(eq(browserUserActionRequests.orgId, orgId));
   await deleteClerkAgentLifecycleData(db, { kind: "organization", orgId });
   // VNC references were removed at the start of organization cleanup. Remove
-  // SSH hosts before their credentials and Access configurations so shared
-  // tokens cannot outlive the organization or violate the restrictive FK.
+  // Access rows before SSH hosts: rotation takes config then host locks.
+  // Delete hosts before credentials and configs for the restrictive FK.
   await db.transaction(async (tx) => {
+    await tx
+      .select({ id: cloudflareAccessConfigs.id })
+      .from(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.orgId, orgId))
+      .orderBy(asc(cloudflareAccessConfigs.id))
+      .for("update");
     await tx.delete(sshConnections).where(eq(sshConnections.orgId, orgId));
     await tx.delete(sshCredentials).where(eq(sshCredentials.orgId, orgId));
     await tx
@@ -903,7 +919,14 @@ async function deleteUserData(
   // VNC references were removed before user cleanup. Delete only this user's
   // SSH resources and personal Access configurations; organization Access
   // configurations have no user owner and must survive creator deletion.
+  // Take config locks first to match token rotation's config-then-host order.
   await db.transaction(async (tx) => {
+    await tx
+      .select({ id: cloudflareAccessConfigs.id })
+      .from(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.userId, userId))
+      .orderBy(asc(cloudflareAccessConfigs.id))
+      .for("update");
     await tx.delete(sshConnections).where(eq(sshConnections.userId, userId));
     await tx.delete(sshCredentials).where(eq(sshCredentials.userId, userId));
     await tx
