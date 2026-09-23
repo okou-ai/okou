@@ -21,7 +21,7 @@ use super::{
     terminal,
 };
 use crate::{
-    http::{HttpClient, HttpClientConfig},
+    test_fixtures::http::{HttpClient, HttpClientConfig},
     vnc::VncRuntime,
 };
 

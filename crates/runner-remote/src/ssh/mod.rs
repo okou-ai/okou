@@ -30,7 +30,7 @@ use tokio_util::sync::CancellationToken;
 
 use runner_types::ids::RunId;
 
-use crate::http::HttpClient;
+use crate::{RemoteApiRequestFactory, RemoteInitError};
 use authority::{Authority, CredentialAuth, PreparedAuth, PreparedCredential, Trust};
 pub(crate) use forwarding::DirectTcpIpStream;
 use io::GuestIo;
@@ -76,7 +76,7 @@ struct ExecRequest {
     command: String,
 }
 
-pub(crate) struct SshRuntime {
+pub struct SshRuntime {
     authority: Arc<Authority>,
     network: Arc<dyn Network>,
     cpu: Arc<Semaphore>,
@@ -114,29 +114,26 @@ impl SshRuntime {
         true
     }
 
-    pub(crate) fn official(
-        http: HttpClient,
+    pub fn official(
+        http: impl RemoteApiRequestFactory + 'static,
         token: &str,
         identity: RunnerProcessIdentity,
-    ) -> Result<Option<Arc<Self>>, crate::error::RunnerError> {
+    ) -> Result<Option<Arc<Self>>, RemoteInitError> {
         use api_contracts::generated::constants::runners::OFFICIAL_RUNNER_TOKEN_PREFIX;
         if !token.starts_with(OFFICIAL_RUNNER_TOKEN_PREFIX) {
             return Ok(None);
         }
         // The prefix only selects transport. Every API call authenticates the
         // actual fleet secret and exact current winning claim independently.
-        let authority = Authority::new(http, token.to_owned(), identity).map_err(|_| {
-            crate::error::RunnerError::Internal("SSH authority client initialization failed".into())
-        })?;
+        let authority = Authority::new(Arc::new(http), token.to_owned(), identity)
+            .map_err(|_| RemoteInitError::SshAuthority)?;
         Ok(Some(Arc::new(Self {
             authority: Arc::new(authority),
             network: Arc::new(PublicNetwork),
             cpu: Arc::new(Semaphore::new(2)),
             reports: Arc::new(Semaphore::new(4)),
             cache: cache::Cache::new(),
-            access_tls: access::tls_config().map_err(|_| {
-                crate::error::RunnerError::Internal("SSH Access TLS initialization failed".into())
-            })?,
+            access_tls: access::tls_config().map_err(|_| RemoteInitError::SshAccessTls)?,
         })))
     }
 
@@ -527,7 +524,7 @@ async fn send_generic(scope: &Scope, writer: &mut ResponseWriter<GuestIo>, code:
         .await;
 }
 
-pub(crate) fn safe_log_metadata(metadata: &tracing::Metadata<'_>) -> bool {
+pub fn safe_log_metadata(metadata: &tracing::Metadata<'_>) -> bool {
     ![
         "russh",
         "ssh_key",
