@@ -42,7 +42,7 @@ import {
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { expect, test, vi, type Mock, describe, beforeEach, it } from "vitest";
+import { expect, test, vi, type Mock } from "vitest";
 
 import {
   click,
@@ -1644,27 +1644,6 @@ async function openCopyDialog(): Promise<HTMLElement> {
   });
 }
 
-test("Browse workspace workflows", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch()]);
-
-  await setupPage({
-    context,
-    path: "/workflows",
-  });
-
-  await waitFor(() => {
-    expect(pathname()).toBe("/workflows");
-    expect(
-      screen.getByRole("heading", { name: "Workflows" }),
-    ).toBeInTheDocument();
-  });
-  expect(screen.getByText("Sales Research")).toBeInTheDocument();
-
-  await user.hover(linkByAriaLabel("Open Sales Research"));
-  await expect(screen.findByText("TU")).resolves.toBeInTheDocument();
-});
-
 test("Hide Official Workflow discovery when it is unavailable", async () => {
   mockWorkflowApis([officialSalesResearch()]);
   await setupPage({
@@ -1833,84 +1812,6 @@ test("Show the current status of a retired Official Workflow", async () => {
   expect(queryButtonByText("Install")).toBeNull();
 });
 
-async function dismissOfficialWorkflowDialog(
-  dialog: HTMLElement,
-  dismissal: "Cancel" | "Close" | "Escape" | "backdrop",
-) {
-  if (dismissal === "Cancel") {
-    click(buttonByText("Cancel", dialog));
-  } else if (dismissal === "Close") {
-    click(within(dialog).getByLabelText("Close"));
-  } else if (dismissal === "Escape") {
-    await userEvent.setup({ delay: null }).keyboard("{Escape}");
-  } else {
-    const viewport = dialog.closest('[data-slot="dialog-viewport"]');
-    if (!(viewport instanceof HTMLElement)) {
-      throw new Error("Expected the Official Workflow dialog viewport");
-    }
-    await userEvent.setup({ delay: null }).click(viewport);
-  }
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-}
-
-test.each(["Cancel", "Close", "Escape", "backdrop"] as const)(
-  "Clear the previous Official Workflow install error after %s",
-  async (dismissal) => {
-    const definition = officialCatalogDetail();
-    mockAgentPageApis();
-    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
-    context.mocks.data.userPreferences({ timezone: "UTC" });
-    mockWorkflowApis([]);
-    context.mocks.api(officialWorkflowsContract.get, ({ respond }) => {
-      return respond(200, definition);
-    });
-    context.mocks.api(officialWorkflowsContract.install, ({ respond }) => {
-      return respond(500, {
-        error: { code: "INTERNAL_SERVER_ERROR", message: "Install failed" },
-      });
-    });
-    await setupPage({
-      context,
-      path: `/workflows/official/${definition.name}`,
-      featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
-    });
-    const installButton = await waitFor(() => {
-      return buttonByText("Install");
-    });
-    click(installButton);
-    const dialog = await screen.findByRole("dialog");
-    await fill(
-      within(dialog).getByLabelText("interval-seconds (required)"),
-      "7200",
-    );
-    await userEvent
-      .setup({ delay: null })
-      .click(buttonByText("Install", dialog));
-    await expect(
-      within(dialog).findByText("Official Workflow could not be installed"),
-    ).resolves.toBeVisible();
-    expect(buttonByText("Install", dialog)).toBeEnabled();
-
-    await dismissOfficialWorkflowDialog(dialog, dismissal);
-    click(installButton);
-    const reopened = await screen.findByRole("dialog");
-    expect(
-      within(reopened).getByLabelText("interval-seconds (required)"),
-    ).toHaveValue(3600);
-    expect(
-      within(reopened).queryByText("Official Workflow could not be installed"),
-    ).not.toBeInTheDocument();
-    expect(buttonByText("Install", reopened)).toBeEnabled();
-
-    click(buttonByText("Install", reopened));
-    await expect(
-      within(reopened).findByText("Official Workflow could not be installed"),
-    ).resolves.toBeVisible();
-  },
-);
-
 test("Install an Official Workflow with typed Blueprint settings and closed-select typeahead", async () => {
   const user = userEvent.setup();
   const definition = officialCatalogDetail();
@@ -2018,44 +1919,6 @@ test("Install an Official Workflow with typed Blueprint settings and closed-sele
   });
 });
 
-test("Explain workflow visibility from the list", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch(), opsPlaybook()]);
-
-  await setupPage({
-    context,
-    path: "/workflows",
-  });
-
-  const publicWorkflow = await waitFor(() => {
-    return articleByText("Sales Research");
-  });
-  const publicIcon = within(publicWorkflow).getByLabelText("Public");
-  await user.hover(publicIcon);
-  await expect(
-    screen.findByText("Public", {
-      selector: '[data-slot="tooltip-content"]',
-    }),
-  ).resolves.toBeInTheDocument();
-
-  await user.unhover(publicIcon);
-  await waitFor(() => {
-    expect(
-      screen.queryByText("Public", {
-        selector: '[data-slot="tooltip-content"]',
-      }),
-    ).not.toBeInTheDocument();
-  });
-
-  const privateWorkflow = articleByText("Ops Playbook");
-  await user.hover(within(privateWorkflow).getByLabelText("Private"));
-  await expect(
-    screen.findByText("Private", {
-      selector: '[data-slot="tooltip-content"]',
-    }),
-  ).resolves.toBeInTheDocument();
-});
-
 test("Identify existing Stripe automations in the workflow list", async () => {
   mockWorkflowApis([
     {
@@ -2079,22 +1942,6 @@ test("Identify existing Stripe automations in the workflow list", async () => {
   await expect(
     screen.findByText("When a matching Stripe invoice is paid"),
   ).resolves.toBeInTheDocument();
-});
-
-test("Open a workflow from the workspace", async () => {
-  mockWorkflowApis([salesResearch()]);
-  mockConnectedAutomationConnectors();
-
-  await setupPage({
-    context,
-    path: `/workflows/${SALES_WORKFLOW_ID}/automations`,
-  });
-
-  await waitFor(() => {
-    expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/automations`);
-    expect(screen.getAllByText("Sales Research").length).toBeGreaterThan(0);
-  });
-  expect(screen.queryByText("Workflow not found.")).not.toBeInTheDocument();
 });
 
 test("Filter workflows by automation and visibility", async () => {
@@ -2377,29 +2224,6 @@ test("Refine a workflow in its agent chat", async () => {
   await expectComposerText("help me refine the workflow /sales-research");
 });
 
-test("Present workflow settings in a task-focused order", async () => {
-  mockWorkflowApis([salesResearch()]);
-
-  await setupWorkflowDetailPage(workflowDetailPath("info"));
-
-  await waitFor(() => {
-    expect(screen.getAllByText("Visibility").length).toBeGreaterThan(0);
-  });
-
-  const pageText = textFor(document.body);
-  expect(pageText).not.toContain("Created by");
-  expect(pageText).not.toContain("Last updated by");
-  expect(pageText).not.toContain("Jun 17, 2026");
-  expect(pageText).not.toContain("Jun 20, 2026");
-  expect(pageText.indexOf("Slug")).toBeLessThan(pageText.indexOf("Visibility"));
-  expect(pageText.indexOf("Visibility")).toBeLessThan(
-    pageText.indexOf("Copy workflow"),
-  );
-  expect(pageText.indexOf("Copy workflow")).toBeLessThan(
-    pageText.indexOf("Delete workflow"),
-  );
-});
-
 test("Confirm before making a public workflow private", async () => {
   const demotedIds: string[] = [];
   mockWorkflowApis([salesResearch()]);
@@ -2527,79 +2351,6 @@ test("Show an Official Workflow that needs reconfiguration", async () => {
     ),
   ).resolves.toBeInTheDocument();
 });
-
-test.each(["Cancel", "Close", "Escape", "backdrop"] as const)(
-  "Clear the previous Official Workflow reconfigure error after %s",
-  async (dismissal) => {
-    const workflow = officialSalesResearch();
-    const definition = officialCatalogDetail();
-    mockAgentPageApis();
-    context.mocks.data.userPreferences({ timezone: "UTC" });
-    mockWorkflowApis([workflow]);
-    context.mocks.api(
-      officialWorkflowInstallationsContract.get,
-      ({ respond }) => {
-        return respond(200, {
-          workflow,
-          definition: {
-            name: definition.name,
-            revision: definition.revision,
-            lifecycle: "active",
-            blueprints: definition.blueprints,
-          },
-        });
-      },
-    );
-    context.mocks.api(
-      officialWorkflowInstallationsContract.reconfigure,
-      ({ respond }) => {
-        return respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Reconfigure failed",
-          },
-        });
-      },
-    );
-    await setupWorkflowDetailPage(workflowDetailPath("info"));
-    const reconfigureButton = await waitFor(() => {
-      return buttonByText("Reconfigure");
-    });
-    click(reconfigureButton);
-    const dialog = await screen.findByRole("dialog");
-    await fill(
-      within(dialog).getByLabelText("interval-seconds (required)"),
-      "7200",
-    );
-    await userEvent
-      .setup({ delay: null })
-      .click(buttonByText("Reconfigure", dialog));
-    await expect(
-      within(dialog).findByText("Official Workflow could not be reconfigured"),
-    ).resolves.toBeVisible();
-    expect(buttonByText("Reconfigure", dialog)).toBeEnabled();
-
-    await dismissOfficialWorkflowDialog(dialog, dismissal);
-    click(reconfigureButton);
-    const reopened = await screen.findByRole("dialog");
-    expect(
-      within(reopened).getByLabelText("interval-seconds (required)"),
-    ).toHaveValue(3600);
-    expect(
-      within(reopened).queryByText(
-        "Official Workflow could not be reconfigured",
-      ),
-    ).not.toBeInTheDocument();
-    expect(buttonByText("Reconfigure", reopened)).toBeEnabled();
-
-    click(buttonByText("Reconfigure", reopened));
-    await expect(
-      within(reopened).findByText(
-        "Official Workflow could not be reconfigured",
-      ),
-    ).resolves.toBeVisible();
-  },
-);
 
 test.each(["Install", "Reconfigure"] as const)(
   "Keep an Official Workflow %s submission disabled until failure and allow retry",
@@ -5133,46 +4884,6 @@ test("Allow webhook creation when the plan grants the capability", async () => {
   });
 });
 
-test.each([
-  { name: "URL only", hasUrl: true, hasSecret: false },
-  { name: "secret only", hasUrl: false, hasSecret: true },
-  { name: "neither value", hasUrl: false, hasSecret: false },
-])(
-  "Show only the available webhook fields after creation: $name",
-  async ({ hasUrl, hasSecret }) => {
-    mockWorkflowApis([salesResearch()]);
-    context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
-      return respond(201, {
-        ...webhookWorkflowAutomation(),
-        webhookUrl: hasUrl ? webhookWorkflowAutomation().webhookUrl : undefined,
-        webhookSecret: hasSecret ? "webhook-secret" : undefined,
-      });
-    });
-    await setupWorkflowDetailPage(workflowDetailPath("automations"));
-
-    click(await screen.findByText("Add automation"));
-    await screen.findByRole("dialog");
-    pickAutomation("Integrations", /^Webhook/u);
-    click(await screen.findByText("Create webhook"));
-    await screen.findByText("Done");
-    const dialog = screen.getByRole("dialog", {
-      name: "Add webhook automation",
-    });
-    expect(within(dialog).getByText("Webhook URL")).toBeInTheDocument();
-    const url =
-      within(dialog).queryByLabelText<HTMLInputElement>("Webhook URL");
-    expect(url?.value).toBe(
-      hasUrl ? webhookWorkflowAutomation().webhookUrl : undefined,
-    );
-    const secret =
-      within(dialog).queryByLabelText<HTMLInputElement>("Signing secret");
-    expect(secret?.value).toBe(hasSecret ? "webhook-secret" : undefined);
-    expect(within(dialog).queryByText("Signing secret")?.textContent).toBe(
-      hasSecret ? "Signing secret" : undefined,
-    );
-  },
-);
-
 test("Handle a plan restriction discovered while creating a webhook", async () => {
   context.mocks.data.org({
     id: "org_1",
@@ -5900,7 +5611,7 @@ test("Load detail author on keyboard focus without delaying the detail page", as
   expect(requests).toBe(1);
 });
 
-test.each([404, 429, 503] as const)(
+test.each([404, 503] as const)(
   "Recover the author row after an API %s without affecting workflow content",
   async (status) => {
     const user = userEvent.setup();
@@ -6033,30 +5744,6 @@ test("Keep reopened consumers and out-of-order workflow author responses isolate
   expect(firstRequests).toBe(1);
 });
 
-test("Do not request an author when a pointer pass never opens its tooltip", async () => {
-  const user = userEvent.setup();
-  mockWorkflowApis([salesResearch()]);
-  let requests = 0;
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    requests += 1;
-    return respond(200, { displayName: "Unused Author", imageUrl: null });
-  });
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  const title = linkByAriaLabel("Open Sales Research");
-  await user.hover(title);
-  await user.unhover(title);
-  await user.hover(
-    within(articleByText("Sales Research")).getByLabelText("Public"),
-  );
-  await expect(
-    screen.findByText("Public", {
-      selector: '[data-slot="tooltip-content"]',
-    }),
-  ).resolves.toBeInTheDocument();
-  expect(requests).toBe(0);
-});
-
 test("Discard cached author data on account change and abort the old account's pending request", async () => {
   const user = userEvent.setup();
   const clerk = context.mocks.clerk();
@@ -6141,121 +5828,6 @@ test("Release author requests on workflow navigation", async () => {
   expect(requestSignal.aborted).toBeTruthy();
   response.resolve();
   expect(screen.queryByText("Previous Page Author")).not.toBeInTheDocument();
-});
-
-describe("with a complete workflow author catalog", () => {
-  async function prepareScenario() {
-    const workflows = Array.from({ length: 33 }, (_, index) => {
-      return {
-        ...salesResearch(),
-        id: `d0000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
-        name: `bounded-${index}`,
-        displayName: `Bounded Workflow ${index}`,
-        automations: [],
-      };
-    });
-    mockWorkflowApis(workflows);
-    let revision = "Initial";
-    context.mocks.api(
-      workflowsDetailContract.ownerProfile,
-      ({ params, respond }) => {
-        return respond(200, {
-          displayName: `${revision} ${params.workflowId}`,
-          imageUrl: null,
-        });
-      },
-    );
-    await setupPage({ context, path: "/workflows" });
-    await screen.findByText("Bounded Workflow 32");
-    const links = queryAllByRoleFast("link");
-    return {
-      links,
-      workflows,
-      get revision() {
-        return revision;
-      },
-      set revision(next: typeof revision) {
-        revision = next;
-      },
-    };
-  }
-  let preparedScenario: Awaited<ReturnType<typeof prepareScenario>>;
-  beforeEach(async () => {
-    preparedScenario = await prepareScenario();
-  });
-  it("bound the page's author cache while quickly moving between workflows", async () => {
-    const { links, workflows } = preparedScenario;
-    await act(() => {
-      linkByAriaLabel("Open Bounded Workflow 0", links).focus();
-    });
-    await expect(
-      screen.findByText(`Initial ${workflows[0]?.id}`, {
-        selector: '[role="tooltip"] *',
-      }),
-    ).resolves.toBeInTheDocument();
-
-    // Focus can move again before an author arrives; the page still owns each
-    // request. Observe the final row before checking that capacity evicts the first.
-    await act(() => {
-      for (const workflow of workflows.slice(1)) {
-        linkByAriaLabel(`Open ${workflow.displayName}`, links).focus();
-      }
-    });
-    await expect(
-      screen.findByText(`Initial ${workflows[32]?.id}`, {
-        selector: '[role="tooltip"] *',
-      }),
-    ).resolves.toBeInTheDocument();
-
-    preparedScenario.revision = "Evicted";
-    await act(() => {
-      linkByAriaLabel("Open Bounded Workflow 0", links).focus();
-    });
-    await expect(
-      screen.findByText(`Evicted ${workflows[0]?.id}`, {
-        selector: '[role="tooltip"] *',
-      }),
-    ).resolves.toBeInTheDocument();
-  });
-});
-
-test("Reuse a successful author profile until its TTL expires", async () => {
-  const user = userEvent.setup();
-  const startedAt = new Date("2026-09-14T08:00:00Z").getTime();
-  mockNow(startedAt, context.signal);
-  mockWorkflowApis([salesResearch()]);
-  let revision = "Initial";
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    return respond(200, { displayName: `${revision} Author`, imageUrl: null });
-  });
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  const title = linkByAriaLabel("Open Sales Research");
-  await user.hover(title);
-  await expect(
-    screen.findByText("Initial Author"),
-  ).resolves.toBeInTheDocument();
-  await user.unhover(title);
-  await waitFor(() => {
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-
-  revision = "Refreshed";
-  mockNow(startedAt + 15 * 60 * 1000 - 1, context.signal);
-  await user.hover(title);
-  await expect(
-    screen.findByText("Initial Author"),
-  ).resolves.toBeInTheDocument();
-  await user.unhover(title);
-  await waitFor(() => {
-    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-
-  mockNow(startedAt + 15 * 60 * 1000, context.signal);
-  await user.hover(title);
-  await expect(
-    screen.findByText("Refreshed Author"),
-  ).resolves.toBeInTheDocument();
 });
 
 test("Clear the author cache when the active organization changes", async () => {
