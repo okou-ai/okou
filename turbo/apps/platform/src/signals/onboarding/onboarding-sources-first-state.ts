@@ -146,12 +146,13 @@ function restoredDraft(
   if (saved === null) {
     return emptyDraft();
   }
+  // A page reload cannot resume a POST that never returned a job ID.
   const recommendationStatus: SourcesFirstRecommendationStatus =
     saved.recommendationJobId !== null
       ? "pending"
       : saved.recommendationStartedAt === null
         ? "idle"
-        : "starting";
+        : "failed";
   return {
     ...emptyDraft(),
     industry: saved.industry,

@@ -107,6 +107,10 @@ export function OnboardingProfilePage() {
   const startRecommendation = useSet(startOnboardingRecommendation$);
   const rootSignal = useGet(rootSignal$);
   const { recommendationStatus: status, recommendation } = flow.draft;
+  const industry = flow.draft.industry;
+  if (industry === null) {
+    throw new Error("Onboarding profile requires a selected positioning");
+  }
   const profile = status === "completed" ? recommendation?.profile : null;
   const isGenerating =
     status === "starting" ||
@@ -160,7 +164,7 @@ export function OnboardingProfilePage() {
               detach(
                 startRecommendation(
                   {
-                    industry: flow.draft.industry ?? "other",
+                    industry,
                     locale: onboardingRecommendationLocaleSchema.parse(
                       i18n.resolvedLanguage || i18n.language || "en-US",
                     ),

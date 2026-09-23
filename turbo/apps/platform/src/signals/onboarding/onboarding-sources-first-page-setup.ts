@@ -145,6 +145,10 @@ function createSourcesFirstPageSetup(
     set(setSourcesFirstFlow$, flow);
 
     const draft = get(sourcesFirstDraft$);
+    if (config.step === "profile" && draft.industry === null) {
+      set(redirectTo$, ROUTES.onboarding);
+      return;
+    }
     if (config.step !== "industry" && config.step !== "sources") {
       const { connectors } = await get(connectorCatalogStatus$);
       signal.throwIfAborted();

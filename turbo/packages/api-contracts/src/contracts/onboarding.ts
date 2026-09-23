@@ -115,8 +115,7 @@ export const onboardingRecommendationSchema = z
     title: z.string().trim().min(1).max(120),
     outcome: z.string().trim().min(1).max(240),
     prompt: z.string().trim().min(1).max(1000),
-    // Jobs created before the profile step was deployed have no profile.
-    profile: onboardingUserProfileSchema.optional(),
+    profile: onboardingUserProfileSchema,
   })
   .strict();
 
