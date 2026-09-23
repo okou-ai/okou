@@ -20,6 +20,7 @@ import {
 import { testChatThreadSnapshotCompactionRoutes } from "../test-chat-thread-snapshot-compaction";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { mockChatThreadSnapshotStorage } from "./helpers/chat-thread-snapshot-storage";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -140,6 +141,7 @@ async function compactedPinState(fixture: PinFixture): Promise<{
   readonly pinnedAtMs: number | null;
   readonly pinOrder: string | null;
 }> {
+  mockChatThreadSnapshotStorage(context);
   const compaction = setupApp({
     context,
     routes: testChatThreadSnapshotCompactionRoutes,
