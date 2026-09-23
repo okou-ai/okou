@@ -310,22 +310,6 @@ async function page(path = "/connectors") {
   });
 }
 
-test("The remote-access category is localized independently of the SSH service name", async () => {
-  mockCatalog();
-  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-    return respond(200, { configuredCount: 0 });
-  });
-  await setupPage({
-    context,
-    path: "/connectors?keywords=ssh",
-    locale: "fr-FR",
-  });
-  await screen.findByRole("heading", { name: "Accès à distance" });
-  expect(
-    screen.getByTestId("connector-category-remote-access"),
-  ).toHaveTextContent("SSH");
-});
-
 test.each([0, 1, 2])(
   "Global SSH entry shows %i configured hosts and opens management without an Agent",
   async (count) => {

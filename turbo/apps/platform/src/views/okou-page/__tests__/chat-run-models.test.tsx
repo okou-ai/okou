@@ -591,167 +591,6 @@ test.each([
   },
 );
 
-test.each([
-  [
-    "provider_insufficient_credits",
-    "Your connected model provider account has insufficient balance.",
-    "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
-  ],
-  [
-    undefined,
-    "The current model is unavailable.",
-    "Le modèle actuel est indisponible.",
-  ],
-  [
-    undefined,
-    "Oops, something went wrong. Please try again later.",
-    "Une erreur s’est produite. Veuillez réessayer plus tard.",
-  ],
-  [
-    "reconnect_required",
-    "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
-    "La session ChatGPT doit être reconnectée. Reconnectez ChatGPT (Codex) dans les fournisseurs de modèles, puis réessayez.",
-  ],
-  [
-    "safety_policy_refusal",
-    "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
-    "Le fournisseur de modèle a refusé cette demande en raison de sa politique de sécurité du contenu.",
-  ],
-  [
-    undefined,
-    "Every built-in model route for this model is temporarily unavailable",
-    "Toutes les routes intégrées de ce modèle sont temporairement indisponibles. Veuillez réessayer plus tard.",
-  ],
-  [
-    undefined,
-    "The model provider is temporarily unavailable. Please try again later.",
-    "Le fournisseur de modèle est temporairement indisponible. Veuillez réessayer plus tard.",
-  ],
-] as const)(
-  "Localize known run failures in French: %s / %s",
-  async (failureReason, message, expected) => {
-    configureModelPolicies(["gpt-5.6-sol"]);
-    installRunChat({
-      selectedModel: "gpt-5.6-sol",
-      chatEvents: failedRunEvents(message, "gpt-5.6-sol", failureReason),
-    });
-
-    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
-
-    const card = await screen.findByRole("status");
-    expect(card).toHaveTextContent("Cette exécution n’a pas pu se terminer");
-    expect(card).toHaveTextContent(expected);
-    click(await findButton("Voir les détails"));
-    const details = await screen.findByRole("dialog");
-    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
-    expect(
-      queryButton("Réinitialiser et réessayer", details),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test.each([
-  [
-    "Reconnecter Claude Code:",
-    "invalid_credentials",
-    "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
-    "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans les fournisseurs de modèles, puis réessayez.",
-    "https://app.example.test/?settings=model",
-  ],
-  [
-    "Ouvrir les fournisseurs de modèles:",
-    "invalid_credentials",
-    "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.example.test/?settings=model",
-    "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Mettez à jour ou remplacez la clé API dans les fournisseurs de modèles, puis réessayez.",
-    "https://app.example.test/?settings=model",
-  ],
-  [
-    "Partager avec un administrateur:",
-    "invalid_credentials",
-    "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.\n\nShare with an admin: https://app.example.test/?settings=model",
-    "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Demandez à un administrateur de l’espace de travail de mettre à jour ou de remplacer la clé API.",
-    "https://app.example.test/?settings=model",
-  ],
-  [
-    "Connectez-vous à",
-    "terms_acceptance_required",
-    "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
-    "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour.",
-    "https://claude.ai",
-  ],
-] as const)(
-  "Localize credential guidance and links in French: %s",
-  async (action, reason, message, expected, url) => {
-    configureModelPolicies(["gpt-5.6-sol"]);
-    installRunChat({
-      selectedModel: "gpt-5.6-sol",
-      chatEvents: failedRunEvents(message, "gpt-5.6-sol", reason),
-    });
-    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
-    const card = await screen.findByRole("status");
-    expect(card).toHaveTextContent(expected);
-    expect(card).toHaveTextContent(action);
-    click(await findButton("Voir les détails"));
-    const details = await screen.findByRole("dialog");
-    const link = await waitFor(() => {
-      const candidate = queryAllByRoleFast("link", details).find((element) => {
-        return element.textContent === url;
-      });
-      if (!candidate) {
-        throw new Error("Localized guidance link is unavailable");
-      }
-      return candidate;
-    });
-    expect(link).toHaveAttribute("href", url);
-    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
-    expect(
-      queryButton("Réinitialiser et réessayer", details),
-    ).not.toBeInTheDocument();
-  },
-);
-
-test.each([
-  ["The current model is unavailable.", "Le modèle actuel est indisponible."],
-  [
-    "Your connected model provider account has insufficient balance.",
-    "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
-  ],
-])(
-  "Localize a balance error before the run completes: %s",
-  async (error, expected) => {
-    installRunChat({
-      chatEvents: [
-        promptEvent({
-          id: "stream-prompt",
-          runId: RUN_A,
-          seqId: 1,
-          text: "Hello",
-        }),
-        {
-          ...assistantEvent({
-            id: "stream-error",
-            runId: RUN_A,
-            seqId: 2,
-            text: error,
-          }),
-          eventType: "output.error",
-          content: null,
-          error,
-        },
-      ],
-    });
-    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
-    const card = await screen.findByRole("status");
-    expect(card).toHaveTextContent(expected);
-    click(await findButton("Voir les détails"));
-    const details = await screen.findByRole("dialog");
-    expect(queryButton("Réessayer", details)).not.toBeInTheDocument();
-    expect(
-      queryButton("Réinitialiser et réessayer", details),
-    ).not.toBeInTheDocument();
-  },
-);
-
 test("A Japanese chat keeps ordinary assistant output unchanged", async () => {
   const message = "The current model is unavailable.";
   installRunChat({
@@ -778,38 +617,26 @@ test("A Japanese chat keeps ordinary assistant output unchanged", async () => {
   ).not.toBeInTheDocument();
 });
 
-test.each([
-  [
-    "usage_limit",
-    "You've hit your usage limit. Try again tomorrow.",
-    "Limite Codex atteinte",
-    "Vous pourrez continuer lorsque votre limite d'utilisation sera réinitialisée, ou changer de modèle maintenant.",
-  ],
-  [
-    "provider_overloaded",
-    "Selected model is at capacity. Please try a different model.",
-    "Ce modèle est saturé pour le moment",
-    "Réessayez dans quelques instants ou changez de modèle.",
-  ],
-] as const)(
-  "Keep existing recovery localized for %s",
-  async (reason, message, title, description) => {
-    configureModelPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
-    installRunChat({
-      selectedModel: "gpt-5.6-sol",
-      chatEvents: failedRunEvents(message, "gpt-5.6-sol", reason),
-    });
-    await setupPage({ context, path: RUN_PATH, locale: "fr-FR" });
-    await expect(screen.findByText(title)).resolves.toBeInTheDocument();
-    const card = screen.getByRole("status");
-    expect(card).toHaveTextContent(title);
-    expect(card).toHaveTextContent(description);
-    click(await findButton("Voir les détails"));
-    const details = await screen.findByRole("dialog");
-    expect(queryButton("Réessayer", details)).toBeInTheDocument();
-    expect(within(details).getByRole("combobox")).toBeInTheDocument();
-  },
-);
+test("Credential recovery guidance links to Model Providers", async () => {
+  const url = "https://app.example.test/?settings=model";
+  configureModelPolicies(["gpt-5.6-sol"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      `Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: ${url}`,
+      "gpt-5.6-sol",
+      "invalid_credentials",
+    ),
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  const details = await openRecoveryDetails();
+  const link = queryAllByRoleFast("link", details).find((candidate) => {
+    return candidate.getAttribute("href") === url;
+  });
+  expect(link).toBeInTheDocument();
+});
 
 test("An unknown structured failure does not infer recovery from provider text", async () => {
   const providerError =

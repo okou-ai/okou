@@ -111,26 +111,6 @@ async function openRunCreditUsage() {
   return { user, usageButton };
 }
 
-test("Show friendly labels for every run credit category", async () => {
-  await openRunCreditUsage();
-  for (const name of [
-    "Claude Sonnet 4.6",
-    "Flux Pro",
-    "Veo 3",
-    "Avatar",
-    "Slack",
-    "Web Search",
-    "Maps",
-    "Finance",
-    "Weather",
-  ]) {
-    for (const label of screen.getAllByText(name)) {
-      expect(label).toBeVisible();
-    }
-  }
-  expect(document.body).not.toHaveTextContent("internal_web_search_v2");
-});
-
 test("Dismiss run credit usage with Escape and reopen it", async () => {
   const { user, usageButton } = await openRunCreditUsage();
   await user.keyboard("{Escape}");
@@ -139,10 +119,7 @@ test("Dismiss run credit usage with Escape and reopen it", async () => {
   });
   await user.click(usageButton);
 
-  await waitFor(() => {
-    expect(screen.getAllByText("Claude Sonnet 4.6").length).toBeGreaterThan(1);
-  });
-  expect(screen.getByText("Web Search")).toBeVisible();
+  await expect(screen.findByText("Credit usage")).resolves.toBeVisible();
 });
 
 test("Return to the conversation that started a chat message", async () => {

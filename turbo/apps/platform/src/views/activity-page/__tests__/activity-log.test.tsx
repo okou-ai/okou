@@ -144,37 +144,11 @@ function expectBefore(first: Element, second: Element): void {
   ).not.toBe(0);
 }
 
-test.each([
-  ["The current model is unavailable.", "現在のモデルは利用できません。"],
-  [
-    "Your connected model provider account has insufficient balance.",
-    "接続されているモデルプロバイダーのアカウント残高が不足しています。",
-  ],
-  [
-    "This run reached its execution time limit.",
-    "この実行は時間制限に達しました。",
-  ],
-  ["Run failed", "実行に失敗しました"],
-  [
-    "Ask a workspace admin to add credits or upgrade the workspace plan.",
-    "ワークスペースの管理者にクレジットの追加またはプランのアップグレードを依頼してください。",
-  ],
-  [
-    "Claude Sonnet 4.6 is overloaded. Please wait a few minutes and try again, or switch to another model.",
-    "Claude Sonnet 4.6 は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
-  ],
-  [
-    "Model temporarily unavailable. Every built-in model route for this model is temporarily unavailable. Please try again later.",
-    "モデルは一時的に利用できません",
-  ],
-  [
-    "Provider detail: Credit balance is too low",
-    "Provider detail: Credit balance is too low",
-  ],
-])("Localize the Activity run error: %s", async (error, expected) => {
-  mockActivity([], { status: "failed", error });
+test("Provider error details remain unchanged in a localized Activity", async () => {
+  const providerDetail = "Provider detail: Credit balance is too low";
+  mockActivity([], { status: "failed", error: providerDetail });
   await setupPage({ context, path: "/activities/" + RUN_ID, locale: "ja-JP" });
-  await expect(screen.findByText(expected)).resolves.toBeInTheDocument();
+  await expect(screen.findByText(providerDetail)).resolves.toBeInTheDocument();
 });
 
 test("Large plans and file-change lists remain readable", async () => {

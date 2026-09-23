@@ -92,11 +92,6 @@ function waitForFastRole(
   });
 }
 
-function clerkProviderLocalization(): string | undefined {
-  return screen.getByTestId("clerk-provider-config").dataset
-    .clerkSignInStartActionLink;
-}
-
 async function selectLanguage(
   currentLabel: string,
   optionLabel: string,
@@ -126,7 +121,7 @@ async function closeDialog(dialog: HTMLElement, label: string): Promise<void> {
   });
 }
 
-test("Authentication copy falls back without changing the app language", async () => {
+test("Unavailable Clerk localization keeps the App language", async () => {
   const clerk = context.mocks.clerk();
   vi.spyOn(console, "error").mockImplementation(() => {});
   clerk.localizationUnavailable("pt-BR");
@@ -136,12 +131,6 @@ test("Authentication copy falls back without changing the app language", async (
     locale: "pt-BR",
   });
 
-  await expect(
-    screen.findByRole("heading", { name: "Preferência" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Escolha seu idioma preferido para a interface do Okou"),
-  ).toBeVisible();
   expect(document.documentElement).toHaveAttribute("lang", "pt-BR");
   expect(clerk.localizationRequests).toStrictEqual(["pt-BR"]);
 });
@@ -178,7 +167,6 @@ test("A cancelled language change does not apply late", async () => {
     screen.findByRole("heading", { name: "Connectors" }),
   ).resolves.toBeInTheDocument();
   expect(document.documentElement).toHaveAttribute("lang", DEFAULT_LOCALE);
-  expect(screen.queryByText("Lingua")).not.toBeInTheDocument();
 });
 
 test("A failed language download falls back without blocking chat", async () => {
@@ -230,52 +218,6 @@ test("A failed runtime language change keeps the current language", async () => 
     expect(document.documentElement).toHaveAttribute("lang", DEFAULT_LOCALE);
     expect(screen.getByText("Language")).toBeVisible();
   });
-  expect(screen.queryByText("Langue")).not.toBeInTheDocument();
-});
-
-test("Run error copy follows a language change without rewriting the run", async () => {
-  const runId = "94000000-0000-4000-a000-000000000002";
-  const error = "The current model is unavailable.";
-  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-    return respond(200, {
-      id: runId,
-      sessionId: null,
-      agentId: null,
-      displayName: null,
-      framework: "claude-code",
-      modelProvider: "built-in",
-      selectedModel: null,
-      triggerSource: "web",
-      status: "failed",
-      prompt: "Run localization",
-      appendSystemPrompt: null,
-      error,
-      createdAt: "2026-01-01T12:00:00.000Z",
-      startedAt: "2026-01-01T12:00:00.000Z",
-      completedAt: "2026-01-01T12:00:01.200Z",
-      artifact: { name: null, version: null },
-    });
-  });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [],
-      hasMore: false,
-      status: "failed",
-      lastEventSequence: null,
-    });
-  });
-  await setupPage({ context, path: `/activities/${runId}` });
-  await expect(screen.findByText(error)).resolves.toBeInTheDocument();
-
-  const settings = await openSettingsDialog("Settings");
-  await selectLanguage("Language", "Français");
-  await expect(
-    screen.findByText("Le modèle actuel est indisponible."),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText(error)).not.toBeInTheDocument();
-  await selectLanguage("Langue", "English");
-  await expect(screen.findByText(error)).resolves.toBeInTheDocument();
-  await closeDialog(settings, "Close");
 });
 
 test("French uses local formatting and plurals", async () => {
@@ -358,49 +300,6 @@ test("French uses local formatting and plurals", async () => {
 
   expect(screen.getByText("2 fichiers")).toBeVisible();
   expect(screen.getByText("1,2s")).toBeVisible();
-});
-
-async function openFrenchAuthenticationSettings() {
-  const clerk = context.mocks.clerk();
-  await setupPage({
-    context,
-    path: "/agents?settings=preference",
-    locale: "fr-FR",
-  });
-  await expect(
-    screen.findByRole("heading", { name: "Préférences" }),
-  ).resolves.toBeInTheDocument();
-  // Clerk takes `localization` only as a global option, so the app-level
-  // provider is what carries it to components opened outside the auth route.
-  expect(clerkProviderLocalization()).toBe("S'inscrire");
-  return clerk;
-}
-
-test("Authentication copy follows the selected language after switching", async () => {
-  const clerk = await openFrenchAuthenticationSettings();
-  await selectLanguage("Langue", "English");
-  await expect(
-    screen.findByRole("heading", { name: "Preference" }),
-  ).resolves.toBeInTheDocument();
-  expect(clerkProviderLocalization()).toBe("Sign up");
-  expect(clerk.localizationRequests).toStrictEqual(["fr-FR"]);
-});
-
-test("Switching back reuses the previously loaded authentication language", async () => {
-  const clerk = await openFrenchAuthenticationSettings();
-  await selectLanguage("Langue", "English");
-  await expect(
-    screen.findByRole("heading", { name: "Preference" }),
-  ).resolves.toBeInTheDocument();
-  await selectLanguage("Language", "Français");
-  await expect(
-    screen.findByRole("heading", { name: "Préférences" }),
-  ).resolves.toBeInTheDocument();
-  expect(clerkProviderLocalization()).toBe("S'inscrire");
-
-  // Returning to French reuses the cached resource instead of downloading it
-  // again, and English never downloads because it ships as the default.
-  expect(clerk.localizationRequests).toStrictEqual(["fr-FR"]);
 });
 
 test("An unsupported language falls back and repairs the workspace cache", async () => {

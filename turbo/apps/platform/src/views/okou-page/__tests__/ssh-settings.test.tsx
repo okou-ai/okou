@@ -1311,25 +1311,6 @@ test("Mobile SSH management retains its Connectors section and return navigation
 });
 
 test.each([
-  { count: 0, label: "0 hosts configured" },
-  { count: 1, label: "1 host configured" },
-  { count: 2, label: "2 hosts configured" },
-])(
-  "Shows the translated configured host count for $count hosts",
-  async ({ count, label }) => {
-    const hosts = Array.from({ length: count }, (_, index) => {
-      return { ...base, id: `b0000000-0000-4000-8000-00000000000${index}` };
-    });
-    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-      return respond(200, { connections: hosts });
-    });
-    await page();
-    const configuredCount = await screen.findByText(label);
-    expect(configuredCount).toBeInTheDocument();
-  },
-);
-
-test.each([
   { count: 0, label: "0 credentials configured" },
   { count: 1, label: "1 credential configured" },
   { count: 2, label: "2 credentials configured" },

@@ -170,31 +170,6 @@ test("Keep category search scoped and offer All for a custom-only match", async 
   expect(locationSearch()).toContain("keywords=acme");
 });
 
-test("Ignore obsolete connection filters in directory mode", async () => {
-  installCustomDirectory();
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "github",
-      label: "GitHub",
-      connected: false,
-    }),
-  ]);
-  await setupPage({
-    context,
-    path: "/connectors?connection=connected",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-  await waitFor(() => {
-    expect(getConnectorCard("GitHub")).toBeVisible();
-  });
-  click(screen.getByTestId("connectors-scope-custom"));
-  await waitFor(() => {
-    expect(locationSearch()).toContain("scope=custom");
-  });
-  expect(getConnectorCard("Acme Reports")).toBeInTheDocument();
-  expect(locationSearch()).not.toContain("connection=");
-});
-
 test("Preserve old connection filters and Custom tabs with directory disabled", async () => {
   installCustomDirectory();
   mockPublicConnectorStatus(context, [

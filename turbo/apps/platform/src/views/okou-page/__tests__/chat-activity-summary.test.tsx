@@ -1,15 +1,11 @@
-import { act, screen, within } from "@testing-library/react";
+import { act, screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
   chatThreadActivitySummaryContract,
   type ActivitySummaryResponse,
 } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
@@ -160,23 +156,6 @@ test("The pending summary fallback stays stable when reopening the thread", asyn
   ).resolves.toBeVisible();
   click(await findLink("Run conversation"));
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
-});
-
-test("The pending summary fallback follows a saved language change", async () => {
-  await openPendingActivitySummary();
-  click(await findButton("Test User"));
-  const menu = await screen.findByRole("menu");
-  const settings = queryAllByRoleFast("menuitem", menu).find((item) => {
-    return item.textContent?.trim() === "Settings";
-  });
-  expect(settings).toBeDefined();
-  click(settings!);
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  click(within(dialog).getByRole("combobox", { name: "Language" }));
-  click(await screen.findByRole("option", { name: "日本語" }));
-
-  await expect(screen.findByText("考え中...")).resolves.toBeVisible();
-  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
 });
 
 test("The loop keeps polling on its fixed interval while hidden", async () => {

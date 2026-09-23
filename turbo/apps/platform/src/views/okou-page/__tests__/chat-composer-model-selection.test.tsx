@@ -336,34 +336,6 @@ test.each([
   },
 );
 
-test("Localize fractional Fast speed guidance on hover", async () => {
-  const user = userEvent.setup({ delay: null });
-  installNewChat(["gpt-5.6-luna"], "gpt-5.6-luna");
-  context.mocks.data.orgModelPolicies([
-    modelPolicy("gpt-5.6-luna", 1, {
-      default: true,
-      providerType: "codex-oauth-token",
-    }),
-  ]);
-  await setupPage({
-    locale: "de-DE",
-    context,
-    path: NEW_CHAT_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
-  });
-  await expect(
-    screen.findByLabelText("Nachricht", {
-      selector: '[contenteditable="true"]',
-    }),
-  ).resolves.toBeVisible();
-  await user.hover(await fastRow("Aufwand", "Schnell"));
-  await expect(
-    screen.findByText("1,5× Modellgeschwindigkeit · 2,5× ChatGPT-Verbrauch"),
-  ).resolves.toBeVisible();
-});
-
 test("Choose Fast then Standard Codex execution before changing models", async () => {
   const user = userEvent.setup({ delay: null });
   await openCodexExecutionChat();

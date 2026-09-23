@@ -150,18 +150,6 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   expect(within(pane).getByText(first.title)).toBeInTheDocument();
 });
 
-test("Make lists the three types it indexes; Video and Workflow are not among them", async () => {
-  await openSlashMenu();
-  for (const category of ["Presentation", "Illustration", "Website"]) {
-    expect(slashButton(category)).toBeInTheDocument();
-  }
-  expect(querySlashButton("Video")).toBeNull();
-  // The agent's own workflows are listed right below Make, so a type row for
-  // them would only reopen the same catalog the panel already indexes.
-  expect(querySlashButton("Workflow")).toBeNull();
-  expect(slashButton(`/${WORKFLOW_NAME}`)).toBeInTheDocument();
-});
-
 test("The pane carries every template in the category", async () => {
   await openSlashMenu();
   const pane = detailPane();

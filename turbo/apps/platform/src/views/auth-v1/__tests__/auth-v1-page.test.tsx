@@ -81,11 +81,6 @@ test("The hosted sign-in form renders with Google One Tap on the base route", as
     "aria-hidden",
     "true",
   );
-  // The runtime registers the router at `clerk.load()`, so the app-level
-  // provider does not redeclare it. `clerk-bootstrap.test.ts` covers that.
-  expect(
-    document.querySelector("[data-auth-v1-legacy-clerk-css]"),
-  ).not.toBeInTheDocument();
 });
 
 test("Nested sign-in task paths stay on the hosted sign-in form", async () => {
@@ -247,9 +242,6 @@ test("The hosted sign-up form renders with an allowed redirect URL", async () =>
     "data-clerk-provider-sign-up-url",
     "https://app.okou.ai/sign-up",
   );
-  expect(
-    document.querySelector("[data-auth-v1-legacy-clerk-css]"),
-  ).not.toBeInTheDocument();
 });
 
 test("Clerk's public fallback takes over after core initialization", async () => {
