@@ -879,10 +879,10 @@ describe("CHAT-02: generation templates and attachments", () => {
       "Image workflow: use supplied images first;",
     );
     expect(websitePrompt).toMatch(
-      /npx --yes --package="\$\{CLI_PKG_URL\}" okou generate image-batch start <manifest\.tsv> <state-dir>/,
+      /run `okou generate image-batch start <manifest\.tsv> <state-dir>`/,
     );
     expect(websitePrompt).toMatch(
-      /npx --yes --package="\$\{CLI_PKG_URL\}" okou generate image-batch wait <state-dir>/,
+      /with `okou generate image-batch wait <state-dir>`/,
     );
     expect(websitePrompt).not.toContain("tools/generate-images.mjs");
     expect(websitePrompt).not.toContain("resolve-images.mjs");

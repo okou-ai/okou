@@ -61,10 +61,10 @@ export function buildAgentToolsPrompt(args: {
   readonly deliveryFormatGuidanceEnabled: boolean;
   readonly presentationConvertEnabled: boolean;
 }): string {
-  const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou`;
   return [
     "# Agent Tools",
-    `You have access to the Okou CLI. Run commands with: \`${okouCliCommand} <command>\``,
+    "You have access to the Okou CLI. Run commands with: `okou <command>`.",
+    'If `okou` is unavailable, use `npx --yes --package="${CLI_PKG_URL}" okou <command>`.',
     "- Discover available commands: `okou --help`.",
     ...(args.privateArtifactsEnabled
       ? [

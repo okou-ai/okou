@@ -169,10 +169,10 @@ describe("okou generate website command", () => {
     );
     expect(imageWorkflow).toContain("asset-id<TAB>raw prompt<TAB>size");
     expect(imageWorkflow).toMatch(
-      /npx --yes --package="\$\{CLI_PKG_URL\}" okou generate image-batch start <manifest\.tsv> <state-dir>/,
+      /run `okou generate image-batch start <manifest\.tsv> <state-dir>`/,
     );
     expect(imageWorkflow).toMatch(
-      /npx --yes --package="\$\{CLI_PKG_URL\}" okou generate image-batch wait <state-dir>/,
+      /with `okou generate image-batch wait <state-dir>`/,
     );
     expect(imageWorkflow).toContain("author the HTML while it runs");
     expect(imageWorkflow).toContain("<state-dir>/results.tsv");
