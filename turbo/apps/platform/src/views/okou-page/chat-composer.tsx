@@ -9853,9 +9853,23 @@ function ComposerTemporaryModelNoticeSlot({
 /** The one tray below the card, and the notice that currently owns it. */
 function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
   const paidToolHints = useGet(signals.paidToolHints$);
+  const imageMode = useGet(signals.create.mode$) === "image";
+  const imageCategory = useGet(signals.model.mediaModelCategory$) === "image";
+  const clearTask = useSet(signals.taskChips.selectTask$);
+  const clearCategory = useSet(signals.model.setMediaModelCategory$);
+  const onDiscardImage = imageMode
+    ? () => {
+        clearTask(null);
+      }
+    : imageCategory
+      ? () => {
+          clearCategory(null);
+        }
+      : undefined;
   return (
     <ComposerPaidToolNotice
       tools={paidToolHints}
+      onDiscardImage={onDiscardImage}
       fallback={<ComposerTemporaryModelNoticeSlot signals={signals} />}
     />
   );
