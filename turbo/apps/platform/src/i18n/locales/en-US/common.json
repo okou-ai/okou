@@ -1483,6 +1483,13 @@
           "alreadyRedeemed": "Post already used",
           "postMustMention": "Must mention {{assistantName}}"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} credits",
+          "confirm": "Back to work",
+          "organizationDescription": "Credits were added to your workspace balance.",
+          "personalDescription": "Credits were added to your balance.",
+          "title": "Nice work!"
+        },
         "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
         "share": {
           "action": "Share",

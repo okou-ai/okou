@@ -1507,6 +1507,13 @@
           "alreadyRedeemed": "Publication déjà utilisée",
           "postMustMention": "Doit mentionner {{assistantName}}"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} crédits",
+          "confirm": "Retour au travail",
+          "organizationDescription": "Les crédits ont été ajoutés au solde de votre espace de travail.",
+          "personalDescription": "Les crédits ont été ajoutés à votre solde.",
+          "title": "Bien joué !"
+        },
         "rewardsNote": "Les récompenses expirent 7 jours après leur attribution. La présence quotidienne est réinitialisée à 00:00 UTC. Celles de Slack vont à l’organisation ; les autres à votre solde personnel.",
         "share": {
           "action": "Partager",

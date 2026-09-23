@@ -1482,6 +1482,13 @@
           "alreadyRedeemed": "이미 사용된 게시물",
           "postMustMention": "{{assistantName}} 언급 필요"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} 크레딧",
+          "confirm": "일하러 가기",
+          "organizationDescription": "크레딧이 워크스페이스 잔액에 추가되었습니다.",
+          "personalDescription": "크레딧이 잔액에 추가되었습니다.",
+          "title": "잘하셨어요!"
+        },
         "rewardsNote": "보상은 지급 후 7일이 지나면 만료돼요. 출석은 UTC 00:00에 초기화됩니다. Slack 보상은 조직에, 나머지는 개인 잔액에 지급돼요.",
         "share": {
           "action": "공유",

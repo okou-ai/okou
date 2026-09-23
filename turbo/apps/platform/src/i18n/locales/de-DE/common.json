@@ -1483,6 +1483,13 @@
           "alreadyRedeemed": "Post bereits verwendet",
           "postMustMention": "Muss {{assistantName}} erwähnen"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} Credits",
+          "confirm": "Zurück an die Arbeit",
+          "organizationDescription": "Die Credits wurden dem Guthaben deines Workspaces gutgeschrieben.",
+          "personalDescription": "Die Credits wurden deinem Guthaben gutgeschrieben.",
+          "title": "Gut gemacht!"
+        },
         "rewardsNote": "Prämien verfallen 7 Tage nach der Gutschrift. Das Einchecken beginnt um 00:00 UTC neu. Slack-Prämien gehen an die Organisation, alle anderen an dein persönliches Guthaben.",
         "share": {
           "action": "Teilen",

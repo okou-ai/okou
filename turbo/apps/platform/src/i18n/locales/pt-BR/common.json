@@ -1507,6 +1507,13 @@
           "alreadyRedeemed": "Publicação já usada",
           "postMustMention": "Precisa mencionar o {{assistantName}}"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} créditos",
+          "confirm": "Voltar ao trabalho",
+          "organizationDescription": "Os créditos foram adicionados ao saldo do seu espaço de trabalho.",
+          "personalDescription": "Os créditos foram adicionados ao seu saldo.",
+          "title": "Mandou bem!"
+        },
         "rewardsNote": "As recompensas expiram 7 dias após a concessão. O check-in reinicia às 00:00 UTC. As do Slack vão para a organização; as demais, para seu saldo pessoal.",
         "share": {
           "action": "Compartilhar",

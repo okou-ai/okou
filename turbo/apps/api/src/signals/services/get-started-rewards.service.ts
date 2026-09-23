@@ -359,6 +359,15 @@ export async function getStartedStatus(
       eq(getStartedClaims.questKey, "slack"),
     ),
   );
+  // Slack credits belong to the workspace, but only the admin who connected
+  // it should receive a personal congratulations dialog.
+  const recentOwner = or(
+    eq(getStartedClaims.beneficiaryUserId, args.userId),
+    and(
+      eq(getStartedClaims.questKey, "slack"),
+      eq(getStartedClaims.actorUserId, args.userId),
+    ),
+  );
   const groups = await db
     .select({
       questKey: getStartedClaims.questKey,
@@ -411,7 +420,7 @@ export async function getStartedStatus(
     .from(getStartedClaims)
     .where(
       and(
-        owner,
+        recentOwner,
         eq(getStartedClaims.orgId, args.orgId),
         eq(getStartedClaims.status, "granted"),
       ),

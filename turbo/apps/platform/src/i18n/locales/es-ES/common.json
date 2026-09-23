@@ -1507,6 +1507,13 @@
           "alreadyRedeemed": "Publicación ya usada",
           "postMustMention": "Debe mencionar a {{assistantName}}"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} créditos",
+          "confirm": "Volver al trabajo",
+          "organizationDescription": "Los créditos se añadieron al saldo de tu espacio de trabajo.",
+          "personalDescription": "Los créditos se añadieron a tu saldo.",
+          "title": "¡Buen trabajo!"
+        },
         "rewardsNote": "Las recompensas caducan 7 días después de recibirlas. El registro diario se reinicia a las 00:00 UTC. Las de Slack van a la organización; las demás, a tu saldo personal.",
         "share": {
           "action": "Compartir",

@@ -1507,6 +1507,13 @@
           "alreadyRedeemed": "Post già utilizzato",
           "postMustMention": "Deve menzionare {{assistantName}}"
         },
+        "rewardDialog": {
+          "amount": "+{{amount}} crediti",
+          "confirm": "Torna al lavoro",
+          "organizationDescription": "I crediti sono stati aggiunti al saldo del tuo workspace.",
+          "personalDescription": "I crediti sono stati aggiunti al tuo saldo.",
+          "title": "Ottimo lavoro!"
+        },
         "rewardsNote": "I premi scadono 7 giorni dopo l’assegnazione. Il check-in si reimposta alle 00:00 UTC. Quelli di Slack vanno all’organizzazione; gli altri al tuo saldo personale.",
         "share": {
           "action": "Condividi",

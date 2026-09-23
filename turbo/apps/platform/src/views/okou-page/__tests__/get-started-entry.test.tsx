@@ -216,6 +216,7 @@ function configureQuestPage(
     data.shareClaim = claim;
     return respond(202, claim);
   });
+  let checkinGrantCount = 0;
   context.mocks.api(getStartedContract.checkin, ({ respond }) => {
     const checkin = data.quests.find((q) => {
       return q.key === "checkin";
@@ -226,14 +227,16 @@ function configureQuestPage(
     if (!data.claimedToday) {
       checkin.claimedCount++;
       checkin.earnedCredits += 100;
-      // The server counts the day it just recorded, so the fixture does too:
-      // the streak is what decides whether the reward gets a screen or a line.
+      // The server counts the day it just recorded, so the fixture does too;
+      // the popup reports the resulting streak.
       data.checkinStreak++;
     }
     checkin.canEarnMore = false;
     data.claimedToday = true;
+    const claimId = `22222222-2222-4222-a222-${checkinGrantCount.toString().padStart(12, "0")}`;
+    checkinGrantCount++;
     return respond(200, {
-      id: "22222222-2222-4222-a222-222222222222",
+      id: claimId,
       questKey: "checkin",
       status: "granted",
       rewardAmount: 100,
@@ -462,6 +465,7 @@ test("Sharing on X restores pending state and an Ably review notification update
   data.shareClaim.status = "granted";
   data.shareClaim.grantedAt = data.serverNow;
   data.shareClaim.expiresAt = "2026-09-22T12:00:00.000Z";
+  data.recentGrants = [data.shareClaim];
   Object.assign(share, {
     claimedCount: 1,
     earnedCredits: 2000,
@@ -472,6 +476,11 @@ test("Sharing on X restores pending state and an Ably review notification update
     within(afterReview).findByText("2,400 earned"),
   ).resolves.toBeInTheDocument();
   expect(within(afterReview).queryByText("In review")).not.toBeInTheDocument();
+  const rewardDialog = await screen.findByRole("dialog", {
+    name: "Nice work!",
+  });
+  expect(within(rewardDialog).getByText("Share on X")).toBeInTheDocument();
+  expect(within(rewardDialog).getByText("+2,000 credits")).toBeInTheDocument();
 });
 
 test("Reward notifications refresh quests without disconnecting shared chat history", async () => {
@@ -698,22 +707,35 @@ test("Daily rewards are claimed by selecting check in and menu reopening refresh
   expect(normalizedText(checkinRow)).toContain("Check in daily+100Check in");
 
   click(checkinRow);
+  const firstDayReward = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(firstDayReward).getByText("+100 credits")).toBeInTheDocument();
+  click(buttonNamed("Back to work", firstDayReward));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  const sameDayPanel = await openQuestPanel();
   await expect(
-    within(panel).findByText("400 earned"),
+    within(sameDayPanel).findByText("400 earned"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByTestId("get-started-quest-checkin")).not.toHaveAttribute(
     "role",
     "menuitem",
   );
-  expect(within(panel).queryByText("Check in")).not.toBeInTheDocument();
+  expect(within(sameDayPanel).queryByText("Check in")).not.toBeInTheDocument();
 
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
-  const sameDayPanel = await openQuestPanel();
-  expect(within(sameDayPanel).getByText("400 earned")).toBeInTheDocument();
-  expect(within(sameDayPanel).queryByText("Check in")).not.toBeInTheDocument();
+  const reopenedSameDayPanel = await openQuestPanel();
+  expect(
+    within(reopenedSameDayPanel).getByText("400 earned"),
+  ).toBeInTheDocument();
+  expect(
+    within(reopenedSameDayPanel).queryByText("Check in"),
+  ).not.toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -738,10 +760,19 @@ test("Daily rewards are claimed by selecting check in and menu reopening refresh
   const nextDayCheckin = screen.getByTestId("get-started-quest-checkin");
   nextDayCheckin.focus();
   await userEvent.keyboard("{Enter}");
+  const nextDayReward = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(nextDayReward).getByText("+100 credits")).toBeInTheDocument();
+  click(buttonNamed("Back to work", nextDayReward));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  const afterNextDay = await openQuestPanel();
   await expect(
-    within(nextDayPanel).findByText("500 earned"),
+    within(afterNextDay).findByText("500 earned"),
   ).resolves.toBeInTheDocument();
-  expect(within(nextDayPanel).queryByText("Check in")).not.toBeInTheDocument();
+  expect(within(afterNextDay).queryByText("Check in")).not.toBeInTheDocument();
 });
 
 test("The daily step leads the list on the same grammar as every other step", async () => {
@@ -1080,10 +1111,10 @@ test("Picking a workflow hands its sentence to the composer", async () => {
   });
 });
 
-test("An ordinary day's check-in reports the streak without taking the screen", async () => {
+test("Every daily check-in confirms its reward, including ordinary streak days", async () => {
   const data = configureQuestPage(context, "member", { claimedToday: false });
-  // Mid-streak: the next check-in is day four, which is neither the first nor
-  // a full week, so it is the case that should stay out of the way.
+  // Mid-streak: the next check-in is day four, between the first day and a
+  // full week.
   data.checkinStreak = 3;
   await setupPage({
     context,
@@ -1097,9 +1128,11 @@ test("An ordinary day's check-in reports the streak without taking the screen", 
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-checkin"));
 
-  // The streak is the part worth saying, and it is said without a modal.
-  await expect(screen.findByText("4-day streak")).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).toBeNull();
+  const rewardDialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(rewardDialog).getByText("4-day streak")).toBeInTheDocument();
+  expect(within(rewardDialog).getByText("+100 credits")).toBeInTheDocument();
 });
 
 test("Checking in confirms the reward instead of closing silently", async () => {
