@@ -1136,6 +1136,7 @@ describe("Browser user-action route", () => {
     });
 
     const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
         const body = z
@@ -1325,6 +1326,7 @@ describe("Browser user-action route", () => {
     const providerId = randomUUID();
     const providerProfileId = randomUUID();
     const deletedProfiles: string[] = [];
+    acceptBrowserUseCdpSessions([providerId]);
     server.use(
       http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
         const body = z
