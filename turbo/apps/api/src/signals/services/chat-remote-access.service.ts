@@ -259,7 +259,9 @@ export async function setThreadRemoteAccessOverride(
           ),
         )
         .limit(1);
-      if (!host) return null;
+      if (!host) {
+        return null;
+      }
       await tx
         .insert(chatThreadSshAccessOverrides)
         .values({
@@ -291,7 +293,9 @@ export async function setThreadRemoteAccessOverride(
         ),
       )
       .limit(1);
-    if (!host) return null;
+    if (!host) {
+      return null;
+    }
     await tx
       .insert(chatThreadVncAccessOverrides)
       .values({
@@ -335,7 +339,9 @@ export async function clearThreadRemoteAccessOverride(
           ),
         )
         .limit(1);
-      if (!host) return null;
+      if (!host) {
+        return null;
+      }
       await tx
         .delete(chatThreadSshAccessOverrides)
         .where(
@@ -361,7 +367,9 @@ export async function clearThreadRemoteAccessOverride(
         ),
       )
       .limit(1);
-    if (!host) return null;
+    if (!host) {
+      return null;
+    }
     await tx
       .delete(chatThreadVncAccessOverrides)
       .where(

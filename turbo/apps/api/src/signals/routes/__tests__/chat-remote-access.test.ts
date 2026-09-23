@@ -47,7 +47,9 @@ async function ownerWithThread(actor = bdd.user()) {
     visibility: "private",
   });
   const thread = await chat.createThread(actor, { agentId: agent.agentId });
-  if (!actor.orgId) throw new Error("Expected an organization");
+  if (!actor.orgId) {
+    throw new Error("Expected an organization");
+  }
   const actorWithOrg = { ...actor, orgId: actor.orgId };
   mocks.clerk.session(
     actorWithOrg.userId,
@@ -98,7 +100,7 @@ describe("chat remote access owner API", () => {
       }),
       [200],
     );
-    expect(initial.body.ssh).toEqual([
+    expect(initial.body.ssh).toStrictEqual([
       {
         connectionId: first,
         displayName: "First host",
@@ -116,7 +118,7 @@ describe("chat remote access owner API", () => {
         source: "default",
       },
     ]);
-    expect(initial.body.vnc).toEqual([]);
+    expect(initial.body.vnc).toStrictEqual([]);
 
     await accept(
       accessClient().updateHostDefault({
@@ -161,7 +163,7 @@ describe("chat remote access owner API", () => {
       overridden.body.ssh.map((host) => {
         return [host.enabled, host.source];
       }),
-    ).toEqual([
+    ).toStrictEqual([
       [false, "override"],
       [true, "override"],
     ]);
@@ -176,7 +178,7 @@ describe("chat remote access owner API", () => {
       inherited.body.ssh.map((host) => {
         return [host.enabled, host.source];
       }),
-    ).toEqual([
+    ).toStrictEqual([
       [true, "default"],
       [false, "default"],
     ]);
@@ -238,7 +240,7 @@ describe("chat remote access owner API", () => {
       afterDelete.body.ssh.map((host) => {
         return host.connectionId;
       }),
-    ).toEqual([first]);
+    ).toStrictEqual([first]);
     await createSshHost("Reused host ID", second);
     const afterReuse = await accept(
       accessClient().listThreadAccess({
@@ -271,7 +273,7 @@ describe("chat remote access owner API", () => {
       secondOwner.actor.orgId,
       secondOwner.actor.orgRole,
     );
-    await accept(
+    const crossOwnerThread = await accept(
       accessClient().listThreadAccess({
         headers,
         params: { threadId: firstOwner.threadId },
@@ -308,13 +310,14 @@ describe("chat remote access owner API", () => {
       secondOwner.actor.orgId,
       secondOwner.actor.orgRole,
     );
-    await accept(
+    const otherOrgThread = await accept(
       accessClient().listThreadAccess({
         headers,
         params: { threadId: sameUserOtherOrg.threadId },
       }),
       [404],
     );
+    expect(otherOrgThread.body).toStrictEqual(crossOwnerThread.body);
     await accept(
       accessClient().updateHostDefault({
         headers,
@@ -345,7 +348,7 @@ describe("chat remote access owner API", () => {
       accessClient().listHostDefaults({ headers }),
       [200],
     );
-    expect(listed.body.vnc).toEqual([
+    expect(listed.body.vnc).toStrictEqual([
       {
         connectionId: vncId,
         displayName: "VNC desktop",
@@ -438,7 +441,7 @@ describe("chat remote access owner API", () => {
       accessClient().listHostDefaults({ headers }),
       [200],
     );
-    expect(hidden.body.vnc).toEqual([]);
+    expect(hidden.body.vnc).toStrictEqual([]);
     await accept(
       accessClient().updateHostDefault({
         headers,

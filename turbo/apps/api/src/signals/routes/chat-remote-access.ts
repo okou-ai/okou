@@ -50,7 +50,9 @@ const accessContext$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(accessContext$, signal);
-  if (!context) return unavailable;
+  if (!context) {
+    return unavailable;
+  }
   const includeVnc =
     context.vncEnabled &&
     (await hasCurrentVncMembership(get(clerk$), context.auth, signal));
@@ -66,7 +68,9 @@ const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
 const updateHostDefault$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = await set(accessContext$, signal);
-    if (!context) return unavailable;
+    if (!context) {
+      return unavailable;
+    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.updateHostDefault),
     );
@@ -81,7 +85,9 @@ const updateHostDefault$ = command(
       bodyResultOf(chatRemoteAccessContract.updateHostDefault),
     );
     signal.throwIfAborted();
-    if (!body.ok) return body.response;
+    if (!body.ok) {
+      return body.response;
+    }
     const result = await updateRemoteHostDefault(
       set(writeDb$),
       { ...context.owner, connectionId: params.connectionId },
@@ -95,7 +101,9 @@ const updateHostDefault$ = command(
 
 const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(accessContext$, signal);
-  if (!context) return unavailable;
+  if (!context) {
+    return unavailable;
+  }
   const params = get(pathParamsOf(chatRemoteAccessContract.listThreadAccess));
   const includeVnc =
     context.vncEnabled &&
@@ -112,7 +120,9 @@ const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
 const setThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = await set(accessContext$, signal);
-    if (!context) return unavailable;
+    if (!context) {
+      return unavailable;
+    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.setThreadOverride),
     );
@@ -127,7 +137,9 @@ const setThreadOverride$ = command(
       bodyResultOf(chatRemoteAccessContract.setThreadOverride),
     );
     signal.throwIfAborted();
-    if (!body.ok) return body.response;
+    if (!body.ok) {
+      return body.response;
+    }
     const result = await setThreadRemoteAccessOverride(
       set(writeDb$),
       {
@@ -146,7 +158,9 @@ const setThreadOverride$ = command(
 const clearThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = await set(accessContext$, signal);
-    if (!context) return unavailable;
+    if (!context) {
+      return unavailable;
+    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.clearThreadOverride),
     );
