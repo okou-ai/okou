@@ -800,7 +800,7 @@ body {
   --okou-card-radius: 1.25rem;
   /* Cards rendered inside a chat message sit one level in from the page, so
      they take one step down the radius scale. */
-  --okou-chat-card-radius: 0.75rem;
+  --okou-chat-card-radius: 1rem;
   --okou-card-shadow:
     0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025);
   /* A card inside a message is not elevated off the page the way a page-level
