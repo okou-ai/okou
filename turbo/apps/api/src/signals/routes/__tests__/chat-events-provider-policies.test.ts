@@ -983,7 +983,7 @@ describe("CHAT-02: model-first provider policies", () => {
       checkpointObjects.has(
         `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${untraced.runId}/manifest.json`,
       ),
-    ).toBe(true);
+    ).toBeTruthy();
     expect((await api.readRun(actor, untraced.runId)).status).toBe("pending");
     await expect(
       api.readRun(actor, untraced.runId),
