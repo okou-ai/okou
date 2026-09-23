@@ -212,6 +212,21 @@ function onboardingWorkflowIdentity(workflowIdValue: string | null): {
   return null;
 }
 
+/** The connectors a workflow asks for, required first, without its copy. */
+export function onboardingWorkflowConnectorSlugs(
+  workflowIdValue: string | null,
+): readonly ConnectorSlug[] {
+  const identity = onboardingWorkflowIdentity(workflowIdValue);
+  const spec = identity
+    ? ONBOARDING_WORKFLOW_SPECS[identity.categoryId].find((candidate) => {
+        return candidate.id === identity.id;
+      })
+    : undefined;
+  return spec
+    ? [...spec.requiredConnectorSlugs, ...workflowOptionalConnectorSlugs(spec)]
+    : [];
+}
+
 export function hasOnboardingWorkflow(workflowIdValue: string | null): boolean {
   return onboardingWorkflowIdentity(workflowIdValue) !== null;
 }

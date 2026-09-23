@@ -7,12 +7,13 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { connectorCatalogStatusBySlug$ } from "../external/connectors.ts";
+import { connectorCatalogItemBySlug } from "../external/connectors.ts";
 import type {
   ComposerConnectorAuthorizationState,
   ComposerConnectorSignals,
@@ -189,6 +190,32 @@ function targetIsAuthorized(
     : authorization.customConnectorIds.includes(target.customConnectorId);
 }
 
+// A block names one connector, so it reads that catalog entry rather than the
+// whole catalog status.
+function builtinActionConnector(
+  connectorSlug: ConnectorSlug,
+): Computed<Promise<ConnectorAccountActionConnector>> {
+  const catalogItem$ = connectorCatalogItemBySlug(connectorSlug);
+  return computed(async (get): Promise<ConnectorAccountActionConnector> => {
+    return { kind: "builtin", icon: (await get(catalogItem$))?.icon };
+  });
+}
+
+function customActionConnector(
+  customConnectorId: string,
+): Computed<Promise<ConnectorAccountActionConnector>> {
+  return computed(async (get): Promise<ConnectorAccountActionConnector> => {
+    return {
+      kind: "custom",
+      id: customConnectorId,
+      displayName:
+        (await get(customConnectors$)).find((candidate) => {
+          return candidate.id === customConnectorId;
+        })?.displayName ?? null,
+    };
+  });
+}
+
 function createConnectorAccountActionSignals(
   descriptor: ConnectorAccountActionDescriptor,
   connector: ComposerConnectorSignals,
@@ -199,28 +226,11 @@ function createConnectorAccountActionSignals(
   const confirmationState$ = computed((get) => {
     return get(internalConfirmationState$);
   });
-  const connector$ = computed(
-    async (get): Promise<ConnectorAccountActionConnector> => {
-      const target = descriptor.selection.target;
-      if (target.kind === "builtin") {
-        return {
-          kind: "builtin",
-          icon: (await get(connectorCatalogStatusBySlug$)).get(
-            target.connectorSlug,
-          )?.icon,
-        };
-      }
-      const customConnectorId = target.customConnectorId;
-      return {
-        kind: "custom",
-        id: customConnectorId,
-        displayName:
-          (await get(customConnectors$)).find((candidate) => {
-            return candidate.id === customConnectorId;
-          })?.displayName ?? null,
-      };
-    },
-  );
+  const target = descriptor.selection.target;
+  const connector$ =
+    target.kind === "builtin"
+      ? builtinActionConnector(target.connectorSlug)
+      : customActionConnector(target.customConnectorId);
   const status$ = computed(
     async (get): Promise<ConnectorAccountActionStatus> => {
       get(reload$);

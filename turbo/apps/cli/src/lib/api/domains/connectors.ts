@@ -170,6 +170,32 @@ export async function listConnectorCatalog(): Promise<ConnectorCatalogListRespon
   handleError(result, "Failed to list connector catalog");
 }
 
+/**
+ * Get one catalog connector with its connection status.
+ * Returns null when the catalog has no connector with this slug.
+ */
+export async function getConnectorCatalogStatus(
+  connectorSlug: ConnectorSlug,
+): Promise<ConnectorCatalogStatus | null> {
+  const config = await getClientConfig();
+  const client = initClient(connectorCatalogContract, config);
+
+  const result = await client.get({ headers: {}, params: { connectorSlug } });
+
+  if (result.status === 200) {
+    return result.body.connector;
+  }
+
+  if (result.status === 404) {
+    return null;
+  }
+
+  handleError(
+    result,
+    `Failed to get connector catalog item "${connectorSlug}"`,
+  );
+}
+
 export async function listConnectorCatalogStatus(): Promise<ConnectorCatalogStatusResponse> {
   const config = await getClientConfig();
   const client = initClient(connectorCatalogContract, config);

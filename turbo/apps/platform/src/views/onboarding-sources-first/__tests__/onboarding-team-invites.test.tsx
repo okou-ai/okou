@@ -1,7 +1,3 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
@@ -16,6 +12,10 @@ import {
 import { pathname } from "../../../signals/location.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  connectedGmailSource,
+  mockOnboardingConnectorCatalog,
+} from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
 
@@ -32,45 +32,7 @@ const TEAMMATE = "rowan@company.com";
 
 /** One connected source, which every step after the source step requires. */
 function mockConnectedCatalog(): void {
-  const connector: PublicConnectorCatalogStatusItem = {
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    icon: {
-      url: "https://icons.example.test/onboarding-gmail.svg",
-      invertInDarkMode: false,
-    },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: true,
-    connectionStatus: "connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
 }
 
 function getButtonByName(name: string): HTMLElement {

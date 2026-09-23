@@ -1,6 +1,10 @@
 import { screen, waitFor } from "@testing-library/react";
 import { bankingUserContract } from "@okouai/api-contracts/contracts/banking";
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
 import {
@@ -578,6 +582,100 @@ test("Keep the connector slot when delayed metadata is unavailable", async () =>
   const unavailable = await screen.findByTestId("unavailable-action-card");
   expect(unavailable).toHaveTextContent("Action unavailable");
   expectNodeBefore(unavailable, screen.getByText("After the request"));
+});
+
+test("A connector account switch shows its connector icon from that connector's catalog entry", async () => {
+  const github = connectorSlugSchema.parse("github");
+  const connectionId = "f0000000-0000-4000-a000-000000000901";
+  const iconUrl = "https://icons.example.test/account-switch-github.svg";
+  const switchUrl = new URL(
+    `https://app.okou.ai/agents/${AGENT_ID}/connector-accounts/${connectionId}/select`,
+  );
+  switchUrl.searchParams.set("kind", "builtin");
+  switchUrl.searchParams.set("connectorSlug", github);
+  switchUrl.searchParams.set("threadId", THREAD_ID);
+  switchUrl.searchParams.set("callbackPrompt", "Continue");
+  context.mocks.api(connectorOverviewContract.agent, ({ params, respond }) => {
+    return respond(200, {
+      enabledConnectorSlugs: params.id === AGENT_ID ? [github] : [],
+      customConnectorIds: [],
+    });
+  });
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      return respond(200, {
+        id: params.connectionId,
+        target: { kind: "builtin", connectorSlug: github },
+        authMethod: "oauth",
+        displayName: "Work GitHub",
+        isDefault: false,
+        externalId: null,
+        externalUsername: null,
+        externalEmail: null,
+        oauthScopes: [],
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-08-01T12:00:00.000Z",
+        updatedAt: "2026-08-01T12:00:00.000Z",
+      });
+    },
+  );
+  context.mocks.api(chatThreadConnectorSelectionContract.get, ({ respond }) => {
+    return respond(200, { selections: [], selectedConnections: [] });
+  });
+  // The slug route also matches the catalog's static paths, so the status
+  // route is registered after it to keep answering its own path.
+  const itemReads: string[] = [];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    itemReads.push(params.connectorSlug);
+    return params.connectorSlug === github
+      ? respond(200, {
+          connector: {
+            slug: github,
+            label: "GitHub",
+            description: "GitHub connector",
+            icon: { url: iconUrl, invertInDarkMode: false },
+            category: "productivity",
+            generation: [],
+            tags: [],
+            authMethods: [],
+            permissionSummary: {
+              hasPermissions: false,
+              permissionCount: 0,
+              hasCategories: false,
+              hasDefaultPolicyOverrides: false,
+            },
+            connection: null,
+            connected: true,
+            connectionStatus: "connected",
+            scopeMismatch: false,
+            authMethodSupportsRefresh: true,
+            tokenExpiresAt: null,
+            singleAuthCodeAuthMethodId: null,
+            connectNotice: null,
+          },
+        })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+  });
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, { connectors: [] });
+  });
+
+  await setupChat(`Use the work account\n\n${switchUrl.toString()}`);
+
+  const card = await screen.findByTestId("connector-account-action-card");
+  expect(card).toHaveTextContent("Switch to Work GitHub?");
+  await waitFor(() => {
+    expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
+  });
+  expect(itemReads).toStrictEqual([github]);
+  expect(statusReads).toBe(0);
 });
 
 test("Ordinary or code links remain message content", async () => {

@@ -23,6 +23,9 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000811";
+function connectorIconUrl(slug: string): string {
+  return `https://static.example.test/connectors/${slug}.svg`;
+}
 
 function mockRecommendations(
   target:
@@ -57,6 +60,13 @@ function mockRecommendations(
             connectors,
           },
         ],
+        connectors: connectors.map((slug) => {
+          return {
+            slug,
+            label: slug === "gmail" ? "Gmail" : slug,
+            icon: { url: connectorIconUrl(slug), invertInDarkMode: false },
+          };
+        }),
       });
     },
   );
@@ -166,6 +176,12 @@ test("A permission notice hides Gmail cards without reloading the home snapshot"
   });
 
   await screen.findByText("Prepare the launch follow-up");
+  expect(screen.getByText("Gmail")).toBeInTheDocument();
+  expect(
+    document.querySelector(
+      `[data-slot="home-task-recommendation-card"] img[src="${connectorIconUrl("gmail")}"]`,
+    ),
+  ).toBeInTheDocument();
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscription("connectorPermissionUpdated"),

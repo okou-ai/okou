@@ -9,7 +9,6 @@ import {
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import {
@@ -24,7 +23,10 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { NEVER_RESOLVED_PROMISE } from "../../../signals/utils.ts";
-import { catalogConnectorFixture } from "../../team-page/__tests__/team-page-test-helpers.ts";
+import {
+  catalogConnectorFixture,
+  mockConnectorOverview,
+} from "../../team-page/__tests__/team-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -2228,9 +2230,7 @@ test.each([false, true])(
       "GitHub",
       { hasPermissions: false },
     );
-    context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-      return respond(200, { connectors: [github] });
-    });
+    mockConnectorOverview(context, [github]);
     context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
       return ordinaryFailure
         ? respond(403, {
