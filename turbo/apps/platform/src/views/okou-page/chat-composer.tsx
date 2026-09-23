@@ -7098,9 +7098,8 @@ function ComposerConnectorAccountMenu({
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const open = Boolean(
     menuOpen &&
-      menuTarget &&
-      connectorAccountTargetKey(menuTarget) ===
-        connectorAccountTargetKey(target),
+    menuTarget &&
+    connectorAccountTargetKey(menuTarget) === connectorAccountTargetKey(target),
   );
   const effectiveConnection = explicit ? selectedConnection : defaultConnection;
   const resolveAccountLabel = useConnectorAccountLabel();
@@ -9197,8 +9196,9 @@ interface ComposerMediaModelPickerState<Model extends string> {
   readonly onChange: (next: Model | null) => void;
 }
 
-interface ComposerResolvedMediaModelPickerState<Model extends string>
-  extends ComposerMediaModelPickerState<Model> {
+interface ComposerResolvedMediaModelPickerState<
+  Model extends string,
+> extends ComposerMediaModelPickerState<Model> {
   readonly selectedModel: Model;
 }
 
