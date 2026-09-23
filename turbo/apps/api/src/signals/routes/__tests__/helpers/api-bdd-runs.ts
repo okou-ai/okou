@@ -27,6 +27,7 @@ import {
 } from "@okouai/api-contracts/contracts/cron";
 import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
+  NATIVE_GPT_6_LUNA_HEADER,
   runnersActiveInputsContract,
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
@@ -514,7 +515,7 @@ export function createRunsApi(
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(true),
-          ...(extraHeaders ? { extraHeaders } : {}),
+          extraHeaders: { [NATIVE_GPT_6_LUNA_HEADER]: "1", ...extraHeaders },
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,
