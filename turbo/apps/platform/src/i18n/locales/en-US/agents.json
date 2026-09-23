@@ -81,6 +81,7 @@
       "description": "The agent “{{agentId}}” doesn't exist or you don't have access to it.",
       "title": "Agent not found"
     },
+    "sectionNavigation": "Agent details section",
     "tabs": {
       "authorization": "Authorization",
       "instructions": "Instructions",
