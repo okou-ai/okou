@@ -401,7 +401,7 @@ describe("managed SocialKit route", () => {
   });
 
   it.each(["session", "sandbox"] as const)(
-    "preserves null, omitted, zero and positive Instagram views for %s callers",
+    "preserves Instagram views and duration for %s callers",
     async (tokenType) => {
       const actor = createBddApi(context).user();
       if (!actor.orgId) {
@@ -433,6 +433,7 @@ describe("managed SocialKit route", () => {
           likes: 4,
           comments: 2,
           author: "example",
+          duration: views === 0 ? "00:12" : null,
           videoUrl: "https://media.example/video.mp4",
         };
         server.use(

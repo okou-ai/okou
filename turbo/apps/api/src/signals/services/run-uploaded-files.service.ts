@@ -10,10 +10,14 @@ import {
 } from "@okouai/db/schema/run-uploaded-file";
 
 import { logger } from "../../lib/log";
+import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { type Db, writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
+import {
+  queueArtifactCatalogFile,
+  syncArtifactCatalogForFile$,
+} from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 import {
   scheduleArtifactPreviewRender$,
@@ -93,13 +97,23 @@ interface RecordedUploadedFile {
 const L = logger("RunUploadedFiles");
 
 async function recordRunUploadedFileWrite(
-  write: Promise<readonly RecordedUploadedFile[]>,
+  db: Db,
+  write: (tx: Tx) => Promise<readonly RecordedUploadedFile[]>,
   runId: string,
   signal: AbortSignal,
 ): Promise<RecordedUploadedFile | undefined> {
-  const result = await settle(write, signal);
+  const result = await settle(
+    db.transaction(async (tx) => {
+      const [row] = await write(tx);
+      if (row) {
+        await queueArtifactCatalogFile(tx, row.id, signal);
+      }
+      return row;
+    }),
+    signal,
+  );
   if (result.ok) {
-    return result.value[0];
+    return result.value;
   }
   if (!isForeignKeyViolation(result.error)) {
     throw result.error;
@@ -167,40 +181,13 @@ export const recordHostedSiteArtifact$ = command(
         ? `${args.publicSlug}.html`
         : `${args.site}-v${args.deploymentVersion}.html`;
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename,
-        contentType: "text/html",
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata: {
-          generatedBy: "zero-official-website",
-          artifactKind: args.artifactKind,
-          siteId: args.siteId,
-          deploymentId: args.deploymentId,
-          deploymentVersion: args.deploymentVersion,
-          aliasUrl: args.aliasUrl,
-          access: args.access,
-          publicSlug: args.publicSlug,
-          fileCount: args.fileCount,
-          entrypoint: args.entrypoint,
-          spaFallback: args.spaFallback,
-          publicBrand: args.publicBrand,
-        },
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId,
           userId: args.userId,
           orgId: args.orgId,
           filename,
@@ -221,13 +208,41 @@ export const recordHostedSiteArtifact$ = command(
             spaFallback: args.spaFallback,
             publicBrand: args.publicBrand,
           },
-          // Legacy redeploys reuse a mutable alias row. Preserve the preview
-          // when the same deployment is completed again, but clear it when a
-          // new deployment takes over that row. Versioned rows are immutable
-          // and keep their own preview.
-          ...(args.deploymentVersion === null
-            ? {
-                previewImageUrl: sql`case
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId,
+            filename,
+            contentType: "text/html",
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata: {
+              generatedBy: "zero-official-website",
+              artifactKind: args.artifactKind,
+              siteId: args.siteId,
+              deploymentId: args.deploymentId,
+              deploymentVersion: args.deploymentVersion,
+              aliasUrl: args.aliasUrl,
+              access: args.access,
+              publicSlug: args.publicSlug,
+              fileCount: args.fileCount,
+              entrypoint: args.entrypoint,
+              spaFallback: args.spaFallback,
+              publicBrand: args.publicBrand,
+            },
+            // Legacy redeploys reuse a mutable alias row. Preserve the preview
+            // when the same deployment is completed again, but clear it when a
+            // new deployment takes over that row. Versioned rows are immutable
+            // and keep their own preview.
+            ...(args.deploymentVersion === null
+              ? {
+                  previewImageUrl: sql`case
                   when ${eq(
                     sql`${runUploadedFiles.metadata}->>'deploymentId'`,
                     args.deploymentId,
@@ -235,17 +250,23 @@ export const recordHostedSiteArtifact$ = command(
                   then ${runUploadedFiles.previewImageUrl}
                   else null
                 end`,
-              }
-            : {}),
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+                }
+              : {}),
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {
@@ -286,27 +307,13 @@ export const recordWebUploadedFile$ = command(
       publicBrand: args.publicBrand,
     };
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        userId: args.userId,
-        orgId: args.orgId ?? null,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata,
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId: args.externalId,
           userId: args.userId,
           orgId: args.orgId ?? null,
           filename: args.filename,
@@ -314,15 +321,36 @@ export const recordWebUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata,
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId ?? null,
+            filename: args.filename,
+            contentType: args.contentType,
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata,
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {
@@ -383,27 +411,13 @@ export const recordTelegramUploadedFile$ = command(
     const writeDb = set(writeDb$);
     const source = await sourceForRun(writeDb, args.runId, "telegram", signal);
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata: { ...args.metadata, publicBrand: args.publicBrand },
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId: args.externalId,
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -411,15 +425,36 @@ export const recordTelegramUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: { ...args.metadata, publicBrand: args.publicBrand },
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId,
+            filename: args.filename,
+            contentType: args.contentType,
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata: { ...args.metadata, publicBrand: args.publicBrand },
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {
@@ -522,27 +557,13 @@ export const recordGithubUploadedFile$ = command(
     const writeDb = set(writeDb$);
     const source = await sourceForRun(writeDb, args.runId, "github", signal);
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata: { ...args.metadata, publicBrand: args.publicBrand },
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId: args.externalId,
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -550,15 +571,36 @@ export const recordGithubUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: { ...args.metadata, publicBrand: args.publicBrand },
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId,
+            filename: args.filename,
+            contentType: args.contentType,
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata: { ...args.metadata, publicBrand: args.publicBrand },
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {
@@ -596,27 +638,13 @@ export const recordFeishuUploadedFile$ = command(
     const writeDb = set(writeDb$);
     const source = await sourceForRun(writeDb, args.runId, "feishu", signal);
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata: { ...args.metadata, publicBrand: args.publicBrand },
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId: args.externalId,
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -624,15 +652,36 @@ export const recordFeishuUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: { ...args.metadata, publicBrand: args.publicBrand },
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId,
+            filename: args.filename,
+            contentType: args.contentType,
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata: { ...args.metadata, publicBrand: args.publicBrand },
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {
@@ -670,27 +719,13 @@ export const recordTeamsUploadedFile$ = command(
     const writeDb = set(writeDb$);
     const source = await sourceForRun(writeDb, args.runId, "teams", signal);
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata: { ...args.metadata, publicBrand: args.publicBrand },
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId: args.externalId,
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -698,15 +733,36 @@ export const recordTeamsUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: { ...args.metadata, publicBrand: args.publicBrand },
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId,
+            filename: args.filename,
+            contentType: args.contentType,
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata: { ...args.metadata, publicBrand: args.publicBrand },
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {
@@ -755,27 +811,13 @@ export const recordAgentPhoneUploadedFile$ = command(
       signal,
     );
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata: { ...args.metadata, publicBrand: args.publicBrand },
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId: args.externalId,
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -783,15 +825,36 @@ export const recordAgentPhoneUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: { ...args.metadata, publicBrand: args.publicBrand },
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId,
+            filename: args.filename,
+            contentType: args.contentType,
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata: { ...args.metadata, publicBrand: args.publicBrand },
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {
@@ -840,27 +903,13 @@ export const recordSlackUploadedFile$ = command(
     const writeDb = set(writeDb$);
     const source = await sourceForRun(writeDb, args.runId, "slack", signal);
 
-    const write = writeDb
-      .insert(runUploadedFiles)
-      .values({
-        runId: args.runId,
-        source,
-        externalId: args.externalId,
-        userId: args.userId,
-        orgId: args.orgId,
-        filename: args.filename,
-        contentType: args.contentType,
-        sizeBytes: args.sizeBytes,
-        url: args.url,
-        metadata: { ...args.metadata, publicBrand: args.publicBrand },
-      })
-      .onConflictDoUpdate({
-        target: [
-          runUploadedFiles.runId,
-          runUploadedFiles.source,
-          runUploadedFiles.externalId,
-        ],
-        set: {
+    const write = (tx: Tx) => {
+      return tx
+        .insert(runUploadedFiles)
+        .values({
+          runId: args.runId,
+          source,
+          externalId: args.externalId,
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -868,15 +917,36 @@ export const recordSlackUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata: { ...args.metadata, publicBrand: args.publicBrand },
-          updatedAt: sql`now()`,
-        },
-      })
-      .returning({
-        id: runUploadedFiles.id,
-        previewImageUrl: runUploadedFiles.previewImageUrl,
-        sizeBytes: runUploadedFiles.sizeBytes,
-      });
-    const row = await recordRunUploadedFileWrite(write, args.runId, signal);
+        })
+        .onConflictDoUpdate({
+          target: [
+            runUploadedFiles.runId,
+            runUploadedFiles.source,
+            runUploadedFiles.externalId,
+          ],
+          set: {
+            userId: args.userId,
+            orgId: args.orgId,
+            filename: args.filename,
+            contentType: args.contentType,
+            sizeBytes: args.sizeBytes,
+            url: args.url,
+            metadata: { ...args.metadata, publicBrand: args.publicBrand },
+            updatedAt: sql`now()`,
+          },
+        })
+        .returning({
+          id: runUploadedFiles.id,
+          previewImageUrl: runUploadedFiles.previewImageUrl,
+          sizeBytes: runUploadedFiles.sizeBytes,
+        });
+    };
+    const row = await recordRunUploadedFileWrite(
+      writeDb,
+      write,
+      args.runId,
+      signal,
+    );
     signal.throwIfAborted();
 
     if (!row) {

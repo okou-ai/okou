@@ -14,7 +14,7 @@ import { writeDb$, type Db } from "../external/db";
 import { sendTeamsMessage } from "../external/teams-bot-client";
 import {
   materializeUploadedArtifact$,
-  uploadedArtifactFetchUrl,
+  uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
 import { recordTeamsUploadedFile$ } from "../services/run-uploaded-files.service";
 import type { RouteEntry } from "../route-entry";
@@ -146,7 +146,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
   const mimetype = body.contentType ?? object.contentType;
 
-  const fetchUrl = await get(uploadedArtifactFetchUrl(object));
+  const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
   signal.throwIfAborted();
   const result = await sendTeamsMessage(
     {

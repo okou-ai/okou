@@ -2018,9 +2018,13 @@
       "title": "Encaminhar para"
     },
     "homeTasks": {
+      "empty": "Ainda não há tarefas sugeridas",
       "existingThread": "Continuar chat",
+      "exploreWorkflow": "Explorar fluxo de trabalho",
       "heading": "Retomado do seu trabalho recente",
-      "newThread": "Novo chat"
+      "newTasksAvailable": "Novas tarefas disponíveis",
+      "newThread": "Novo chat",
+      "reload": "Recarregar tarefas"
     },
     "mail": {
       "bcc": "cco",

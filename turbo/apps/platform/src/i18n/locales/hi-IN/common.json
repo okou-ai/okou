@@ -1981,9 +1981,13 @@
       "title": "फ़ॉरवर्ड करें"
     },
     "homeTasks": {
+      "empty": "अभी कोई सुझाया गया कार्य नहीं",
       "existingThread": "चैट जारी रखें",
+      "exploreWorkflow": "वर्कफ़्लो देखें",
       "heading": "आपके हाल के काम से लिया गया",
-      "newThread": "नई चैट"
+      "newTasksAvailable": "नए कार्य उपलब्ध हैं",
+      "newThread": "नई चैट",
+      "reload": "कार्य फिर से लोड करें"
     },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",

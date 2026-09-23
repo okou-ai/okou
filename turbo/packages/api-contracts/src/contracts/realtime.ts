@@ -45,9 +45,16 @@ export type BrowserSessionChangedPayload = z.infer<
   typeof browserSessionChangedPayloadSchema
 >;
 
-/** Invalidate the cached task cards for one Agent after a cron refresh. */
+/** Notify one Agent's home page when its visible task cards change. */
 export const homeTaskRecommendationsChangedPayloadSchema = z
-  .object({ agentId: z.uuid() })
+  .object({
+    agentId: z.uuid(),
+    revision: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    removed: z.boolean().optional(),
+  })
   .strict();
 
 export type HomeTaskRecommendationsChangedPayload = z.infer<

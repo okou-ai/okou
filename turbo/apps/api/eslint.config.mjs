@@ -292,6 +292,25 @@ export default [
     },
   },
   {
+    files: [
+      "src/signals/services/model-provider-subscription-usage.service.ts",
+    ],
+    rules: {
+      // A 503 from the ChatGPT usage endpoint is a bounded, already recovered
+      // outcome — the list response still carries the stored provider row — so
+      // `warn` put every occurrence into the production error review. A
+      // sustained rate is still the real signal and the record carries the
+      // `status` and provider identity a genuine ChatGPT outage needs, so it
+      // has to survive Axiom's info default; debug would drop it entirely.
+      // Every other refresh failure, including authentication rejections,
+      // stays on the shared warn path.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["codex usage unavailable upstream"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/onboarding.service.ts"],
     rules: {
       "api/no-logger-info": [

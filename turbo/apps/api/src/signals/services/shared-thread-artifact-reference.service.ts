@@ -7,13 +7,13 @@ import {
 import { nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import {
-  generateArtifactPreviewUrl,
   generateHostedSitesPresignedGetUrl,
   readArtifactSharePolicyObject,
 } from "../external/s3";
 import { settle } from "../utils";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import type { SharedThreadArtifactReference } from "./artifact-reference.service";
+import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
@@ -105,21 +105,31 @@ export const resolveSharedThreadArtifactReference$ = command(
     if (target.kind === "file") {
       const signingDate = nowDate();
       const [preview, download] = await Promise.all([
-        get(
-          generateArtifactPreviewUrl(privateArtifactsBucket(), target.key, {
-            signingDate,
-          }),
+        set(
+          resolveArtifactPreviewUrl$,
+          { bucket: privateArtifactsBucket(), key: target.key, signingDate },
+          signal,
         ),
-        get(
-          generateArtifactPreviewUrl(privateArtifactsBucket(), target.key, {
+        set(
+          resolveArtifactPreviewUrl$,
+          {
+            bucket: privateArtifactsBucket(),
+            key: target.key,
             signingDate,
             filename: target.filename,
-          }),
+          },
+          signal,
         ),
       ]);
       signal.throwIfAborted();
       return {
         ...preview,
+        expiresAt: new Date(
+          Math.min(
+            Date.parse(preview.expiresAt),
+            Date.parse(download.expiresAt),
+          ),
+        ).toISOString(),
         downloadUrl: download.url,
         filename: target.filename,
         contentType: target.contentType,
