@@ -46,7 +46,7 @@ function BrowserActionSurface({
       className={
         variant === "standalone"
           ? "@container w-full"
-          : "@container w-full max-w-2xl"
+          : "@container w-full max-w-xl"
       }
     >
       <ChatCard
@@ -55,7 +55,7 @@ function BrowserActionSurface({
         className={
           variant === "standalone"
             ? "w-full p-5 sm:p-6"
-            : "h-[136px] w-full p-3 @[560px]:h-[88px]"
+            : "h-[136px] w-full p-2.5 @[380px]:h-[112px] @[520px]:h-[80px]"
         }
       >
         {children}
@@ -82,20 +82,25 @@ function ActionState({
       className={cn(
         "flex w-full flex-col justify-center gap-2",
         variant === "inline"
-          ? "h-full @[560px]:flex-row @[560px]:items-center @[560px]:justify-start @[560px]:gap-4"
+          ? "h-full @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3"
           : "min-h-20 sm:flex-row sm:items-center sm:justify-start sm:gap-4",
       )}
       role="status"
     >
-      <div className="flex min-w-0 max-w-full items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+      <div className="flex min-w-0 max-w-full items-start gap-2.5">
+        <div
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground",
+            variant === "inline" ? "h-8 w-8" : "h-9 w-9",
+          )}
+        >
           {icon}
         </div>
         <div className="min-w-0 max-w-sm">
           <div
             className={cn(
               "text-[0.9375rem] font-medium text-foreground",
-              variant === "inline" && "line-clamp-2",
+              variant === "inline" && (action ? "truncate" : "line-clamp-2"),
             )}
           >
             {title}
@@ -116,10 +121,10 @@ function ActionState({
       {action && (
         <div
           className={cn(
-            "shrink-0 self-start pl-12",
+            "shrink-0 self-start",
             variant === "inline"
-              ? "@[560px]:self-auto @[560px]:pl-0"
-              : "sm:self-auto sm:pl-0",
+              ? "pl-[42px] @[520px]:self-auto @[520px]:pl-0"
+              : "pl-12 sm:self-auto sm:pl-0",
           )}
         >
           {action}
@@ -347,8 +352,18 @@ function PendingFormHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-w-0 max-w-full items-center gap-3">
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+    <div
+      className={cn(
+        "flex min-w-0 max-w-full items-center",
+        compact ? "gap-2.5" : "gap-3",
+      )}
+    >
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground",
+          compact ? "h-8 w-8" : "h-9 w-9",
+        )}
+      >
         <Globe size={20} />
       </div>
       <div className="min-w-0 max-w-sm">
@@ -359,7 +374,12 @@ function PendingFormHeader({
             })}
           </h2>
         )}
-        <div className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+        <div
+          className={cn(
+            "flex items-start gap-1.5 text-xs text-muted-foreground",
+            compact ? "mt-1" : "mt-2",
+          )}
+        >
           <span className="shrink-0 font-medium text-foreground">
             {t(($) => {
               return $.chat.browserInput.site;
@@ -648,29 +668,31 @@ function PendingInlineAction({
   const beginEntry = useSet(signals.beginEntry$);
   const endEntry = useSet(signals.endEntry$);
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 @[560px]:flex-row @[560px]:items-center @[560px]:justify-start @[560px]:gap-4">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
-      <ChatCardDetails
-        title={t(($) => {
-          return $.chat.browserInput.title;
-        })}
-        triggerLabel={t(($) => {
-          return $.chat.browserInput.open;
-        })}
-        onOpenChange={(open) => {
-          if (open) {
-            detach(beginEntry(pageSignal), Reason.DomCallback);
-          } else {
-            endEntry();
-          }
-        }}
-      >
-        <PendingFormGate
-          signals={signals}
-          request={request}
-          showTitle={false}
-        />
-      </ChatCardDetails>
+      <div className="shrink-0 self-start pl-[42px] @[520px]:self-auto @[520px]:pl-0">
+        <ChatCardDetails
+          title={t(($) => {
+            return $.chat.browserInput.title;
+          })}
+          triggerLabel={t(($) => {
+            return $.chat.browserInput.open;
+          })}
+          onOpenChange={(open) => {
+            if (open) {
+              detach(beginEntry(pageSignal), Reason.DomCallback);
+            } else {
+              endEntry();
+            }
+          }}
+        >
+          <PendingFormGate
+            signals={signals}
+            request={request}
+            showTitle={false}
+          />
+        </ChatCardDetails>
+      </div>
     </div>
   );
 }
@@ -938,9 +960,9 @@ function PendingInlineDirectInteraction({
   const { t } = useTranslation();
   const openBrowserSidebar = useSet(openThreadBrowserSession$);
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 @[560px]:flex-row @[560px]:items-center @[560px]:justify-start @[560px]:gap-4">
-      <div className="flex min-w-0 max-w-full items-center gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3">
+      <div className="flex min-w-0 max-w-full items-center gap-2.5">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           <MousePointerClick size={20} />
         </div>
         <div className="min-w-0 max-w-sm">
@@ -949,12 +971,15 @@ function PendingInlineDirectInteraction({
               return $.chat.browserInteraction.title;
             })}
           </div>
-          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground @[560px]:line-clamp-1">
+          <p
+            className="mt-1 line-clamp-1 text-sm leading-5 text-muted-foreground"
+            title={action.reason}
+          >
             {action.reason}
           </p>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2 self-start pl-12 @[560px]:self-auto @[560px]:pl-0">
+      <div className="flex shrink-0 items-center gap-2 self-start pl-[42px] @[520px]:self-auto @[520px]:pl-0">
         <Button
           type="button"
           size="sm"
