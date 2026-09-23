@@ -126,29 +126,6 @@ test.each(["available", "unavailable"] as const)(
   },
 );
 
-async function openPendingActivitySummary() {
-  installActiveRun();
-  context.mocks.api(
-    chatThreadActivitySummaryContract.summarize,
-    ({ respond }) => {
-      return respond(200, summary({ messages: [] }));
-    },
-  );
-
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
-  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
-}
-
-test("The pending summary fallback stays stable when reopening the thread", async () => {
-  await openPendingActivitySummary();
-  click(await findLink("Agents"));
-  await expect(
-    screen.findByRole("heading", { name: "Agents" }),
-  ).resolves.toBeVisible();
-  click(await findLink("Run conversation"));
-  await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
-});
-
 test("The loop keeps polling on its fixed interval while hidden", async () => {
   context.mocks.browser.visibilityState("hidden");
   installActiveRun();

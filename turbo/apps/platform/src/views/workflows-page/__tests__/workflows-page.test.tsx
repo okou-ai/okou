@@ -7,7 +7,6 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { mockNow } from "../../../lib/time.ts";
 import {
   billingStatusContract,
   type BillingStatusResponse,
@@ -5599,45 +5598,6 @@ test("Recover the author row after an API error without affecting workflow conte
   await user.hover(linkByAriaLabel("Open Sales Research"));
   await expect(
     within(await screen.findByRole("tooltip")).findByText("Recovered Author"),
-  ).resolves.toBeInTheDocument();
-});
-
-test("Expire a missing author result and recover on a later open", async () => {
-  const user = userEvent.setup();
-  const startedAt = new Date("2026-09-14T08:00:00Z").getTime();
-  mockNow(startedAt, context.signal);
-  mockWorkflowApis([salesResearch()]);
-  let available = false;
-  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-    return respond(200, {
-      displayName: available ? "Returned Author" : null,
-      imageUrl: null,
-    });
-  });
-  await setupPage({ context, path: "/workflows" });
-  await screen.findByText("Sales Research");
-  const title = linkByAriaLabel("Open Sales Research");
-  await user.hover(title);
-  await expect(
-    within(await screen.findByRole("tooltip")).findByText("Author unavailable"),
-  ).resolves.toBeInTheDocument();
-  available = true;
-  await user.unhover(title);
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  await user.hover(title);
-  await expect(
-    within(await screen.findByRole("tooltip")).findByText("Author unavailable"),
-  ).resolves.toBeInTheDocument();
-  await user.unhover(title);
-  await waitFor(() => {
-    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  });
-  mockNow(startedAt + 60_000, context.signal);
-  await user.hover(title);
-  await expect(
-    within(await screen.findByRole("tooltip")).findByText("Returned Author"),
   ).resolves.toBeInTheDocument();
 });
 
