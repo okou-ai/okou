@@ -417,8 +417,8 @@ export const morningBriefPreference$ = command(
       readLatestMorningBriefNativeOccurrence(db, owner),
       readLastDeliveredAt(db, owner),
     ]);
-    const lastRun = projectLastRun(latestOccurrence);
     signal.throwIfAborted();
+    const lastRun = projectLastRun(latestOccurrence);
     if (native !== undefined && native.phase !== "legacy") {
       return withLastRunAndDelivery(
         projectNativePreference(native),
@@ -1102,8 +1102,8 @@ export const updateMorningBriefPreference$ = command(
       readLatestMorningBriefNativeOccurrence(db, owner),
       readLastDeliveredAt(db, owner),
     ]);
-    const lastRun = projectLastRun(latestOccurrence);
     signal.throwIfAborted();
+    const lastRun = projectLastRun(latestOccurrence);
     return withLastRunAndDelivery(result, lastRun, lastDeliveredAt);
   },
 );
