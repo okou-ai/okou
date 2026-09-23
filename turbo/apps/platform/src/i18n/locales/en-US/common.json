@@ -4246,7 +4246,7 @@
         "no": "I'm new to AI agents",
         "noCopy": "Okou helps you choose a useful first task.",
         "title": "How would you like to start with Okou?",
-        "trust": "Your choice shapes what comes next. You can connect a plan now or later."
+        "trust": "Run tasks on your Codex or Claude Code plan instead of Okou credits, so you can do more without worrying about usage. Connect now or later."
       },
       "industries": {
         "coaching": {
@@ -4301,7 +4301,7 @@
       },
       "skills": {
         "copied": "Copied",
-        "copy": "Run this prompt in {{provider}} to import what you've built, so your team can reuse it in Okou.",
+        "copy": "Run this prompt in {{provider}} to import the skills you've already built, so Okou can use them from day one.",
         "copyError": "The prompt could not be copied.",
         "copyPrompt": "Copy prompt",
         "importedCopy": "Imported as an Okou workflow.",
@@ -4312,7 +4312,7 @@
         "promptLabel": "Skill import prompt",
         "promptTitle": "Run this in {{provider}}",
         "startError": "The import session could not be opened.",
-        "title": "Turn your skills into team workflows",
+        "title": "Bring your existing skills into Okou",
         "tryAgain": "Try again",
         "waiting": "Imported skills appear here as they arrive."
       },

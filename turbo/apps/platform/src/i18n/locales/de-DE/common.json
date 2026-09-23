@@ -4254,7 +4254,7 @@
         "no": "Ich bin neu bei KI-Agenten",
         "noCopy": "Okou hilft dir, eine passende erste Aufgabe zu finden.",
         "title": "Wie möchtest du mit Okou starten?",
-        "trust": "Deine Wahl bestimmt den nächsten Schritt. Einen Tarif kannst du jetzt oder später verbinden."
+        "trust": "Aufgaben laufen über deinen Codex- oder Claude-Code-Tarif statt über Okou-Credits, so kannst du mehr erledigen, ohne auf den Verbrauch zu achten. Jetzt oder später verbinden."
       },
       "industries": {
         "coaching": {
@@ -4309,7 +4309,7 @@
       },
       "skills": {
         "copied": "Kopiert",
-        "copy": "Führe diesen Prompt in {{provider}} aus, um deine Skills zu importieren und im Team über Okou wiederzuverwenden.",
+        "copy": "Führe diesen Prompt in {{provider}} aus, um deine vorhandenen Skills zu importieren, damit Okou sie sofort nutzen kann.",
         "copyError": "Der Prompt konnte nicht kopiert werden.",
         "copyPrompt": "Prompt kopieren",
         "importedCopy": "Als Okou-Workflow importiert.",
@@ -4320,7 +4320,7 @@
         "promptLabel": "Prompt für den Skill-Import",
         "promptTitle": "Führe das in {{provider}} aus",
         "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
-        "title": "Mach aus deinen Skills Team-Workflows",
+        "title": "Bring deine vorhandenen Skills zu Okou",
         "tryAgain": "Erneut versuchen",
         "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },

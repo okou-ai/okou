@@ -4310,7 +4310,7 @@
         "no": "Soy nuevo en los agentes de IA",
         "noCopy": "Okou te ayuda a encontrar una primera tarea útil.",
         "title": "¿Cómo quieres empezar con Okou?",
-        "trust": "Tu elección determina el siguiente paso. Puedes conectar un plan ahora o más adelante."
+        "trust": "Las tareas se ejecutan con tu plan de Codex o Claude Code en lugar de créditos de Okou, así puedes hacer más sin preocuparte por el consumo. Conéctalo ahora o más adelante."
       },
       "industries": {
         "coaching": {
@@ -4365,7 +4365,7 @@
       },
       "skills": {
         "copied": "Copiado",
-        "copy": "Ejecuta este prompt en {{provider}} para importar tus skills y reutilizarlas con tu equipo en Okou.",
+        "copy": "Ejecuta este prompt en {{provider}} para importar las skills que ya has creado y que Okou pueda usarlas desde el primer día.",
         "copyError": "No se pudo copiar el prompt.",
         "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow de Okou.",
@@ -4376,7 +4376,7 @@
         "promptLabel": "Prompt de importación de skills",
         "promptTitle": "Ejecuta esto en {{provider}}",
         "startError": "No se pudo abrir la sesión de importación.",
-        "title": "Convierte tus skills en flujos de trabajo para el equipo",
+        "title": "Trae tus skills a Okou",
         "tryAgain": "Intentar de nuevo",
         "waiting": "Las skills importadas aparecen aquí a medida que llegan."
       },

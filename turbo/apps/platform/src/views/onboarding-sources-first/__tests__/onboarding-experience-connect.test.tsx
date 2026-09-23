@@ -25,7 +25,7 @@ const SOURCES_FIRST_ON = {
 } as const;
 
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
-const SKILLS_QUESTION = "Turn your skills into team workflows";
+const SKILLS_QUESTION = "Bring your existing skills into Okou";
 const SLACK_QUESTION = "Keep work moving in Slack";
 const CODEX_CARD = "Codex";
 const NEW_TO_THIS_CARD = "I'm new to AI agents";

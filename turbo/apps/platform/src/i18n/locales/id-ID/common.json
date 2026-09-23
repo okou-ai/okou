@@ -4240,7 +4240,7 @@
         "no": "Saya baru mengenal agen AI",
         "noCopy": "Okou membantu Anda memilih tugas pertama yang berguna.",
         "title": "Bagaimana Anda ingin memulai dengan Okou?",
-        "trust": "Pilihan Anda menentukan langkah berikutnya. Paket dapat dihubungkan sekarang atau nanti."
+        "trust": "Tugas berjalan dengan paket Codex atau Claude Code Anda, bukan kredit Okou, jadi Anda bisa melakukan lebih banyak tanpa khawatir soal pemakaian. Hubungkan sekarang atau nanti."
       },
       "industries": {
         "coaching": {
@@ -4295,7 +4295,7 @@
       },
       "skills": {
         "copied": "Tersalin",
-        "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah dibuat agar tim dapat menggunakannya kembali di Okou.",
+        "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
         "importedCopy": "Diimpor sebagai workflow Okou.",
@@ -4306,7 +4306,7 @@
         "promptLabel": "Prompt impor skill",
         "promptTitle": "Jalankan ini di {{provider}}",
         "startError": "Sesi impor tidak dapat dibuka.",
-        "title": "Ubah skill Anda menjadi alur kerja tim",
+        "title": "Bawa skill Anda ke Okou",
         "tryAgain": "Coba lagi",
         "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },

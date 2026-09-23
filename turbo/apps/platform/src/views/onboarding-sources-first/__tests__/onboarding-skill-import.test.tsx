@@ -45,7 +45,7 @@ const SOURCES_FIRST_ON = {
 } as const;
 
 const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
-const SKILLS_QUESTION = "Turn your skills into team workflows";
+const SKILLS_QUESTION = "Bring your existing skills into Okou";
 const SKILLS_ARRIVED_TITLE = "Your skills are in Okou";
 const SLACK_QUESTION = "Keep work moving in Slack";
 const CODEX_CARD = "Codex";
@@ -402,7 +402,7 @@ test("The step hands over the prompt its session produced, and copies it whole",
   expect(screen.getByText("Run this in Codex")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Run this prompt in Codex to import what you've built, so your team can reuse it in Okou.",
+      "Run this prompt in Codex to import the skills you've already built, so Okou can use them from day one.",
     ),
   ).toBeInTheDocument();
 
@@ -439,7 +439,7 @@ test("The skills step names Claude Code when it was selected", async () => {
   expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
   expect(
     screen.getByText(
-      "Run this prompt in Claude Code to import what you've built, so your team can reuse it in Okou.",
+      "Run this prompt in Claude Code to import the skills you've already built, so Okou can use them from day one.",
     ),
   ).toBeInTheDocument();
 });
