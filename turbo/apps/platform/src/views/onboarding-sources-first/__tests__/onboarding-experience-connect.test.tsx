@@ -129,7 +129,7 @@ function mockSlackNotInstalled(): void {
   });
 }
 
-async function openExperienceStep(): Promise<void> {
+async function openExperienceStep(fromStart = false): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -140,9 +140,28 @@ async function openExperienceStep(): Promise<void> {
   await setupPage({
     context,
     locale: "en-US",
-    path: ROUTES.onboardingExperience,
+    path: fromStart ? ROUTES.onboarding : ROUTES.onboardingExperience,
     featureSwitches: SOURCES_FIRST_ON,
   });
+
+  if (fromStart) {
+    await screen.findByRole("heading", {
+      name: "What kind of work do you do?",
+    });
+    click(answerRadio("Marketing & content"));
+    await waitFor(() => {
+      expect(getButtonByName("Continue")).toBeEnabled();
+    });
+    click(getButtonByName("Continue"));
+    await screen.findByRole("heading", {
+      name: "Okou is for you, and shared across your whole team.",
+    });
+    click(getButtonByName("Continue"));
+    await screen.findByRole("heading", {
+      name: "Bring the people who do this work with you.",
+    });
+    click(getButtonByName("Not now"));
+  }
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
@@ -307,7 +326,7 @@ test("A failed connect says so and still lets the person continue", async () => 
 });
 
 test("Answering new to this keeps skipping the skills step", async () => {
-  await openExperienceStep();
+  await openExperienceStep(true);
 
   click(answerRadio(NEW_TO_THIS_CARD));
 

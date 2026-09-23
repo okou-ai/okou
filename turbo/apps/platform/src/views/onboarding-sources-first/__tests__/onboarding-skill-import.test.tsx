@@ -460,13 +460,6 @@ test.each([
     scenario: "full flow",
     expectedIndustry: "marketing",
   },
-  {
-    card: "Claude Code" as const,
-    provider: "claudeCode",
-    fromStart: false,
-    scenario: "resumed without an industry answer",
-    expectedIndustry: undefined,
-  },
 ])(
   "Finishing onboarding sends the selected $card model preference after a $scenario",
   async ({ card, provider, fromStart, expectedIndustry }) => {
@@ -513,11 +506,23 @@ test.each([
   },
 );
 
+test("A resumed skills step without a work positioning returns to the first question", async () => {
+  mockAgentWorkflows();
+  await openSkillsStep();
+
+  click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", {
+    name: "What kind of work do you do?",
+  });
+  expect(pathname()).toBe(ROUTES.onboarding);
+});
+
 test("A skill the import writes appears without the step being asked again", async () => {
   const posthog = context.mocks.posthog();
   const agentWorkflows = mockAgentWorkflows();
 
-  await openSkillsStep();
+  await openSkillsStep(CODEX_CARD, true);
 
   await expect(
     screen.findByText(WAITING_FOR_SKILLS),
@@ -601,7 +606,7 @@ test("The step can be left with nothing imported", async () => {
   const posthog = context.mocks.posthog();
   mockAgentWorkflows();
 
-  await openSkillsStep();
+  await openSkillsStep(CODEX_CARD, true);
 
   await expect(
     screen.findByText(WAITING_FOR_SKILLS),
