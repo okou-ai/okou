@@ -6404,7 +6404,7 @@
         "workspaceDescription": "Disponível para todos neste espaço de trabalho."
       },
       "reset": {
-        "confirmDescription": "Use uma redefinição do Codex para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
+        "confirmDescription": "Use uma redefinição do {{provider}} para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
         "progress": "Redefinindo...",
         "remaining_one": "{{value}} redefinição restante",
         "remaining_many": "{{value}} redefinições restantes",
@@ -6414,7 +6414,7 @@
         "remainingWithExpiry_one": "{{value}} redefinição restante · expira {{expiry}}",
         "remainingWithExpiry_many": "{{value}} redefinições restantes · expiram {{expiry}}",
         "remainingWithExpiry_other": "{{value}} redefinições restantes · expiram {{expiry}}",
-        "title": "Redefinir o uso do Codex?"
+        "title": "Redefinir o uso do {{provider}}?"
       },
       "stale": {
         "claudeExpired": "Sua sessão do Claude Code expirou. Reconecte para continuar.",
@@ -6431,9 +6431,9 @@
         "accountSwitched": "Conta ativa alterada",
         "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configurações dos provedores de modelo atualizadas",
-        "reset": "Uso do Codex redefinido",
-        "resetUnavailable": "Nenhuma redefinição de uso do Codex disponível",
-        "resetUnneeded": "O uso do Codex não precisa ser redefinido agora"
+        "reset": "Uso do {{provider}} redefinido",
+        "resetUnavailable": "Nenhuma redefinição de uso do {{provider}} disponível",
+        "resetUnneeded": "O uso do {{provider}} não precisa ser redefinido agora"
       },
       "usage": {
         "inDays": "em {{days}}d",

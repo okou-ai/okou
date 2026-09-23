@@ -6404,7 +6404,7 @@
         "workspaceDescription": "Disponible pour tous les membres de cet espace de travail."
       },
       "reset": {
-        "confirmDescription": "Utilisez une réinitialisation de Codex pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
+        "confirmDescription": "Utilisez une réinitialisation de {{provider}} pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
         "progress": "Réinitialisation en cours...",
         "remaining_one": "{{value}} réinitialisation restante",
         "remaining_many": "{{value}} réinitialisations restantes",
@@ -6414,7 +6414,7 @@
         "remainingWithExpiry_one": "{{value}} réinitialisation restante · expire {{expiry}}",
         "remainingWithExpiry_many": "{{value}} réinitialisations restantes · expirent {{expiry}}",
         "remainingWithExpiry_other": "{{value}} réinitialisations restantes · expirent {{expiry}}",
-        "title": "Réinitialiser l'utilisation de Codex ?"
+        "title": "Réinitialiser l'utilisation de {{provider}} ?"
       },
       "stale": {
         "claudeExpired": "Votre session Claude Code a expiré. Reconnectez-vous pour continuer.",
@@ -6431,9 +6431,9 @@
         "accountSwitched": "Compte actif changé",
         "disconnected": "{{provider}} déconnecté",
         "policiesUpdated": "Paramètres du fournisseur de modèle mis à jour",
-        "reset": "Utilisation de Codex réinitialisée",
-        "resetUnavailable": "Aucune réinitialisation d'utilisation de Codex disponible",
-        "resetUnneeded": "L'utilisation de Codex n'a pas besoin d'être réinitialisée pour le moment"
+        "reset": "Utilisation de {{provider}} réinitialisée",
+        "resetUnavailable": "Aucune réinitialisation d'utilisation de {{provider}} disponible",
+        "resetUnneeded": "L'utilisation de {{provider}} n'a pas besoin d'être réinitialisée pour le moment"
       },
       "usage": {
         "inDays": "dans {{days}}j",

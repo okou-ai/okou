@@ -765,6 +765,9 @@ const importClaudeCodeOAuthToken$ = command(
       fetchClaudeCodeSubscriptionMetadata(
         {
           accessToken: args.accessToken,
+          // Reset credits are read live for display and are not persisted on
+          // the provider row, so connecting an account never reads them.
+          includeResetGrants: false,
         },
         signal,
       ),

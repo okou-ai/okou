@@ -142,6 +142,7 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
   async (
     { get, set },
     args: {
+      readonly type: ModelProviderType;
       readonly idempotencyKey: string;
     },
     signal: AbortSignal,
@@ -150,7 +151,7 @@ export const resetPersonalCodexSubscriptionUsage$ = command(
     const client = createClient(personalModelProvidersByTypeContract);
     const result = await accept(
       client.resetSubscriptionUsage({
-        params: { type: "codex-oauth-token" },
+        params: { type: args.type },
         body: { idempotencyKey: args.idempotencyKey },
         fetchOptions: { signal },
       }),

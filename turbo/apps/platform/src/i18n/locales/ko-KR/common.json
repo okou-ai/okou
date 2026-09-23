@@ -6330,14 +6330,14 @@
         "workspaceDescription": "이 워크스페이스의 모든 사용자에게 제공됨."
       },
       "reset": {
-        "confirmDescription": "현재 사용량 창을 재설정하려면 Codex 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
+        "confirmDescription": "현재 사용량 창을 재설정하려면 {{provider}} 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
         "progress": "재설정 중...",
         "remaining_one": "{{value}}회 재설정 가능",
         "remaining_other": "{{value}}회 재설정 가능",
         "remainingUnavailable": "재설정 가능 횟수 없음",
         "remainingUnknown": "재설정 —",
         "remainingWithExpiry_other": "{{value}}회 재설정 가능 · {{expiry}} 만료",
-        "title": "Codex 사용량을 재설정하시겠습니까?"
+        "title": "{{provider}} 사용량을 재설정하시겠습니까?"
       },
       "stale": {
         "claudeExpired": "Claude Code 세션이 만료되었습니다. 계속하려면 다시 연결하세요.",
@@ -6354,9 +6354,9 @@
         "accountSwitched": "활성 계정이 변경되었습니다",
         "disconnected": "{{provider}} 연결 해제됨",
         "policiesUpdated": "모델 공급자 설정이 업데이트되었습니다.",
-        "reset": "Codex 사용량이 재설정되었습니다.",
-        "resetUnavailable": "사용 가능한 Codex 사용량 재설정이 없습니다.",
-        "resetUnneeded": "현재 Codex 사용량 재설정이 필요하지 않습니다."
+        "reset": "{{provider}} 사용량이 재설정되었습니다.",
+        "resetUnavailable": "사용 가능한 {{provider}} 사용량 재설정이 없습니다.",
+        "resetUnneeded": "현재 {{provider}} 사용량 재설정이 필요하지 않습니다."
       },
       "usage": {
         "inDays": "{{days}}일 후",

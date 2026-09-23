@@ -6344,7 +6344,7 @@
         "workspaceDescription": "इस वर्कस्पेस में सभी के लिए उपलब्ध है।"
       },
       "reset": {
-        "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक Codex रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
+        "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक {{provider}} रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
         "progress": "रीसेट किया जा रहा है...",
         "remaining_one": "{{value}} रीसेट बचे हैं",
         "remaining_other": "{{value}} रीसेट बचे हैं",
@@ -6352,7 +6352,7 @@
         "remainingUnknown": "रीसेट —",
         "remainingWithExpiry_one": "{{value}} रीसेट बचा है · {{expiry}} समाप्त",
         "remainingWithExpiry_other": "{{value}} रीसेट बचे हैं · {{expiry}} समाप्त",
-        "title": "Codex उपयोग रीसेट करें?"
+        "title": "{{provider}} उपयोग रीसेट करें?"
       },
       "stale": {
         "claudeExpired": "आपका Claude Code सत्र समाप्त हो गया। जारी रखने के लिए पुनः कनेक्ट करें.",
@@ -6369,9 +6369,9 @@
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
         "disconnected": "{{provider}} डिस्कनेक्ट हो गया",
         "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",
-        "reset": "Codex उपयोग रीसेट",
-        "resetUnavailable": "कोई Codex उपयोग रीसेट उपलब्ध नहीं है",
-        "resetUnneeded": "Codex उपयोग को अभी रीसेट की आवश्यकता नहीं है"
+        "reset": "{{provider}} उपयोग रीसेट",
+        "resetUnavailable": "कोई {{provider}} उपयोग रीसेट उपलब्ध नहीं है",
+        "resetUnneeded": "{{provider}} उपयोग को अभी रीसेट की आवश्यकता नहीं है"
       },
       "usage": {
         "inDays": "{{days}}d में",

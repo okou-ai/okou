@@ -445,6 +445,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ClaudeCodeUsageReset]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Offer manual usage-window resets for personal Claude Code subscriptions, matching the Codex reset action.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:
