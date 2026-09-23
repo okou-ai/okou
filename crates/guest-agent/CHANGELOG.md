@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.98.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.97.0...guest-agent-v0.98.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
 ## [0.97.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.96.0...guest-agent-v0.97.0) (2026-09-23)
 
 

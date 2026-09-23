@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.702.0](https://github.com/okou-ai/okou/compare/core-v8.701.0...core-v8.702.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.495.0
+
 ## [8.701.0](https://github.com/okou-ai/okou/compare/core-v8.700.2...core-v8.701.0) (2026-09-23)
 
 
