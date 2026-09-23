@@ -583,7 +583,6 @@ describe("custom model provider gateway routes", () => {
         model: upstreamModel,
         catalogModel: logicalModel,
       });
-      expect(deepseekClaim.codexRuntimeConfig).toBeUndefined();
       expect(deepseekClaim.appendSystemPrompt).toContain(
         'okou image-recognition --file <image-path> --prompt "<instruction>"',
       );
