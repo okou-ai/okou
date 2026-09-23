@@ -361,11 +361,12 @@ async function resolveFixture(
 async function resolveFixtureWithExpiredRows(
   fixture: BenchFixture,
   useMixedLookup: boolean,
+  expiredEvery = 10,
 ): Promise<void> {
   const db = store.set(writeDb$);
   const expiredCacheKeys = fixture.pairs
     .filter((_, index) => {
-      return index % 10 === 0;
+      return index % expiredEvery === 0;
     })
     .map((pair) => {
       return pair.cacheKey;
@@ -471,6 +472,32 @@ test(
         }),
       );
     }).run(benchOptions);
+    await bench("current per-scope lookup 96 raw / 17 unique x32", async () => {
+      await Promise.all(
+        Array.from({ length: 32 }, async () => {
+          await resolveFixture(repeated96Fixture, false);
+        }),
+      );
+    }).run(benchOptions);
+    await bench("bounded mixed lookup 96 raw / 17 unique x32", async () => {
+      await Promise.all(
+        Array.from({ length: 32 }, async () => {
+          await resolveFixture(repeated96Fixture, true);
+        }),
+      );
+    }).run(benchOptions);
+    await bench(
+      "current per-scope lookup 96 raw / 17 unique half expired",
+      async () => {
+        await resolveFixtureWithExpiredRows(repeated96Fixture, false, 2);
+      },
+    ).run(benchOptions);
+    await bench(
+      "bounded mixed lookup 96 raw / 17 unique half expired",
+      async () => {
+        await resolveFixtureWithExpiredRows(repeated96Fixture, true, 2);
+      },
+    ).run(benchOptions);
   },
 );
 
