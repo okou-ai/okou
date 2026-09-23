@@ -6677,6 +6677,7 @@
         "checkEmailSubscription": "Consultez l’abonnement aux e-mails ci-dessus pour connaître l’état de la livraison.",
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
         "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
+        "lastDelivered": "Dernière livraison : {{date}}",
         "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",

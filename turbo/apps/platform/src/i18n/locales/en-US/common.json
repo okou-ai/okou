@@ -6606,6 +6606,7 @@
         "checkEmailSubscription": "Check your email subscription above for delivery status.",
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent. Retry when reconciliation finishes.",
         "description": "Daily priorities at 7:00 AM in your time zone.",
+        "lastDelivered": "Last delivered {{date}}",
         "loading": "Loading Morning Brief settings...",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",

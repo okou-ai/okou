@@ -6599,6 +6599,7 @@
         "checkEmailSubscription": "위의 이메일 구독에서 전송 상태를 확인하세요.",
         "conflict": "설치 상태가 일관되지 않아 Morning Brief를 일시적으로 사용할 수 없습니다. 조정이 완료되면 다시 시도하세요.",
         "description": "내 시간대의 오전 7:00에 일일 우선순위를 받습니다.",
+        "lastDelivered": "마지막 전달: {{date}}",
         "loading": "Morning Brief 설정을 불러오는 중...",
         "missingDefaultAgent": "Morning Brief를 활성화하기 전에 사용 가능한 기본 Agent를 선택하세요.",
         "missingTimezone": "Morning Brief를 활성화하기 전에 유효한 시간대를 설정하세요.",

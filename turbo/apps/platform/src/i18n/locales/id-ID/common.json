@@ -6599,6 +6599,7 @@
         "checkEmailSubscription": "Periksa langganan email di atas untuk status pengiriman.",
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten. Coba lagi setelah rekonsiliasi selesai.",
         "description": "Prioritas harian pukul 07.00 sesuai zona waktu Anda.",
+        "lastDelivered": "Terakhir dikirim: {{date}}",
         "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",

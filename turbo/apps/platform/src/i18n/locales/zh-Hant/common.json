@@ -6599,6 +6599,7 @@
         "checkEmailSubscription": "投遞狀態請檢視上方的郵件訂閱。",
         "conflict": "晨報的安裝狀態不一致，暫時無法使用。請在狀態同步完成後重試。",
         "description": "每天早上 7:00（按你的時區）接收當日重點。",
+        "lastDelivered": "上次投遞：{{date}}",
         "loading": "正在載入晨報設定…",
         "missingDefaultAgent": "啟用晨報前，請先選擇一個可用的預設智能體。",
         "missingTimezone": "啟用晨報前，請先設定有效的時區。",
