@@ -48,36 +48,20 @@ describe("Browser user-action JSONB payload", () => {
     });
   });
 
-  it("decodes direct interaction without page metadata", () => {
-    expect(
-      parseBrowserUserActionPayload({
-        version: 1,
-        kind: "direct_interaction",
-        callbackIds,
-        reason: "Complete the challenge in the Browser",
-      }),
-    ).toStrictEqual({
-      version: 1,
-      kind: "direct_interaction",
-      callbackIds,
-      reason: "Complete the challenge in the Browser",
-    });
-  });
-
   it("rejects unknown versions, duplicate keys, and unsafe shapes", () => {
     expect(() => {
       return parseBrowserUserActionPayload({
         version: 2,
-        kind: "direct_interaction",
+        kind: "input",
         callbackIds,
-        reason: "New shape",
+        target: { ...inputTarget, fields: [] },
       });
     }).toThrow("Unsupported Browser user-action payload version");
     expect(() => {
       return parseBrowserUserActionPayload({
         version: 1,
-        kind: "direct_interaction",
-        reason: "Missing callback identities",
+        kind: "input",
+        target: { ...inputTarget, fields: [] },
       });
     }).toThrow("Invalid Browser user-action callback identities");
     expect(() => {

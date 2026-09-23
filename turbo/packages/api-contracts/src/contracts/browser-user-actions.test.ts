@@ -60,9 +60,18 @@ describe("Browser user-action contracts", () => {
   it("rejects unknown properties and oversized values", () => {
     expect(
       browserUserActionCreateRequestSchema.safeParse({
-        kind: "direct_interaction",
+        kind: "input",
         callbackPrompt: "Finish verification",
-        reason: "Complete the site challenge",
+        pageTargetId: "page-target",
+        fields: [
+          {
+            key: "code",
+            label: "Code",
+            fieldKind: "one_time_code",
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
         selector: "#must-not-be-accepted",
       }).success,
     ).toBe(false);
@@ -121,35 +130,6 @@ describe("Browser user-action contracts", () => {
         pageTargetId: "target",
         value: "secret",
         fields: [{ ...safe.fields[0], backendNodeId: 42 }],
-      }).success,
-    ).toBe(false);
-  });
-
-  it("does not require page metadata for direct interaction responses", () => {
-    const direct = {
-      requestToken: "vm0_browser_user_action_public-token",
-      kind: "direct_interaction" as const,
-      state: "pending" as const,
-      reason: "Complete the site challenge",
-      completedAt: null,
-      agentId: uuid("1"),
-      threadId: uuid("2"),
-      callbackIds: {
-        success: {
-          clientEventId: uuid("3"),
-          chatThreadSortEventId: uuid("4"),
-        },
-        cancellation: {
-          clientEventId: uuid("5"),
-          chatThreadSortEventId: uuid("6"),
-        },
-      },
-    };
-    expect(browserUserActionResponseSchema.parse(direct)).toStrictEqual(direct);
-    expect(
-      browserUserActionResponseSchema.safeParse({
-        ...direct,
-        siteOrigin: "https://example.com",
       }).success,
     ).toBe(false);
   });

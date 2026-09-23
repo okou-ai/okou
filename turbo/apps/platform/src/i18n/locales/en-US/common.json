@@ -1760,29 +1760,6 @@
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
     },
-    "browserInteraction": {
-      "applying": "Completing browser interaction",
-      "applyingDescription": "The browser is finishing this request.",
-      "callbackFailed": "Agent not notified.",
-      "cancel": "Cancel",
-      "cancelFailed": "Couldn't cancel this request. Try again.",
-      "cancelled": "Request cancelled",
-      "cancelling": "Cancelling…",
-      "completed": "Browser interaction complete",
-      "completeFailed": "Couldn't complete this request. Try again.",
-      "completing": "Completing…",
-      "continue": "Notify agent",
-      "continuing": "Notifying…",
-      "delivered": "Agent notified",
-      "description": "Open the browser, complete this step, then choose Done.",
-      "done": "Done",
-      "finish": "Finish step",
-      "stale": "Browser no longer available",
-      "staleDescription": "Ask the agent to create a new request.",
-      "title": "Take over the browser",
-      "uncertain": "Check the browser",
-      "uncertainDescription": "The interaction may have completed. Ask the agent to check before trying again."
-    },
     "cards": {
       "viewDetails": "View details"
     },

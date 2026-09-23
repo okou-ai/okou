@@ -147,9 +147,6 @@ function publicRequest(
     threadId: row.chatThreadId,
     callbackIds: payload.callbackIds,
   };
-  if (payload.kind === "direct_interaction") {
-    return { ...common, kind: payload.kind, reason: payload.reason };
-  }
   return {
     ...common,
     kind: payload.kind,
@@ -497,7 +494,7 @@ interface CreateBrowserUserActionArgs {
 interface PreparedBrowserUserAction {
   readonly chatThreadId: string;
   readonly providerSessionId: string;
-  readonly validation: BrowserUseUserActionValidation | null;
+  readonly validation: BrowserUseUserActionValidation;
 }
 
 async function prepareBrowserUserAction(
@@ -541,16 +538,6 @@ async function prepareBrowserUserAction(
       "The current chat run has no live managed Browser",
       "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
     );
-  }
-  if (args.input.kind === "direct_interaction") {
-    return {
-      kind: "ok",
-      value: {
-        chatThreadId: run.chatThreadId,
-        providerSessionId: live.providerSessionId,
-        validation: null,
-      },
-    };
   }
   const providerResult = await settle(
     getBrowserUseSession(live.providerSessionId, signal),
@@ -619,20 +606,9 @@ async function prepareBrowserUserAction(
 
 function buildBrowserUserActionPayload(
   input: BrowserUserActionCreateRequest,
-  validation: BrowserUseUserActionValidation | null,
+  validation: BrowserUseUserActionValidation,
   callbackIds: BrowserUserActionCallbackIds,
 ): BrowserUserActionPayload {
-  if (input.kind === "direct_interaction") {
-    return {
-      version: 1,
-      kind: input.kind,
-      callbackIds,
-      reason: input.reason,
-    };
-  }
-  if (!validation) {
-    throw new Error("Browser input request has no validated targets");
-  }
   return {
     version: 1,
     kind: input.kind,
@@ -1374,7 +1350,7 @@ async function mutatePendingRequest(
   args: {
     readonly row: RequestRow;
     readonly requestToken: string;
-    readonly terminal: "cancelled" | "succeeded";
+    readonly terminal: "cancelled";
   },
   signal: AbortSignal,
 ): Promise<ServiceResult<BrowserUserActionResponse>> {
@@ -1465,39 +1441,5 @@ export const cancelBrowserUserAction$ = command(
           signal,
         )
       : notFound();
-  },
-);
-
-export const completeBrowserUserAction$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly requestToken: string;
-    },
-    signal: AbortSignal,
-  ): Promise<ServiceResult<BrowserUserActionResponse>> => {
-    const db = set(writeDb$);
-    const row = await loadOwnedRequest(db, args);
-    signal.throwIfAborted();
-    if (!row) {
-      return notFound();
-    }
-    const payload = decodePayload(row);
-    if (!payload) {
-      return conflict(
-        "Browser user-action request payload is unavailable",
-        "BROWSER_USER_ACTION_UNAVAILABLE",
-      );
-    }
-    if (payload.kind !== "direct_interaction") {
-      return conflict("This Browser request is not a direct interaction");
-    }
-    return await mutatePendingRequest(
-      db,
-      { row, requestToken: args.requestToken, terminal: "succeeded" },
-      signal,
-    );
   },
 );

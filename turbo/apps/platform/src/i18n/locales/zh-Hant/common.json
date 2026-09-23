@@ -1757,29 +1757,6 @@
       "uncertain": "請檢查瀏覽器",
       "uncertainDescription": "瀏覽器可能已收到這些資訊。重試前，請先讓 Agent 檢查。"
     },
-    "browserInteraction": {
-      "applying": "正在完成瀏覽器互動",
-      "applyingDescription": "瀏覽器正在完成此請求。",
-      "callbackFailed": "未能通知 Agent。",
-      "cancel": "取消",
-      "cancelFailed": "無法取消此請求。請重試。",
-      "cancelled": "請求已取消",
-      "cancelling": "正在取消…",
-      "completed": "瀏覽器互動已完成",
-      "completeFailed": "無法完成此請求。請重試。",
-      "completing": "正在完成…",
-      "continue": "通知 Agent",
-      "continuing": "正在通知 Agent…",
-      "delivered": "已通知 Agent",
-      "description": "開啟瀏覽器並完成此步驟，然後點擊完成。",
-      "done": "完成",
-      "finish": "完成此步驟",
-      "stale": "瀏覽器已不可用",
-      "staleDescription": "請讓 Agent 建立新請求。",
-      "title": "接管瀏覽器",
-      "uncertain": "請檢查瀏覽器",
-      "uncertainDescription": "互動可能已完成。重試前，請先讓 Agent 檢查。"
-    },
     "cards": {
       "viewDetails": "檢視詳情"
     },
