@@ -255,12 +255,12 @@ try {
   );
   const oldDirect = await client.query(`
     INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,credential_id)
-      VALUES ('00000000-0000-4000-8000-000000000009','org','user','Old Direct','ssh.example.com','00000000-0000-4000-8000-000000000002')
+      VALUES ('00000000-0000-4000-8000-000000000009','org','user','Old Direct','legacy-direct.example.com','00000000-0000-4000-8000-000000000002')
       RETURNING id,org_id,user_id,cloudflare_access_id,port,generation;
   `);
   const oldAccess = await client.query(`
     INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,port,credential_id,cloudflare_access_id)
-      VALUES ('00000000-0000-4000-8000-000000000010','org','user','Old Access','ssh.example.com',443,'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000011')
+      VALUES ('00000000-0000-4000-8000-000000000010','org','user','Old Access','legacy-access.example.com',443,'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000011')
       RETURNING id,org_id,user_id,cloudflare_access_id,port,generation;
   `);
   assert.deepEqual(oldDirect.rows, [
