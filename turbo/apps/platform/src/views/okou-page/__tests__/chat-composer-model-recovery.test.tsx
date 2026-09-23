@@ -360,9 +360,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   await fill(authorizationCode, "claude-valid-authorization-code");
   click(buttonNamed("Connect", dialog));
 
-  await expect(
-    screen.findByText("Claude connected"),
-  ).resolves.toBeVisible();
+  await expect(screen.findByText("Claude connected")).resolves.toBeVisible();
   await waitFor(() => {
     expect(queryButton("Configure model")).toBeNull();
   });
