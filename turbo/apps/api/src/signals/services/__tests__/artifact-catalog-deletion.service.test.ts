@@ -18,9 +18,10 @@ import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { deleteArtifactCatalogForRunIds } from "../artifact-catalog-deletion.service";
+import { queueArtifactCatalogFile } from "../artifact-catalog.service";
 import { deleteLockedRuns } from "../conversation-history-deletion.service";
 
-testContext();
+const context = testContext();
 
 // An isolated schema carries the real FK cascades but none of the legacy
 // catalog triggers. The public schema and concurrent suites are untouched.
@@ -65,7 +66,10 @@ async function harness() {
   await db.execute(sql`ALTER TABLE artifact_catalog_pending_files
     ADD FOREIGN KEY (file_id) REFERENCES run_uploaded_files(id) ON DELETE CASCADE`);
 
-  async function seed(suffix: string) {
+  async function seed(
+    suffix: string,
+    options: { readonly catalog?: boolean; readonly url?: string | null } = {},
+  ) {
     const userId = `user_catalog_${suffix}`;
     const orgId = `org_catalog_${suffix}`;
     const [session] = await db
@@ -82,7 +86,10 @@ async function harness() {
         orgId,
         sessionId: session.id,
         status: "completed",
-        prompt: "catalog deletion test",
+        ...(options.catalog === false
+          ? { triggerSource: "chat" as const, autonomyBudget: 0 }
+          : {}),
+        prompt: "catalog test",
       })
       .returning({ id: agentRuns.id });
     if (!run) {
@@ -97,11 +104,17 @@ async function harness() {
         userId,
         orgId,
         filename: `${suffix}.png`,
-        url: `https://example.test/${suffix}.png`,
+        url:
+          options.url === undefined
+            ? `https://example.test/${suffix}.png`
+            : options.url,
       })
       .returning({ id: runUploadedFiles.id });
     if (!file) {
       throw new Error("Expected a file");
+    }
+    if (options.catalog === false) {
+      return { runId: run.id, fileId: file.id };
     }
     const [image] = await db
       .insert(imageArtifacts)
@@ -231,4 +244,120 @@ test("can repeat catalog cleanup while the locked Run and file still exist", asy
         .where(eq(artifacts.projectionFileId, target.fileId)),
     ).resolves.toHaveLength(0);
   });
+});
+
+test("keeps the catalog handoff in step with file changes without triggers", async () => {
+  const { db, seed } = await harness();
+  const target = await seed("handoff", { catalog: false, url: null });
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(runUploadedFiles)
+      .set({ url: "https://example.test/handoff.png" })
+      .where(eq(runUploadedFiles.id, target.fileId));
+    await queueArtifactCatalogFile(tx, target.fileId, context.signal);
+    await queueArtifactCatalogFile(tx, target.fileId, context.signal);
+  });
+  await expect(
+    db
+      .select({
+        orgId: artifactCatalogPendingFiles.orgId,
+        authorUserId: artifactCatalogPendingFiles.authorUserId,
+      })
+      .from(artifactCatalogPendingFiles)
+      .where(eq(artifactCatalogPendingFiles.fileId, target.fileId)),
+  ).resolves.toEqual([
+    { orgId: "org_catalog_handoff", authorUserId: "user_catalog_handoff" },
+  ]);
+
+  const changedOrgId = "org_catalog_handoff_changed";
+  const changedUserId = "user_catalog_handoff_changed";
+  await db.transaction(async (tx) => {
+    await tx
+      .update(runUploadedFiles)
+      .set({ orgId: changedOrgId, userId: changedUserId })
+      .where(eq(runUploadedFiles.id, target.fileId));
+    await queueArtifactCatalogFile(tx, target.fileId, context.signal);
+  });
+  await expect(
+    db
+      .select({
+        orgId: artifactCatalogPendingFiles.orgId,
+        authorUserId: artifactCatalogPendingFiles.authorUserId,
+      })
+      .from(artifactCatalogPendingFiles)
+      .where(eq(artifactCatalogPendingFiles.fileId, target.fileId)),
+  ).resolves.toEqual([{ orgId: changedOrgId, authorUserId: changedUserId }]);
+
+  await db.insert(artifacts).values({
+    kind: "file",
+    entityId: target.fileId,
+    orgId: changedOrgId,
+    authorUserId: changedUserId,
+    logicalKey: `file:${target.fileId}`,
+    projectionFileId: target.fileId,
+    projectionCreatedAt: nowDate(),
+    title: "handoff.png",
+  });
+  await db.transaction(async (tx) => {
+    await tx
+      .update(runUploadedFiles)
+      .set({ url: null })
+      .where(eq(runUploadedFiles.id, target.fileId));
+    await queueArtifactCatalogFile(tx, target.fileId, context.signal);
+  });
+
+  await expect(
+    db
+      .select()
+      .from(artifactCatalogPendingFiles)
+      .where(eq(artifactCatalogPendingFiles.fileId, target.fileId)),
+  ).resolves.toHaveLength(0);
+  await expect(
+    db
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.projectionFileId, target.fileId)),
+  ).resolves.toHaveLength(0);
+  await expect(
+    db
+      .select({ id: runUploadedFiles.id })
+      .from(runUploadedFiles)
+      .where(eq(runUploadedFiles.id, target.fileId)),
+  ).resolves.toHaveLength(1);
+});
+
+test("rolls back file publication and catalog handoff together without triggers", async () => {
+  const { db, seed } = await harness();
+  const target = await seed("handoff_rollback", { catalog: false, url: null });
+
+  await expect(
+    db.transaction(async (tx) => {
+      await tx
+        .update(runUploadedFiles)
+        .set({ url: "https://example.test/handoff_rollback.png" })
+        .where(eq(runUploadedFiles.id, target.fileId));
+      await queueArtifactCatalogFile(tx, target.fileId, context.signal);
+      await expect(
+        tx
+          .select()
+          .from(artifactCatalogPendingFiles)
+          .where(eq(artifactCatalogPendingFiles.fileId, target.fileId)),
+      ).resolves.toHaveLength(1);
+      throw new Error("rollback");
+    }),
+  ).rejects.toThrow("rollback");
+
+  await expect(
+    db
+      .select({ url: runUploadedFiles.url })
+      .from(runUploadedFiles)
+      .where(eq(runUploadedFiles.id, target.fileId)),
+  ).resolves.toEqual([{ url: null }]);
+  await expect(
+    db
+      .select()
+      .from(artifactCatalogPendingFiles)
+      .where(eq(artifactCatalogPendingFiles.fileId, target.fileId)),
+  ).resolves.toHaveLength(0);
 });
