@@ -13,18 +13,19 @@ use tracing::{info, warn};
 
 use super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
-use crate::paths::guest;
 use crate::storage_cache::decoded::CachedFiles;
+use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
+use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 use runner_types::types::ExecutionContext;
 
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub(super) fn guest_storage_apply_command() -> String {
-    format!("{} {}", guest::STORAGE_APPLY_BIN, guest::STORAGE_MANIFEST)
+    format!("{STORAGE_APPLY_PATH} {STORAGE_MANIFEST_PATH}")
 }
 
 pub(super) fn guest_storage_manifest_cleanup_command() -> String {
-    format!("rm -f -- {}", guest::STORAGE_MANIFEST)
+    format!("rm -f -- {STORAGE_MANIFEST_PATH}")
 }
 
 pub(super) fn guest_storage_apply_env<'a>(
@@ -99,12 +100,12 @@ fn storage_inputs(
         .iter()
         .map(|(mount, files)| (mount.as_str(), files.files.as_slice()))
         .collect::<Vec<_>>();
+    storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
+        .map_err(|e| RunnerError::Internal(format!("storage files bindings: {e}")))?;
     if json.len() <= storage_files::MAX_MANIFEST_BYTES {
         return Ok(vec![files_input(&json, &groups)?]);
     }
     // A split request alone cannot see conflicts with entries in another batch.
-    storage_files::validate_bindings(&manifest, groups.iter().map(|(mount, _)| *mount))
-        .map_err(|e| RunnerError::Internal(format!("storage files bindings: {e}")))?;
     drop(json);
     // Batching does not increase the aggregate selected-file or mount budget.
     drop(
@@ -112,13 +113,18 @@ fn storage_inputs(
             .map_err(|e| RunnerError::Internal(format!("storage files payload: {e}")))?,
     );
     let files_by_mount = groups.into_iter().collect::<HashMap<_, _>>();
-    let (decoded, ordinary) = std::mem::take(&mut manifest.storages)
+    let (decoded_storages, ordinary_storages) = std::mem::take(&mut manifest.storages)
         .into_iter()
         .partition(|entry| files_by_mount.contains_key(entry.mount_path.as_str()));
-    manifest.storages = ordinary;
+    let (decoded_artifacts, ordinary_artifacts) = std::mem::take(&mut manifest.artifacts)
+        .into_iter()
+        .partition(|entry| files_by_mount.contains_key(entry.mount_path.as_str()));
+    manifest.storages = ordinary_storages;
+    manifest.artifacts = ordinary_artifacts;
     let mut inputs = Vec::new();
-    // All cleanup, reused paths, instructions and artifacts stay together and
-    // run before any decoded writes. Subsequent batches never repeat cleanup.
+    // All cleanup, reused paths, instructions and unselected artifacts stay
+    // together and run before any decoded writes. Subsequent batches never
+    // repeat cleanup.
     if !manifest.storages.is_empty()
         || !manifest.artifacts.is_empty()
         || !manifest.cleanup_paths.is_empty()
@@ -129,47 +135,97 @@ fn storage_inputs(
     let mut batch = empty_storage_manifest();
     let empty_bytes = manifest_json(&batch)?.len();
     let mut batch_bytes = empty_bytes;
+    let decoded = decoded_storages
+        .into_iter()
+        .map(DecodedManifestEntry::Storage)
+        .chain(
+            decoded_artifacts
+                .into_iter()
+                .map(DecodedManifestEntry::Artifact),
+        );
     for entry in decoded {
-        let single = Manifest {
-            storages: vec![entry.clone()],
-            ..empty_storage_manifest()
-        };
+        let single = entry.single_manifest();
         let single_bytes = manifest_json(&single)?.len();
         if single_bytes > storage_files::MAX_MANIFEST_BYTES {
             return Err(RunnerError::Internal(
-                "decoded storage entry exceeds manifest limit".into(),
+                "decoded manifest entry exceeds manifest limit".into(),
             ));
         }
         // Exact canonical array accounting, including escaped field contents.
         // The codec revalidates each final serialized batch against the cap.
         let entry_bytes = single_bytes - empty_bytes;
-        let comma_bytes = usize::from(!batch.storages.is_empty());
+        let comma_bytes = entry.comma_bytes(&batch);
         if batch_bytes + comma_bytes + entry_bytes > storage_files::MAX_MANIFEST_BYTES {
-            inputs.push(encode_storage_batch(&batch, &files_by_mount)?);
-            batch.storages.clear();
+            inputs.push(encode_decoded_batch(&batch, &files_by_mount)?);
+            batch = empty_storage_manifest();
             batch_bytes = empty_bytes;
         }
-        batch_bytes += usize::from(!batch.storages.is_empty()) + entry_bytes;
-        batch.storages.push(entry);
+        batch_bytes += entry.comma_bytes(&batch) + entry_bytes;
+        entry.push_into(&mut batch);
     }
-    if !batch.storages.is_empty() {
-        inputs.push(encode_storage_batch(&batch, &files_by_mount)?);
+    if manifest_entry_count(&batch) > 0 {
+        inputs.push(encode_decoded_batch(&batch, &files_by_mount)?);
     }
     Ok(inputs)
 }
 
-fn encode_storage_batch(
+enum DecodedManifestEntry {
+    Storage(guest_contracts::storage_manifest::StorageEntry),
+    Artifact(guest_contracts::storage_manifest::ArtifactEntry),
+}
+
+impl DecodedManifestEntry {
+    fn single_manifest(&self) -> Manifest {
+        match self {
+            Self::Storage(entry) => Manifest {
+                storages: vec![entry.clone()],
+                ..empty_storage_manifest()
+            },
+            Self::Artifact(entry) => Manifest {
+                artifacts: vec![entry.clone()],
+                ..empty_storage_manifest()
+            },
+        }
+    }
+
+    fn push_into(self, manifest: &mut Manifest) {
+        match self {
+            Self::Storage(entry) => manifest.storages.push(entry),
+            Self::Artifact(entry) => manifest.artifacts.push(entry),
+        }
+    }
+
+    fn comma_bytes(&self, manifest: &Manifest) -> usize {
+        match self {
+            Self::Storage(_) => usize::from(!manifest.storages.is_empty()),
+            Self::Artifact(_) => usize::from(!manifest.artifacts.is_empty()),
+        }
+    }
+}
+
+fn manifest_entry_count(manifest: &Manifest) -> usize {
+    manifest.storages.len() + manifest.artifacts.len()
+}
+
+fn encode_decoded_batch(
     manifest: &Manifest,
     files: &HashMap<&str, &[StorageFile]>,
 ) -> RunnerResult<StorageInput> {
     let groups = manifest
         .storages
         .iter()
+        .map(|entry| entry.mount_path.as_str())
+        .chain(
+            manifest
+                .artifacts
+                .iter()
+                .map(|entry| entry.mount_path.as_str()),
+        )
         .map(|entry| {
             files
-                .get(entry.mount_path.as_str())
-                .map(|files| (entry.mount_path.as_str(), *files))
-                .ok_or_else(|| RunnerError::Internal("decoded storage files absent".into()))
+                .get(entry)
+                .map(|files| (entry, *files))
+                .ok_or_else(|| RunnerError::Internal("decoded files absent".into()))
         })
         .collect::<RunnerResult<Vec<_>>>()?;
     files_input(&manifest_json(manifest)?, &groups)
@@ -207,7 +263,7 @@ async fn apply_storage_input(
     } else {
         remove_fallback_storage_manifest(sandbox).await?;
         if let Err(error) = sandbox
-            .write_file(guest::STORAGE_MANIFEST, manifest_json)
+            .write_file(STORAGE_MANIFEST_PATH, manifest_json)
             .await
         {
             cleanup_fallback_storage_manifest_after_failure(sandbox, context).await;

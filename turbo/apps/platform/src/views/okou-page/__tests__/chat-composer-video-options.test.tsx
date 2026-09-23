@@ -1,3 +1,4 @@
+import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
@@ -74,7 +75,7 @@ function pickerTrigger(label: string): HTMLElement {
 
 /** A slash panel row opens the template picker, and it covers the composer. */
 function fastControl(
-  role: "button" | "radio" | "tab",
+  role: "button" | "radio" | "tab" | "menuitem",
   label: string,
   container: ParentNode = document,
 ): HTMLElement {
@@ -83,7 +84,7 @@ function fastControl(
       candidate.getAttribute("aria-label") === label ||
       candidate.textContent?.trim() === label ||
       // A type row in the flyout's rail reads as its type over its model.
-      (role === "tab" && candidate.textContent?.startsWith(label) === true)
+      (role === "menuitem" && candidate.textContent?.startsWith(label) === true)
     );
   });
   if (!control) {
@@ -97,15 +98,16 @@ async function enterVideoMode(triggerLabel: string): Promise<void> {
     expect(pickerTrigger(triggerLabel)).toBeInTheDocument();
   });
   click(pickerTrigger(triggerLabel));
-  const types = await screen.findByRole("tablist", { name: "Models" });
-  click(fastControl("tab", "Video", types));
-  const videoModels = await screen.findByRole("listbox", {
+  const types = await screen.findByRole("menu", { name: "Models" });
+  click(fastControl("menuitem", "Video", types));
+  const videoModels = await screen.findByRole("menu", {
     name: "Video models",
   });
   await waitFor(() => {
-    expect(
-      within(videoModels).getByRole("option", { name: /Seedance 2\.0/u }),
-    ).toHaveAttribute("aria-selected", "true");
+    expect(modelMenuOption(/Seedance 2\.0/u, videoModels)).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
 }

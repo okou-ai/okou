@@ -12,6 +12,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  Textarea,
 } from "@okouai/ui";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
@@ -21,8 +22,10 @@ import {
   getStartedQuests$,
   questIntroKey$,
   questIntroPromptShown$,
+  questWorkflowPrompt$,
   setCheckinClaimedOpen$,
   setQuestIntroKey$,
+  setQuestWorkflowPrompt$,
   showQuestIntroPrompt$,
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
@@ -527,9 +530,14 @@ function WorkflowPromptIntro({
 }) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const prompt = t(($) => {
+  const edited = useGet(questWorkflowPrompt$);
+  const setPrompt = useSet(setQuestWorkflowPrompt$);
+  const suggestion = t(($) => {
     return $.chat.agentPage.getStarted.intro.workflow.prompt;
   });
+  // `null` means untouched, so the suggestion follows the interface language
+  // until the reader makes the sentence theirs.
+  const prompt = edited ?? suggestion;
   return (
     <IntroLayout
       title={t(
@@ -557,11 +565,21 @@ function WorkflowPromptIntro({
       }}
       figure={<QuestFigure art="prompt" />}
     >
-      {/* The sentence is the point of this screen, so it is set as the thing
-          being handed over rather than as a field in a form. */}
-      <p className="rounded-xl border border-surface-border bg-card px-4 py-3.5 text-[15px] leading-relaxed text-foreground">
-        {prompt}
-      </p>
+      {/* The subtitle offers to change the wording first, so the sentence has
+          to be editable -- it was a paragraph, which made that offer false.
+          `field-sizing-content` keeps it the height of its own text, so a
+          longer prompt grows the box instead of hiding in a scroller. */}
+      <Textarea
+        data-testid="quest-workflow-prompt"
+        aria-label={t(($) => {
+          return $.chat.agentPage.getStarted.intro.workflow.promptTitle;
+        })}
+        value={prompt}
+        onChange={(event) => {
+          setPrompt(event.target.value);
+        }}
+        className="min-h-0 resize-none rounded-xl border-surface-border bg-card px-4 py-3.5 text-[15px] leading-relaxed text-foreground [field-sizing:content]"
+      />
       <p className="px-0.5 text-xs text-muted-foreground">
         {t(($) => {
           return $.chat.agentPage.getStarted.intro.workflow.promptOutcome;

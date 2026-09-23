@@ -52,10 +52,7 @@ type PopoverPositionerProps = Pick<
 
 type PopoverContentProps = PopoverPrimitive.Popup.Props &
   PopoverPositionerProps & {
-    avoidCollisions?: boolean;
-    hideWhenDetached?: boolean;
     positionerClassName?: string;
-    updatePositionStrategy?: "always" | "optimized";
   };
 
 const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
@@ -64,51 +61,33 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
       align = "center",
       alignOffset = 0,
       anchor,
-      avoidCollisions,
       children,
       className,
       collisionAvoidance,
       collisionBoundary,
       collisionPadding,
       disableAnchorTracking,
-      hideWhenDetached = false,
       positionerClassName,
       positionMethod = "fixed",
       side = "bottom",
       sideOffset = 4,
       sticky,
       style,
-      updatePositionStrategy,
       ...props
     },
     ref,
   ) => {
-    const resolvedCollisionAvoidance =
-      collisionAvoidance ??
-      (avoidCollisions === false
-        ? {
-            align: "none" as const,
-            fallbackAxisSide: "none" as const,
-            side: "none" as const,
-          }
-        : undefined);
-
     return (
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner
           align={align}
           alignOffset={alignOffset}
           anchor={anchor}
-          className={cn(
-            hideWhenDetached && "data-anchor-hidden:invisible",
-            positionerClassName,
-          )}
-          collisionAvoidance={resolvedCollisionAvoidance}
+          className={positionerClassName}
+          collisionAvoidance={collisionAvoidance}
           collisionBoundary={collisionBoundary}
           collisionPadding={resolveCollisionPadding(collisionPadding)}
-          disableAnchorTracking={
-            disableAnchorTracking ?? updatePositionStrategy === "optimized"
-          }
+          disableAnchorTracking={disableAnchorTracking}
           positionMethod={positionMethod}
           side={side}
           sideOffset={sideOffset}

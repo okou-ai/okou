@@ -1504,9 +1504,20 @@
         },
         "shareDialog": {
           "description": "समीक्षा के लिए सार्वजनिक पोस्ट भेजें। हर व्यक्ति को एक स्वीकृत इनाम मिल सकता है।",
+          "draft": "सोमवार की प्रतिस्पर्धी रिपोर्ट मैं {{assistantName}} से बनवाता हूँ — यह स्रोत पढ़कर तालिका बनाकर देता है।",
           "helper": "पोस्ट सार्वजनिक होनी चाहिए और उसमें {{assistantName}} का ज़िक्र होना चाहिए।",
           "inputLabel": "पोस्ट का लिंक",
+          "openX": "X खोलें",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "अब और कुछ नहीं करना है — क्रेडिट अपने आप मिल जाएंगे।",
+          "reviewDone": "हो गया",
+          "reviewExplain": "अगर पोस्ट सार्वजनिक है और उसमें {{assistantName}} का उल्लेख है, तो इनाम अपने आप मिल जाता है। कुछ गड़बड़ होने पर यह चरण कारण के साथ फिर खुल जाएगा।",
+          "reviewOpenPost": "पोस्ट खोलें",
+          "reviewPending": "आम तौर पर एक घंटे के भीतर",
+          "reviewTime": "समीक्षा आम तौर पर एक घंटे में पूरी हो जाती है।",
+          "reviewTitle": "आपकी पोस्ट समीक्षा में है",
+          "stepPaste": "लिंक पेस्ट करें",
+          "stepWrite": "पोस्ट लिखें",
           "submit": "भेजें",
           "title": "{{assistantName}} को X पर शेयर करें"
         },
@@ -1548,7 +1559,6 @@
         "enteredChat": "{{userName}} ने चैट में प्रवेश किया है।",
         "goodToSeeYou": "आपको देखकर अच्छा लगा, {{userName}}।",
         "knewYouWouldCome": "जानता था तुम वापस आओगे, {{userName}}।",
-        "letsRoll": "{{agentName}} तैयार है, {{userName}}। चलो रोल करें।",
         "makeTodayCount": "आइए आज का दिन गिनें, {{userName}}।",
         "newIdeas": "आज नये विचार, {{userName}}?",
         "readyToBuild": "निर्माण के लिए तैयार, {{userName}}?",
@@ -1725,6 +1735,11 @@
       "upgradeToRun": "{{assistantName}} रन करने के लिए प्रो में अपग्रेड करें",
       "upgradeWorkspace": "अपने वर्कस्पेस को अपग्रेड करें"
     },
+    "browserAction": {
+      "documentTitle": "ब्राउज़र कार्रवाई",
+      "loading": "ब्राउज़र अनुरोध लोड किया जा रहा है",
+      "unavailableDescription": "यह ब्राउज़र अनुरोध अमान्य है या अब उपलब्ध नहीं है।"
+    },
     "browserInput": {
       "applyFailed": "जानकारी जोड़ी नहीं जा सकी। आपकी प्रविष्टियाँ अभी भी यहाँ हैं। फिर से प्रयास करें।",
       "applying": "जानकारी जोड़ी जा रही है",
@@ -1742,12 +1757,10 @@
       "delivered": "एजेंट को सूचित किया गया",
       "deliveredDescription": "एजेंट अब जारी रख सकता है।",
       "description": "इस साइट के लिए माँगी गई जानकारी दर्ज करें।",
-      "documentTitle": "ब्राउज़र इनपुट",
       "expired": "अनुरोध की अवधि समाप्त",
       "expiredDescription": "ब्राउज़र बंद हो गया है या यह अनुरोध अब सक्रिय नहीं है।",
       "loadFailed": "यह अनुरोध लोड नहीं हो सका",
       "loadFailedDescription": "कुछ देर में फिर से प्रयास करें।",
-      "loading": "ब्राउज़र इनपुट लोड हो रहा है",
       "loadingDescription": "इस अनुरोध की जाँच हो रही है…",
       "open": "जानकारी दर्ज करें",
       "optional": "(वैकल्पिक)",
@@ -1760,9 +1773,33 @@
       "submitting": "जोड़ा जा रहा है…",
       "title": "ब्राउज़र में जानकारी दर्ज करें",
       "unavailable": "अनुरोध उपलब्ध नहीं है",
-      "unavailableDescription": "यह ब्राउज़र इनपुट अनुरोध अमान्य है या अब उपलब्ध नहीं है।",
       "uncertain": "ब्राउज़र जाँचें",
       "uncertainDescription": "ब्राउज़र को जानकारी मिल गई हो सकती है। दोबारा प्रयास करने से पहले एजेंट से जाँच करने को कहें।"
+    },
+    "browserInteraction": {
+      "applying": "ब्राउज़र इंटरैक्शन पूरा किया जा रहा है",
+      "applyingDescription": "ब्राउज़र इस अनुरोध को पूरा कर रहा है।",
+      "callbackFailed": "एजेंट को सूचना नहीं मिली। फिर से जारी रखें चुनें।",
+      "cancel": "रद्द करें",
+      "cancelFailed": "यह अनुरोध रद्द नहीं किया जा सका। फिर से प्रयास करें।",
+      "cancelled": "अनुरोध रद्द किया गया",
+      "cancelledDescription": "ब्राउज़र हैंडऑफ़ रद्द कर दिया गया। एजेंट को सूचित करने के लिए जारी रखें चुनें।",
+      "cancelling": "रद्द किया जा रहा है…",
+      "completed": "ब्राउज़र इंटरैक्शन पूरा हुआ",
+      "completedDescription": "आपका ब्राउज़र इंटरैक्शन दर्ज हो गया है। एजेंट को सूचित करने के लिए जारी रखें चुनें।",
+      "completeFailed": "यह अनुरोध पूरा नहीं किया जा सका। फिर से प्रयास करें।",
+      "completing": "पूरा किया जा रहा है…",
+      "continue": "जारी रखें",
+      "continuing": "जारी है…",
+      "delivered": "एजेंट को सूचित किया गया",
+      "deliveredDescription": "एजेंट अब आगे बढ़ सकता है।",
+      "description": "ब्राउज़र खोलें, यह चरण पूरा करें, फिर हो गया चुनें।",
+      "done": "हो गया",
+      "stale": "ब्राउज़र अब उपलब्ध नहीं है",
+      "staleDescription": "एजेंट से नया अनुरोध बनाने के लिए कहें।",
+      "title": "ब्राउज़र का नियंत्रण लें",
+      "uncertain": "ब्राउज़र जाँचें",
+      "uncertainDescription": "इंटरैक्शन पूरा हो सकता है। फिर से प्रयास करने से पहले एजेंट से जाँच करने को कहें।"
     },
     "cards": {
       "viewDetails": "विवरण देखें"
@@ -1955,6 +1992,11 @@
       "sent": "सफलतापूर्वक फ़ॉरवर्ड किया गया",
       "threads": "चैट",
       "title": "फ़ॉरवर्ड करें"
+    },
+    "homeTasks": {
+      "existingThread": "चैट जारी रखें",
+      "heading": "आपके हाल के काम से लिया गया",
+      "newThread": "नई चैट"
     },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
@@ -2903,6 +2945,50 @@
       "named": "वर्कफ़्लो {{title}}",
       "open": "वर्कफ़्लो {{title}} खोलें"
     }
+  },
+  "cloudflareAccess": {
+    "add": "Cloudflare Access जोड़ें",
+    "cancel": "रद्द करें",
+    "changed": "संपादन के दौरान यह Cloudflare Access बदल गया। सहेजने से पहले नवीनतम सेटिंग्स की समीक्षा करें।",
+    "clientId": "Service Token क्लाइंट ID",
+    "clientIdPlaceholder": "Service Token का Client ID पेस्ट करें",
+    "clientSecret": "Service Token क्लाइंट सीक्रेट",
+    "clientSecretPlaceholder": "Service Token का Client Secret पेस्ट करें",
+    "configuration": "Cloudflare Access",
+    "createNew": "नया Cloudflare Access बनाएँ",
+    "delete": "Cloudflare Access हटाएँ",
+    "deleteHelp": "यह अप्रयुक्त Cloudflare Access हटाएँ? सहेजा गया Service Token पुनर्प्राप्त नहीं किया जा सकेगा।",
+    "description": "Cloudflare Access सर्विस टोकन से सुरक्षित ऐप्लिकेशन एक्सेस करें।",
+    "edit": "Cloudflare Access संपादित करें",
+    "empty": "अभी कोई Cloudflare Access नहीं है। सुरक्षित ऐप्लिकेशन एक्सेस करने के लिए सर्विस टोकन जोड़ें।",
+    "failed": "Cloudflare Access बदलाव सहेजा नहीं जा सका। फिर से कोशिश करें।",
+    "inUse": "कोई होस्ट इस Cloudflare Access का उपयोग कर रहा है। संबंधित होस्ट की समीक्षा करें और पहले उनका कॉन्फ़िगरेशन बदलें या उन्हें हटाएँ।",
+    "inUseHelp": "इस Cloudflare Access को हटाने से पहले संबंधित होस्ट के लिए दूसरा Cloudflare Access चुनें, स्पष्ट रूप से सीधे कनेक्शन पर जाएँ या होस्ट हटाएँ।",
+    "invalidInput": "कुछ Cloudflare Access सेटिंग अमान्य हैं। फ़ील्ड जाँचें और फिर से कोशिश करें।",
+    "keepChanges": "इस संस्करण पर मेरे बदलाव लागू करें",
+    "latest": "नवीनतम सहेजी गई सेटिंग्स",
+    "loadFailed": "Cloudflare Access लोड नहीं हो सका। दोबारा प्रयास करें।",
+    "loading": "Cloudflare Access लोड हो रहा है…",
+    "manage": "Cloudflare Access प्रबंधित करें",
+    "missing": "यह Cloudflare Access अब उपलब्ध नहीं है। दूसरा चुनें या नया बनाएँ।",
+    "name": "नाम",
+    "namePlaceholder": "जैसे, प्रोडक्शन एक्सेस",
+    "replace": "Service Token बदलें",
+    "resourceIdConflict": "इस संसाधन आईडी का उपयोग नहीं किया जा सकता। फिर से कोशिश करने के लिए फ़ॉर्म बंद करके दोबारा खोलें।",
+    "retry": "फिर से कोशिश करें",
+    "reviewHelp": "आपका ड्राफ़्ट सुरक्षित है। बदलाव लागू करने से पहले नवीनतम सहेजी गई सेटिंग्स की पुष्टि करें।",
+    "revisionExhausted": "यह कॉन्फ़िगरेशन अब अपडेट नहीं किया जा सकता। नया कॉन्फ़िगरेशन बनाएँ।",
+    "save": "सहेजें",
+    "saveUncertain": "हम पुष्टि नहीं कर सके कि आपके बदलाव सहेजे गए हैं या नहीं। वही जानकारी फिर से सहेजने की कोशिश करें, या फ़ॉर्म बंद करें और दोबारा जोड़ने से पहले सूची जाँचें।",
+    "select": "Cloudflare Access चुनें",
+    "summary_one": "{{count}} Cloudflare Access सेट है",
+    "summary_other": "{{count}} Cloudflare Access सेट हैं",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Cloudflare Access सर्विस टोकन से सुरक्षित ऐप्लिकेशन एक्सेस करें।",
+    "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।",
+    "unused": "किसी होस्ट द्वारा उपयोग नहीं किया जा रहा",
+    "usedBy_one": "{{count}} होस्ट द्वारा उपयोग:",
+    "usedBy_other": "{{count}} होस्ट द्वारा उपयोग:"
   },
   "connectors": {
     "access": {
@@ -4227,7 +4313,7 @@
       },
       "skills": {
         "copied": "कॉपी हो गया",
-        "copy": "इस prompt को अपने Codex या Claude Code सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
+        "copy": "इस prompt को अपने {{provider}} सेशन में पेस्ट करें — यह आपकी मशीन की skills को Okou में ले आता है।",
         "copyError": "prompt कॉपी नहीं हो सका।",
         "copyPrompt": "prompt कॉपी करें",
         "importedCopy": "Okou workflow के रूप में इम्पोर्ट हुआ।",
@@ -4236,7 +4322,7 @@
         "preparing": "आपका इम्पोर्ट सेशन खोला जा रहा है…",
         "promptCopy": "यह आपकी मशीन की skills पढ़कर Okou में लिख देता है।",
         "promptLabel": "skill इम्पोर्ट prompt",
-        "promptTitle": "इसे Codex या Claude Code में चलाएँ",
+        "promptTitle": "इसे {{provider}} में चलाएँ",
         "startError": "इम्पोर्ट सेशन नहीं खोला जा सका।",
         "title": "जो skills आपने पहले ही लिखी हैं, उन्हें ले आएँ।",
         "tryAgain": "फिर से कोशिश करें",
@@ -4284,11 +4370,6 @@
       "sources": {
         "copy": "यह क्लाउड में चलता है, उन्हीं टूल्स से जो आपकी टीम पहले से इस्तेमाल करती है। दस गुना नतीजा, कम परिचालन झंझट, कम लागत। शुरू करने के लिए एक स्रोत जोड़ें।",
         "note": "कौन-से खाते जोड़ने हैं, यह आप तय करते हैं।",
-        "searchAction": "अपने काम के लिए स्रोत खोजें",
-        "searchCopy": "काम या ऐप के नाम से पूरी सूची खोजें।",
-        "searchEmpty": "कोई मिलता-जुलता स्रोत नहीं",
-        "searchPlaceholder": "काम या ऐप के नाम से खोजें",
-        "searchTitle": "अपने काम के लिए स्रोत खोजें",
         "title": "Okou आपके लिए है, और आपकी पूरी टीम के साथ साझा है।"
       },
       "startingPrompt": {
@@ -6143,6 +6224,8 @@
       },
       "personal": {
         "accountFallback": "खाता {{number}}",
+        "accountsDescription": "नई रन के लिए हर प्रदाता द्वारा उपयोग किया जाने वाला खाता चुनें।",
+        "accountsSectionTitle": "व्यक्तिगत खाते",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "सक्रिय",
         "addAccount": "खाता जोड़ें",
@@ -6261,7 +6344,7 @@
         "workspaceDescription": "इस वर्कस्पेस में सभी के लिए उपलब्ध है।"
       },
       "reset": {
-        "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक Codex रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
+        "confirmDescription": "अपनी वर्तमान उपयोग विंडो को रीसेट करने के लिए एक {{provider}} रीसेट का उपयोग करें। आपके पास {{remaining}} है।",
         "progress": "रीसेट किया जा रहा है...",
         "remaining_one": "{{value}} रीसेट बचे हैं",
         "remaining_other": "{{value}} रीसेट बचे हैं",
@@ -6269,7 +6352,7 @@
         "remainingUnknown": "रीसेट —",
         "remainingWithExpiry_one": "{{value}} रीसेट बचा है · {{expiry}} समाप्त",
         "remainingWithExpiry_other": "{{value}} रीसेट बचे हैं · {{expiry}} समाप्त",
-        "title": "Codex उपयोग रीसेट करें?"
+        "title": "{{provider}} उपयोग रीसेट करें?"
       },
       "stale": {
         "claudeExpired": "आपका Claude Code सत्र समाप्त हो गया। जारी रखने के लिए पुनः कनेक्ट करें.",
@@ -6286,9 +6369,9 @@
         "accountSwitched": "सक्रिय खाता बदल दिया गया",
         "disconnected": "{{provider}} डिस्कनेक्ट हो गया",
         "policiesUpdated": "मॉडल प्रोवाइडर सेटिंग अपडेट की गईं",
-        "reset": "Codex उपयोग रीसेट",
-        "resetUnavailable": "कोई Codex उपयोग रीसेट उपलब्ध नहीं है",
-        "resetUnneeded": "Codex उपयोग को अभी रीसेट की आवश्यकता नहीं है"
+        "reset": "{{provider}} उपयोग रीसेट",
+        "resetUnavailable": "कोई {{provider}} उपयोग रीसेट उपलब्ध नहीं है",
+        "resetUnneeded": "{{provider}} उपयोग को अभी रीसेट की आवश्यकता नहीं है"
       },
       "usage": {
         "inDays": "{{days}}d में",
@@ -6775,38 +6858,15 @@
     "chooseFile": "फ़ाइल चुनें",
     "choosePrivateKeyFile": "निजी कुंजी की फ़ाइल चुनें",
     "cloudflare": {
-      "add": "Cloudflare Access जोड़ें",
-      "changed": "संपादन के दौरान यह Cloudflare Access बदल गया। सहेजने से पहले नवीनतम सेटिंग्स की समीक्षा करें।",
-      "clientId": "Service Token क्लाइंट ID",
-      "clientSecret": "Service Token क्लाइंट सीक्रेट",
-      "configuration": "Cloudflare Access",
-      "createNew": "नया Cloudflare Access बनाएँ",
-      "delete": "Cloudflare Access हटाएँ",
-      "deleteHelp": "यह अप्रयुक्त Cloudflare Access हटाएँ? सहेजा गया Service Token पुनर्प्राप्त नहीं किया जा सकेगा।",
       "direct": "सीधा",
-      "edit": "Cloudflare Access संपादित करें",
-      "empty": "अभी कोई Cloudflare Access नहीं है। सुरक्षित SSH होस्ट से कनेक्ट करने के लिए Service Token जोड़ें।",
-      "inUse": "कोई होस्ट इस Cloudflare Access का उपयोग कर रहा है। संबंधित होस्ट की समीक्षा करें और पहले उनका कॉन्फ़िगरेशन बदलें या उन्हें हटाएँ।",
-      "inUseHelp": "इस Cloudflare Access को हटाने से पहले संबंधित होस्ट के लिए दूसरा Cloudflare Access चुनें, स्पष्ट रूप से सीधे कनेक्शन पर जाएँ या होस्ट हटाएँ।",
       "keepChanges": "इस संस्करण पर मेरे बदलाव लागू करें",
       "latest": "नवीनतम सहेजी गई सेटिंग्स",
-      "loadFailed": "Cloudflare Access लोड नहीं हो सका। दोबारा प्रयास करें।",
-      "loading": "Cloudflare Access लोड हो रहा है…",
-      "missing": "यह Cloudflare Access अब उपलब्ध नहीं है। दूसरा चुनें या नया बनाएँ।",
       "mode": "कनेक्शन",
-      "name": "नाम",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "प्रकाशित होस्टनाम",
-      "replace": "Service Token बदलें",
       "reviewHelp": "आपका ड्राफ़्ट सुरक्षित है। बदलाव लागू करने से पहले नवीनतम सहेजी गई सेटिंग्स की पुष्टि करें।",
-      "select": "Cloudflare Access चुनें",
-      "summary_one": "{{count}} Cloudflare Access सेट है",
-      "summary_other": "{{count}} Cloudflare Access सेट हैं",
       "title": "Cloudflare Access",
-      "tokenHelp": "अपनी SSH ऐप की Service Auth नीति द्वारा अनुमत Service Token का उपयोग करें। यह आपके SSH लॉगिन से अलग है।",
-      "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।",
-      "usedBy_one": "{{count}} होस्ट द्वारा उपयोग:",
-      "usedBy_other": "{{count}} होस्ट द्वारा उपयोग:"
+      "unavailable": "इस खाते के लिए Cloudflare Access उपलब्ध नहीं है।"
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access SSH टनल स्थापित नहीं कर सका। प्रकाशित होस्टनाम और Tunnel रूटिंग जाँचें।",
@@ -6864,6 +6924,7 @@
       "credentialInUse": "यह क्रेडेंशियल उपयोग में है। पहले संबंधित होस्ट के लिए दूसरा क्रेडेंशियल चुनें या होस्ट हटा दें।",
       "credentialUnavailable": "यह SSH क्रेडेंशियल अब उपलब्ध नहीं है। दूसरा चुनें या नया बनाएं।",
       "failed": "SSH बदलाव सहेजा नहीं जा सका। फिर से कोशिश करें।",
+      "hostInUse": "इस SSH होस्ट का उपयोग VNC रूट कर रहा है। इस होस्ट को हटाने से पहले उन VNC रूट के लिए कोई दूसरा SSH होस्ट चुनें, उन्हें स्पष्ट रूप से Direct पर बदलें या उन्हें हटाएँ।",
       "hostUnavailable": "यह SSH होस्ट अब उपलब्ध नहीं है। होस्ट सूची में वापस जाएँ और कोई मौजूदा होस्ट चुनें।",
       "invalidHost": "URL स्कीम, पाथ या स्पेस के बिना होस्टनाम या IP पता दर्ज करें।",
       "invalidInput": "कुछ SSH सेटिंग अमान्य हैं। फ़ील्ड जाँचें और फिर से कोशिश करें।",
@@ -6884,9 +6945,6 @@
     "notLearned": "होस्ट कुंजी अभी सहेजी नहीं गई है",
     "passphrase": "पासफ़्रेज़ (वैकल्पिक)",
     "placeholders": {
-      "accessName": "जैसे, प्रोडक्शन एक्सेस",
-      "clientId": "Service Token का Client ID पेस्ट करें",
-      "clientSecret": "Service Token का Client Secret पेस्ट करें",
       "credentialName": "जैसे, डिप्लॉयमेंट लॉगिन",
       "displayName": "जैसे, प्रोडक्शन सर्वर",
       "host": "जैसे, ssh.example.com",
@@ -7082,6 +7140,9 @@
       "caHint": "सर्वर प्रमाणपत्र जारी करने वाले सार्वजनिक CA प्रमाणपत्र चिपकाएँ",
       "custom": "कस्टम प्रमाणपत्र प्राधिकरण",
       "profileLabel": "सुरक्षा प्रोफ़ाइल",
+      "serverName": "TLS प्रमाणपत्र पहचान",
+      "serverNameHelp": "वैकल्पिक। RFB गंतव्य होस्ट के विरुद्ध प्रमाणपत्र सत्यापित करने के लिए खाली छोड़ें। इसे केवल तब सेट करें जब प्रमाणपत्र किसी दूसरे DNS नाम का उपयोग करता हो।",
+      "serverNameHint": "उदा. desktop.internal.example.com",
       "system": "सिस्टम के प्रमाणपत्र प्राधिकरण",
       "title": "सर्वर प्रमाणपत्र पर भरोसा",
       "x509Plain": "एन्क्रिप्ट किया गया उपयोगकर्ता नाम और पासवर्ड (X509Plain)",
@@ -7092,6 +7153,22 @@
     "summary_one": "{{count}} कॉन्फ़िगर किया गया होस्ट",
     "summary_other": "{{count}} कॉन्फ़िगर किए गए होस्ट",
     "title": "VNC रिमोट एक्सेस",
+    "transport": {
+      "destination": "RFB गंतव्य",
+      "destinationHelp": "SSH रूट के लिए इस होस्ट और पोर्ट तक चुने गए SSH सर्वर से पहुँचा जाता है, Runner से सीधे नहीं।",
+      "direct": "Runner से सीधे",
+      "empty": "कोई सहेजा हुआ SSH होस्ट उपलब्ध नहीं है। इस रूट का उपयोग करने से पहले SSH सेटिंग में एक जोड़ें।",
+      "loadFailed": "सहेजे गए SSH होस्ट लोड नहीं हो सके।",
+      "loading": "सहेजे गए SSH होस्ट लोड हो रहे हैं…",
+      "select": "सहेजा हुआ SSH होस्ट चुनें",
+      "selectionUnavailable": "चुना गया SSH होस्ट अब उपलब्ध नहीं है। कोई दूसरा होस्ट चुनें या स्पष्ट रूप से Direct पर बदलें।",
+      "ssh": "सहेजे गए SSH होस्ट के माध्यम से",
+      "sshConnection": "SSH होस्ट",
+      "sshHelp": "SSH Runner से SSH सर्वर तक के चरण को सुरक्षित करता है। वह सर्वर RFB गंतव्य तक पहुँचने में सक्षम होना चाहिए। Agent को VNC और SSH दोनों एक्सेस चाहिए।",
+      "title": "कनेक्शन रूट",
+      "unavailable": "इस खाते के लिए SSH सेटिंग उपलब्ध नहीं हैं।",
+      "via": "SSH होस्ट:"
+    },
     "unavailable": "इस कार्यक्षेत्र में VNC उपलब्ध नहीं है।"
   },
   "workflows": {

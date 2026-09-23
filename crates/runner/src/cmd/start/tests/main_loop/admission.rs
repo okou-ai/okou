@@ -11,12 +11,12 @@ use super::super::support::{
 };
 use std::sync::Arc;
 
-use crate::paths::RunnerPaths;
-use crate::provider::{
+use crate::workspace_image_cache::{WorkspaceImageCache, WorkspaceImagePrepareLockTestGate};
+use runner_host::paths::RunnerPaths;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::{
     ActiveRunnerPreference, RunnerPreference, RunnerPreferenceClaimState, RunnerPreferenceTier,
 };
-use crate::runner_process_identity::RunnerProcessIdentity;
-use crate::workspace_image_cache::{WorkspaceImageCache, WorkspaceImagePrepareLockTestGate};
 use runner_types::types::SandboxReuseResult;
 use runner_types::types::WorkspaceReuseResult;
 
@@ -29,7 +29,7 @@ fn ranked_candidate(
     tier: RunnerPreferenceTier,
     runner_id: &str,
     heartbeat_generation: u64,
-) -> crate::provider::JobCandidate {
+) -> runner_provider::JobCandidate {
     ranked_candidate_until(
         run_id,
         reuse_key,
@@ -47,17 +47,17 @@ fn ranked_candidate_until(
     runner_id: &str,
     heartbeat_generation: u64,
     deadline: std::time::Instant,
-) -> crate::provider::JobCandidate {
-    crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+) -> runner_provider::JobCandidate {
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(reuse_key.map(str::to_owned))
-        .with_runner_preference_for_test(ActiveRunnerPreference::ranked_for_test(
+        .with_runner_preference(ActiveRunnerPreference::new(
             RunnerProcessIdentity::new(runner_id.parse().unwrap(), heartbeat_generation).unwrap(),
             tier,
             deadline,
         ))
 }
 
-fn matching_preference_candidate(run_id: RunId, session_id: &str) -> crate::provider::JobCandidate {
+fn matching_preference_candidate(run_id: RunId, session_id: &str) -> runner_provider::JobCandidate {
     ranked_candidate(
         run_id,
         Some(session_id),
@@ -71,7 +71,7 @@ fn exact_generation_preference_candidate(
     run_id: RunId,
     session_id: &str,
     target_generation_run_id: RunId,
-) -> crate::provider::JobCandidate {
+) -> runner_provider::JobCandidate {
     ranked_candidate(
         run_id,
         Some(session_id),
@@ -88,7 +88,7 @@ fn finalizing_candidate(
     history_generation_run_id: RunId,
     runner_id: &str,
     heartbeat_generation: u64,
-) -> crate::provider::JobCandidate {
+) -> runner_provider::JobCandidate {
     finalizing_candidate_until(
         run_id,
         reuse_key,
@@ -106,11 +106,11 @@ fn finalizing_candidate_until(
     runner_id: &str,
     heartbeat_generation: u64,
     deadline: std::time::Instant,
-) -> crate::provider::JobCandidate {
-    crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+) -> runner_provider::JobCandidate {
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(reuse_key.to_owned()))
         .with_history_generation_run_id(Some(history_generation_run_id))
-        .with_runner_preference_for_test(ActiveRunnerPreference::ranked_for_test(
+        .with_runner_preference(ActiveRunnerPreference::new(
             RunnerProcessIdentity::new(runner_id.parse().unwrap(), heartbeat_generation).unwrap(),
             RunnerPreferenceTier::FinalizingPredecessor,
             deadline,
@@ -248,7 +248,7 @@ async fn claim_failure_rolls_back_budget() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id_1, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id_1, "vm0/default".into())
                 .with_history_generation_run_id(Some(target_generation_run_id)),
         )
         .unwrap();
@@ -431,7 +431,7 @@ async fn matching_preference_reservation_is_restored_after_claim_conflict() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(ordinary_run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(ordinary_run_id, "vm0/default".into())
                 .with_reuse_key(Some(session_id.to_owned())),
         )
         .unwrap();
@@ -1972,10 +1972,10 @@ async fn cancelled_finalizing_capacity_wait_releases_retiring_leases_but_keeps_c
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/large".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/large".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(history_generation_run_id))
-                .with_runner_preference_for_test(ActiveRunnerPreference::ranked_for_test(
+                .with_runner_preference(ActiveRunnerPreference::new(
                     RunnerProcessIdentity::new(
                         TEST_RUNNER_ID.parse().unwrap(),
                         TEST_HEARTBEAT_GENERATION,
@@ -2082,19 +2082,20 @@ async fn pending_finalizing_fallback_skips_workspace_cache_lock_retry() {
     let workspace_cache =
         WorkspaceImageCache::shared(runner_paths, &config.paths.home, &config.runner.group)
             .with_prepare_lock_test_gate(prepare_lock_gate);
-    let cache_key = crate::paths::scoped_workspace_image_cache_key(
+    let cache_key = runner_host::paths::scoped_workspace_image_cache_key(
         &config.runner.group,
         "vm0/default",
         reuse_key,
         api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR,
         image_size_bytes,
     );
-    let held_lock = crate::lock::acquire(crate::paths::workspace_image_cache_lock_path(
-        &config.paths.home.locks_dir(),
-        &cache_key,
-    ))
-    .await
-    .unwrap();
+    let held_lock =
+        runner_host::lock::acquire(runner_host::paths::workspace_image_cache_lock_path(
+            &config.paths.home.locks_dir(),
+            &cache_key,
+        ))
+        .await
+        .unwrap();
     Arc::get_mut(&mut config.exec_config)
         .unwrap()
         .workspace_cache = Some(workspace_cache);
@@ -3083,9 +3084,9 @@ async fn selected_finalizing_candidate_without_reuse_key_uses_ordinary_admission
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_history_generation_run_id(Some(RunId::new_v4()))
-                .with_runner_preference_for_test(ActiveRunnerPreference::ranked_for_test(
+                .with_runner_preference(ActiveRunnerPreference::new(
                     RunnerProcessIdentity::new(
                         TEST_RUNNER_ID.parse().unwrap(),
                         TEST_HEARTBEAT_GENERATION,
@@ -3188,7 +3189,7 @@ async fn ready_direct_drain_continues_after_preference_defer() {
             "sess-owned-elsewhere",
         ));
     env.handle
-        .push_ready_candidate(crate::provider::JobCandidate::new(
+        .push_ready_candidate(runner_provider::JobCandidate::new(
             followup_run_id,
             "vm0/default".into(),
         ));
@@ -3260,12 +3261,12 @@ async fn ready_direct_drain_continues_after_claim_conflict() {
     env.provider
         .set_claim_result(followup_run_id, Some(minimal_context(followup_run_id)));
     env.handle
-        .push_ready_candidate(crate::provider::JobCandidate::new(
+        .push_ready_candidate(runner_provider::JobCandidate::new(
             conflict_run_id,
             "vm0/default".into(),
         ));
     env.handle
-        .push_ready_candidate(crate::provider::JobCandidate::new(
+        .push_ready_candidate(runner_provider::JobCandidate::new(
             followup_run_id,
             "vm0/default".into(),
         ));
@@ -3581,12 +3582,12 @@ async fn ready_direct_drain_batches_reuse_state_heartbeat() {
         Some(context_with_session(ready_run_id_2, ready_session_2)),
     );
     env.handle
-        .push_ready_candidate(crate::provider::JobCandidate::new(
+        .push_ready_candidate(runner_provider::JobCandidate::new(
             ready_run_id_1,
             "vm0/default".into(),
         ));
     env.handle
-        .push_ready_candidate(crate::provider::JobCandidate::new(
+        .push_ready_candidate(runner_provider::JobCandidate::new(
             ready_run_id_2,
             "vm0/default".into(),
         ));

@@ -1,0 +1,366 @@
+{
+  "operation_id": "11111111-1111-4111-8111-111111111111",
+  "guest_boot_id": "22222222-2222-4222-8222-222222222222",
+  "started_boottime_us": 1000,
+  "sampled_at": "2026-09-16T03:00:03.000Z",
+  "groups": [
+    {
+      "role": "workload",
+      "cgroup": "/vm0-exec/exec-281-7-3/workload",
+      "inode": 1,
+      "status": "available",
+      "current": 4096,
+      "peak": 8192,
+      "limit": "16384",
+      "initial_limit": "16384",
+      "anon": 1024,
+      "file": 2048,
+      "kernel": 1024,
+      "baseline": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "events": {
+        "high": 0,
+        "max": 2,
+        "oom": 1,
+        "oom_kill": 1,
+        "oom_group_kill": 0
+      },
+      "delta": {
+        "high": 0,
+        "max": 2,
+        "oom": 1,
+        "oom_kill": 1,
+        "oom_group_kill": 0
+      },
+      "local_baseline": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "local_events": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "local_delta": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    },
+    {
+      "role": "runtime",
+      "cgroup": "/vm0-exec/exec-281-7-3/workload/runtime",
+      "inode": 2,
+      "status": "available",
+      "current": 4096,
+      "peak": 8192,
+      "limit": "max",
+      "initial_limit": "max",
+      "anon": 1024,
+      "file": 2048,
+      "kernel": 1024,
+      "baseline": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "events": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "delta": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "local_baseline": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "local_events": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "local_delta": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    },
+    {
+      "role": "tools",
+      "cgroup": "/vm0-exec/exec-281-7-3/workload/tools",
+      "inode": 3,
+      "status": "available",
+      "current": 4096,
+      "peak": 8192,
+      "limit": "max",
+      "initial_limit": "max",
+      "anon": 1024,
+      "file": 2048,
+      "kernel": 1024,
+      "baseline": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "events": {
+        "high": 0,
+        "max": 2,
+        "oom": 1,
+        "oom_kill": 1,
+        "oom_group_kill": 0
+      },
+      "delta": {
+        "high": 0,
+        "max": 2,
+        "oom": 1,
+        "oom_kill": 1,
+        "oom_group_kill": 0
+      },
+      "local_baseline": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "local_events": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "local_delta": {
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      }
+    }
+  ],
+  "incidents": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111:1",
+      "captured_at": "2026-09-16T03:00:01.000Z",
+      "reason": "sample",
+      "after_observation": true,
+      "before_cleanup": true,
+      "kernel_status": "available",
+      "kernel_events": [
+        {
+          "source": "guest",
+          "sequence": 42,
+          "boottime_us": 2000,
+          "constraint": "CONSTRAINT_MEMCG",
+          "oom_cgroup": "/vm0-exec/exec-281-7-3/workload",
+          "victim_pid": 999999,
+          "victim_comm": "MainThread",
+          "task_cgroup": "/vm0-exec/exec-281-7-3/workload/tools/tool-1"
+        }
+      ],
+      "groups": [
+        {
+          "role": "workload",
+          "cgroup": "/vm0-exec/exec-281-7-3/workload",
+          "inode": 1,
+          "status": "available",
+          "current": 4096,
+          "peak": 8192,
+          "limit": "16384",
+          "initial_limit": "16384",
+          "anon": 1024,
+          "file": 2048,
+          "kernel": 1024,
+          "baseline": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "events": {
+            "high": 0,
+            "max": 2,
+            "oom": 1,
+            "oom_kill": 1,
+            "oom_group_kill": 0
+          },
+          "delta": {
+            "high": 0,
+            "max": 2,
+            "oom": 1,
+            "oom_kill": 1,
+            "oom_group_kill": 0
+          },
+          "local_baseline": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "local_events": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "local_delta": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          }
+        },
+        {
+          "role": "runtime",
+          "cgroup": "/vm0-exec/exec-281-7-3/workload/runtime",
+          "inode": 2,
+          "status": "available",
+          "current": 4096,
+          "peak": 8192,
+          "limit": "max",
+          "initial_limit": "max",
+          "anon": 1024,
+          "file": 2048,
+          "kernel": 1024,
+          "baseline": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "events": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "delta": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "local_baseline": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "local_events": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "local_delta": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          }
+        },
+        {
+          "role": "tools",
+          "cgroup": "/vm0-exec/exec-281-7-3/workload/tools",
+          "inode": 3,
+          "status": "available",
+          "current": 4096,
+          "peak": 8192,
+          "limit": "max",
+          "initial_limit": "max",
+          "anon": 1024,
+          "file": 2048,
+          "kernel": 1024,
+          "baseline": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "events": {
+            "high": 0,
+            "max": 2,
+            "oom": 1,
+            "oom_kill": 1,
+            "oom_group_kill": 0
+          },
+          "delta": {
+            "high": 0,
+            "max": 2,
+            "oom": 1,
+            "oom_kill": 1,
+            "oom_group_kill": 0
+          },
+          "local_baseline": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "local_events": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          },
+          "local_delta": {
+            "high": 0,
+            "max": 0,
+            "oom": 0,
+            "oom_kill": 0,
+            "oom_group_kill": 0
+          }
+        }
+      ]
+    }
+  ],
+  "dropped_incidents": 0,
+  "kernel_cursor": 42,
+  "kernel_status": "available",
+  "runtime_progress_at": 1789527602000
+}

@@ -7,10 +7,10 @@ use super::*;
 use crate::cmd::gc::test_support::{
     assert_is_symlink, old_gc_time, set_mtime, set_soft_nofile_limit_for_child, test_home,
 };
-use crate::lock;
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
+use runner_host::lock;
 
 fn rootfs_state_with_deletion(
     rootfs_path: PathBuf,

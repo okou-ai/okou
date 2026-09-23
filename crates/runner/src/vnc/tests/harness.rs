@@ -23,11 +23,9 @@ use super::{
     super::{VncRuntime, network::Network},
     peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
 };
-use crate::{
-    guest_rpc::{Run as RpcRun, Runtime},
-    http::{HttpClient, HttpClientConfig},
-    runner_process_identity::RunnerProcessIdentity,
-};
+use crate::guest_rpc::{Run as RpcRun, Runtime};
+use crate::http::{HttpClient, HttpClientConfig};
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";

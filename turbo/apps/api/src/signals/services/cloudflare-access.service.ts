@@ -3,7 +3,7 @@ import type {
   CreateCloudflareAccessRequest,
   UpdateCloudflareAccessRequest,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { SSH_ERROR_CODES } from "@okouai/api-contracts/contracts/ssh-errors";
+import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
@@ -11,10 +11,13 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
 import { encryptStoredSecretValue } from "./crypto.utils";
-import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
-import { lockSshOwner, sshCredentialFailure } from "./ssh-credential.service";
+import {
+  publishCloudflareAccessClientInvalidation,
+  publishCloudflareAccessMutationInvalidation,
+} from "./cloudflare-access-client-invalidation.service";
+import { lockSshOwner } from "./ssh-credential.service";
 import { checkSshCreationId } from "./ssh-creation.service";
-import { publishSshRuntimeInvalidation } from "./ssh-runtime-wakeup.service";
+import { publishSshRunnerInvalidation } from "./ssh-runtime-wakeup.service";
 
 interface Owner {
   readonly orgId: string;
@@ -36,18 +39,29 @@ type Metadata = Pick<
 const failures = {
   notFound: {
     kind: "not_found",
-    code: SSH_ERROR_CODES.ACCESS_NOT_FOUND,
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.NOT_FOUND,
     message: "Cloudflare Access not found",
+  },
+  resourceIdConflict: {
+    kind: "conflict",
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.RESOURCE_ID_CONFLICT,
+    message:
+      "This resource ID cannot be used for this Cloudflare Access configuration.",
   },
   conflict: {
     kind: "conflict",
-    code: SSH_ERROR_CODES.ACCESS_REVISION_CONFLICT,
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_CONFLICT,
     message: "Cloudflare Access was modified by another request",
   },
   inUse: {
     kind: "conflict",
-    code: SSH_ERROR_CODES.ACCESS_IN_USE,
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.IN_USE,
     message: "Cloudflare Access is used by an SSH host",
+  },
+  exhausted: {
+    kind: "conflict",
+    code: CLOUDFLARE_ACCESS_ERROR_CODES.REVISION_EXHAUSTED,
+    message: "Cloudflare Access revision limit reached",
   },
 } as const;
 export function cloudflareAccessFailure(reason: keyof typeof failures) {
@@ -73,13 +87,13 @@ export async function findCloudflareAccessConfig(
 }
 function response(
   row: Metadata,
-  hosts: CloudflareAccessConfig["hosts"],
+  sshHosts: CloudflareAccessConfig["sshHosts"],
 ): CloudflareAccessConfig {
   return {
     ...row,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    hosts,
+    sshHosts,
   };
 }
 export async function listCloudflareAccessConfigs(
@@ -114,7 +128,7 @@ export async function listCloudflareAccessConfigs(
       configs.set(config.id, config);
     }
     if (row.host) {
-      config.hosts.push(row.host);
+      config.sshHosts.push(row.host);
     }
   }
   return [...configs.values()];
@@ -182,7 +196,7 @@ export async function createCloudflareAccessConfig(args: {
       args.id,
     );
     if (!creation.ok) {
-      return creation;
+      return cloudflareAccessFailure("resourceIdConflict");
     }
     if (!creation.value) {
       return { ok: true as const, value: undefined };
@@ -196,7 +210,7 @@ export async function createCloudflareAccessConfig(args: {
     return { ok: true as const, value };
   });
   if (config.ok && config.value) {
-    await publishSshClientInvalidation(args.owner);
+    await publishCloudflareAccessClientInvalidation(args.owner);
   }
   return config;
 }
@@ -263,7 +277,7 @@ export async function updateCloudflareAccessConfig(args: {
             return host.generation === 2_147_483_647;
           })))
     ) {
-      return sshCredentialFailure("exhausted");
+      return cloudflareAccessFailure("exhausted");
     }
     const [updated] = await tx
       .update(cloudflareAccessConfigs)
@@ -310,9 +324,11 @@ export async function updateCloudflareAccessConfig(args: {
     };
   });
   if (result.ok) {
-    await publishSshRuntimeInvalidation(args.db, {
-      ...args.owner,
-      connectionIds: result.affectedIds,
+    await publishCloudflareAccessMutationInvalidation(args.owner, () => {
+      return publishSshRunnerInvalidation(args.db, {
+        ...args.owner,
+        connectionIds: result.affectedIds,
+      });
     });
   }
   return result;
@@ -346,7 +362,7 @@ export async function deleteCloudflareAccessConfig(args: {
     return { ok: true as const, value: undefined };
   });
   if (result.ok) {
-    await publishSshClientInvalidation(args.owner);
+    await publishCloudflareAccessClientInvalidation(args.owner);
   }
   return result;
 }

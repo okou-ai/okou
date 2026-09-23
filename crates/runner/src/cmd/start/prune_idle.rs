@@ -10,8 +10,8 @@ use super::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 use crate::idle_pool::DestroyOutcome;
 use crate::idle_prune_control::{PruneIdleReport, PruneIdleResponse, read_request, write_response};
 use crate::lifecycle::{LifecycleController, RunnerMode};
-use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::status::StatusTracker;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 pub(super) struct PruneIdleContext {
     pub identity: RunnerProcessIdentity,

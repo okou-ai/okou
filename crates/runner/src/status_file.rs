@@ -42,16 +42,19 @@ where
     T: DeserializeOwned,
 {
     let path = path(base_dir);
-    let content = match crate::private_fs::read_private_file_to_string_with_max(
+    let content = match runner_host::private_fs::read_private_file_to_string_with_max(
         &path,
-        crate::private_fs::PRIVATE_STATUS_FILE_READ_MAX_BYTES,
+        runner_host::private_fs::PRIVATE_STATUS_FILE_READ_MAX_BYTES,
     )
     .await
     {
         Ok(Some(content)) => content,
         Ok(None) => return Ok(None),
         Err(error) => {
-            return Err(StatusFileReadError::Read { path, error });
+            return Err(StatusFileReadError::Read {
+                path,
+                error: error.into(),
+            });
         }
     };
     serde_json::from_str(&content)

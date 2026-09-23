@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::{Duration, SystemTime};
 
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 pub(super) fn test_home(root: &Path) -> HomePaths {
     HomePaths::with_root(root.to_path_buf())

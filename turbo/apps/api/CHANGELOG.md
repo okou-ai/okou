@@ -8,6 +8,105 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.660.0](https://github.com/okou-ai/okou/compare/api-v1.659.1...api-v1.660.0) (2026-09-23)
+
+
+### Features
+
+* add manual usage reset for claude code subscriptions ([#36165](https://github.com/okou-ai/okou/issues/36165)) ([741e209](https://github.com/okou-ai/okou/commit/741e2092ecb9b944dc41e155cb58787d3316673b))
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+* **api:** default new organizations to gpt-6 luna ([#36166](https://github.com/okou-ai/okou/issues/36166)) ([a202943](https://github.com/okou-ai/okou/commit/a20294342f008216e87fc242b0e03ff32ea30124))
+
+
+### Refactoring
+
+* **api:** retire ssh-owned cloudflare access compatibility ([#36157](https://github.com/okou-ai/okou/issues/36157)) ([c58ef67](https://github.com/okou-ai/okou/commit/c58ef67af9fbe0607bd35b97f9132af45f9bbf22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.494.0
+    * @okouai/core bumped to 8.701.0
+    * @okouai/db bumped to 1.288.0
+    * @okouai/pi-agent-runtime bumped to 1.38.0
+
+## [1.659.1](https://github.com/okou-ai/okou/compare/api-v1.659.0...api-v1.659.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+
+### Performance Improvements
+
+* **api:** batch storage manifest cache lookups ([#36140](https://github.com/okou-ai/okou/issues/36140)) ([1f8ee78](https://github.com/okou-ai/okou/commit/1f8ee78ce8927e72a330e238aa0ddcb6a43f2c8c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.700.2
+    * @okouai/db bumped to 1.287.2
+    * @okouai/pi-agent-runtime bumped to 1.37.1
+
+## [1.659.0](https://github.com/okou-ai/okou/compare/api-v1.658.0...api-v1.659.0) (2026-09-22)
+
+
+### Features
+
+* expose ssh-backed vnc access ([#36116](https://github.com/okou-ai/okou/issues/36116)) ([05910d3](https://github.com/okou-ai/okou/commit/05910d386aebd37b12637adf5dea4a935c9a0198))
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
+
+### Bug Fixes
+
+* **platform:** resolve optimistic file previews directly ([#36141](https://github.com/okou-ai/okou/issues/36141)) ([f7d300f](https://github.com/okou-ai/okou/commit/f7d300fb8d5a15bd67d5f5b882a92b41e9bdd8b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.493.0
+    * @okouai/core bumped to 8.700.1
+    * @okouai/db bumped to 1.287.1
+    * @okouai/pi-agent-runtime bumped to 1.37.0
+
+## [1.658.0](https://github.com/okou-ai/okou/compare/api-v1.657.0...api-v1.658.0) (2026-09-22)
+
+
+### Features
+
+* **api:** add standalone cloudflare access management boundary ([#36057](https://github.com/okou-ai/okou/issues/36057)) ([c6df88a](https://github.com/okou-ai/okou/commit/c6df88aeb90ffe3d6f563a1028ffec5a41cc0b45))
+* **api:** write the pi launch-config runtime and cli version requirements ([#36083](https://github.com/okou-ai/okou/issues/36083)) ([34914c1](https://github.com/okou-ai/okou/commit/34914c13958a80b12565432275bb4de74bfdd8bb)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+* **app:** recommend personalized tasks on the agent home page ([#35881](https://github.com/okou-ai/okou/issues/35881)) ([26dfde0](https://github.com/okou-ai/okou/commit/26dfde0a42e1a45d191508ffcde7348f00925303))
+* **platform:** make the share step two steps and give review a screen ([#36076](https://github.com/okou-ai/okou/issues/36076)) ([d7c6996](https://github.com/okou-ai/okou/commit/d7c69963051d28469c38b9cfc011689f39fa6dd2))
+* streamline source-first onboarding ([#36078](https://github.com/okou-ai/okou/issues/36078)) ([3ea7b47](https://github.com/okou-ai/okou/commit/3ea7b472711d7c76f80bbe1d0b48472ad9005c7d))
+
+
+### Bug Fixes
+
+* **api:** disable codex websockets for openrouter ([#36074](https://github.com/okou-ai/okou/issues/36074)) ([662419b](https://github.com/okou-ai/okou/commit/662419b73c90802704d54eaa170c4e41d994b3dc))
+
+
+### Performance Improvements
+
+* **api:** instrument the unattributed pre-provider dispatch interval ([#36095](https://github.com/okou-ai/okou/issues/36095)) ([e6e3286](https://github.com/okou-ai/okou/commit/e6e32869d1b62ab65f7a3cf4a393191cfaf77782))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.492.0
+    * @okouai/core bumped to 8.700.0
+    * @okouai/db bumped to 1.287.0
+    * @okouai/pi-agent-runtime bumped to 1.36.1
+
 ## [1.657.0](https://github.com/okou-ai/okou/compare/api-v1.656.1...api-v1.657.0) (2026-09-22)
 
 

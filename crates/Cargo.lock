@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "api-contracts"
-version = "0.40.0"
+version = "0.41.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -1003,7 +1003,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.1"
+version = "0.22.3"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -1030,7 +1030,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.11.32"
+version = "0.11.34"
 dependencies = [
  "chrono",
  "clap",
@@ -1747,7 +1747,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.95.0"
+version = "0.97.0"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1786,7 +1786,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.16.0"
+version = "0.17.0"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.22.4"
+version = "0.22.6"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -1820,7 +1820,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.21.28"
+version = "0.21.30"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -1828,7 +1828,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.21.38"
+version = "0.21.40"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1844,7 +1844,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.19"
+version = "0.12.21"
 dependencies = [
  "guest-contracts",
  "guest-control-client",
@@ -1860,7 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.16.287"
+version = "0.16.289"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -1879,7 +1879,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.24.13"
+version = "0.24.15"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -1897,7 +1897,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.99"
+version = "0.3.101"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -1909,7 +1909,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.1.88"
+version = "0.1.90"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -1931,7 +1931,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.182"
+version = "0.1.184"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -3414,7 +3414,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "des",
  "flate2",
@@ -3522,7 +3522,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.210.0"
+version = "0.212.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3559,11 +3559,12 @@ dependencies = [
  "pkcs5",
  "pkcs8",
  "png",
- "process-control-ipc",
  "rcgen",
  "reqwest",
  "rfb-client",
  "rsa",
+ "runner-host",
+ "runner-provider",
  "runner-rpc-client",
  "runner-rpc-proto",
  "runner-types",
@@ -3576,7 +3577,6 @@ dependencies = [
  "sentry",
  "serde",
  "serde_json",
- "serde_path_to_error",
  "serde_yaml_ng",
  "sha2",
  "shell-quote",
@@ -3604,6 +3604,61 @@ dependencies = [
 ]
 
 [[package]]
+name = "runner-host"
+version = "0.1.3"
+dependencies = [
+ "futures-util",
+ "hex",
+ "libc",
+ "nix",
+ "runner-types",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "runner-provider"
+version = "0.1.1"
+dependencies = [
+ "ably-subscriber",
+ "api-contracts",
+ "async-trait",
+ "chrono",
+ "futures-util",
+ "guest-contracts",
+ "guest-control-proto",
+ "http-body 1.1.0",
+ "httpmock",
+ "hyper 1.11.1",
+ "nix",
+ "process-control-ipc",
+ "reqwest",
+ "runner-host",
+ "runner-types",
+ "sandbox",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test-support",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "runner-rpc-client"
 version = "0.4.0"
 dependencies = [
@@ -3625,7 +3680,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "api-contracts",
  "idna",
@@ -3898,7 +3953,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.43.18"
+version = "0.43.20"
 dependencies = [
  "async-trait",
  "clap",
@@ -3933,7 +3988,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.11.16"
+version = "0.11.18"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4181,7 +4236,7 @@ dependencies = [
 
 [[package]]
 name = "session-history-selector"
-version = "0.3.113"
+version = "0.3.115"
 dependencies = [
  "guest-contracts",
  "proptest",

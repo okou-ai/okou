@@ -7,12 +7,13 @@ use sandbox::SnapshotProvider;
 use sandbox_firecracker::DNS_PROBE_RESOLVER_IPV4;
 
 use crate::ca;
+use crate::config::RootfsSnapshotPathsExt;
 use crate::deps::{FIRECRACKER_VERSION, KERNEL_VERSION};
 use crate::error::{RunnerError, RunnerResult};
-use crate::lock;
-use crate::paths::{HomePaths, RootfsPaths, touch_mtime};
 use crate::profile;
 use crate::r2_cache::R2ImageCache;
+use runner_host::lock;
+use runner_host::paths::{HomePaths, RootfsPaths, touch_mtime};
 
 mod guest;
 mod hashes;

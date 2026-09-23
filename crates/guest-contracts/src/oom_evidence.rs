@@ -2,8 +2,6 @@
 
 mod containment;
 
-pub use containment::ContainmentRejection;
-
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -187,12 +185,6 @@ pub struct OomEvidence {
     pub started_boottime_us: u64,
     /// Source sample time.
     pub sampled_at: String,
-    /// Latest validated native Pi message timestamp in Unix milliseconds.
-    /// Ordering after an incident must be checked before using it as proof.
-    /// Supplied only by the operation's authenticated Guest Agent. This local
-    /// observability context is not part of the version-1 telemetry API.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_progress_at: Option<u64>,
     /// Last consumed kernel sequence, absent before the first record.
     pub kernel_cursor: Option<u64>,
     /// Availability of the bounded kernel reader at this sample.
@@ -392,6 +384,36 @@ mod tests {
         assert_eq!(
             serde_json::to_value(evidence).unwrap(),
             serde_json::from_str::<serde_json::Value>(FIXTURE).unwrap()
+        );
+    }
+
+    /// A byte copy of `contained-tool-oom.json` as it stood before
+    /// `runtime_progress_at` was removed, so the retired field below is a real
+    /// recorded payload rather than a hand-written one.
+    const LEGACY_RUNTIME_PROGRESS_FIXTURE: &str =
+        include_str!("../tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json");
+
+    #[test]
+    fn a_retired_runtime_progress_field_decodes_as_an_unknown_key() {
+        // Runner and Guest binaries ship together and a draining artifact keeps
+        // its own sandbox, so no live producer still emits this field. This
+        // pins the decoder's treatment of the retired key, not a rollout
+        // window: `OomEvidence` has no `deny_unknown_fields`, so it is ignored.
+        assert!(
+            LEGACY_RUNTIME_PROGRESS_FIXTURE.contains(r#""runtime_progress_at": 1789527602000"#)
+        );
+        let legacy =
+            decode_evidence(LEGACY_RUNTIME_PROGRESS_FIXTURE.as_bytes()).expect("legacy payload");
+        let current: OomEvidence =
+            serde_json::from_str(include_str!("../tests/fixtures/contained-tool-oom.json"))
+                .unwrap();
+
+        assert_eq!(legacy, current);
+        // The re-encoded payload carries no trace of the retired key.
+        assert!(
+            !serde_json::to_string(&legacy)
+                .unwrap()
+                .contains("runtime_progress_at")
         );
     }
 

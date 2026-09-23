@@ -8,6 +8,8 @@ control and RPC services, shared contracts, and developer/test support.
 | Crate                    | Responsibility                                                                                        |
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
 | runner                   | Host-side run orchestration, sandbox lifecycle, proxy, images and operational CLI                     |
+| runner-host              | Runner host filesystem, process, lock, path and logging primitives                                    |
+| runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-types             | Shared Runner identifiers, API payloads, storage manifest types and validation                        |
 | sandbox                  | Provider-neutral sandbox interfaces and shared lifecycle/control types                                |
 | sandbox-firecracker      | Firecracker provider: VM lifecycle, networking, NBD COW and snapshot restore                          |
@@ -47,6 +49,7 @@ invalid-record policy: cleanup and snapshot lookup skip malformed records;
 the privileged workspace helper rejects malformed records and empty tables.
 
 ```text
+Runner -> runner-provider -> runner-host -> runner-types
 Runner -> guest-control-client -> guest-control-server (guest-init child)
 Guest  -> runner-rpc-client    -> Runner service endpoint
 Guest  -> process-control-ipc  -> guest-local process control / placement

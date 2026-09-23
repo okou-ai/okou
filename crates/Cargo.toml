@@ -21,6 +21,8 @@ members = [
     "linux-mountinfo",
     "nbd-cow",
     "runner",
+    "runner-host",
+    "runner-provider",
     "runner-types",
     "sandbox",
     "sandbox-firecracker",
@@ -60,6 +62,8 @@ guest-write-file = { path = "guest-write-file" }
 guest-workspace-mount = { path = "guest-workspace-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
 nbd-cow = { path = "nbd-cow" }
+runner-host = { path = "runner-host" }
+runner-provider = { path = "runner-provider" }
 runner-types = { path = "runner-types" }
 sandbox = { path = "sandbox" }
 sandbox-firecracker = { path = "sandbox-firecracker" }

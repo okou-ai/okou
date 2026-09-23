@@ -145,7 +145,7 @@ export function ArtifactActionTooltip({
     children
   );
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger render={trigger} />
         <TooltipContent side={side}>
@@ -528,7 +528,7 @@ function GoogleDriveMenuItem({
   }
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={

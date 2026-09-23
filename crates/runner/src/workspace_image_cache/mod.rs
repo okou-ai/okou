@@ -70,7 +70,7 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::{HomePaths, RunnerPaths};
+use runner_host::paths::{HomePaths, RunnerPaths};
 
 mod entry;
 mod fs;
@@ -186,14 +186,14 @@ struct TemporaryPathStats {
 impl WorkspaceImageCache {
     #[cfg(test)]
     pub(crate) fn new(paths: RunnerPaths) -> Self {
-        let cache_dir = paths.workspace_image_cache_dir();
+        let cache_dir = crate::test_fixtures::runner_workspace_image_cache_dir(&paths);
         let lock_dir = paths.base_dir().join("locks");
         Self::with_cache_dirs(paths, cache_dir, lock_dir, "")
     }
 
     #[cfg(test)]
     fn new_with_fs_stats(paths: RunnerPaths, fs_stats: FsStats) -> Self {
-        let cache_dir = paths.workspace_image_cache_dir();
+        let cache_dir = crate::test_fixtures::runner_workspace_image_cache_dir(&paths);
         let lock_dir = paths.base_dir().join("locks");
         Self::with_cache_dirs_and_fs_stats(paths, cache_dir, lock_dir, "", fs_stats)
     }

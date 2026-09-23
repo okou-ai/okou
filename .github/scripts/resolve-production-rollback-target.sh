@@ -17,6 +17,7 @@ readonly HOSTED_PUBLICATION_RUNTIME_COMMIT=f205ec54fc463f43b1106a3659e5d6a8c979c
 readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a24
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
+readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 
 fail() {
   echo "::error::$*" >&2
@@ -129,6 +130,15 @@ fi
 # Keep the owner-aware reader and structured Runner writer available for new runs.
 if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates owner-aware provider balance failures: ${PROVIDER_BALANCE_FAILURE_COMMIT}."
+fi
+
+# The API writes `requiredPiAgentRuntimeVersion` and `minCliVersion` into the
+# persisted Pi launch config, and `piApiFirstTurnConfigSchema` is strict, so an
+# API that predates the tolerant reader rejects every queued payload carrying
+# them at claim time. Retained Runner tags are unaffected: the guest ignores
+# unknown launch-config fields.
+if ! git merge-base --is-ancestor "$PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Pi launch-config version reader: ${PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

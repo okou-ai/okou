@@ -71,6 +71,15 @@ export const setGetStartedMenuOpen$ = command(({ set }, open: boolean) => {
   }
 });
 
+/**
+ * The latest share claim, which carries what the row cannot: which post is in
+ * the queue and when it went in.
+ */
+export const shareClaim$ = computed(async (get) => {
+  const data = await get(getStartedStatus$);
+  return data?.shareClaim ?? null;
+});
+
 export const getStartedQuests$ = computed(
   async (get): Promise<readonly GetStartedQuest[]> => {
     const data = await get(getStartedStatus$);
@@ -183,6 +192,16 @@ const internalQuestIntroPromptShown$ = state(false);
  * decide what that page shows the next time it opens.
  */
 const internalQuestConnectorSearch$ = state("");
+/**
+ * The workflow prompt as the reader has edited it, or `null` while it is still
+ * the suggestion.
+ *
+ * The screen's own subtitle offers to change the wording first, so the sentence
+ * has to be editable. `null` rather than a copy of the default, because the
+ * default is a translated string that only the view can resolve -- seeding this
+ * with it would freeze one language into the signal.
+ */
+const internalQuestWorkflowPrompt$ = state<string | null>(null);
 export const questIntroKey$ = computed((get) => {
   return get(internalQuestIntroKey$);
 });
@@ -192,6 +211,9 @@ export const questIntroPromptShown$ = computed((get) => {
 export const questConnectorSearch$ = computed((get) => {
   return get(internalQuestConnectorSearch$);
 });
+export const questWorkflowPrompt$ = computed((get) => {
+  return get(internalQuestWorkflowPrompt$);
+});
 export const setQuestIntroKey$ = command(
   ({ set }, key: GetStartedQuestKey | null) => {
     set(internalQuestIntroKey$, key);
@@ -200,8 +222,14 @@ export const setQuestIntroKey$ = command(
     // time the dialog was open would otherwise hide most of it with no visible
     // cause but a filled box the reader has to notice first.
     set(internalQuestConnectorSearch$, "");
+    // And on the suggested prompt rather than a sentence edited in a session
+    // the reader has since left.
+    set(internalQuestWorkflowPrompt$, null);
   },
 );
+export const setQuestWorkflowPrompt$ = command(({ set }, value: string) => {
+  set(internalQuestWorkflowPrompt$, value);
+});
 export const setQuestConnectorSearch$ = command(({ set }, value: string) => {
   set(internalQuestConnectorSearch$, value);
 });

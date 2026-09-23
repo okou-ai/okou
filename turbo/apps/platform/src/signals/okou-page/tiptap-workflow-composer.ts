@@ -215,7 +215,11 @@ export interface WorkflowComposerSignals {
   /** Null while the pointer is not previewing, so keyboard selection leads. */
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
-  readonly closeSuggestionMenu$: Command<void, []>;
+  readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
+  readonly setSuggestionMenuRef$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null]
+  >;
   /** Drops the typed `/token` for a row that does not insert one itself. */
   readonly clearSlashRange$: Command<void, []>;
   readonly insertWorkflow$: Command<void, [ComposerSlashWorkflow]>;
@@ -1579,7 +1583,8 @@ interface WorkflowComposerRuntime {
   update(editor: Editor): void;
   selectionUpdate(editor: Editor): void;
   focus(editor: Editor): void;
-  blur(): void;
+  pointerUp(editor: Editor): void;
+  blur(event: FocusEvent): void;
   openTemplate(intent: OpenComposerTemplatePickerIntent): void;
   removeTemplate(): void;
   replaceFeedbackItems(items: readonly FeedbackItem[]): void;
@@ -1742,7 +1747,7 @@ function createWorkflowEditor(
   runtime: WorkflowComposerRuntime,
   agentMentionAvatarRuntime: AgentMentionAvatarRuntime,
 ): Editor {
-  return new Editor({
+  const editor = new Editor({
     element: null,
     extensions: [
       ...createWorkflowComposerBaseExtensions(),
@@ -1766,6 +1771,20 @@ function createWorkflowEditor(
         tabindex: "0",
         class: EDITOR_CONTENT_CLASS,
       },
+      handleDOMEvents: {
+        pointerup: (_view, event) => {
+          if (
+            event.target instanceof globalThis.Element &&
+            event.target.closest('[contenteditable="false"]') !== null
+          ) {
+            return false;
+          }
+          if (editor.isFocused) {
+            runtime.pointerUp(editor);
+          }
+          return false;
+        },
+      },
     },
     onUpdate: ({ editor }) => {
       runtime.update(editor);
@@ -1776,10 +1795,11 @@ function createWorkflowEditor(
     onFocus: ({ editor }) => {
       runtime.focus(editor);
     },
-    onBlur: () => {
-      runtime.blur();
+    onBlur: ({ event }) => {
+      runtime.blur(event);
     },
   });
+  return editor;
 }
 
 function setWorkflowComposerDocument(
@@ -1848,6 +1868,7 @@ function workflowComposerDocumentForDraft(
 function configureMountedWorkflowEditor(editor: Editor): void {
   editor.setOptions({
     editorProps: {
+      ...editor.options.editorProps,
       clipboardTextSerializer: workflowComposerClipboardText,
       attributes: {
         "aria-label": i18n.t(($) => {
@@ -1895,6 +1916,7 @@ function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
   runtime.update = () => {};
   runtime.selectionUpdate = () => {};
   runtime.focus = () => {};
+  runtime.pointerUp = () => {};
   runtime.blur = () => {};
   runtime.openTemplate = () => {};
   runtime.removeTemplate = () => {};
@@ -2006,6 +2028,54 @@ function mountLocalizationListener(
   });
 }
 
+function createCloseSuggestionMenuCommand(
+  editor: Editor,
+  interactionActive$: State<boolean>,
+  previewIndex$: State<number | null>,
+  caretIndex$: State<number>,
+) {
+  return command(({ set }, restoreEditorFocus = false) => {
+    if (restoreEditorFocus) {
+      // Focus synchronously before dismissing the token, so the focus event
+      // cannot reopen it on a later animation frame.
+      editor.view.focus();
+    }
+    set(interactionActive$, editor.isFocused);
+    set(previewIndex$, null);
+    set(caretIndex$, -1);
+  });
+}
+
+function createSuggestionMenuBoundary() {
+  const elements = new Set<HTMLElement>();
+  const ref$ = onRef(
+    command((_context, element: HTMLElement, signal: AbortSignal) => {
+      elements.add(element);
+      signal.addEventListener("abort", () => {
+        elements.delete(element);
+      });
+    }),
+  );
+  return {
+    ref$,
+    ownsBlur(target: EventTarget | null): boolean {
+      // Suggestion buttons share the editor's interaction lifetime. Their
+      // native focus must keep the token available until click activation.
+      // Safari buttons can blur the editor without taking focus. In that
+      // case the mounted Popover owns outside-press/Escape dismissal. The
+      // triggerless editor still owns moves to a known outside focus target.
+      return (
+        elements.size > 0 &&
+        (target === null ||
+          (target instanceof globalThis.Node &&
+            [...elements].some((menu) => {
+              return menu.contains(target);
+            })))
+      );
+    },
+  };
+}
+
 interface MountEditorOptions {
   editor: Editor;
   draft: DraftSignals;
@@ -2016,7 +2086,8 @@ interface MountEditorOptions {
   templateSelection: ReturnType<typeof createTemplateSelectionSignals>;
   openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   caretIndex$: State<number>;
-  editorFocusedState$: State<boolean>;
+  editorInteractionActiveState$: State<boolean>;
+  suggestionMenu: ReturnType<typeof createSuggestionMenuBoundary>;
   selectedSuggestionIndexState$: State<number>;
   previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
@@ -2089,7 +2160,8 @@ function createMountEditorCommand({
   templateSelection,
   openTemplatePicker$,
   caretIndex$,
-  editorFocusedState$,
+  editorInteractionActiveState$,
+  suggestionMenu,
   selectedSuggestionIndexState$,
   previewSuggestionIndexState$,
   feedback,
@@ -2127,12 +2199,16 @@ function createMountEditorCommand({
       };
       runtime.focus = (focusedEditor) => {
         set(previewSuggestionIndexState$, null);
-        set(editorFocusedState$, true);
+        set(editorInteractionActiveState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);
       };
-      runtime.blur = () => {
+      runtime.pointerUp = runtime.focus;
+      runtime.blur = (event) => {
+        if (suggestionMenu.ownsBlur(event.relatedTarget)) {
+          return;
+        }
         set(previewSuggestionIndexState$, null);
-        set(editorFocusedState$, false);
+        set(editorInteractionActiveState$, false);
       };
       runtime.replaceFeedbackItems = (items) => {
         set(feedback.replaceFromEditor$, items);
@@ -2192,7 +2268,7 @@ function createMountEditorCommand({
         set(legacyTemplateAttachment.reset$);
         set(draft.setInputSyncTarget$, null);
         set(previewSuggestionIndexState$, null);
-        set(editorFocusedState$, false);
+        set(editorInteractionActiveState$, false);
         editor.unmount();
       });
       await Promise.all([
@@ -2712,7 +2788,8 @@ function createWorkflowComposerRuntime(
     update(_editor: Editor): void {},
     selectionUpdate(_editor: Editor): void {},
     focus(_editor: Editor): void {},
-    blur(): void {},
+    pointerUp(_editor: Editor): void {},
+    blur(_event: FocusEvent): void {},
     openTemplate(_intent: OpenComposerTemplatePickerIntent): void {},
     removeTemplate(): void {},
     replaceFeedbackItems(_items: readonly FeedbackItem[]): void {},
@@ -2793,12 +2870,12 @@ function createTemplateSelectionSignals(
 function createActiveSuggestionRange<T>(
   editor: Editor,
   caretIndex$: State<number>,
-  editorFocusedState$: State<boolean>,
+  editorInteractionActiveState$: State<boolean>,
   findRange: (value: string, caretIndex: number) => T | null,
 ): Computed<T | null> {
   return computed((get) => {
     const caretIndex = get(caretIndex$);
-    if (caretIndex < 0 || !get(editorFocusedState$)) {
+    if (caretIndex < 0 || !get(editorInteractionActiveState$)) {
       return null;
     }
     const textblock = activeTextblock(editor);
@@ -2831,7 +2908,8 @@ export function createWorkflowComposerSignals<
   feedback: ComposerFeedbackModel = createComposerFeedbackModel(),
 ): WorkflowComposerSignals {
   const caretIndex$ = state(-1);
-  const editorFocusedState$ = state(false);
+  const editorInteractionActiveState$ = state(false);
+  const suggestionMenu = createSuggestionMenuBoundary();
   const selectedSuggestionIndexState$ = state(0);
   // A pointer preview is independent of keyboard selection. Null means the
   // preview follows the keyboard again, including when the menu reopens.
@@ -2855,19 +2933,16 @@ export function createWorkflowComposerSignals<
     agentMentionAvatarRuntime,
   );
   const templates = createTemplateSignals(editor, draft, openDialog$);
-  const selectedSuggestionIndex$ = computed((get) => {
-    return get(selectedSuggestionIndexState$);
-  });
   const activeSlashRange$ = createActiveSuggestionRange(
     editor,
     caretIndex$,
-    editorFocusedState$,
+    editorInteractionActiveState$,
     findActiveSlashWorkflowRange,
   );
   const activeChatThreadSuggestionRange$ = createActiveSuggestionRange(
     editor,
     caretIndex$,
-    editorFocusedState$,
+    editorInteractionActiveState$,
     findActiveChatThreadSuggestionRange,
   );
   const chatThreadSuggestions$ = createComposerChatThreadSuggestions(
@@ -2887,10 +2962,12 @@ export function createWorkflowComposerSignals<
   const previewSuggestion$ = command(({ set }, index: number | null) => {
     set(previewSuggestionIndexState$, index);
   });
-  const closeSuggestionMenu$ = command(({ set }) => {
-    set(previewSuggestionIndexState$, null);
-    set(caretIndex$, -1);
-  });
+  const closeSuggestionMenu$ = createCloseSuggestionMenuCommand(
+    editor,
+    editorInteractionActiveState$,
+    previewSuggestionIndexState$,
+    caretIndex$,
+  );
   const focus$ = command(() => {
     editor.commands.focus("end");
   });
@@ -2902,7 +2979,8 @@ export function createWorkflowComposerSignals<
     templateSelection: templates.selection,
     openTemplatePicker$: templates.commands.openTemplatePicker$,
     caretIndex$,
-    editorFocusedState$,
+    editorInteractionActiveState$,
+    suggestionMenu,
     selectedSuggestionIndexState$,
     previewSuggestionIndexState$,
     feedback,
@@ -2922,16 +3000,14 @@ export function createWorkflowComposerSignals<
     editor,
     compositionGate,
   );
-  const hasInput$ = computed((get) => {
-    return get(draft.hasInput$) || get(feedback.active$);
-  });
-
   return {
     editor,
     templatePreview,
     setContainerRef$,
     focus$,
-    hasInput$,
+    hasInput$: computed((get) => {
+      return get(draft.hasInput$) || get(feedback.active$);
+    }),
     hasTemplateAttachment$: templates.legacy.active$,
     templateRequests$: templates.selection.requests$,
     activeSlashRange$,
@@ -2940,11 +3016,14 @@ export function createWorkflowComposerSignals<
     agentId$,
     workflows$,
     reloadWorkflows$: reloadMountedComposerWorkflows$,
-    selectedSuggestionIndex$,
+    selectedSuggestionIndex$: computed((get) => {
+      return get(selectedSuggestionIndexState$);
+    }),
     setSelectedSuggestionIndex$,
     previewSuggestionIndex$,
     previewSuggestion$,
     closeSuggestionMenu$,
+    setSuggestionMenuRef$: suggestionMenu.ref$,
     ...suggestionInsertionCommands,
     ...textCommands,
     ...templates.commands,

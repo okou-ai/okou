@@ -43,11 +43,10 @@ metadata does not make the two sources atomic.
 
 ## Current-assignment query
 
-When the `runUsage` switch was captured as enabled for an official API-backed
-assignment, the Runner freezes the host-assigned Run identity, the immutable
-durable-continuation observation and the current MITM addon generation before
-Agent work starts. The guest can then call `run.usage` with exactly empty
-parameters:
+For every official API-backed assignment, the Runner freezes the host-assigned
+Run identity, the immutable durable-continuation observation and the current
+MITM addon generation before Agent work starts. The guest can then call
+`run.usage` with exactly empty parameters:
 
 ```json
 { "version": 1, "method": "run.usage", "params": {} }

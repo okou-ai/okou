@@ -8,6 +8,7 @@ import urllib.parse
 from pathlib import Path
 
 import pytest
+import zstandard
 from mitmproxy import http
 from mitmproxy.test import tutils
 
@@ -619,6 +620,40 @@ def test_body_capture_decompresses_buffered_response_with_bounded_headers(
     [entry] = read_jsonl_entries_after_flush(log_path)
     assert entry["response_body"] == "response body"
     assert entry["response_body_encoding"] == "utf-8"
+
+
+def test_body_capture_decompresses_concatenated_zstd_stream_buffer(tmp_path, real_flow, mitm_ctx):
+    raw_url = "https://target.example.com/path"
+    first = b"first response frame"
+    second = b" and second response frame"
+    compressor = zstandard.ZstdCompressor()
+    streamed_body = compressor.compress(first) + compressor.compress(second)
+    flow = real_flow(
+        host="target.example.com",
+        response_headers=header_map({"Content-Type": "text/plain", "Content-Encoding": "zstd"}),
+        response_body=b"buffered response must be ignored",
+    )
+    set_response_stream_buffer(flow, streamed_body)
+    log_path = tmp_path / "network.jsonl"
+    flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-abc-123"
+    flow.metadata[metadata_keys.SANDBOX_NETWORK_LOG_PATH] = str(log_path)
+    flow.metadata[metadata_keys.FIREWALL_ACTION] = "ALLOW"
+    flow.metadata[metadata_keys.ORIGINAL_URL] = raw_url
+    flow.metadata[metadata_keys.CAPTURE_BODY] = True
+    http_network_log.set_target(
+        flow,
+        url=raw_url,
+        host="target.example.com",
+        port=443,
+    )
+
+    with mitm_ctx():
+        mitm_addon.response(flow)
+
+    [entry] = read_jsonl_entries_after_flush(log_path)
+    assert entry["response_body"] == (first + second).decode()
+    assert entry["response_body_encoding"] == "utf-8"
+    assert "response_body_truncated" not in entry
 
 
 @pytest.mark.parametrize("delimiter", ["?", "#"], ids=["query", "fragment"])

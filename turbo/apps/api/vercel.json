@@ -38,6 +38,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/refresh-home-task-recommendations",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/renew-gmail-watches",
       "schedule": "0 */12 * * *"
     },

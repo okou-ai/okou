@@ -41,7 +41,7 @@ interface AttachmentPresignedToken {
   readonly expiresAt: string;
   readonly contentType?: string;
   /** Stable reference to the independent screenshot or video poster. */
-  readonly previewImageUrl?: string;
+  readonly previewImageUrl?: string | null;
   /** Signed bytes served as an attachment, distinct from a hosted preview. */
   readonly downloadUrl?: string;
   /** Stable resource identity returned while resolving an artifact reference. */
@@ -106,12 +106,14 @@ function createWebFilePresignedToken$(
     const response = await accept(
       client.fileUrl({
         query: { file_id: fileId },
+        fetchOptions: { cache: "no-store" },
       }),
       [200],
     );
     return {
       token: response.body.url,
       expiresAt: response.body.expiresAt,
+      previewImageUrl: response.body.previewImageUrl,
       publicUrl: response.body.publicUrl,
     };
   });

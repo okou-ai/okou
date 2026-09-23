@@ -1503,9 +1503,20 @@
         },
         "shareDialog": {
           "description": "提交一條公開貼文供稽核。每人只能成功領取一次獎勵。",
+          "draft": "我每週一的競品報告都交給 {{assistantName}} 做——它會讀完資料，直接把表格給我。",
           "helper": "貼文必須是公開的，並且提到 {{assistantName}}。",
           "inputLabel": "貼文連結",
+          "openX": "開啟 X",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "不用再做什麼，點數會自己入帳。",
+          "reviewDone": "知道了",
+          "reviewExplain": "只要貼文是公開的並且提到了 {{assistantName}}，獎勵就會自動發放。如果有問題，這一步會帶著原因重新開啟。",
+          "reviewOpenPost": "開啟貼文",
+          "reviewPending": "通常一小時內",
+          "reviewTime": "審核通常一小時內完成。",
+          "reviewTitle": "貼文已經在審核了",
+          "stepPaste": "把連結貼回來",
+          "stepWrite": "寫這則貼文",
           "submit": "提交",
           "title": "在 X 上分享 {{assistantName}}"
         },
@@ -1547,7 +1558,6 @@
         "enteredChat": "{{userName}} 上線了。",
         "goodToSeeYou": "見到你真好，{{userName}}。",
         "knewYouWouldCome": "就知道你會回來，{{userName}}。",
-        "letsRoll": "{{agentName}} 準備好了，{{userName}}，開工吧。",
         "makeTodayCount": "讓今天過得有價值，{{userName}}。",
         "newIdeas": "今天有什麼新想法，{{userName}}？",
         "readyToBuild": "準備開工了嗎，{{userName}}？",
@@ -1722,6 +1732,11 @@
       "upgradeToRun": "升級到 Pro 才能執行 {{assistantName}}",
       "upgradeWorkspace": "升級你的工作區"
     },
+    "browserAction": {
+      "documentTitle": "瀏覽器操作",
+      "loading": "正在載入瀏覽器請求",
+      "unavailableDescription": "此瀏覽器請求無效或已不可用。"
+    },
     "browserInput": {
       "applyFailed": "無法新增資訊。你填寫的內容仍然保留，請重試。",
       "applying": "正在新增資訊",
@@ -1739,12 +1754,10 @@
       "delivered": "已通知 Agent",
       "deliveredDescription": "Agent 現在可以繼續了。",
       "description": "請輸入這個網站所需的資訊。",
-      "documentTitle": "瀏覽器資訊輸入",
       "expired": "請求已過期",
       "expiredDescription": "瀏覽器已關閉，或這個請求已不再有效。",
       "loadFailed": "無法載入這個請求",
       "loadFailedDescription": "請稍後重試。",
-      "loading": "正在載入瀏覽器輸入",
       "loadingDescription": "正在檢查這個請求…",
       "open": "輸入資訊",
       "optional": "（選填）",
@@ -1757,9 +1770,33 @@
       "submitting": "正在新增…",
       "title": "在瀏覽器中輸入資訊",
       "unavailable": "請求不可用",
-      "unavailableDescription": "這個瀏覽器資訊輸入請求無效或已不可用。",
       "uncertain": "請檢查瀏覽器",
       "uncertainDescription": "瀏覽器可能已收到這些資訊。重試前，請先讓 Agent 檢查。"
+    },
+    "browserInteraction": {
+      "applying": "正在完成瀏覽器互動",
+      "applyingDescription": "瀏覽器正在完成此請求。",
+      "callbackFailed": "未能通知 Agent。請再次點擊繼續。",
+      "cancel": "取消",
+      "cancelFailed": "無法取消此請求。請重試。",
+      "cancelled": "請求已取消",
+      "cancelledDescription": "瀏覽器接管已取消。點擊繼續以通知 Agent。",
+      "cancelling": "正在取消…",
+      "completed": "瀏覽器互動已完成",
+      "completedDescription": "瀏覽器互動已記錄。點擊繼續以通知 Agent。",
+      "completeFailed": "無法完成此請求。請重試。",
+      "completing": "正在完成…",
+      "continue": "繼續",
+      "continuing": "正在繼續…",
+      "delivered": "已通知 Agent",
+      "deliveredDescription": "Agent 現在可以繼續。",
+      "description": "開啟瀏覽器並完成此步驟，然後點擊完成。",
+      "done": "完成",
+      "stale": "瀏覽器已不可用",
+      "staleDescription": "請讓 Agent 建立新請求。",
+      "title": "接管瀏覽器",
+      "uncertain": "請檢查瀏覽器",
+      "uncertainDescription": "互動可能已完成。重試前，請先讓 Agent 檢查。"
     },
     "cards": {
       "viewDetails": "檢視詳情"
@@ -1948,6 +1985,11 @@
       "sent": "轉發成功",
       "threads": "聊天",
       "title": "轉發到"
+    },
+    "homeTasks": {
+      "existingThread": "繼續聊天",
+      "heading": "從近期工作中提取",
+      "newThread": "新增聊天"
     },
     "mail": {
       "bcc": "密送",
@@ -2895,6 +2937,48 @@
       "named": "工作流 {{title}}",
       "open": "開啟工作流 {{title}}"
     }
+  },
+  "cloudflareAccess": {
+    "add": "新增Cloudflare Access",
+    "cancel": "取消",
+    "changed": "該Cloudflare Access在你編輯期間發生了變化。請先檢視最新設定，再儲存你的更改。",
+    "clientId": "Service Token Client ID",
+    "clientIdPlaceholder": "貼上Service Token Client ID",
+    "clientSecret": "Service Token Client Secret",
+    "clientSecretPlaceholder": "貼上Service Token Client Secret",
+    "configuration": "Cloudflare Access",
+    "createNew": "新建Cloudflare Access",
+    "delete": "刪除Cloudflare Access",
+    "deleteHelp": "確定刪除這個未被使用的Cloudflare Access？其中儲存的Service Token無法恢復。",
+    "description": "使用 Cloudflare Access 服務權杖存取受保護的應用程式。",
+    "edit": "編輯Cloudflare Access",
+    "empty": "還沒有 Cloudflare Access。新增服務權杖即可存取受保護的應用程式。",
+    "failed": "無法儲存 Cloudflare Access 更改，請重試。",
+    "inUse": "該Cloudflare Access正在被主機使用。請先檢視受影響的主機，為它們重新綁定或刪除它們。",
+    "inUseHelp": "刪除之前，請為這些主機選擇其他Cloudflare Access、明確改為直連，或刪除這些主機。",
+    "invalidInput": "部分 Cloudflare Access 設定無效，請檢查各欄位後重試。",
+    "keepChanges": "在該版本上保留我的更改",
+    "latest": "最新儲存的設定",
+    "loadFailed": "無法載入Cloudflare Access，請重試。",
+    "loading": "正在載入Cloudflare Access…",
+    "manage": "管理 Cloudflare Access",
+    "missing": "該Cloudflare Access已不可用。請選擇其他項或新建一個。",
+    "name": "名稱",
+    "namePlaceholder": "例如：生產環境訪問",
+    "replace": "替換Service Token",
+    "resourceIdConflict": "該資源 ID 無法使用。請關閉表單並重新開啟後再試。",
+    "retry": "重試",
+    "reviewHelp": "你的草稿已保留。請先確認最新儲存的設定，再應用你的更改。",
+    "revisionExhausted": "該配置已無法繼續更新，請新建一個。",
+    "save": "儲存",
+    "saveUncertain": "我們無法確認你的更改是否已儲存。請重試這次儲存，或關閉後先檢視列表，再決定是否重新新增。",
+    "select": "選擇Cloudflare Access",
+    "summary_other": "已配置{{count}}個Cloudflare Access",
+    "title": "Cloudflare Access",
+    "tokenHelp": "使用 Cloudflare Access 服務權杖存取受保護的應用程式。",
+    "unavailable": "該帳號無法使用Cloudflare Access。",
+    "unused": "未被任何主機使用",
+    "usedBy_other": "正在被{{count}}臺主機使用："
   },
   "connectors": {
     "access": {
@@ -4215,7 +4299,7 @@
       },
       "skills": {
         "copied": "已複製",
-        "copy": "匯入一個SKILL.md，它就會變成Okou裡的工作流，輸入/即可執行。",
+        "copy": "將此提示詞貼到你的{{provider}}會話中，它會把你本機的技能匯入Okou。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
         "importedCopy": "已匯入為Okou工作流。",
@@ -4224,7 +4308,7 @@
         "preparing": "正在開啟匯入會話…",
         "promptCopy": "它會讀取你本機上的技能，並寫入Okou。",
         "promptLabel": "技能匯入提示詞",
-        "promptTitle": "在Codex或Claude Code中執行",
+        "promptTitle": "在{{provider}}中執行",
         "startError": "無法開啟匯入會話。",
         "title": "把你已經寫好的技能帶過來。",
         "tryAgain": "重試",
@@ -4272,11 +4356,6 @@
       "sources": {
         "copy": "它在雲端執行，直接用你團隊已有的工具。產出提升10倍，協作更順，成本更低。先連線一個資料來源開始。",
         "note": "連線哪些帳號，由你決定。",
-        "searchAction": "找到適合你工作的資料來源",
-        "searchCopy": "按任務或應用名稱搜尋完整目錄。",
-        "searchEmpty": "沒有匹配的資料來源",
-        "searchPlaceholder": "按任務或應用名稱搜尋",
-        "searchTitle": "找到適合你工作的資料來源",
         "title": "Okou為你所用，也服務你的整個團隊。"
       },
       "startingPrompt": {
@@ -6131,6 +6210,8 @@
       },
       "personal": {
         "accountFallback": "帳號{{number}}",
+        "accountsDescription": "選擇每個供應商在新工作中使用的帳號。",
+        "accountsSectionTitle": "個人帳號",
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "新增帳號",
@@ -6249,14 +6330,14 @@
         "workspaceDescription": "這個工作區的所有人都可以使用。"
       },
       "reset": {
-        "confirmDescription": "消耗一次Codex重置額度，重置當前的用量週期。你還有{{remaining}}。",
+        "confirmDescription": "消耗一次{{provider}}重置額度，重置當前的用量週期。你還有{{remaining}}。",
         "progress": "正在重置…",
         "remaining_one": "還剩{{value}}次重置",
         "remaining_other": "還剩{{value}}次重置",
         "remainingUnavailable": "剩餘重置次數不可用",
         "remainingUnknown": "重置 —",
         "remainingWithExpiry_other": "還剩{{value}}次重置 · {{expiry}}過期",
-        "title": "重置Codex用量？"
+        "title": "重置{{provider}}用量？"
       },
       "stale": {
         "claudeExpired": "你的Claude Code會話已過期。請重新連線以繼續。",
@@ -6273,9 +6354,9 @@
         "accountSwitched": "已切換當前帳號",
         "disconnected": "{{provider}}已斷開連線",
         "policiesUpdated": "模型服務商設定已更新",
-        "reset": "Codex用量已重置",
-        "resetUnavailable": "沒有可用的Codex用量重置次數",
-        "resetUnneeded": "Codex用量當前不需要重置"
+        "reset": "{{provider}}用量已重置",
+        "resetUnavailable": "沒有可用的{{provider}}用量重置次數",
+        "resetUnneeded": "{{provider}}用量當前不需要重置"
       },
       "usage": {
         "inDays": "{{days}}天后",
@@ -6762,36 +6843,15 @@
     "chooseFile": "選擇檔案",
     "choosePrivateKeyFile": "選擇私鑰檔案",
     "cloudflare": {
-      "add": "新增Cloudflare Access",
-      "changed": "該Cloudflare Access在你編輯期間發生了變化。請先檢視最新設定，再儲存你的更改。",
-      "clientId": "Service Token Client ID",
-      "clientSecret": "Service Token Client Secret",
-      "configuration": "Cloudflare Access",
-      "createNew": "新建Cloudflare Access",
-      "delete": "刪除Cloudflare Access",
-      "deleteHelp": "確定刪除這個未被使用的Cloudflare Access？其中儲存的Service Token無法恢復。",
       "direct": "直連",
-      "edit": "編輯Cloudflare Access",
-      "empty": "還沒有Cloudflare Access。新增Service Token即可連線受保護的SSH主機。",
-      "inUse": "該Cloudflare Access正在被主機使用。請先檢視受影響的主機，為它們重新綁定或刪除它們。",
-      "inUseHelp": "刪除之前，請為這些主機選擇其他Cloudflare Access、明確改為直連，或刪除這些主機。",
       "keepChanges": "在該版本上保留我的更改",
       "latest": "最新儲存的設定",
-      "loadFailed": "無法載入Cloudflare Access，請重試。",
-      "loading": "正在載入Cloudflare Access…",
-      "missing": "該Cloudflare Access已不可用。請選擇其他項或新建一個。",
       "mode": "連線方式",
-      "name": "名稱",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "對外發布的主機名",
-      "replace": "替換Service Token",
       "reviewHelp": "你的草稿已保留。請先確認最新儲存的設定，再應用你的更改。",
-      "select": "選擇Cloudflare Access",
-      "summary_other": "已配置{{count}}個Cloudflare Access",
       "title": "Cloudflare Access",
-      "tokenHelp": "請使用SSH應用的Service Auth策略允許的Service Token。它與你的SSH登入資訊相互獨立。",
-      "unavailable": "該帳號無法使用Cloudflare Access。",
-      "usedBy_other": "正在被{{count}}臺主機使用："
+      "unavailable": "該帳號無法使用Cloudflare Access。"
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access未能建立SSH隧道。請檢查對外發布的主機名和Tunnel路由。",
@@ -6846,6 +6906,7 @@
       "credentialInUse": "該憑據正在被主機使用。請為這些主機選擇其他憑據，或先刪除這些主機。",
       "credentialUnavailable": "該SSH憑據已不可用。請選擇已有憑據或新建一個。",
       "failed": "無法儲存SSH更改，請重試。",
+      "hostInUse": "此SSH主機正被VNC路由使用。刪除該主機前，請為這些VNC路由選擇其他SSH主機、明確切換為直接連線，或先刪除這些路由。",
       "hostUnavailable": "該SSH主機已不可用。請返回主機列表，選擇已有的主機。",
       "invalidHost": "請輸入主機名或IP地址，不要包含URL協議頭、路徑或空格。",
       "invalidInput": "部分SSH設定無效，請檢查各欄位後重試。",
@@ -6866,9 +6927,6 @@
     "notLearned": "尚未記錄主機金鑰",
     "passphrase": "金鑰口令（可選）",
     "placeholders": {
-      "accessName": "例如：生產環境訪問",
-      "clientId": "貼上Service Token Client ID",
-      "clientSecret": "貼上Service Token Client Secret",
       "credentialName": "例如：部署帳號",
       "displayName": "例如：生產伺服器",
       "host": "例如：ssh.example.com",
@@ -7063,6 +7121,9 @@
       "caHint": "貼上簽發該伺服器證書的公開CA證書",
       "custom": "自定義證書頒發機構",
       "profileLabel": "安全方案",
+      "serverName": "TLS憑證身分",
+      "serverNameHelp": "選填。留空時將依據RFB目標主機驗證憑證。僅當憑證使用其他DNS名稱時才填寫。",
+      "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系統證書頒發機構",
       "title": "伺服器證書信任",
       "x509Plain": "加密的使用者名稱和密碼（X509Plain）",
@@ -7073,6 +7134,22 @@
     "summary_one": "已配置{{count}}臺主機",
     "summary_other": "已配置{{count}}臺主機",
     "title": "VNC遠端訪問",
+    "transport": {
+      "destination": "RFB目標",
+      "destinationHelp": "使用SSH路由時，將從所選SSH伺服器存取此主機和連接埠，而不是由Runner直接存取。",
+      "direct": "Runner直接連線",
+      "empty": "沒有可用的已儲存SSH主機。使用此路由前，請先在SSH設定中新增主機。",
+      "loadFailed": "無法載入已儲存的SSH主機。",
+      "loading": "正在載入已儲存的SSH主機…",
+      "select": "選擇已儲存的SSH主機",
+      "selectionUnavailable": "所選SSH主機已無法使用。請選擇其他主機，或明確切換為直接連線。",
+      "ssh": "透過已儲存的SSH主機",
+      "sshConnection": "SSH主機",
+      "sshHelp": "SSH僅保護Runner到SSH伺服器這一段。該伺服器必須能夠存取RFB目標。Agent必須同時取得VNC和SSH存取權限。",
+      "title": "連線路由",
+      "unavailable": "此帳戶無法使用SSH設定。",
+      "via": "SSH主機："
+    },
     "unavailable": "當前工作區不支援VNC。"
   },
   "workflows": {

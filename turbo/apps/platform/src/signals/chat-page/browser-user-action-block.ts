@@ -36,11 +36,18 @@ import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
 export const BROWSER_INPUT_CANCELLATION_PROMPT =
   "The user cancelled the browser input request.";
+export const BROWSER_INTERACTION_CANCELLATION_PROMPT =
+  "The user cancelled the browser interaction request.";
 
 type BrowserInputAction = Extract<
   BrowserUserActionResponse,
   { readonly kind: "input" }
 >;
+type BrowserDirectInteractionAction = Extract<
+  BrowserUserActionResponse,
+  { readonly kind: "direct_interaction" }
+>;
+type BrowserUserAction = BrowserInputAction | BrowserDirectInteractionAction;
 
 export interface BrowserUserActionDescriptor {
   readonly requestToken: string;
@@ -51,7 +58,7 @@ export interface BrowserUserActionDescriptor {
 }
 
 export type BrowserUserActionRequestState =
-  | { readonly kind: "action"; readonly action: BrowserInputAction }
+  | { readonly kind: "action"; readonly action: BrowserUserAction }
   | { readonly kind: "expired" }
   | { readonly kind: "unavailable" };
 
@@ -73,6 +80,7 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     [HTMLFormElement | null]
   >;
   readonly submit$: Command<Promise<void>, [AbortSignal]>;
+  readonly complete$: Command<Promise<void>, [AbortSignal]>;
   readonly cancel$: Command<Promise<void>, [AbortSignal]>;
   readonly continue$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -189,12 +197,11 @@ export function browserUserActionResourceKey(
   ]);
 }
 
-function inputActionMatches(
+function actionMatches(
   action: BrowserUserActionResponse,
   descriptor: BrowserUserActionDescriptor,
-): action is BrowserInputAction {
+): action is BrowserUserAction {
   return (
-    action.kind === "input" &&
     action.requestToken === descriptor.requestToken &&
     chatActionIdMatches(action.agentId, descriptor.agentId) &&
     chatActionIdMatches(action.threadId, descriptor.threadId)
@@ -219,7 +226,7 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
       if (status === 410) {
         return { kind: "expired" };
       }
-      if (status !== 200 || !inputActionMatches(result.body, descriptor)) {
+      if (status !== 200 || !actionMatches(result.body, descriptor)) {
         return { kind: "unavailable" };
       }
       return { kind: "action", action: result.body };
@@ -352,7 +359,11 @@ function createSubmitSignal({
     if (get(activeMutation$)) {
       return;
     }
-    if (request.kind !== "action" || request.action.state !== "pending") {
+    if (
+      request.kind !== "action" ||
+      request.action.kind !== "input" ||
+      request.action.state !== "pending"
+    ) {
       return;
     }
     const draft = get(draft$);
@@ -387,7 +398,10 @@ function createSubmitSignal({
       set(refresh$);
       return;
     }
-    if (!inputActionMatches(result.body, descriptor)) {
+    if (
+      !actionMatches(result.body, descriptor) ||
+      result.body.kind !== "input"
+    ) {
       set(clearDraft$);
       set(refresh$);
       return;
@@ -396,6 +410,73 @@ function createSubmitSignal({
       set(clearDraft$);
     }
     if (result.body.state === "succeeded") {
+      set(activeMutation$, true);
+      await set(
+        deliverCallback$,
+        descriptor.callbackPrompt,
+        result.body.callbackIds.success,
+        signal,
+      ).finally(() => {
+        set(activeMutation$, false);
+        set(refresh$);
+      });
+      signal.throwIfAborted();
+      return;
+    }
+    set(refresh$);
+  });
+}
+
+function cancellationPrompt(action: BrowserUserAction): string {
+  return action.kind === "direct_interaction"
+    ? BROWSER_INTERACTION_CANCELLATION_PROMPT
+    : BROWSER_INPUT_CANCELLATION_PROMPT;
+}
+
+function createCompleteSignal({
+  descriptor,
+  request$,
+  refresh$,
+  activeMutation$,
+  deliverCallback$,
+}: BrowserUserActionMutationContext): BrowserUserActionSignals["complete$"] {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(activeMutation$)) {
+      return;
+    }
+    const request = await get(request$);
+    signal.throwIfAborted();
+    if (get(activeMutation$)) {
+      return;
+    }
+    if (
+      request.kind !== "action" ||
+      request.action.kind !== "direct_interaction" ||
+      request.action.state !== "pending"
+    ) {
+      return;
+    }
+
+    set(activeMutation$, true);
+    const result = await accept(
+      get(apiClient$)(browserUserActionsContract).complete({
+        params: { requestToken: descriptor.requestToken },
+        body: {},
+        fetchOptions: { signal },
+      }),
+      [200, 403, 404, 409, 410],
+      signal,
+    ).finally(() => {
+      set(activeMutation$, false);
+    });
+    signal.throwIfAborted();
+    const status: number = result.status;
+    if (
+      status === 200 &&
+      actionMatches(result.body, descriptor) &&
+      result.body.kind === "direct_interaction" &&
+      result.body.state === "succeeded"
+    ) {
       set(activeMutation$, true);
       await set(
         deliverCallback$,
@@ -450,13 +531,14 @@ function createCancelSignal({
     set(clearDraft$);
     if (
       status === 200 &&
-      inputActionMatches(result.body, descriptor) &&
+      actionMatches(result.body, descriptor) &&
+      result.body.kind === request.action.kind &&
       result.body.state === "cancelled"
     ) {
       set(activeMutation$, true);
       await set(
         deliverCallback$,
-        BROWSER_INPUT_CANCELLATION_PROMPT,
+        cancellationPrompt(result.body),
         result.body.callbackIds.cancellation,
         signal,
       ).finally(() => {
@@ -496,7 +578,7 @@ function createContinueSignal({
           }
         : request.action.state === "cancelled"
           ? {
-              prompt: BROWSER_INPUT_CANCELLATION_PROMPT,
+              prompt: cancellationPrompt(request.action),
               ids: request.action.callbackIds.cancellation,
             }
           : null;
@@ -524,6 +606,7 @@ function createMutationSignals(
   | "callbackFailed$"
   | "busy$"
   | "submit$"
+  | "complete$"
   | "cancel$"
   | "continue$"
 > {
@@ -573,6 +656,7 @@ function createMutationSignals(
       return get(activeMutation$);
     }),
     submit$: createSubmitSignal(context),
+    complete$: createCompleteSignal(context),
     cancel$: createCancelSignal(context),
     continue$: createContinueSignal(context),
   };

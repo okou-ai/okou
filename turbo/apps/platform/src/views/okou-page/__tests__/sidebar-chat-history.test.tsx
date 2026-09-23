@@ -92,6 +92,66 @@ test("Browse a long sidebar chat history", async () => {
   expect(scrollArea).toBeInTheDocument();
 });
 
+test("Toggle the chat list from its title with pointer and keyboard", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Release plan");
+  const titleButton = buttonByText("Chats with Okou", list);
+  const contentId = titleButton.getAttribute("aria-controls");
+  if (!contentId) {
+    throw new Error("Chat list title does not control its content");
+  }
+  const content = document.getElementById(contentId);
+  if (!content) {
+    throw new Error("Controlled chat list content not found");
+  }
+
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).toBeVisible();
+  titleButton.focus();
+  await user.keyboard("{Enter}");
+
+  expect(titleButton).toHaveFocus();
+  expect(titleButton).toHaveAttribute("aria-expanded", "false");
+  expect(content).not.toBeVisible();
+  expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
+
+  await user.keyboard(" ");
+
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).toBeVisible();
+  await within(list).findByText("Release plan");
+
+  // Pointer activation runs through the same control as Enter and Space.
+  click(titleButton);
+  await waitFor(() => {
+    expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
+  });
+  expect(titleButton).toHaveAttribute("aria-expanded", "false");
+  expect(content).not.toBeVisible();
+
+  click(titleButton);
+  await within(list).findByText("Release plan");
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).toBeVisible();
+
+  const titleRow = titleButton.parentElement;
+  if (!titleRow) {
+    throw new Error("Chat list title row not found");
+  }
+  click(within(titleRow).getByLabelText("Open chat list menu"));
+  await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+});
+
 test("Refresh a long sidebar after deleting an offscreen chat", async () => {
   const remote = context.mocks.deferred<void>();
   const cachedChatThreadEvents = mockLongSidebarHistory(remote.promise);
@@ -496,6 +556,11 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
 
   openChatListMenu();
   expect(menuItemByText("Archived")).toBeInTheDocument();
+  expect(
+    screen
+      .getByRole("menu")
+      .querySelectorAll('[data-slot="dropdown-menu-separator"]'),
+  ).toHaveLength(1);
   click(menuItemByText("Unread"));
 
   await waitFor(() => {
@@ -507,6 +572,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["✅ Waiting for review"]);
   });
+  expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
 
   openChatListMenu();
   click(menuItemByText("Archived"));
@@ -520,6 +586,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["✅ Archived context", "✅ Waiting for review"]);
   });
+  expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
 
   openChatListMenu();
   click(menuItemByText("All chats"));
@@ -533,6 +600,9 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["Release plan"]);
   });
+  expect(
+    within(sidebar()).queryByText("Show all chats"),
+  ).not.toBeInTheDocument();
 });
 
 test("Hide the current chat after archiving it", async () => {
@@ -577,6 +647,14 @@ test("Hide the current chat after archiving it", async () => {
     expect(within(sidebar()).queryByText("New Thread")).not.toBeInTheDocument();
     expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
   });
+
+  click(buttonByText("Show all chats", sidebar()));
+  await expect(
+    within(sidebar()).findByText("New Thread"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(sidebar()).queryByText("No archived chats"),
+  ).not.toBeInTheDocument();
 });
 
 test("Find archived chats in All and Chats workspace search results", async () => {

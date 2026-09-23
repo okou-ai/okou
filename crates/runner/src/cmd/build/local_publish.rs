@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::RootfsPaths;
+use runner_host::paths::RootfsPaths;
 
 pub(super) struct LocalFilePublish {
     staging: PathBuf,
@@ -107,7 +107,7 @@ fn remove_file_if_exists_sync(path: &Path, label: &str) -> RunnerResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::paths::HomePaths;
+    use runner_host::paths::HomePaths;
 
     #[tokio::test]
     async fn local_file_publish_removes_stale_file_residue() {

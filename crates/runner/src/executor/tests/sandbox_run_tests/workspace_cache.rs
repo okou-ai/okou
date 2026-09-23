@@ -1059,12 +1059,13 @@ async fn execute_inner_waits_for_transient_workspace_cache_lock() {
         CANONICAL_WORKING_DIR,
         u64::from(params.workspace_disk_mb) * 1024 * 1024,
     );
-    let held_lock = crate::lock::acquire(crate::paths::workspace_image_cache_lock_path(
-        &runner_paths.base_dir().join("locks"),
-        &cache_key,
-    ))
-    .await
-    .unwrap();
+    let held_lock =
+        runner_host::lock::acquire(runner_host::paths::workspace_image_cache_lock_path(
+            &runner_paths.base_dir().join("locks"),
+            &cache_key,
+        ))
+        .await
+        .unwrap();
     let mut telemetry = test_telemetry(&config, &ctx);
 
     let outcome = {
@@ -1205,12 +1206,13 @@ async fn execute_inner_records_workspace_cache_lock_busy_prepare_telemetry() {
         CANONICAL_WORKING_DIR,
         u64::from(params.workspace_disk_mb) * 1024 * 1024,
     );
-    let _held_lock = crate::lock::acquire(crate::paths::workspace_image_cache_lock_path(
-        &runner_paths.base_dir().join("locks"),
-        &cache_key,
-    ))
-    .await
-    .unwrap();
+    let _held_lock =
+        runner_host::lock::acquire(runner_host::paths::workspace_image_cache_lock_path(
+            &runner_paths.base_dir().join("locks"),
+            &cache_key,
+        ))
+        .await
+        .unwrap();
     let mut telemetry = test_telemetry(&config, &ctx);
 
     let outcome = tokio::time::timeout(
@@ -1284,7 +1286,7 @@ async fn execute_inner_logs_workspace_cache_lock_error_separately() {
         CANONICAL_WORKING_DIR,
         u64::from(params.workspace_disk_mb) * 1024 * 1024,
     );
-    let lock_path = crate::paths::workspace_image_cache_lock_path(
+    let lock_path = runner_host::paths::workspace_image_cache_lock_path(
         &runner_paths.base_dir().join("locks"),
         &cache_key,
     );

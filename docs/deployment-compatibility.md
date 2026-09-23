@@ -17,6 +17,65 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Browser user-action retention (2026-09-23)
+
+Browser user-action requests have no independent expiry. Their active lifetime
+continues to come from the exact `browser_session_instances` row: active status,
+absolute `timeout_at`, and renewable `idle_expires_at`. The existing Browser
+reconciliation worker now converts requests after actual closure, using the
+instance's persisted `finished_at`: `pending` becomes `stale`, `applying`
+becomes `uncertain`, and existing terminal outcomes remain unchanged. This
+database-only work runs independently of the `BrowserNativeInput` switch and
+does not call Browser Use or CDP.
+
+Terminal requests remain available for callback recovery for seven days. A row
+is cleanup-eligible only when both its `completed_at` and the Browser's
+`finished_at` are at least seven days old, which anchors retention to the later
+timestamp. Conversion and deletion each process at most 20 rows in ascending
+token-hash order per Browser reconciliation tick. Ordinary inactive-Browser and
+stopped-instance cleanup retains the instance while any associated action row
+remains, so `finished_at` cannot disappear between those phases. Thread
+deletion and explicit user or organization erasure remain immediate and are not
+delayed by callback retention.
+
+This rollout changes API queries and worker ordering only. It needs no schema
+migration or backfill, and new API code is compatible with the already-shipped
+action and Browser tables. During a mixed API rollout, older workers do not have
+the action-existence guards. Do not treat the retention invariant as active
+until the new API version is serving everywhere.
+
+Rolling the API back is schema-compatible but not lifecycle-safe for retained
+actions. An older worker can delete the only instance `finished_at` after its
+ordinary Browser retention window. A nonterminal action that was not yet
+converted can then no longer converge, and a terminal action whose later
+completion extended recovery can no longer be selected by the bounded cleanup.
+Those rows remain removable by thread/account erasure, but a later forward
+deploy cannot reconstruct the lost closure timestamp. Prefer a forward fix; if
+a rollback is unavoidable, restore the guarded worker before any affected
+instance reaches ordinary Browser cleanup.
+
+## Onboarding model preference
+
+New organization seeds use GPT-6 Luna as the Built-in default for both Free and
+paid workspaces. Existing organizations keep their stored default, including
+GPT-5.6 Luna. The new API also recognizes an untouched GPT-5.6 Luna seed from
+an older API when completing a Codex or Claude Code onboarding choice. Migration
+`1199_gpt_6_luna_policy_admission` enables new GPT-6 Luna organization policies
+before the API starts serving the new default; it does not rewrite existing
+policies. The GPT-6 Luna runtime route and pricing must be available before this
+default is deployed. Remove the old-seed recognition after old API writers drain
+and no incomplete-onboarding organization retains the untouched old seed; #36167
+tracks the production inventory and removal.
+
+The source-first App sends its optional Codex or Claude Code choice as a query
+parameter on `POST /api/onboarding/complete`. An older API ignores that parameter
+and completes onboarding with the existing model seed; a newer API accepts older
+App requests without it and keeps the same seed. No database migration is needed.
+On first completion, the newer API replaces only an untouched default model seed
+with the chosen subscription models in the same transaction as the completion
+marker. A repeated completion or an already customized model policy leaves the
+policy unchanged. A member's onboarding flow does not call this admin-only route.
+
 ## Slack ingress failed status retirement (2026-09-20)
 
 Migration `1179_retire_slack_ingress_failed_status` rewrites every
@@ -745,33 +804,65 @@ Compatibility is negotiated per run rather than by deployment order:
   API-first turn with) and `minCliVersion` (the lowest CLI release that
   understands the current launch payload). They are optional so contexts
   captured by earlier backends remain valid.
-- **The backend does not write them yet.** This launch config is persisted in
-  the encrypted queue payload and decoded by whichever API instance serves the
+- **The backend writes them.** This launch config is persisted in the
+  encrypted queue payload and decoded by whichever API instance serves the
   claim, and `piApiFirstTurnConfigSchema` is strict, so a backend from before
-  these fields existed rejects a payload that carries them. The reader ships
-  first; the writer is enabled in a later release, once this one is deployed
-  across the serving fleet and outside the rollback window. This is the same
-  staging the API-first usage handoff producer (#35413) used. Until then every
-  run takes the `npx` path below. Follow-up: #35967.
-- The guest agent execs the installed CLI only when the installed
-  `piAgentRuntime` equals `requiredPiAgentRuntimeVersion` and the installed
-  `cli` is at or above `minCliVersion`; otherwise it launches the
+  these fields existed rejects a payload that carries them. The tolerant reader
+  shipped first with the writer off, in `8d8f3a3e14d23f7471e0773bd9acb988f59217af`
+  (#36000, released as api 1.657.0 in `1807fbf7e37dc98e99793a57e7799f6dc804ad53`);
+  the writer followed in its own release after that API was promoted. This is
+  the same staging the API-first usage handoff producer (#35413) used.
+
+  **API rollback floor: `8d8f3a3e14d23f7471e0773bd9acb988f59217af`** (#36000's
+  merge commit). An API artifact that predates it rejects, at claim time, every
+  queued Pi run created after the writer was enabled. The production rollback
+  resolver (`.github/scripts/resolve-production-rollback-target.sh`) enforces
+  the floor for API targets; verify manually with
+  `gh api repos/okou-ai/okou/compare/8d8f3a3e14d23f7471e0773bd9acb988f59217af...<artifact-sha> --jq .status`
+  and require `ahead` or `identical`. Retained Runner tags are not constrained:
+  the guest ignores unknown launch-config fields.
+
+- `piLaunchConfig.apiFirstTurn` also accepts the optional
+  `requiredPiSessionConstructionDigest`: a build-time SHA-256 over the
+  code-determined session construction (the system prompt template and the
+  ordered tool schemas for fixed inputs, one profile without and one with the
+  memory tools) that `@okouai/pi-agent-runtime` commits in
+  `session-construction-digest.json` and whose test fails while it is stale.
+  Every CLI artifact manifest carries the same value as
+  `sessionConstruction.digest`, and the runner build copies it into the
+  installed manifest. It moves only when code that feeds the constructed
+  session changes, in whichever package that code lives, whereas
+  `piAgentRuntime` also moves on dependency-only release bumps and therefore
+  forced the `npx` launch after most releases. **The backend does not write it
+  yet**: the reader ships first, and the writer follows in its own release
+  with the reader commit as an API rollback floor, exactly as the runtime
+  version fields were staged above.
+- The guest agent execs the installed CLI only on a parity match at or above
+  the CLI floor. When the launch config carries
+  `requiredPiSessionConstructionDigest`, parity means the installed manifest's
+  `sessionConstruction.digest` is identical, and an installed CLI without a
+  digest fails parity; otherwise parity means the installed `piAgentRuntime`
+  equals `requiredPiAgentRuntimeVersion`. The installed `cli` must be at or
+  above `minCliVersion` in both cases. Every other case launches the
   commit-addressed package through `npx`, which is always built from the
-  backend's commit. A launch config without the fields, or a rootfs without an
+  backend's commit; a launch config without the fields, or a rootfs without an
   installed CLI, always takes the `npx` path.
 - The runner advertises the installed versions as an optional `installedVersions`
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
-  `runner_installed_pi_agent_runtime_version`.
+  `runner_installed_pi_agent_runtime_version`. The optional
+  `piSessionConstructionDigest` member is accepted but not advertised yet;
+  runners send it once every serving backend accepts it, and the backend then
+  records it as `runner_installed_pi_session_construction_digest`.
 - The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
-  when the required runtime version differs from the runtime it bundles. A
-  settled-session continuation is a complete checkpoint and is never discarded
-  for a version difference.
+  when the required session-construction digest, or without one the required
+  runtime version, differs from what it bundles. A settled-session continuation
+  is a complete checkpoint and is never discarded for a parity difference.
 
-Skew in either direction is therefore safe: once the writer is enabled, a new
-backend with an old runner emits the fields into a launch config the old guest
-ignores, because the generated Rust bindings do not deny unknown fields; a new
-runner with an old backend sees no required version and launches through `npx`.
+Skew in either direction is therefore safe: a new backend with an old runner
+emits the fields into a launch config the old guest ignores, because the
+generated Rust bindings do not deny unknown fields; a new runner with an old
+backend sees no required version and launches through `npx`.
 Raise `PI_SANDBOX_INSTALLED_CLI_MIN_VERSION` whenever a launch-payload or
 handoff field becomes required. Retiring `CLI_PKG_URL` and the `npx` path
 follows the drain procedure below and is tracked in #35967.
@@ -1131,6 +1222,17 @@ protect late proxy usage. It remains unchanged, along with ordinary
 pending-usage/callback cleanup blockers, provider-result usage, lifecycle
 observation and private checkpoint validation.
 
+#### GPT 6 Luna native model readiness
+
+A Runner advertises `X-Native-Gpt-6-Luna: 1` only when its bundled Guest accepts
+native `gpt-6-luna` and `openai/gpt-6-luna` work. This capability is separate
+from `X-Native-Gpt-6-Sol`: a Sol-capable artifact predating Luna must leave Luna
+jobs pending. The API excludes unsupported Luna jobs before the bounded poll
+lookup and rejects an unsupported direct claim with `404`, without changing the
+queued job. New Runners send both headers, while older APIs ignore the new
+header. No organization default or stored selection changes; a new catalog row
+must be admitted separately before an organization can add the model.
+
 #### GPT 6 Sol native model readiness
 
 Poll and claim requests advertise `X-Native-Gpt-6-Sol: 1` only from Runner artifacts
@@ -1151,6 +1253,29 @@ API-first promotion, or a Runner rollback, old Runners can continue executing
 existing models but cannot consume Sol jobs. Sol work waits until a supporting
 Runner is available. The capability remains necessary while an incompatible
 Runner is a supported rollback target; no database migration is involved.
+
+#### Claude Opus 5.5 native model readiness
+
+Poll and claim requests advertise `X-Native-Claude-Opus-5-5: 1` only from
+Runner artifacts whose bundled Guest accepts Claude Opus 5.5, its gateway alias,
+and the model's reasoning efforts. The API checks this capability before an old
+Runner can claim Claude Code work whose canonical `modelUsageProvider` is
+`claude-opus-5-5`. The logical identity is used instead of `ANTHROPIC_MODEL` so
+the guard also covers OpenRouter, Vercel, Azure deployment names, Bedrock
+foundation models and opaque cloud profiles.
+
+Poll excludes unsupported Opus 5.5 jobs before applying its candidate limit, so
+old Runners can still discover existing work behind one. Claim repeats the
+check for direct notifications and previously discovered work. A claimant
+without the header receives the existing claim `404`; the job remains pending
+for a capable Runner.
+
+The header leaves strict request bodies unchanged and is ignored by old APIs.
+During API-first promotion or Runner rollback, old Runners continue executing
+existing models while Opus 5.5 work waits. The model remains on the Claude Code
+harness until the pinned Pi catalog can resolve and verify it. No organization
+default or stored model selection changes, and no database migration is part of
+this compatibility boundary.
 
 #### Runner process drain
 
@@ -1229,14 +1354,23 @@ Only post-spawn background work reads these records; foreground lookup probes po
 file entries only, so unsupported archives do not pay a rejection-record lock
 and read on every startup. Each reader validates its expected entry kind.
 
-For an ordinary archive hit, optional decoded warming is omitted when this
+For an eligible archive hit, optional decoded warming is omitted when this
 plan's existing foreground lookup already validated positive decoded contents,
-even if mount or payload admission did not select them for delivery. This
-observation belongs only to that prepared plan and adds no lookup or retained
-file contents. A missing compressed archive still selects its required fill;
-later plans perform their own positive lookup, so GC eviction cannot become a
-permanent warming exclusion. Unobserved positive entries retain the existing
-background checks.
+even if mount or payload admission did not select them for delivery. Eligible
+consumers are ordinary storage downloads and fresh, non-empty artifact downloads
+with complete storage name, storage ID and version identity plus an archive
+source. Instructions, reused paths, empty entries and artifacts without that
+complete identity retain archive delivery. This observation belongs only to that
+prepared plan and adds no lookup or retained file contents. A missing compressed
+archive still selects its required fill; later plans perform their own positive
+lookup, so GC eviction cannot become a permanent warming exclusion. Unobserved
+positive entries retain the existing background checks.
+
+Artifact decoded selection has the same fail-closed boundary as storage:
+missing, busy, rejected, conflicting or capacity-ineligible optional cache work
+keeps the original archive path, while malformed present data, cache I/O,
+cancellation or direct-write failure is explicit failure. Once Guest mutation
+starts, the retained archive URL is metadata and is not replayed as recovery.
 
 After Agent spawn, ordinary warm-source candidates can pass through one
 runner-owned classification batch of at most 16 keys before queue admission.
@@ -1267,13 +1401,16 @@ still share the 15 MiB payload and 1,024-mount limits across the entire run.
 
 After source resolution, a combined manifest that fits uses one Guest operation.
 An oversized combined manifest is composed into bounded existing-format
-requests: ordinary storage, artifacts, reused paths and all cleanup run first;
-decoded-only batches follow without repeating cleanup. The Runner validates
-decoded bindings against the complete manifest before partitioning, and the
-Guest validates each binary request. Every batch retains the existing 64 KiB
-manifest and 15 MiB payload limits, real source URLs and file/path validation.
-All batches are encoded before the first storage-apply operation, and a failure stops
-later batches and prevents Agent spawn. The existing non-transactional partial
+requests: ordinary storage, unselected artifacts, reused paths and all cleanup
+run first; decoded storage and artifact batches follow without repeating cleanup.
+The Runner validates decoded bindings against the complete manifest before
+partitioning, and the Guest validates each binary request. Decoded artifact
+batches preserve the canonical artifact storage ID, archive source, writeback,
+fingerprints and missing-root policy fields; only their bytes arrive through the
+private decoded-files input. Every batch retains the existing 64 KiB manifest
+and 15 MiB payload limits, real source URLs and file/path validation. All batches
+are encoded before the first storage-apply operation, and a failure stops later
+batches and prevents Agent spawn. The existing non-transactional partial
 filesystem-change semantics remain; multiple requests do not imply rollback.
 Oversized ordinary JSON retains its existing manifest-file transport. No API,
 wire shape, persisted cache format, archive eligibility or generic stdin limit
@@ -1327,10 +1464,11 @@ files. GC can independently evict either format after those locks are released.
 
 Conversion alone does not delete an archive: a never-used converted entry may
 retain both formats until direct use or GC. Old Runners, rollback, instructions,
-artifacts and other archive-required consumers keep their original delivery and
-may refill a compressed cache miss. Queued archive-fill demand takes precedence
-over queued retirement for the same identity. This is use-driven best-effort
-cleanup, not a guarantee of exactly one representation across mixed consumers.
+ineligible artifacts and other archive-required consumers keep their original
+delivery and may refill a compressed cache miss. Queued archive-fill demand takes
+precedence over queued retirement for the same identity. This is use-driven
+best-effort cleanup, not a guarantee of exactly one representation across mixed
+consumers.
 
 Positive lookup includes a metadata-only archive-existence hint for maintenance
 admission. Already retired entries do not consume the background queue again,
@@ -2156,19 +2294,45 @@ no profile selector, duplicate old/new DTO, or legacy diagnostic projection.
 Before the first protected configuration or binding is written in a deployed
 environment, every serving API must understand protected authority, Runners from
 #34080 must own new Run admission, and incompatible active Runs must have drained.
-#34081 owns Access management UI; #34370 records integrated real-Run acceptance
-and the owner-approved evidence boundaries at closure.
-Management stays inside `/connectors/ssh`. Access is a reusable host connection
-setting under the existing SSH Agent grant, not a separately authorized service.
-General availability does not replace the existing Agent permission.
+#34081 originally owned Access management UI; #34370 records integrated real-Run
+acceptance and the owner-approved evidence boundaries at closure. #36038 added
+the standalone `/connectors/cloudflare-access` entry after SSH and VNC, and
+#36150 / PR #36152 removed the duplicate top-level management tab from
+`/connectors/ssh`. Access is reusable owner configuration, not a separately
+authorized Agent service. SSH remains its first consumer under the existing SSH
+Agent grant; general availability does not replace that permission.
 Native Service Auth interoperability must be verified; S1 contract tests are not
 provider E2E evidence. Do not use a production feature override as a test fixture.
 
-The management UI uses the existing canonical Access endpoints; it adds no
-schema or private Runner contract. Unified host forms also accept inline Access
-creation in the host write request. Existing `configId` selections remain valid;
-responses still return only the resolved binding. Deploy API support before the
-App uses inline creation. An older API rejects that write alternative;
+#36037 introduced `/api/cloudflare-access/configs` over the existing rows,
+revisions and mutation service while temporarily retaining
+`/api/ssh/cloudflare-access/configs`, its `hosts` projection and dual
+`cloudflare-access:changed` / `ssh:changed` publication for the deployed App.
+#36038 moved the standalone page and the retained SSH host form to the canonical
+API, `sshHosts` response and canonical event. Both rollout phases operated on the
+same encrypted records; there was no feature switch, schema migration, data copy
+or Runner contract change.
+
+Production `app.okou.ai` was verified at App `0.944.0`, commit
+`3ffd0d5086a02cd8328cf60defab7a242b682273`. That commit contains #36038 and is
+tagged `app-v0.944.0`. #36068 therefore raises the minimum supported App version
+to `0.944.0` and retires the SSH-prefixed route, `hosts` projection, SSH error
+adapter and Access-only `ssh:changed` publication together. Identified App
+clients below the floor receive `426` before route matching. This floor increase
+is deliberately separate from the release that first published the replacement
+App, because production promotes the API before the App.
+
+Standalone Access mutations now publish only `cloudflare-access:changed`.
+Effective Service Token replacement still invalidates Runner authority for every
+referencing protected host. Actual SSH host writes continue publishing
+`ssh:changed` and invalidating Runner authority; inline Access creation also
+publishes `cloudflare-access:changed` because it changes both resources. Neither
+browser event contains a token, configuration ID or host ID.
+
+Unified host forms also accept inline Access creation in the host write request.
+Existing `configId` selections remain valid; responses still return only the
+resolved binding. Deploy API support before the App uses inline creation. An older
+API rejects that write alternative;
 clients should refresh after the current API/App deployment, without a second
 save path or automatic fallback. Existing rows and older App requests remain
 valid, and Runner versions do not need a new decoder for this management change.
@@ -2641,6 +2805,27 @@ Provider results already known at transfer are included. Pre-provider transfer
 is marked `no-inference`. A transfer made before a late provider result becomes
 known has no snapshot and stays explicitly unavailable in this initial
 handoff-only design. See [API-first run usage handoff](api-run-usage.md).
+
+## Current-run usage general availability
+
+Current-run usage is generally available without a rollout switch. The normal
+release promotes the API before the Runner. During that bounded interval, the
+new API grants the prompt and `run-usage:read` capability, while an old Runner
+that captured the switch as disabled returns `unavailable` with
+`not_dispatched`. The CLI reports that as assignment-unavailable and directs the
+caller to create a new Run after Runner promotion; a Runner predating the method
+returns `unknown_method`, reported as unsupported Runner. Neither response uses
+a fallback or automatic retry.
+
+After Runner promotion, every newly created official Run receives the prompt,
+capability and installed `run.usage` consumer. The reverse skew is also safe: a
+new Runner with the previous API installs the assignment-bound consumer while
+that API continues gating prompt and capability discovery. Already-created Runs
+retain their minted capability, stable prompt snapshot and Runner ownership;
+create a new Run after promotion to obtain the generally available command.
+Stored overrides for the retired switch are ignored by the registered-key
+filter and require no database migration. The source DTOs, guest RPC framing,
+handoff metadata and observational accounting semantics are unchanged.
 
 ## DeepSeek V4.1 Flash Pi coverage
 
@@ -3115,3 +3300,54 @@ Direct-interaction creation, read, cancel, and complete are database-only. They
 capture no page or DOM metadata and have no open endpoint. The existing
 thread-scoped Browser card opens the current Browser and its normal viewer
 heartbeat owns Browser access and lease renewal.
+
+## OOM containment proof chain removal (#36027)
+
+`OomEvidence.runtime_progress_at` is removed, together with the containment
+proof chain that consumed it. No deployment boundary observes the removal.
+
+Guest Control Server produces the evidence inside the guest image and Guest
+Control Client consumes it on the Runner host, but those are not independently
+deployed surfaces. Runner and Guest binaries ship together, and a draining
+Runner keeps executing its already-claimed runs on its own sandboxes rather
+than handing them to the new artifact, as described under
+[Runner process drain](#runner-process-drain) and in
+[guest memory policy](runner-memory-policy.md). Sandbox reuse is decided inside
+a single Runner process. The producer and the consumer are therefore always the
+same artifact, so no mixed-version pair exists for this field.
+
+The persisted copies are write-only in production. Runner writes
+`oom_evidence_log` and Guest Agent writes `<metrics_log>.oom-evidence.json`;
+neither is read back by production code, so no reader can encounter a payload
+written by an older artifact.
+
+`evidence_written_by_an_older_guest_image_still_decodes` is retained as
+`a_retired_runtime_progress_field_decodes_as_an_unknown_key`, reading
+`crates/guest-contracts/tests/fixtures/oom-evidence-v1-legacy-runtime-progress.json`
+— a byte copy of the pre-removal `contained-tool-oom.json`. It pins the
+decoder's treatment of the retired key, not a rollout window: `OomEvidence` and
+every nested type (`MemorySnapshot`, `MemoryEvents`, `KernelOomEvent`,
+`OomIncident`) carry no `deny_unknown_fields`, so the key is ignored. It carries
+no removal gate and is not a bounded rollout fallback.
+
+The v1 telemetry payload is unchanged. `telemetry_evidence()` existed only to
+force the field to `None` before upload, and `skip_serializing_if` then omitted
+the key, so `runtime_progress_at` never appeared in a v1 payload and still does
+not. `oom_evidence_upload_payload_is_unchanged_by_the_removed_progress_field`
+uploads the legacy fixture through `JobTelemetry::upload_oom_evidence` and
+asserts the serialized `oomEvidence` bytes.
+
+The Guest Agent to Guest Control Server evidence request bytes `3` and `4` are
+removed outright. That socket is intra-guest: `guest-control-server` is linked
+into `guest-init`, and `guest-agent` and `guest-init` are pinned together by
+`guestSha256` in one runner image manifest, so both ends always ship in the same
+rootfs. An unrecognized request byte ends the exchange rather than reading a
+payload the peer never promised.
+
+`oom_classification` changes meaning at the same time. It previously reported
+whether the containment proof succeeded; it now reports which cgroup the kernel
+killed. The token `contained_tool_oom` therefore means something different
+before and after this change, and a record with no proven OOM evidence now
+carries an empty classification instead of `unproven_containment`. The
+`oom_unproven_reason` field is gone. Dashboards or saved queries that compare
+`oom_classification` across this boundary will be wrong.

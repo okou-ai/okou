@@ -8,7 +8,7 @@ import { queryRunUsage } from "./rpc";
 function requireCapability(): void {
   if (!decodeSandboxTokenPayload()?.capabilities.includes("run-usage:read")) {
     throw new Error(
-      "This command requires a current Run token with run-usage:read. Start a new Run after the feature is enabled.",
+      "This command requires a current Run token with run-usage:read. Start a new Run to receive the capability.",
     );
   }
 }
@@ -108,8 +108,8 @@ function errorMessage(
   const message: Record<typeof outcome.error.kind, string> = {
     "unsupported-runner":
       "This Runner does not support run.usage; start a new Run after Runner promotion.",
-    "feature-unavailable":
-      "Current-run usage is unavailable for this assignment; start a new Run after the feature is enabled.",
+    "assignment-unavailable":
+      "Current-run usage is unavailable for this assignment; start a new Run after Runner promotion.",
     busy: "Current-run usage is busy; no result was fabricated.",
     "timed-out": "Current-run usage timed out.",
     cancelled: "Current-run usage was cancelled.",

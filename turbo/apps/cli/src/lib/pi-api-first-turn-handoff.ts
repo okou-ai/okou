@@ -12,7 +12,10 @@ import {
   type PiApiFirstTurnOwnershipTransferMode,
 } from "@okouai/api-contracts/contracts/runners";
 import type { PiApiHandoffUsage } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
-import { PI_AGENT_RUNTIME_VERSION } from "@okouai/pi-agent-runtime";
+import {
+  PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
+} from "@okouai/pi-agent-runtime";
 import {
   inspectPiSessionJsonl,
   type PiSessionInspection,
@@ -62,10 +65,38 @@ export interface PiApiFirstTurnBoundaryControl {
  * Recorded so the discarded API-side attempt stays explainable; `apiUsage`
  * still carries what the API consumed.
  */
-interface PiApiFirstTurnHandoffDegrade {
-  readonly reason: "runtime_parity_mismatch";
-  readonly requiredPiAgentRuntimeVersion: string;
-  readonly installedPiAgentRuntimeVersion: string;
+type PiApiFirstTurnHandoffDegrade =
+  | {
+      readonly reason: "runtime_parity_mismatch";
+      readonly requiredPiAgentRuntimeVersion: string;
+      readonly installedPiAgentRuntimeVersion: string;
+    }
+  | {
+      readonly reason: "session_construction_mismatch";
+      readonly requiredPiSessionConstructionDigest: string;
+      readonly installedPiSessionConstructionDigest: string;
+    };
+
+/** One-line, content-free description for the sandbox failure tail. */
+export function describePiApiFirstTurnHandoffDegrade(
+  degraded: PiApiFirstTurnHandoffDegrade,
+): string {
+  switch (degraded.reason) {
+    case "runtime_parity_mismatch": {
+      return (
+        `${degraded.reason} (required pi-agent-runtime ` +
+        `${degraded.requiredPiAgentRuntimeVersion}, ` +
+        `installed ${degraded.installedPiAgentRuntimeVersion})`
+      );
+    }
+    case "session_construction_mismatch": {
+      return (
+        `${degraded.reason} (required session construction ` +
+        `${degraded.requiredPiSessionConstructionDigest}, ` +
+        `installed ${degraded.installedPiSessionConstructionDigest})`
+      );
+    }
+  }
 }
 
 interface PiApiFirstTurnHandoff {
@@ -357,16 +388,36 @@ export function deriveBaseSessionBytes(
  * parity with the API. A settled H1 is a complete checkpoint, and resuming one
  * with a newer or older runtime is the ordinary cross-release resume path, so
  * it is never discarded.
+ *
+ * Parity is the session-construction digest when the API recorded one: it
+ * moves only when code feeding the constructed session changes, so a
+ * dependency-only runtime version bump does not discard the API's work. A
+ * launch config without a digest falls back to the exact runtime version.
  */
 function runtimeParityDegrade(args: {
   readonly config: PiApiFirstTurnConfig;
   readonly manifest: PiApiFirstTurnManifest;
   readonly installedPiAgentRuntimeVersion: string;
+  readonly installedPiSessionConstructionDigest: string;
 }): PiApiFirstTurnHandoffDegrade | undefined {
+  if (args.manifest.mode !== "pending-tool-continuation") {
+    return undefined;
+  }
+  const requiredDigest = args.config.requiredPiSessionConstructionDigest;
+  if (requiredDigest !== undefined) {
+    if (requiredDigest === args.installedPiSessionConstructionDigest) {
+      return undefined;
+    }
+    return {
+      reason: "session_construction_mismatch",
+      requiredPiSessionConstructionDigest: requiredDigest,
+      installedPiSessionConstructionDigest:
+        args.installedPiSessionConstructionDigest,
+    };
+  }
   const required = args.config.requiredPiAgentRuntimeVersion;
   if (
     required === undefined ||
-    args.manifest.mode !== "pending-tool-continuation" ||
     required === args.installedPiAgentRuntimeVersion
   ) {
     return undefined;
@@ -562,6 +613,8 @@ export async function resolvePiApiFirstTurnHandoff(args: {
   readonly runtime?: HandoffRuntime;
   /** Defaults to the runtime bundled into this CLI; tests inject a mismatch. */
   readonly installedPiAgentRuntimeVersion?: string;
+  /** Defaults to the digest bundled into this CLI; tests inject a mismatch. */
+  readonly installedPiSessionConstructionDigest?: string;
 }): Promise<PiApiFirstTurnHandoff> {
   const runtime = args.runtime ?? defaultRuntime;
   const manifest = await pollManifest(args.config, runtime);
@@ -570,6 +623,9 @@ export async function resolvePiApiFirstTurnHandoff(args: {
     manifest,
     installedPiAgentRuntimeVersion:
       args.installedPiAgentRuntimeVersion ?? PI_AGENT_RUNTIME_VERSION,
+    installedPiSessionConstructionDigest:
+      args.installedPiSessionConstructionDigest ??
+      PI_SESSION_CONSTRUCTION_DIGEST,
   });
   const mode: PiApiFirstTurnOwnershipTransferMode = degraded
     ? "sandbox-first"

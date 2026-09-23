@@ -8,7 +8,7 @@ use super::super::storage::{
 };
 use super::super::{DEFAULT_EXEC_TIMEOUT, guest_runtime_dir};
 use super::support::{minimal_context, sandbox_exec_error, sandbox_write_file_error};
-use crate::paths::guest;
+use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 
 fn empty_manifest() -> Manifest {
     Manifest {
@@ -292,7 +292,7 @@ async fn fallback_cleanup_failure_preserves_write_error() {
     assert!(error.to_string().contains("vsock write failed"));
     assert_eq!(sandbox.exec_calls().len(), 2);
     assert_eq!(
-        guest::STORAGE_MANIFEST,
+        STORAGE_MANIFEST_PATH,
         guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH
     );
 }

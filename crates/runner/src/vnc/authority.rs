@@ -13,7 +13,8 @@ use zeroize::Zeroizing;
 use super::Failure;
 use runner_types::ids::RunId;
 
-use crate::{http::HttpClient, runner_process_identity::RunnerProcessIdentity};
+use crate::http::HttpClient;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 
 const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;

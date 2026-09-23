@@ -28,6 +28,7 @@ export const ROUTES = {
   connectors: "/connectors",
   connectorSsh: "/connectors/ssh",
   connectorVnc: "/connectors/vnc",
+  connectorCloudflareAccess: "/connectors/cloudflare-access",
   computerUseAuthorize: "/computer-use/authorize/:requestToken",
   bankingConnectReturn: "/banking/connect/return",
   bankingConnectReturnResult: "/banking/connect/return/:bankingConnectStatus",

@@ -86,7 +86,7 @@ fn unchanged_storage_reuses_without_guest_work() {
 }
 
 #[test]
-fn decoded_admission_only_selects_non_overlapping_ordinary_downloads() {
+fn decoded_admission_selects_non_overlapping_storage_and_artifact_downloads() {
     let source = manifest(
         vec![
             storage("/ordinary", "ordinary", "v1", None),
@@ -100,7 +100,7 @@ fn decoded_admission_only_selects_non_overlapping_ordinary_downloads() {
         .iter()
         .filter_map(|candidate| plan.decoded_mount(candidate.handle))
         .collect();
-    assert_eq!(selected, ["/ordinary"]);
+    assert_eq!(selected, ["/ordinary", "/artifact"]);
     for overlap in ["/ordinary/child", "/ordinary/child/../nested", "/"] {
         let source = manifest(
             vec![storage("/ordinary", "ordinary", "v1", None)],
@@ -113,6 +113,45 @@ fn decoded_admission_only_selects_non_overlapping_ordinary_downloads() {
                 .all(|candidate| plan.decoded_mount(candidate.handle).is_none())
         );
     }
+}
+
+#[test]
+fn decoded_artifact_admission_requires_complete_fresh_identity() {
+    for missing in ["name", "storage-id", "version"] {
+        let mut entry = artifact("/artifact", "artifact", "v1", false);
+        if missing == "name" {
+            entry.vas_storage_name.clear();
+        } else if missing == "storage-id" {
+            entry.vas_storage_id.clear();
+        } else {
+            entry.vas_version_id.clear();
+        }
+        let plan = build_storage_plan(&manifest(Vec::new(), vec![entry]), "/run", None).unwrap();
+        assert!(
+            plan.cache_candidates()
+                .iter()
+                .all(|candidate| plan.decoded_mount(candidate.handle).is_none()),
+            "{missing}"
+        );
+    }
+
+    let fresh = artifact("/artifact", "artifact", "v1", false);
+    let previous = StorageFingerprints {
+        storages: HashMap::new(),
+        artifacts: HashMap::from([(
+            "/artifact".into(),
+            StorageFingerprint::new("artifact", "v1"),
+        )]),
+    };
+    let plan =
+        build_storage_plan(&manifest(Vec::new(), vec![fresh]), "/run", Some(&previous)).unwrap();
+    assert!(plan.cache_candidates().is_empty());
+
+    let mut oversized = artifact("/artifact", "artifact", "v1", false);
+    oversized.archive_url = Some(format!("https://example.com/{}", "x".repeat(70_000)));
+    let plan = build_storage_plan(&manifest(Vec::new(), vec![oversized]), "/run", None).unwrap();
+    let candidate = plan.cache_candidates().pop().unwrap();
+    assert!(!plan.decoded_entry_fits(candidate.handle).unwrap());
 }
 
 #[test]

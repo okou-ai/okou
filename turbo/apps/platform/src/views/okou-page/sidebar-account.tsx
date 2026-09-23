@@ -8,6 +8,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   LogOut,
   Plus,
@@ -247,7 +248,10 @@ function AccountUsageGroup({
   subscriptionsEnabled,
 }: {
   onOpenCreditBalance: () => void;
-  onResetCodexUsage: (resetCredits: number | null) => void;
+  onResetCodexUsage: (
+    type: ModelProviderType,
+    resetCredits: number | null,
+  ) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
   subscriptionsEnabled: boolean;
@@ -319,7 +323,10 @@ function AccountUsageGroupWithSubscriptions({
 }: {
   combinedCredit: boolean;
   onOpenCreditBalance: () => void;
-  onResetCodexUsage: (resetCredits: number | null) => void;
+  onResetCodexUsage: (
+    type: ModelProviderType,
+    resetCredits: number | null,
+  ) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
 }) {
@@ -666,14 +673,17 @@ export function AccountDropdown({
     openSettingsSection("usage");
   };
 
-  const handleOpenCodexReset = (resetCredits: number | null) => {
-    setResetDialog({ open: true, resetCredits });
+  const handleOpenCodexReset = (
+    type: ModelProviderType,
+    resetCredits: number | null,
+  ) => {
+    setResetDialog({ open: true, resetCredits, type });
   };
 
   const handleConfirmCodexReset = () => {
     detach(
       (async () => {
-        await resetCodexSubscriptionUsage(pageSignal);
+        await resetCodexSubscriptionUsage(resetDialog.type, pageSignal);
         await reloadSubscriptions(subscriptionRowsCacheKey, pageSignal);
         setResetDialog({ ...resetDialog, open: false });
       })(),
@@ -759,6 +769,7 @@ export function AccountDropdown({
       {renderCodexResetDialog && (
         <CodexResetUsageDialog
           open={resetDialog.open}
+          providerType={resetDialog.type}
           resetCredits={resetDialog.resetCredits}
           resetting={actionPending}
           onOpenChange={handleCodexResetOpenChange}

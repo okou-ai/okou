@@ -6,7 +6,7 @@ use super::super::fs::{
 };
 use super::super::{CacheBudget, FsStats, GIB, WorkspaceImageCache};
 use crate::error::RunnerError;
-use crate::paths::RunnerPaths;
+use runner_host::paths::RunnerPaths;
 
 #[test]
 fn budget_uses_automatic_bounds() {
@@ -36,13 +36,11 @@ fn budget_uses_half_of_filesystem_for_smaller_hosts() {
 fn fs_stats_path_prefers_existing_cache_dir() {
     let dir = tempfile::tempdir().unwrap();
     let paths = RunnerPaths::new(dir.path().join("runner"));
-    std::fs::create_dir_all(paths.workspace_image_cache_dir()).unwrap();
+    let cache_dir = crate::test_fixtures::runner_workspace_image_cache_dir(&paths);
+    std::fs::create_dir_all(&cache_dir).unwrap();
     let cache = WorkspaceImageCache::new(paths.clone());
 
-    assert_eq!(
-        cache.workspace_image_cache_fs_stats_path(),
-        paths.workspace_image_cache_dir()
-    );
+    assert_eq!(cache.workspace_image_cache_fs_stats_path(), cache_dir);
 }
 
 #[test]
@@ -65,7 +63,7 @@ async fn real_fs_stats_queries_selected_existing_parent() {
     std::fs::create_dir_all(paths.base_dir()).unwrap();
     let cache = WorkspaceImageCache::new(paths.clone());
 
-    assert!(!paths.workspace_image_cache_dir().exists());
+    assert!(!crate::test_fixtures::runner_workspace_image_cache_dir(&paths).exists());
     assert_eq!(
         cache.workspace_image_cache_fs_stats_path(),
         paths.base_dir().to_path_buf()

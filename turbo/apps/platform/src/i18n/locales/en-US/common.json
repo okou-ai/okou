@@ -1442,7 +1442,7 @@
             "amount": "+{{amount}} credits",
             "confirm": "Back to work",
             "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
-            "title": "That is today done"
+            "title": "Checked in for today"
           },
           "connector": {
             "confirm": "Browse all connectors",
@@ -1504,9 +1504,20 @@
         },
         "shareDialog": {
           "description": "Submit a public post for review. One successful reward per person.",
+          "draft": "Been running my Monday competitor report with {{assistantName}} — it reads the sources and hands back the table.",
           "helper": "The post has to be public and mention {{assistantName}}.",
           "inputLabel": "Post link",
+          "openX": "Open X",
           "placeholder": "https://x.com/...",
+          "reviewDescription": "Nothing more to do — the credits land on their own.",
+          "reviewDone": "Done",
+          "reviewExplain": "If the post is public and mentions {{assistantName}}, the reward is granted automatically. If something is off, this step reopens with the reason.",
+          "reviewOpenPost": "Open the post",
+          "reviewPending": "Usually under an hour",
+          "reviewTime": "Review usually finishes within the hour.",
+          "reviewTitle": "Your post is with the reviewer",
+          "stepPaste": "Paste the link",
+          "stepWrite": "Write the post",
           "submit": "Submit",
           "title": "Share {{assistantName}} on X"
         },
@@ -1548,7 +1559,6 @@
         "enteredChat": "{{userName}} has entered the chat.",
         "goodToSeeYou": "Good to see you, {{userName}}.",
         "knewYouWouldCome": "Knew you'd come back, {{userName}}.",
-        "letsRoll": "{{agentName}} is ready, {{userName}}. Let's roll.",
         "makeTodayCount": "Let's make today count, {{userName}}.",
         "newIdeas": "New ideas today, {{userName}}?",
         "readyToBuild": "Ready to build, {{userName}}?",
@@ -1725,6 +1735,11 @@
       "upgradeToRun": "Upgrade to Pro to run {{assistantName}}",
       "upgradeWorkspace": "Upgrade your workspace"
     },
+    "browserAction": {
+      "documentTitle": "Browser action",
+      "loading": "Loading browser request",
+      "unavailableDescription": "This browser request is invalid or no longer available."
+    },
     "browserInput": {
       "applyFailed": "Couldn't add the information. Your entries are still here. Try again.",
       "applying": "Adding information",
@@ -1742,12 +1757,10 @@
       "delivered": "Agent notified",
       "deliveredDescription": "The agent can continue now.",
       "description": "Enter the information requested for this site.",
-      "documentTitle": "Browser input",
       "expired": "Request expired",
       "expiredDescription": "The browser closed or this request is no longer active.",
       "loadFailed": "Couldn't load this request",
       "loadFailedDescription": "Try again in a moment.",
-      "loading": "Loading browser input",
       "loadingDescription": "Checking this request…",
       "open": "Enter information",
       "optional": "(Optional)",
@@ -1760,9 +1773,33 @@
       "submitting": "Adding…",
       "title": "Enter information in browser",
       "unavailable": "Request unavailable",
-      "unavailableDescription": "This browser input request is invalid or no longer available.",
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
+    },
+    "browserInteraction": {
+      "applying": "Completing browser interaction",
+      "applyingDescription": "The browser is finishing this request.",
+      "callbackFailed": "The agent wasn't notified. Try Continue again.",
+      "cancel": "Cancel",
+      "cancelFailed": "Couldn't cancel this request. Try again.",
+      "cancelled": "Request cancelled",
+      "cancelledDescription": "The browser handoff was cancelled. Continue to notify the agent.",
+      "cancelling": "Cancelling…",
+      "completed": "Browser interaction complete",
+      "completedDescription": "Your browser interaction is recorded. Continue to notify the agent.",
+      "completeFailed": "Couldn't complete this request. Try again.",
+      "completing": "Completing…",
+      "continue": "Continue",
+      "continuing": "Continuing…",
+      "delivered": "Agent notified",
+      "deliveredDescription": "The agent can continue now.",
+      "description": "Open the browser, complete this step, then choose Done.",
+      "done": "Done",
+      "stale": "Browser no longer available",
+      "staleDescription": "Ask the agent to create a new request.",
+      "title": "Take over the browser",
+      "uncertain": "Check the browser",
+      "uncertainDescription": "The interaction may have completed. Ask the agent to check before trying again."
     },
     "cards": {
       "viewDetails": "View details"
@@ -1955,6 +1992,11 @@
       "sent": "Forwarded successfully",
       "threads": "Chats",
       "title": "Forward to"
+    },
+    "homeTasks": {
+      "existingThread": "Continue chat",
+      "heading": "Picked up from your recent work",
+      "newThread": "New chat"
     },
     "mail": {
       "bcc": "bcc",
@@ -2903,6 +2945,50 @@
       "named": "Workflow {{title}}",
       "open": "Open workflow {{title}}"
     }
+  },
+  "cloudflareAccess": {
+    "add": "Add Cloudflare Access",
+    "cancel": "Cancel",
+    "changed": "This Cloudflare Access changed while you were editing. Review its latest settings before saving your changes.",
+    "clientId": "Service Token Client ID",
+    "clientIdPlaceholder": "Paste the Service Token Client ID",
+    "clientSecret": "Service Token Client Secret",
+    "clientSecretPlaceholder": "Paste the Service Token Client Secret",
+    "configuration": "Cloudflare Access",
+    "createNew": "Create new Cloudflare Access",
+    "delete": "Delete Cloudflare Access",
+    "deleteHelp": "Delete this unused Cloudflare Access? Its stored Service Token cannot be recovered.",
+    "description": "Access protected applications with Cloudflare Access Service Tokens.",
+    "edit": "Edit Cloudflare Access",
+    "empty": "No Cloudflare Access yet. Add a Service Token to access protected applications.",
+    "failed": "Could not save the Cloudflare Access change. Try again.",
+    "inUse": "This Cloudflare Access is used by a host. Review the affected hosts and rebind or delete them first.",
+    "inUseHelp": "Select another Cloudflare Access for these hosts, switch them explicitly to Direct, or delete them before deleting this one.",
+    "invalidInput": "Some Cloudflare Access settings are invalid. Check the fields and try again.",
+    "keepChanges": "Keep my changes with this version",
+    "latest": "Latest saved settings",
+    "loadFailed": "Could not load Cloudflare Access. Try again.",
+    "loading": "Loading Cloudflare Access…",
+    "manage": "Manage Cloudflare Access",
+    "missing": "This Cloudflare Access is no longer available. Select another one or create one.",
+    "name": "Name",
+    "namePlaceholder": "e.g. Production access",
+    "replace": "Replace Service Token",
+    "resourceIdConflict": "This resource ID cannot be used. Close and reopen the form to try again.",
+    "retry": "Retry",
+    "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
+    "revisionExhausted": "This configuration can no longer be updated. Create a new one.",
+    "save": "Save",
+    "saveUncertain": "We couldn't confirm whether your changes were saved. Retry the same save, or close and check the list before adding again.",
+    "select": "Select Cloudflare Access",
+    "summary_one": "{{count}} Cloudflare Access configured",
+    "summary_other": "{{count}} Cloudflare Access configured",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Access protected applications with Cloudflare Access Service Tokens.",
+    "unavailable": "Cloudflare Access is not available for this account.",
+    "unused": "Not used by any hosts",
+    "usedBy_one": "Used by {{count}} host:",
+    "usedBy_other": "Used by {{count}} hosts:"
   },
   "connectors": {
     "access": {
@@ -4219,7 +4305,7 @@
       },
       "skills": {
         "copied": "Copied",
-        "copy": "Paste this prompt into your own Codex or Claude Code session and it brings the skills on your machine into Okou.",
+        "copy": "Paste this prompt into your own {{provider}} session and it brings the skills on your machine into Okou.",
         "copyError": "The prompt could not be copied.",
         "copyPrompt": "Copy prompt",
         "importedCopy": "Imported as an Okou workflow.",
@@ -4228,7 +4314,7 @@
         "preparing": "Opening your import session…",
         "promptCopy": "It reads the skills on your machine and writes them into Okou.",
         "promptLabel": "Skill import prompt",
-        "promptTitle": "Run this in Codex or Claude Code",
+        "promptTitle": "Run this in {{provider}}",
         "startError": "The import session could not be opened.",
         "title": "Bring the skills you already wrote.",
         "tryAgain": "Try again",
@@ -4276,11 +4362,6 @@
       "sources": {
         "copy": "It works in the cloud, from the tools your team already uses. 10x the output, less operational friction, lower cost. Connect one source to start.",
         "note": "You choose which accounts to connect.",
-        "searchAction": "Find a source for your work",
-        "searchCopy": "Search the full catalog by task or app name.",
-        "searchEmpty": "No matching sources",
-        "searchPlaceholder": "Search by task or app name",
-        "searchTitle": "Find a source for your work",
         "title": "Okou is for you, and shared across your whole team."
       },
       "startingPrompt": {
@@ -6135,6 +6216,8 @@
       },
       "personal": {
         "accountFallback": "Account {{number}}",
+        "accountsDescription": "Choose the account each provider uses for new runs.",
+        "accountsSectionTitle": "Personal accounts",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Active",
         "addAccount": "Add account",
@@ -6253,7 +6336,7 @@
         "workspaceDescription": "Available to everyone in this workspace."
       },
       "reset": {
-        "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
+        "confirmDescription": "Use one {{provider}} reset to reset your current usage windows. You have {{remaining}}.",
         "progress": "Resetting...",
         "remaining_one": "{{value}} reset left",
         "remaining_other": "{{value}} resets left",
@@ -6261,7 +6344,7 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} reset left · expires {{expiry}}",
         "remainingWithExpiry_other": "{{value}} resets left · expires {{expiry}}",
-        "title": "Reset Codex usage?"
+        "title": "Reset {{provider}} usage?"
       },
       "stale": {
         "claudeExpired": "Your Claude Code session expired. Re-connect to continue.",
@@ -6278,9 +6361,9 @@
         "accountSwitched": "Active account switched",
         "disconnected": "{{provider}} disconnected",
         "policiesUpdated": "Model provider settings updated",
-        "reset": "Codex usage reset",
-        "resetUnavailable": "No Codex usage resets available",
-        "resetUnneeded": "Codex usage does not need a reset right now"
+        "reset": "{{provider}} usage reset",
+        "resetUnavailable": "No {{provider}} usage resets available",
+        "resetUnneeded": "{{provider}} usage does not need a reset right now"
       },
       "usage": {
         "inDays": "in {{days}}d",
@@ -6767,38 +6850,15 @@
     "chooseFile": "Choose file",
     "choosePrivateKeyFile": "Choose private key file",
     "cloudflare": {
-      "add": "Add Cloudflare Access",
-      "changed": "This Cloudflare Access changed while you were editing. Review its latest settings before saving your changes.",
-      "clientId": "Service Token Client ID",
-      "clientSecret": "Service Token Client Secret",
-      "configuration": "Cloudflare Access",
-      "createNew": "Create new Cloudflare Access",
-      "delete": "Delete Cloudflare Access",
-      "deleteHelp": "Delete this unused Cloudflare Access? Its stored Service Token cannot be recovered.",
       "direct": "Direct",
-      "edit": "Edit Cloudflare Access",
-      "empty": "No Cloudflare Access yet. Add a Service Token to connect to protected SSH hosts.",
-      "inUse": "This Cloudflare Access is used by a host. Review the affected hosts and rebind or delete them first.",
-      "inUseHelp": "Select another Cloudflare Access for these hosts, switch them explicitly to Direct, or delete them before deleting this one.",
       "keepChanges": "Keep my changes with this version",
       "latest": "Latest saved settings",
-      "loadFailed": "Could not load Cloudflare Access. Try again.",
-      "loading": "Loading Cloudflare Access…",
-      "missing": "This Cloudflare Access is no longer available. Select another one or create one.",
       "mode": "Connection",
-      "name": "Name",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Published hostname",
-      "replace": "Replace Service Token",
       "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
-      "select": "Select Cloudflare Access",
-      "summary_one": "{{count}} Cloudflare Access configured",
-      "summary_other": "{{count}} Cloudflare Access configured",
       "title": "Cloudflare Access",
-      "tokenHelp": "Use a Service Token allowed by your SSH application's Service Auth policy. This is separate from your SSH login.",
-      "unavailable": "Cloudflare Access is not available for this account.",
-      "usedBy_one": "Used by {{count}} host:",
-      "usedBy_other": "Used by {{count}} hosts:"
+      "unavailable": "Cloudflare Access is not available for this account."
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access did not establish an SSH tunnel. Check the published hostname and Tunnel routing.",
@@ -6856,6 +6916,7 @@
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",
       "credentialUnavailable": "This SSH credential is no longer available. Select an existing credential or create a new one.",
       "failed": "Could not save the SSH change. Try again.",
+      "hostInUse": "This SSH host is used by a VNC route. Select another SSH host for those VNC routes, switch them explicitly to Direct, or delete them before deleting this host.",
       "hostUnavailable": "This SSH host is no longer available. Return to the host list and choose an existing host.",
       "invalidHost": "Enter a hostname or IP address without a URL scheme, path or spaces.",
       "invalidInput": "Some SSH settings are invalid. Check the fields and try again.",
@@ -6876,9 +6937,6 @@
     "notLearned": "Host key not learned yet",
     "passphrase": "Passphrase (optional)",
     "placeholders": {
-      "accessName": "e.g. Production access",
-      "clientId": "Paste the Service Token Client ID",
-      "clientSecret": "Paste the Service Token Client Secret",
       "credentialName": "e.g. Deployment login",
       "displayName": "e.g. Production server",
       "host": "e.g. ssh.example.com",
@@ -7051,7 +7109,7 @@
       "ownerChanged": "Your workspace access changed. Refresh before continuing.",
       "revisionExhausted": "This configuration can no longer be updated. Create a new one."
     },
-    "host": "Hostname or IP address",
+    "host": "RFB destination host",
     "hostHint": "e.g. desktop.example.com",
     "hostsTab": "Hosts",
     "label": "VNC",
@@ -7059,7 +7117,7 @@
     "loading": "Loading VNC configuration…",
     "loadingAccess": "Loading Agent access…",
     "manage": "Manage VNC",
-    "port": "Port",
+    "port": "RFB destination port",
     "retry": "Retry",
     "save": "Save",
     "saveRecovery": {
@@ -7074,6 +7132,9 @@
       "caHint": "Paste the public CA certificates that issued the server certificate",
       "custom": "Custom certificate authorities",
       "profileLabel": "Security profile",
+      "serverName": "TLS certificate identity",
+      "serverNameHelp": "Optional. Leave blank to verify the certificate against the RFB destination host. Set this only when the certificate uses a different DNS name.",
+      "serverNameHint": "e.g. desktop.internal.example.com",
       "system": "System certificate authorities",
       "title": "Server certificate trust",
       "x509Plain": "Encrypted username and password (X509Plain)",
@@ -7084,6 +7145,22 @@
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
     "title": "VNC remote access",
+    "transport": {
+      "destination": "RFB destination",
+      "destinationHelp": "For SSH routes, this host and port are reached from the selected SSH server, not directly from the Runner.",
+      "direct": "Direct from Runner",
+      "empty": "No saved SSH hosts are available. Add one in SSH settings before using this route.",
+      "loadFailed": "Could not load saved SSH hosts.",
+      "loading": "Loading saved SSH hosts…",
+      "select": "Select a saved SSH host",
+      "selectionUnavailable": "The selected SSH host is no longer available. Select another host or switch explicitly to Direct.",
+      "ssh": "Through saved SSH host",
+      "sshConnection": "SSH host",
+      "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. The Agent needs both VNC and SSH access.",
+      "title": "Connection route",
+      "unavailable": "SSH settings are not available for this account.",
+      "via": "SSH host:"
+    },
     "unavailable": "VNC is not available in this workspace."
   },
   "workflows": {

@@ -1,3 +1,4 @@
+import { findModelMenuOption } from "./chat-model-menu-test-helpers.ts";
 import { codexDeviceAuthContract } from "@okouai/api-contracts/contracts/codex-device-auth";
 import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
 import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
@@ -7,7 +8,11 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 import {
   context,
@@ -94,7 +99,7 @@ test.each(
     const trigger = await waitFor(() => {
       // Wait for the requested menu while feature switches load.
       const button = queryButton("GPT 5.6 Sol");
-      if (button?.getAttribute("aria-haspopup") !== "dialog") {
+      if (button?.getAttribute("aria-haspopup") !== "menu") {
         throw new Error("The model menu trigger is not ready");
       }
       return button;
@@ -103,9 +108,12 @@ test.each(
     click(trigger);
     if (layout === "compact") {
       const overview = await screen.findByRole("region", { name: "Models" });
-      const changeModel = queryButton(
-        "Change Chat model, GPT 5.6 Sol",
-        overview,
+      const changeModel = queryAllByRoleFast("menuitem", overview).find(
+        (item) => {
+          return (
+            item.getAttribute("aria-label") === "Change Chat model, GPT 5.6 Sol"
+          );
+        },
       );
       if (!changeModel) {
         throw new Error("The Models menu has no Chat model navigation");
@@ -113,21 +121,9 @@ test.each(
       click(changeModel);
     }
 
-    const option =
-      layout === "compact"
-        ? queryButton(
-            modelLabel,
-            await screen.findByRole("region", { name: "Chat models" }),
-          )
-        : await screen.findByRole("option", {
-            // A Fast-capable model adds its own " Fast" row beside the plain one.
-            name: (name) => {
-              return name.includes(modelLabel) && !name.endsWith(" Fast");
-            },
-          });
-    if (!option) {
-      throw new Error(`Expected a model option for ${modelLabel}`);
-    }
+    const option = await findModelMenuOption((name) => {
+      return name.includes(modelLabel);
+    });
     expect(option).not.toHaveAttribute("aria-disabled", "true");
     expect(option).not.toBeDisabled();
     expect(option).not.toHaveTextContent("$");
@@ -288,6 +284,7 @@ test("Refreshes the account target on explicit reconnect after a remote account 
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [
         {
           ...currentPolicy,

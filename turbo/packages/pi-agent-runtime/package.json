@@ -1,6 +1,6 @@
 {
   "name": "@okouai/pi-agent-runtime",
-  "version": "1.36.0",
+  "version": "1.38.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -20,6 +20,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "update-session-construction-digest": "vitest run src/session-construction-digest.test.ts -u",
     "lint": "oxlint && oxlint --type-aware -c ../../.oxlintrc.typeaware.json && eslint . --max-warnings 0",
     "build": "tsc -p tsconfig.build.json && pnpm run check-public-declarations",
     "check-public-declarations": "node scripts/check-public-declarations.mjs",

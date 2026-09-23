@@ -20,6 +20,9 @@ overrides:
 packageExtensionsChecksum: sha256-pIE0Os0Euwl0py2OjpqWgejwY4MKO7vYrYee9T5h+bs=
 
 patchedDependencies:
+  '@base-ui/react@1.7.0':
+    hash: 025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e
+    path: patches/@base-ui__react@1.7.0.patch
   '@earendil-works/pi-agent-core@0.86.1':
     hash: 5d207f51a1da5cc9bcd19768b5160f5532effe66adafd05dd359febad6329007
     path: patches/@earendil-works__pi-agent-core@0.86.1.patch
@@ -592,7 +595,7 @@ importers:
         version: 1.5.0
       '@base-ui/react':
         specifier: ^1.7.0
-        version: 1.7.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 1.7.0(patch_hash=025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@clerk/localizations':
         specifier: ^4.17.1
         version: 4.17.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1220,7 +1223,7 @@ importers:
     dependencies:
       '@base-ui/react':
         specifier: ^1.7.0
-        version: 1.7.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 1.7.0(patch_hash=025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -11269,7 +11272,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@base-ui/react@1.7.0(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@base-ui/react@1.7.0(patch_hash=025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@babel/runtime': 7.29.7
       '@base-ui/utils': 0.3.2(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

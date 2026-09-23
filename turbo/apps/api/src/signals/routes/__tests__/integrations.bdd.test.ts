@@ -4751,7 +4751,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect.stringContaining("Use org default"),
     );
 
-    await integrations.updateUserModelPreference(actor, "gpt-5.6-luna");
+    await integrations.updateUserModelPreference(actor, "gpt-6-luna");
     const modelResponse = await integrations.postSlackCommand({
       teamId,
       userId: slackUserId,
@@ -4769,7 +4769,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(modelModal.optionLabels).toContainEqual(
       expect.stringContaining("(workspace default)"),
     );
-    expect(modelModal.initialOptionValue).toBe("gpt-5.6-luna");
+    expect(modelModal.initialOptionValue).toBe("gpt-6-luna");
 
     const disconnected = await integrations.postSlackCommand({
       teamId,
@@ -5028,7 +5028,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       integrations.modelPickerSubmission({
         workspaceId: teamId,
         slackUserId,
-        selectedValue: "gpt-5.6-luna",
+        selectedValue: "gpt-6-luna",
         channelId: "C_BDD_PICK",
       }),
     );
@@ -5036,7 +5036,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "gpt-5.6-luna",
+      selectedModel: "gpt-6-luna",
     });
 
     const rejectedModel = await integrations.postSlackInteractive(
@@ -5054,7 +5054,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     await expect(
       integrations.readUserModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "gpt-5.6-luna",
+      selectedModel: "gpt-6-luna",
     });
 
     context.mocks.slack.views.open.mockClear();

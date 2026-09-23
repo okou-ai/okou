@@ -54,8 +54,19 @@ use guest_contracts::process_containment::{
 };
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::{HomePaths, RootfsPaths, SnapshotPaths};
 use crate::profile;
+use runner_host::paths::{HomePaths, RootfsPaths};
+use sandbox_firecracker::SnapshotOutputPaths as SnapshotPaths;
+
+pub(crate) trait RootfsSnapshotPathsExt {
+    fn snapshot(&self, snapshot_hash: &str) -> SnapshotPaths;
+}
+
+impl RootfsSnapshotPathsExt for RootfsPaths {
+    fn snapshot(&self, snapshot_hash: &str) -> SnapshotPaths {
+        SnapshotPaths::new(self.snapshot_dir(snapshot_hash))
+    }
+}
 
 /// 0 means auto-detect from host CPU and memory at startup.
 pub(crate) const DEFAULT_MAX_CONCURRENT: usize = 0;
@@ -200,12 +211,12 @@ pub(crate) async fn load_for_start(
 /// paths discovered from local process state, where the path itself is not a
 /// trusted operator-supplied argument.
 pub(crate) async fn read_diagnostic_config_to_string(path: &Path) -> RunnerResult<Option<String>> {
-    crate::state_file::read_to_string(
+    Ok(runner_host::state_file::read_to_string(
         path,
         DIAGNOSTIC_CONFIG_MAX_BYTES,
-        crate::state_file::OwnerCheck::CurrentEuid,
+        runner_host::state_file::OwnerCheck::CurrentEuid,
     )
-    .await
+    .await?)
 }
 
 #[cfg(test)]
@@ -250,13 +261,13 @@ async fn load_with_home_inner(
 /// Generate a runner.yaml config file from a `RunnerConfig`.
 pub async fn generate(config: &RunnerConfig) -> RunnerResult<()> {
     let runner_dir = &config.base_dir;
-    crate::private_fs::ensure_private_dir(runner_dir).await?;
+    runner_host::private_fs::ensure_private_dir(runner_dir).await?;
 
     let content = serde_yaml_ng::to_string(config)
         .map_err(|e| RunnerError::Config(format!("serialize config: {e}")))?;
 
     let config_path = runner_dir.join("runner.yaml");
-    crate::private_fs::write_private_file(&config_path, content.as_bytes()).await?;
+    runner_host::private_fs::write_private_file(&config_path, content.as_bytes()).await?;
     Ok(())
 }
 
@@ -571,7 +582,7 @@ pub(crate) async fn lock_and_validate_runner_image_artifacts(
 
     let mut rootfs_locks = Vec::with_capacity(rootfs_hashes.len());
     for hash in rootfs_hashes {
-        rootfs_locks.push(crate::lock::acquire_shared(home.rootfs_lock(hash)).await?);
+        rootfs_locks.push(runner_host::lock::acquire_shared(home.rootfs_lock(hash)).await?);
     }
 
     let mut rootfs_paths = BTreeMap::new();
@@ -584,7 +595,7 @@ pub(crate) async fn lock_and_validate_runner_image_artifacts(
 
     let mut snapshot_locks = Vec::with_capacity(snapshot_hashes.len());
     for hash in snapshot_hashes {
-        snapshot_locks.push(crate::lock::acquire_shared(home.snapshot_lock(hash)).await?);
+        snapshot_locks.push(runner_host::lock::acquire_shared(home.snapshot_lock(hash)).await?);
     }
 
     let mut profile_paths = BTreeMap::new();

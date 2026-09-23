@@ -41,6 +41,16 @@ export const getStartedClaimSchema = z.object({
   rewardAmount: z.number().int().nonnegative(),
   rewardTarget: z.enum(["user", "org"]),
   reason: z.string().nullable(),
+  /**
+   * The post the claim was opened with, for the quests that submit one.
+   *
+   * Only the share quest carries a URL, and the row has always stored it; the
+   * status response simply never returned it, so a user waiting on review had
+   * no way to see which post was in the queue. Nullable for the quests that
+   * submit nothing, and for a claim read back by a client newer than the API
+   * that fills it in.
+   */
+  postUrl: z.string().nullable(),
   submittedAt: z.string().datetime(),
   grantedAt: z.string().datetime().nullable(),
   expiresAt: z.string().datetime().nullable(),

@@ -21,7 +21,7 @@ const name = z.string().trim().min(1).max(128);
 export const createCloudflareAccessRequestSchema = z
   .object({ name, credentials: cloudflareAccessCredentialsSchema })
   .strict();
-export const cloudflareAccessConfigSchema = z
+const cloudflareAccessConfigMetadataSchema = z
   .object({
     id: z.uuid(),
     name: z.string(),
@@ -29,10 +29,13 @@ export const cloudflareAccessConfigSchema = z
     generation: revision,
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
-    hosts: z.array(
-      z.object({ id: z.uuid(), displayName: z.string() }).strict(),
-    ),
   })
+  .strict();
+const sshHostReferenceSchema = z
+  .object({ id: z.uuid(), displayName: z.string() })
+  .strict();
+export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
+  .extend({ sshHosts: z.array(sshHostReferenceSchema) })
   .strict();
 const c = initContract();
 const errors = {
@@ -44,10 +47,25 @@ const errors = {
   500: apiErrorSchema,
 };
 const pathParams = z.object({ configId: z.uuid() }).strict();
+const createBody = createCloudflareAccessRequestSchema.extend({ id: z.uuid() });
+const updateBody = z
+  .object({
+    expectedRevision: revision,
+    name: name.optional(),
+    credentials: cloudflareAccessCredentialsSchema.optional(),
+  })
+  .strict()
+  .refine(
+    (body) => {
+      return body.name !== undefined || body.credentials !== undefined;
+    },
+    { message: "At least one Cloudflare Access field must be updated" },
+  );
+const deleteBody = z.object({ expectedRevision: revision }).strict();
 export const cloudflareAccessContract = c.router({
   list: {
     method: "GET",
-    path: "/api/ssh/cloudflare-access/configs",
+    path: "/api/cloudflare-access/configs",
     headers: authHeadersSchema,
     responses: {
       200: z
@@ -58,11 +76,9 @@ export const cloudflareAccessContract = c.router({
   },
   create: {
     method: "POST",
-    path: "/api/ssh/cloudflare-access/configs",
+    path: "/api/cloudflare-access/configs",
     headers: authHeadersSchema,
-    body: createCloudflareAccessRequestSchema.extend({
-      id: z.uuid(),
-    }),
+    body: createBody,
     responses: {
       201: cloudflareAccessConfigSchema,
       204: c.noBody(),
@@ -71,30 +87,18 @@ export const cloudflareAccessContract = c.router({
   },
   update: {
     method: "PATCH",
-    path: "/api/ssh/cloudflare-access/configs/:configId",
+    path: "/api/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
     pathParams,
-    body: z
-      .object({
-        expectedRevision: revision,
-        name: name.optional(),
-        credentials: cloudflareAccessCredentialsSchema.optional(),
-      })
-      .strict()
-      .refine(
-        (body) => {
-          return body.name !== undefined || body.credentials !== undefined;
-        },
-        { message: "At least one Cloudflare Access field must be updated" },
-      ),
+    body: updateBody,
     responses: { 200: cloudflareAccessConfigSchema, ...errors },
   },
   delete: {
     method: "DELETE",
-    path: "/api/ssh/cloudflare-access/configs/:configId",
+    path: "/api/cloudflare-access/configs/:configId",
     headers: authHeadersSchema,
     pathParams,
-    body: z.object({ expectedRevision: revision }).strict(),
+    body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
   },
 });
@@ -104,6 +108,4 @@ export type CloudflareAccessConfig = z.infer<
 export type CreateCloudflareAccessRequest = z.infer<
   typeof createCloudflareAccessRequestSchema
 >;
-export type UpdateCloudflareAccessRequest = z.infer<
-  typeof cloudflareAccessContract.update.body
->;
+export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;

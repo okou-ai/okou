@@ -2,10 +2,10 @@ use super::*;
 
 use std::sync::Arc;
 
-use crate::paths::RunnerPaths;
 use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::workspace_image_cache::{WorkspaceCacheCheckoutResult, WorkspaceImagePromotionContext};
 use crate::workspace_promotion::test_support::WorkspacePromotionFixture;
+use runner_host::paths::RunnerPaths;
 use sandbox::{ResourceLimits, SandboxConfig, SandboxFactory, SandboxId};
 use sandbox_mock::{MockSandboxFactory, MockSandboxOverrides};
 

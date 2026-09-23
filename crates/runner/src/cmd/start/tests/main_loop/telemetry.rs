@@ -5,8 +5,8 @@ use super::super::support::{
     seed_idle_pool_with_speculative_timezone, shutdown, test_profiles, test_runner_identity,
     wait_budget_count, wait_cancel_handle, wait_cancel_token_removed, wait_discover_entered,
 };
-use crate::paths::RunnerPaths;
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_host::paths::RunnerPaths;
 
 #[tokio::test]
 async fn telemetry_flush_includes_start_loop_claim_phase_spans() {
@@ -385,16 +385,14 @@ async fn cancelled_finalizing_handoff_flushes_outcome_without_executor() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(predecessor_run_id))
-                .with_runner_preference_for_test(
-                    crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        test_runner_identity(),
-                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
-                        std::time::Instant::now() + Duration::from_secs(30),
-                    ),
-                ),
+                .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                    test_runner_identity(),
+                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    std::time::Instant::now() + Duration::from_secs(30),
+                )),
         )
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
@@ -454,16 +452,14 @@ async fn finalizing_no_exact_fallback_reports_atomic_idle_miss() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(predecessor_run_id))
-                .with_runner_preference_for_test(
-                    crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        test_runner_identity(),
-                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
-                        std::time::Instant::now() + Duration::from_secs(30),
-                    ),
-                ),
+                .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                    test_runner_identity(),
+                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    std::time::Instant::now() + Duration::from_secs(30),
+                )),
         )
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
@@ -521,16 +517,14 @@ async fn finalizing_handoff_deadline_reports_fallback_reason() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(predecessor_run_id))
-                .with_runner_preference_for_test(
-                    crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        test_runner_identity(),
-                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
-                        std::time::Instant::now() + Duration::from_secs(1),
-                    ),
-                ),
+                .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                    test_runner_identity(),
+                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    std::time::Instant::now() + Duration::from_secs(1),
+                )),
         )
         .unwrap();
 
@@ -605,16 +599,14 @@ async fn finalizing_handoff_activation_failure_is_not_reported_as_accepted() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(predecessor_run_id))
-                .with_runner_preference_for_test(
-                    crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        test_runner_identity(),
-                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
-                        std::time::Instant::now() + Duration::from_secs(30),
-                    ),
-                ),
+                .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                    test_runner_identity(),
+                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    std::time::Instant::now() + Duration::from_secs(30),
+                )),
         )
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
@@ -693,16 +685,14 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(predecessor_run_id))
-                .with_runner_preference_for_test(
-                    crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        test_runner_identity(),
-                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
-                        std::time::Instant::now() + Duration::from_secs(30),
-                    ),
-                ),
+                .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                    test_runner_identity(),
+                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    std::time::Instant::now() + Duration::from_secs(30),
+                )),
         )
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;
@@ -814,16 +804,14 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(predecessor_run_id))
-                .with_runner_preference_for_test(
-                    crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        test_runner_identity(),
-                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
-                        std::time::Instant::now() + Duration::from_secs(30),
-                    ),
-                ),
+                .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                    test_runner_identity(),
+                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    std::time::Instant::now() + Duration::from_secs(30),
+                )),
         )
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;

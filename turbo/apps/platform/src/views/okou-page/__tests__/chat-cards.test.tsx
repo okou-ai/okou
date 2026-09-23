@@ -231,6 +231,125 @@ test("A bare relative permission beside another link keeps punctuation and prose
   expectNodeBefore(reference!, card);
 });
 
+test("Bare actions recognize typographic delimiters without losing their labels", async () => {
+  const relativePermissionUrl =
+    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
+  const englandFlag =
+    "\u{1F3F4}\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}";
+  await setupChat(
+    [
+      `Dev：${PERMISSION_URL}`,
+      `Prod:${PERMISSION_URL}`,
+      `Docs(${CONNECTOR_URL})`,
+      `说明【${PERMISSION_URL}】`,
+      `Status—${CONNECTOR_URL}`,
+      `Next→${PERMISSION_URL}`,
+      `🔐${CONNECTOR_URL}`,
+      `❤️${CONNECTOR_URL}`,
+      `👍🏽${CONNECTOR_URL}`,
+      `1️⃣${CONNECTOR_URL}`,
+      `${englandFlag}${CONNECTOR_URL}`,
+      `Relative：${relativePermissionUrl}`,
+    ].join("\n\n"),
+  );
+
+  await waitFor(() => {
+    expect(screen.getAllByTestId("permission-action-card")).toHaveLength(5);
+    expect(screen.getAllByTestId("connector-action-card")).toHaveLength(7);
+  });
+  for (const label of [
+    "Dev：",
+    "Prod:",
+    "Docs()",
+    "说明【】",
+    "Status—",
+    "Next→",
+    "🔐",
+    "❤️",
+    "👍🏽",
+    "1️⃣",
+    englandFlag,
+    "Relative：",
+  ]) {
+    expect(screen.getByText(label)).toBeInTheDocument();
+  }
+  expect(
+    Array.from(
+      document.querySelectorAll(
+        '[data-testid="permission-action-card"], [data-testid="connector-action-card"]',
+      ),
+      (card) => {
+        return (card as HTMLElement).dataset.testid;
+      },
+    ),
+  ).toStrictEqual([
+    "permission-action-card",
+    "permission-action-card",
+    "connector-action-card",
+    "permission-action-card",
+    "connector-action-card",
+    "permission-action-card",
+    "connector-action-card",
+    "connector-action-card",
+    "connector-action-card",
+    "connector-action-card",
+    "connector-action-card",
+    "permission-action-card",
+  ]);
+  expect(
+    queryAllByRoleFast("link").some((link) => {
+      return [PERMISSION_URL, CONNECTOR_URL, relativePermissionUrl].includes(
+        link.getAttribute("href") ?? "",
+      );
+    }),
+  ).toBeFalsy();
+});
+
+test("Action-looking URLs embedded in structural text remain content", async () => {
+  const relativePermissionUrl =
+    new URL(PERMISSION_URL).pathname + new URL(PERMISSION_URL).search;
+  const externalUrl = `https://example.com/redirect?next=${PERMISSION_URL}`;
+  await setupChat(
+    [
+      `Word: prefix${PERMISSION_URL}`,
+      `Identifier: prefix_${PERMISSION_URL}`,
+      `Hyphenated identifier: prefix-${PERMISSION_URL}`,
+      `Path: /docs/${PERMISSION_URL}`,
+      `Dot path: .${relativePermissionUrl}`,
+      `Home path: ~${relativePermissionUrl}`,
+      `Wildcard path: *${relativePermissionUrl}`,
+      `Matrix path: item;${relativePermissionUrl}`,
+      `Assignment: next=${PERMISSION_URL}`,
+      `Query: ?next=${PERMISSION_URL}`,
+      `Address: user@${PERMISSION_URL}`,
+      `Combining identifier: cafe\u0301${PERMISSION_URL}`,
+      `Relative path: docs/${relativePermissionUrl}`,
+      `[Outer URL](${externalUrl})`,
+    ].join("\n\n"),
+  );
+
+  await screen.findByText(/Word: prefix/u);
+  expect(screen.queryAllByTestId("permission-action-card")).toHaveLength(0);
+  expect(screen.getByText(/Identifier: prefix_/u)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Hyphenated identifier: prefix-/u),
+  ).toBeInTheDocument();
+  expect(screen.getByText(/Path: \/docs\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Dot path: \.\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Home path: ~\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Wildcard path: \*\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Matrix path: item;\//u)).toBeInTheDocument();
+  expect(screen.getByText(/Assignment: next=/u)).toBeInTheDocument();
+  expect(screen.getByText(/Query: \?next=/u)).toBeInTheDocument();
+  expect(screen.getByText(/Address: user@/u)).toBeInTheDocument();
+  expect(screen.getByText(/Combining identifier: cafe/u)).toBeInTheDocument();
+  expect(screen.getByText(/Relative path: docs\//u)).toBeInTheDocument();
+  const outerLink = queryAllByRoleFast("link").find((link) => {
+    return link.textContent === "Outer URL";
+  });
+  expect(outerLink).toHaveAttribute("href", externalUrl);
+});
+
 test("A bare action stops before adjacent Chinese punctuation and prose", async () => {
   await setupChat(`Please connect ${CONNECTOR_URL}。然后继续查看说明。`);
 

@@ -27,10 +27,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::super::{SshRuntime, network::Network};
 use crate::guest_rpc::{Run as RpcRun, Runtime as RpcRuntime};
-use crate::{
-    http::{HttpClient, HttpClientConfig},
-    runner_process_identity::RunnerProcessIdentity,
-};
+use crate::http::{HttpClient, HttpClientConfig};
+use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
@@ -243,16 +241,10 @@ impl AdditionalRun {
 }
 
 impl Harness {
-    pub(super) fn notifications(&self) -> crate::provider::AblyTestEvents {
-        crate::provider::AblyTestEvents::new(
-            HttpClient::new(HttpClientConfig {
-                api_url: self.api.base_url(),
-                vercel_bypass: None,
-                client_session_id: "ssh-notification-test".into(),
-            })
-            .unwrap(),
-            Arc::clone(&self.runtime),
-        )
+    pub(super) fn notifications(&self) -> TestNotifications {
+        TestNotifications {
+            runtime: Arc::clone(&self.runtime),
+        }
     }
 
     pub(super) async fn new(reply: Reply) -> Self {
@@ -497,6 +489,18 @@ impl Harness {
                 &self.cancel,
             ),
         );
+    }
+}
+
+pub(super) struct TestNotifications {
+    runtime: Arc<SshRuntime>,
+}
+
+impl TestNotifications {
+    pub(super) async fn send(&mut self, event: Option<ably_subscriber::Event>) {
+        if let Some(ably_subscriber::Event::Message(message)) = event {
+            self.runtime.ably_message(&message);
+        }
     }
 }
 impl Drop for Harness {

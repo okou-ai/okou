@@ -157,7 +157,7 @@ impl NetworkLogTestComponent {
         }
     }
 
-    fn set_reap_gate(self, config: &mut RunConfig, gate: crate::child_cleanup::ReapGate) {
+    fn set_reap_gate(self, config: &mut RunConfig, gate: crate::test_fixtures::ReapGate) {
         match self {
             Self::Kmsg => config.shutdown.kmsg_handle.set_reap_gate(gate),
             Self::Dns => config.shutdown.dns_handle.set_reap_gate(gate),
@@ -168,7 +168,7 @@ impl NetworkLogTestComponent {
 async fn assert_network_log_eof_stops_runner(component: NetworkLogTestComponent) {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let (stdin, pid, starttime) = component.install(&mut config).await;
-    let reap_gate = crate::child_cleanup::ReapGate::new();
+    let reap_gate = crate::test_fixtures::ReapGate::new();
     component.set_reap_gate(&mut config, reap_gate.clone());
     env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
@@ -208,7 +208,7 @@ async fn assert_network_log_eof_stops_runner(component: NetworkLogTestComponent)
 async fn assert_network_log_read_error_stops_runner(component: NetworkLogTestComponent) {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let (mut stdin, pid, starttime) = component.install(&mut config).await;
-    let reap_gate = crate::child_cleanup::ReapGate::new();
+    let reap_gate = crate::test_fixtures::ReapGate::new();
     component.set_reap_gate(&mut config, reap_gate.clone());
     env.handle.block_heartbeats();
     let run_handle = tokio::spawn(run(config));
@@ -288,7 +288,7 @@ async fn dns_monitor_task_panic_stops_runner_and_cancels_active_job() {
     overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
     let (mut config, env) = mock_run_config_with_overrides(test_profiles(), 8, 32768, 4, overrides);
     let (_stdin, pid, starttime) = install_controllable_dns(&mut config).await;
-    let reap_gate = crate::child_cleanup::ReapGate::new();
+    let reap_gate = crate::test_fixtures::ReapGate::new();
     config.shutdown.dns_handle.set_reap_gate(reap_gate.clone());
     let panic_trigger = config
         .shutdown
@@ -366,7 +366,7 @@ async fn required_monitor_failure_publishes_stopping_before_delayed_child_reap()
     for component in [NetworkLogTestComponent::Dns, NetworkLogTestComponent::Kmsg] {
         let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
         let (mut stdin, pid, starttime) = component.install(&mut config).await;
-        let gate = crate::child_cleanup::ReapGate::new();
+        let gate = crate::test_fixtures::ReapGate::new();
         component.set_reap_gate(&mut config, gate.clone());
         let status_path = env._temp_dir.path().join("status.json");
         let run_handle = tokio::spawn(run(config));
@@ -393,7 +393,7 @@ async fn required_monitor_failure_publishes_stopping_before_delayed_child_reap()
 async fn cancelled_reactor_does_not_abort_owned_network_log_child_cleanup() {
     let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
     let (mut stdin, pid, starttime) = install_controllable_dns(&mut config).await;
-    let gate = crate::child_cleanup::ReapGate::new();
+    let gate = crate::test_fixtures::ReapGate::new();
     config.shutdown.dns_handle.set_reap_gate(gate.clone());
     let run_handle = tokio::spawn(run(config));
     wait_discover_entered(&env, Duration::from_secs(2)).await;
@@ -415,11 +415,11 @@ async fn mitm_recovery_keeps_lifecycle_live_and_shutdown_joins_old_child_cleanup
         .spawn()
         .unwrap();
     let pid = child.id().unwrap();
-    let starttime = crate::process::read_process_stat(pid)
+    let starttime = runner_host::process::read_process_stat(pid)
         .await
         .unwrap()
         .starttime;
-    let gate = crate::child_cleanup::ReapGate::new();
+    let gate = crate::test_fixtures::ReapGate::new();
     config.proxy.mitm.set_child_for_test(child);
     config.proxy.mitm.set_reap_gate_for_test(gate.clone());
     let (crash_tx, crash_rx) = mpsc::channel(1);
@@ -471,11 +471,11 @@ async fn mitm_recovery_panic_stops_runner_instead_of_retrying_unknown_cleanup() 
         .spawn()
         .unwrap();
     let pid = child.id().unwrap();
-    let starttime = crate::process::read_process_stat(pid)
+    let starttime = runner_host::process::read_process_stat(pid)
         .await
         .unwrap()
         .starttime;
-    let gate = crate::child_cleanup::ReapGate::new();
+    let gate = crate::test_fixtures::ReapGate::new();
     config.proxy.mitm.set_child_for_test(child);
     config.proxy.mitm.set_reap_gate_for_test(gate.clone());
     let (crash_tx, crash_rx) = mpsc::channel(1);
@@ -767,7 +767,7 @@ async fn install_controllable_kmsg(
         .expect("spawn controllable kmsg child");
     let stdin = child.stdin.take().expect("capture test child stdin");
     let pid = child.id().expect("test child pid");
-    let starttime = crate::process::read_process_stat(pid)
+    let starttime = runner_host::process::read_process_stat(pid)
         .await
         .expect("test child should be visible in procfs")
         .starttime;
@@ -789,7 +789,7 @@ async fn install_controllable_dns(
         .expect("spawn controllable dns child");
     let stdin = child.stdin.take().expect("capture test child stdin");
     let pid = child.id().expect("test child pid");
-    let starttime = crate::process::read_process_stat(pid)
+    let starttime = runner_host::process::read_process_stat(pid)
         .await
         .expect("test child should be visible in procfs")
         .starttime;
@@ -801,7 +801,7 @@ async fn install_controllable_dns(
 }
 
 async fn assert_child_reaped(component: &str, pid: u32, starttime: u64) {
-    let observed_starttime = crate::process::read_process_stat(pid)
+    let observed_starttime = runner_host::process::read_process_stat(pid)
         .await
         .map(|stat| stat.starttime);
     assert_ne!(
@@ -815,7 +815,7 @@ async fn assert_child_reaped(component: &str, pid: u32, starttime: u64) {
 // cleanup paths use assert_child_reaped to enforce the stronger postcondition.
 async fn wait_for_child_cleanup(component: &str, pid: u32, starttime: u64) {
     tokio::time::timeout(Duration::from_secs(2), async {
-        while crate::process::read_process_stat(pid)
+        while runner_host::process::read_process_stat(pid)
             .await
             .is_some_and(|stat| stat.starttime == starttime)
         {
