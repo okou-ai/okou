@@ -8,6 +8,44 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.663.0](https://github.com/okou-ai/okou/compare/api-v1.662.0...api-v1.663.0) (2026-09-23)
+
+
+### Features
+
+* **core:** enable pi loop for all users ([#36194](https://github.com/okou-ai/okou/issues/36194)) ([9599f34](https://github.com/okou-ai/okou/commit/9599f34492d19160fa56a0885618bded47c9e2dd))
+* refine home task recommendations ([#36238](https://github.com/okou-ai/okou/issues/36238)) ([9e49b9c](https://github.com/okou-ai/okou/commit/9e49b9c9a2c50d449c478b8b9be17f7bff4a0a7c))
+
+
+### Bug Fixes
+
+* **api:** log handled codex usage outage at info ([#36251](https://github.com/okou-ai/okou/issues/36251)) ([c5c0205](https://github.com/okou-ai/okou/commit/c5c0205b25736137ed5eba46249902e80fe901f6))
+* **api:** mark credit-admitted only for free plans ([#36191](https://github.com/okou-ai/okou/issues/36191)) ([281cd45](https://github.com/okou-ai/okou/commit/281cd45490a838114e0091629d8b9143bc2ad65b))
+* **pi-memory:** consolidate mixed sources with current owner route ([#36245](https://github.com/okou-ai/okou/issues/36245)) ([96fd126](https://github.com/okou-ai/okou/commit/96fd126f2bf6eefb0525604bc4ccf8ecaa08fc80))
+* preserve usage pack schedules across immediate upgrades ([#36196](https://github.com/okou-ai/okou/issues/36196)) ([d63296f](https://github.com/okou-ai/okou/commit/d63296f5d722afde880b09563febce03d255f718))
+* **social:** accept nullable instagram stats duration ([#36222](https://github.com/okou-ai/okou/issues/36222)) ([67a94a4](https://github.com/okou-ai/okou/commit/67a94a44cc92854630cafedad041f066680037e5))
+
+
+### Refactoring
+
+* **api:** persist artifact catalog sync work explicitly ([#36258](https://github.com/okou-ai/okou/issues/36258)) ([3a31343](https://github.com/okou-ai/okou/commit/3a31343fd9a8222756235b464482dd084a72040a))
+* **pi:** limit api-first execution to strict first turns ([#36202](https://github.com/okou-ai/okou/issues/36202)) ([1d47a9c](https://github.com/okou-ai/okou/commit/1d47a9cae6d58a61e4cf86893abcb0f8447c48ad))
+
+
+### Performance Improvements
+
+* **api:** observe storage cache prefetch decisions ([#36248](https://github.com/okou-ai/okou/issues/36248)) ([16f4656](https://github.com/okou-ai/okou/commit/16f465655d251677770bbd11dd56ae905033a88f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.0
+    * @okouai/core bumped to 8.703.0
+    * @okouai/db bumped to 1.290.0
+    * @okouai/pi-agent-runtime bumped to 1.39.2
+
 ## [1.662.0](https://github.com/okou-ai/okou/compare/api-v1.661.0...api-v1.662.0) (2026-09-23)
 
 

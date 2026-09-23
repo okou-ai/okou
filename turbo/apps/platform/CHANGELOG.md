@@ -11,6 +11,34 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.949.0](https://github.com/okou-ai/okou/compare/app-v0.948.0...app-v0.949.0) (2026-09-23)
+
+
+### Features
+
+* refine home task recommendations ([#36238](https://github.com/okou-ai/okou/issues/36238)) ([9e49b9c](https://github.com/okou-ai/okou/commit/9e49b9c9a2c50d449c478b8b9be17f7bff4a0a7c))
+
+
+### Bug Fixes
+
+* **app:** separate webhook labels from copy buttons ([#36129](https://github.com/okou-ai/okou/issues/36129)) ([47c7739](https://github.com/okou-ai/okou/commit/47c7739ec3089609de1bd59b41568aaef6803dff))
+* **app:** use native activation for catalog cards ([#36110](https://github.com/okou-ai/okou/issues/36110)) ([aa4b22d](https://github.com/okou-ai/okou/commit/aa4b22d174e5caaffdf0c26fd81538e7e2b2a0d3))
+* **platform:** expose contextual actions to keyboard and touch ([#36128](https://github.com/okou-ai/okou/issues/36128)) ([4a52187](https://github.com/okou-ai/okou/commit/4a52187b5948476e28b406d8dbae4befb4eade8a))
+* **platform:** expose localized chat states to screen readers ([#36218](https://github.com/okou-ai/okou/issues/36218)) ([a5246c8](https://github.com/okou-ai/okou/commit/a5246c8b77acf91f839f9c4667eabcc490c868fb))
+* **platform:** label select fields and section navigation ([#36133](https://github.com/okou-ai/okou/issues/36133)) ([ef61a30](https://github.com/okou-ai/okou/commit/ef61a307730d4119a0dfc49e7f0b8f84e0ea1c1a))
+* **platform:** name the connector directory dialog in detail view ([#36197](https://github.com/okou-ai/okou/issues/36197)) ([0feb143](https://github.com/okou-ai/okou/commit/0feb1436ebfed1922f71e3bb34e3a837def2b977))
+* **platform:** restore native focus for composer chip actions ([#36109](https://github.com/okou-ai/okou/issues/36109)) ([c1a5235](https://github.com/okou-ai/okou/commit/c1a5235fefc565b089d15657f1d39eb1479179a1))
+* **platform:** separate template selection borders from focus rings ([#36241](https://github.com/okou-ai/okou/issues/36241)) ([48aac0e](https://github.com/okou-ai/okou/commit/48aac0e180f45195f0bc64c07af0b242e683370e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.0
+    * @okouai/core bumped to 8.703.0
+    * @okouai/ui bumped to 1.11.8
+
 ## [0.948.0](https://github.com/okou-ai/okou/compare/app-v0.947.0...app-v0.948.0) (2026-09-23)
 
 
