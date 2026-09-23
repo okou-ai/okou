@@ -600,13 +600,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const PAGINATION_RESULT_FIELDS = new Set([
-  "cursor",
-  "hasMore",
-  "nextCursor",
-  "collectionStatus",
-  "stopReason",
-]);
+const PAGINATION_RESULT_FIELDS = new Set(["cursor", "hasMore", "nextCursor"]);
 
 function collectionPage(
   response: SocialKitResponse,
@@ -630,7 +624,12 @@ function collectionPage(
     items,
     context: Object.fromEntries(
       Object.entries(response.result).filter(([key]) => {
-        return key !== resultField && !PAGINATION_RESULT_FIELDS.has(key);
+        return (
+          key !== resultField &&
+          !PAGINATION_RESULT_FIELDS.has(key) &&
+          (response.tool !== "instagram_comments" ||
+            (key !== "collectionStatus" && key !== "stopReason"))
+        );
       }),
     ),
   };
