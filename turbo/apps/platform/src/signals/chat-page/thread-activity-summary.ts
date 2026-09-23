@@ -6,11 +6,9 @@ import {
   type ThinkingMessage,
 } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { foldChatRunStates } from "@okouai/api-contracts/contracts/chat-events";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setLoop } from "../utils.ts";
 import { createActiveRunSubscription } from "./active-run-subscription.ts";
 import { liveRunIdsFromChatEvents } from "./chat-event-state.ts";
@@ -98,15 +96,8 @@ export function createThreadActivitySummarySignals(
   chatEvents$: Computed<ChatEvent[]>,
   threadMeta$: Computed<ThreadMeta | null>,
 ) {
-  const enabled$ = computed((get) => {
-    return get(featureSwitch$)[FeatureSwitchKey.ThreadActivitySummary] === true;
-  });
   const currentActiveRunId$ = computed((get): string | null => {
-    if (
-      !get(enabled$) ||
-      get(currentChatThreadId$) !== threadId ||
-      get(threadMeta$) === null
-    ) {
+    if (get(currentChatThreadId$) !== threadId || get(threadMeta$) === null) {
       return null;
     }
     const events = get(chatEvents$);
@@ -127,7 +118,6 @@ export function createThreadActivitySummarySignals(
 
   return {
     subscribe$: demand.subscribe$,
-    enabled$,
     thinkingSummaries$: demand.demandSummaries$,
     thinkingRunId$: demand.runId$,
   };

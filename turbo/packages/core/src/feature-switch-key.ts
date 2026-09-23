@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   SocialDataJobs = "socialDataJobs",
-  ThreadActivitySummary = "threadActivitySummary",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",

@@ -69,12 +69,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
     enabled: false,
   },
-  [FeatureSwitchKey.ThreadActivitySummary]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Generate short public activity summaries for active thread subscriptions.",
-    enabled: true,
-  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:

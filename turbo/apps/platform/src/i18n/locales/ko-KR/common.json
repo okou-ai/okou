@@ -2146,17 +2146,7 @@
       "relatedArtifacts": "관련 아티팩트",
       "selectedModelAppliesAfterCurrentRun": "선택한 {{model}} 모델은 이번 실행 후에 적용됩니다",
       "thinking": {
-        "assembling": "조립 중...",
-        "brewing": "응답 준비 중...",
-        "default": "생각 중...",
-        "mapping": "구성 중...",
-        "onIt": "작업 중...",
-        "piecingTogether": "조합 중...",
-        "shaping": "응답 형성 중...",
-        "sketching": "세부 사항 스케치 중...",
-        "spinningUp": "시작 중...",
-        "tuningIn": "조율 중...",
-        "wiring": "연결 중..."
+        "default": "생각 중..."
       },
       "viewActivityLogs": "활동 로그 보기",
       "viewLangfuseTrace": "Langfuse 트레이스 보기",

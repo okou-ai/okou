@@ -1,6 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -180,12 +179,9 @@ test("Project workflow history expansion through the existing run group", async 
     },
   ] satisfies MockChatEventInput[];
   installRunChat({ chatEvents: events, activeRunIds: [WORKFLOW_RUN_IDS[2]] });
-  // Current progress is drawn from the run's own thinking event only while
-  // thread activity summaries are off, which is the case this test covers.
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
   });
   await readyChat();
   expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();
@@ -194,9 +190,7 @@ test("Project workflow history expansion through the existing run group", async 
   const main = screen.getByText("Earlier workflow result 2");
   expect(main).toBeVisible();
   expect(queryWorkHistoryToggle("collapsed")).toBeVisible();
-  const currentProgress = await screen.findByLabelText(
-    "Checking the latest workflow run",
-  );
+  const currentProgress = await screen.findByText("Thinking...");
   expect(currentProgress).toBeVisible();
   const assistantGroup = main.closest<HTMLElement>('[data-role="assistant"]');
   if (!assistantGroup) {
@@ -260,12 +254,9 @@ test("Project workflow current run output through the existing run group", async
     },
   ] satisfies MockChatEventInput[];
   installRunChat({ chatEvents: events, activeRunIds: [WORKFLOW_RUN_IDS[2]] });
-  // Current progress is drawn from the run's own thinking event only while
-  // thread activity summaries are off, which is the case this test covers.
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
   });
   await readyChat();
   expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();
@@ -274,9 +265,7 @@ test("Project workflow current run output through the existing run group", async
   const main = screen.getByText("Earlier workflow result 2");
   expect(main).toBeVisible();
   expect(queryWorkHistoryToggle("collapsed")).toBeVisible();
-  const currentProgress = await screen.findByLabelText(
-    "Checking the latest workflow run",
-  );
+  const currentProgress = await screen.findByText("Thinking...");
   expect(currentProgress).toBeVisible();
   const assistantGroup = main.closest<HTMLElement>('[data-role="assistant"]');
   if (!assistantGroup) {

@@ -2146,17 +2146,7 @@
       "relatedArtifacts": "相关成果",
       "selectedModelAppliesAfterCurrentRun": "下次运行将使用{{model}}",
       "thinking": {
-        "assembling": "正在拼合各个部分…",
-        "brewing": "正在酝酿回复…",
-        "default": "思考中…",
-        "mapping": "正在理清思路…",
-        "onIt": "这就去办…",
-        "piecingTogether": "正在把线索拼起来…",
-        "shaping": "正在打磨回复…",
-        "sketching": "正在勾勒细节…",
-        "spinningUp": "正在启动…",
-        "tuningIn": "正在进入状态…",
-        "wiring": "正在串联起来…"
+        "default": "思考中…"
       },
       "viewActivityLogs": "查看活动日志",
       "viewLangfuseTrace": "查看Langfuse追踪",
