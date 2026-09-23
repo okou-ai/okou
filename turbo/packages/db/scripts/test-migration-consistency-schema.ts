@@ -239,35 +239,10 @@ function databaseErrorCode(error: unknown): string | undefined {
   return typeof error.code === "string" ? error.code : undefined;
 }
 
-async function expectAppendOnlyUpdateRejected(
-  client: Client,
-  args: {
-    readonly tableName: "chat_events" | "chat_messages" | "chat_thread_events";
-    readonly query: string;
-    readonly rowId: string;
-  },
-): Promise<void> {
-  try {
-    await client.query(args.query, [args.rowId]);
-  } catch (error) {
-    const expectedMessage = `${args.tableName} is append-only; UPDATE is not allowed`;
-    if (
-      databaseErrorCode(error) === "P0001" &&
-      error instanceof Error &&
-      error.message.includes(expectedMessage)
-    ) {
-      return;
-    }
-    throw error;
-  }
-
-  throw new Error(`${args.tableName} accepted an UPDATE`);
-}
-
 async function validateCanonicalChatMessageStorage(
   client: Client,
   threadId: string,
-): Promise<string> {
+): Promise<void> {
   const sequenceReservation = await client.query<{ lastSeqId: string }>(
     `
       UPDATE "chat_threads"
@@ -358,8 +333,6 @@ async function validateCanonicalChatMessageStorage(
     [threadId],
   );
   assert.equal(sequenceState.rows[0]?.lastSeqId, String(lastSeqId));
-
-  return messageRow.id;
 }
 
 async function validateCanonicalDraftStorage(
@@ -385,16 +358,13 @@ async function validateCanonicalDraftStorage(
   assert.deepEqual(canonicalDraft.rows[0]?.draftUserMessage, draftUserMessage);
 }
 
-async function validateChatEventSourcesAreAppendOnly(
-  dbUrl: string,
-): Promise<void> {
-  console.log("=== Phase 2.5: Validate append-only chat event sources ===\n");
+async function validateCanonicalChatEventStorage(dbUrl: string): Promise<void> {
+  console.log("=== Phase 2.5: Validate explicit chat event storage ===\n");
   const client = new Client({ connectionString: dbUrl });
   await client.connect();
 
   const agentId = "00000000-0000-4000-8000-000000074401";
   let threadId: string | undefined;
-  let messageId: string | undefined;
 
   try {
     await client.query(
@@ -422,26 +392,22 @@ async function validateChatEventSourcesAreAppendOnly(
     }
 
     // Insert through the canonical table with application-reserved seq_ids.
-    messageId = await validateCanonicalChatMessageStorage(client, threadId);
+    await validateCanonicalChatMessageStorage(client, threadId);
     await validateCanonicalDraftStorage(client, threadId);
 
+    await client.query(`
+      INSERT INTO "chat_thread_event_sequences" (
+        "user_id", "org_id", "last_seq_id"
+      ) VALUES ('append-only-test-user', 'append-only-test-org', 1)
+    `);
     const event = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id",
-          "org_id",
-          "chat_thread_id",
-          "kind",
-          "agent_id",
-          "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
         )
         VALUES (
-          'append-only-test-user',
-          'append-only-test-org',
-          $1,
-          'created',
-          $2,
-          'append-only migration test'
+          'append-only-test-user', 'append-only-test-org', 1,
+          $1, 'created', $2, 'append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
@@ -464,23 +430,22 @@ async function validateChatEventSourcesAreAppendOnly(
     );
     assert.equal(threadEventSequenceState.rows[0]?.lastSeqId, "1");
 
+    const advancedSequence = await client.query<{ lastSeqId: string }>(`
+      UPDATE "chat_thread_event_sequences"
+      SET "last_seq_id" = "last_seq_id" + 1
+      WHERE "user_id" = 'append-only-test-user'
+        AND "org_id" = 'append-only-test-org'
+      RETURNING "last_seq_id" AS "lastSeqId"
+    `);
+    assert.equal(advancedSequence.rows[0]?.lastSeqId, "2");
     const nextEvent = await client.query<{ id: string; seqId: string }>(
       `
         INSERT INTO "chat_thread_events" (
-          "user_id",
-          "org_id",
-          "chat_thread_id",
-          "kind",
-          "agent_id",
-          "title"
+          "user_id", "org_id", "seq_id", "chat_thread_id", "kind", "agent_id", "title"
         )
         VALUES (
-          'append-only-test-user',
-          'append-only-test-org',
-          $1,
-          'renamed',
-          $2,
-          'advanced append-only migration test'
+          'append-only-test-user', 'append-only-test-org', 2,
+          $1, 'renamed', $2, 'advanced append-only migration test'
         )
         RETURNING "id", "seq_id" AS "seqId"
       `,
@@ -495,11 +460,9 @@ async function validateChatEventSourcesAreAppendOnly(
     const snapshot = await client.query<{ latestSeqId: string }>(
       `
         INSERT INTO "chat_thread_snapshots" (
-          "user_id",
-          "org_id",
-          "latest_event_id"
+          "user_id", "org_id", "latest_event_id", "latest_event_seq_id"
         )
-        VALUES ('append-only-test-user', 'append-only-test-org', $1)
+        VALUES ('append-only-test-user', 'append-only-test-org', $1, 1)
         RETURNING "latest_event_seq_id" AS "latestSeqId"
       `,
       [eventId],
@@ -509,7 +472,7 @@ async function validateChatEventSourcesAreAppendOnly(
     const advancedSnapshot = await client.query<{ latestSeqId: string }>(
       `
         UPDATE "chat_thread_snapshots"
-        SET "latest_event_id" = $1
+        SET "latest_event_id" = $1, "latest_event_seq_id" = 2
         WHERE "user_id" = 'append-only-test-user'
           AND "org_id" = 'append-only-test-org'
         RETURNING "latest_event_seq_id" AS "latestSeqId"
@@ -518,20 +481,9 @@ async function validateChatEventSourcesAreAppendOnly(
     );
     assert.equal(advancedSnapshot.rows[0]?.latestSeqId, "2");
 
-    await expectAppendOnlyUpdateRejected(client, {
-      tableName: "chat_events",
-      query: `UPDATE "chat_events" SET "event_type" = "event_type" WHERE "id" = $1`,
-      rowId: messageId,
-    });
-    await expectAppendOnlyUpdateRejected(client, {
-      tableName: "chat_thread_events",
-      query: `UPDATE "chat_thread_events" SET "title" = 'mutated' WHERE "id" = $1`,
-      rowId: eventId,
-    });
-
-    console.log("   ✅ chat_events rejects UPDATE");
-    console.log("   ✅ chat_thread_events rejects UPDATE\n");
-    console.log("   ✅ chat event writes use application-reserved seq_ids\n");
+    console.log(
+      "   ✅ chat events and snapshots accept explicit seq_ids and cursors\n",
+    );
   } finally {
     await client.query(
       `
@@ -1354,83 +1306,6 @@ const EXPECTED_PERMANENT_TRIGGERS = [
   },
   {
     definition:
-      "CREATE TRIGGER chat_events_reject_update BEFORE UPDATE ON public.chat_events FOR EACH ROW EXECUTE FUNCTION reject_chat_event_source_update()",
-    schemaName: "public",
-    tableName: "chat_events",
-    triggerName: "chat_events_reject_update",
-  },
-  {
-    definition:
-      "CREATE TRIGGER allocate_legacy_chat_thread_event_seq_id BEFORE INSERT ON public.chat_thread_events FOR EACH ROW EXECUTE FUNCTION allocate_legacy_chat_thread_event_seq_id()",
-    schemaName: "public",
-    tableName: "chat_thread_events",
-    triggerName: "allocate_legacy_chat_thread_event_seq_id",
-  },
-  {
-    definition:
-      "CREATE TRIGGER chat_thread_events_reject_update BEFORE UPDATE ON public.chat_thread_events FOR EACH ROW EXECUTE FUNCTION reject_chat_event_source_update()",
-    schemaName: "public",
-    tableName: "chat_thread_events",
-    triggerName: "chat_thread_events_reject_update",
-  },
-  {
-    definition:
-      "CREATE TRIGGER fill_legacy_chat_thread_snapshot_event_seq_id BEFORE INSERT OR UPDATE ON public.chat_thread_snapshots FOR EACH ROW EXECUTE FUNCTION fill_legacy_chat_thread_snapshot_event_seq_id()",
-    schemaName: "public",
-    tableName: "chat_thread_snapshots",
-    triggerName: "fill_legacy_chat_thread_snapshot_event_seq_id",
-  },
-  {
-    definition:
-      "CREATE TRIGGER chat_threads_normalize_computer_access BEFORE INSERT OR UPDATE OF computer_use_host_id, cloud_browser_enabled ON public.chat_threads FOR EACH ROW EXECUTE FUNCTION chat_threads_normalize_computer_access()",
-    schemaName: "public",
-    tableName: "chat_threads",
-    triggerName: "chat_threads_normalize_computer_access",
-  },
-  {
-    definition:
-      "CREATE TRIGGER hosted_sites_delete_artifact_registry AFTER DELETE ON public.hosted_sites FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('hosted-site')",
-    schemaName: "public",
-    tableName: "hosted_sites",
-    triggerName: "hosted_sites_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER image_artifacts_delete_artifact_registry AFTER DELETE ON public.image_artifacts FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('image')",
-    schemaName: "public",
-    tableName: "image_artifacts",
-    triggerName: "image_artifacts_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER presentation_artifacts_delete_artifact_registry AFTER DELETE ON public.presentation_artifacts FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('presentation')",
-    schemaName: "public",
-    tableName: "presentation_artifacts",
-    triggerName: "presentation_artifacts_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER run_uploaded_files_delete_artifact_registry AFTER DELETE ON public.run_uploaded_files FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('file')",
-    schemaName: "public",
-    tableName: "run_uploaded_files",
-    triggerName: "run_uploaded_files_delete_artifact_registry",
-  },
-  {
-    definition:
-      "CREATE TRIGGER run_uploaded_files_queue_artifact_catalog AFTER INSERT OR UPDATE OF run_id, chat_thread_id, user_id, org_id, external_id, filename, content_type, url, preview_image_url, metadata ON public.run_uploaded_files FOR EACH ROW EXECUTE FUNCTION queue_artifact_catalog_file()",
-    schemaName: "public",
-    tableName: "run_uploaded_files",
-    triggerName: "run_uploaded_files_queue_artifact_catalog",
-  },
-  {
-    definition:
-      "CREATE TRIGGER video_artifacts_delete_artifact_registry AFTER DELETE ON public.video_artifacts FOR EACH ROW EXECUTE FUNCTION delete_artifact_registry_entity('video')",
-    schemaName: "public",
-    tableName: "video_artifacts",
-    triggerName: "video_artifacts_delete_artifact_registry",
-  },
-  {
-    definition:
       "CREATE TRIGGER ssh_cloudflare_access_binding_guard BEFORE INSERT OR UPDATE OF cloudflare_access_id, org_id, user_id ON public.ssh_connections FOR EACH ROW EXECUTE FUNCTION validate_ssh_cloudflare_access_binding()",
     schemaName: "public",
     tableName: "ssh_connections",
@@ -1508,48 +1383,6 @@ const EXPECTED_PERMANENT_FUNCTIONS = [
     functionName: "purge_quiescent_provisional_billing_attribution",
     identityArguments:
       "billed_org text, billed_user text, quiescent_run_ids uuid[]",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "6b1b5ad47ec35bcbaad3fa95d86ef027",
-    functionName: "allocate_legacy_chat_thread_event_seq_id",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "7f12cb6026b4e6d6638aaa22e0a93514",
-    functionName: "chat_threads_normalize_computer_access",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "3879e0228971b9f64e4bf8439ec5df4b",
-    functionName: "delete_artifact_registry_entity",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "7740cf65befb5e06a73e1f21bcfdd5cc",
-    functionName: "fill_legacy_chat_thread_snapshot_event_seq_id",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "6e1e9c59353aa29b1e0ba58f1406e875",
-    functionName: "queue_artifact_catalog_file",
-    identityArguments: "",
-    kind: "f",
-    schemaName: "public",
-  },
-  {
-    bodyHash: "519c7504c787a49c4c6bea8a588711fc",
-    functionName: "reject_chat_event_source_update",
-    identityArguments: "",
     kind: "f",
     schemaName: "public",
   },
@@ -1672,250 +1505,6 @@ async function validatePermanentTriggerAndFunctionInventory(
 
     console.log("   ✅ Permanent trigger and function inventories match\n");
   } finally {
-    await client.end();
-  }
-}
-
-async function validatePermanentArtifactTriggerBehavior(
-  dbUrl: string,
-): Promise<void> {
-  console.log(
-    "=== Phase 2.5.2: Validate permanent artifact trigger behavior ===\n",
-  );
-  const client = new Client({ connectionString: dbUrl });
-  await client.connect();
-
-  const fixture = {
-    agentId: "00000000-0000-4000-8000-000000246701",
-    sessionId: "00000000-0000-4000-8000-000000246702",
-    firstRunId: "00000000-0000-4000-8000-000000246703",
-    secondRunId: "00000000-0000-4000-8000-000000246704",
-    firstThreadId: "00000000-0000-4000-8000-000000246705",
-    secondThreadId: "00000000-0000-4000-8000-000000246706",
-    hostedSiteId: "00000000-0000-4000-8000-000000246707",
-    presentationSiteId: "00000000-0000-4000-8000-000000246708",
-    scopedSiteId: "00000000-0000-4000-8000-000000246709",
-    directFileId: "00000000-0000-4000-8000-000000246710",
-    queuedFileId: "00000000-0000-4000-8000-000000246711",
-    imageFileId: "00000000-0000-4000-8000-000000246712",
-    videoFileId: "00000000-0000-4000-8000-000000246713",
-    imageId: "00000000-0000-4000-8000-000000246714",
-    presentationId: "00000000-0000-4000-8000-000000246715",
-    videoId: "00000000-0000-4000-8000-000000246716",
-    orgId: "permanent-artifact-trigger-org",
-    otherUserId: "permanent-artifact-trigger-other-user",
-    userId: "permanent-artifact-trigger-user",
-  } as const;
-  const registryIds = [
-    "00000000-0000-4000-8000-000000246721",
-    "00000000-0000-4000-8000-000000246722",
-    "00000000-0000-4000-8000-000000246723",
-    "00000000-0000-4000-8000-000000246724",
-    "00000000-0000-4000-8000-000000246725",
-  ] as const;
-
-  try {
-    await client.query(
-      `INSERT INTO "agents" ("id", "org_id", "owner", "name")
-       VALUES ($1, $2, $3, 'permanent-artifact-trigger-test')`,
-      [fixture.agentId, fixture.orgId, fixture.userId],
-    );
-    await client.query(
-      `INSERT INTO "agent_sessions" (
-         "id", "user_id", "org_id", "agent_id"
-       )
-       VALUES ($1, $2, $3, $4)`,
-      [fixture.sessionId, fixture.userId, fixture.orgId, fixture.agentId],
-    );
-    await client.query(
-      `INSERT INTO "agent_runs" (
-         "id", "user_id", "session_id", "status", "prompt", "org_id"
-       )
-       VALUES
-         ($1, $3, $4, 'running', 'first scoped deployment', $5),
-         ($2, $3, $4, 'running', 'second scoped deployment', $5)`,
-      [
-        fixture.firstRunId,
-        fixture.secondRunId,
-        fixture.userId,
-        fixture.sessionId,
-        fixture.orgId,
-      ],
-    );
-    await client.query(
-      `INSERT INTO "chat_threads" (
-         "id", "user_id", "agent_id", "title"
-       )
-       VALUES
-         ($1, $3, $4, 'First permanent artifact trigger chat'),
-         ($2, $5, $4, 'Second permanent artifact trigger chat')`,
-      [
-        fixture.firstThreadId,
-        fixture.secondThreadId,
-        fixture.userId,
-        fixture.agentId,
-        fixture.otherUserId,
-      ],
-    );
-    await client.query(
-      `UPDATE "agent_runs"
-       SET
-         "trigger_source" = 'chat',
-         "autonomy_budget" = 10,
-         "chat_thread_id" = CASE
-           WHEN "id" = $1 THEN $3::uuid
-           ELSE $4::uuid
-         END
-       WHERE "id" IN ($1, $2)`,
-      [
-        fixture.firstRunId,
-        fixture.secondRunId,
-        fixture.firstThreadId,
-        fixture.secondThreadId,
-      ],
-    );
-    await client.query(
-      `INSERT INTO "run_uploaded_files" (
-         "id", "source", "external_id", "user_id", "org_id", "url",
-         "run_id"
-       )
-       VALUES
-         ($1, 'web', 'direct-file', $5, NULL, NULL, NULL),
-         ($2, 'web', 'queued-file', $5, $6,
-          'https://example.invalid/queued-file', $7),
-         ($3, 'web', 'image-file', $5, NULL, NULL, NULL),
-         ($4, 'web', 'video-file', $5, NULL, NULL, NULL)`,
-      [
-        fixture.directFileId,
-        fixture.queuedFileId,
-        fixture.imageFileId,
-        fixture.videoFileId,
-        fixture.userId,
-        fixture.orgId,
-        fixture.firstRunId,
-      ],
-    );
-    const queuedFile = await client.query<{
-      authorUserId: string;
-      orgId: string;
-    }>(
-      `SELECT
-         "author_user_id" AS "authorUserId",
-         "org_id" AS "orgId"
-       FROM "artifact_catalog_pending_files"
-       WHERE "file_id" = $1`,
-      [fixture.queuedFileId],
-    );
-    assert.deepEqual(queuedFile.rows, [
-      { authorUserId: fixture.userId, orgId: fixture.orgId },
-    ]);
-
-    await client.query(
-      `INSERT INTO "hosted_sites" (
-         "id", "org_id", "user_id", "slug", "public_slug",
-         "requested_slug", "chat_thread_id", "created_from_run_id",
-         "public_brand"
-       )
-       VALUES
-         ($1, $4, $5, 'permanent-hosted-site', 'permanent-hosted-site',
-          'permanent-hosted-site', $6, $7, 'vm0'),
-         ($2, $4, $5, 'permanent-presentation', 'permanent-presentation',
-          'permanent-presentation', NULL, NULL, 'vm0'),
-         ($3, $4, $5, 'permanent-scoped-site', 'permanent-scoped-site',
-          'permanent-scoped-site', $6, NULL, 'vm0')`,
-      [
-        fixture.hostedSiteId,
-        fixture.presentationSiteId,
-        fixture.scopedSiteId,
-        fixture.orgId,
-        fixture.userId,
-        fixture.firstThreadId,
-        fixture.firstRunId,
-      ],
-    );
-    await client.query(
-      `INSERT INTO "image_artifacts" ("id", "file_id") VALUES ($1, $2)`,
-      [fixture.imageId, fixture.imageFileId],
-    );
-    await client.query(
-      `INSERT INTO "presentation_artifacts" ("id", "hosted_site_id")
-       VALUES ($1, $2)`,
-      [fixture.presentationId, fixture.presentationSiteId],
-    );
-    await client.query(
-      `INSERT INTO "video_artifacts" ("id", "file_id") VALUES ($1, $2)`,
-      [fixture.videoId, fixture.videoFileId],
-    );
-    await client.query(
-      `INSERT INTO "artifacts" (
-         "id", "org_id", "author_user_id", "kind", "entity_id",
-         "logical_key", "projection_file_id", "projection_created_at", "title"
-       )
-       VALUES
-         ($1, $6, $7, 'hosted-site', $8, 'permanent-hosted-site', $9, now(), 'Hosted site'),
-         ($2, $6, $7, 'image', $10, 'permanent-image', $11, now(), 'Image'),
-         ($3, $6, $7, 'presentation', $12, 'permanent-presentation', $13, now(), 'Presentation'),
-         ($4, $6, $7, 'video', $14, 'permanent-video', $15, now(), 'Video'),
-         ($5, $6, $7, 'file', $16, 'permanent-file', $16, now(), 'File')`,
-      [
-        ...registryIds,
-        fixture.orgId,
-        fixture.userId,
-        fixture.hostedSiteId,
-        fixture.directFileId,
-        fixture.imageId,
-        fixture.imageFileId,
-        fixture.presentationId,
-        fixture.queuedFileId,
-        fixture.videoId,
-        fixture.videoFileId,
-        fixture.directFileId,
-      ],
-    );
-
-    await client.query(`DELETE FROM "hosted_sites" WHERE "id" = $1`, [
-      fixture.hostedSiteId,
-    ]);
-    await client.query(`DELETE FROM "image_artifacts" WHERE "id" = $1`, [
-      fixture.imageId,
-    ]);
-    await client.query(`DELETE FROM "presentation_artifacts" WHERE "id" = $1`, [
-      fixture.presentationId,
-    ]);
-    await client.query(`DELETE FROM "video_artifacts" WHERE "id" = $1`, [
-      fixture.videoId,
-    ]);
-    await client.query(`DELETE FROM "run_uploaded_files" WHERE "id" = $1`, [
-      fixture.directFileId,
-    ]);
-
-    const remainingRegistryRows = await client.query<{ kind: string }>(
-      `SELECT "kind"
-       FROM "artifacts"
-       WHERE "id" = ANY($1::uuid[])
-       ORDER BY "kind"`,
-      [[...registryIds]],
-    );
-    assert.deepEqual(remainingRegistryRows.rows, []);
-
-    console.log("   ✅ Artifact registry cascades and catalog queueing work\n");
-  } finally {
-    await client.query(`DELETE FROM "artifacts" WHERE "org_id" = $1`, [
-      fixture.orgId,
-    ]);
-    await client.query(`DELETE FROM "hosted_deployments" WHERE "org_id" = $1`, [
-      fixture.orgId,
-    ]);
-    await client.query(`DELETE FROM "hosted_sites" WHERE "org_id" = $1`, [
-      fixture.orgId,
-    ]);
-    await client.query(
-      `DELETE FROM "run_uploaded_files" WHERE "user_id" = $1`,
-      [fixture.userId],
-    );
-    await client.query(`DELETE FROM "agents" WHERE "id" = $1`, [
-      fixture.agentId,
-    ]);
     await client.end();
   }
 }
@@ -2125,25 +1714,6 @@ async function validatePermanentAgentRunMetadataState(
         transitionTriggerCount: 0,
       },
     ]);
-
-    const metadataReaders = await client.query<{
-      body: string;
-      name: string;
-    }>(`
-      SELECT "proname" AS "name", "prosrc" AS "body"
-      FROM "pg_proc"
-      WHERE "pronamespace" = 'public'::regnamespace
-        AND "proname" IN (
-          'queue_artifact_catalog_file'
-        )
-      ORDER BY "proname"
-    `);
-    assert.equal(metadataReaders.rows.length, 1);
-    for (const reader of metadataReaders.rows) {
-      assert.ok(reader.body.includes('FROM "agent_runs"'));
-      assert.ok(reader.body.includes('"trigger_source" IS NOT NULL'));
-      assert.ok(!reader.body.includes('"zero_runs"'));
-    }
 
     await client.query(
       `INSERT INTO "agents" ("id", "org_id", "owner", "name")
@@ -3540,7 +3110,6 @@ async function main(): Promise<void> {
     await validatePermanentTriggerAndFunctionInventory(dbUrl1);
     await validatePiMemoryStage1Cost(dbUrl1);
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
-    await validatePermanentArtifactTriggerBehavior(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelCooldownState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
@@ -3552,7 +3121,7 @@ async function main(): Promise<void> {
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateOfficialAutomationResultEmailSchema(dbUrl1);
     await validateExpandedBrowserSchema(dbUrl1);
-    await validateChatEventSourcesAreAppendOnly(dbUrl1);
+    await validateCanonicalChatEventStorage(dbUrl1);
     await validateChatEventContextPointerConstraints(dbUrl1);
     await validateConnectorCatalogFinalConstraints(dbUrl1);
     await validateCustomConnectorOauthModeConstraints(dbUrl1);
@@ -3597,7 +3166,9 @@ async function main(): Promise<void> {
       console.log(
         "   ✅ Browser state uses canonical thread identity and lifecycle events",
       );
-      console.log("   ✅ Chat event source tables reject UPDATE");
+      console.log(
+        "   ✅ Chat event storage accepts explicit sequences and cursors",
+      );
       console.log(
         "   ✅ Final connector catalog constraints reject invalid state",
       );
@@ -3614,9 +3185,6 @@ async function main(): Promise<void> {
       console.log("   ✅ Permanent trigger and function inventories match");
       console.log(
         "   ✅ Usage-pack pending guards retain uniqueness and count constraints",
-      );
-      console.log(
-        "   ✅ Permanent artifact triggers preserve cascade and queue behavior",
       );
       console.log(
         "   ✅ Permanent inventory matches API-owned Pi candidate accounting",

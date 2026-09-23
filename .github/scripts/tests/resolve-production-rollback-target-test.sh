@@ -46,6 +46,8 @@ case "${1:-}" in
       [ "${MOCK_CLIENT_PRODUCT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eb2f211a9af41450d0d5dad10c0c8ad12fac0a24" ]; then
       [ "${MOCK_PREPARED_DOMAIN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "065f970bbb8c21c10ef709495d5824d0a6183e50" ]; then
+      [ "${MOCK_ARTIFACT_CHAT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dddddddddddddddddddddddddddddddddddddddd" ]; then
       [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
@@ -173,6 +175,7 @@ run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor f205ec54fc463f43b1106a3659e5d6a8c979cab8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the hosted publication runtime floor"
 grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi launch-config version reader floor"
 grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
+grep -Fxq "git merge-base --is-ancestor 065f970bbb8c21c10ef709495d5824d0a6183e50 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the artifact/chat explicit-writer floor"
 grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
@@ -217,6 +220,15 @@ grep -Fq '322efb6d72508e15b90dc788100a776da1485751' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-session-digest-floor.output" ] || fail "pre-digest-reader API target must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-digest-reader API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates artifact/chat explicit writers" \
+  run_resolver "${tmp_dir}/artifact-chat-floor.output" MOCK_ARTIFACT_CHAT_WRITER_FLOOR_VALID=0
+grep -Fq '065f970bbb8c21c10ef709495d5824d0a6183e50' "${tmp_dir}/failure.err" || fail "artifact/chat rejection must identify the last explicit writer commit"
+[ ! -s "${tmp_dir}/artifact-chat-floor.output" ] || fail "pre-writer API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-writer API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

@@ -75,6 +75,32 @@ deletes coexist with the old triggers because deleting an absent catalog row is
 idempotent. The direct hosted-site and account-erasure paths need their own
 source-scoped cleanup before the delete triggers can be retired.
 
+## Artifact and chat trigger retirement (contract step)
+
+Migration `1206_retire_artifact_chat_triggers` removes the eleven triggers named
+in #33749 and their six unreferenced functions. It is a **contract step**, not
+an API expand step. It cannot ship while any serving API instance or supported
+rollback binary still relies on trigger-owned catalog writes/deletes, chat event
+seq or snapshot cursor derivation, append-only rejection, or computer-host/browser
+normalization. An old API against the contracted schema is not supported.
+
+Before applying this migration in production, confirm the explicit API paths from
+#36258, #36294, #36301 and #36304 have deployed to **all** serving instances.
+Any further production writer fixes discovered in this Draft PR must also ship
+before contraction; the migration cannot be its own expand release. The
+production rollback resolver rejects API targets before canonical
+main commit `065f970bbb8c21c10ef709495d5824d0a6183e50` (#36301, the last
+preparation to merge): the first supported rollback release is
+`3a2a331d50503a73407029ed9074e7d6930778da` (API 1.664.0). Older entries
+in the rollback dashboard remain visible but are rejected before artifact or
+host access. Record serving deployment and rollback evidence with the release.
+Verify the migration and its permanent inventory against a
+replayed database, plus API no-trigger integration coverage for ordinary file
+writes and deletion cascades, hosted-site/presentation deletion, chat event and
+snapshot concurrency/retries, and computer host selection on create/update.
+Do not infer production readiness from a merged commit or a passing isolated
+test. Preserve the shipped historical SQL migrations.
+
 This document focuses on three independently deployed surfaces that have
 cross-version API or persisted-state compatibility boundaries:
 
