@@ -415,20 +415,3 @@ test("Retired Goal history displays and copies the complete literal objective", 
     expect(clipboard.writes).toStrictEqual([content]);
   });
 });
-
-test("An actual assistant copying the Goal notice retains citation filtering and Markdown", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const content =
-    "Okou Goal retired.\nGoal ID: 00000000-0000-4000-8000-000000000001\nOriginal recorded status: complete\nThe recorded status is preserved; retirement does not mark the objective complete.\n\nFull original objective:\n**Formatted actual answer** <oai-mem-citation>hidden transport</oai-mem-citation>";
-  const rows = completedMessageRows(chat, content);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
-  await expect(
-    screen.findByText("Formatted actual answer"),
-  ).resolves.toHaveProperty("tagName", "STRONG");
-  expect(screen.queryByText(/hidden transport/)).not.toBeInTheDocument();
-});

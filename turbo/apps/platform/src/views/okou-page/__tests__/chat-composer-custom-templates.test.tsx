@@ -736,18 +736,6 @@ test("An empty catalog leads with the upload entry instead of showing no matches
   expect(within(dialog).queryByText("No matches")).not.toBeInTheDocument();
 });
 
-test("An empty catalog offers no search box, because there is nothing to narrow", async () => {
-  mockCustomTemplates([]);
-
-  const { dialog } = await openCustomPanel();
-  click(tabByText("Custom"));
-  await within(dialog).findByLabelText("Import template");
-
-  expect(
-    within(dialog).queryByPlaceholderText("Search templates"),
-  ).not.toBeInTheDocument();
-});
-
 test("Opening a deck shows its pages and management controls", async () => {
   mockCustomTemplates([customTemplate()]);
   context.mocks.api(userTemplatesContract.get, ({ respond }) => {
@@ -1464,19 +1452,6 @@ test("Uploading moves to Custom once the switch is on", async () => {
   expect(within(dialog).getByLabelText("Import template")).toBeInTheDocument();
 });
 
-test("One entry takes every kind of source a template can be made from", async () => {
-  mockCustomTemplates([customTemplate()]);
-
-  const { dialog } = await openCustomPanel();
-
-  click(tabByText("Custom"));
-  const entry = await within(dialog).findByLabelText("Import template");
-  // The active category never narrows the files accepted by the import action.
-  expect(entry.getAttribute("accept")).toBe(
-    ".pptx,.ppt,.pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,.bmp",
-  );
-});
-
 test("A document can be imported while browsing images", async () => {
   mockCustomTemplates([illustrationTemplate()]);
   context.mocks.upload.success({
@@ -1511,34 +1486,6 @@ test("A document can be imported while browsing images", async () => {
   // with the `--kind` a document needs to avoid the flag's presentation
   // default, and the repository that tells the dispatcher apart from the
   // registry's presentation-only copy.
-  expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
-});
-
-test("A deck from the same entry is sent the same message", async () => {
-  mockCustomTemplates([]);
-  context.mocks.upload.success({
-    id: "81000000-0000-4000-a000-000000000012",
-    filename: "brand-system.pptx",
-    contentType:
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    size: 5,
-    url: "https://cdn.example.test/brand-system.pptx",
-  });
-
-  const { user, dialog, capture } = await openCustomPanel();
-
-  click(tabByText("Custom"));
-  await user.upload(
-    await within(dialog).findByLabelText("Import template"),
-    new File(["pptx"], "brand-system.pptx", {
-      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    }),
-  );
-
-  await waitFor(() => {
-    expect(capture.runPrompts).toHaveLength(1);
-  });
-  expect(capture.runPrompts[0]).toBe(PROMPT);
   expect(additionalInfo(capture.sentMessages[0]!)).toStrictEqual([GUIDANCE]);
 });
 

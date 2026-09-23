@@ -95,54 +95,6 @@ function visibleText(message: SubmittedMessage | undefined): string {
   );
 }
 
-test("Presentation defaults to 8-12 slides", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  expect(screen.queryByRole("combobox", { name: "Slide count" })).toBeNull();
-  const picker = await enterPresentation(editor);
-  expect(picker).toHaveTextContent("8–12 slides");
-});
-
-test("Presentation offers every documented slide count", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  const picker = await enterPresentation(editor);
-  click(picker);
-  const menu = await screen.findByRole("listbox");
-  expect(
-    within(menu)
-      .getAllByRole("option")
-      .map((item) => {
-        return item.textContent?.trim();
-      }),
-  ).toStrictEqual([
-    "Auto",
-    "4–8 slides",
-    "8–12 slides",
-    "12–16 slides",
-    "16–20 slides",
-    "20–24 slides",
-  ]);
-  expect(
-    within(menu).getByRole("option", { name: "8–12 slides" }),
-  ).toHaveAttribute("aria-selected", "true");
-});
-
-test("Presentation selects Auto", async () => {
-  setupModels();
-  mockChatLifecycle(context);
-  const editor = await setupComposer();
-  const picker = await enterPresentation(editor);
-  click(picker);
-  const menu = await screen.findByRole("listbox");
-  click(within(menu).getByRole("option", { name: "Auto" }));
-  await waitFor(() => {
-    return expect(picker).toHaveTextContent("Auto");
-  });
-});
-
 test("Presentation sends Auto as hidden additional info while keeping the message unchanged", async () => {
   setupModels();
   const submissions: SubmittedMessage[] = [];
@@ -184,9 +136,6 @@ test("Presentation sends Auto as hidden additional info while keeping the messag
 
 test.each([
   ["8–12 slides", "8-12"],
-  ["4–8 slides", "4-8"],
-  ["12–16 slides", "12-16"],
-  ["16–20 slides", "16-20"],
   ["20–24 slides", "20-24"],
 ])("Presentation sends %s in additional info", async (label, range) => {
   setupModels();

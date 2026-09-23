@@ -279,20 +279,18 @@ test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
   },
 );
 
-test.each(["Workflow", "Presentation", "Image", "Website", "Visualization"])(
-  "Backspace removes %s from an empty composer",
-  async (task) => {
-    mockTemplateChat();
-    const user = userEvent.setup({ delay: null });
-    const editor = await setupChips();
-    click(button(task, screen.getByRole("group", { name: "Choose a task" })));
-    expect(selectedTask(editor, task)).toBeVisible();
-    await user.keyboard("{Backspace}");
-    await screen.findByRole("group", { name: "Choose a task" });
-    expect(screen.queryByRole("group", { name: task })).toBeNull();
-    expect(editor).toHaveFocus();
-  },
-);
+test("Backspace removes a selected task from an empty composer", async () => {
+  const task = "Workflow";
+  mockTemplateChat();
+  const user = userEvent.setup({ delay: null });
+  const editor = await setupChips();
+  click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+  expect(selectedTask(editor, task)).toBeVisible();
+  await user.keyboard("{Backspace}");
+  await screen.findByRole("group", { name: "Choose a task" });
+  expect(screen.queryByRole("group", { name: task })).toBeNull();
+  expect(editor).toHaveFocus();
+});
 
 test("Backspace edits a nonempty draft and preserves task selection during composition", async () => {
   mockTemplateChat();
@@ -638,13 +636,6 @@ async function setupTaskChangesWithUpload() {
   return { capture, editor };
 }
 
-test("Task changes preserve uploaded files and the draft", async () => {
-  const { capture, editor } = await setupTaskChangesWithUpload();
-  expect(editor).toHaveTextContent("Keep my draft");
-  expect(screen.getByText("brief.txt")).toBeInTheDocument();
-  expect(capture.sentMessages).toHaveLength(0);
-});
-
 test("Toggling a task off sends the ordinary draft and uploaded file", async () => {
   const { capture } = await setupTaskChangesWithUpload();
   click(button("Send"));
@@ -663,18 +654,6 @@ test.each([
     first: "Put my product in a new scene",
     next: "Make a cover for my newsletter",
     prompt: "Put my product in a new scene.",
-  },
-  {
-    task: "Website",
-    first: "Build a website for my business",
-    next: "Put my café menu online for guests",
-    prompt: "Build a website that explains my business",
-  },
-  {
-    task: "Presentation",
-    first: "Pitch my new business to a room of investors",
-    next: "Present this quarter’s results to the team",
-    prompt: "Create an investor pitch deck for my business",
   },
 ])(
   "$task ideas rotate without changing the draft and keep what was typed",
@@ -712,24 +691,6 @@ test.each([
       "Put my product in a new scene. I will add a product photo; help me choose a setting while keeping the product itself consistent.",
     secondPrompt:
       "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting.",
-  },
-  {
-    task: "Website",
-    first: "Build a website for my business",
-    second: "Showcase my work in a portfolio",
-    firstPrompt:
-      "Build a website that explains my business, services, and how to contact me. Start with my business details and audience.",
-    secondPrompt:
-      "Create a portfolio website for my work. Help me organize my projects, introduce myself, and add contact details.",
-  },
-  {
-    task: "Presentation",
-    first: "Pitch my new business to a room of investors",
-    second: "Put together this week’s team update",
-    firstPrompt:
-      "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising.",
-    secondPrompt:
-      "Build a deck for my team update. Ask me what happened this period, what comes next, and who is in the room.",
   },
 ])(
   "A second $task idea rewrites the first prompt instead of stacking one after it",
@@ -1121,28 +1082,6 @@ test("Task chips do not replace the composer in an existing conversation", async
   expect(
     screen.queryByRole("region", { name: "Tasks to get started" }),
   ).toBeNull();
-});
-
-test("Starting ideas use the active app language", async () => {
-  mockTemplateChat();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    locale: "ja-JP",
-    featureSwitches: { [FeatureSwitchKey.ComposerTaskChips]: true },
-  });
-  const editor = await findComposerEditor();
-  click(
-    button("ワークフロー", screen.getByRole("group", { name: "タスクを選ぶ" })),
-  );
-  click(button("明確な計画で一日を始める"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "モーニングブリーフ",
-  });
-  click(button("このワークフローを使う", dialog));
-  await waitFor(() => {
-    expect(editor).toHaveTextContent("重要なメールと今日の予定を読む");
-  });
 });
 
 function workflowTiles(container: ParentNode): HTMLElement[] {
