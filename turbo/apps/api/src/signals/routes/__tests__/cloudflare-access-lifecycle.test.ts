@@ -139,9 +139,9 @@ test("creator erasure preserves shared Access and another member's SSH host", as
   const member = await owner(creator.orgId, "member");
   const host = await createHost(shared.id);
 
-  expect(
-    await countUserSshAccessResourcesFixture(creator.userId),
-  ).toStrictEqual({
+  await expect(
+    countUserSshAccessResourcesFixture(creator.userId),
+  ).resolves.toStrictEqual({
     configs: 1,
     hosts: 1,
     credentials: 1,
@@ -150,9 +150,9 @@ test("creator erasure preserves shared Access and another member's SSH host", as
 
   // The deleted user cannot authenticate to list their own resources. This
   // narrow fixture verifies that encrypted personal state was actually erased.
-  expect(
-    await countUserSshAccessResourcesFixture(creator.userId),
-  ).toStrictEqual({
+  await expect(
+    countUserSshAccessResourcesFixture(creator.userId),
+  ).resolves.toStrictEqual({
     configs: 0,
     hosts: 0,
     credentials: 0,
