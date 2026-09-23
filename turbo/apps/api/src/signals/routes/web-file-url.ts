@@ -7,7 +7,7 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
-import { generateArtifactPreviewUrl } from "../external/s3";
+import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
 import {
   uploadedArtifactObject,
   uploadedArtifactPreviewImageUrl,
@@ -41,10 +41,10 @@ const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   // Signed against the object key resolved for this user, so the URL never
   // widens beyond what the ownership check already allowed.
-  const preview = await get(
-    generateArtifactPreviewUrl(object.bucket, object.key, {
-      signingDate: nowDate(),
-    }),
+  const preview = await set(
+    resolveArtifactPreviewUrl$,
+    { bucket: object.bucket, key: object.key, signingDate: nowDate() },
+    signal,
   );
 
   signal.throwIfAborted();

@@ -290,6 +290,7 @@ const cronPruneStoragePresignedUrlsResponseSchema = z.object({
   workflowSkill: storagePresignedUrlPruneResultSchema,
   readOnly: storagePresignedUrlPruneResultSchema,
   presentationTemplatePreview: storagePresignedUrlPruneResultSchema,
+  privateArtifactPreview: storagePresignedUrlPruneResultSchema.optional(),
 });
 
 const cronMaterializeMemorySummariesResponseSchema = z.object({
