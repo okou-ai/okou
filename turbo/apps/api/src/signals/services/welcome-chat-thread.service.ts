@@ -1,8 +1,6 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 
@@ -16,7 +14,6 @@ import { insertChatEvent } from "./chat-event.service";
 import { createChatThreadInTransaction } from "./chat-thread.service";
 import { loadNewChatThreadMediaModels } from "./chat-thread-media-model.service";
 import { chatThreadModelPinColumns } from "./chat-thread-model.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveDefaultModelFirstPin } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
 
@@ -62,30 +59,12 @@ export type WelcomeThreadDeliveryOutcome =
     }
   | {
       readonly outcome: "skipped";
-      readonly reason: "disabled" | "default-agent-not-ready";
+      readonly reason: "default-agent-not-ready";
     };
 
 export const createWelcomeChatThread$ = command(
   async ({ get, set }, args: WelcomeThreadAction, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const switches = await loadUserFeatureSwitchContext(
-      db,
-      args.orgId,
-      args.userId,
-    );
-    signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.WelcomeThread, switches)) {
-      return {
-        status: 403 as const,
-        body: {
-          error: {
-            code: "FORBIDDEN",
-            message: "Welcome thread is not enabled",
-          },
-        },
-      };
-    }
-
     const [agent] = await db
       .select({ id: agents.id })
       .from(orgMetadata)
@@ -180,9 +159,6 @@ export const deliverWelcomeChatThread$ = command(
       // this recipient's own earlier delivery can hold an id derived from this
       // recipient's identity, so the welcome is already there.
       return { outcome: "already-delivered", threadId };
-    }
-    if (result.status === 403) {
-      return { outcome: "skipped", reason: "disabled" };
     }
     if (result.status === 409) {
       return { outcome: "skipped", reason: "default-agent-not-ready" };

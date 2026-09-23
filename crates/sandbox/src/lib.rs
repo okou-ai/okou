@@ -23,6 +23,7 @@ mod dns_readiness;
 mod error;
 mod factory;
 mod guest_rpc;
+pub mod helper_exec;
 mod runtime;
 mod sandbox;
 mod snapshot;

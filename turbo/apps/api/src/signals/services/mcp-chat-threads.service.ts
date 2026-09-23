@@ -54,7 +54,7 @@ const CURSOR_TTL_MS = 24 * 60 * 60 * 1000;
 // PostgreSQL counts characters, while JSON schema string limits count UTF-16
 // units. Five hundred code points fit the 1,000-unit response bound even for emoji.
 const TEXT_CHARACTER_LIMIT = 500;
-const UNREAD_COVERAGE = "retained_terminal_events_and_native_deliveries";
+const UNREAD_COVERAGE = "retained_terminal_events";
 const cursorSchema = z.strictObject({
   version: z.literal(1),
   operation: z.literal("list_chat_threads"),

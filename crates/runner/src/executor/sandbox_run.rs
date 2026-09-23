@@ -30,6 +30,7 @@ use super::diagnostics::{
 };
 use super::env::PreparedRunPayload;
 use super::session_id::invalid_session_id_diagnostic_preview;
+use super::session_restore::restored_session_identity_from_context;
 use super::telemetry::record_workspace_cache_result;
 use super::workspace_session_history_materializer::WorkspaceSessionHistoryMaterializer;
 use super::{
@@ -42,7 +43,6 @@ use crate::dns::{DnsReadinessLogObservation, inspect_readiness_log_segment};
 use crate::duration::duration_ms;
 use crate::network_log_manager::NetworkLogSession;
 use crate::proxy;
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_cache::PreparedStorage;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::storage_plan::build_storage_plan;
@@ -1020,7 +1020,7 @@ async fn resolve_fresh_session_history_restore_plan(
             context, config, cancel, telemetry, fallback,
         );
     }
-    let Some(expected) = RestoredSessionIdentity::from_context(context) else {
+    let Some(expected) = restored_session_identity_from_context(context) else {
         telemetry.record(
             "session_history_workspace_cache_miss",
             Duration::ZERO,
@@ -1481,7 +1481,7 @@ async fn create_started_sandbox(
                 .await
                 .is_completed();
             return Err(SandboxPrepareError::retry_without_workspace_image(
-                e.error,
+                e.error.into(),
                 unregister_completed && destroy_completed,
             ));
         }

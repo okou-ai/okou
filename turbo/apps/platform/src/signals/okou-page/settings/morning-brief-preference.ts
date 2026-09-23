@@ -6,15 +6,11 @@ import {
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { searchParams$ } from "../../route.ts";
-import { onRef, settle } from "../../utils.ts";
-import { logger } from "../../log.ts";
-
-const L = logger("MorningBrief");
+import { onRef } from "../../utils.ts";
 
 export type MorningBriefPreferenceState =
   | {
@@ -98,33 +94,10 @@ const reloadMorningBriefFromPush$ = command(({ set }) => {
   set(retryMorningBriefPreference$);
   return false;
 });
-/** Optional enrollment failures stay isolated from application and connector lifecycles. */
-export const initializeMorningBriefEnrollment$ = command(
-  async (
-    { get, set },
-    body: { readonly timezone?: string },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const client = get(apiClient$)(userPreferencesContract);
-    const result = await settle(
-      accept(client.initialize({ body, fetchOptions: { signal } }), [200]),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!result.ok) {
-      L.warn(
-        "Morning Brief initialization failed; a later visit or connector change can retry",
-        result.error,
-      );
-    }
-    set(retryMorningBriefPreference$);
-  },
-);
-
 const retryMorningBriefAfterConnectorChange$ = command(
-  async ({ set }, _payload: unknown, signal: AbortSignal) => {
-    await set(initializeMorningBriefEnrollment$, {}, signal);
+  ({ set }, _payload: unknown, signal: AbortSignal) => {
     signal.throwIfAborted();
+    set(retryMorningBriefPreference$);
     return false;
   },
 );

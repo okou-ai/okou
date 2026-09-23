@@ -124,7 +124,7 @@
 //! successful exit and valid metadata.
 //!
 //! The runner caller and consumer are
-//! `crates/runner/src/workspace_promotion.rs::export_session_history_sidecar`.
+//! `crates/runner-lifecycle/src/workspace_promotion.rs::export_session_history_sidecar`.
 //! That path parses the linked metadata, validates its encoded size, and
 //! cleans up the export when promotion cannot proceed.
 //!
@@ -168,7 +168,7 @@
 //! returned after earlier stale entries have already been removed.
 //!
 //! The runner constructs the request and command in
-//! `crates/runner/src/idle_reuse_preparation.rs::IdleReusePreparation::new`,
+//! `crates/runner-lifecycle/src/idle_reuse_preparation.rs::IdleReusePreparation::new`,
 //! sends the linked request through `exec_request`, and validates the linked
 //! report in `validate_result`.
 //!

@@ -19,6 +19,7 @@ import {
   chatThreadRenameContract,
   chatThreadUnpinContract,
   chatThreadsContract,
+  chatThreadSnapshotArchiveSchema,
   type ChatEvent,
   type ChatSearchResponse,
   type ChatThreadArtifactRun,
@@ -605,6 +606,20 @@ export function createChatFilesBddApi(context: TestContext) {
       if (response.body.latestSeqId === undefined) {
         throw new Error("Expected snapshot sequence cursor");
       }
+      if ("url" in response.body) {
+        const archiveResponse = await fetch(response.body.url);
+        if (!archiveResponse.ok) {
+          throw new Error("Failed to download chat thread snapshot");
+        }
+        const archive = chatThreadSnapshotArchiveSchema.parse(
+          await archiveResponse.json(),
+        );
+        return {
+          chatThreads: archive.chatThreads,
+          latestEventId: response.body.latestEventId,
+          latestSeqId: response.body.latestSeqId,
+        };
+      }
       return {
         ...response.body,
         latestSeqId: response.body.latestSeqId,
@@ -655,8 +670,14 @@ export function createChatFilesBddApi(context: TestContext) {
         threadsClient().snapshot({ headers }),
         [200],
       );
+      const chatThreads =
+        "url" in snapshot.body
+          ? chatThreadSnapshotArchiveSchema.parse(
+              await (await fetch(snapshot.body.url)).json(),
+            ).chatThreads
+          : snapshot.body.chatThreads;
       const agentByThreadId = new Map(
-        snapshot.body.chatThreads.map((thread) => {
+        chatThreads.map((thread) => {
           return [thread.id, thread.agentId];
         }),
       );

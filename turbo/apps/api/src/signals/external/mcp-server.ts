@@ -888,7 +888,7 @@ function createChatServer(
       "list_chat_threads",
       {
         description:
-          "List your conversations newest-message first. Filter by Agent, literal title substring, lastMessageAt, activity, or unread; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained terminal events and native deliveries, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
+          "List your conversations newest-message first. Filter by Agent, literal title substring, lastMessageAt, activity, or unread; bounds, order, and continuation use lastMessageAt, while metadataUpdatedAt is the separate metadata clock. Continue nextCursor with identical filters. Pagination reads live metadata, so restart to refresh moved conversations. Unread covers retained Run terminal events, not all archives; activity is not run completion. Reading does not mark read. Use get_chat_thread for details.",
         inputSchema: mcpListChatThreadsInputSchema,
         outputSchema: mcpListChatThreadsOutputSchema,
         annotations: { ...readAnnotations, title: "List Chat Threads" },
@@ -912,7 +912,7 @@ function createChatServer(
       "get_chat_thread",
       {
         description:
-          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. Unread covers retained terminal events and native deliveries. This neither reads messages nor marks read, and idle activity does not prove execution success.",
+          "Read one owned conversation's title, Agent, selected/effective model, activity, and unread state. createdAt is creation, metadataUpdatedAt is metadata change, and lastMessageAt is message activity. Model metadata is current policy; admission is checked on send. Unread covers retained Run terminal events. This neither reads messages nor marks read, and idle activity does not prove execution success.",
         inputSchema: mcpGetChatThreadInputSchema,
         outputSchema: mcpGetChatThreadOutputSchema,
         annotations: { ...readAnnotations, title: "Get Chat Thread" },

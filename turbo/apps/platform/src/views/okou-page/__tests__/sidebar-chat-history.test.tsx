@@ -918,8 +918,8 @@ test("Keep pin management usable with many pinned agents", async () => {
   context.mocks.api(userPreferencesContract.get, async ({ respond }) => {
     await preferencesGate.promise;
     return respond(200, {
-      timezone: null,
-      locale: null,
+      timezone: "America/Los_Angeles",
+      locale: "en-US",
       supportedLocales: [
         "en-US",
         "pt-BR",

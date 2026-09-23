@@ -38,8 +38,17 @@ const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
 const MARKETING_FIELD = "Marketing & content";
 const READY_TITLE = "Okou is ready for you";
+const PROFILE_TITLE = "Here's what we've learned about you";
 const START_ACTION = "Start with Okou";
 const HANDOFF_PROMPT = "Draft the launch plan";
+function generatedProfile() {
+  return {
+    overview: "Your inbox has several conversations to keep moving.",
+    professionalIdentity: ["You coordinate work through email"],
+    communicationStyle: [],
+    priorities: ["Keep important replies moving"],
+  };
+}
 
 function mockOnboardingNeeded(): void {
   context.mocks.data.onboardingStatus({
@@ -339,6 +348,7 @@ test("Connected account context replaces the static starting prompt", async () =
             title: "Clear the replies that matter",
             outcome: "Three priority responses ready for review",
             prompt: generatedPrompt,
+            profile: generatedProfile(),
           },
         });
   });
@@ -370,6 +380,15 @@ test("Connected account context replaces the static starting prompt", async () =
   click(getButtonByName("Continue"));
 
   await expect(
+    screen.findByRole("heading", { name: PROFILE_TITLE }),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText("Keep important replies moving"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(ROUTES.onboardingProfile);
+  click(getButtonByName("Continue"));
+
+  await expect(
     screen.findByText("Clear the replies that matter"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
@@ -378,6 +397,206 @@ test("Connected account context replaces the static starting prompt", async () =
     locale: "en-US",
   });
   expect(pollCount).toBe(2);
+});
+
+test("The profile step shows a skeleton until the shared context result arrives", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7496e";
+  const releaseResult = context.mocks.deferred<void>();
+  const generatedPrompt = "Draft replies to the most important messages.";
+  context.mocks.api(onboardingRecommendationContract.start, ({ respond }) => {
+    return respond(202, { jobId, status: "pending" });
+  });
+  context.mocks.api(
+    onboardingRecommendationContract.get,
+    async ({ respond }) => {
+      await releaseResult.promise;
+      return respond(200, {
+        jobId,
+        status: "completed",
+        recommendation: {
+          kind: "task",
+          title: "Clear the inbox",
+          outcome: "Priority replies ready for review",
+          prompt: generatedPrompt,
+          profile: generatedProfile(),
+        },
+      });
+    },
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: SOURCES_QUESTION });
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", {
+    name: "Have you used Codex or Claude Code?",
+  });
+  click(fieldRadio("No, I’m new to this"));
+  click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
+  expect(
+    screen.getByText("Creating your profile from your connected work…"),
+  ).toBeInTheDocument();
+  expect(getButtonByName("Continue")).toBeDisabled();
+
+  releaseResult.resolve();
+  await screen.findByText("Keep important replies moving");
+  expect(
+    screen.queryByText("Creating your profile from your connected work…"),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText("How you communicate")).not.toBeInTheDocument();
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: READY_TITLE });
+  expect(screen.getByDisplayValue(generatedPrompt)).toBeInTheDocument();
+});
+
+test("A failed profile can be retried without losing the rest of onboarding", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  const failedJobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7497e";
+  const retriedJobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7498e";
+  const startedIndustries: string[] = [];
+  context.mocks.api(
+    onboardingRecommendationContract.start,
+    ({ body, respond }) => {
+      startedIndustries.push(body.industry);
+      return respond(202, {
+        jobId: startedIndustries.length === 1 ? failedJobId : retriedJobId,
+        status: "pending",
+      });
+    },
+  );
+  context.mocks.api(
+    onboardingRecommendationContract.get,
+    ({ params, respond }) => {
+      return params.jobId === failedJobId
+        ? respond(200, { jobId: failedJobId, status: "failed" })
+        : respond(200, {
+            jobId: retriedJobId,
+            status: "completed",
+            recommendation: {
+              kind: "task",
+              title: "Clear the inbox",
+              outcome: "Priority replies ready for review",
+              prompt: "Draft replies to the most important messages.",
+              profile: generatedProfile(),
+            },
+          });
+    },
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  click(fieldRadio(MARKETING_FIELD));
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: SOURCES_QUESTION });
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", {
+    name: "Have you used Codex or Claude Code?",
+  });
+  click(fieldRadio("No, I’m new to this"));
+  click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "We couldn't create your profile right now.",
+  );
+  click(getButtonByName("Try again"));
+  await screen.findByText("Keep important replies moving");
+  expect(startedIndustries).toStrictEqual(["marketing", "marketing"]);
+  click(getButtonByName("Continue"));
+  await screen.findByRole("heading", { name: READY_TITLE });
+});
+
+test("A direct profile visit without a selected positioning returns to the first step", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingProfile,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await screen.findByRole("heading", { name: INDUSTRY_QUESTION });
+  expect(pathname()).toBe(ROUTES.onboarding);
+});
+
+test("A refreshed profile lets the user retry an interrupted start", async () => {
+  mockMemberOnboardingNeeded();
+  mockCatalog({ connected: true });
+  const startedAt = Date.parse("2026-09-22T08:00:00.000Z");
+  mockNow(startedAt + 1000, context.signal);
+  // The in-flight POST belongs to the discarded page. A fresh app startup
+  // cannot construct its persisted, jobless state through page interactions.
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: false,
+      provider: null,
+      startingPromptDraft: "",
+      startingPromptKey: "",
+      recommendationJobId: null,
+      recommendationStartedAt: startedAt,
+    }),
+  );
+  const jobId = "e8b94a61-0c73-4ba4-904a-45f6a9f7499e";
+  context.mocks.api(onboardingRecommendationContract.start, ({ respond }) => {
+    return respond(202, { jobId, status: "pending" });
+  });
+  context.mocks.api(onboardingRecommendationContract.get, ({ respond }) => {
+    return respond(200, {
+      jobId,
+      status: "completed",
+      recommendation: {
+        kind: "task",
+        title: "Clear the inbox",
+        outcome: "Priority replies ready for review",
+        prompt: "Draft replies to the most important messages.",
+        profile: generatedProfile(),
+      },
+    });
+  });
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingProfile,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "We couldn't create your profile right now.",
+  );
+  click(getButtonByName("Try again"));
+  await screen.findByText("Keep important replies moving");
 });
 
 test("The fallback budget starts with generation and a late result preserves edits", async () => {
@@ -407,6 +626,7 @@ test("The fallback budget starts with generation and a late result preserves edi
         title: "Catch up on important replies",
         outcome: "Priority replies ready for review",
         prompt: generatedPrompt,
+        profile: generatedProfile(),
       },
     });
   });
@@ -434,6 +654,12 @@ test("The fallback budget starts with generation and a late result preserves edi
   });
   click(fieldRadio("No, I’m new to this"));
   click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
+  expect(
+    screen.getByText("Creating your profile from your connected work…"),
+  ).toBeInTheDocument();
+  click(getButtonByName("Skip for now"));
 
   await screen.findByRole("heading", { name: READY_TITLE });
   const prompt = await screen.findByRole("textbox");
@@ -484,6 +710,7 @@ test("A refreshed ready step resumes its durable recommendation job", async () =
         title: "Resume the important replies",
         outcome: "Priority drafts ready for review",
         prompt: generatedPrompt,
+        profile: generatedProfile(),
       },
     });
   });
