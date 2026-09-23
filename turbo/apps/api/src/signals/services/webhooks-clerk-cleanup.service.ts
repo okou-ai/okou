@@ -551,30 +551,10 @@ const cleanupUserExternalServices$ = command(
     userId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const steps: readonly {
-      readonly name: string;
-      readonly run: () => Promise<void>;
-    }[] = [
-      {
-        name: "connector tokens",
-        run: () => {
-          return set(revokeUserConnectorTokens$, db, userId, signal);
-        },
-      },
-      {
-        name: "telegram owned bots",
-        run: () => {
-          return deregisterOwnedTelegramWebhooks(db, userId);
-        },
-      },
-    ];
-
-    for (const step of steps) {
-      await tapError(step.run(), (error) => {
-        L.warn(`failed to cleanup ${step.name}`, { userId, error });
-      });
-      signal.throwIfAborted();
-    }
+    await set(revokeUserConnectorTokens$, db, userId, signal);
+    signal.throwIfAborted();
+    await deregisterOwnedTelegramWebhooks(db, userId);
+    signal.throwIfAborted();
   },
 );
 
@@ -691,45 +671,24 @@ function deleteObjectsForPrefixes(
   });
 }
 
-function deleteUserObjectsForPrefixesBestEffort(
+function deleteUserObjectsForPrefixes(
   bucket: string,
   prefixes: readonly string[],
-  userId: string,
 ): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
     for (const prefix of prefixes) {
-      const objects = await tapError(
-        get(listS3ObjectsUnderPrefix(bucket, prefix)),
-        (error) => {
-          L.warn("failed to list user storage objects", {
-            userId,
-            prefix,
-            error,
-          });
-        },
-      );
-      if (!objects) {
-        continue;
-      }
-
+      const objects = await get(listS3ObjectsUnderPrefix(bucket, prefix));
       if (objects.length === 0) {
         continue;
       }
-
-      const keys = objects.map((object) => {
-        return object.key;
-      });
-      await tapError(get(deleteS3Objects(bucket, keys)), (error) => {
-        // The storage rows (and with them the version keys) are deleted
-        // right after this best-effort pass, so log the full key list to
-        // keep manual re-deletion possible.
-        L.warn("failed to delete user storage objects", {
-          userId,
-          prefix,
-          keys,
-          error,
-        });
-      });
+      await get(
+        deleteS3Objects(
+          bucket,
+          objects.map((object) => {
+            return object.key;
+          }),
+        ),
+      );
     }
   });
 }
@@ -808,7 +767,7 @@ function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
         }),
       ),
     ];
-    await get(deleteUserObjectsForPrefixesBestEffort(bucket, prefixes, userId));
+    await get(deleteUserObjectsForPrefixes(bucket, prefixes));
 
     const exportRows = await db
       .select({ s3Key: exportJobs.s3Key })
@@ -817,13 +776,7 @@ function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
     const exportKeys = exportRows.flatMap((row) => {
       return row.s3Key ? [row.s3Key] : [];
     });
-    await tapError(get(deleteS3Objects(bucket, exportKeys)), (error) => {
-      L.warn("failed to delete user export objects", {
-        userId,
-        count: exportKeys.length,
-        error,
-      });
-    });
+    await get(deleteS3Objects(bucket, exportKeys));
   });
 }
 

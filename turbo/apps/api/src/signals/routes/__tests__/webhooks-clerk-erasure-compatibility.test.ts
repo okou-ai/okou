@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { Webhook } from "svix";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -50,10 +51,12 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 
 const context = testContext({ connectorCatalog: true });
 const mocks = createRouteMocks(context);
 const bdd = createBddApi(context);
+const storages = createStoragesBddApi(context);
 const chat = createChatFilesBddApi(context);
 const runs = createRunsApi(context);
 const THREAD_MODEL = "claude-sonnet-5";
@@ -194,6 +197,70 @@ test("keeps the current signed Clerk deletion ACK and preserves another owner's 
   const listed = await accept(agents.list({ headers }), [200]);
   expect(listed.body).toContainEqual(created.body);
 });
+
+test.each(["list", "delete"] as const)(
+  "preserves a user Storage locator when S3 %s fails",
+  async (failure) => {
+    const userId = `synthetic_deleted_${randomUUID()}`;
+    const orgId = `synthetic_org_${randomUUID()}`;
+    const actor = bdd.user({ userId, orgId });
+    const storageName = `erasure-${randomUUID()}`;
+    storages.mockStoragePresignedUrls();
+    await storages.prepareStorage(actor, {
+      storageName,
+      storageOwner: "user",
+      files: [],
+    });
+
+    let failNext = true;
+    let failed = false;
+    let deleted = false;
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof ListObjectsV2Command) {
+        const prefix = command.input.Prefix;
+        if (!prefix?.startsWith(`${orgId}/`)) {
+          return Promise.resolve({ Contents: [] });
+        }
+        if (failure === "list" && failNext) {
+          failNext = false;
+          failed = true;
+          return Promise.reject(new Error("synthetic S3 listing failure"));
+        }
+        return Promise.resolve({
+          Contents: [
+            { Key: `${prefix}version`, Size: 1, LastModified: nowDate() },
+          ],
+        });
+      }
+      if (command instanceof DeleteObjectsCommand) {
+        const isStorage = command.input.Delete?.Objects?.some((item) => {
+          return item.Key?.startsWith(`${orgId}/`);
+        });
+        if (isStorage && failure === "delete" && failNext) {
+          failNext = false;
+          failed = true;
+          return Promise.reject(new Error("synthetic S3 deletion failure"));
+        }
+        deleted ||= isStorage === true;
+      }
+      return Promise.resolve({});
+    });
+
+    await deleteUserWithSignedWebhook(userId, `preserve-locators-${failure}`);
+    expect(failed).toBeTruthy();
+    await expect(storages.listStorages(actor, "user")).resolves.toContainEqual(
+      expect.objectContaining({ name: storageName }),
+    );
+
+    await deleteUserWithSignedWebhook(userId, `retry-locators-${failure}`);
+    expect(deleted).toBeTruthy();
+    await expect(
+      storages.listStorages(actor, "user"),
+    ).resolves.not.toContainEqual(
+      expect.objectContaining({ name: storageName }),
+    );
+  },
+);
 
 test("does not recreate erased generation metadata from an authenticated connector write", async () => {
   const sdk = await vi.importActual<typeof import("@clerk/backend/webhooks")>(
