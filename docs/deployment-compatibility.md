@@ -36,7 +36,7 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
-## Thread draft child table, phase 1 (2026-09-23)
+## Thread draft child table, phases 1 and 2a (2026-09-23)
 
 `chat_thread_drafts` holds one row per thread whose composer draft has been
 written since the table existed. Phase 1 of #36230 only adds the table and
@@ -58,15 +58,29 @@ deleted row. Phase 2 reads the child row first and falls back to the legacy
 columns only when the row is absent, so absence has to keep meaning "never
 written" — deleting on clear would resurrect a cleared draft.
 
-Two draft writers in the current API still touch only the legacy columns: the
-message-send paths clear the draft inside the transaction that reserves the
-thread's event sequence. Phase 1 deliberately leaves them alone, because they
-lock the thread row before they could write a child row and the reverse order
-in `PATCH` would make the two paths deadlock. Phase 2 owns converting them
-together with the read cutover.
+Phase 2a (#36297) makes message sends that clear the legacy draft also clear
+an **existing** child row in the same transaction. A missing child remains
+missing; the legacy clear makes a later missing-row fallback return null. The
+send first locks the authorized parent `FOR UPDATE`, before any weaker thread
+lock, parent write or child write. Its original parent UPDATE must match before
+it updates the child. A child error rolls back the parent clear, event and
+sequence reservation. MCP replay and automation sends that preserve drafts
+still skip the clear. The older phase-1 PATCH keeps its B1 admission and
+`KEY SHARE` -> child -> parent order. The strong send entry lock serializes
+these orders even while old phase-1 API processes remain active; `FOR NO KEY
+UPDATE` would not conflict with the PATCH's `KEY SHARE` and is insufficient.
 
-This phase changes no read, contract, or response, and performs no historical
-backfill. It does not remove the `chat_threads` row contention in #36173: the
+This bridge cannot make historical child rows current. Sends from phase-1 or
+older API instances may already have left stale children; an API rollback can
+do so again. Before child-first reads, all pre-bridge writers must drain and a
+separate bounded, resumable reconciliation must repair both missing **and
+stale** rows while legacy remains authoritative. Reader cutover needs its own
+release gate and rollback design. Later contraction requires a verified cutover
+and final completeness check. This slice does not add a send producer fence,
+historical backfill or child-first reads.
+
+These phases change no read, contract, or response, and perform no historical
+backfill. They do not remove the `chat_threads` row contention in #36173: the
 draft `PATCH` still updates that row and can still fail with 55P03 while
 another transaction holds it.
 
