@@ -66,7 +66,9 @@ import {
   type ModelProviderRefreshProviderKey,
 } from "@okouai/connectors/auth-providers/model-provider-auth";
 import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
+import { erasureSubjectOpenCondition } from "@okouai/db/operations/account-erasure";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { connectors } from "@okouai/db/schema/connector";
 import {
   modelProviderAccounts,
@@ -75,7 +77,7 @@ import {
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { executeRawRows, pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
@@ -4832,6 +4834,26 @@ async function admitFirewallAuthResponse(
           eq(agentRuns.id, auth.runId),
           eq(agentRuns.userId, auth.userId),
           eq(agentRuns.orgId, auth.orgId),
+          // This is the final credential handoff, not a write admission.
+          // Keep it in the same READ COMMITTED query as the active-run check:
+          // a prior standalone read would allow closure between the two.
+          erasureSubjectOpenCondition(tx, [
+            { subjectKind: "user", subjectId: agentRuns.userId },
+            { subjectKind: "organization", subjectId: agentRuns.orgId },
+          ]),
+          // The webhook commits this row before the B1 worker projects its
+          // subject closure. Deny access during that durable queue interval too.
+          notExists(
+            tx
+              .select({ id: backgroundJobs.id })
+              .from(backgroundJobs)
+              .where(
+                and(
+                  eq(backgroundJobs.kind, "clerk-user-deletion"),
+                  eq(backgroundJobs.userId, agentRuns.userId),
+                ),
+              ),
+          ),
         ),
       )
       .for("update")
