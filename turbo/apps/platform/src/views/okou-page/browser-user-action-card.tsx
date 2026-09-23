@@ -76,7 +76,7 @@ function ActionState({
       )}
       role="status"
     >
-      <div className="flex min-w-0 max-w-full items-center gap-3">
+      <div className="flex min-w-0 max-w-full items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           {icon}
         </div>
