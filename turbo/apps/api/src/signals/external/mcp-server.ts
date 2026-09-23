@@ -231,10 +231,13 @@ function inlineJsonSchema(
       const segment = encodedSegment
         .replaceAll("~1", "/")
         .replaceAll("~0", "~");
-      if (!isJsonObject(value) || !Object.hasOwn(value, segment)) {
+      const property = isJsonObject(value)
+        ? Object.getOwnPropertyDescriptor(value, segment)
+        : undefined;
+      if (!property || !("value" in property)) {
         throw new Error(`Unresolved JSON Schema reference ${reference}`);
       }
-      value = value[segment];
+      value = property.value;
     }
     if (!isJsonObject(value)) {
       throw new Error(`JSON Schema reference is not an object ${reference}`);
