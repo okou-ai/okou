@@ -785,7 +785,11 @@ describe("protected SSH authority", () => {
       }),
       [200],
     );
-    expect(changed.body.generation).toBe(f.host.generation + 1);
+    const generation = changed.body.generation;
+    if (generation === undefined) {
+      throw new Error("Missing rebind fixture generation");
+    }
+    expect(generation).toBe(f.host.generation + 1);
     await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
       sshHostsContract,
@@ -802,7 +806,7 @@ describe("protected SSH authority", () => {
             params: f.params,
             body: {
               ...f.body,
-              expectedGeneration: changed.body.generation ?? 0,
+              expectedGeneration: generation,
               observedHostKey: hostKey,
             },
           }),
@@ -818,7 +822,7 @@ describe("protected SSH authority", () => {
             params: f.params,
             body: {
               ...f.body,
-              expectedGeneration: changed.body.generation ?? 0,
+              expectedGeneration: generation,
               observedAt: nowDate().toISOString(),
               failureReason: "access_rejected",
             },
