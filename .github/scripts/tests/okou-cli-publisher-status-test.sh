@@ -15,9 +15,17 @@ set -euo pipefail
 case "$*" in
   *"/jobs?per_page=100"*)
     [[ "$*" == *"--paginate"* ]] || exit 90
+    [[ "$*" =~ /runs/([0-9]+)/jobs ]] || exit 96
+    run_id="${BASH_REMATCH[1]}"
     case "$MOCK_CASE" in
-      skipped|failed|success|queued)
-        case "$MOCK_CASE" in
+      skipped|failed|success|queued|older_active|older_success|all_skipped)
+        job_case="$MOCK_CASE"
+        case "$MOCK_CASE:$run_id" in
+          older_active:11|older_success:11|all_skipped:*) job_case=skipped ;;
+          older_active:10) job_case=queued ;;
+          older_success:10) job_case=success ;;
+        esac
+        case "$job_case" in
           skipped) status=completed; conclusion=skipped ;;
           failed) status=completed; conclusion=failure ;;
           success) status=completed; conclusion=success ;;
@@ -35,15 +43,20 @@ case "$*" in
     [[ "$*" == *"event=${GITHUB_EVENT_NAME}"* ]] || exit 92
     [[ "$*" == *"/workflows/${EXPECTED_WORKFLOW}/runs?"* ]] || exit 93
     [[ "$MOCK_CASE" != api_error ]] || exit 94
-    if [[ "$MOCK_CASE" == none ]]; then
-      printf '%s\n' '{"workflow_runs":[]}'
-    else
-      status=in_progress
-      [[ "$MOCK_CASE" != terminal_no_job ]] || status=completed
-      jq -nc --arg sha "$ARTIFACT_SHA" --arg event "$GITHUB_EVENT_NAME" \
-        --arg status "$status" \
-        '{workflow_runs:[{id:11,head_sha:$sha,event:$event,created_at:"2026-09-23T00:00:00Z",status:$status}]}'
-    fi
+    status=in_progress
+    [[ "$MOCK_CASE" != terminal_no_job ]] || status=completed
+    jq -nc --arg sha "$ARTIFACT_SHA" --arg event "$GITHUB_EVENT_NAME" \
+      --arg status "$status" --arg mock_case "$MOCK_CASE" '
+      ($mock_case == "older_active" or $mock_case == "older_success" or
+        $mock_case == "all_skipped") as $multiple |
+      {total_count: (if $mock_case == "none" then 0
+        elif $mock_case == "truncated" then 2
+        elif $multiple then 2 else 1 end),
+       workflow_runs: (if $mock_case == "none" then [] else
+         [{id:11,head_sha:$sha,event:$event,created_at:"2026-09-23T00:01:00Z",status:$status}] +
+         (if $multiple then
+           [{id:10,head_sha:$sha,event:$event,created_at:"2026-09-23T00:00:00Z",status:"in_progress"}]
+          else [] end) end)}'
     ;;
   *) exit 95 ;;
 esac
@@ -85,6 +98,10 @@ assert_status queued pending
 assert_status success pending
 assert_status skipped unavailable
 assert_status failed unavailable
+assert_status older_active pending
+assert_status older_success pending
+assert_status all_skipped unavailable
+assert_status truncated pending
 
 export GITHUB_EVENT_NAME=merge_group
 assert_status skipped unavailable
