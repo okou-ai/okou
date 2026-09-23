@@ -5569,14 +5569,78 @@ function structuredFailureDescription(
   reason: KnownRunFailureReason,
   t: TFunction<"common">,
 ): string {
+  if (
+    reason === "session_history_limit" ||
+    reason === "context_window_exceeded"
+  ) {
+    return t(($) => {
+      return $.chat.errors.recovery.newChatDescription;
+    });
+  }
+  if (reason === "guest_root_filesystem_full") {
+    return t(($) => {
+      return $.chat.errors.recovery.filesystemFullDescription;
+    });
+  }
+  if (reason === "execution_timeout") {
+    return t(($) => {
+      return $.chat.errors.recovery.timeoutDescription;
+    });
+  }
+  if (reason === "provider_insufficient_credits") {
+    return t(($) => {
+      return $.chat.errors.recovery.providerBalanceDescription;
+    });
+  }
+  if (
+    reason === "invalid_api_key" ||
+    reason === "invalid_credentials" ||
+    reason === "reconnect_required"
+  ) {
+    return t(($) => {
+      return $.chat.errors.recovery.providerConnectionDescription;
+    });
+  }
+  if (reason === "terms_acceptance_required") {
+    return t(($) => {
+      return $.chat.errors.recovery.termsDescription;
+    });
+  }
   if (reason === "input_too_large") {
     return t(($) => {
       return $.chat.errors.recovery.inputTooLargeDescription;
     });
   }
+  if (reason === "output_token_limit") {
+    return t(($) => {
+      return $.chat.errors.recovery.outputLimitDescription;
+    });
+  }
+  if (
+    reason === "provider_rate_limited" ||
+    reason === "provider_overloaded" ||
+    reason === "provider_stream_timeout" ||
+    reason === "provider_queue_timeout" ||
+    reason === "provider_server_error" ||
+    reason === "response_connection_lost"
+  ) {
+    return t(($) => {
+      return $.chat.errors.recovery.capacityDescription;
+    });
+  }
+  if (reason === "codex_access_program_unavailable") {
+    return t(($) => {
+      return $.chat.errors.recovery.accessProgramDescription;
+    });
+  }
   if (reason === "safety_policy_refusal") {
     return t(($) => {
       return $.chat.errors.recovery.safetyDescription;
+    });
+  }
+  if (reason === "unsupported_model") {
+    return t(($) => {
+      return $.chat.errors.recovery.unavailableDescription;
     });
   }
   if (reason === "usage_limit") {

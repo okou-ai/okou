@@ -160,9 +160,12 @@ interface StructuredFailureExpectation {
 }
 
 const STRUCTURED_FAILURE_EXPECTATIONS = {
-  session_history_limit: { title: "This chat is full", action: "New chat" },
+  session_history_limit: {
+    title: "This chat has reached its limit",
+    action: "New chat",
+  },
   guest_root_filesystem_full: {
-    title: "Run storage is full",
+    title: "This run ran out of space",
     action: "Try again",
   },
   execution_timeout: { title: "Time limit reached", action: "Continue" },
@@ -171,7 +174,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "Upgrade to Pro",
   },
   provider_insufficient_credits: {
-    title: "Model provider balance is too low",
+    title: "Your provider account needs more credit",
     action: "Open Model Providers",
   },
   invalid_api_key: {
@@ -179,7 +182,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "Open Model Providers",
   },
   invalid_credentials: {
-    title: "Model provider credentials need updating",
+    title: "Your model connection needs attention",
     action: "Open Model Providers",
   },
   terms_acceptance_required: {
@@ -192,11 +195,11 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
   },
   input_too_large: { title: "Your message is too large" },
   output_token_limit: {
-    title: "The model stopped at its output limit",
+    title: "The response reached its length limit",
     action: "Continue",
   },
   provider_rate_limited: {
-    title: "The provider is rate limiting requests",
+    title: "Too many model requests right now",
     action: "Try again",
     picker: true,
   },
@@ -211,7 +214,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     picker: true,
   },
   provider_queue_timeout: {
-    title: "The provider queue timed out",
+    title: "The model didn't start in time",
     action: "Try again",
     picker: true,
   },
@@ -225,12 +228,12 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     picker: true,
   },
   response_connection_lost: {
-    title: "The response connection was lost",
+    title: "The response was interrupted",
     action: "Try again",
     picker: true,
   },
   safety_policy_refusal: {
-    title: "The provider blocked this request",
+    title: "The model couldn't help with this request",
     picker: true,
   },
   reconnect_required: {
@@ -317,6 +320,9 @@ test.each(STRUCTURED_FAILURE_CASES)(
     const description = within(card).queryByTestId(
       "assistant-error-description",
     );
+    if (failureReason !== "insufficient_credits") {
+      expect(description).toHaveTextContent(/\S/u);
+    }
     expect(
       description?.classList.contains("line-clamp-2") ?? false,
     ).toBeFalsy();
@@ -726,14 +732,14 @@ test.each([
     "BYOK balance",
     "provider_insufficient_credits",
     "Your connected model provider account has insufficient balance.",
-    "Model provider balance is too low",
+    "Your provider account needs more credit",
     "Open Model Providers",
   ],
   [
     "queue expiry",
     "provider_queue_timeout",
     "Oops, something went wrong. Please try again later.",
-    "The provider queue timed out",
+    "The model didn't start in time",
     "Try again",
   ],
   [
@@ -783,7 +789,7 @@ test.each([
   [
     "provider_insufficient_credits",
     "Your connected model provider account has insufficient balance.",
-    "Le solde du fournisseur de modèles est insuffisant",
+    "Le compte du fournisseur de modèles manque de crédit",
   ],
   [
     undefined,
@@ -803,7 +809,7 @@ test.each([
   [
     "safety_policy_refusal",
     "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
-    "Le fournisseur a bloqué cette demande",
+    "Le modèle n’a pas pu répondre à cette demande",
   ],
   [
     undefined,
@@ -840,21 +846,21 @@ test.each([
   [
     "invalid_credentials",
     "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.example.test/?settings=model",
-    "Les identifiants du fournisseur doivent être mis à jour",
+    "La connexion au modèle doit être vérifiée",
     "Ouvrir les fournisseurs de modèles",
     null,
   ],
   [
     "invalid_credentials",
     "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.\n\nOpen Model Providers: https://app.example.test/?settings=model",
-    "Les identifiants du fournisseur doivent être mis à jour",
+    "La connexion au modèle doit être vérifiée",
     "Ouvrir les fournisseurs de modèles",
     null,
   ],
   [
     "invalid_credentials",
     "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.\n\nShare with an admin: https://app.example.test/?settings=model",
-    "Les identifiants du fournisseur doivent être mis à jour",
+    "La connexion au modèle doit être vérifiée",
     "Ouvrir les fournisseurs de modèles",
     null,
   ],
