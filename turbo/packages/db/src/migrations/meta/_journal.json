@@ -901,8 +901,15 @@
     {
       "idx": 1206,
       "version": "7",
-      "when": 1790180276057,
-      "tag": "1206_account_erasure_blob_and_owner_attribution",
+      "when": 1790179906297,
+      "tag": "1206_retire_artifact_chat_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 1207,
+      "version": "7",
+      "when": 1790182317627,
+      "tag": "1207_account_erasure_blob_and_owner_attribution",
       "breakpoints": true
     }
   ]

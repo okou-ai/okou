@@ -2115,6 +2115,7 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       isAdmin: true,
       workspaceName,
       scopeMismatch: false,
+      reinstallUrl: null,
     });
 
     const memberOrgStatus = await integrations.requestSlackIntegrationStatus(
@@ -6286,8 +6287,11 @@ describe("INT-02: Telegram integration", () => {
       OFFICIAL_TELEGRAM_BOT_ID,
       [403],
     );
-    expect(officialDisconnect.body).toMatchObject({
-      error: { code: "FORBIDDEN" },
+    expect(officialDisconnect.body).toStrictEqual({
+      error: {
+        message: "The official Telegram bot cannot be uninstalled",
+        code: "FORBIDDEN",
+      },
     });
 
     const officialLink = await integrations.requestLinkTelegram(
@@ -6647,8 +6651,11 @@ describe("INT-02: Telegram integration", () => {
       botId,
       [403],
     );
-    expect(memberDisconnect.body).toMatchObject({
-      error: { code: "FORBIDDEN" },
+    expect(memberDisconnect.body).toStrictEqual({
+      error: {
+        message: "Only the bot owner or an org admin can uninstall this bot",
+        code: "FORBIDDEN",
+      },
     });
 
     const disconnected = await integrations.requestDisconnectTelegramBot(

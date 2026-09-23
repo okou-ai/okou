@@ -25,7 +25,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { insertLegacyArtifactCatalogFile } from "./helpers/runtime-state";
+import { seedPendingArtifactCatalogFile } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -313,7 +313,7 @@ async function uploadFile(args: {
   return { fileId, url: completed.body.url, threadId: run.threadId };
 }
 
-async function insertLegacyCatalogFile(args: {
+async function seedPendingCatalogFile(args: {
   readonly owner: CatalogActor;
   readonly filename: string;
   readonly url: string;
@@ -322,10 +322,9 @@ async function insertLegacyCatalogFile(args: {
     throw new Error("Expected artifact catalog actor to have an org");
   }
 
-  // The previous API version cannot be invoked through the current route
-  // boundary. The guarded test route reproduces its schema-compatible insert
-  // so the public catalog endpoint proves migration-trigger reconciliation.
-  return await insertLegacyArtifactCatalogFile(context, {
+  // The guarded test route keeps the explicit file + queue transaction but
+  // skips immediate sync to exercise the public catalog's recovery behavior.
+  return await seedPendingArtifactCatalogFile(context, {
     userId: args.owner.actor.userId,
     orgId: args.owner.actor.orgId,
     filename: args.filename,
@@ -593,10 +592,10 @@ describe("GET /api/artifacts/catalog", () => {
     ]);
   }, 180_000);
 
-  it("reconciles a file written by the previous API after migration", async () => {
+  it("reconciles a pending file when immediate catalog sync is deferred", async () => {
     const owner = await catalogActor("Artifact catalog promotion owner");
     const url = `https://files.okou.test/${randomUUID()}/legacy-output.zip`;
-    const fileId = await insertLegacyCatalogFile({
+    const fileId = await seedPendingCatalogFile({
       owner,
       filename: "legacy-output.zip",
       url,
@@ -626,7 +625,7 @@ describe("GET /api/artifacts/catalog", () => {
     const fileIds: string[] = [];
     for (let index = 0; index < 21; index += 1) {
       fileIds.push(
-        await insertLegacyCatalogFile({
+        await seedPendingCatalogFile({
           owner,
           filename: `backlog-${index}.zip`,
           url: `https://files.okou.test/${randomUUID()}/backlog-${index}.zip`,
@@ -637,9 +636,8 @@ describe("GET /api/artifacts/catalog", () => {
     const firstPage = await chat.listArtifactCatalog(owner.actor);
     expect(firstPage.artifacts).toHaveLength(20);
 
-    // The previous API writer cannot be invoked through the current routes.
-    // Its trigger leaves durable pending rows; this test-only route limits the
-    // production worker to IDs owned by this case instead of a global scan.
+    // The test-only route leaves durable pending rows; this worker call limits
+    // production recovery to IDs owned by this case instead of a global scan.
     const recovery = await createAppWithRoutes({
       signal: context.signal,
       routes: testArtifactCatalogReconcileRoutes,
