@@ -9,6 +9,7 @@ import {
   AWS_QUERY_KEY_RE,
   AWS_QUERY_VALUE_RE,
   AWS_S3_PERMISSION_HEADER_NAMES,
+  isSensitiveAwsDiagnosticQueryKey,
 } from "@okouai/connectors/firewall-expander";
 
 const c = initContract();
@@ -53,6 +54,14 @@ function validateAwsQuerySelectors(
 ): void {
   const seenQueryKeys = new Set<string>();
   for (const [index, selector] of selectors.entries()) {
+    if (isSensitiveAwsDiagnosticQueryKey(selector.key)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["query", index, "key"],
+        message:
+          "AWS authentication query parameters cannot be diagnostic selectors",
+      });
+    }
     if (selector.value === "") {
       ctx.addIssue({
         code: "custom",

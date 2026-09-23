@@ -943,6 +943,19 @@ describe("okou connector check command", () => {
         expected: "--aws-query-param Action conflicts with --aws-target",
       },
       {
+        name: "rejects AWS signature query selectors without printing their values",
+        args: [
+          "--url",
+          "https://s3.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "s3",
+          "--aws-query-param",
+          "X-Amz-Signature=private-signature",
+        ],
+        expected:
+          "AWS authentication query parameters cannot be diagnostic selectors",
+      },
+      {
         name: "rejects more than 32 AWS query selectors",
         args: [
           "--url",
@@ -971,6 +984,9 @@ describe("okou connector check command", () => {
         expect(
           [getErrorOutput(), stderr.mock.calls.flat().join("\n")].join("\n"),
         ).toContain(expected);
+        expect(stderr.mock.calls.flat().join("\n")).not.toContain(
+          "private-signature",
+        );
         expect(getOutput()).not.toContain("Step 1");
       } finally {
         stderr.mockRestore();

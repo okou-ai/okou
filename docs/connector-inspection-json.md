@@ -86,7 +86,8 @@ selectors are limited to the allowlisted permission-selector names. These select
 operation only: they do not validate a SigV4 signature or send a request to
 AWS. The raw URL query and fragment remain stripped. AWS rules that do not
 match the explicit selectors remain unmatched and use the configured unknown-
-endpoint policy. Selector values are included in JSON and generated follow-up
+endpoint policy. SigV4 credential, security-token, and signature query keys are
+rejected. Other selector values are included in JSON and generated follow-up
 commands, so never supply credentials or other secrets as selectors.
 
 Check's `actions` contain commands, links, or guidance. Builtin permission

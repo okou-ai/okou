@@ -479,6 +479,20 @@ describe("connector client request contracts", () => {
     }).toThrow();
   });
 
+  it("rejects AWS authentication query parameters as diagnostic selectors", () => {
+    expect(() => {
+      connectorCheckRequestBodySchema.parse({
+        mode: "url",
+        method: "GET",
+        url: "https://s3.us-west-2.amazonaws.com/bucket/key",
+        aws: {
+          sigv4Service: "s3",
+          query: [{ key: "X-Amz-Signature", value: "private-signature" }],
+        },
+      });
+    }).toThrow();
+  });
+
   it("separates legacy and target-aware connector check requests", () => {
     const base = {
       mode: "url" as const,

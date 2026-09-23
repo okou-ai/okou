@@ -11,6 +11,7 @@ import {
   AWS_QUERY_VALUE_RE,
   AWS_S3_PERMISSION_HEADER_QUERY_KEYS,
   AWS_S3_PERMISSION_HEADER_NAMES,
+  isSensitiveAwsDiagnosticQueryKey,
   parseRuleRemainder,
 } from "./firewall-expander";
 import { hasRawWhitespace, hasUnsafeUrlCodepoint } from "./firewall-url-utils";
@@ -779,6 +780,7 @@ function isValidAwsDiagnosticQuery(
       typeof key !== "string" ||
       key.length > 128 ||
       !AWS_QUERY_KEY_RE.test(key) ||
+      isSensitiveAwsDiagnosticQueryKey(key) ||
       queryKeys.has(key)
     ) {
       return false;

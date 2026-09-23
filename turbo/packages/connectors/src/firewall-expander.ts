@@ -22,6 +22,16 @@ const AWS_RULE_SEPARATOR = " AWS ";
 export const AWS_PREDICATE_VALUE_RE = /^[A-Za-z0-9._:-]+$/;
 export const AWS_QUERY_KEY_RE = /^[A-Za-z0-9._~-]+$/;
 export const AWS_QUERY_VALUE_RE = /^[A-Za-z0-9._~:{}-]+$/;
+const AWS_SENSITIVE_DIAGNOSTIC_QUERY_KEYS = new Set([
+  "x-amz-credential",
+  "x-amz-security-token",
+  "x-amz-signature",
+]);
+
+export function isSensitiveAwsDiagnosticQueryKey(key: string): boolean {
+  return AWS_SENSITIVE_DIAGNOSTIC_QUERY_KEYS.has(key.toLowerCase());
+}
+
 const VALID_AWS_PREDICATE_KEYS = new Set(["sigv4", "action", "target"]);
 export const AWS_S3_PERMISSION_HEADER_NAMES = [
   "x-amz-copy-source",

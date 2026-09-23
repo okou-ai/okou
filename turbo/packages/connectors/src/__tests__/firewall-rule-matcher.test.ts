@@ -2010,6 +2010,27 @@ describe("findMatchingPermissions", () => {
           awsDiagnostic: {
             context: {
               sigv4Service: "s3",
+              query: [
+                { key: "acl" },
+                { key: "X-Amz-Signature", value: "private-signature" },
+              ],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "GET",
+        "https://s3.example.com/bucket/key",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "present", value: "aws" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "s3",
               query: [{ key: "acl" }],
               headerNames: ["x-amz-copy-source"],
             },

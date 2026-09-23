@@ -4,6 +4,7 @@ import {
   AWS_QUERY_KEY_RE,
   AWS_QUERY_VALUE_RE,
   AWS_S3_PERMISSION_HEADER_NAMES,
+  isSensitiveAwsDiagnosticQueryKey,
 } from "@okouai/connectors/firewall-expander";
 import type {
   ConnectorCheckTargetAwareDiagnosticResult,
@@ -137,6 +138,11 @@ function parseAwsQueryParam(value: string): {
   const separator = value.indexOf("=");
   const key = separator === -1 ? value : value.slice(0, separator);
   const queryValue = separator === -1 ? undefined : value.slice(separator + 1);
+  if (isSensitiveAwsDiagnosticQueryKey(key)) {
+    throw new Error(
+      "AWS authentication query parameters cannot be diagnostic selectors.",
+    );
+  }
   if (
     !AWS_QUERY_KEY_RE.test(key) ||
     key.length > 128 ||
@@ -146,7 +152,7 @@ function parseAwsQueryParam(value: string): {
         (queryValue !== "*" && !AWS_QUERY_VALUE_RE.test(queryValue))))
   ) {
     throw new Error(
-      `Invalid --aws-query-param value "${value}". Use KEY or KEY=VALUE with a bounded AWS selector value.`,
+      "Invalid --aws-query-param value. Use KEY or KEY=VALUE with a bounded AWS selector value.",
     );
   }
   return queryValue === undefined ? { key } : { key, value: queryValue };
