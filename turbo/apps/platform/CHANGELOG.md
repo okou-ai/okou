@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.946.0](https://github.com/okou-ai/okou/compare/app-v0.945.0...app-v0.946.0) (2026-09-23)
+
+
+### Features
+
+* add manual usage reset for claude code subscriptions ([#36165](https://github.com/okou-ai/okou/issues/36165)) ([741e209](https://github.com/okou-ai/okou/commit/741e2092ecb9b944dc41e155cb58787d3316673b))
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+* **api:** default new organizations to gpt-6 luna ([#36166](https://github.com/okou-ai/okou/issues/36166)) ([a202943](https://github.com/okou-ai/okou/commit/a20294342f008216e87fc242b0e03ff32ea30124))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#36161](https://github.com/okou-ai/okou/issues/36161)) ([b11509c](https://github.com/okou-ai/okou/commit/b11509c43b4cf1327eae5e40a7782df259e1ffb9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.494.0
+    * @okouai/core bumped to 8.701.0
+
 ## [0.945.0](https://github.com/okou-ai/okou/compare/app-v0.944.0...app-v0.945.0) (2026-09-22)
 
 

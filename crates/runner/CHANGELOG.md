@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.212.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.1...runner-rs-v0.212.0) (2026-09-23)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+
+
+### Refactoring
+
+* **runner:** extract provider coordination crate ([#36148](https://github.com/okou-ai/okou/issues/36148)) ([789a24f](https://github.com/okou-ai/okou/commit/789a24f6632566071af38533d4df58a0ef0c0c75))
+
 ## [0.211.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.0...runner-rs-v0.211.1) (2026-09-22)
 
 
