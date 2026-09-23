@@ -24,7 +24,10 @@ import {
   privateArtifactCreationEnabled,
   privateArtifactRecord,
 } from "./private-artifact-storage.service";
-import { syncArtifactCatalogForFile$ } from "./artifact-catalog.service";
+import {
+  queueArtifactCatalogFile,
+  syncArtifactCatalogForFile$,
+} from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
 import { extractPrivateVideoPoster$ } from "./private-video-preview.service";
 
@@ -773,13 +776,19 @@ const renderAndStoreArtifactPreview$ = command(
       );
     }
     const db = set(writeDb$);
-    await db
-      .update(runUploadedFiles)
-      .set({
-        previewImageUrl: artifact.url,
-        updatedAt: nowDate(),
-      })
-      .where(eq(runUploadedFiles.id, args.id));
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(runUploadedFiles)
+        .set({
+          previewImageUrl: artifact.url,
+          updatedAt: nowDate(),
+        })
+        .where(eq(runUploadedFiles.id, args.id))
+        .returning({ id: runUploadedFiles.id });
+      if (row) {
+        await queueArtifactCatalogFile(tx, row.id, signal);
+      }
+    });
     signal.throwIfAborted();
 
     await set(syncArtifactCatalogForFile$, args.id, signal);

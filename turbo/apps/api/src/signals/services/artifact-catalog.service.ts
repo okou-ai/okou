@@ -49,19 +49,26 @@ import { canonicalOkouArtifactCatalogUrl } from "../../lib/file-url";
 import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,
+  pgTextDecoder,
 } from "../../lib/db-structured-result";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
+import { logger } from "../../lib/log";
 import {
   isSharedThreadArtifactLogicalKey,
   sharedThreadArtifactAuthorUserId,
   SHARED_THREAD_ARTIFACT_LOGICAL_KEY_PREFIX,
 } from "../../lib/shared-thread-artifact";
 import { writeDb$, type Db } from "../external/db";
-import { safeUrlParse } from "../utils";
+import type { Tx } from "../../lib/db-types";
+import { safeUrlParse, settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 
 const ARTIFACT_CATALOG_DEFAULT_LIMIT = 60;
+const ARTIFACT_CATALOG_LIST_REPAIR_LIMIT = 20;
+const ARTIFACT_CATALOG_WORKER_BATCH_SIZE = 100;
+const ARTIFACT_CATALOG_WORKER_BUDGET_MS = 20_000;
+const L = logger("ArtifactCatalog");
 
 /**
  * `generatedBy` markers written by the built-in generation pipelines. They are
@@ -113,10 +120,9 @@ function metadataString(
 }
 
 /**
- * Whether a stored file belongs in the catalog at all. The database trigger
- * queues every `run_uploaded_files` row that gains a URL, so attachments the
- * user handed to the agent arrive here alongside the agent's own outputs; this
- * is where the two are separated.
+ * Whether a stored file belongs in the catalog at all. File writers queue
+ * rows that gain a URL, including attachments the user handed to the agent;
+ * this is where attachments are separated from the agent's own outputs.
  *
  * An upload declaring `purpose: "artifact"` is one, and every producer of an
  * artifact output declares it — including the generation and download paths
@@ -271,7 +277,7 @@ async function resolveChatThreadId(
 }
 
 async function resolveAuthorUserId(
-  db: Db,
+  db: Db | Tx,
   row: CatalogFileRow,
   signal: AbortSignal,
 ): Promise<string> {
@@ -290,7 +296,7 @@ async function resolveAuthorUserId(
 }
 
 async function readCatalogFileRow(
-  db: Db,
+  db: Db | Tx,
   fileId: string,
   signal: AbortSignal,
 ): Promise<CatalogFileRow | null> {
@@ -315,6 +321,42 @@ async function readCatalogFileRow(
     .limit(1);
   signal.throwIfAborted();
   return row ?? null;
+}
+
+/** Persist the handoff in the same transaction as the file mutation. */
+export async function queueArtifactCatalogFile(
+  tx: Tx,
+  fileId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const row = await readCatalogFileRow(tx, fileId, signal);
+  if (!row?.url || !row.orgId) {
+    await tx.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
+    signal.throwIfAborted();
+    await tx
+      .delete(artifactCatalogPendingFiles)
+      .where(eq(artifactCatalogPendingFiles.fileId, fileId));
+    signal.throwIfAborted();
+    return;
+  }
+  const authorUserId = await resolveAuthorUserId(tx, row, signal);
+  await tx
+    .insert(artifactCatalogPendingFiles)
+    .values({
+      fileId,
+      orgId: row.orgId,
+      authorUserId,
+      queuedAt: sql`clock_timestamp()`,
+    })
+    .onConflictDoUpdate({
+      target: artifactCatalogPendingFiles.fileId,
+      set: {
+        orgId: row.orgId,
+        authorUserId,
+        queuedAt: sql`clock_timestamp()`,
+      },
+    });
+  signal.throwIfAborted();
 }
 
 interface UpsertArtifactArgs {
@@ -641,11 +683,20 @@ async function removeAttachmentArtifacts(
 async function finishPendingArtifactFile(
   db: Db,
   fileId: string,
+  pendingRevision: string | null,
   signal: AbortSignal,
 ): Promise<void> {
+  if (pendingRevision === null) {
+    return;
+  }
   await db
     .delete(artifactCatalogPendingFiles)
-    .where(eq(artifactCatalogPendingFiles.fileId, fileId));
+    .where(
+      and(
+        eq(artifactCatalogPendingFiles.fileId, fileId),
+        sql`xmin::text = ${pendingRevision}`,
+      ),
+    );
   signal.throwIfAborted();
 }
 
@@ -654,15 +705,24 @@ async function syncArtifactCatalogFile(
   fileId: string,
   signal: AbortSignal,
 ): Promise<void> {
+  const [pending] = await db
+    .select({
+      revision: sql`xmin::text`.mapWith(pgTextDecoder),
+    })
+    .from(artifactCatalogPendingFiles)
+    .where(eq(artifactCatalogPendingFiles.fileId, fileId))
+    .limit(1);
+  const pendingRevision = pending?.revision ?? null;
   const row = await readCatalogFileRow(db, fileId, signal);
   if (!row?.url || !row.orgId) {
-    await finishPendingArtifactFile(db, fileId, signal);
+    await db.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
+    await finishPendingArtifactFile(db, fileId, pendingRevision, signal);
     return;
   }
 
   if (!isCatalogArtifactFile(row)) {
     await removeAttachmentArtifacts(db, fileId, signal);
-    await finishPendingArtifactFile(db, fileId, signal);
+    await finishPendingArtifactFile(db, fileId, pendingRevision, signal);
     return;
   }
 
@@ -697,7 +757,7 @@ async function syncArtifactCatalogFile(
     if (!complete) {
       return;
     }
-    await finishPendingArtifactFile(db, fileId, signal);
+    await finishPendingArtifactFile(db, fileId, pendingRevision, signal);
     return;
   }
 
@@ -713,7 +773,7 @@ async function syncArtifactCatalogFile(
         ),
       );
     signal.throwIfAborted();
-    await finishPendingArtifactFile(db, fileId, signal);
+    await finishPendingArtifactFile(db, fileId, pendingRevision, signal);
     return;
   }
 
@@ -740,6 +800,15 @@ async function syncArtifactCatalogFile(
       return false;
     }
 
+    await tx
+      .delete(artifacts)
+      .where(
+        and(
+          eq(artifacts.projectionFileId, row.id),
+          sql`(${artifacts.orgId}, ${artifacts.authorUserId}, ${artifacts.logicalKey}, ${artifacts.kind}, ${artifacts.entityId}) IS DISTINCT FROM (${orgId}, ${authorUserId}, ${logicalKey}, ${kind}, ${entityId})`,
+        ),
+      );
+
     await upsertArtifact({
       db: tx,
       kind,
@@ -759,7 +828,7 @@ async function syncArtifactCatalogFile(
   if (!synced) {
     return;
   }
-  await finishPendingArtifactFile(db, fileId, signal);
+  await finishPendingArtifactFile(db, fileId, pendingRevision, signal);
 }
 
 /**
@@ -817,7 +886,8 @@ async function reconcilePendingArtifactCatalog(
     .orderBy(
       asc(artifactCatalogPendingFiles.queuedAt),
       asc(artifactCatalogPendingFiles.fileId),
-    );
+    )
+    .limit(ARTIFACT_CATALOG_LIST_REPAIR_LIMIT);
   signal.throwIfAborted();
 
   for (const pending of pendingRows) {
@@ -825,6 +895,64 @@ async function reconcilePendingArtifactCatalog(
     signal.throwIfAborted();
   }
 }
+
+/** Bounded, explicit recovery for pending files, independent of catalog reads. */
+export const reconcileArtifactCatalogFiles$ = command(
+  async (
+    { set },
+    signal: AbortSignal,
+  ): Promise<{ processed: number; failed: number }> => {
+    const db = set(writeDb$);
+    const pendingRows = await db
+      .select({
+        fileId: artifactCatalogPendingFiles.fileId,
+        revision: sql`xmin::text`.mapWith(pgTextDecoder),
+      })
+      .from(artifactCatalogPendingFiles)
+      .orderBy(
+        asc(artifactCatalogPendingFiles.queuedAt),
+        asc(artifactCatalogPendingFiles.fileId),
+      )
+      .limit(ARTIFACT_CATALOG_WORKER_BATCH_SIZE);
+    signal.throwIfAborted();
+    const deadline = monotonicNow() + ARTIFACT_CATALOG_WORKER_BUDGET_MS;
+    let processed = 0;
+    let failed = 0;
+    for (const pending of pendingRows) {
+      if (monotonicNow() >= deadline) {
+        break;
+      }
+      signal.throwIfAborted();
+      const result = await settle(
+        syncArtifactCatalogFile(db, pending.fileId, signal),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (result.ok) {
+        processed += 1;
+      } else {
+        failed += 1;
+        L.warn("Artifact catalog reconciliation failed", {
+          fileId: pending.fileId,
+          error: result.error,
+        });
+      }
+      // A missing hosted-site dependency keeps the task durable. Move that
+      // task behind the rest of the queue so it cannot starve valid files.
+      await db
+        .update(artifactCatalogPendingFiles)
+        .set({ queuedAt: sql`clock_timestamp()` })
+        .where(
+          and(
+            eq(artifactCatalogPendingFiles.fileId, pending.fileId),
+            sql`xmin::text = ${pending.revision}`,
+          ),
+        );
+      signal.throwIfAborted();
+    }
+    return { processed, failed };
+  },
+);
 
 function toArtifactSummary(row: {
   readonly id: string;
