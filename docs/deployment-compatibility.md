@@ -1,22 +1,20 @@
 # Deployment Compatibility
 
-## Codex 0.156.1 OAuth workspace routing
+## Codex OAuth workspace ID preparation
 
-Codex 0.156.1 compares its local `auth.json` workspace ID with the selected
-entry returned by `/wham/accounts/check`. The Codex guest therefore writes the
-selected workspace ID from `CODEX_OAUTH_ACCOUNT_ID` into `auth.json` and both
-placeholder JWT claims. Access and refresh tokens remain placeholders; the
-firewall still injects real credentials into outbound requests.
+The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
+Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
+JWT claims. Access and refresh tokens remain placeholders; the firewall still
+injects real credentials into outbound requests.
 
-The API adds this non-credential identifier to Codex OAuth run environments
-while retaining the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. Deploy the API before the Runner image pinned to Codex 0.156.1. An older
-Runner ignores the additive field and continues using Codex 0.155.1. A newer
-Runner with an older API rejects Codex OAuth setup because the workspace ID is
-missing, so do not promote that combination. Runs queued before API promotion
-also retain their captured environment without the new field. Let old Runners
-claim and drain those runs before promoting new Runners, or recreate the runs
-after API promotion; draining only already-running work is not sufficient.
+The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
+and Pi. This preparatory change keeps the Runner on Codex 0.155.1. An older
+Runner ignores the additive field; a newer Runner served by an older API, or
+claiming a context queued before API promotion, retains the original
+placeholder account ID when the new field is absent. An explicitly empty field
+is rejected as a broken API contract. Deploy this compatible change first;
+upgrade Codex to 0.156.1 only after the API rollout and old claimable contexts
+have drained. The follow-up upgrade and fallback removal are tracked by #36420.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 

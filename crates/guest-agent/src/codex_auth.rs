@@ -9,7 +9,7 @@
 //! `auth_mode: "chatgpt"`, `OPENAI_API_KEY: null`, and a `tokens` object
 //! whose JWTs carry far-future `exp` claims, we put the codex CLI into
 //! ChatGPT mode without ever holding real OAuth credentials inside the
-//! sandbox. Codex 0.156.1 compares the local account ID with workspace
+//! sandbox. Newer Codex versions compare the local account ID with workspace
 //! discovery, so the selected workspace ID is copied into auth.json. The
 //! bearer and refresh tokens remain placeholders; the mitm firewall injects
 //! real credentials on egress.
@@ -49,12 +49,11 @@ use crate::error::AgentError;
 pub(crate) const PLACEHOLDER_PLAN_TYPE: &str = "plus";
 
 /// Far-future JWT `exp` offset, in seconds. For a parseable access token,
-/// Codex 0.156.1's `AuthManager::should_refresh_proactively` returns true when
+/// Codex's `AuthManager::should_refresh_proactively` returns true when
 /// its `exp` is no later than five minutes from now:
 /// <https://github.com/openai/codex/blob/rust-v0.156.1/codex-rs/login/src/auth/manager.rs#L2955-L2974>.
-/// This version is pinned by `CODEX_CLI_VERSION` in
-/// `crates/runner/scripts/build-template.sh`; an `exp` ~100 years from now
-/// therefore keeps the predicate false during runs.
+/// An `exp` ~100 years from now therefore keeps the predicate false during
+/// runs.
 const FAR_FUTURE_EXP_SECS: i64 = 100 * 365 * 24 * 3600;
 
 /// Localhost no-op URL for `CODEX_REFRESH_TOKEN_URL_OVERRIDE`. Defense
