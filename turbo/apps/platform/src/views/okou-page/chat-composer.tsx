@@ -7098,8 +7098,9 @@ function ComposerConnectorAccountMenu({
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const open = Boolean(
     menuOpen &&
-    menuTarget &&
-    connectorAccountTargetKey(menuTarget) === connectorAccountTargetKey(target),
+      menuTarget &&
+      connectorAccountTargetKey(menuTarget) ===
+        connectorAccountTargetKey(target),
   );
   const effectiveConnection = explicit ? selectedConnection : defaultConnection;
   const resolveAccountLabel = useConnectorAccountLabel();
@@ -9196,9 +9197,8 @@ interface ComposerMediaModelPickerState<Model extends string> {
   readonly onChange: (next: Model | null) => void;
 }
 
-interface ComposerResolvedMediaModelPickerState<
-  Model extends string,
-> extends ComposerMediaModelPickerState<Model> {
+interface ComposerResolvedMediaModelPickerState<Model extends string>
+  extends ComposerMediaModelPickerState<Model> {
   readonly selectedModel: Model;
 }
 
@@ -9871,9 +9871,23 @@ function ComposerTemporaryModelNoticeSlot({
 /** The one tray below the card, and the notice that currently owns it. */
 function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
   const paidToolHints = useGet(signals.paidToolHints$);
+  const imageMode = useGet(signals.create.mode$) === "image";
+  const imageCategory = useGet(signals.model.mediaModelCategory$) === "image";
+  const clearTask = useSet(signals.taskChips.selectTask$);
+  const clearCategory = useSet(signals.model.setMediaModelCategory$);
+  const onDiscardImage = imageMode
+    ? () => {
+        clearTask(null);
+      }
+    : imageCategory
+      ? () => {
+          clearCategory(null);
+        }
+      : undefined;
   return (
     <ComposerPaidToolNotice
       tools={paidToolHints}
+      onDiscardImage={onDiscardImage}
       fallback={<ComposerTemporaryModelNoticeSlot signals={signals} />}
     />
   );
