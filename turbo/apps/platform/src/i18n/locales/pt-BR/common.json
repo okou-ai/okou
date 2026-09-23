@@ -2170,17 +2170,7 @@
       "relatedArtifacts": "Artefatos relacionados",
       "selectedModelAppliesAfterCurrentRun": "O modelo {{model}} selecionado entrará em vigor após esta execução",
       "thinking": {
-        "assembling": "Juntando as peças...",
-        "brewing": "Preparando uma resposta...",
-        "default": "Pensando...",
-        "mapping": "Mapeando tudo...",
-        "onIt": "Já estou cuidando...",
-        "piecingTogether": "Organizando as ideias...",
-        "shaping": "Estruturando a resposta...",
-        "sketching": "Esboçando os detalhes...",
-        "spinningUp": "Começando...",
-        "tuningIn": "Entrando no contexto...",
-        "wiring": "Conectando tudo..."
+        "default": "Pensando..."
       },
       "viewActivityLogs": "Ver logs de atividade",
       "viewLangfuseTrace": "Ver trace do Langfuse",

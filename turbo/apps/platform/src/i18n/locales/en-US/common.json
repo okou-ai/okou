@@ -2125,17 +2125,7 @@
       "relatedArtifacts": "Related artifacts",
       "selectedModelAppliesAfterCurrentRun": "Next run will use {{model}}",
       "thinking": {
-        "assembling": "Assembling the pieces...",
-        "brewing": "Brewing up a response...",
-        "default": "Thinking...",
-        "mapping": "Mapping it out...",
-        "onIt": "On it...",
-        "piecingTogether": "Piecing things together...",
-        "shaping": "Shaping the response...",
-        "sketching": "Sketching the details...",
-        "spinningUp": "Spinning up...",
-        "tuningIn": "Tuning in...",
-        "wiring": "Wiring it together..."
+        "default": "Thinking..."
       },
       "viewActivityLogs": "View activity logs",
       "viewLangfuseTrace": "View Langfuse trace",

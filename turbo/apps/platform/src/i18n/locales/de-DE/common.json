@@ -2125,17 +2125,7 @@
       "relatedArtifacts": "Zugehörige Artefakte",
       "selectedModelAppliesAfterCurrentRun": "Ihr ausgewähltes {{model}}-Modell wird nach dieser Ausführung wirksam",
       "thinking": {
-        "assembling": "Teile werden zusammengesetzt...",
-        "brewing": "Eine Antwort wird vorbereitet...",
-        "default": "Denke nach...",
-        "mapping": "Schritte werden geplant...",
-        "onIt": "Wird erledigt...",
-        "piecingTogether": "Details werden zusammengefügt...",
-        "shaping": "Antwort wird formuliert...",
-        "sketching": "Details werden ausgearbeitet...",
-        "spinningUp": "Wird vorbereitet...",
-        "tuningIn": "Wird abgestimmt...",
-        "wiring": "Komponenten werden verbunden..."
+        "default": "Denke nach..."
       },
       "viewActivityLogs": "Aktivitätsprotokolle anzeigen",
       "viewLangfuseTrace": "Langfuse-Trace anzeigen",

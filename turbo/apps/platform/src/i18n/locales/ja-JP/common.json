@@ -2118,17 +2118,7 @@
       "relatedArtifacts": "関連するアーティファクト",
       "selectedModelAppliesAfterCurrentRun": "選択した{{model}}モデルはこの実行後に適用されます",
       "thinking": {
-        "assembling": "部品を組み立て中...",
-        "brewing": "返答を作成中...",
-        "default": "考え中...",
-        "mapping": "それをマッピングする...",
-        "onIt": "その上で...",
-        "piecingTogether": "物事をつなぎ合わせる...",
-        "shaping": "応答を形成中...",
-        "sketching": "詳細をスケッチ中...",
-        "spinningUp": "スピンアップ中...",
-        "tuningIn": "チューニング中...",
-        "wiring": "配線を合わせてみると・・・"
+        "default": "考え中..."
       },
       "viewActivityLogs": "アクティビティログを表示する",
       "viewLangfuseTrace": "Langfuse トレースを表示",

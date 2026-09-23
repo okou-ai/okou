@@ -2118,17 +2118,7 @@
       "relatedArtifacts": "相關成果",
       "selectedModelAppliesAfterCurrentRun": "下次執行將使用{{model}}",
       "thinking": {
-        "assembling": "正在拼合各個部分…",
-        "brewing": "正在醞釀回覆…",
-        "default": "思考中…",
-        "mapping": "正在理清思路…",
-        "onIt": "這就去辦…",
-        "piecingTogether": "正在把線索拼起來…",
-        "shaping": "正在打磨回覆…",
-        "sketching": "正在勾勒細節…",
-        "spinningUp": "正在啟動…",
-        "tuningIn": "正在進入狀態…",
-        "wiring": "正在串聯起來…"
+        "default": "思考中…"
       },
       "viewActivityLogs": "檢視活動日誌",
       "viewLangfuseTrace": "檢視Langfuse追蹤",

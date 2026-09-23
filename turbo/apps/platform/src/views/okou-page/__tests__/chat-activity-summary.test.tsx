@@ -4,7 +4,6 @@ import {
   chatThreadActivitySummaryContract,
   type ActivitySummaryResponse,
 } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -23,16 +22,12 @@ import {
   publishRunUpdate,
   readyChat,
   RUN_PATH,
-  thinkingEvent,
 } from "./chat-run-test-fixtures.ts";
 
 const RUN_ID = "d0000000-0000-4000-a000-000000000841";
 const NEXT_RUN_ID = "d0000000-0000-4000-a000-000000000842";
 const PREPARATION = "Preparing the launch checklist";
 const ACTIVITY = "Checking the release evidence";
-const featureSwitches = Object.freeze({
-  [FeatureSwitchKey.ThreadActivitySummary]: true,
-});
 
 function summary(
   overrides: Partial<ActivitySummaryResponse> = {},
@@ -59,27 +54,6 @@ function installActiveRun() {
   return events;
 }
 
-test("Feature off retains initial thinking and makes no summary demand", async () => {
-  const events = installActiveRun();
-  events.push(
-    thinkingEvent({
-      id: "old-thinking",
-      runId: RUN_ID,
-      seqId: 2,
-      text: "Preparing the original response",
-    }),
-  );
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ThreadActivitySummary]: false },
-  });
-
-  await expect(
-    screen.findByLabelText("Preparing the original response"),
-  ).resolves.toBeVisible();
-});
-
 test("A chat event starts demand for the newly active run", async () => {
   const events: ReturnType<typeof promptEvent>[] = [];
   installRunChat({ chatEvents: events, activeRunIds: [RUN_ID] });
@@ -90,7 +64,7 @@ test("A chat event starts demand for the newly active run", async () => {
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await readyChat();
 
   events.push(
@@ -130,7 +104,7 @@ test.each(["available", "unavailable", 500] as const)(
       },
     );
 
-    await setupPage({ context, path: RUN_PATH, featureSwitches });
+    await setupPage({ context, path: RUN_PATH });
     await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 
     recovered = true;
@@ -148,7 +122,7 @@ async function openPendingActivitySummary() {
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 }
 
@@ -196,7 +170,7 @@ test("The loop keeps polling on its fixed interval while hidden", async () => {
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
 
   refreshed = true;
@@ -225,7 +199,7 @@ test("The last resolved summary remains visible while a refresh is loading", asy
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
   refreshing = true;
   await act(async () => {
@@ -267,7 +241,7 @@ test.each(["completed", "cancelled", "replaced", "queued"] as const)(
       },
     );
 
-    await setupPage({ context, path: RUN_PATH, featureSwitches });
+    await setupPage({ context, path: RUN_PATH });
     await firstRequestStarted.promise;
     await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 
@@ -342,7 +316,7 @@ test.each([403, 404, "ineligible"] as const)(
       },
     );
 
-    await setupPage({ context, path: RUN_PATH, featureSwitches });
+    await setupPage({ context, path: RUN_PATH });
     await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
 
     phase = "failed";
@@ -374,7 +348,7 @@ test("A replacement run cannot display the previous run's last result", async ()
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
 
   events.push(
@@ -413,7 +387,7 @@ test("Navigating away prevents an outstanding summary from reviving the indicato
     },
   );
 
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await requestStarted.promise;
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 

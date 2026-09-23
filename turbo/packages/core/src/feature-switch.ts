@@ -75,12 +75,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Deliver a welcome conversation with fixed examples to every member joining a workspace",
     enabled: true,
   },
-  [FeatureSwitchKey.ThreadActivitySummary]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Generate short public activity summaries for active thread subscriptions.",
-    enabled: true,
-  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:

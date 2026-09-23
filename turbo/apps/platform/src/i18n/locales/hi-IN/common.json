@@ -2125,17 +2125,7 @@
       "relatedArtifacts": "संबंधित आर्टिफ़ैक्ट",
       "selectedModelAppliesAfterCurrentRun": "आपका चुना हुआ {{model}} मॉडल इस रन के बाद लागू होगा",
       "thinking": {
-        "assembling": "टुकड़ों को जोड़ना...",
-        "brewing": "एक प्रतिक्रिया तैयार की जा रही है...",
-        "default": "सोच रहा हूँ...",
-        "mapping": "इसे मैप करना...",
-        "onIt": "उस पर...",
-        "piecingTogether": "चीजों को एक साथ जोड़ना...",
-        "shaping": "प्रतिक्रिया को आकार देना...",
-        "sketching": "विवरण का रेखाचित्र बनाना...",
-        "spinningUp": "घूम रहा है...",
-        "tuningIn": "तालमेल बिठाना...",
-        "wiring": "इसे एक साथ जोड़ना..."
+        "default": "सोच रहा हूँ..."
       },
       "viewActivityLogs": "गतिविधि लॉग देखें",
       "viewLangfuseTrace": "Langfuse ट्रेस देखें",

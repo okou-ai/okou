@@ -2118,17 +2118,7 @@
       "relatedArtifacts": "Artefak terkait",
       "selectedModelAppliesAfterCurrentRun": "Model {{model}} yang Anda pilih akan berlaku setelah eksekusi ini",
       "thinking": {
-        "assembling": "Menyusun bagian-bagiannya...",
-        "brewing": "Meracik respons...",
-        "default": "Sedang berpikir...",
-        "mapping": "Memetakan...",
-        "onIt": "Sedang dikerjakan...",
-        "piecingTogether": "Menyusun semuanya...",
-        "shaping": "Membentuk respons...",
-        "sketching": "Membuat sketsa detail...",
-        "spinningUp": "Menyiapkan...",
-        "tuningIn": "Menyesuaikan...",
-        "wiring": "Menyambungkannya..."
+        "default": "Sedang berpikir..."
       },
       "viewActivityLogs": "Lihat log aktivitas",
       "viewLangfuseTrace": "Lihat trace Langfuse",

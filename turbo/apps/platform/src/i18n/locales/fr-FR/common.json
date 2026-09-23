@@ -2170,17 +2170,7 @@
       "relatedArtifacts": "Artefacts associés",
       "selectedModelAppliesAfterCurrentRun": "Votre modèle sélectionné {{model}} entrera en vigueur après cette exécution",
       "thinking": {
-        "assembling": "Assemblage des pièces...",
-        "brewing": "Préparation d'une réponse...",
-        "default": "Réflexion en cours...",
-        "mapping": "Cartographie en cours...",
-        "onIt": "En cours...",
-        "piecingTogether": "Mise en place des éléments...",
-        "shaping": "Formation de la réponse...",
-        "sketching": "Esquisse des détails...",
-        "spinningUp": "Démarrage...",
-        "tuningIn": "Réglage en cours...",
-        "wiring": "Branchement des éléments..."
+        "default": "Réflexion en cours..."
       },
       "viewActivityLogs": "Voir les journaux d'activité",
       "viewLangfuseTrace": "Voir la trace Langfuse",

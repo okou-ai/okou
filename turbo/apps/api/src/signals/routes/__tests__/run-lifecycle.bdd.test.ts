@@ -15884,11 +15884,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       }),
     ).toContain("Codex follow-up note");
     const codexThinking = afterCodex.events.filter((message) => {
-      return (
-        message.eventType === "output.thinking" &&
-        message.runId === runId &&
-        message.runEventId !== "thinking:initial"
-      );
+      return message.eventType === "output.thinking" && message.runId === runId;
     });
     expect(codexThinking).toStrictEqual([
       expect.objectContaining({
