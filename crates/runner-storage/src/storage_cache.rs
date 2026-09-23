@@ -13,8 +13,9 @@
 //! re-fetching.
 //!
 //! Production source preparation first selects admissible extracted-file hits
-//! and pins their owned bytes in the plan. Those identities bypass archive
-//! prefetch and staging entirely.
+//! and pins their owned bytes in the plan. Groups whose targets all use decoded
+//! delivery bypass archive prefetch and staging entirely; mixed groups retain
+//! archive delivery for their unselected targets.
 //! Each selected mount must fit a bounded Guest request; larger combined
 //! manifests are batched by the executor without increasing payload budgets.
 //!
@@ -1755,7 +1756,6 @@ fn reuse_decoded(
         let Some(mount) = plan.decoded_mount(target.handle) else {
             continue;
         };
-        let mount = mount.to_owned();
         if !plan.decoded_entry_fits(target.handle)? {
             continue;
         }
@@ -1767,7 +1767,7 @@ fn reuse_decoded(
         }
         payload_bytes += added;
         mount_count += 1;
-        plan.add_decoded(mount, Arc::clone(&files));
+        plan.add_decoded(mount.to_owned(), Arc::clone(&files));
     }
     Ok(())
 }
@@ -2586,9 +2586,10 @@ fn collect_targets(candidates: Vec<CacheArchiveCandidate>) -> Vec<CacheTarget> {
 /// [`FreshArchiveDelivery::cancel_and_drain`] before abandoning the plan.
 /// Admitted cache misses reuse the Runner's bounded same-origin HTTP client.
 /// Plans without an admitted miss do not initialize a client or load CA roots.
-/// Select extracted files using the same source groups before archive admission;
-/// selected hits never start an archive request. A prepared plan keeps its pins
-/// and does not repeat the lookup during population.
+/// Select extracted files using the same source groups before archive admission.
+/// A group skips its archive request only when every target uses decoded files;
+/// mixed groups still request an archive for their unselected targets. A prepared
+/// plan keeps its pins and does not repeat the lookup during population.
 pub async fn prepare_fresh_archive_delivery(
     plan: &mut StoragePlan,
     home: &HomePaths,

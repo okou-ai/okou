@@ -212,16 +212,24 @@ async fn same_key_payload_limit_keeps_a_bounded_decoded_prefix() {
     let files = plan.take_decoded();
     assert_eq!(files.len(), 59);
     let manifest = plan.into_guest_manifest();
-    assert!(
-        manifest.storages[files.len()]
-            .archive_url
-            .as_deref()
-            .unwrap()
-            .starts_with("file://")
-    );
+    for (index, entry) in manifest.storages.iter().enumerate() {
+        if index < files.len() {
+            assert_eq!(entry.archive_url.as_deref(), Some(url));
+            assert_eq!(files[index].0, entry.mount_path);
+        } else {
+            assert!(entry.archive_url.as_deref().unwrap().starts_with("file://"));
+        }
+    }
     guest_contracts::storage_files::validate_bindings(
         &manifest,
         files.iter().map(|(mount, _)| mount.as_str()),
+    )
+    .unwrap();
+    guest_contracts::storage_files::encode(
+        &files
+            .iter()
+            .map(|(mount, cached)| (mount.as_str(), cached.files.as_slice()))
+            .collect::<Vec<_>>(),
     )
     .unwrap();
     cache.shutdown().await;
