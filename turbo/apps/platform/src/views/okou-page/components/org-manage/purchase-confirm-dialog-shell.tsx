@@ -62,7 +62,7 @@ export function PurchaseConfirmDialogShell({
       }}
     >
       <DialogContent smMaxWidth={420}>
-        <DialogHeader>
+        <DialogHeader className="pr-8">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
