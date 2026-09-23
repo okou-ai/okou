@@ -8171,13 +8171,11 @@ function ConnectorsPopoverButton({
           />
         )}
       </PopoverContent>
-      {computerUse && (
-        <ComputerUseDownloadDialog
-          open={downloadDialogOpen}
-          onOpenChange={setDownloadDialogOpen}
-          downloadUrl={computerUse.downloadUrl}
-        />
-      )}
+      <OptionalComputerUseDownloadDialog
+        computerUse={computerUse}
+        open={downloadDialogOpen}
+        onOpenChange={setDownloadDialogOpen}
+      />
       {agentId && permissionConnector && (
         <ComposerConnectorPermissionDialog
           signals={signals}
@@ -8191,6 +8189,24 @@ function ConnectorsPopoverButton({
       )}
     </Popover>
   );
+}
+
+function OptionalComputerUseDownloadDialog({
+  computerUse,
+  open,
+  onOpenChange,
+}: {
+  computerUse: ComposerComputerUse | undefined;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return computerUse ? (
+    <ComputerUseDownloadDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      downloadUrl={computerUse.downloadUrl}
+    />
+  ) : null;
 }
 
 function ComputerUseDownloadDialog({
@@ -10114,7 +10130,9 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   const computerUseHosts =
     computerUseHostsState.state === "hasData"
       ? computerUseHostsState.data.computerUseHosts
-      : lastComputerUseHosts;
+      : computerUseHostsState.state === "hasError"
+        ? []
+        : lastComputerUseHosts;
   const resolvedComputerUseHostId = selectedComputerUseHostId(
     computerUseHosts,
     storedComputerUseHostId,

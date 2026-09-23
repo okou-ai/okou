@@ -2,6 +2,7 @@ import {
   computerUseHostsContract,
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
+import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -59,6 +60,7 @@ function computerHost(args: {
 
 function installComputerHosts(
   readHosts: () => readonly ComputerUseHost[] | null,
+  cloudBrowserEnabledByDefault = true,
 ): void {
   context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
     const hosts = readHosts();
@@ -71,6 +73,32 @@ function installComputerHosts(
       });
     }
     return respond(200, { hosts: [...hosts] });
+  });
+  context.mocks.api(composerConnectorsContract.overview, ({ respond }) => {
+    const hosts = readHosts();
+    if (hosts === null) {
+      return respond(403, {
+        error: {
+          code: "FORBIDDEN",
+          message: "Computer Use hosts are temporarily unavailable",
+        },
+      });
+    }
+    return respond(200, {
+      builtinConnectors: [],
+      customConnectors: [],
+      accountSummaries: [],
+      computerUseHosts: hosts.map((host) => {
+        return {
+          id: host.id,
+          hostName: host.hostName ?? host.displayName,
+          displayName: host.displayName,
+          lastSeenAt: host.lastSeenAt,
+          status: host.status,
+        };
+      }),
+      cloudBrowserEnabledByDefault,
+    });
   });
 }
 
@@ -113,6 +141,7 @@ async function waitForComputerSend(
 function installNewComputerChat(
   sends: CapturedComputerSend[],
   hosts: readonly ComputerUseHost[],
+  cloudBrowserEnabledByDefault = true,
 ): void {
   installRunChat({
     onSendRequest(body) {
@@ -129,7 +158,7 @@ function installNewComputerChat(
   });
   installComputerHosts(() => {
     return hosts;
-  });
+  }, cloudBrowserEnabledByDefault);
 }
 
 async function openComputerDownloadDialog(title: string): Promise<HTMLElement> {
@@ -212,7 +241,7 @@ test("Use the saved Cloud browser default for an untouched new chat", async () =
   context.mocks.data.userPreferences({
     cloudBrowserEnabledByDefault: false,
   });
-  installNewComputerChat(sends, []);
+  installNewComputerChat(sends, [], false);
 
   await setupPage({
     context,
