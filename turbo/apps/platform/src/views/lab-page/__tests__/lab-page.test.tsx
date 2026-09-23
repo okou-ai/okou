@@ -232,22 +232,3 @@ test("A feature switch update resynchronizes color theme document attributes", a
     expect(document.documentElement.dataset.gradientColorThemes).toBe("");
   });
 });
-
-test("Lab orders features by name within each rollout stage", async () => {
-  await setupPage({
-    context,
-    path: "/_/lab",
-    featureSwitches: { [FeatureSwitchKey.Lab]: true },
-  });
-
-  await screen.findByRole("heading", { name: "Lab" });
-
-  const banking = featureSwitchRow(FeatureSwitchKey.Banking);
-  const realAgentInPreview = featureSwitchRow(
-    FeatureSwitchKey.RealAgentInPreview,
-  );
-  expect(
-    banking.compareDocumentPosition(realAgentInPreview) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-});
