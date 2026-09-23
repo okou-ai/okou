@@ -123,12 +123,94 @@ try {
     "UPDATE cloudflare_access_configs SET encrypted_client_secret=''",
     { code: "23514" },
   );
-  await client.query(
-    "UPDATE ssh_connections SET cloudflare_access_id=NULL,port=22",
+  await migrate("1203_cloudflare_access_org_scope");
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT scope, user_id FROM cloudflare_access_configs ORDER BY id",
+      )
+    ).rows,
+    [
+      { scope: "personal", user_id: "user" },
+      { scope: "personal", user_id: "foreign" },
+    ],
   );
-  await client.query("DELETE FROM cloudflare_access_configs");
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT cloudflare_access_id, needs_rebind FROM ssh_connections",
+      )
+    ).rows,
+    [
+      {
+        cloudflare_access_id: "00000000-0000-4000-8000-000000000004",
+        needs_rebind: false,
+      },
+    ],
+  );
+  await client.query(`
+    INSERT INTO cloudflare_access_configs (id,org_id,user_id,scope,name,encrypted_client_id,encrypted_client_secret)
+      VALUES ('00000000-0000-4000-8000-000000000006','org',NULL,'organization','Shared','encrypted-id','encrypted-secret'),
+        ('00000000-0000-4000-8000-000000000007','other',NULL,'organization','Outside','encrypted-id','encrypted-secret');
+  `);
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT scope, user_id FROM cloudflare_access_configs WHERE id='00000000-0000-4000-8000-000000000004'",
+      )
+    ).rows,
+    [{ scope: "personal", user_id: "user" }],
+  );
+  await rejects(
+    "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000005',port=443",
+    {
+      code: "23514",
+      constraint: "ssh_connections_cloudflare_access_personal_owner_guard",
+    },
+  );
+  await rejects(
+    "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000007',port=443",
+    { code: "23503", constraint: "ssh_connections_cloudflare_access_org_fk" },
+  );
+  await client.query(
+    "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000004',port=443",
+  );
+  assert.deepEqual(
+    (await client.query("SELECT needs_rebind FROM ssh_connections")).rows,
+    [{ needs_rebind: false }],
+  );
+  await client.query(
+    "UPDATE ssh_connections SET cloudflare_access_id='00000000-0000-4000-8000-000000000006'",
+  );
+  await rejects(
+    "DELETE FROM cloudflare_access_configs WHERE id='00000000-0000-4000-8000-000000000006'",
+    {
+      code: /^(23503|23001)$/,
+      constraint: "ssh_connections_cloudflare_access_org_fk",
+    },
+  );
+  await rejects("UPDATE ssh_connections SET needs_rebind=true", {
+    code: "23514",
+    constraint: "chk_ssh_connections_needs_rebind_unbound",
+  });
+  await client.query(
+    "UPDATE ssh_connections SET cloudflare_access_id=NULL,needs_rebind=true",
+  );
+  await rejects("UPDATE ssh_connections SET port=22", {
+    code: "23514",
+    constraint: "chk_ssh_connections_cloudflare_access_destination",
+  });
+  await client.query("UPDATE ssh_connections SET needs_rebind=false,port=22");
+  await rejects(
+    "UPDATE cloudflare_access_configs SET scope='organization',user_id=NULL WHERE id='00000000-0000-4000-8000-000000000004'",
+    { code: "23514", constraint: "cloudflare_access_scope_change_guard" },
+  );
+  await rejects(
+    "INSERT INTO cloudflare_access_configs (id,org_id,user_id,scope,name,encrypted_client_id,encrypted_client_secret) VALUES ('00000000-0000-4000-8000-000000000008','org',NULL,'personal','Invalid','encrypted-id','encrypted-secret')",
+    { code: "23514", constraint: "chk_cloudflare_access_configs_scope_owner" },
+  );
   await client.query("ROLLBACK");
-  console.log("Cloudflare Access additive migration and constraints passed");
+  console.log("Cloudflare Access migrations and scoped constraints passed");
 } finally {
   await client.end();
 }

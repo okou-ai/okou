@@ -769,6 +769,107 @@ describe("Cloudflare Access owner configuration", () => {
 });
 
 describe("protected SSH authority", () => {
+  it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
+    const f = await fixture();
+    expect((await resolve(f)).outcome).toBe("resolved_access");
+    const changed = await accept(
+      state().action({
+        body: {
+          action: "set-needs-rebind",
+          orgId: f.orgId,
+          userId: f.userId,
+          connectionId: f.host.id,
+        },
+      }),
+      [200],
+    );
+    expect(changed.body.generation).toBe(f.host.generation + 1);
+    await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    const inventory = setupApp({ context, routes: sshAccessRoutes })(
+      sshHostsContract,
+    );
+    expect(
+      (await accept(inventory.list({ headers: f.guestHeaders }), [200])).body
+        .hosts,
+    ).toStrictEqual([]);
+    expect(
+      (
+        await accept(
+          runner().pin({
+            headers: runnerHeaders,
+            params: f.params,
+            body: {
+              ...f.body,
+              expectedGeneration: changed.body.generation ?? 0,
+              observedHostKey: hostKey,
+            },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+    expect(
+      (
+        await accept(
+          runner().observe({
+            headers: runnerHeaders,
+            params: f.params,
+            body: {
+              ...f.body,
+              expectedGeneration: changed.body.generation ?? 0,
+              observedAt: nowDate().toISOString(),
+              failureReason: "access_rejected",
+            },
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+  });
+
+  it("resolves a same-organization shared Access row for another member", async () => {
+    const first = owner();
+    const personal = await config();
+    const second = owner({ orgId: first.orgId });
+    const r = await runtime(second);
+    const h = await host();
+    const bound = await accept(
+      state().action({
+        body: {
+          action: "bind-shared-access",
+          orgId: second.orgId,
+          userId: second.userId,
+          connectionId: h.id,
+          sourceConfigId: personal.id,
+        },
+      }),
+      [200],
+    );
+    expect(bound.body.configId).toBeDefined();
+    const resolved = await accept(
+      runner().resolve({
+        headers: runnerHeaders,
+        params: { runId: r.runId },
+        body: { connectionId: h.id, runnerIdentity: r.runnerIdentity },
+      }),
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      outcome: "resolved_access",
+      access: { configId: bound.body.configId },
+    });
+    const inventory = setupApp({ context, routes: sshAccessRoutes })(
+      sshHostsContract,
+    );
+    expect(
+      (
+        await accept(inventory.list({ headers: r.guestHeaders }), [200])
+      ).body.hosts.map(({ id }) => {
+        return id;
+      }),
+    ).toStrictEqual([h.id]);
+  });
+
   it("uses existing protected hosts after a later Agent receives SSH permission", async () => {
     const f = await fixture();
     const later = await runtime(f);
