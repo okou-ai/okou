@@ -9,14 +9,14 @@ import {
 } from "../feature-switch";
 
 describe("FeatureSwitchKey", () => {
-  it("uses the canonical internal switch names", () => {
+  it("uses the canonical switch names", () => {
     expect(FeatureSwitchKey.PersonalModelProviderAccounts).toBe(
-      "_multipleSubscriptions",
+      "multipleSubscriptions",
     );
     expect(FeatureSwitchKey.Dummy).toBe("_dummy");
     expect(FeatureSwitchKey.Lab).toBe("_lab");
     expect(FeatureSwitchKey.SidebarSubscriptionUsage).toBe(
-      "_sidebarSubscriptionUsage",
+      "sidebarSubscriptionUsage",
     );
     expect(FeatureSwitchKey.FeishuIntegration).toBe("_feishuIntegration");
     expect(FeatureSwitchKey.ChatPreference).toBe("chatPreference");
@@ -710,6 +710,12 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
       "beta",
     );
+    expect(
+      metadata[FeatureSwitchKey.PersonalModelProviderAccounts].rolloutStage,
+    ).toBe("beta");
+    expect(
+      metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
+    ).toBe("beta");
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );
