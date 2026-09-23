@@ -24,7 +24,7 @@ test("Clerk sign-out preserves other accounts, while an owner-bound pending dele
     database.close();
   }
 
-  let status: "active" | "pending" = "active";
+  let status: "active" | "pending" | "complete" = "active";
   context.mocks.api(accountErasureStatusContract.capability, ({ respond }) => {
     return respond(200, {
       token: `capability-${owner}`,
@@ -49,6 +49,39 @@ test("Clerk sign-out preserves other accounts, while an owner-bound pending dele
   });
 
   status = "pending";
+  emitMockedClerkEvent();
+  await waitFor(async () => {
+    const names = (await indexedDB.databases()).map((entry) => {
+      return entry.name;
+    });
+    expect(names).not.toContain(ownerDbName);
+    expect(names).toContain(peerDbName);
+  });
+
+  status = "complete";
+  const staleDatabase = await openDB(ownerDbName, 1, {
+    upgrade(db) {
+      db.createObjectStore("private");
+    },
+  });
+  await staleDatabase.put("private", "late bytes", "key");
+  staleDatabase.close();
+  emitMockedClerkEvent();
+  await waitFor(async () => {
+    const names = (await indexedDB.databases()).map((entry) => {
+      return entry.name;
+    });
+    expect(names).not.toContain(ownerDbName);
+    expect(names).toContain(peerDbName);
+  });
+
+  const laterDatabase = await openDB(ownerDbName, 1, {
+    upgrade(db) {
+      db.createObjectStore("private");
+    },
+  });
+  await laterDatabase.put("private", "later bytes", "key");
+  laterDatabase.close();
   emitMockedClerkEvent();
   await waitFor(async () => {
     const names = (await indexedDB.databases()).map((entry) => {

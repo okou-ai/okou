@@ -28,6 +28,14 @@ export function createStorageSignals(
     return storage().getItem(key);
   });
 
+  // Storage events from another tab do not invalidate this store's computed
+  // value. Callers that poll shared storage can refresh before reading it.
+  const refresh$ = command(({ set }) => {
+    set(reload$, (previous) => {
+      return previous + 1;
+    });
+  });
+
   const set$ = command(({ set }, value: string) => {
     set(registeredKeys$, (registeredKeys) => {
       if (registeredKeys?.has(key)) {
@@ -51,5 +59,5 @@ export function createStorageSignals(
     });
   });
 
-  return Object.freeze({ get$, set$, clear$ });
+  return Object.freeze({ get$, set$, clear$, refresh$ });
 }

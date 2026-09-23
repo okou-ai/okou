@@ -59,6 +59,7 @@ const issueStatusCapability$ = command(
     if (clerk.user?.id !== userId) {
       return false;
     }
+    set(capabilityStorage.refresh$);
     const prior = savedCapabilities(get(capabilityStorage.get$));
     set(
       capabilityStorage.set$,
@@ -78,6 +79,7 @@ const issueStatusCapability$ = command(
 
 const checkSavedDeletionStatuses$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    set(capabilityStorage.refresh$);
     const saved = savedCapabilities(get(capabilityStorage.get$));
     for (const capability of saved) {
       signal.throwIfAborted();
@@ -100,19 +102,9 @@ const checkSavedDeletionStatuses$ = command(
       }
       await set(deleteAccountLocalData$, response.body.userId, signal);
       signal.throwIfAborted();
-      if (response.body.status === "complete") {
-        // Remove only this credential after its local purge succeeds. Pending
-        // jobs remain checked so delayed local writes are purged on replay.
-        const current = savedCapabilities(get(capabilityStorage.get$));
-        set(
-          capabilityStorage.set$,
-          JSON.stringify(
-            current.filter((entry) => {
-              return entry.userId !== capability.userId;
-            }),
-          ),
-        );
-      }
+      // Keep the verified read-only credential after server completion.
+      // Another open tab may still recreate account-scoped cache bytes; a
+      // later poll or renderer restart must be able to purge them again.
     }
   },
 );
