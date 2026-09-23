@@ -574,6 +574,7 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
+    expect(readBack.body.callbackDelivered).toBeFalsy();
     const serializedReadBack = JSON.stringify(readBack.body);
     expect(serializedReadBack).not.toContain("#password");
     expect(serializedReadBack).not.toContain("#username");
@@ -582,6 +583,49 @@ describe("Browser user-action route", () => {
     expect(providerReadCount).toBe(0);
     expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
     expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
+
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        threadId: current.threadId,
+        prompt: "Another message with a different event ID",
+        clientEventId: randomUUID(),
+      },
+      [201],
+    );
+    const beforeCallback = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: created.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(beforeCallback.body.callbackDelivered).toBeFalsy();
+
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        threadId: current.threadId,
+        prompt: "Continue after password entry",
+        clientEventId: created.body.action.callbackIds.success.clientEventId,
+        chatThreadSortEventId:
+          created.body.action.callbackIds.success.chatThreadSortEventId,
+      },
+      [201],
+    );
+    const afterCallback = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: created.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(afterCallback.body.callbackDelivered).toBeTruthy();
+    expect(JSON.stringify(afterCallback.body)).not.toContain(
+      "request-memory-only",
+    );
 
     const duplicateApply = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
@@ -687,6 +731,34 @@ describe("Browser user-action route", () => {
     expect(completedAgain.body.callbackIds).toStrictEqual(
       completed.body.callbackIds,
     );
+    const beforeDirectCallback = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: direct.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(beforeDirectCallback.body.callbackDelivered).toBeFalsy();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        threadId: current.threadId,
+        prompt: "Continue after verification",
+        clientEventId: completed.body.callbackIds.success.clientEventId,
+        chatThreadSortEventId:
+          completed.body.callbackIds.success.chatThreadSortEventId,
+      },
+      [201],
+    );
+    const afterDirectCallback = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: direct.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(afterDirectCallback.body.callbackDelivered).toBeTruthy();
     expect(providerReadCount).toBe(0);
     expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
     expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
@@ -725,6 +797,34 @@ describe("Browser user-action route", () => {
     expect(cancelledAgain.body.callbackIds).toStrictEqual(
       cancelled.body.callbackIds,
     );
+    const beforeCancellationCallback = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: cancellable.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(beforeCancellationCallback.body.callbackDelivered).toBeFalsy();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId: agent.agentId,
+        threadId: current.threadId,
+        prompt: "The user cancelled the browser interaction request.",
+        clientEventId: cancelled.body.callbackIds.cancellation.clientEventId,
+        chatThreadSortEventId:
+          cancelled.body.callbackIds.cancellation.chatThreadSortEventId,
+      },
+      [201],
+    );
+    const afterCancellationCallback = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: cancellable.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(afterCancellationCallback.body.callbackDelivered).toBeTruthy();
     expect(providerReadCount).toBe(0);
     expect(context.mocks.browserUseCdp.connect).not.toHaveBeenCalled();
     expect(context.mocks.browserUseCdp.command).not.toHaveBeenCalled();
