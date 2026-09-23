@@ -7,7 +7,10 @@ import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
 import { deleteAccountLocalData$ } from "./external/account-erasure-local-data.ts";
-import { localStorageSignals } from "./external/local-storage.ts";
+import {
+  listLocalStorageEntries,
+  localStorageSignals,
+} from "./external/local-storage.ts";
 import {
   bestEffort,
   detach,
@@ -19,22 +22,27 @@ import {
   withCleanup,
 } from "./utils.ts";
 
-const capabilityStorage = localStorageSignals(
-  "account-erasure-status-capabilities",
-);
+const CAPABILITY_KEY_PREFIX = "account-erasure-status-capability:";
 const capabilitySchema = z.object({
   userId: z.string().min(1),
   token: z.string().min(1),
 });
 type SavedCapability = z.infer<typeof capabilitySchema>;
-const capabilitiesSchema = z.array(capabilitySchema).max(64);
 const POLL_MS = 60_000;
 
-function savedCapabilities(raw: string | null): SavedCapability[] {
-  const parsed = capabilitiesSchema.safeParse(
-    raw === null ? [] : jsonParseOr<unknown>(raw, null),
-  );
-  return parsed.success ? parsed.data : [];
+function capabilityKey(userId: string): string {
+  return `${CAPABILITY_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+function savedCapabilities(): SavedCapability[] {
+  return listLocalStorageEntries(CAPABILITY_KEY_PREFIX).flatMap((entry) => {
+    const parsed = capabilitySchema.safeParse(
+      jsonParseOr<unknown>(entry.value, null),
+    );
+    return parsed.success && entry.key === capabilityKey(parsed.data.userId)
+      ? [parsed.data]
+      : [];
+  });
 }
 
 const issueStatusCapability$ = command(
@@ -59,19 +67,9 @@ const issueStatusCapability$ = command(
     if (clerk.user?.id !== userId) {
       return false;
     }
-    set(capabilityStorage.refresh$);
-    const prior = savedCapabilities(get(capabilityStorage.get$));
     set(
-      capabilityStorage.set$,
-      JSON.stringify([
-        ...prior.filter((saved) => {
-          return saved.userId !== userId;
-        }),
-        {
-          userId,
-          token: response.body.token,
-        },
-      ]),
+      localStorageSignals(capabilityKey(userId)).set$,
+      JSON.stringify({ userId, token: response.body.token }),
     );
     return true;
   },
@@ -79,8 +77,7 @@ const issueStatusCapability$ = command(
 
 const checkSavedDeletionStatuses$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    set(capabilityStorage.refresh$);
-    const saved = savedCapabilities(get(capabilityStorage.get$));
+    const saved = savedCapabilities();
     for (const capability of saved) {
       signal.throwIfAborted();
       const response = await accept(
