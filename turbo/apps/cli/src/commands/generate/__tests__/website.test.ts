@@ -106,11 +106,11 @@ describe("okou generate website command", () => {
       "okou host ./generated/mockups/clearpath-demo --site clearpath-demo --spa\n",
     );
     expect(stdout).toContain(
-      "With privateArtifacts enabled, new artifacts default to only-me.",
+      "Hosted websites are public: anyone with the returned URL can open them.",
     );
   });
 
-  it("preserves public visibility for website delivery without sharing supporting images", async () => {
+  it("provides a valid public hosting command without sharing supporting images", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -119,17 +119,13 @@ describe("okou generate website command", () => {
       "A launch site",
       "--site-slug",
       "launch-site",
-      "--visibility",
-      "public",
     ]);
 
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain(
-      "okou host ./generated/mockups/launch-site --site launch-site --spa --visibility public\n",
+      "okou host ./generated/mockups/launch-site --site launch-site --spa\n",
     );
-    expect(stdout).toContain(
-      "okou web upload-file -f <file> --visibility public",
-    );
+    expect(stdout).toContain("okou web upload-file -f <file>");
     expect(stdout).toContain("do not make supporting media public separately");
     const imageWorkflow = stdout.split("\n").find((line) => {
       return line.startsWith("- Image workflow:");
@@ -347,6 +343,5 @@ describe("okou generate website command", () => {
     expect(helpOutput).toContain("--title <text>");
     expect(helpOutput).toContain("--design-system <id>");
     expect(helpOutput).toContain("--template <id>");
-    expect(helpOutput).toContain("--visibility <visibility>");
   });
 });

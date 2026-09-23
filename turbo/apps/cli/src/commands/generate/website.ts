@@ -14,10 +14,6 @@ import {
 } from "../shared/resource-listing";
 import { dispatchGenerate } from "./lib/dispatch";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
-import {
-  createArtifactVisibilityOption,
-  type ArtifactVisibility,
-} from "../shared/artifact-visibility";
 
 const WEBSITE_TARGET = "website";
 const WEBSITE_USAGE_COMMAND = "okou generate website";
@@ -28,7 +24,6 @@ interface WebsiteOptions {
   readonly designSystem?: string;
   readonly siteSlug?: string;
   readonly title?: string;
-  readonly visibility?: ArtifactVisibility;
 }
 
 function selectedTemplateDetails(
@@ -85,7 +80,6 @@ export const websiteCommand = new Command()
   .option("--prompt <text>", "Website prompt; can also be piped via stdin")
   .option("--site-slug <slug>", "Hosted site slug override")
   .option("--title <text>", "Requested site title or name")
-  .addOption(createArtifactVisibilityOption())
   .option(
     "--design-system <id>",
     "Design system id from the registry (see Design Systems below). Accepts either 'apple' or 'design-system:apple'.",
@@ -167,7 +161,6 @@ ${formatRegistryListing(templates, "website templates")}`;
         prompt,
         slugSource: options.title,
         siteSlug: options.siteSlug,
-        visibility: options.visibility,
         details: [
           `Requested title/site name: ${options.title ?? "not specified"}`,
           `Selected design system: ${

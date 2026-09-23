@@ -9965,6 +9965,593 @@ describe("usage pack allocation management", () => {
     ]);
   });
 
+  async function checkoutTwoMemberScheduleFixture(
+    otherUserId: string,
+    otherUsagePackUsd: 20 | 50,
+  ): Promise<ManagedUsagePackFixture> {
+    const actor = createOrgFixture();
+    authenticateOrg(actor);
+    mockClerkOrganization(actor);
+    const customerId = `cus_${randomUUID()}`;
+    const subscriptionId = `sub_${randomUUID()}`;
+    const checkoutSessionId = `cs_${randomUUID()}`;
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: actor.userId },
+            createdAt: now(),
+          },
+          {
+            role: "org:member",
+            publicUserData: { userId: otherUserId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      id: checkoutSessionId,
+      url: `https://checkout.stripe.test/${checkoutSessionId}`,
+    });
+    await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      ).create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          ...usagePackCheckoutBody(actor.userId),
+          memberUsagePacks: [
+            { memberId: actor.userId, usagePackUsd: 50 },
+            { memberId: otherUserId, usagePackUsd: otherUsagePackUsd },
+          ],
+        },
+      }),
+      [200],
+    );
+    const usagePackSubscriptionId = stripeInputMetadata(
+      context.mocks.stripe.checkout.sessions.create.mock.calls.at(-1)?.[0],
+    ).usagePackSubscriptionId;
+    if (!usagePackSubscriptionId) {
+      throw new Error("Checkout did not identify its usage pack subscription");
+    }
+    const fixture: ManagedUsagePackFixture = {
+      ...actor,
+      customerId,
+      subscriptionId,
+      usagePackSubscriptionId,
+      billingPeriod: {
+        start: currentSecond() - 15 * 86_400,
+        end: currentSecond() + 15 * 86_400,
+      },
+      tier: "pro",
+    };
+    onTestFinished(async () => {
+      await usagePackStateAction({
+        action: "cleanup",
+        orgId: actor.orgId,
+        usagePackSubscriptionId,
+        deleteGrants: true,
+        deleteOrgMetadata: true,
+      });
+    });
+    const quantities = new Map<string, number>([[TEST_PRICE_USAGE_PACK_50, 1]]);
+    const otherPriceId = priceIdForManagedUsagePack(otherUsagePackUsd);
+    quantities.set(otherPriceId, (quantities.get(otherPriceId) ?? 0) + 1);
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(fixture, quantities),
+    );
+    await postManagedUsagePackEvent(
+      "invoice.paid",
+      managedUsagePackInvoice(fixture, {
+        invoiceId: `in_${randomUUID()}`,
+        quantities,
+      }),
+    );
+    const management = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackManagementContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(management.body.allocations).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: actor.userId,
+          usagePackUsd: 50,
+          pendingChange: null,
+        }),
+        expect.objectContaining({
+          memberId: otherUserId,
+          usagePackUsd: otherUsagePackUsd,
+          pendingChange: null,
+        }),
+      ]),
+    );
+    return fixture;
+  }
+
+  async function scheduleTestMemberCredits() {
+    const credits = await accept(
+      setupApp({ context, routes: billingUsagePackCreditsRoutes })(
+        billingUsagePackCreditsContract,
+      ).get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    if (!credits.body.memberCredits) {
+      throw new Error("Admin credit response has no member balances");
+    }
+    return credits.body.memberCredits;
+  }
+
+  it("keeps a package downgrade scheduled while another member upgrades", async () => {
+    const upgradedUserId = `user_${randomUUID()}`;
+    const fixture = await checkoutTwoMemberScheduleFixture(upgradedUserId, 20);
+    const downgradedUserId = fixture.userId;
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    const sourceSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([
+        [TEST_PRICE_USAGE_PACK_50, 1],
+        [TEST_PRICE_USAGE_PACK_20, 1],
+      ]),
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      sourceSubscription,
+    );
+    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+      id: scheduleId,
+    });
+    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+      id: scheduleId,
+    });
+    mockUsagePackSubscriptionPackagePreviews({
+      immediateAmountCents: 0,
+      nextRecurringAmountCents: 4000,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+      targetPriceId: TEST_PRICE_USAGE_PACK_20,
+    });
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+    const downgradePreview = await accept(
+      client.previewSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "pro",
+          memberUsagePacks: [
+            { memberId: downgradedUserId, usagePackUsd: 20 },
+            { memberId: upgradedUserId, usagePackUsd: 20 },
+          ],
+        },
+      }),
+      [200],
+    );
+    await accept(
+      client.confirmSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { changeId: downgradePreview.body.changeId },
+      }),
+      [200],
+    );
+
+    const scheduledSubscription = {
+      ...sourceSubscription,
+      schedule: scheduleId,
+    };
+    const futureEnd = fixture.billingPeriod.end + 30 * 86_400;
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      scheduledSubscription,
+    );
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
+      id: scheduleId,
+      end_behavior: "release",
+      current_phase: {
+        start_date: fixture.billingPeriod.start,
+        end_date: fixture.billingPeriod.end,
+      },
+      phases: [
+        {
+          start_date: fixture.billingPeriod.start,
+          end_date: fixture.billingPeriod.end,
+          items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+          ],
+        },
+        {
+          start_date: fixture.billingPeriod.end,
+          end_date: futureEnd,
+          items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_20, quantity: 2 },
+          ],
+        },
+      ],
+    });
+    mockUsagePackSubscriptionPackagePreviews({
+      immediateAmountCents: 1500,
+      nextRecurringAmountCents: 7000,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_20,
+      targetPriceId: TEST_PRICE_USAGE_PACK_50,
+    });
+    const preview = await accept(
+      client.previewSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "pro",
+          memberUsagePacks: [
+            { memberId: downgradedUserId, usagePackUsd: 20 },
+            { memberId: upgradedUserId, usagePackUsd: 50 },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(preview.body).toStrictEqual(
+      expect.objectContaining({
+        immediateAmountCents: 1500,
+        nextRecurringAmountCents: 7000,
+      }),
+    );
+    const beforeCredits = await scheduleTestMemberCredits();
+    const upgradedCreditsBefore = beforeCredits.find((member) => {
+      return member.memberId === upgradedUserId;
+    })?.totalCredits;
+    if (upgradedCreditsBefore === undefined) {
+      throw new Error("Upgrading member has no initial credits");
+    }
+    const prorationTimestamp = Math.floor(
+      new Date(preview.body.prorationDate).getTime() / 1000,
+    );
+    const paidInvoice = managedUsagePackUpgradeInvoice(fixture, {
+      invoiceId: `in_${randomUUID()}`,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_20,
+      targetPriceId: TEST_PRICE_USAGE_PACK_50,
+      prorationTimestamp,
+    });
+    context.mocks.stripe.subscriptions.update.mockResolvedValue({
+      ...scheduledSubscription,
+      pending_update: { expires_at: prorationTimestamp + 300 },
+      latest_invoice: { ...paidInvoice, status: "open" },
+    });
+    const confirmed = await accept(
+      client.confirmSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { changeId: preview.body.changeId },
+      }),
+      [200],
+    );
+    expect(confirmed.body.status).toBe("pending_payment");
+    expect(
+      context.mocks.stripe.subscriptionSchedules.release,
+    ).not.toHaveBeenCalled();
+    const beforePayment = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(beforePayment.body.allocations).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: downgradedUserId,
+          usagePackUsd: 50,
+          pendingChange: expect.objectContaining({
+            status: "scheduled",
+            targetUsagePackUsd: 20,
+          }),
+        }),
+      ]),
+    );
+
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(
+        fixture,
+        new Map([[TEST_PRICE_USAGE_PACK_50, 2]]),
+        fixture.billingPeriod,
+        { scheduleId },
+      ),
+    );
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).toHaveBeenLastCalledWith(
+      scheduleId,
+      expect.objectContaining({
+        phases: [
+          expect.objectContaining({
+            items: expect.arrayContaining([
+              { price: TEST_PRICE_USAGE_PACK_50, quantity: 2 },
+            ]),
+          }),
+          expect.objectContaining({
+            start_date: fixture.billingPeriod.end,
+            items: expect.arrayContaining([
+              { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+            ]),
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        idempotencyKey: `usage-pack-subscription-change:${preview.body.changeId}:schedule-update`,
+      }),
+    );
+    const management = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(management.body.allocations).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: downgradedUserId,
+          usagePackUsd: 50,
+          pendingChange: expect.objectContaining({
+            status: "scheduled",
+            targetUsagePackUsd: 20,
+          }),
+        }),
+        expect.objectContaining({
+          memberId: upgradedUserId,
+          usagePackUsd: 50,
+          pendingChange: null,
+        }),
+      ]),
+    );
+    const upgradedCreditsAfter = (await scheduleTestMemberCredits()).find(
+      (member) => {
+        return member.memberId === upgradedUserId;
+      },
+    )?.totalCredits;
+    expect(upgradedCreditsAfter).toBeGreaterThan(upgradedCreditsBefore);
+  });
+
+  it("cancels an old package downgrade when that member upgrades immediately", async () => {
+    const otherUserId = `user_${randomUUID()}`;
+    const fixture = await checkoutTwoMemberScheduleFixture(otherUserId, 50);
+    const userId = fixture.userId;
+    const scheduleId = `sub_sched_${randomUUID()}`;
+    const sourceSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_50, 2]]),
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      sourceSubscription,
+    );
+    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+      id: scheduleId,
+    });
+    context.mocks.stripe.subscriptionSchedules.update.mockResolvedValue({
+      id: scheduleId,
+    });
+    mockUsagePackSubscriptionPackagePreviews({
+      immediateAmountCents: 0,
+      nextRecurringAmountCents: 7000,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+      targetPriceId: TEST_PRICE_USAGE_PACK_20,
+    });
+    const client = setupApp({ context, routes: billingCheckoutRoutes })(
+      billingUsagePackManagementContract,
+    );
+    const downgradePreview = await accept(
+      client.previewSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "pro",
+          memberUsagePacks: [
+            { memberId: userId, usagePackUsd: 20 },
+            { memberId: otherUserId, usagePackUsd: 50 },
+          ],
+        },
+      }),
+      [200],
+    );
+    await accept(
+      client.confirmSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { changeId: downgradePreview.body.changeId },
+      }),
+      [200],
+    );
+    const scheduledManagement = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(scheduledManagement.body.allocations).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: userId,
+          usagePackUsd: 50,
+          pendingChange: expect.objectContaining({
+            status: "scheduled",
+            targetUsagePackUsd: 20,
+          }),
+        }),
+      ]),
+    );
+    const scheduledSubscription = managedUsagePackSubscription(
+      fixture,
+      new Map([[TEST_PRICE_USAGE_PACK_50, 2]]),
+      fixture.billingPeriod,
+      { scheduleId },
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      scheduledSubscription,
+    );
+    context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
+      id: scheduleId,
+      end_behavior: "release",
+      current_phase: {
+        start_date: fixture.billingPeriod.start,
+        end_date: fixture.billingPeriod.end,
+      },
+      phases: [
+        {
+          start_date: fixture.billingPeriod.start,
+          end_date: fixture.billingPeriod.end,
+          items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_50, quantity: 2 },
+          ],
+        },
+        {
+          start_date: fixture.billingPeriod.end,
+          end_date: fixture.billingPeriod.end + 30 * 86_400,
+          items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
+          ],
+        },
+      ],
+    });
+    mockUsagePackSubscriptionPackagePreviews({
+      immediateAmountCents: 4998,
+      nextRecurringAmountCents: 15_000,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+      targetPriceId: TEST_PRICE_USAGE_PACK_100,
+    });
+    const preview = await accept(
+      client.previewSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          targetTier: "pro",
+          memberUsagePacks: [
+            { memberId: userId, usagePackUsd: 100 },
+            { memberId: otherUserId, usagePackUsd: 50 },
+          ],
+        },
+      }),
+      [200],
+    );
+    expect(preview.body.immediateAmountCents).toBe(4998);
+    const beforeCredits = await scheduleTestMemberCredits();
+    const ownerCreditsBefore = beforeCredits.find((member) => {
+      return member.memberId === userId;
+    })?.totalCredits;
+    const otherCreditsBefore = beforeCredits.find((member) => {
+      return member.memberId === otherUserId;
+    })?.totalCredits;
+    if (ownerCreditsBefore === undefined || otherCreditsBefore === undefined) {
+      throw new Error("Checkout members have no initial credits");
+    }
+    const prorationTimestamp = Math.floor(
+      new Date(preview.body.prorationDate).getTime() / 1000,
+    );
+    const upgradeInvoice = managedUsagePackUpgradeInvoice(fixture, {
+      invoiceId: `in_${randomUUID()}`,
+      sourcePriceId: TEST_PRICE_USAGE_PACK_50,
+      targetPriceId: TEST_PRICE_USAGE_PACK_100,
+      prorationTimestamp,
+    });
+    const [oldPriceLine, newPriceLine] = upgradeInvoice.lines.data;
+    if (!oldPriceLine || !newPriceLine) {
+      throw new Error("Expected upgrade proration lines");
+    }
+    // Stripe reprices the full old quantity, including the member who keeps
+    // the $50 pack: +$99.98 for $100, +$49.99 for $50, -$99.99 for 2 × $50.
+    const paidInvoice = {
+      ...upgradeInvoice,
+      amount_paid: 4998,
+      lines: {
+        has_more: false,
+        data: [
+          { ...newPriceLine, amount: 9998, subtotal: 9998 },
+          {
+            ...oldPriceLine,
+            id: `il_${randomUUID()}`,
+            amount: 4999,
+            subtotal: 4999,
+          },
+          { ...oldPriceLine, amount: -9999, subtotal: -9999, quantity: 2 },
+        ],
+      },
+    };
+    context.mocks.stripe.subscriptions.update.mockResolvedValue({
+      ...scheduledSubscription,
+      pending_update: { expires_at: prorationTimestamp + 300 },
+      latest_invoice: { ...paidInvoice, status: "open" },
+    });
+    await accept(
+      client.confirmSubscriptionChange({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { changeId: preview.body.changeId },
+      }),
+      [200],
+    );
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+      managedUsagePackSubscription(
+        fixture,
+        new Map([
+          [TEST_PRICE_USAGE_PACK_100, 1],
+          [TEST_PRICE_USAGE_PACK_50, 1],
+        ]),
+        fixture.billingPeriod,
+        { scheduleId },
+      ),
+    );
+    await postManagedUsagePackEvent("invoice.paid", paidInvoice);
+    expect(
+      context.mocks.stripe.subscriptionSchedules.update,
+    ).toHaveBeenLastCalledWith(
+      scheduleId,
+      expect.objectContaining({
+        phases: [
+          expect.objectContaining({
+            items: expect.arrayContaining([
+              { price: TEST_PRICE_USAGE_PACK_100, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+            ]),
+          }),
+          expect.objectContaining({
+            start_date: fixture.billingPeriod.end,
+            items: expect.arrayContaining([
+              { price: TEST_PRICE_USAGE_PACK_100, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+            ]),
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        idempotencyKey: `usage-pack-subscription-change:${preview.body.changeId}:schedule-update`,
+      }),
+    );
+    const management = await accept(
+      client.get({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(management.body.allocations).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          memberId: userId,
+          usagePackUsd: 100,
+          pendingChange: null,
+        }),
+        expect.objectContaining({
+          memberId: otherUserId,
+          usagePackUsd: 50,
+          pendingChange: null,
+        }),
+      ]),
+    );
+    const afterCredits = await scheduleTestMemberCredits();
+    expect(
+      afterCredits.find((member) => {
+        return member.memberId === userId;
+      })?.totalCredits,
+    ).toBeGreaterThan(ownerCreditsBefore);
+    expect(
+      afterCredits.find((member) => {
+        return member.memberId === otherUserId;
+      })?.totalCredits,
+    ).toBe(otherCreditsBefore);
+  });
+
   it("replaces a scheduled package downgrade on the existing schedule", async () => {
     const userId = `user_${randomUUID()}`;
     const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 200 }]);

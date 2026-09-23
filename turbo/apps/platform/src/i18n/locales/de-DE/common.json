@@ -1515,7 +1515,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} Tage in Folge",
-        "title": "Einstieg",
+        "title": "Mehr Guthaben erhalten",
         "toGo": "Noch {{amount}}",
         "workflow": {
           "action": "Bauen",
@@ -3204,12 +3204,19 @@
       "noConnectorsAlt": "Keine Integrationen",
       "otherCategory": "Andere",
       "remoteAccess": "Fernzugriff",
+      "remoteControl": {
+        "connections": "Verbindungen",
+        "credentials": "Zugangsdaten",
+        "type": "Typ"
+      },
       "scope": {
         "aria": "Connector-Bereich",
         "attention": "Benötigt Aufmerksamkeit",
         "connected": "Verbunden",
         "custom": "Eigene",
         "discover": "Entdecken",
+        "privateNetwork": "Privates Netzwerk",
+        "remoteControl": "Fernsteuerung",
         "searchConnected": "Verbundene Integrationen finden",
         "searchCustom": "Eigene Integrationen finden"
       },

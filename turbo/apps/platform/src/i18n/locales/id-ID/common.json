@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Beruntun {{amount}} hari",
-        "title": "Mulai",
+        "title": "Dapatkan lebih banyak kredit",
         "toGo": "Kurang {{amount}}",
         "workflow": {
           "action": "Buat",
@@ -3190,12 +3190,19 @@
       "noConnectorsAlt": "Tidak ada konektor",
       "otherCategory": "Lainnya",
       "remoteAccess": "Akses jarak jauh",
+      "remoteControl": {
+        "connections": "Koneksi",
+        "credentials": "Kredensial",
+        "type": "Jenis"
+      },
       "scope": {
         "aria": "Cakupan konektor",
         "attention": "Perlu perhatian",
         "connected": "Terhubung",
         "custom": "Kustom",
         "discover": "Jelajahi",
+        "privateNetwork": "Jaringan privat",
+        "remoteControl": "Kendali jarak jauh",
         "searchConnected": "Cari konektor yang terhubung",
         "searchCustom": "Cari konektor kustom"
       },

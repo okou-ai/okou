@@ -24,6 +24,10 @@ import {
   allocateArtifactReference$,
   artifactReferenceRecord,
 } from "./artifact-reference.service";
+import {
+  queueArtifactCatalogFile,
+  syncArtifactCatalogForFile$,
+} from "./artifact-catalog.service";
 
 const PRIVATE_STORAGE = "private-artifact-v1";
 const privateMetadataSchema = z.object({
@@ -312,16 +316,27 @@ export const completePrivateArtifact$ = command(
     },
     signal: AbortSignal,
   ) => {
-    await set(writeDb$)
-      .update(runUploadedFiles)
-      .set({
-        url: args.url,
-        contentType: args.contentType,
-        sizeBytes: args.size,
-        materializationStatus: "ready",
-        updatedAt: nowDate(),
-      })
-      .where(eq(runUploadedFiles.id, args.id));
+    const db = set(writeDb$);
+    const changed = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(runUploadedFiles)
+        .set({
+          url: args.url,
+          contentType: args.contentType,
+          sizeBytes: args.size,
+          materializationStatus: "ready",
+          updatedAt: nowDate(),
+        })
+        .where(eq(runUploadedFiles.id, args.id))
+        .returning({ id: runUploadedFiles.id });
+      if (row) {
+        await queueArtifactCatalogFile(tx, row.id, signal);
+      }
+      return Boolean(row);
+    });
     signal.throwIfAborted();
+    if (changed) {
+      await set(syncArtifactCatalogForFile$, args.id, signal);
+    }
   },
 );

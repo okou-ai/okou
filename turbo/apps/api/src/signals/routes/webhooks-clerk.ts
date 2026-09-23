@@ -20,8 +20,11 @@ import {
   cleanupClerkDeletedOrgBilling$,
   cleanupClerkDeletedOrgMembership$,
   cleanupClerkDeletedOrg$,
-  cleanupClerkDeletedUser$,
 } from "../services/webhooks-clerk-cleanup.service";
+import {
+  enqueueClerkUserDeletion$,
+  executeClerkUserDeletionWork$,
+} from "../services/clerk-user-deletion-job.service";
 import { handleUsagePackInvitationAccepted } from "../services/usage-pack-invitation-purchase.service";
 import { recordMorningBriefMembership } from "../services/morning-brief-enrollment-data.service";
 import {
@@ -609,6 +612,44 @@ const enrollMorningBriefMembership$ = command(
   },
 );
 
+const handleDeletedUserWebhook$ = command(
+  async ({ set }, userId: string, signal: AbortSignal): Promise<Response> => {
+    const revocation = await settle(
+      set(revokeSharedThreadArtifacts$, { kind: "user", userId }, signal),
+      signal,
+    );
+    if (!revocation.ok) {
+      return jsonError("User artifact revocation failed", 503);
+    }
+
+    const receipt = await settle(
+      set(enqueueClerkUserDeletion$, userId, signal),
+      signal,
+    );
+    if (!receipt.ok) {
+      L.error("user.deleted job persistence failed", {
+        userId,
+        error: receipt.error,
+      });
+      return jsonError("User deletion could not be recorded", 503);
+    }
+
+    waitUntil(
+      tapError(
+        set(
+          executeClerkUserDeletionWork$,
+          { jobId: receipt.value },
+          AbortSignal.timeout(50_000),
+        ),
+        (error) => {
+          L.error("user.deleted worker failed", { userId, error });
+        },
+      ),
+    );
+    return new Response("OK", { status: 200 });
+  },
+);
+
 const postClerkWebhook$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const event = await verifiedClerkWebhook(get(request$).raw);
@@ -683,26 +724,9 @@ const postClerkWebhook$ = command(
       const userId = eventDataId(event.data);
       if (!userId) {
         L.error("user.deleted event missing user ID", { data: event.data });
-        return new Response("OK", { status: 200 });
+        return jsonError("User deletion is missing an ID", 503);
       }
-
-      const revocation = await settle(
-        set(revokeSharedThreadArtifacts$, { kind: "user", userId }, signal),
-        signal,
-      );
-      if (!revocation.ok) {
-        return jsonError("User artifact revocation failed", 503);
-      }
-
-      waitUntil(
-        tapError(set(cleanupClerkDeletedUser$, userId, signal), (error) => {
-          L.error("user.deleted cleanup failed", { userId, error });
-          if (isLockNotAvailable(error)) {
-            throw error;
-          }
-        }),
-      );
-      return new Response("OK", { status: 200 });
+      return await set(handleDeletedUserWebhook$, userId, signal);
     }
 
     if (event.type === "user.banned") {

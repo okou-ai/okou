@@ -62,7 +62,7 @@ Notes:
   - The returned hosted URL is the user-facing artifact view; a local index.html or localhost server is not
   - Return the exact hosted URL printed by the command
   - Authenticates via OKOU_TOKEN (publish requires host:write; clone requires host:read)
-  - Hosted sites are public: anyone with the returned URL can open them, so do not publish confidential content
+  - Hosted sites are public: anyone with the returned URL can open them
   - Reusing --site redeploys that site when you created it: the hosted URL stays the same and serves the new version
   - A name owned by another chat or another user is rejected; choose a different --site value
   - HTML files may change on every redeploy; every other file must carry a content hash in its name, such as /assets/app-4f3a9c12.js

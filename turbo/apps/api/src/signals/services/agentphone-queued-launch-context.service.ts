@@ -181,7 +181,7 @@ export async function loadAgentPhoneQueuedLaunchMaterial(
     agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
       messageId: context.messageId,
       conversationId: context.conversationId,
-      groupId: context.groupId,
+      ...(context.isGroup ? { groupId: context.groupId } : {}),
       channel: context.channel,
       isGroup: context.isGroup,
       rootMessageId: context.rootMessageId,

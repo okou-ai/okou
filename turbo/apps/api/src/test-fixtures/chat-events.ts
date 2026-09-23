@@ -1536,9 +1536,18 @@ async function blockedKeyShareWaiterCount(holderPid: number): Promise<number> {
  * Holds one thread row so route tests can observe the first product statement
  * that requires a write-oriented lock. Product APIs cannot pause at this
  * boundary, and the fixture does not change the held row.
+ *
+ * `update` is the default and conflicts with every write-oriented lock,
+ * including the fenced writer's first `FOR KEY SHARE`. `no key update` is the
+ * lock an ordinary row `UPDATE` takes: it is compatible with `FOR KEY SHARE`,
+ * so a fenced writer passes its identity lock and blocks later, at its own
+ * `UPDATE` of the held row. That is the shape the production 55P03 records in
+ * #36173 show, and it is the only way a test can reach a writer's statements
+ * after the identity lock and still fail the thread-row write.
  */
 export async function holdChatThreadRowLockFixture(args: {
   readonly threadId: string;
+  readonly mode?: "update" | "no key update";
   readonly signal: AbortSignal;
 }): Promise<{
   readonly release: () => void;
@@ -1554,7 +1563,7 @@ export async function holdChatThreadRowLockFixture(args: {
       .select({ id: chatThreads.id })
       .from(chatThreads)
       .where(eq(chatThreads.id, args.threadId))
-      .for("update")
+      .for(args.mode ?? "update")
       .limit(1);
     if (!thread) {
       throw new Error("Expected the chat thread row");

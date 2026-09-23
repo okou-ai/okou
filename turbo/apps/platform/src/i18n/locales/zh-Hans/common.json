@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "连续 {{amount}} 天",
-        "title": "快速上手",
+        "title": "获得更多积分",
         "toGo": "还差 {{amount}}",
         "workflow": {
           "action": "搭建",
@@ -3190,12 +3190,19 @@
       "noConnectorsAlt": "暂无连接器",
       "otherCategory": "其他",
       "remoteAccess": "远程访问",
+      "remoteControl": {
+        "connections": "连接",
+        "credentials": "凭据",
+        "type": "类型"
+      },
       "scope": {
         "aria": "连接器范围",
         "attention": "需要处理",
         "connected": "已连接",
         "custom": "自定义",
         "discover": "发现",
+        "privateNetwork": "私有网络",
+        "remoteControl": "远程控制",
         "searchConnected": "查找已连接的连接器",
         "searchCustom": "查找自定义连接器"
       },

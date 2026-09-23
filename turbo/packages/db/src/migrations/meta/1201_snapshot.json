@@ -1,5 +1,5 @@
 {
-  "id": "f7c75860-4892-4440-b0d5-361fbd7037ae",
+  "id": "b33968f8-435a-4852-ab5d-81880e5d4047",
   "prevId": "3ad3fa56-baae-4641-b63e-e84cd266f9a6",
   "version": "7",
   "dialect": "postgresql",
@@ -7193,12 +7193,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "group_id": {
-          "name": "group_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "channel": {
           "name": "channel",
           "type": "text",
@@ -8955,6 +8949,77 @@
         "chk_chat_thread_connector_selections_target": {
           "name": "chk_chat_thread_connector_selections_target",
           "value": "num_nonnulls(\"chat_thread_connector_selections\".\"connector_slug\", \"chat_thread_connector_selections\".\"custom_connector_id\") = 1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.chat_thread_drafts": {
+      "name": "chat_thread_drafts",
+      "schema": "",
+      "columns": {
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "draft_user_message": {
+          "name": "draft_user_message",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "draft_attachments": {
+          "name": "draft_attachments",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "chat_thread_drafts_chat_thread_id_chat_threads_id_fk": {
+          "name": "chat_thread_drafts_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "chat_thread_drafts",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "chat_thread_drafts_chat_thread_id_pk": {
+          "name": "chat_thread_drafts_chat_thread_id_pk",
+          "columns": [
+            "chat_thread_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_thread_drafts_draft_user_message_check": {
+          "name": "chat_thread_drafts_draft_user_message_check",
+          "value": "\"chat_thread_drafts\".\"draft_user_message\" IS NOT NULL\n          OR COALESCE(\"chat_thread_drafts\".\"draft_attachments\", '[]'::jsonb) = '[]'::jsonb"
         }
       },
       "isRLSEnabled": false

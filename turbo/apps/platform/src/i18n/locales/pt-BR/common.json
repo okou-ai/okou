@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Sequência de {{amount}} dias",
-        "title": "Primeiros passos",
+        "title": "Obtenha mais créditos",
         "toGo": "Faltam {{amount}}",
         "workflow": {
           "action": "Criar",
@@ -3256,12 +3256,19 @@
       "noConnectorsAlt": "Nenhum conector",
       "otherCategory": "Outros",
       "remoteAccess": "Acesso remoto",
+      "remoteControl": {
+        "connections": "Conexões",
+        "credentials": "Credenciais",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Escopo dos conectores",
         "attention": "Requer atenção",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descobrir",
+        "privateNetwork": "Rede privada",
+        "remoteControl": "Controle remoto",
         "searchConnected": "Buscar conectores conectados",
         "searchCustom": "Buscar conectores personalizados"
       },

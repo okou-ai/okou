@@ -681,8 +681,12 @@ clear the complete draft, and nothing is persisted across page reload.
 
 Apply or cancel completes before the card sends its normal chat callback.
 Request-owned event IDs make callback-only Continue retries idempotent without
-repeating the Browser mutation or retaining submitted values. The Platform and
-API both enforce `BrowserNativeInput`.
+repeating the Browser mutation or retaining submitted values. Terminal action
+reads resolve callback delivery from the matching canonical Chat input event in
+the owning thread. A mounted terminal card with an unconfirmed callback refreshes
+when its page regains focus or visibility, so completing a standalone action
+updates the original transcript card on return. The Platform and API both
+enforce `BrowserNativeInput`.
 
 A verified `direct_interaction` response uses the same action URL, ownership
 checks, mutation lock, and callback-only recovery, but it never carries or
