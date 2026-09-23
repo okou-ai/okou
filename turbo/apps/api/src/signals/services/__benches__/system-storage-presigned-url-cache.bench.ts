@@ -11,7 +11,7 @@ import { executeRawRows } from "../../../lib/db-raw-rows";
 import { nowDate } from "../../../lib/time";
 import { writeDb$ } from "../../external/db";
 import {
-  buildPartitionedStorageManifestPresignedUrlCacheQuery,
+  buildKeyedStorageManifestPresignedUrlCacheQuery,
   prefetchStorageManifestPresignedUrlCacheRows,
   readOnlyStoragePresignedUrlCacheKey,
   resolveReadOnlyStoragePresignedUrls,
@@ -242,12 +242,12 @@ async function logQueryPlan(
   );
 }
 
-async function logPartitionedQueryPlan(
+async function logKeyedQueryPlan(
   fixture: BenchFixture,
   pairCount: number,
 ): Promise<void> {
   const db = store.set(writeDb$);
-  const query = buildPartitionedStorageManifestPresignedUrlCacheQuery(
+  const query = buildKeyedStorageManifestPresignedUrlCacheQuery(
     db,
     fixture.pairs.slice(0, pairCount),
   );
@@ -264,11 +264,11 @@ async function logPartitionedQueryPlan(
     })
   ) {
     throw new Error(
-      `Partitioned cache lookup scanned the cache table at ${String(pairCount)} pairs`,
+      `Keyed cache lookup scanned the cache table at ${String(pairCount)} pairs`,
     );
   }
   process.stdout.write(
-    `\n[bench-explain] storage cache partitioned lookup, ${String(
+    `\n[bench-explain] storage cache keyed lookup, ${String(
       pairCount,
     )} exact pairs\n${plan
       .map((row) => {
@@ -418,7 +418,7 @@ const ensureSeeded: () => Promise<ReadonlyMap<number, BenchFixture>> = (() => {
             `Missing ${String(pairCount)}-pair storage cache benchmark fixture`,
           );
         }
-        await logPartitionedQueryPlan(planFixture, pairCount);
+        await logKeyedQueryPlan(planFixture, pairCount);
       }
       return fixtures;
     })();
@@ -499,13 +499,13 @@ test(
   },
 );
 
-test("partitioned lookup returns exact scoped URLs", async () => {
+test("keyed lookup returns exact scoped URLs", async () => {
   const fixture = benchFixture(96, `storage-cache-urls-${randomUUID()}`);
   await insertChunks(fixture.rows);
   await resolveFixture(fixture, true, 0, true);
 });
 
-test("partitioned lookup preserves scope and hard-expiry classification", async () => {
+test("keyed lookup preserves scope and hard-expiry classification", async () => {
   const fixture = benchFixture(52, `storage-cache-scope-${randomUUID()}`);
   const wrongScope = fixture.rows[0];
   const expired = fixture.rows[1];
