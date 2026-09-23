@@ -55,7 +55,7 @@ function BrowserActionSurface({
         className={
           variant === "standalone"
             ? "w-full p-5 sm:p-6"
-            : "h-[136px] w-full p-2.5 @[380px]:h-[112px] @[520px]:h-[80px]"
+            : "h-[160px] w-full p-2 @[320px]:h-[136px] @[380px]:h-[112px] @[380px]:p-2.5 @[520px]:h-[80px]"
         }
       >
         {children}
@@ -100,7 +100,8 @@ function ActionState({
           <div
             className={cn(
               "text-[0.9375rem] font-medium text-foreground",
-              variant === "inline" && (action ? "truncate" : "line-clamp-2"),
+              variant === "inline" &&
+                (action ? "line-clamp-2 @[380px]:truncate" : "line-clamp-2"),
             )}
           >
             {title}
