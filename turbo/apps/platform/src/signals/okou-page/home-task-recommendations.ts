@@ -91,8 +91,8 @@ export const homeTaskRecommendations$ = computed(
       revision,
       contentRevision: data.revision,
       recommendations: data.recommendations,
-      // Older APIs, and a catalog that was unavailable for this read, send no
-      // metadata; the cards then render without connector chips.
+      // A catalog that was unavailable for this read sends no metadata; the
+      // cards then render without connector chips.
       connectors: data.connectors ?? [],
     };
   },

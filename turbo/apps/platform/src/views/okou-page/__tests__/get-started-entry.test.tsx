@@ -1193,14 +1193,16 @@ test("A connector that needs a choice opens its connect dialog from its own cata
   };
   // The slug route would also match the catalog's static paths, so it is
   // installed before the one-click mock, which then takes precedence there.
-  const itemReads: string[] = [];
+  // Other surfaces on the page (the start card) read their own slugs, so only
+  // Notion's entry is counted.
+  let notionReads = 0;
   context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    itemReads.push(params.connectorSlug);
     if (params.connectorSlug !== notion.slug) {
       return respond(404, {
         error: { message: "Connector not found", code: "NOT_FOUND" },
       });
     }
+    notionReads += 1;
     return respond(200, { connector: notion });
   });
   mockOneClickCatalog([notion]);
@@ -1216,11 +1218,12 @@ test("A connector that needs a choice opens its connect dialog from its own cata
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-connector"));
   const tile = await screen.findByTestId("quest-connector-notion");
-  expect(itemReads).toStrictEqual([]);
+  expect(notionReads).toBe(0);
   click(tile);
 
-  await expect(
-    screen.findByRole("dialog", { name: "Notion" }),
-  ).resolves.toBeInTheDocument();
-  expect(itemReads).toStrictEqual(["notion"]);
+  // The dialog offers both methods, which only the connector's own full entry
+  // carries.
+  const dialog = await screen.findByRole("dialog", { name: "Notion" });
+  expect(within(dialog).getByText("Notion workspace")).toBeInTheDocument();
+  expect(notionReads).toBe(1);
 });

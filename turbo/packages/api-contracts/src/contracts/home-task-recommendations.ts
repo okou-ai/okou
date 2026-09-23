@@ -87,8 +87,8 @@ export const homeTaskRecommendationsResponseSchema = z.object({
   /**
    * Label and icon for the connector slugs the cards name, limited to
    * connectors the caller can see. A slug without an entry is not drawn.
-   * Optional because older APIs omit it and a temporarily unavailable catalog
-   * still returns the cards; `revision` covers the cards only.
+   * Optional because a temporarily unavailable catalog still returns the
+   * cards without it; `revision` covers the cards only.
    */
   connectors: z.array(homeTaskRecommendationConnectorSchema).optional(),
 });
