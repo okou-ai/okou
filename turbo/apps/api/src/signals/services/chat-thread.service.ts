@@ -257,24 +257,25 @@ const INDICATOR_UNREAD_LIMIT = 50;
 const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** One indexed lookup for the newest Run terminal marker in each thread. */
-function latestRunTerminalAt(): SQL<Date | null> {
+function latestRunTerminalAt() {
   return sql`(
-    SELECT ${chatEvents.createdAt}
+    SELECT ${sql`${chatEvents.createdAt}`}
     FROM ${chatEvents}
-    WHERE ${chatEvents.chatThreadId} = ${chatThreads.id}
+    WHERE ${sql`${chatEvents.chatThreadId}`} = ${sql`${chatThreads.id}`}
       AND ${chatEventTerminalPredicate(chatEvents.eventType)}
-    ORDER BY ${chatEvents.createdAt} DESC NULLS LAST, ${chatEvents.id} DESC
+    ORDER BY ${sql`${chatEvents.createdAt}`} DESC NULLS LAST,
+      ${sql`${chatEvents.id}`} DESC
     LIMIT 1
   )`.mapWith(nullableDriverValueDecoder(chatEvents.createdAt));
 }
 
 /** Native Morning Brief delivery is a separate, run-less unread source. */
-function latestBriefDeliveryAt(): SQL<Date | null> {
+function latestBriefDeliveryAt() {
   return sql`(
-    SELECT ${morningBriefDeliveries.deliveredAt}
+    SELECT ${sql`${morningBriefDeliveries.deliveredAt}`}
     FROM ${morningBriefDeliveries}
-    WHERE ${morningBriefDeliveries.chatThreadId} = ${chatThreads.id}
-    ORDER BY ${morningBriefDeliveries.deliveredAt} DESC
+    WHERE ${sql`${morningBriefDeliveries.chatThreadId}`} = ${sql`${chatThreads.id}`}
+    ORDER BY ${sql`${morningBriefDeliveries.deliveredAt}`} DESC
     LIMIT 1
   )`.mapWith(nullableDriverValueDecoder(morningBriefDeliveries.deliveredAt));
 }
@@ -380,6 +381,137 @@ export function chatThreadUnreads(args: {
   });
 }
 
+type IndicatorOwner = { readonly userId: string; readonly orgId: string };
+type IndicatorThreadRow = {
+  readonly threadId: string;
+  readonly agentId: string | null;
+};
+type UnreadIndicatorRow = IndicatorThreadRow & {
+  readonly unreadAt: Date | null;
+};
+
+async function loadActiveIndicatorRows(
+  db: ReadonlyDb,
+  args: IndicatorOwner,
+): Promise<readonly IndicatorThreadRow[]> {
+  const activeRunRows = await db
+    .select({ threadId: agentRuns.chatThreadId })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.userId, args.userId),
+        eq(agentRuns.orgId, args.orgId),
+        inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+        isNotNull(agentRuns.triggerSource),
+        isNotNull(agentRuns.chatThreadId),
+      ),
+    )
+    .groupBy(agentRuns.chatThreadId)
+    .orderBy(desc(max(agentRuns.createdAt)))
+    .limit(INDICATOR_ACTIVE_LIMIT);
+  const activeIds = activeRunRows.flatMap((row) => {
+    return row.threadId === null ? [] : [row.threadId];
+  });
+  if (activeIds.length === 0) {
+    return [];
+  }
+  return await db
+    .select({ threadId: chatThreads.id, agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.userId, args.userId),
+        inArray(chatThreads.id, activeIds),
+        chatThreadOrganizationCondition(db, args.orgId),
+      ),
+    )
+    .limit(INDICATOR_ACTIVE_LIMIT);
+}
+
+async function loadUnreadIndicatorRows(
+  db: ReadonlyDb,
+  args: IndicatorOwner,
+  unreadCutoff: Date,
+): Promise<readonly UnreadIndicatorRow[]> {
+  const commonConditions = and(
+    eq(chatThreads.userId, args.userId),
+    chatThreadOrganizationCondition(db, args.orgId),
+    gte(chatThreads.lastMessageAt, unreadCutoff),
+    or(
+      isNull(chatThreads.lastReadAt),
+      gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
+    ),
+    noActiveRunsForCurrentThreadCondition(db),
+  );
+  const latestRunAt = latestRunTerminalAt();
+  const latestDeliveryAt = latestBriefDeliveryAt();
+  const [runRows, deliveryRows] = await Promise.all([
+    db
+      .select({
+        threadId: chatThreads.id,
+        agentId: chatThreads.agentId,
+        unreadAt: latestRunAt,
+      })
+      .from(chatThreads)
+      .where(
+        and(
+          commonConditions,
+          exists(
+            db
+              .select({ id: chatEvents.id })
+              .from(chatEvents)
+              .where(
+                and(
+                  eq(chatEvents.chatThreadId, chatThreads.id),
+                  chatEventTerminalPredicate(chatEvents.eventType),
+                  gte(chatEvents.createdAt, unreadCutoff),
+                  or(
+                    isNull(chatThreads.lastReadAt),
+                    gt(chatEvents.createdAt, chatThreads.lastReadAt),
+                  ),
+                ),
+              ),
+          ),
+        ),
+      )
+      .orderBy(desc(latestRunAt), desc(chatThreads.id))
+      .limit(INDICATOR_UNREAD_LIMIT),
+    db
+      .select({
+        threadId: chatThreads.id,
+        agentId: chatThreads.agentId,
+        unreadAt: latestDeliveryAt,
+      })
+      .from(chatThreads)
+      .where(
+        and(
+          commonConditions,
+          exists(
+            db
+              .select({ deliveredAt: morningBriefDeliveries.deliveredAt })
+              .from(morningBriefDeliveries)
+              .where(
+                and(
+                  eq(morningBriefDeliveries.chatThreadId, chatThreads.id),
+                  gte(morningBriefDeliveries.deliveredAt, unreadCutoff),
+                  or(
+                    isNull(chatThreads.lastReadAt),
+                    gt(
+                      morningBriefDeliveries.deliveredAt,
+                      chatThreads.lastReadAt,
+                    ),
+                  ),
+                ),
+              ),
+          ),
+        ),
+      )
+      .orderBy(desc(latestDeliveryAt), desc(chatThreads.id))
+      .limit(INDICATOR_UNREAD_LIMIT),
+  ]);
+  return [...runRows, ...deliveryRows];
+}
+
 /**
  * Active and unread indicators for the user's agents and threads in the
  * current organization. A fixed number of small, indexed reads replaces the
@@ -396,117 +528,9 @@ export function chatIndicators(args: {
   return computed(async (get): Promise<Indicators> => {
     const db = get(db$);
     const unreadCutoff = new Date(now() - INDICATOR_UNREAD_LOOKBACK_MS);
-    const activeRunRows = await db
-      .select({ threadId: agentRuns.chatThreadId })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.userId, args.userId),
-          eq(agentRuns.orgId, args.orgId),
-          inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-          isNotNull(agentRuns.triggerSource),
-          isNotNull(agentRuns.chatThreadId),
-        ),
-      )
-      .groupBy(agentRuns.chatThreadId)
-      .orderBy(desc(max(agentRuns.createdAt)))
-      .limit(INDICATOR_ACTIVE_LIMIT);
-    const activeIds = activeRunRows.flatMap((row) => {
-      return row.threadId === null ? [] : [row.threadId];
-    });
-    const activeRows =
-      activeIds.length === 0
-        ? []
-        : await db
-            .select({
-              threadId: chatThreads.id,
-              agentId: chatThreads.agentId,
-            })
-            .from(chatThreads)
-            .where(
-              and(
-                eq(chatThreads.userId, args.userId),
-                inArray(chatThreads.id, activeIds),
-                chatThreadOrganizationCondition(db, args.orgId),
-              ),
-            )
-            .limit(INDICATOR_ACTIVE_LIMIT);
-
-    const commonUnreadConditions = and(
-      eq(chatThreads.userId, args.userId),
-      chatThreadOrganizationCondition(db, args.orgId),
-      gte(chatThreads.lastMessageAt, unreadCutoff),
-      or(
-        isNull(chatThreads.lastReadAt),
-        gt(chatThreads.lastMessageAt, chatThreads.lastReadAt),
-      ),
-      noActiveRunsForCurrentThreadCondition(db),
-    );
-    const latestRunAt = latestRunTerminalAt();
-    const latestDeliveryAt = latestBriefDeliveryAt();
-    const [runUnreadRows, briefUnreadRows] = await Promise.all([
-      db
-        .select({
-          threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
-          unreadAt: latestRunAt,
-        })
-        .from(chatThreads)
-        .where(
-          and(
-            commonUnreadConditions,
-            exists(
-              db
-                .select({ id: chatEvents.id })
-                .from(chatEvents)
-                .where(
-                  and(
-                    eq(chatEvents.chatThreadId, chatThreads.id),
-                    chatEventTerminalPredicate(chatEvents.eventType),
-                    gte(chatEvents.createdAt, unreadCutoff),
-                    or(
-                      isNull(chatThreads.lastReadAt),
-                      gt(chatEvents.createdAt, chatThreads.lastReadAt),
-                    ),
-                  ),
-                ),
-            ),
-          ),
-        )
-        .orderBy(desc(latestRunAt), desc(chatThreads.id))
-        .limit(INDICATOR_UNREAD_LIMIT),
-      db
-        .select({
-          threadId: chatThreads.id,
-          agentId: chatThreads.agentId,
-          unreadAt: latestDeliveryAt,
-        })
-        .from(chatThreads)
-        .where(
-          and(
-            commonUnreadConditions,
-            exists(
-              db
-                .select({ deliveredAt: morningBriefDeliveries.deliveredAt })
-                .from(morningBriefDeliveries)
-                .where(
-                  and(
-                    eq(morningBriefDeliveries.chatThreadId, chatThreads.id),
-                    gte(morningBriefDeliveries.deliveredAt, unreadCutoff),
-                    or(
-                      isNull(chatThreads.lastReadAt),
-                      gt(
-                        morningBriefDeliveries.deliveredAt,
-                        chatThreads.lastReadAt,
-                      ),
-                    ),
-                  ),
-                ),
-            ),
-          ),
-        )
-        .orderBy(desc(latestDeliveryAt), desc(chatThreads.id))
-        .limit(INDICATOR_UNREAD_LIMIT),
+    const [activeRows, unreadRows] = await Promise.all([
+      loadActiveIndicatorRows(db, args),
+      loadUnreadIndicatorRows(db, args, unreadCutoff),
     ]);
 
     const agentIndicators: Record<string, Indicator> = {};
@@ -522,7 +546,7 @@ export function chatIndicators(args: {
       string,
       { readonly agentId: string | null; readonly unreadAt: Date }
     >();
-    for (const row of [...runUnreadRows, ...briefUnreadRows]) {
+    for (const row of unreadRows) {
       if (row.unreadAt === null) {
         throw new Error("Unread indicator is missing its read watermark");
       }
