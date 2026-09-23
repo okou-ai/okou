@@ -41,17 +41,25 @@ function BrowserActionSurface({
   readonly variant: BrowserUserActionCardVariant;
 }) {
   return (
-    <ChatCard
-      data-testid="browser-user-action-card"
-      ref={resumeRef}
+    <div
       className={
         variant === "standalone"
-          ? "w-full p-5 sm:p-6"
-          : "h-[136px] w-full max-w-2xl p-3 sm:h-[88px]"
+          ? "@container w-full"
+          : "@container w-full max-w-2xl"
       }
     >
-      {children}
-    </ChatCard>
+      <ChatCard
+        data-testid="browser-user-action-card"
+        ref={resumeRef}
+        className={
+          variant === "standalone"
+            ? "w-full p-5 sm:p-6"
+            : "h-[136px] w-full p-3 @[560px]:h-[88px]"
+        }
+      >
+        {children}
+      </ChatCard>
+    </div>
   );
 }
 
@@ -71,8 +79,10 @@ function ActionState({
   return (
     <div
       className={cn(
-        "flex w-full flex-col justify-center gap-2 sm:flex-row sm:items-center sm:justify-start sm:gap-4",
-        variant === "inline" ? "h-full" : "min-h-20",
+        "flex w-full flex-col justify-center gap-2",
+        variant === "inline"
+          ? "h-full @[560px]:flex-row @[560px]:items-center @[560px]:justify-start @[560px]:gap-4"
+          : "min-h-20 sm:flex-row sm:items-center sm:justify-start sm:gap-4",
       )}
       role="status"
     >
@@ -103,7 +113,14 @@ function ActionState({
         </div>
       </div>
       {action && (
-        <div className="shrink-0 self-start pl-12 sm:self-auto sm:pl-0">
+        <div
+          className={cn(
+            "shrink-0 self-start pl-12",
+            variant === "inline"
+              ? "@[560px]:self-auto @[560px]:pl-0"
+              : "sm:self-auto sm:pl-0",
+          )}
+        >
           {action}
         </div>
       )}
@@ -630,7 +647,7 @@ function PendingInlineAction({
   const beginEntry = useSet(signals.beginEntry$);
   const endEntry = useSet(signals.endEntry$);
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 sm:flex-row sm:items-center sm:justify-start sm:gap-4">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @[560px]:flex-row @[560px]:items-center @[560px]:justify-start @[560px]:gap-4">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <ChatCardDetails
         title={t(($) => {
@@ -919,7 +936,7 @@ function PendingInlineDirectInteraction({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 sm:flex-row sm:items-center sm:justify-start sm:gap-4">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @[560px]:flex-row @[560px]:items-center @[560px]:justify-start @[560px]:gap-4">
       <div className="flex min-w-0 max-w-full items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           <MousePointerClick size={20} />
@@ -930,7 +947,7 @@ function PendingInlineDirectInteraction({
               return $.chat.browserInteraction.title;
             })}
           </div>
-          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground sm:line-clamp-1">
+          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground @[560px]:line-clamp-1">
             {action.reason}
           </p>
         </div>
