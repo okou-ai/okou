@@ -106,6 +106,25 @@ Desktop tests should keep real:
 Do not use relative internal `vi.mock()` paths for Desktop implementation
 modules.
 
+## Timer Policy
+
+Desktop's main-process host tests currently have a narrow exception to the
+project-wide ban on Vitest fake timers. `computer-use-host.test.ts` and
+`desktop-computer-use-autostart.test.ts` exercise production timeout, retry,
+and periodic scheduling through Electron and native-helper boundaries. Those
+paths do not yet expose an owned clock, and advancing Vitest's clock keeps the
+tests from waiting for minutes of production time. Keep fake timers confined
+to these two files, restore real timers after each test, and assert host or
+bridge outcomes at the deadline boundary. New Desktop tests should use an
+owned clock or an observable result instead of extending this exception.
+
+The isolated child-process test in
+`desktop-computer-use-permission-stall.test.ts` is a separate real-deadline
+exception: it verifies that a native helper reply survives a blocked parent
+event loop and an actual request timeout. Its timing assertions establish the
+fixture's ordering across processes; replacing that stall with a mocked timer
+would remove the behavior under test.
+
 ## Narrow Exceptions
 
 Pure or matrix-style tests are allowed only when the integration boundary would
