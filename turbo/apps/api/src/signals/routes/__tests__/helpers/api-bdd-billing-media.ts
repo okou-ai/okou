@@ -25,7 +25,10 @@ import {
 import { builtInGenerationContract } from "@okouai/api-contracts/contracts/built-in-generation";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { imageIoGenerateContract } from "@okouai/api-contracts/contracts/image-io-generate";
-import { mapsContract } from "@okouai/api-contracts/contracts/maps";
+import {
+  mapsContract,
+  type MapsSearchRequest,
+} from "@okouai/api-contracts/contracts/maps";
 import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
 import {
   usageRecordContract,
@@ -46,6 +49,7 @@ import {
 } from "../../../external/stripe-client";
 import { testUsageSettlementRoutes } from "../../test-usage-settlement";
 import type { ApiTestUser } from "./api-bdd";
+import { mockGoogleMapsGrounding } from "./google-maps-grounding";
 import { createRouteMocks } from "./route-test";
 import { bankingRoutes } from "../../banking";
 import { billingAutoRechargeRoutes } from "../../billing-auto-recharge";
@@ -131,35 +135,6 @@ type ImageIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
 type VideoIoStatus = 200 | 202 | 400 | 401 | 402 | 403 | 500 | 502 | 503 | 504;
 type VoiceSpeechStatus = 200 | 400 | 401 | 402 | 403 | 500 | 502 | 503;
 type MapsStatus = 200 | 400 | 401 | 402 | 403 | 502 | 503;
-type OsmLayer = "roads" | "buildings" | "water" | "parks";
-type OsmStyle = "standard" | "guide";
-
-interface OsmAreaBody {
-  readonly bbox?: {
-    readonly west: number;
-    readonly south: number;
-    readonly east: number;
-    readonly north: number;
-  };
-  readonly center?: {
-    readonly lat: number;
-    readonly lng: number;
-  };
-  readonly radiusMeters?: number;
-  readonly layers?: readonly OsmLayer[];
-}
-
-interface OsmRenderBody extends OsmAreaBody {
-  readonly width?: number;
-  readonly height?: number;
-  readonly style?: OsmStyle;
-  readonly title?: string;
-  readonly markers?: readonly {
-    readonly lat: number;
-    readonly lng: number;
-    readonly label?: string;
-  }[];
-}
 
 function authHeaders(actor: ApiTestUser | null): AuthHeaders {
   return actor ? { authorization: "Bearer clerk-session" } : {};
@@ -276,7 +251,7 @@ export function createBillingMediaApi(context: TestContext) {
   }
 
   function configureMapsProvider(): void {
-    mockEnv("OKOU_MAPS_GOOGLE_MAPS_TOKEN", "test-google-maps-key");
+    mockGoogleMapsGrounding();
   }
 
   return {
@@ -688,101 +663,14 @@ export function createBillingMediaApi(context: TestContext) {
       );
     },
 
-    async requestMapsGeocode(
+    async requestMapsSearch(
       actor: ApiTestUser | null,
-      body: { readonly address: string; readonly region?: string },
+      body: MapsSearchRequest,
       statuses: readonly MapsStatus[],
     ) {
       const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
       return await accept(
-        client.geocode({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestMapsReverseGeocode(
-      actor: ApiTestUser | null,
-      body: { readonly lat: number; readonly lng: number },
-      statuses: readonly MapsStatus[],
-    ) {
-      const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
-      return await accept(
-        client.reverseGeocode({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestMapsDirections(
-      actor: ApiTestUser | null,
-      body: {
-        readonly origin: string;
-        readonly destination: string;
-        readonly mode?: "driving" | "walking" | "bicycling" | "transit";
-        readonly departureTime?: string;
-      },
-      statuses: readonly MapsStatus[],
-    ) {
-      const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
-      return await accept(
-        client.directions({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestMapsPlacesSearch(
-      actor: ApiTestUser | null,
-      body: {
-        readonly query: string;
-        readonly location?: string;
-        readonly radius?: number;
-        readonly limit?: number;
-        readonly region?: string;
-        readonly fields?: "pro" | "enterprise";
-      },
-      statuses: readonly MapsStatus[],
-    ) {
-      const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
-      return await accept(
-        client.placesSearch({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestMapsPlacesDetails(
-      actor: ApiTestUser | null,
-      body: {
-        readonly placeId: string;
-        readonly fields?: "essentials" | "pro" | "enterprise";
-      },
-      statuses: readonly MapsStatus[],
-    ) {
-      const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
-      return await accept(
-        client.placesDetails({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestMapsOsmDownload(
-      actor: ApiTestUser | null,
-      body: OsmAreaBody,
-      statuses: readonly MapsStatus[],
-    ) {
-      const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
-      return await accept(
-        client.osmDownload({ headers: authenticate(actor), body }),
-        statuses,
-      );
-    },
-
-    async requestMapsOsmRender(
-      actor: ApiTestUser | null,
-      body: OsmRenderBody,
-      statuses: readonly MapsStatus[],
-    ) {
-      const client = setupApp({ context, routes: mapsRoutes })(mapsContract);
-      return await accept(
-        client.osmRender({ headers: authenticate(actor), body }),
+        client.search({ headers: authenticate(actor), body }),
         statuses,
       );
     },

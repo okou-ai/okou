@@ -820,6 +820,7 @@ export function mockChatLifecycle(
             return [id, "active" as const];
           }),
       ),
+      unreadAt: {},
     });
   });
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {

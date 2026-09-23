@@ -161,6 +161,8 @@ const DropdownMenuRadioItem = React.forwardRef<
 });
 DropdownMenuRadioItem.displayName = "DropdownMenuRadioItem";
 
+const DropdownMenuRadioItemIndicator = MenuPrimitive.RadioItemIndicator;
+
 const DropdownMenuSeparator = React.forwardRef<
   HTMLDivElement,
   MenuPrimitive.Separator.Props
@@ -224,6 +226,7 @@ export {
   DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubTrigger,

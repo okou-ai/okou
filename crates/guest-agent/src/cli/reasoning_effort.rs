@@ -25,7 +25,12 @@ pub(super) fn resolve(
         (framework, model, effort.as_str()),
         (
             Framework::Codex,
-            "gpt-6-astra" | "gpt-6-sol" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna",
+            "gpt-6-astra"
+                | "gpt-6-sol"
+                | "gpt-6-luna"
+                | "gpt-5.6-sol"
+                | "gpt-5.6-terra"
+                | "gpt-5.6-luna",
             "low" | "medium" | "high" | "xhigh" | "max",
         ) | (
             Framework::Codex,
@@ -40,6 +45,8 @@ pub(super) fn resolve(
             "claude-fable-5-1"
                 | "claude-fable-5.1"
                 | "fable"
+                | "claude-opus-5-5"
+                | "claude-opus-5.5"
                 | "claude-opus-5"
                 | "claude-opus-4-8"
                 | "claude-opus-4.8"
@@ -75,6 +82,7 @@ mod tests {
             (Framework::Codex, "OPENAI_MODEL", "gpt-6-astra", "ultracode"),
             (Framework::Codex, "OPENAI_MODEL", "gpt-6-sol", "extra"),
             (Framework::Codex, "OPENAI_MODEL", "gpt-6-sol", "ultracode"),
+            (Framework::Codex, "OPENAI_MODEL", "gpt-6-luna", "ultra"),
             (
                 Framework::ClaudeCode,
                 "ANTHROPIC_MODEL",
@@ -86,6 +94,12 @@ mod tests {
                 "ANTHROPIC_MODEL",
                 "claude-sonnet-4-6",
                 "ultracode",
+            ),
+            (
+                Framework::ClaudeCode,
+                "ANTHROPIC_MODEL",
+                "claude-opus-5-5",
+                "xhigh",
             ),
             (
                 Framework::ClaudeCode,

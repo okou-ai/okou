@@ -138,7 +138,6 @@ export async function createPhase2Provider(
     await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.PiMemory]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
     });
     const account = subscription?.accountId ?? `account-${randomUUID()}`;
     const token = makeCodexJwt({

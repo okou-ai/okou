@@ -16,10 +16,10 @@ class ConnectorResponseParser(NamedTuple):
 
     ``feed`` receives each streamed response-body parser chunk. The stream
     wrapper passes decoded bytes to ``feed`` for ``gzip``, ``deflate``, and
-    ``br``. With no ``Content-Encoding`` or ``identity``, it passes the raw
-    response chunk bytes through unchanged. For compressed encodings, decoded
-    parser chunks are bounded independently by the configured streaming decode
-    chunk limit, while the cumulative decoded-output budget remains scoped to
+    ``br``. With no ``Content-Encoding`` or ``identity``, the byte content is
+    unchanged. Parser delivery chunks for every supported encoding are bounded
+    independently by the configured streaming decode chunk limit, while the
+    cumulative decoded-output budget for compressed encodings remains scoped to
     the response. Brotli 1.2's ``output_buffer_limit`` is a soft allocation
     threshold, so temporary output allocation may transiently exceed that limit
     even though delivered output is split and charged against the response

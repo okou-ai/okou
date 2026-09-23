@@ -1,8 +1,8 @@
 use super::super::super::*;
 use super::env::MockRunEnv;
 use super::wait::assert_run_exits_within;
-use crate::provider::JobCandidate;
 use crate::test_fixtures::execution_context::execution_context_for_test;
+use runner_provider::JobCandidate;
 
 pub(in super::super) fn minimal_context(run_id: RunId) -> runner_types::types::ExecutionContext {
     execution_context_for_test(run_id)

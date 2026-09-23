@@ -326,20 +326,10 @@ test("Show only the selected agent’s unread conversations when switching agent
         [INCIDENT_THREAD_ID]: "unread",
         [AUTOMATION_THREAD_ID]: "active",
       },
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ query, respond }) => {
-    const threadId =
-      query.agentId === SUPPORT_AGENT_ID
-        ? INCIDENT_THREAD_ID
-        : RESEARCH_THREAD_ID;
-    return respond(200, {
-      unreads: [
-        {
-          threadId,
-          unreadAt: "2026-03-10T00:05:00Z",
-        },
-      ],
+      unreadAt: {
+        [RESEARCH_THREAD_ID]: "2026-03-10T00:05:00Z",
+        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
+      },
     });
   });
 
@@ -405,17 +395,10 @@ test("Toggle unread chats by reselecting an unread pinned agent", async () => {
         [EXISTING_THREAD_ID]: "unread",
         [INCIDENT_THREAD_ID]: "unread",
       },
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ query, respond }) => {
-    const threadId =
-      query.agentId === SUPPORT_AGENT_ID
-        ? INCIDENT_THREAD_ID
-        : query.agentId === AGENT_ID
-          ? EXISTING_THREAD_ID
-          : null;
-    return respond(200, {
-      unreads: threadId ? [{ threadId, unreadAt: "2026-03-10T00:05:00Z" }] : [],
+      unreadAt: {
+        [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z",
+        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
+      },
     });
   });
 
@@ -486,7 +469,7 @@ test("Keep all chats when reselecting a pinned agent without unread", async () =
     }),
   ]);
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
 
   await setupSidebarPage({
@@ -580,7 +563,7 @@ test("Show the three-column chat navigation and actions", async () => {
   const list = screen.getByTestId("chat-list-column");
   expect(within(list).getByText("Chat")).toBeInTheDocument();
   const searchButton = within(list).getByLabelText("Search workspace");
-  const chatThreadsTitle = within(list).getByText("Chats with Okou");
+  const chatThreadsTitle = buttonByText("Chats with Okou", list);
   if (!searchButton.parentElement || !chatThreadsTitle.parentElement) {
     throw new Error("Chat action headers not found");
   }

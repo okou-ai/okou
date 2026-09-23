@@ -53,7 +53,10 @@ import {
   sql,
 } from "drizzle-orm";
 
-import { zodEnumDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  nullableDriverValueDecoder,
+  zodEnumDriverValueDecoder,
+} from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
@@ -394,6 +397,7 @@ export function chatIndicators(args: {
         .select({
           threadId: chatThreads.id,
           agentId: chatThreads.agentId,
+          unreadAt: latestReadWatermark.createdAt,
         })
         .from(chatThreads)
         .innerJoin(agents, eq(agents.id, chatThreads.agentId))
@@ -426,6 +430,9 @@ export function chatIndicators(args: {
             threadId: activeThreads.threadId,
             agentId: activeThreads.agentId,
             indicator: sql`'active'`.mapWith(indicatorDecoder).as("indicator"),
+            unreadAt: sql`NULL`
+              .mapWith(nullableDriverValueDecoder(chatEvents.createdAt))
+              .as("unread_at"),
           })
           .from(activeThreads),
         db
@@ -433,6 +440,7 @@ export function chatIndicators(args: {
             threadId: unreadThreads.threadId,
             agentId: unreadThreads.agentId,
             indicator: sql`'unread'`.mapWith(indicatorDecoder).as("indicator"),
+            unreadAt: unreadThreads.unreadAt,
           })
           .from(unreadThreads),
       ),
@@ -444,8 +452,15 @@ export function chatIndicators(args: {
 
     const agentIndicators: Record<string, Indicator> = {};
     const threads: Record<string, Indicator> = {};
+    const unreadAt: Record<string, string> = {};
     for (const row of rows) {
       threads[row.threadId] = row.indicator;
+      if (row.indicator === "unread") {
+        if (row.unreadAt === null) {
+          throw new Error("Unread indicator is missing its read watermark");
+        }
+        unreadAt[row.threadId] = row.unreadAt.toISOString();
+      }
       if (
         row.agentId !== null &&
         (row.indicator === "unread" ||
@@ -454,7 +469,7 @@ export function chatIndicators(args: {
         agentIndicators[row.agentId] = row.indicator;
       }
     }
-    return { agents: agentIndicators, threads };
+    return { agents: agentIndicators, threads, unreadAt };
   });
 }
 

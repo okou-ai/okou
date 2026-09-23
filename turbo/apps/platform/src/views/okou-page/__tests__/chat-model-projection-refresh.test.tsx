@@ -75,7 +75,6 @@ async function openChat(
     path: NEW_CHAT_PATH,
     sharedWorkerTestTransport: transport,
     featureSwitches: {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       [FeatureSwitchKey.ChatPreference]: true,
     },
@@ -167,6 +166,7 @@ test.each([
       return respond(200, {
         revision: "revision-1",
         writePreconditionRequired: false,
+        modelsAvailableToAdd: [],
         policies: [modelPolicy(personal, restricted)],
         workspaceDefaultModel: MODEL,
         workspaceDefaultPolicyId: POLICY_ID,
@@ -229,6 +229,7 @@ async function setupHeldProjectionRefresh() {
       return respond(200, {
         revision: "revision-1",
         writePreconditionRequired: false,
+        modelsAvailableToAdd: [],
         policies: [modelPolicy(true)],
         workspaceDefaultModel: MODEL,
         workspaceDefaultPolicyId: POLICY_ID,
@@ -325,6 +326,7 @@ test("A local active-account change refreshes the member projection", async () =
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [modelPolicy(personal)],
       workspaceDefaultModel: MODEL,
       workspaceDefaultPolicyId: POLICY_ID,
@@ -366,17 +368,17 @@ test("A local active-account change refreshes the member projection", async () =
     screen.findByRole("heading", { name: "Models" }),
   ).resolves.toBeInTheDocument();
   const row = await screen.findByTestId(`oauth-account-${secondId}`);
-  const activate = queryAllByRoleFast("radio", row).find((radio) => {
-    return radio.getAttribute("aria-label") === "Use";
+  const activate = queryAllByRoleFast("button", row).find((button) => {
+    return button.getAttribute("aria-label")?.startsWith("Use:");
   });
   expect(activate).toBeDefined();
   click(activate!);
   await waitFor(() => {
     expect(
-      queryAllByRoleFast("radio", row).find((radio) => {
-        return radio.getAttribute("aria-label") === "Active";
+      queryAllByRoleFast("button", row).find((button) => {
+        return button.getAttribute("aria-label")?.startsWith("Active:");
       }),
-    ).toHaveAttribute("aria-checked", "true");
+    ).toHaveAttribute("aria-pressed", "true");
   });
   click(within(settings).getByLabelText("Close"));
   await waitFor(() => {

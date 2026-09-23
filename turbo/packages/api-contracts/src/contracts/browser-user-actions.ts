@@ -227,6 +227,15 @@ export const browserUserActionsContract = c.router({
     responses: { 200: browserUserActionResponseSchema, ...commonErrors },
     summary: "Read a Browser user-action request",
   },
+  preflight: {
+    method: "POST",
+    path: "/api/browser/user-actions/:requestToken/preflight",
+    headers: authHeadersSchema,
+    pathParams: requestTokenParamsSchema,
+    body: emptyBodySchema,
+    responses: { 200: browserUserActionResponseSchema, ...commonErrors },
+    summary: "Check an exact Browser input target before form entry",
+  },
   apply: {
     method: "POST",
     path: "/api/browser/user-actions/:requestToken/apply",

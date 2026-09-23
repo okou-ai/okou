@@ -14,10 +14,12 @@ export function ChatCardDetails({
   title,
   children,
   triggerLabel,
+  onOpenChange,
 }: {
   readonly title: string;
   readonly children: ReactNode;
   readonly triggerLabel?: string;
+  readonly onOpenChange?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   const label =
@@ -26,7 +28,7 @@ export function ChatCardDetails({
       return $.chat.cards.viewDetails;
     });
   return (
-    <Dialog>
+    <Dialog onOpenChange={onOpenChange}>
       <DialogTrigger
         render={
           <Button

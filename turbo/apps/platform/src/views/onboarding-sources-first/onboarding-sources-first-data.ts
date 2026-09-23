@@ -1,4 +1,8 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import {
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+  type OnboardingRecommendationConnectorSlug,
+} from "@okouai/api-contracts/contracts/onboarding";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 
 /**
@@ -7,21 +11,8 @@ import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
  * The fields themselves come from `@okouai/core/onboarding-industry`, which the
  * completion contract validates against.
  */
-export const FEATURED_SOURCE_SLUGS = [
-  "gmail",
-  "google-docs",
-  "google-drive",
-  "google-sheets",
-  "github",
-  "quickbooks",
-  "hubspot",
-  "linear",
-  "notion",
-  "google-calendar",
-  "outlook-mail",
-  "google-ads",
-  "meta-ads",
-] as const satisfies readonly ConnectorSlug[];
+export const FEATURED_SOURCE_SLUGS =
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS satisfies readonly ConnectorSlug[];
 
 export const SOURCE_FAMILIES = {
   documents: [
@@ -47,7 +38,7 @@ export type SourceFamily = keyof typeof SOURCE_FAMILIES;
  * prompt prefers.
  */
 export const INDUSTRY_SOURCE_SLUGS: Readonly<
-  Record<OnboardingIndustry, readonly ConnectorSlug[]>
+  Record<OnboardingIndustry, readonly OnboardingRecommendationConnectorSlug[]>
 > = {
   marketing: [
     "google-ads",
@@ -141,7 +132,7 @@ export const INDUSTRY_SOURCE_SLUGS: Readonly<
 
 /** Sources the prototype prefers first when several are connected. */
 export const INDUSTRY_RECOMMENDED_SOURCES: Readonly<
-  Record<OnboardingIndustry, readonly ConnectorSlug[]>
+  Record<OnboardingIndustry, readonly OnboardingRecommendationConnectorSlug[]>
 > = {
   marketing: ["google-ads", "meta-ads", "google-sheets"],
   design: ["google-drive"],

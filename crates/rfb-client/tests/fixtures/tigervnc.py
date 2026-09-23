@@ -269,6 +269,7 @@ def fixture(connection, name, port, tmp, security):
             "port": port,
             "display": name,
             "ca_der": str(tmp / "ca.der"),
+            "ca_pem": str(ca),
             "version": PIN,
             "security": security,
         }

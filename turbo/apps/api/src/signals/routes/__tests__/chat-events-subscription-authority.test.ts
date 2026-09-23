@@ -106,7 +106,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PiLoop]: false,
       });
       const thread = await chat.createThread(actor, { agentId });
@@ -162,7 +161,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: `retry-subscription-${randomUUID()}`,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PiLoop]: true,
       });
       mockPiResourceArchiveDownloads();
@@ -354,7 +352,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: `cancelled-subscription-${randomUUID()}`,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PiLoop]: false,
       });
       const thread = await chat.createThread(actor, { agentId });
@@ -463,7 +460,6 @@ describe("CHAT-02: run-level model overrides", () => {
         accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
       });
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
       });
       await configureOrganizationGptModel(actor);
@@ -771,104 +767,98 @@ describe("CHAT-02: run-level model overrides", () => {
     );
   });
 
-  it.each(["deleted", "reconnect-required"] as const)(
-    "rejects a prepared subscription when its captured account becomes %s",
-    async (revocation) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const captured = await configureSubscriptionPiModel(actor, {
-        accountId: "prepared-subscription-account",
-        accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
-      });
-      const instructions = await publishPendingPiInstructions(actor, agentId);
-      const thread = await chat.createThread(actor, { agentId });
-      const sdk = await context.mocks.piSdk.controlInitialization(
-        { sessionId: thread.id, instructions, holdInitialization: true },
-        context.signal,
-      );
-      mockPiResourceArchiveDownloads();
-      const objects = mockPiCheckpointObjectStore();
-      const requests: string[] = [];
-      server.use(
-        http.post(
-          "https://chatgpt.com/backend-api/codex/responses",
-          ({ request }) => {
-            requests.push(request.url);
-            return nativeCodexSseResponse(
-              piResponsesTextSse("unexpected revoked account", 1),
-            );
-          },
-        ),
-      );
-      const run = await sendChatRun(actor, {
-        agentId,
-        threadId: thread.id,
-        model: "gpt-5.6-terra",
-        prompt: "retain subscription revocation at execution",
-        runOptions: { codexServiceTier: "fast" },
-      });
-      // Credentials have been materialized before this real SDK boundary.
-      await sdk.entered;
-      expect(requests).toHaveLength(0);
-      if (revocation === "deleted") {
-        await authDeviceSupport.deletePersonalModelProviderAccount(
-          actor,
-          captured.accountSourceId,
-        );
-      } else {
-        const { claim, sandboxHeaders } = await claimChatRun(
-          runnerGroup,
-          run.runId,
-        );
-        const firewall = createFirewallApi(context);
-        firewall.mockCodexTokenRefresh(() => {
-          return HttpResponse.json(
-            {
-              error: {
-                code: "refresh_token_invalidated",
-                message: "revoked account",
-              },
-            },
-            { status: 401 },
+  // A captured account referenced by a nonterminal run is retained, so deleting
+  // it no longer revokes the prepared subscription. `personal-subscription-run-
+  // identity` owns that retention contract; this case keeps the refresh path.
+  it("rejects a prepared subscription when its captured account needs a reconnect", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    await configureSubscriptionPiModel(actor, {
+      accountId: "prepared-subscription-account",
+      accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
+    });
+    const instructions = await publishPendingPiInstructions(actor, agentId);
+    const thread = await chat.createThread(actor, { agentId });
+    const sdk = await context.mocks.piSdk.controlInitialization(
+      { sessionId: thread.id, instructions, holdInitialization: true },
+      context.signal,
+    );
+    mockPiResourceArchiveDownloads();
+    const objects = mockPiCheckpointObjectStore();
+    const requests: string[] = [];
+    server.use(
+      http.post(
+        "https://chatgpt.com/backend-api/codex/responses",
+        ({ request }) => {
+          requests.push(request.url);
+          return nativeCodexSseResponse(
+            piResponsesTextSse("unexpected revoked account", 1),
           );
-        });
-        const rejected = await firewall.requestFirewallAuth(
-          sandboxHeaders,
-          {
-            encryptedSecrets: z.string().parse(claim.encryptedSecrets),
-            authHeaders: {
-              Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
-              "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
-            },
-            secretConnectorMap: claim.secretConnectorMap ?? undefined,
-            secretConnectorMetadataMap:
-              claim.secretConnectorMetadataMap ?? undefined,
-            forceRefresh: true,
-          },
-          [502],
-        );
-        expect(rejected.body).toMatchObject({
-          error: { failureReason: "reconnect_required" },
-        });
-      }
-      sdk.release();
-      await waitForRunStatus(actor, run.runId, "failed");
-      await flushWaitUntilForTest();
-      expect(requests).toHaveLength(0);
-      expect(sdk.disposeCount()).toBe(1);
-      expectNoPiApiFirstTurnArtifacts(run.runId, objects);
-      await expectNoBuiltInModelUsage(run.runId);
-      expect(
-        (await chat.listThreadEvents(actor, thread.id)).events,
-      ).toContainEqual(
-        expect.objectContaining({
-          eventType: "run.failed",
-          runId: run.runId,
-          failureReason: "reconnect_required",
-        }),
+        },
+      ),
+    );
+    const run = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      model: "gpt-5.6-terra",
+      prompt: "retain subscription revocation at execution",
+      runOptions: { codexServiceTier: "fast" },
+    });
+    // Credentials have been materialized before this real SDK boundary.
+    await sdk.entered;
+    expect(requests).toHaveLength(0);
+    {
+      const { claim, sandboxHeaders } = await claimChatRun(
+        runnerGroup,
+        run.runId,
       );
-    },
-    30_000,
-  );
+      const firewall = createFirewallApi(context);
+      firewall.mockCodexTokenRefresh(() => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "refresh_token_invalidated",
+              message: "revoked account",
+            },
+          },
+          { status: 401 },
+        );
+      });
+      const rejected = await firewall.requestFirewallAuth(
+        sandboxHeaders,
+        {
+          encryptedSecrets: z.string().parse(claim.encryptedSecrets),
+          authHeaders: {
+            Authorization: `Bearer ${secretTemplate("CHATGPT_ACCESS_TOKEN")}`,
+            "ChatGPT-Account-ID": secretTemplate("CHATGPT_ACCOUNT_ID"),
+          },
+          secretConnectorMap: claim.secretConnectorMap ?? undefined,
+          secretConnectorMetadataMap:
+            claim.secretConnectorMetadataMap ?? undefined,
+          forceRefresh: true,
+        },
+        [502],
+      );
+      expect(rejected.body).toMatchObject({
+        error: { failureReason: "reconnect_required" },
+      });
+    }
+    sdk.release();
+    await waitForRunStatus(actor, run.runId, "failed");
+    await flushWaitUntilForTest();
+    expect(requests).toHaveLength(0);
+    expect(sdk.disposeCount()).toBe(1);
+    expectNoPiApiFirstTurnArtifacts(run.runId, objects);
+    await expectNoBuiltInModelUsage(run.runId);
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).toContainEqual(
+      expect.objectContaining({
+        eventType: "run.failed",
+        runId: run.runId,
+        failureReason: "reconnect_required",
+      }),
+    );
+  }, 30_000);
 
   it("refreshes the captured subscription Fast account while another account becomes active", async () => {
     const { actor, agentId } = await entitledChatActor();

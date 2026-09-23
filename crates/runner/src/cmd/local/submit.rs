@@ -15,12 +15,12 @@ use clap::Args;
 use tokio::signal::unix::{Signal, SignalKind, signal};
 use uuid::Uuid;
 
-use crate::active_input::{
+use crate::error::{RunnerError, RunnerResult};
+use runner_host::paths::HomePaths;
+use runner_provider::local_queue::{self, JobRequest, JobResponse};
+use runner_provider::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
-use crate::error::{RunnerError, RunnerResult};
-use crate::local_queue::{self, JobRequest, JobResponse};
-use runner_host::paths::HomePaths;
 use runner_types::ids::RunId;
 
 /// Poll interval for checking the result file.
@@ -747,13 +747,6 @@ pub(super) fn cleanup_completed_for_test(group_dir: &Path, profile: &str, job_id
     SubmitQueueEntry::for_job(group_dir, profile, job_id)
         .unwrap()
         .cleanup_completed();
-}
-
-#[cfg(test)]
-pub(crate) fn abandon_cancelled_submit_for_test(group_dir: &Path, job_id: RunId) {
-    SubmitQueueEntry::for_job(group_dir, crate::profile::DEFAULT_PROFILE, job_id)
-        .unwrap()
-        .abandon_cancelled();
 }
 
 pub async fn run_submit(args: SubmitArgs) -> RunnerResult<ExitCode> {

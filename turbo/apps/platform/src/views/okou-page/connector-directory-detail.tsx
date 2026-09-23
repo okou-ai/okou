@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 import { ChevronLeft, SlidersHorizontal } from "lucide-react";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import { Button } from "@okouai/ui";
+import { DialogTitle } from "@okouai/ui/components/ui/dialog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { builtinConnectorCurrentConnectionStatus } from "../../signals/okou-page/settings/connectors.ts";
 import {
@@ -65,9 +66,16 @@ function ConnectorDetailHeader({
       <div className="flex shrink-0 items-start gap-3.5 px-6 pb-4 pt-4">
         <ConnectorIconTile icon={connector.icon} size="lg" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-foreground">
+          {/*
+            A dialog is named by the title mounted inside it, and this view
+            replaces the one the browse list owns -- a plain heading here
+            leaves the dialog with no name at all. Base UI's title still
+            renders an `h2`, so only the name changes; the class list restores
+            the size and spacing the shared title would otherwise impose.
+          */}
+          <DialogTitle className="truncate text-base font-semibold leading-normal tracking-normal text-foreground">
             {connector.label}
-          </h2>
+          </DialogTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {connector.description}
           </p>

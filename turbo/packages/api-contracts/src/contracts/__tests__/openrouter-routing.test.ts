@@ -9,6 +9,7 @@ import {
 } from "../model-provider-firewalls";
 
 const usRouted: readonly (readonly [OpenRouterApi, string])[] = [
+  ["messages", "anthropic/claude-opus-5.5"],
   ["messages", "anthropic/claude-opus-5"],
   ["messages", "anthropic/claude-opus-4.8"],
   ["messages", "anthropic/claude-sonnet-5"],

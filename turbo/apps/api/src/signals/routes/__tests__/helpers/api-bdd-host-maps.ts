@@ -7,7 +7,10 @@ import {
   type HostedSitePrepareRequest,
   type HostedSitePrepareResponse,
 } from "@okouai/api-contracts/contracts/host";
-import { mapsContract } from "@okouai/api-contracts/contracts/maps";
+import {
+  mapsContract,
+  type MapsSearchRequest,
+} from "@okouai/api-contracts/contracts/maps";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
@@ -312,13 +315,13 @@ export function createHostMapsBddApi(context: TestContext) {
       );
     },
 
-    async requestMapsGeocodeWithBearer(
+    async requestMapsSearchWithBearer(
       token: string,
-      body: { readonly address: string; readonly region?: string },
+      body: MapsSearchRequest,
       statuses: readonly MapsStatus[],
     ) {
       return await accept(
-        mapsClient().geocode({
+        mapsClient().search({
           headers: { authorization: `Bearer ${token}` },
           body,
         }),

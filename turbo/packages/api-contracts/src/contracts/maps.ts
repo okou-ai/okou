@@ -5,150 +5,84 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-const travelModeSchema = z.enum(["driving", "walking", "bicycling", "transit"]);
-const placeSearchFieldsetSchema = z.enum(["pro", "enterprise"]);
-const placeDetailFieldsetSchema = z.enum(["essentials", "pro", "enterprise"]);
-const osmLayerSchema = z.enum(["roads", "buildings", "water", "parks"]);
-const osmStyleSchema = z.enum(["standard", "guide"]);
-const osmBBoxSchema = z.object({
-  west: z.number().min(-180).max(180),
-  south: z.number().min(-90).max(90),
-  east: z.number().min(-180).max(180),
-  north: z.number().min(-90).max(90),
-});
-const osmCenterSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-});
-const osmMarkerSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
-  label: z.string().trim().min(1).max(80).optional(),
-});
-const osmAreaRequestBaseSchema = z.object({
-  bbox: osmBBoxSchema.optional(),
-  center: osmCenterSchema.optional(),
-  radiusMeters: z.number().int().min(50).max(5_000).optional(),
-});
-const defaultOsmLayers = ["roads", "buildings", "water", "parks"] as const;
+export const MAPS_SEARCH_MAX_QUERY_CHARS = 4_096;
+export const MAPS_SEARCH_MAX_ANSWER_CHARS = 32_768;
+export const MAPS_SEARCH_MAX_SOURCES = 64;
+export const MAPS_SEARCH_MAX_SOURCE_TITLE_CHARS = 512;
+export const MAPS_SEARCH_MAX_SOURCE_URL_CHARS = 2_048;
+export const MAPS_SEARCH_MAX_CITATIONS = 128;
 
-function validateOsmArea<T extends z.infer<typeof osmAreaRequestBaseSchema>>(
-  schema: z.ZodType<T>,
-) {
-  return schema
-    .refine((value) => {
-      return value.bbox !== undefined
-        ? value.center === undefined && value.radiusMeters === undefined
-        : value.center !== undefined && value.radiusMeters !== undefined;
-    }, "Provide either bbox or center with radiusMeters")
-    .refine((value) => {
-      if (!value.bbox) {
-        return true;
-      }
-      return (
-        value.bbox.east > value.bbox.west && value.bbox.north > value.bbox.south
-      );
-    }, "bbox east/north must be greater than west/south");
-}
-
-export const mapsOperationSchema = z.enum([
-  "geocode",
-  "reverse-geocode",
-  "directions",
-  "places.search",
-  "places.details",
-  "osm.download",
-  "osm.render",
-]);
-
-export const mapsResponseSchema = z.object({
-  operation: mapsOperationSchema,
-  provider: z.enum(["google-maps", "openstreetmap"]),
-  creditsCharged: z.number(),
-  billingCategory: z.string(),
-  billingQuantity: z.number(),
-  result: z.unknown(),
+export const mapsSearchLocationSchema = z.object({
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
 });
 
-export const mapsGeocodeRequestSchema = z.object({
-  address: z.string().trim().min(1),
-  region: z.string().trim().min(1).optional(),
+export const mapsSearchLanguageCodeSchema = z
+  .string()
+  .trim()
+  .regex(
+    /^[a-z]{2,3}(?:[-_][A-Z]{2})?$/u,
+    "languageCode must look like en or en_US",
+  )
+  .transform((value) => {
+    return value.replace("-", "_");
+  });
+
+export const mapsSearchRequestSchema = z.object({
+  query: z.string().trim().min(1).max(MAPS_SEARCH_MAX_QUERY_CHARS),
+  location: mapsSearchLocationSchema.optional(),
+  languageCode: mapsSearchLanguageCodeSchema.optional(),
 });
 
-export const mapsReverseGeocodeRequestSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
+const mapsSearchSourceUrlSchema = z
+  .string()
+  .max(MAPS_SEARCH_MAX_SOURCE_URL_CHARS)
+  .url()
+  .regex(/^https:\/\//u, "Google Maps source URL must use https");
+
+export const mapsSearchSourceSchema = z.object({
+  title: z.string().min(1).max(MAPS_SEARCH_MAX_SOURCE_TITLE_CHARS),
+  uri: mapsSearchSourceUrlSchema,
 });
 
-export const mapsDirectionsRequestSchema = z.object({
-  origin: z.string().trim().min(1),
-  destination: z.string().trim().min(1),
-  mode: travelModeSchema.default("driving"),
-  departureTime: z.string().trim().min(1).optional(),
+export const mapsSearchCitationSchema = z.object({
+  startByte: z.number().int().nonnegative(),
+  endByte: z.number().int().nonnegative(),
+  text: z.string().min(1).max(MAPS_SEARCH_MAX_ANSWER_CHARS),
+  sourceIndices: z.array(z.number().int().nonnegative()).min(1).max(64),
 });
 
-export const mapsPlacesSearchRequestSchema = z.object({
-  query: z.string().trim().min(1),
-  location: z.string().trim().min(1).optional(),
-  radius: z.number().int().positive().optional(),
-  limit: z.number().int().min(1).max(20).default(5),
-  region: z.string().trim().min(1).optional(),
-  fields: placeSearchFieldsetSchema.default("pro"),
+export const mapsSearchUsageSchema = z.object({
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
 });
 
-export const mapsPlacesDetailsRequestSchema = z.object({
-  placeId: z.string().trim().min(1),
-  fields: placeDetailFieldsetSchema.default("essentials"),
+export const mapsSearchResponseSchema = z.object({
+  query: z.string().max(MAPS_SEARCH_MAX_QUERY_CHARS),
+  location: mapsSearchLocationSchema.optional(),
+  languageCode: mapsSearchLanguageCodeSchema.optional(),
+  provider: z.literal("google-maps-grounding"),
+  model: z.literal("gemini-2.5-flash"),
+  billingCategory: z.literal("provider_cost_usd_micros"),
+  billingQuantity: z.number().int().nonnegative(),
+  providerCostUsd: z.number().finite().nonnegative(),
+  creditsCharged: z.number().int().nonnegative(),
+  answer: z.string().min(1).max(MAPS_SEARCH_MAX_ANSWER_CHARS),
+  sources: z.array(mapsSearchSourceSchema).max(MAPS_SEARCH_MAX_SOURCES),
+  citations: z.array(mapsSearchCitationSchema).max(MAPS_SEARCH_MAX_CITATIONS),
+  attribution: z.literal("Google Maps").optional(),
+  usage: mapsSearchUsageSchema,
 });
 
-export const mapsOsmDownloadRequestSchema = validateOsmArea(
-  osmAreaRequestBaseSchema.extend({
-    layers: z
-      .array(osmLayerSchema)
-      .min(1)
-      .max(4)
-      .default(() => {
-        return [...defaultOsmLayers];
-      }),
-  }),
-);
+export type MapsSearchLocation = z.infer<typeof mapsSearchLocationSchema>;
+export type MapsSearchRequest = z.infer<typeof mapsSearchRequestSchema>;
+export type MapsSearchSource = z.infer<typeof mapsSearchSourceSchema>;
+export type MapsSearchCitation = z.infer<typeof mapsSearchCitationSchema>;
+export type MapsSearchUsage = z.infer<typeof mapsSearchUsageSchema>;
+export type MapsSearchResponse = z.infer<typeof mapsSearchResponseSchema>;
 
-export const mapsOsmRenderRequestSchema = validateOsmArea(
-  osmAreaRequestBaseSchema.extend({
-    layers: z
-      .array(osmLayerSchema)
-      .min(1)
-      .max(4)
-      .default(() => {
-        return [...defaultOsmLayers];
-      }),
-    width: z.number().int().min(320).max(2_048).default(1_536),
-    height: z.number().int().min(240).max(2_048).default(1_024),
-    style: osmStyleSchema.default("standard"),
-    title: z.string().trim().min(1).max(120).optional(),
-    markers: z.array(osmMarkerSchema).max(100).default([]),
-  }),
-);
-
-export type MapsResponse = z.infer<typeof mapsResponseSchema>;
-export type MapsGeocodeRequest = z.infer<typeof mapsGeocodeRequestSchema>;
-export type MapsReverseGeocodeRequest = z.infer<
-  typeof mapsReverseGeocodeRequestSchema
->;
-export type MapsDirectionsRequest = z.infer<typeof mapsDirectionsRequestSchema>;
-export type MapsPlacesSearchRequest = z.infer<
-  typeof mapsPlacesSearchRequestSchema
->;
-export type MapsPlacesDetailsRequest = z.infer<
-  typeof mapsPlacesDetailsRequestSchema
->;
-export type MapsOsmDownloadRequest = z.infer<
-  typeof mapsOsmDownloadRequestSchema
->;
-export type MapsOsmRenderRequest = z.infer<typeof mapsOsmRenderRequestSchema>;
-
-const mapsResponses = {
-  200: mapsResponseSchema,
+const mapsSearchResponses = {
+  200: mapsSearchResponseSchema,
   400: apiErrorSchema,
   401: apiErrorSchema,
   402: apiErrorSchema,
@@ -158,61 +92,13 @@ const mapsResponses = {
 } as const;
 
 export const mapsContract = c.router({
-  geocode: {
+  search: {
     method: "POST",
-    path: "/api/maps/geocode",
+    path: "/api/maps/search",
     headers: authHeadersSchema,
-    body: mapsGeocodeRequestSchema,
-    responses: mapsResponses,
-    summary: "Geocode an address through managed Okou Maps",
-  },
-  reverseGeocode: {
-    method: "POST",
-    path: "/api/maps/reverse-geocode",
-    headers: authHeadersSchema,
-    body: mapsReverseGeocodeRequestSchema,
-    responses: mapsResponses,
-    summary: "Reverse geocode coordinates through managed Okou Maps",
-  },
-  directions: {
-    method: "POST",
-    path: "/api/maps/directions",
-    headers: authHeadersSchema,
-    body: mapsDirectionsRequestSchema,
-    responses: mapsResponses,
-    summary: "Compute directions through managed Okou Maps",
-  },
-  placesSearch: {
-    method: "POST",
-    path: "/api/maps/places/search",
-    headers: authHeadersSchema,
-    body: mapsPlacesSearchRequestSchema,
-    responses: mapsResponses,
-    summary: "Search places through managed Okou Maps",
-  },
-  placesDetails: {
-    method: "POST",
-    path: "/api/maps/places/details",
-    headers: authHeadersSchema,
-    body: mapsPlacesDetailsRequestSchema,
-    responses: mapsResponses,
-    summary: "Fetch place details through managed Okou Maps",
-  },
-  osmDownload: {
-    method: "POST",
-    path: "/api/maps/osm/download",
-    headers: authHeadersSchema,
-    body: mapsOsmDownloadRequestSchema,
-    responses: mapsResponses,
-    summary: "Download OpenStreetMap features through managed Okou Maps",
-  },
-  osmRender: {
-    method: "POST",
-    path: "/api/maps/osm/render",
-    headers: authHeadersSchema,
-    body: mapsOsmRenderRequestSchema,
-    responses: mapsResponses,
-    summary: "Render OpenStreetMap features to PNG through managed Okou Maps",
+    body: mapsSearchRequestSchema,
+    responses: mapsSearchResponses,
+    summary: "Search places and routes with Google Maps grounding",
   },
 });
 

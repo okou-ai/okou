@@ -311,6 +311,7 @@ describe("private artifact uploads", () => {
     expect(preview.body).toStrictEqual({
       url: "https://private-r2.example/report.html?signature=one",
       publicUrl: null,
+      previewImageUrl: null,
       expiresAt: "2026-09-11T12:00:00.000Z",
     });
     expect(preview.headers.get("cache-control")).toBe("private, no-store");
@@ -347,6 +348,7 @@ describe("private artifact uploads", () => {
     expect(refreshed.body).toStrictEqual({
       url: "https://private-r2.example/report.html?signature=two",
       publicUrl: null,
+      previewImageUrl: null,
       expiresAt: "2026-09-11T12:00:00.000Z",
     });
   });

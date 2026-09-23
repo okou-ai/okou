@@ -272,6 +272,7 @@ export function mockChatThreadSnapshot(
           return [threadId, "active" as const];
         }),
       ),
+      unreadAt: {},
     });
   });
   targetContext.mocks.api(browserContract.get, ({ respond }) => {
@@ -300,6 +301,7 @@ export function mockUnreadAgents(
         }),
       ),
       threads: {},
+      unreadAt: {},
     });
   });
 }

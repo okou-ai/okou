@@ -423,6 +423,26 @@ function InviteDialogFields({
 }) {
   const { t } = useTranslation();
   const roleId = useId();
+  const roleItems = [
+    {
+      value: "member",
+      label: t(($) => {
+        return $.settings.workspace.members.member;
+      }),
+    },
+    {
+      value: "admin",
+      label: t(($) => {
+        return $.settings.workspace.members.admin;
+      }),
+    },
+  ];
+  const usagePackItems = usagePacks?.map((pack) => {
+    return {
+      value: String(pack.usagePackUsd),
+      label: usagePackOptionLabel(pack),
+    };
+  });
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
@@ -456,9 +476,14 @@ function InviteDialogFields({
           })}
         </label>
         <Select
+          items={roleItems}
           value={role}
-          onValueChange={(value) => {
-            return setRole(orgRoleSchema.parse(value));
+          onValueChange={(value, details) => {
+            if (value === null) {
+              details.cancel();
+              return;
+            }
+            setRole(orgRoleSchema.parse(value));
           }}
           disabled={sending}
         >
@@ -466,16 +491,13 @@ function InviteDialogFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="member">
-              {t(($) => {
-                return $.settings.workspace.members.member;
-              })}
-            </SelectItem>
-            <SelectItem value="admin">
-              {t(($) => {
-                return $.settings.workspace.members.admin;
-              })}
-            </SelectItem>
+            {roleItems.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>
@@ -487,9 +509,14 @@ function InviteDialogFields({
             })}
           </label>
           <Select
+            items={usagePackItems}
             value={String(usagePackUsd)}
-            onValueChange={(value) => {
-              return setUsagePackUsd(parseUsagePackOption(value, usagePacks));
+            onValueChange={(value, details) => {
+              if (value === null) {
+                details.cancel();
+                return;
+              }
+              setUsagePackUsd(parseUsagePackOption(value, usagePacks));
             }}
             disabled={sending}
           >
@@ -497,14 +524,14 @@ function InviteDialogFields({
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="w-max max-w-[calc(100vw-2rem)]">
-              {usagePacks.map((usagePack) => {
+              {usagePackItems?.map((item) => {
                 return (
                   <SelectItem
-                    key={usagePack.usagePackUsd}
-                    value={String(usagePack.usagePackUsd)}
+                    key={item.value}
+                    value={item.value}
                     className="whitespace-nowrap"
                   >
-                    {usagePackOptionLabel(usagePack)}
+                    {item.label}
                   </SelectItem>
                 );
               })}

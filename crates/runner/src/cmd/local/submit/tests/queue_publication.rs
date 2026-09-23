@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use super::super::{SubmitArgs, SubmitPlan};
 use super::support::{mode, submit_queue_entry};
-use crate::local_queue;
 use runner_host::paths::HomePaths;
+use runner_provider::local_queue;
 use runner_types::ids::RunId;
 
 #[test]

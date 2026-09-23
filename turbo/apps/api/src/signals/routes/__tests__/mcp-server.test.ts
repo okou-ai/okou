@@ -1095,68 +1095,57 @@ describe("MCP chat discovery and creation", () => {
     );
   });
 
-  it.each([false, true])(
-    "keeps a member subscription route selectable after a plan downgrade with personal priority %s",
-    async (personalSubscriptionPriority) => {
-      const f = await threadFixture();
-      const runs = createRunsApi(context);
-      const { subscriptionId } = await runs.grantProEntitlement(f.actor);
-      await runs.updateOrgModelPolicies(f.actor, [
-        {
-          model: "gpt-5.6-luna",
-          isDefault: true,
-          defaultProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          modelProviderId: null,
-        },
-      ]);
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: f.auth.userId, orgId: f.auth.orgId },
-        {
-          [FeatureSwitchKey.PersonalSubscriptionPriority]:
-            personalSubscriptionPriority,
-        },
-      );
-      const token = f.auth.token({ scope: defaultScopes });
-      expect((await listModels(token)).models).toContainEqual(
-        expect.objectContaining({
-          id: "gpt-5.6-luna",
-          selectable: true,
-          availability: "connection_required",
-        }),
-      );
-      await createWebhookCallbackApi(context).postStripeEvent(
-        {
-          id: `evt_${randomUUID()}`,
-          type: "customer.subscription.deleted",
-          data: { object: { id: subscriptionId, metadata: {} } },
-        },
-        [200],
-      );
+  it("keeps a member subscription route selectable after a plan downgrade", async () => {
+    const f = await threadFixture();
+    const runs = createRunsApi(context);
+    const { subscriptionId } = await runs.grantProEntitlement(f.actor);
+    await runs.updateOrgModelPolicies(f.actor, [
+      {
+        model: "gpt-5.6-luna",
+        isDefault: true,
+        defaultProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        modelProviderId: null,
+      },
+    ]);
+    const token = f.auth.token({ scope: defaultScopes });
+    expect((await listModels(token)).models).toContainEqual(
+      expect.objectContaining({
+        id: "gpt-5.6-luna",
+        selectable: true,
+        availability: "connection_required",
+      }),
+    );
+    await createWebhookCallbackApi(context).postStripeEvent(
+      {
+        id: `evt_${randomUUID()}`,
+        type: "customer.subscription.deleted",
+        data: { object: { id: subscriptionId, metadata: {} } },
+      },
+      [200],
+    );
 
-      // Every runnable plan supports BYOK, so the member subscription route
-      // survives the downgrade and the policies need no synchronization.
-      const models = await listModels(token);
-      expect(models.defaultModel).toStrictEqual({
-        model: "gpt-5.6-luna",
-        source: "org_default",
-      });
-      expect(models.models).toContainEqual(
-        expect.objectContaining({ id: "gpt-5.6-luna", selectable: true }),
-      );
-      const created = await createThread(token, {
-        requestId: randomUUID(),
-        agentId: f.agent.agentId,
-        title: "After plan synchronization",
-        model: "gpt-5.6-luna",
-      });
-      expect(created.model.selectedModel).toBe("gpt-5.6-luna");
-      expect(
-        (await getMessages(token, { threadId: created.threadId })).messages,
-      ).toStrictEqual([]);
-    },
-  );
+    // Every runnable plan supports BYOK, so the member subscription route
+    // survives the downgrade and the policies need no synchronization.
+    const models = await listModels(token);
+    expect(models.defaultModel).toStrictEqual({
+      model: "gpt-5.6-luna",
+      source: "org_default",
+    });
+    expect(models.models).toContainEqual(
+      expect.objectContaining({ id: "gpt-5.6-luna", selectable: true }),
+    );
+    const created = await createThread(token, {
+      requestId: randomUUID(),
+      agentId: f.agent.agentId,
+      title: "After plan synchronization",
+      model: "gpt-5.6-luna",
+    });
+    expect(created.model.selectedModel).toBe("gpt-5.6-luna");
+    expect(
+      (await getMessages(token, { threadId: created.threadId })).messages,
+    ).toStrictEqual([]);
+  });
 
   it("reports pending model setup when a restricted plan keeps a Pro-only built-in default", async () => {
     const f = await threadFixture();
@@ -1203,10 +1192,10 @@ describe("MCP chat discovery and creation", () => {
       ).list({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
     );
-    expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    expect(settings.body.workspaceDefaultModel).toBe("gpt-6-luna");
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       source: "org_default",
     });
   });
@@ -1251,23 +1240,13 @@ describe("MCP chat discovery and creation", () => {
         availability: "available",
       }),
     );
-    for (const personalSubscriptionPriority of [false, true]) {
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: f.auth.userId, orgId: f.auth.orgId },
-        {
-          [FeatureSwitchKey.PersonalSubscriptionPriority]:
-            personalSubscriptionPriority,
-        },
-      );
-      expect((await listModels(token)).models).toContainEqual(
-        expect.objectContaining({
-          id: "gpt-5.6-sol",
-          selectable: true,
-          availability: "connection_required",
-        }),
-      );
-    }
+    expect((await listModels(token)).models).toContainEqual(
+      expect.objectContaining({
+        id: "gpt-5.6-sol",
+        selectable: true,
+        availability: "connection_required",
+      }),
+    );
     const visible = JSON.stringify(models);
     expect(visible).not.toContain(f.providerId);
     expect(visible).not.toContain("test-anthropic-key");

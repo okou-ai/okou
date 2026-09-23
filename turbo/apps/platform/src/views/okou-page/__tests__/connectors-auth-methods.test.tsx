@@ -1198,106 +1198,123 @@ test("Optionally name a newly added credential-free account", async () => {
   expect(submittedAuthorizeAgent).toBeTruthy();
 });
 
-test("Retry device authorization after a provider error", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, [
-    publicStatusItem({
-      connectorSlug: "stripe",
-      label: "Stripe",
-      authMethods: [
-        {
-          id: "cli",
-          label: "Stripe CLI",
-          description: "Approve access with Stripe CLI.",
-          grantKind: "device-auth",
-          manualFields: [],
-          startOptions: [
-            {
-              id: "mode",
-              kind: "select",
-              label: "Mode",
-              required: true,
-              defaultValue: "test",
-              options: [
-                { value: "test", label: "Test" },
-                { value: "live", label: "Live" },
-              ],
-            },
-          ],
-        },
-      ],
-    }),
-  ]);
-  context.mocks.browser.open(createAuthWindow());
-  const startOptions: Record<string, string>[] = [];
-  context.mocks.api(
-    builtinConnectorOauthDeviceAuthSessionContract.create,
-    ({ body, params, respond }) => {
-      startOptions.push(body.options ?? {});
-      return respond(200, {
-        sessionId: crypto.randomUUID(),
-        sessionToken: "stripe-device-token",
-        connectorSlug: params.connectorSlug,
-        status: "pending",
-        userCode: "STRIPE-DEVICE",
-        verificationUri: "https://oauth.test/stripe/device",
-        verificationUriComplete:
-          "https://oauth.test/stripe/device?user_code=STRIPE-DEVICE",
-        expiresIn: 300,
-        interval: 1,
-      });
-    },
-  );
-  let polls = 0;
-  context.mocks.http.post(
-    "*/api/connectors/stripe/oauth/device/sessions/:sessionId/poll",
-    () => {
-      polls += 1;
-      if (polls === 1) {
-        return HttpResponse.json(
+test.each(["test", null])(
+  "Retry device authorization with default %s after a provider error",
+  async (defaultValue) => {
+    mockConnectors(context, []);
+    mockPublicConnectorStatus(context, [
+      publicStatusItem({
+        connectorSlug: "stripe",
+        label: "Stripe",
+        authMethods: [
           {
-            error: {
-              message: "Stripe device authorization is unavailable",
-              code: "UNAVAILABLE",
-            },
+            id: "cli",
+            label: "Stripe CLI",
+            description: "Approve access with Stripe CLI.",
+            grantKind: "device-auth",
+            manualFields: [],
+            startOptions: [
+              {
+                id: "mode",
+                kind: "select",
+                label: "Mode",
+                required: true,
+                defaultValue,
+                options: [
+                  { value: "test", label: "Test" },
+                  { value: "live", label: "Live" },
+                ],
+              },
+            ],
           },
-          { status: 500 },
-        );
-      }
-      return HttpResponse.error();
-    },
-  );
-  await setupPage({
-    context,
-    path: "/connectors",
-  });
-  click(
+        ],
+      }),
+    ]);
+    context.mocks.browser.open(createAuthWindow());
+    const startOptions: Record<string, string>[] = [];
+    context.mocks.api(
+      builtinConnectorOauthDeviceAuthSessionContract.create,
+      ({ body, params, respond }) => {
+        startOptions.push(body.options ?? {});
+        return respond(200, {
+          sessionId: crypto.randomUUID(),
+          sessionToken: "stripe-device-token",
+          connectorSlug: params.connectorSlug,
+          status: "pending",
+          userCode: "STRIPE-DEVICE",
+          verificationUri: "https://oauth.test/stripe/device",
+          verificationUriComplete:
+            "https://oauth.test/stripe/device?user_code=STRIPE-DEVICE",
+          expiresIn: 300,
+          interval: 1,
+        });
+      },
+    );
+    let polls = 0;
+    context.mocks.http.post(
+      "*/api/connectors/stripe/oauth/device/sessions/:sessionId/poll",
+      () => {
+        polls += 1;
+        if (polls === 1) {
+          return HttpResponse.json(
+            {
+              error: {
+                message: "Stripe device authorization is unavailable",
+                code: "UNAVAILABLE",
+              },
+            },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.error();
+      },
+    );
+    await setupPage({
+      context,
+      path: "/connectors",
+    });
+    click(
+      await waitFor(() => {
+        return getConnectorAction("button", "Connect Stripe");
+      }),
+    );
+    const dialog = await screen.findByRole("dialog", { name: "Stripe" });
+    const mode = within(dialog).getByRole("combobox", { name: "Mode" });
+    expect(mode).toHaveTextContent(
+      defaultValue === null ? "Select Mode" : "Test",
+    );
+    expect(
+      getConnectorAction("button", "Connect Stripe", dialog),
+    ).toHaveProperty("disabled", defaultValue === null);
+    if (defaultValue === null) {
+      click(mode);
+      click(await screen.findByRole("option", { name: "Live" }));
+    }
+    expect(mode).toHaveTextContent(defaultValue === null ? "Live" : "Test");
+    expect(
+      getConnectorAction("button", "Connect Stripe", dialog),
+    ).toBeEnabled();
+    click(getConnectorAction("button", "Connect Stripe", dialog));
+
+    await expect(
+      screen.findByText("Stripe device authorization is unavailable"),
+    ).resolves.toBeInTheDocument();
+    expect(startOptions[0]).toStrictEqual({ mode: defaultValue ?? "live" });
     await waitFor(() => {
-      return getConnectorAction("button", "Connect Stripe");
-    }),
-  );
-  const dialog = await screen.findByRole("dialog", { name: "Stripe" });
+      expect(
+        getConnectorAction("button", "Connect Stripe", dialog),
+      ).toBeEnabled();
+    });
 
-  click(getConnectorAction("button", "Connect Stripe", dialog));
-
-  await expect(
-    screen.findByText("Stripe device authorization is unavailable"),
-  ).resolves.toBeInTheDocument();
-  expect(startOptions[0]).toStrictEqual({ mode: "test" });
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", "Connect Stripe", dialog),
-    ).toBeEnabled();
-  });
-
-  click(getConnectorAction("button", "Connect Stripe", dialog));
-  await waitFor(() => {
-    expect(
-      getConnectorAction("button", "Connect Stripe", dialog),
-    ).toBeEnabled();
-  });
-  expect(screen.queryByText("Failed to fetch")).toBeNull();
-});
+    click(getConnectorAction("button", "Connect Stripe", dialog));
+    await waitFor(() => {
+      expect(
+        getConnectorAction("button", "Connect Stripe", dialog),
+      ).toBeEnabled();
+    });
+    expect(screen.queryByText("Failed to fetch")).toBeNull();
+  },
+);
 
 test("Return Slack authorization directly to the application", async () => {
   mockOAuthCompletions(context);

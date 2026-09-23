@@ -29,6 +29,14 @@ cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -j 1 -p runner-host -- --test-threads=1
 
+# Extracted Runner provider coordination and its owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-provider -- --test-threads=1
+
+# Extracted Runner storage planning and cache owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-storage -- --test-threads=1
+
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -p shell-quote --lib tests::quoted_words_round_trip_through_posix_shell -- --exact

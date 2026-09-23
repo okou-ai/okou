@@ -818,9 +818,9 @@ describe("Official Workflow catalog release boundary", () => {
     expect(s3.writes).toStrictEqual([]);
   });
 
-  it("uses one canonical effective event configuration for identity", async () => {
+  it("rejects omitted and non-canonical Calendar event configuration", async () => {
     installVolumeS3Fixture();
-    const name = `api-test-event-canonical-${TEST_SUFFIX}`;
+    const name = `api-test-event-calendar-validation-${TEST_SUFFIX}`;
     const omittedCalendarDefault = await syncCatalog(
       catalog([
         activeDefinition(name, {
@@ -846,7 +846,11 @@ describe("Official Workflow catalog release boundary", () => {
       releaseId: null,
       diagnostics: [{ code: "invalid-blueprint-configuration" }],
     });
+  });
 
+  it("canonicalizes duplicate and reordered chat-run statuses", async () => {
+    installVolumeS3Fixture();
+    const name = `api-test-event-statuses-${TEST_SUFFIX}`;
     const duplicateSet = chatRunFinishedBlueprint("chat", [
       "failed",
       "completed",
@@ -865,9 +869,7 @@ describe("Official Workflow catalog release boundary", () => {
       initial?.blueprints.find((blueprint) => {
         return blueprint.key === "chat";
       })?.desiredState,
-    ).toMatchObject({
-      eventConfig: { runStatuses: ["completed", "failed"] },
-    });
+    ).toMatchObject({ eventConfig: { runStatuses: ["completed", "failed"] } });
 
     const reorderedSet = chatRunFinishedBlueprint("chat", [
       "completed",
@@ -884,14 +886,26 @@ describe("Official Workflow catalog release boundary", () => {
       outcome: "unchanged",
       releaseId: accepted.body.releaseId,
     });
+  });
+
+  it("changes only the revised event Blueprint fingerprint", async () => {
+    installVolumeS3Fixture();
+    const name = `api-test-event-fingerprint-${TEST_SUFFIX}`;
+    const chat = chatRunFinishedBlueprint("chat", ["completed", "failed"]);
+    const accepted = await syncCatalog(
+      catalog([
+        activeDefinition(name, {
+          blueprints: [calendarBlueprint("calendar", "primary"), chat],
+        }),
+      ]),
+    );
+    expect(accepted.body.outcome).toBe("accepted");
+    const initial = (await readState(name)).body.definition;
 
     const changed = await syncCatalog(
       catalog([
         activeDefinition(name, {
-          blueprints: [
-            calendarBlueprint("calendar", "secondary"),
-            reorderedSet,
-          ],
+          blueprints: [calendarBlueprint("calendar", "secondary"), chat],
         }),
       ]),
     );

@@ -4,6 +4,7 @@ import {
   type ChatThreadArtifactFile,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -545,6 +546,63 @@ test("Persisted video attachments open in the video sidebar", async () => {
   await waitFor(() => {
     expect(screen.queryByTestId("artifact-sidebar-body-video")).toBeNull();
   });
+});
+
+test("A private video refreshes its file-scoped poster without listing thread artifacts", async () => {
+  const fileId = "refreshing-private-video";
+  const poster = publicArtifactUrl("refreshing-private-video-poster.jpg");
+  mockAttachmentChat(context, {
+    chatEvents: [
+      sentUserMessage(
+        userMessage([
+          filePart(fileId, "recording.mov", "video/quicktime"),
+          { type: "text", text: "Review this recording" },
+        ]),
+      ),
+    ],
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(404, {
+      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
+    });
+  });
+  let posterReady = false;
+  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
+    return respond(200, {
+      url: "https://private-files.example/recording.mov",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      publicUrl: null,
+      previewImageUrl: posterReady ? poster : null,
+    });
+  });
+
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+
+  await screen.findByText("Review this recording");
+  await expect(
+    screen.findByTestId("chat-video-preview-fallback"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryAllByText("Chat thread not found").find((candidate) => {
+      return candidate.closest('[data-sonner-toast][data-visible="true"]');
+    }),
+  ).toBeUndefined();
+
+  posterReady = true;
+  context.mocks.ably.trigger(
+    `chatThreadArtifactsChanged:${ATTACHMENT_THREAD_ID}`,
+  );
+
+  const thumbnail = await screen.findByTestId("chat-video-preview-thumbnail");
+  expect(thumbnail).toHaveAttribute(
+    "src",
+    "https://cdn.vm7.io/cdn-cgi/image/width=800,height=720,fit=scale-down,format=auto,quality=85,metadata=none/artifacts/tests/chat-attachments/refreshing-private-video-poster.jpg",
+  );
+  expect(
+    screen.queryAllByText("Chat thread not found").find((candidate) => {
+      return candidate.closest('[data-sonner-toast][data-visible="true"]');
+    }),
+  ).toBeUndefined();
 });
 
 test("Persisted JSON attachments render their contents", async () => {

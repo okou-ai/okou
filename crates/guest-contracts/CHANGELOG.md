@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.17.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.16.1...guest-contracts-v0.17.0) (2026-09-22)
+
+
+### Features
+
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
+## [0.16.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.16.0...guest-contracts-v0.16.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **guest-contracts:** derive exec log severity from the agent-domain kill ([#36077](https://github.com/okou-ai/okou/issues/36077)) ([0360058](https://github.com/okou-ai/okou/commit/03600589df8d44b36e58b1aefb97235598840a6e)), closes [#36027](https://github.com/okou-ai/okou/issues/36027)
+
 ## [0.16.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.15.3...guest-contracts-v0.16.0) (2026-09-22)
 
 

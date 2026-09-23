@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.213.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.0...runner-rs-v0.213.1) (2026-09-23)
+
+
+### Refactoring
+
+* **runner:** extract runner-storage domain crate ([#36190](https://github.com/okou-ai/okou/issues/36190)) ([25fdd3f](https://github.com/okou-ai/okou/commit/25fdd3f7c8116b3687074d1c0d4f02dbb9b973f3))
+
+## [0.213.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.212.0...runner-rs-v0.213.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
+## [0.212.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.1...runner-rs-v0.212.0) (2026-09-23)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+
+
+### Refactoring
+
+* **runner:** extract provider coordination crate ([#36148](https://github.com/okou-ai/okou/issues/36148)) ([789a24f](https://github.com/okou-ai/okou/commit/789a24f6632566071af38533d4df58a0ef0c0c75))
+
+## [0.211.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.211.0...runner-rs-v0.211.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+## [0.211.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.1...runner-rs-v0.211.0) (2026-09-22)
+
+
+### Features
+
+* expose ssh-backed vnc access ([#36116](https://github.com/okou-ai/okou/issues/36116)) ([05910d3](https://github.com/okou-ai/okou/commit/05910d386aebd37b12637adf5dea4a935c9a0198))
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
+## [0.210.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.210.0...runner-rs-v0.210.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **guest-contracts:** derive exec log severity from the agent-domain kill ([#36077](https://github.com/okou-ai/okou/issues/36077)) ([0360058](https://github.com/okou-ai/okou/commit/03600589df8d44b36e58b1aefb97235598840a6e)), closes [#36027](https://github.com/okou-ai/okou/issues/36027)
+
+
+### Refactoring
+
+* **runner:** extract the runner-host domain crate ([#36075](https://github.com/okou-ai/okou/issues/36075)) ([2f27ce3](https://github.com/okou-ai/okou/commit/2f27ce3a29bfbd91118eb012ab1f0504a132ba38))
+
 ## [0.210.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.209.2...runner-rs-v0.210.0) (2026-09-22)
 
 

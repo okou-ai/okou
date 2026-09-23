@@ -68,7 +68,6 @@ use super::{
     guest_runtime_dir, guest_runtime_path, job_supervisor_timeout, job_terminal_wait_timeout,
     normalize_failure_exit_code,
 };
-use crate::active_input::ActiveInputSource;
 use crate::helper_exec::helper_exec_succeeded;
 use crate::restored_session_identity::{
     FINAL_SESSION_HISTORY_IDENTITY_READ_LIMIT, RestoredSessionFinalMetadataVerification,
@@ -80,6 +79,7 @@ use crate::telemetry::{
     WorkspaceSessionHistoryTelemetry, session_history_prefix_extension_action_type,
 };
 use guest_contracts::guest_binary::AGENT_PATH;
+use runner_provider::ActiveInputSource;
 use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
@@ -1391,13 +1391,13 @@ impl RunControls {
         active_input_source: Option<ActiveInputSource>,
     ) -> Self {
         Self::from_cancellation(
-            crate::run_cancellation::RunCancellationSignals::hard_only(cancel),
+            runner_provider::RunCancellationSignals::from_hard_token(cancel),
             active_input_source,
         )
     }
 
     pub(super) fn from_cancellation(
-        cancellation: crate::run_cancellation::RunCancellationSignals,
+        cancellation: runner_provider::RunCancellationSignals,
         active_input_source: Option<ActiveInputSource>,
     ) -> Self {
         Self {
@@ -1939,7 +1939,7 @@ async fn populate_storage_plan(
         result.is_ok(),
         result.is_err().then_some(STORAGE_CACHE_POPULATE_FAILED),
     );
-    result
+    result.map_err(Into::into)
 }
 
 enum GuestRuntimeStatePreparation {

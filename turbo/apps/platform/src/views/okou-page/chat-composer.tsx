@@ -1,3 +1,12 @@
+import { Combobox } from "@base-ui/react/combobox";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
+} from "@okouai/ui/components/ui/dropdown-menu";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   useComposerConnectorActions,
@@ -129,6 +138,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@okouai/ui/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -1105,34 +1120,32 @@ function WebsiteTemplateCard({
   };
 
   return (
+    // Keep the full-card preview below the independent Use action locally.
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={t(
-        ($) => {
-          return $.artifacts.templates.previewWebsite;
-        },
-        {
-          title: item.title,
-        },
-      )}
-      onClick={preview}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          preview();
-        }
-      }}
       className={cn(
         TEMPLATE_TILE_WRAPPER,
-        "cursor-zoom-in focus-visible:outline-none",
+        TEMPLATE_TILE_RING,
+        "isolate cursor-zoom-in has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-ring",
       )}
     >
+      <button
+        type="button"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.templates.previewWebsite;
+          },
+          {
+            title: item.title,
+          },
+        )}
+        onClick={preview}
+        className="absolute inset-0 z-10 cursor-zoom-in focus-visible:outline-none"
+      />
       <div
         className={cn(
           TEMPLATE_TILE_MEDIA,
           TEMPLATE_TILE_RING,
-          "aspect-[16/9] group-focus-visible/tile:ring-1 group-focus-visible/tile:ring-ring",
+          "aspect-[16/9]",
           selected && TEMPLATE_TILE_RING_SELECTED,
         )}
       >
@@ -1160,7 +1173,12 @@ function WebsiteTemplateCard({
           draggable={false}
           className="pointer-events-none h-full w-full bg-background object-cover"
         />
-        <div className={TEMPLATE_TILE_SCRIM} />
+        <div
+          className={cn(
+            TEMPLATE_TILE_SCRIM,
+            "group-has-[:focus-visible]/tile:opacity-100",
+          )}
+        />
         {selected ? (
           <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
             <Check size={14} />
@@ -1177,11 +1195,13 @@ function WebsiteTemplateCard({
             },
           )}
           aria-pressed={selected}
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             onSelect(item);
           }}
-          className={cn(TEMPLATE_TILE_USE, "cursor-pointer")}
+          className={cn(
+            TEMPLATE_TILE_USE,
+            "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
+          )}
         >
           {t(($) => {
             return $.artifacts.templates.use;
@@ -2931,7 +2951,7 @@ function PptCard({
         </button>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
-        <TooltipProvider delayDuration={300}>
+        <TooltipProvider delay={300}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -3578,11 +3598,13 @@ function TemplatePickerCategoryNav({
   customTemplatesEnabled,
   videoPickersVisible,
   onChange,
+  onResetCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
   videoPickersVisible: boolean;
   onChange: (value: string) => void;
+  onResetCustom: () => void;
 }) {
   const { t } = useTranslation();
   // Custom leads the list and is separated by a rule, because it answers who
@@ -3652,6 +3674,18 @@ function TemplatePickerCategoryNav({
     },
   ];
 
+  const categoryItems = categoryOptions.map(({ value, label, Icon }) => {
+    return {
+      value,
+      label: (
+        <span className="flex items-center gap-2">
+          <Icon className="h-4 w-4" />
+          {label}
+        </span>
+      ),
+    };
+  });
+
   return (
     <>
       <div
@@ -3662,7 +3696,22 @@ function TemplatePickerCategoryNav({
             : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
         )}
       >
-        <Select value={selectedCategory} onValueChange={onChange}>
+        <Select
+          items={categoryItems}
+          value={selectedCategory}
+          onValueChange={(value, details) => {
+            if (
+              value === null ||
+              !categoryItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            onChange(value);
+          }}
+        >
           <SelectTrigger
             aria-label={t(($) => {
               return $.artifacts.templates.category;
@@ -3676,13 +3725,10 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryOptions.flatMap(({ value, label, Icon }) => {
+            {categoryItems.flatMap(({ value, label }) => {
               return [
                 <SelectItem key={value} value={value}>
-                  <span className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </span>
+                  {label}
                 </SelectItem>,
                 ...(value === "custom"
                   ? [<SelectSeparator key={`${value}-rule`} />]
@@ -3695,82 +3741,49 @@ function TemplatePickerCategoryNav({
       <div className="hidden shrink-0 sm:flex">
         <div className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
           <TemplatePickerHeader />
-          <nav
-            role="tablist"
+          <TabsList
+            activateOnFocus
             aria-label={t(($) => {
               return $.artifacts.templates.categories;
             })}
-            aria-orientation="vertical"
             data-template-picker-sidebar=""
-            className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
+            className="flex h-auto min-h-0 flex-1 flex-col items-stretch justify-start gap-0.5 overflow-y-auto rounded-none bg-transparent p-0 px-3 pb-3"
           >
-            {categoryOptions.flatMap(
-              ({ value, label, Icon }, categoryIndex) => {
-                const selected = value === selectedCategory;
-                return [
-                  <button
-                    key={value}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    tabIndex={selected ? 0 : -1}
-                    onClick={() => {
-                      onChange(value);
-                    }}
-                    onKeyDown={(event) => {
-                      let nextIndex: number | null = null;
-                      if (event.key === "ArrowDown") {
-                        nextIndex =
-                          (categoryIndex + 1) % categoryOptions.length;
-                      } else if (event.key === "ArrowUp") {
-                        nextIndex =
-                          (categoryIndex - 1 + categoryOptions.length) %
-                          categoryOptions.length;
-                      } else if (event.key === "Home") {
-                        nextIndex = 0;
-                      } else if (event.key === "End") {
-                        nextIndex = categoryOptions.length - 1;
-                      }
-                      if (nextIndex === null) {
-                        return;
-                      }
-                      event.preventDefault();
-                      const nextTab = event.currentTarget.parentElement
-                        ?.querySelectorAll<HTMLElement>("[role=tab]")
-                        .item(nextIndex);
-                      nextTab?.focus();
-                      onChange(categoryOptions[nextIndex]?.value ?? value);
-                    }}
+            {categoryOptions.flatMap(({ value, label, Icon }) => {
+              const selected = value === selectedCategory;
+              return [
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  // Reopening the active Custom category resets its filters.
+                  // Category selection and keyboard focus stay with Tabs.
+                  onClick={
+                    value === "custom" && selected ? onResetCustom : undefined
+                  }
+                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:text-foreground data-active:shadow-none focus-visible:ring-inset"
+                >
+                  <Icon
                     className={cn(
-                      "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      "h-4 w-4 shrink-0 transition-colors",
                       selected
-                        ? "bg-gray-50 font-medium text-foreground"
-                        : "text-gray-800 hover:bg-state-hover hover:text-foreground",
+                        ? "text-foreground"
+                        : "text-gray-700 group-hover:text-gray-800",
                     )}
-                  >
-                    <Icon
-                      className={cn(
-                        "h-4 w-4 shrink-0 transition-colors",
-                        selected
-                          ? "text-foreground"
-                          : "text-gray-700 group-hover:text-gray-800",
-                      )}
-                    />
-                    <span className="truncate">{label}</span>
-                  </button>,
-                  ...(value === "custom"
-                    ? [
-                        <div
-                          key={`${value}-rule`}
-                          role="presentation"
-                          className="my-2 shrink-0 border-t border-t-gray-400"
-                        />,
-                      ]
-                    : []),
-                ];
-              },
-            )}
-          </nav>
+                  />
+                  <span className="truncate">{label}</span>
+                </TabsTrigger>,
+                ...(value === "custom"
+                  ? [
+                      <div
+                        key={`${value}-rule`}
+                        role="presentation"
+                        className="my-2 shrink-0 border-t border-t-gray-400"
+                      />,
+                    ]
+                  : []),
+              ];
+            })}
+          </TabsList>
         </div>
       </div>
     </>
@@ -4300,7 +4313,7 @@ function ImportedPptCardCaption({
 }) {
   return (
     <div className={TEMPLATE_TILE_CAPTION}>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -4512,7 +4525,7 @@ function ImportedPresentationTemplateRenameControl({
           }}
         />
       </div>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -4548,15 +4561,18 @@ const IMPORTED_TEMPLATE_VISIBILITY_OPTIONS = [
  * because reading the current state is the common act and switching it is not.
  */
 function ImportedPresentationTemplateVisibilityControl({
+  templateId,
   visibility,
   updating,
   onChange,
 }: {
+  templateId: string;
   visibility: PresentationTemplateSummary["visibility"];
   updating: boolean;
   onChange: (visibility: PresentationTemplateSummary["visibility"]) => void;
 }) {
   const { t } = useTranslation();
+  const descriptionId = `imported-template-${templateId}-visibility`;
   const optionLabel = (value: PresentationTemplateSummary["visibility"]) => {
     return value === "private"
       ? t(($) => {
@@ -4577,12 +4593,12 @@ function ImportedPresentationTemplateVisibilityControl({
   };
   const CurrentIcon = visibility === "private" ? Lock : Users;
   return (
-    <Popover>
+    <DropdownMenu>
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
         <CurrentIcon size={14} className="shrink-0" aria-hidden="true" />
         <span>{optionState(visibility)}</span>
         <span aria-hidden="true">·</span>
-        <PopoverTrigger
+        <DropdownMenuTrigger
           disabled={updating}
           className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground disabled:opacity-50"
           aria-label={t(($) => {
@@ -4592,74 +4608,68 @@ function ImportedPresentationTemplateVisibilityControl({
           {t(($) => {
             return $.artifacts.templates.visibility.change;
           })}
-        </PopoverTrigger>
+        </DropdownMenuTrigger>
       </p>
-      <PopoverContent
+      <DropdownMenuContent
         align="start"
         side="bottom"
         sideOffset={6}
         className="w-[19rem] p-1.5"
       >
-        <div
-          role="radiogroup"
+        <DropdownMenuRadioGroup
+          value={visibility}
+          onValueChange={(next: PresentationTemplateSummary["visibility"]) => {
+            if (next !== visibility) {
+              onChange(next);
+            }
+          }}
           aria-label={t(($) => {
             return $.workflows.detail.metadata.visibility;
           })}
         >
           {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
-            const selected = value === visibility;
             return (
-              <PopoverClose
+              <DropdownMenuRadioItem
                 key={value}
-                render={
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={cn(
-                      "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-                      selected && "bg-state-selected",
-                    )}
-                    onClick={() => {
-                      if (!selected) {
-                        onChange(value);
-                      }
-                    }}
+                value={value}
+                label={optionLabel(value)}
+                aria-label={optionLabel(value)}
+                aria-describedby={`${descriptionId}-${value}`}
+                closeOnClick
+                className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
+              >
+                <Icon
+                  size={16}
+                  className="mt-0.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm text-foreground">
+                    {optionLabel(value)}
+                  </span>
+                  <span
+                    id={`${descriptionId}-${value}`}
+                    className="block text-xs text-muted-foreground"
                   >
-                    <Icon
+                    {optionState(value)}
+                  </span>
+                </span>
+                {/* Reserve the check column so descriptions do not reflow. */}
+                <span className="mt-0.5 w-4 shrink-0">
+                  <DropdownMenuRadioItemIndicator>
+                    <Check
                       size={16}
-                      className="mt-0.5 shrink-0 text-muted-foreground"
+                      className="text-foreground"
                       aria-hidden="true"
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm text-foreground">
-                        {optionLabel(value)}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {optionState(value)}
-                      </span>
-                    </span>
-                    {/* The check column is reserved on both rows: letting it
-                      appear only on the selected one narrows that row's text
-                      box, so the description reflows every time the selection
-                      moves. */}
-                    <span className="mt-0.5 w-4 shrink-0">
-                      {selected ? (
-                        <Check
-                          size={16}
-                          className="text-foreground"
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                    </span>
-                  </button>
-                }
-              />
+                  </DropdownMenuRadioItemIndicator>
+                </span>
+              </DropdownMenuRadioItem>
             );
           })}
-        </div>
-      </PopoverContent>
-    </Popover>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -4778,6 +4788,7 @@ function ImportedPresentationTemplateSidebar({
           <>
             <div className="my-5 border-t border-border" />
             <ImportedPresentationTemplateVisibilityControl
+              templateId={activeTemplate.id}
               visibility={activeTemplate.visibility}
               updating={updating}
               onChange={(nextVisibility) => {
@@ -5691,14 +5702,29 @@ function TemplatePickerDialog({
                 })}
               </DialogTitle>
             </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+            <Tabs
+              value={selectedCategory}
+              onValueChange={(nextCategory) => {
+                if (typeof nextCategory === "string") {
+                  handleCategoryChange(nextCategory);
+                }
+              }}
+              orientation="vertical"
+              className="flex min-h-0 flex-1 flex-col sm:flex-row"
+            >
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
                 videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
+                onResetCustom={resetCustomTemplatePicker}
               />
-              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {/* Keep the existing single active content tree and its category
+                  unmounting policy; signals retain search and scroll state. */}
+              <TabsContent
+                value={selectedCategory}
+                className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
                 <TemplatePaidToolNotice category={selectedCategory} />
                 {selectedCategory !== "custom" ? (
                   <div
@@ -5752,8 +5778,8 @@ function TemplatePickerDialog({
                   onSelectWorkflow={handleSelectWorkflow}
                   runtime={runtime}
                 />
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
           </div>
         ) : null}
         {previewItem ? (
@@ -6170,7 +6196,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
 function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
   const { label, prewarm, open } = useTemplatePickerTrigger(signals);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -6272,7 +6298,7 @@ function CreateWorkflowPromptButton({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -7136,37 +7162,7 @@ function ComposerConnectorAccountMenu({
   );
 }
 
-function handleConnectorAccountRadioKeyDown(
-  event: ReactKeyboardEvent<HTMLDivElement>,
-): void {
-  const buttons = [
-    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-      '[role="radio"]:not(:disabled)',
-    ),
-  ];
-  if (buttons.length === 0 || !(event.target instanceof HTMLButtonElement)) {
-    return;
-  }
-  const currentIndex = buttons.indexOf(event.target);
-  if (currentIndex === -1) {
-    return;
-  }
-  let nextIndex: number;
-  if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-    nextIndex = (currentIndex + 1) % buttons.length;
-  } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-    nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
-  } else if (event.key === "Home") {
-    nextIndex = 0;
-  } else if (event.key === "End") {
-    nextIndex = buttons.length - 1;
-  } else {
-    return;
-  }
-  event.preventDefault();
-  buttons[nextIndex]?.focus();
-  buttons[nextIndex]?.click();
-}
+const DEFAULT_CONNECTOR_ACCOUNT = "default";
 
 function ComposerConnectorAccountChoices({
   connectorLabel,
@@ -7178,8 +7174,6 @@ function ComposerConnectorAccountChoices({
   unavailable,
   noResults,
   loadingAccountCount,
-  onSelect,
-  onUseDefault,
 }: {
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
@@ -7190,12 +7184,10 @@ function ComposerConnectorAccountChoices({
   readonly unavailable: boolean;
   readonly noResults: boolean;
   readonly loadingAccountCount: number;
-  readonly onSelect: (connection: ConnectorAccountConnection) => void;
-  readonly onUseDefault: () => void;
 }) {
   const { t } = useTranslation();
   const choiceClassName = cn(
-    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover data-highlighted:bg-state-hover data-highlighted:ring-2 data-highlighted:ring-inset data-highlighted:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     saving && "cursor-default opacity-50",
   );
   const accountLabel = useConnectorAccountLabel();
@@ -7204,9 +7196,6 @@ function ComposerConnectorAccountChoices({
     : t(($) => {
         return $.chat.connectors.noUsableAccount;
       });
-  const hasCheckedConnection = connections.some((connection) => {
-    return selection?.connectionId === connection.id;
-  });
   const accountStatus = (connection: ConnectorAccountConnection): string => {
     if (connection.connectionStatus === "connected") {
       return t(($) => {
@@ -7235,20 +7224,16 @@ function ComposerConnectorAccountChoices({
   };
 
   return (
-    <div
-      className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto p-1"
-      role="radiogroup"
+    <Combobox.List
+      className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto p-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       aria-label={connectorLabel}
-      onKeyDown={handleConnectorAccountRadioKeyDown}
+      aria-busy={saving}
+      tabIndex={0}
     >
-      <button
-        type="button"
-        role="radio"
-        aria-checked={!selection}
-        tabIndex={!selection || !hasCheckedConnection ? 0 : -1}
+      <Combobox.Item
         disabled={saving}
+        value={DEFAULT_CONNECTOR_ACCOUNT}
         className={choiceClassName}
-        onClick={onUseDefault}
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-brand-text">
           {!selection ? <Check size={15} strokeWidth={2.5} /> : null}
@@ -7268,7 +7253,7 @@ function ComposerConnectorAccountChoices({
               : ""}
           </span>
         </span>
-      </button>
+      </Combobox.Item>
       {loading ? (
         <>
           <div className="flex flex-col" aria-hidden="true">
@@ -7309,17 +7294,11 @@ function ComposerConnectorAccountChoices({
       {connections.map((connection) => {
         const checked = selection?.connectionId === connection.id;
         return (
-          <button
+          <Combobox.Item
             key={connection.id}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            tabIndex={checked ? 0 : -1}
             disabled={saving}
+            value={connection.id}
             className={choiceClassName}
-            onClick={() => {
-              onSelect(connection);
-            }}
           >
             <span className="flex h-4 w-4 shrink-0 items-center justify-center text-brand-text">
               {checked ? <Check size={15} strokeWidth={2.5} /> : null}
@@ -7332,7 +7311,7 @@ function ComposerConnectorAccountChoices({
                 {accountStatus(connection)}
               </span>
             </span>
-          </button>
+          </Combobox.Item>
         );
       })}
       {noResults ? (
@@ -7342,7 +7321,7 @@ function ComposerConnectorAccountChoices({
           })}
         </div>
       ) : null}
-    </div>
+    </Combobox.List>
   );
 }
 
@@ -7370,8 +7349,7 @@ function ComposerConnectorAccountMenuContent({
   const search = useGet(signals.connector.accounts.search$);
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const setSearch = useSet(signals.connector.accounts.setSearch$);
-  const selectAccount = actions.selectAccount;
-  const clearAccountSelection = actions.useDefaultAccount;
+  const commitSelection = actions.commitAccountSelection;
   const [loadMoreLoadable, loadMore] = useLoadableSet(
     signals.connector.accounts.loadMore$,
   );
@@ -7393,7 +7371,7 @@ function ComposerConnectorAccountMenuContent({
     summariesLoadable.state === "hasData"
       ? summariesLoadable.data.get(targetKey)
       : undefined;
-  const defaultConnection = summary?.defaultConnection ?? null;
+  const defaultConnection = summary ? summary.defaultConnection : null;
   const accountList =
     accountsLoadable.state === "hasData"
       ? accountsLoadable.data
@@ -7411,111 +7389,119 @@ function ComposerConnectorAccountMenuContent({
     (summary?.accountCount ?? 0) > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
     accountList.nextCursor !== null;
   const saving = actions.savingAccount;
-  const selectAndClose = (connection: ConnectorAccountConnection): void => {
-    detach(
-      (async () => {
-        await selectAccount(connection, signal);
-        closeMenu();
-      })(),
-      Reason.DomCallback,
-    );
-  };
-  const selectDefaultAndClose = (): void => {
-    detach(
-      (async () => {
-        await clearAccountSelection(target, signal);
-        closeMenu();
-      })(),
-      Reason.DomCallback,
-    );
-  };
-
   return (
-    <div
-      className={cn(
-        "flex max-h-[min(25rem,var(--available-height))] min-h-0 flex-col overflow-hidden",
-        showSearch && "h-[min(25rem,var(--available-height))]",
-      )}
-    >
-      <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 pl-1.5 pr-2 text-sm font-medium text-foreground">
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          aria-label={t(($) => {
-            return $.chat.connectors.back;
-          })}
-          onClick={closeMenu}
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-        </Button>
-        <span className="min-w-0 flex-1 truncate">
-          {t(($) => {
-            return $.chat.connectors.accountForThread;
-          })}
-        </span>
-      </div>
-      {showSearch ? (
-        <div className="shrink-0 border-b border-border/50 px-3 py-2">
-          <Input
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value, signal);
-            }}
-            placeholder={t(($) => {
-              return $.connectors.accounts.find;
-            })}
-            className="h-8"
-          />
-        </div>
-      ) : null}
-      <ComposerConnectorAccountChoices
-        connectorLabel={connectorLabel}
-        connections={connections}
-        selection={selection}
-        defaultConnection={defaultConnection}
-        saving={saving}
-        loading={accountsLoadable.state === "loading"}
-        unavailable={
-          accountsLoadable.state === "hasError" || !accountList.available
+    <Combobox.Root<string>
+      inline
+      open
+      readOnly={saving}
+      value={selection ? selection.connectionId : DEFAULT_CONNECTOR_ACCOUNT}
+      filter={null}
+      onValueChange={(value, details) => {
+        if (details.reason !== "item-press") {
+          return;
         }
-        noResults={connectorAccountSearchHasNoResults({
-          state: accountsLoadable.state,
-          available: accountList.available,
-          resultCount: accountList.connections.length,
-          search,
-        })}
-        loadingAccountCount={summary?.accountCount ?? 0}
-        onSelect={(connection) => {
-          selectAndClose(connection);
-        }}
-        onUseDefault={() => {
-          selectDefaultAndClose();
-        }}
-      />
-      {accountList.nextCursor ? (
-        <div className="shrink-0 border-t border-border/50 p-2">
+        // The server (or new-chat pending state) owns the accepted selection.
+        // Reject the immediate transition, including its automatic close.
+        details.cancel();
+        if (saving) {
+          return;
+        }
+        if (value === DEFAULT_CONNECTOR_ACCOUNT) {
+          detach(commitSelection(null, signal), Reason.DomCallback);
+          return;
+        }
+        const connection = connections.find((candidate) => {
+          return candidate.id === value;
+        });
+        if (connection) {
+          detach(commitSelection(connection, signal), Reason.DomCallback);
+        }
+      }}
+    >
+      <div
+        className={cn(
+          "flex max-h-[min(25rem,var(--available-height))] min-h-0 flex-col overflow-hidden",
+          showSearch && "h-[min(25rem,var(--available-height))]",
+        )}
+      >
+        <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 pl-1.5 pr-2 text-sm font-medium text-foreground">
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            disabled={loadMoreLoadable.state === "loading"}
-            onClick={() => {
-              return detach(loadMore(signal), Reason.DomCallback);
-            }}
+            variant="quiet"
+            size="icon-xs"
+            aria-label={t(($) => {
+              return $.chat.connectors.back;
+            })}
+            onClick={closeMenu}
           >
-            {loadMoreLoadable.state === "loading"
-              ? t(($) => {
-                  return $.connectors.accounts.loadingMore;
-                })
-              : t(($) => {
-                  return $.connectors.accounts.loadMore;
-                })}
+            <ArrowLeft size={16} aria-hidden="true" />
           </Button>
+          <span className="min-w-0 flex-1 truncate">
+            {t(($) => {
+              return $.chat.connectors.accountForThread;
+            })}
+          </span>
         </div>
-      ) : null}
-    </div>
+        {showSearch ? (
+          <div className="shrink-0 border-b border-border/50 px-3 py-2">
+            <Input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value, signal);
+              }}
+              readOnly={saving}
+              aria-label={t(($) => {
+                return $.connectors.accounts.find;
+              })}
+              placeholder={t(($) => {
+                return $.connectors.accounts.find;
+              })}
+              className="h-8"
+            />
+          </div>
+        ) : null}
+        <ComposerConnectorAccountChoices
+          connectorLabel={connectorLabel}
+          connections={connections}
+          selection={selection}
+          defaultConnection={defaultConnection}
+          saving={saving}
+          loading={accountsLoadable.state === "loading"}
+          unavailable={
+            accountsLoadable.state === "hasError" || !accountList.available
+          }
+          noResults={connectorAccountSearchHasNoResults({
+            state: accountsLoadable.state,
+            available: accountList.available,
+            resultCount: accountList.connections.length,
+            search,
+          })}
+          loadingAccountCount={summary?.accountCount ?? 0}
+        />
+        {accountList.nextCursor ? (
+          <div className="shrink-0 border-t border-border/50 p-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={saving || loadMoreLoadable.state === "loading"}
+              onClick={() => {
+                return detach(loadMore(signal), Reason.DomCallback);
+              }}
+            >
+              {loadMoreLoadable.state === "loading"
+                ? t(($) => {
+                    return $.connectors.accounts.loadingMore;
+                  })
+                : t(($) => {
+                    return $.connectors.accounts.loadMore;
+                  })}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </Combobox.Root>
   );
 }
 
@@ -7811,7 +7797,7 @@ function ConnectorsPopoverButton({
         handleOpenChange(open);
       }}
     >
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <PopoverTrigger
             render={
@@ -8327,7 +8313,7 @@ function MicButton({
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -8555,7 +8541,7 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9075,7 +9061,7 @@ function ComposerSendButton({
     </Button>
   );
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9137,7 +9123,7 @@ function ModelConfigurationWarning({
   blocker: ComposerSubmitBlocker;
 }) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={

@@ -18,6 +18,10 @@ import {
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  userPreferencesContract,
+  type UserPreferencesResponse,
+} from "@okouai/api-contracts/contracts/user-preferences";
 
 import {
   click,
@@ -29,6 +33,7 @@ import { mockNow } from "../../../__tests__/time.ts";
 import { platformOkouWordmarkLightImg } from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 
@@ -1000,9 +1005,34 @@ test("Open personal Settings and manage account security in production", async (
 
 test("Toggle network-body capture in Debug settings", async () => {
   prepareDefaultAgent();
-  context.mocks.data.userPreferences({
+  const user = userEvent.setup({ delay: null });
+  const save = createDeferredPromise<void>(context.signal);
+  const submitted: number[] = [];
+  let preferences: UserPreferencesResponse = {
+    timezone: null,
+    locale: "en-US",
+    supportedLocales: ["en-US"],
+    pinnedAgentIds: [],
+    sendMode: "enter",
+    cloudBrowserEnabledByDefault: true,
+    theme: "system",
+    colorTheme: null,
     captureNetworkBodiesRemaining: 0,
-  });
+    voiceInputModel: null,
+  };
+  context.mocks.data.userPreferences(preferences);
+  context.mocks.api(
+    userPreferencesContract.update,
+    async ({ body, respond, withSignal }) => {
+      if (body.captureNetworkBodiesRemaining !== undefined) {
+        submitted.push(body.captureNetworkBodiesRemaining);
+        await withSignal(save.promise);
+      }
+      preferences = { ...preferences, ...body };
+      context.mocks.data.userPreferences(preferences);
+      return respond(200, preferences);
+    },
+  );
 
   await setupPage({
     context,
@@ -1047,17 +1077,56 @@ test("Toggle network-body capture in Debug settings", async () => {
     expect(screen.getByText("Disabled")).toBeInTheDocument();
   });
 
-  click(screen.getByRole("switch"));
+  const captureSwitch = screen.getByRole("switch", {
+    name: "Capture network bodies",
+    checked: false,
+  });
+  expect(captureSwitch).toHaveAccessibleDescription("Disabled");
+  await user.click(captureSwitch);
 
   await waitFor(() => {
-    expect(screen.getByText("Enabled for the next 3 runs")).toBeInTheDocument();
+    expect(captureSwitch).toHaveAttribute("aria-disabled", "true");
   });
-
-  click(screen.getByRole("switch"));
+  await user.keyboard("[Space]");
+  click(captureSwitch);
+  await user.click(screen.getByText("Capture network bodies"));
+  save.resolve();
 
   await waitFor(() => {
-    expect(screen.getByText("Disabled")).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", {
+        name: "Capture network bodies",
+        checked: true,
+      }),
+    ).toHaveAccessibleDescription("Enabled for the next 3 runs");
+    expect(captureSwitch).not.toHaveAttribute("aria-disabled", "true");
   });
+  expect(submitted).toStrictEqual([3]);
+
+  captureSwitch.focus();
+  expect(captureSwitch).toHaveFocus();
+  await user.keyboard("[Space]");
+
+  await waitFor(() => {
+    expect(
+      screen.getByRole("switch", {
+        name: "Capture network bodies",
+        checked: false,
+      }),
+    ).toHaveAccessibleDescription("Disabled");
+  });
+  expect(submitted).toStrictEqual([3, 0]);
+
+  await user.click(screen.getByText("Capture network bodies"));
+  await waitFor(() => {
+    expect(
+      screen.getByRole("switch", {
+        name: "Capture network bodies",
+        checked: true,
+      }),
+    ).toHaveAccessibleDescription("Enabled for the next 3 runs");
+  });
+  expect(submitted).toStrictEqual([3, 0, 3]);
 });
 
 test("Hide Debug settings without Debug access", async () => {
