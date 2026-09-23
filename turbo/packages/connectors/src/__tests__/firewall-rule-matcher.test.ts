@@ -1965,6 +1965,25 @@ describe("findMatchingPermissions", () => {
     expect(
       matchFirewallRequestDecision(
         firewalls,
+        "POST",
+        "https://dynamodb.example.com/",
+        { aws: { unknownPolicy: "ask" } },
+        { status: "present", value: "aws" },
+        {
+          awsDiagnostic: {
+            context: {
+              sigv4Service: "dynamodb",
+              target: "DynamoDB_20120810.GetItem",
+              query: [{ key: "Action", value: "OtherOperation" }],
+              headerNames: [],
+            },
+          },
+        },
+      ),
+    ).toMatchObject({ kind: "block", reason: "unknown_endpoint" });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
         "GET",
         "https://s3.example.com/bucket/key",
         { aws: { unknownPolicy: "ask" } },

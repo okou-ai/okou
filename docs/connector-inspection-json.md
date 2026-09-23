@@ -80,9 +80,9 @@ rejected, and query strings/fragments are stripped before transport and output.
 
 AWS URL checks may include a bounded `request.aws` selector object, supplied by
 `--aws-service` with optional `--aws-action`, `--aws-target`, repeated
-`--aws-query-param`, and repeated `--aws-header-present` CLI options. Action and
-target are mutually exclusive; S3 header selectors are limited to the
-allowlisted permission-selector names. These selectors classify the intended
+`--aws-query-param`, and repeated `--aws-header-present` CLI options. An action,
+including a query `Action`, cannot be combined with a target. S3 header
+selectors are limited to the allowlisted permission-selector names. These selectors classify the intended
 operation only: they do not validate a SigV4 signature or send a request to
 AWS. The raw URL query and fragment remain stripped. AWS rules that do not
 match the explicit selectors remain unmatched and use the configured unknown-

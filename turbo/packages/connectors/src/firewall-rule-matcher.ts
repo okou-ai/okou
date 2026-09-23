@@ -903,6 +903,10 @@ function isValidAwsDiagnosticContext(
   }
   return (
     awsActionQueryMatches(action, query) &&
+    (target === undefined ||
+      !query.some((selector) => {
+        return selector.key === "Action";
+      })) &&
     awsDiagnosticHeadersSupported(service, action, target, headerNames)
   );
 }
@@ -999,7 +1003,6 @@ function awsRuleMatches(
           name as keyof typeof AWS_S3_PERMISSION_HEADER_QUERY_KEYS
         ];
       if (
-        selectedKeys.length === 0 ||
         selectedKeys.every((key) => {
           return !requiredKeys.has(key);
         })

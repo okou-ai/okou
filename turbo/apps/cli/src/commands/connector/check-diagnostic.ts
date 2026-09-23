@@ -1,4 +1,4 @@
-import { Option, type Command } from "commander";
+import { InvalidArgumentError, Option, type Command } from "commander";
 import {
   AWS_PREDICATE_VALUE_RE,
   AWS_QUERY_KEY_RE,
@@ -40,22 +40,34 @@ function collectRepeatedOption(
   return [...previous, value];
 }
 
+function collectUniqueAwsOption(flag: string) {
+  return (value: string, previous: string | undefined): string => {
+    if (previous !== undefined) {
+      throw new InvalidArgumentError(`${flag} cannot be repeated.`);
+    }
+    return value;
+  };
+}
+
 export function addAwsDiagnosticOptions(command: Command): Command {
   return command
     .addOption(
       new Option(
         "--aws-service <SERVICE>",
         "Explicit AWS SigV4 signing service; required with AWS selectors",
-      ),
+      ).argParser(collectUniqueAwsOption("--aws-service")),
     )
     .addOption(
-      new Option("--aws-action <ACTION>", "AWS Query API Action selector"),
+      new Option(
+        "--aws-action <ACTION>",
+        "AWS Query API Action selector",
+      ).argParser(collectUniqueAwsOption("--aws-action")),
     )
     .addOption(
       new Option(
         "--aws-target <TARGET>",
         "AWS JSON X-Amz-Target selector (mutually exclusive with --aws-action)",
-      ),
+      ).argParser(collectUniqueAwsOption("--aws-target")),
     )
     .addOption(
       new Option(
@@ -201,7 +213,11 @@ function validateAwsActionAndTarget(
 function parseAwsQuerySelectors(
   inputs: readonly string[],
   action: string | undefined,
+  target: string | undefined,
 ): { readonly key: string; readonly value?: string }[] {
+  if (inputs.length > 32) {
+    throw new Error("--aws-query-param can be supplied at most 32 times.");
+  }
   const query = inputs.map(parseAwsQueryParam);
   const queryKeys = new Set<string>();
   for (const selector of query) {
@@ -224,6 +240,9 @@ function parseAwsQuerySelectors(
     throw new Error(
       "--aws-query-param Action conflicts with --aws-action; provide the same value or omit the query selector.",
     );
+  }
+  if (target !== undefined && actionSelectors.length > 0) {
+    throw new Error("--aws-query-param Action conflicts with --aws-target.");
   }
   return query;
 }
@@ -278,7 +297,11 @@ function awsSelectorsFromOptions(
 
   const service = requireAwsService(options.awsService);
   validateAwsActionAndTarget(options.awsAction, options.awsTarget);
-  const query = parseAwsQuerySelectors(queryInputs, options.awsAction);
+  const query = parseAwsQuerySelectors(
+    queryInputs,
+    options.awsAction,
+    options.awsTarget,
+  );
   const headerNames = parseAwsHeaderNames(
     headerInputs,
     service,

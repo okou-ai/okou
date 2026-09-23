@@ -877,6 +877,46 @@ describe("okou connector check command", () => {
         expected: "--aws-action and --aws-target cannot be combined",
       },
       {
+        name: "rejects repeated AWS signing services",
+        args: [
+          "--url",
+          "https://sts.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "sts",
+          "--aws-service",
+          "ec2",
+        ],
+        expected: "--aws-service cannot be repeated",
+      },
+      {
+        name: "rejects repeated AWS actions",
+        args: [
+          "--url",
+          "https://sts.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "sts",
+          "--aws-action",
+          "GetCallerIdentity",
+          "--aws-action",
+          "GetSessionToken",
+        ],
+        expected: "--aws-action cannot be repeated",
+      },
+      {
+        name: "rejects repeated AWS targets",
+        args: [
+          "--url",
+          "https://dynamodb.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "dynamodb",
+          "--aws-target",
+          "DynamoDB_20120810.GetItem",
+          "--aws-target",
+          "DynamoDB_20120810.PutItem",
+        ],
+        expected: "--aws-target cannot be repeated",
+      },
+      {
         name: "rejects empty AWS query selector values",
         args: [
           "--url",
@@ -889,14 +929,52 @@ describe("okou connector check command", () => {
         expected: "Invalid --aws-query-param value",
       },
       {
+        name: "rejects an AWS target combined with a Query Action",
+        args: [
+          "--url",
+          "https://dynamodb.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "dynamodb",
+          "--aws-target",
+          "DynamoDB_20120810.GetItem",
+          "--aws-query-param",
+          "Action=OtherOperation",
+        ],
+        expected: "--aws-query-param Action conflicts with --aws-target",
+      },
+      {
+        name: "rejects more than 32 AWS query selectors",
+        args: [
+          "--url",
+          "https://s3.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "s3",
+          ...Array.from({ length: 33 }, (_, index) => {
+            return ["--aws-query-param", `key${index}`];
+          }).flat(),
+        ],
+        expected: "--aws-query-param can be supplied at most 32 times",
+      },
+      {
         name: "rejects AWS selectors without URL mode",
         args: ["--aws-service", "sts"],
         expected: "AWS diagnostic selectors can only be used with --url",
       },
     ])("$name", async ({ args, expected }) => {
-      await expectCommandFailure(args);
-      expect(getErrorOutput()).toContain(expected);
-      expect(getOutput()).not.toContain("Step 1");
+      const stderr = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(() => {
+          return true;
+        });
+      try {
+        await expectCommandFailure(args);
+        expect(
+          [getErrorOutput(), stderr.mock.calls.flat().join("\n")].join("\n"),
+        ).toContain(expected);
+        expect(getOutput()).not.toContain("Step 1");
+      } finally {
+        stderr.mockRestore();
+      }
     });
   });
 

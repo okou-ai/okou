@@ -132,6 +132,18 @@ function validateAwsCheckSelectors(
       message: "AWS action and target selectors cannot be combined",
     });
   }
+  if (
+    selectors.target !== undefined &&
+    (selectors.query ?? []).some((selector) => {
+      return selector.key === "Action";
+    })
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["query"],
+      message: "AWS Action query selector conflicts with the target selector",
+    });
+  }
   validateAwsQuerySelectors(selectors.query ?? [], ctx);
   validateAwsActionQuery(selectors, ctx);
   validateAwsHeaderSelectors(selectors, ctx);
