@@ -14,6 +14,22 @@ import type { Db, ReadonlyDb } from "../external/db";
 export type AgentPhoneChannel = "imessage" | "sms" | "mms";
 export type AgentPhoneUserLink = typeof agentphoneUserLinks.$inferSelect;
 
+/** AgentPhone requires to_number for every send. Group replies use the
+ * provider's group id; a member's handle would create a separate DM. */
+export function agentPhoneReplyDestination(target: {
+  readonly isGroup: boolean;
+  readonly groupId: string | null | undefined;
+  readonly phoneHandle: string;
+}): string {
+  if (target.isGroup) {
+    if (!target.groupId?.startsWith("grp_")) {
+      throw new Error("AgentPhone group reply is missing a provider group id");
+    }
+    return target.groupId;
+  }
+  return target.phoneHandle;
+}
+
 const AGENTPHONE_EMAIL_HANDLE_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/u;
 const AGENTPHONE_PHONE_HANDLE_PATTERN = /^\+[1-9]\d{7,14}$/u;
 
@@ -142,7 +158,9 @@ export async function storeOutboundAgentPhoneMessage(
         params.userChannel,
       ),
       fromNumber: normalizeAgentPhoneHandle(params.fromNumber, "sms"),
-      toNumber: normalizeAgentPhoneHandle(params.toNumber, params.userChannel),
+      toNumber: params.toNumber.startsWith("grp_")
+        ? params.toNumber
+        : normalizeAgentPhoneHandle(params.toNumber, params.userChannel),
       direction: "outbound",
       channel: params.channel ?? "unknown",
       body: params.body ?? null,

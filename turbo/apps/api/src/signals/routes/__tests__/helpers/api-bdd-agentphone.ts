@@ -1,5 +1,5 @@
 import { mockClerkUsers } from "./clerk-users";
-import { createHmac, randomInt, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
 
 import {
   integrationsPhoneUploadCompleteContract,
@@ -62,6 +62,7 @@ interface AgentPhoneInboundMessage {
   readonly messageId?: string;
   readonly conversationId?: string;
   readonly isGroup?: boolean;
+  readonly groupId?: string | null;
   readonly mediaUrl?: string;
   readonly mentions?: readonly Readonly<Record<string, unknown>>[];
   readonly recentHistory?: readonly Readonly<Record<string, unknown>>[];
@@ -121,6 +122,13 @@ export function uniquePhoneHandle(): string {
 
 export function uniqueConversationId(): string {
   return `conv-bdd-${randomUUID().slice(0, 13)}`;
+}
+
+export function bddGroupId(conversationId: string): string {
+  return `grp_bdd_${createHash("sha256")
+    .update(conversationId)
+    .digest("hex")
+    .slice(0, 16)}`;
 }
 
 function authenticate(
@@ -191,6 +199,10 @@ export function createAgentPhoneBddApi(context: TestContext) {
     message: AgentPhoneInboundMessage,
   ): Promise<string> {
     const messageId = message.messageId ?? `ap-msg-${randomUUID()}`;
+    const groupId =
+      message.isGroup && message.groupId !== null
+        ? (message.groupId ?? bddGroupId(message.conversationId ?? messageId))
+        : null;
     const rawBody = JSON.stringify({
       event: "agent.message",
       channel: message.channel,
@@ -207,6 +219,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
           ? { conversationId: message.conversationId }
           : {}),
         ...(message.isGroup === undefined ? {} : { isGroup: message.isGroup }),
+        ...(groupId ? { group: { isGroup: true, groupId } } : {}),
         ...(message.mediaUrl ? { mediaUrl: message.mediaUrl } : {}),
         ...(message.mentions ? { mentions: message.mentions } : {}),
       },
@@ -242,6 +255,12 @@ export function createAgentPhoneBddApi(context: TestContext) {
               body: stringField(record, "body"),
               mediaUrl: stringField(record, "media_url"),
             };
+            if (!send.toNumber) {
+              return HttpResponse.json(
+                { detail: "Provide to_number or recipients" },
+                { status: 422 },
+              );
+            }
             messages.push(send);
             return HttpResponse.json({
               id: `apmsg_${randomUUID()}`,

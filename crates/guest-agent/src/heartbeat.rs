@@ -134,6 +134,9 @@ pub async fn heartbeat_loop_for_run_with_interval(
     let mut interval = tokio::time::interval(interval);
     // Drop timer debt after slow HTTP cycles and restore a full-period cadence.
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    // The API opts iMessage runs into a separate best-effort cadence. Its
+    // failures must never count as control-path heartbeat failures.
+    let mut typing_interval: Option<tokio::time::Interval> = None;
     let mut is_first = true;
     let mut consecutive_failures: u32 = 0;
     let mut failed_cycles = Vec::new();
@@ -141,6 +144,16 @@ pub async fn heartbeat_loop_for_run_with_interval(
     loop {
         tokio::select! {
             _ = shutdown.cancelled() => return Ok(()),
+            _ = async {
+                if let Some(timer) = typing_interval.as_mut() {
+                    let _ = timer.tick().await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                let payload = json!({ "runId": run_id.as_str() });
+                let _ = http.post_json(heartbeat_url, &payload, 1).await;
+            }
             scheduled_at = interval.tick() => {
                 let scheduled_lag_ms = elapsed_ms_since(scheduled_at);
                 let payload = json!({ "runId": run_id.as_str() });
@@ -155,7 +168,22 @@ pub async fn heartbeat_loop_for_run_with_interval(
                     .await;
                 let attempts = collector.into_attempts();
                 match heartbeat_result {
-                    Ok(_) => {
+                    Ok(response) => {
+                        if typing_interval.is_none() {
+                            let refresh_seconds = response.as_ref()
+                                .and_then(|value| value.get("typingRefreshIntervalSeconds"))
+                                .and_then(serde_json::Value::as_u64)
+                                .filter(|seconds| (3..=10).contains(seconds));
+                            if let Some(seconds) = refresh_seconds {
+                                let duration = Duration::from_secs(seconds);
+                                let mut timer = tokio::time::interval_at(
+                                    Instant::now() + duration,
+                                    duration,
+                                );
+                                timer.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                                typing_interval = Some(timer);
+                            }
+                        }
                         if is_first {
                             log_info!(LOG_TAG, "Heartbeat sent (initial)");
                         } else if consecutive_failures > 0 {
