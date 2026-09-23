@@ -504,7 +504,7 @@ test(
 test("deduplicated lookup routes by both raw and unique request counts", async () => {
   const fixture = benchFixture(17, `storage-cache-duplicates-${randomUUID()}`);
   await insertChunks(fixture.rows);
-  for (const requestCount of [52, 96, 128]) {
+  for (const requestCount of [51, 52, 64, 96, 128]) {
     const repeated = repeatedFixture(fixture, requestCount);
     if (!(await prefetchFixture(repeated))) {
       throw new Error(
@@ -516,13 +516,16 @@ test("deduplicated lookup routes by both raw and unique request counts", async (
   if (await prefetchFixture(repeatedFixture(fixture, 129))) {
     throw new Error("Expected fallback above 128 raw requests");
   }
+  await resolveFixture(repeatedFixture(fixture, 129), true, 0, true);
   const uniqueFixture = benchFixture(
     52,
     `storage-cache-unique-${randomUUID()}`,
   );
+  await insertChunks(uniqueFixture.rows);
   if (await prefetchFixture(uniqueFixture)) {
     throw new Error("Expected fallback above 51 unique cache pairs");
   }
+  await resolveFixture(uniqueFixture, true, 0, true);
   const sharedObjectKey = "storage-cache-shared-object-key";
   const versionedFixture: BenchFixture = {
     ...uniqueFixture,
