@@ -62,6 +62,10 @@
       "schedule": "0 * * * *"
     },
     {
+      "path": "/api/cron/reconcile-artifact-catalog",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/compact-usage-events",
       "schedule": "* * * * *"
     },

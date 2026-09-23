@@ -1,5 +1,24 @@
 # Deployment Compatibility
 
+## Artifact catalog API handoff (2026-09-23)
+
+The API now enqueues file catalog work in the same transaction as its ordinary
+upload, private-file completion, canonical publication, and preview writes. An
+awaited immediate sync keeps the usual response path current; the durable row
+lets the bounded reconciliation cron recover when that later sync fails. Catalog
+list requests repair at most 20 caller-owned rows and no longer drain an entire
+backlog. The cron processes at most 100 rows or 20 seconds per tick.
+
+The `run_uploaded_files_queue_artifact_catalog` trigger remains for older API
+instances during this handoff. Both the trigger and new API may enqueue the same
+file; the primary key makes that one pending task. Replayed catalog writes retain
+the existing logical-key conflict and projection ordering rules. New API with
+the old schema is supported, and an API rollback remains supported while the
+trigger exists. Do not remove any of the eleven artifact/chat triggers in this
+release. Their removal requires the remaining file writers, parent-deletion
+paths, event and computer-access writers to use explicit operations, followed
+by evidence that all old API instances and rollback binaries have drained.
+
 This document focuses on three independently deployed surfaces that have
 cross-version API or persisted-state compatibility boundaries:
 
