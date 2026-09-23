@@ -444,13 +444,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.PersonalSubscriptionPriority]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ClaudeCodeUsageReset]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -562,7 +555,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: {
     maintainer: "ming@okou.ai",
     description:
-      "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
+      "Replace the make-something onboarding with the source-first flow: choose an industry, connect a work source, invite, AI experience, Slack, and a tailored starting prompt.",
     enabled: false,
   },
 };

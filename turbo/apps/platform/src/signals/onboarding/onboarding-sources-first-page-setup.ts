@@ -37,6 +37,10 @@ import {
 } from "./onboarding-page-setup.ts";
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
+  allowOnboardingRecommendationFallback$,
+  resumeOnboardingRecommendation$,
+} from "./onboarding-recommendation.ts";
+import {
   claimSourcesFirstStartEvent$,
   clearSourcesFirstDraft$,
   restoreSourcesFirstDraft$,
@@ -126,6 +130,7 @@ function createSourcesFirstPageSetup(
       set(forwardOnboardedVisitor$);
       return;
     }
+    set(resumeOnboardingRecommendation$, signal);
 
     // The run started, whichever step this setup ended up on: a guard redirect
     // below, or the way back, still belongs to the same run.
@@ -286,4 +291,5 @@ export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({
     });
   },
   Page: OnboardingReadyPage,
+  enter: allowOnboardingRecommendationFallback$,
 });

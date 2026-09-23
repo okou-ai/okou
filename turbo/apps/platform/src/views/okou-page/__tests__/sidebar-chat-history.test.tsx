@@ -316,7 +316,7 @@ test("Fade a clipped chat title and pace its scroll by the hidden distance", asy
   );
 });
 
-test("Filter the chat list to unread conversations", async () => {
+test("Filter unread conversations when a rollback API omits unreadAt", async () => {
   prepareDefaultAgent();
   const pinnedUnreadThread = createThread(
     AUTOMATION_THREAD_ID,
@@ -353,7 +353,8 @@ test("Filter the chat list to unread conversations", async () => {
       },
     });
   });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.unreads, ({ query, respond }) => {
+    expect(query.agentId).toBe(AGENT_ID);
     return respond(200, {
       unreads: [
         {
@@ -413,14 +414,10 @@ test("Keep unread conversations visible while remote read cursors refresh", asyn
       return respond(200, {
         agents: { [AGENT_ID]: "unread" },
         threads: { [unreadThreadId]: "unread" },
+        unreadAt: { [unreadThreadId]: "2026-03-10T00:05:00Z" },
       });
     },
   );
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: [{ threadId: unreadThreadId, unreadAt: "2026-03-10T00:05:00Z" }],
-    });
-  });
   await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
   await within(sidebar()).findByText("Read conversation");
   openChatListMenu();
@@ -525,16 +522,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
     return respond(200, {
       agents: { [AGENT_ID]: "unread" },
       threads: { [INCIDENT_THREAD_ID]: "unread" },
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: [
-        {
-          threadId: INCIDENT_THREAD_ID,
-          unreadAt: "2026-03-10T00:05:00Z",
-        },
-      ],
+      unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
   });
 
@@ -665,10 +653,6 @@ test("Find archived chats in All and Chats workspace search results", async () =
     "✅ Archived context",
   );
   mockSidebarThreadStory([currentThread, archivedThread]);
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, { unreads: [] });
-  });
-
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
@@ -723,17 +707,6 @@ test("Find conversations by title in workspace search", async () => {
     [],
     [INCIDENT_THREAD_ID],
   );
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: [
-        {
-          threadId: EXISTING_THREAD_ID,
-          unreadAt: "2026-03-10T00:05:00Z",
-        },
-      ],
-    });
-  });
-
   await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   await waitFor(() => {
@@ -857,7 +830,7 @@ test("Keep chat navigation usable while secondary data is unavailable", async ()
   ]);
   context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
     await indicatorResponse.promise;
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.drafts, async ({ respond }) => {
     draftRequestStarted.resolve();
@@ -1168,6 +1141,46 @@ test("Locate the current chat in a long sidebar history", async () => {
   });
 });
 
+test.each([
+  { pinnedAt: null, key: "{Enter}" },
+  { pinnedAt: "2026-03-10T00:00:00Z", key: " " },
+])(
+  "Open a chat menu by keyboard and restore focus after $key (pinned: $pinnedAt)",
+  async ({ pinnedAt, key }) => {
+    const user = userEvent.setup({ delay: null });
+    prepareDefaultAgent();
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Existing conversation", { pinnedAt }),
+    ]);
+
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+    });
+
+    const list = await screen.findByTestId("chat-list-column");
+    await within(list).findByText("Existing conversation");
+    const row = threadRowByTitle("Existing conversation", list);
+    const trigger = within(row).getByLabelText("Open chat menu");
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAccessibleName("Open chat menu");
+
+    await user.keyboard(key);
+    await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  },
+);
+
 test("Keep the chat-list menu closed when navigating with a shortcut", async () => {
   const user = userEvent.setup({ delay: null });
   prepareDefaultAgent();
@@ -1212,18 +1225,9 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
     return respond(200, {
       agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
       threads: hasUnread ? { [INCIDENT_THREAD_ID]: "unread" } : {},
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: hasUnread
-        ? [
-            {
-              threadId: INCIDENT_THREAD_ID,
-              unreadAt: "2026-03-10T00:05:00Z",
-            },
-          ]
-        : [],
+      unreadAt: hasUnread
+        ? { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" }
+        : {},
     });
   });
   context.mocks.api(
@@ -1433,7 +1437,7 @@ async function setupReadUnreadSidebar() {
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
   ]);
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     const unreads = serverUnreads();
     if (
       unreadThreadIds.has(EXISTING_THREAD_ID) &&
@@ -1441,7 +1445,19 @@ async function setupReadUnreadSidebar() {
     ) {
       unreadSnapshotRefreshed.resolve();
     }
-    return respond(200, { unreads });
+    return respond(200, {
+      agents: unreads.length > 0 ? { [AGENT_ID]: "unread" } : {},
+      threads: Object.fromEntries(
+        unreads.map(({ threadId }) => {
+          return [threadId, "unread" as const];
+        }),
+      ),
+      unreadAt: Object.fromEntries(
+        unreads.map(({ threadId, unreadAt }) => {
+          return [threadId, unreadAt];
+        }),
+      ),
+    });
   });
   context.mocks.api(
     chatThreadMarkUnreadContract.markUnread,
@@ -1613,11 +1629,12 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   const secondMarkStarted = context.mocks.deferred<void>();
   const releaseSecondMark = context.mocks.deferred<void>();
 
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     unreadRequests += 1;
     return respond(200, {
-      unreads:
-        unreadAt === null ? [] : [{ threadId: EXISTING_THREAD_ID, unreadAt }],
+      agents: unreadAt === null ? {} : { [AGENT_ID]: "unread" },
+      threads: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: "unread" },
+      unreadAt: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: unreadAt },
     });
   });
   context.mocks.api(

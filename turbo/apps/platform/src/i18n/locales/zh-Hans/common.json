@@ -1466,20 +1466,7 @@
             "title": "在团队日常沟通的地方和 {{assistantName}} 协作"
           },
           "workflow": {
-            "browse": "浏览模板",
-            "confirm": "给我一个试试",
             "description": "把你反复要做的事，变成团队都能跑的工作流。",
-            "prompt": "每周一早上，查一下竞争对手上周发布了什么，按主题分组，给我一张对比表。",
-            "promptConfirm": "发给 {{assistantName}}",
-            "promptDescription": "可以直接把这段发给 {{assistantName}}，也可以先改改措辞。",
-            "promptOutcome": "它会读取数据源，把找到的内容分组，再把表格回复给你。如果结果没问题，它会提议把这次运行保存成工作流。",
-            "promptTitle": "像交代同事一样交代它",
-            "stepRun": "先跑一次",
-            "stepRunDescription": "在做任何决定之前，你先看到做完的结果。",
-            "stepSave": "保存下来，再给它设定时任务",
-            "stepSaveDescription": "不用人开口它也会自己运行，任何同事也都能跑。",
-            "stepTemplate": "从模板开始",
-            "stepTemplateDescription": "挑一个贴近你工作的模板，不用从空白页开始。",
             "title": "一次跑通，就成了团队长期能用的东西"
           }
         },
@@ -6021,6 +6008,7 @@
         "personal": "个人",
         "workspace": "工作区"
       },
+      "sectionNavigation": "设置栏目",
       "sections": {
         "billing": {
           "description": "管理你的套餐和支付方式。",
@@ -7734,6 +7722,7 @@
       },
       "notFound": "未找到该工作流。",
       "refineWith": "用{{agent}}优化",
+      "sectionNavigation": "工作流详情栏目",
       "shadow": {
         "end": "（对你生效）。这个工作流因标识符相同的优先级规则被屏蔽。",
         "resolvesTo": "当前指向"

@@ -9,6 +9,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { Field } from "@base-ui/react/field";
 import {
   AlertTriangle,
   EllipsisVertical,
@@ -333,7 +334,7 @@ function DefaultModelRow({
     : "";
 
   return (
-    <div
+    <Field.Root
       data-testid="default-model-row"
       className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
       style={{
@@ -341,11 +342,15 @@ function DefaultModelRow({
       }}
     >
       <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">
+        <Field.Label
+          render={<p />}
+          nativeLabel={false}
+          className="text-sm font-medium text-foreground"
+        >
           {t(($) => {
             return $.settings.models.policies.defaultModel;
           })}
-        </p>
+        </Field.Label>
         <p className="mt-0.5 text-[13px] text-muted-foreground">
           {t(($) => {
             return $.settings.models.policies.defaultModelDescription;
@@ -405,7 +410,7 @@ function DefaultModelRow({
           </SelectContent>
         </Select>
       )}
-    </div>
+    </Field.Root>
   );
 }
 

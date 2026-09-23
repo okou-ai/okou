@@ -1491,20 +1491,7 @@
             "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
           },
           "workflow": {
-            "browse": "Voir les modèles",
-            "confirm": "Montrez-m'en un",
             "description": "Transformez une tâche récurrente en workflow que l'équipe peut lancer.",
-            "prompt": "Chaque lundi matin, regarde ce que mes concurrents ont publié la semaine dernière, regroupe-le par thème et donne-moi un tableau comparatif.",
-            "promptConfirm": "L'envoyer à {{assistantName}}",
-            "promptDescription": "Envoyez-le tel quel à {{assistantName}}, ou modifiez d'abord la formulation.",
-            "promptOutcome": "Il lit les sources, regroupe ce qu'il trouve et répond avec le tableau. Si le résultat convient, il propose de garder l'exécution comme workflow.",
-            "promptTitle": "Demandez comme vous le demanderiez à un collègue",
-            "stepRun": "Lancez-le une fois",
-            "stepRunDescription": "Vous voyez le travail terminé avant de vous engager.",
-            "stepSave": "Enregistrez-le, puis donnez-lui un horaire",
-            "stepSaveDescription": "Il tourne sans que personne le demande, et n'importe quel collègue peut le lancer.",
-            "stepTemplate": "Partez d'un modèle",
-            "stepTemplateDescription": "Prenez-en un proche de votre métier plutôt qu'une page blanche.",
             "title": "Une bonne exécution devient un acquis pour l'équipe"
           }
         },
@@ -6095,6 +6082,7 @@
         "personal": "Personnel",
         "workspace": "Espace de travail"
       },
+      "sectionNavigation": "Rubrique des paramètres",
       "sections": {
         "billing": {
           "description": "Gérez votre abonnement et votre mode de paiement.",
@@ -7829,6 +7817,7 @@
       },
       "notFound": "Workflow introuvable.",
       "refineWith": "Affiner avec {{agent}}",
+      "sectionNavigation": "Rubrique des détails du workflow",
       "shadow": {
         "end": "pour vous. Ce workflow est masqué par la règle de priorité du même slug.",
         "resolvesTo": "résout actuellement à"

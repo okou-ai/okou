@@ -85,7 +85,7 @@ function mockSidebarThreadStory(threads: readonly SidebarThread[]): void {
     return respond(200, { events: [], hasMore: false });
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {

@@ -565,6 +565,64 @@ function PendingForm({
   );
 }
 
+function PendingFormGate({
+  signals,
+  request,
+  showTitle = true,
+}: {
+  readonly signals: BrowserUserActionSignals;
+  readonly request: PendingBrowserInputRequest;
+  readonly showTitle?: boolean;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const entryState = useGet(signals.entryState$);
+  const beginEntry = useSet(signals.beginEntry$);
+  if (entryState === "ready") {
+    return (
+      <PendingForm signals={signals} request={request} showTitle={showTitle} />
+    );
+  }
+  return (
+    <div className="flex flex-col gap-4" role="status">
+      <PendingFormHeader
+        siteOrigin={request.action.siteOrigin}
+        showTitle={showTitle}
+      />
+      {entryState === "checking" ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 size={16} className="animate-spin" />
+          {t(($) => {
+            return $.chat.browserInput.loadingDescription;
+          })}
+        </p>
+      ) : (
+        <>
+          {entryState === "unavailable" && (
+            <p role="alert" className="text-sm text-destructive">
+              {t(($) => {
+                return $.chat.browserInput.unavailable;
+              })}
+            </p>
+          )}
+          <Button
+            type="button"
+            onClick={() => {
+              detach(beginEntry(pageSignal), Reason.DomCallback);
+            }}
+          >
+            {t(($) => {
+              return entryState === "unavailable"
+                ? $.chat.browserInput.retry
+                : $.chat.browserInput.open;
+            })}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PendingInlineAction({
   signals,
   request,
@@ -573,6 +631,9 @@ function PendingInlineAction({
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const beginEntry = useSet(signals.beginEntry$);
+  const endEntry = useSet(signals.endEntry$);
   return (
     <div className="flex h-full w-full flex-col justify-between gap-3 sm:flex-row sm:items-center">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
@@ -583,8 +644,19 @@ function PendingInlineAction({
         triggerLabel={t(($) => {
           return $.chat.browserInput.open;
         })}
+        onOpenChange={(open) => {
+          if (open) {
+            detach(beginEntry(pageSignal), Reason.DomCallback);
+          } else {
+            endEntry();
+          }
+        }}
       >
-        <PendingForm signals={signals} request={request} showTitle={false} />
+        <PendingFormGate
+          signals={signals}
+          request={request}
+          showTitle={false}
+        />
       </ChatCardDetails>
     </div>
   );
@@ -989,7 +1061,7 @@ export function BrowserUserActionCard({
       variant === "inline" ? (
         <PendingInlineAction signals={signals} request={pendingRequest} />
       ) : (
-        <PendingForm signals={signals} request={pendingRequest} />
+        <PendingFormGate signals={signals} request={pendingRequest} />
       );
   } else {
     content = (

@@ -29,8 +29,8 @@
 //!
 //! ## Cache and guest boundary
 //!
-//! [`StoragePlan::cache_candidates`] exposes only remote archives required by download actions.
-//! Cache handling may use [`StoragePlan::stage_archive`] to replace such a remote source with a
+//! `StoragePlan::cache_candidates` exposes only remote archives required by download actions.
+//! Cache handling may use `StoragePlan::stage_archive` to replace such a remote source with a
 //! guest-staged source after validating the entry identity; it cannot change the storage or
 //! artifact action. [`StoragePlan::requires_guest_work`] is evaluated before cache resolution, and
 //! the resolved plan is finally converted to the guest manifest for execution.
@@ -44,7 +44,7 @@ use api_contracts::generated::{
 };
 use guest_contracts::storage_manifest as wire;
 
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
 use runner_types::storage_manifest::StorageManifest;
 
@@ -56,7 +56,7 @@ const AGENT_INSTRUCTIONS_STORAGE_NAME_PREFIX: &str = "agent-instructions@";
 /// repair decisions stay explicit. Archive delivery may refine an eligible action's source from a
 /// remote URL to a guest-staged URL, but it does not change the action itself.
 #[derive(Debug, Clone)]
-pub(crate) struct StoragePlan {
+pub struct StoragePlan {
     storages: Vec<StoragePlanEntry>,
     artifacts: Vec<ArtifactPlanEntry>,
     cleanup_paths: Vec<String>,
@@ -185,7 +185,7 @@ struct InstructionCleanup {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct ArchiveHandle {
+pub struct ArchiveHandle {
     kind: ArchiveKind,
     index: usize,
 }
@@ -213,8 +213,8 @@ impl ArchiveHandle {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) const fn artifact(index: usize) -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub const fn artifact(index: usize) -> Self {
         Self {
             kind: ArchiveKind::Artifact,
             index,
@@ -247,7 +247,7 @@ pub(crate) struct CacheArchiveCandidate {
 /// # Errors
 ///
 /// Returns an internal error when a non-empty artifact has no archive source.
-pub(crate) fn build_storage_plan(
+pub fn build_storage_plan(
     manifest: &StorageManifest,
     runtime_dir: &str,
     previous: Option<&StorageFingerprints>,
@@ -549,7 +549,7 @@ impl StoragePlan {
         self.decoded.push((mount, files));
     }
 
-    pub(crate) fn take_decoded(
+    pub fn take_decoded(
         &mut self,
     ) -> Vec<(
         String,
@@ -577,7 +577,7 @@ impl StoragePlan {
     /// The result is `false` only when there is no cleanup, every storage is
     /// `ReuseExisting`, and there are no artifacts. Instruction normalization and every artifact
     /// action require the guest even when their fingerprints match.
-    pub(crate) fn requires_guest_work(&self) -> bool {
+    pub fn requires_guest_work(&self) -> bool {
         !self.cleanup_paths.is_empty()
             || !self.instruction_cleanups.is_empty()
             || self
@@ -587,19 +587,19 @@ impl StoragePlan {
             || !self.artifacts.is_empty()
     }
 
-    pub(crate) fn reused_entries(&self) -> usize {
+    pub fn reused_entries(&self) -> usize {
         self.reused_entries
     }
 
-    pub(crate) fn entry_count(&self) -> usize {
+    pub fn entry_count(&self) -> usize {
         self.storages.len() + self.artifacts.len()
     }
 
-    pub(crate) fn cleanup_path_count(&self) -> usize {
+    pub fn cleanup_path_count(&self) -> usize {
         self.cleanup_paths.len()
     }
 
-    pub(crate) fn instruction_cleanup_count(&self) -> usize {
+    pub fn instruction_cleanup_count(&self) -> usize {
         self.instruction_cleanups.len()
     }
 
@@ -703,7 +703,7 @@ impl StoragePlan {
     /// empty, instruction, and cleanup fields. The normal lifecycle calls it after guest-work
     /// detection and cache source resolution; the wire value is transport state, not a second
     /// planning representation.
-    pub(crate) fn into_guest_manifest(self) -> wire::Manifest {
+    pub fn into_guest_manifest(self) -> wire::Manifest {
         wire::Manifest {
             storages: self
                 .storages

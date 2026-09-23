@@ -23,6 +23,7 @@ members = [
     "runner",
     "runner-host",
     "runner-provider",
+    "runner-storage",
     "runner-types",
     "sandbox",
     "sandbox-firecracker",
@@ -64,6 +65,7 @@ linux-mountinfo = { path = "linux-mountinfo" }
 nbd-cow = { path = "nbd-cow" }
 runner-host = { path = "runner-host" }
 runner-provider = { path = "runner-provider" }
+runner-storage = { path = "runner-storage" }
 runner-types = { path = "runner-types" }
 sandbox = { path = "sandbox" }
 sandbox-firecracker = { path = "sandbox-firecracker" }

@@ -65,12 +65,13 @@ export const CHAT_THREAD_ASSISTANT_AVATAR_FRAME_CLASS =
 export const CHAT_THREAD_ASSISTANT_AVATAR_IMAGE_CLASS =
   "h-7 w-7 rounded-full object-cover object-top @[900px]:h-9 @[900px]:w-9";
 
-// Reveal immediately so hover does not create and remove a temporary opacity
-// layer in the scrolling transcript beside the assistant's SVG icons. The row
-// holds its own height because the stack pull below is measured against it: a
-// message that hides its button must not take that space away from the burst.
+// Hide only for fine hover pointers, and reveal the whole row on keyboard focus.
+// Reveal immediately to avoid a temporary opacity layer beside the assistant's
+// SVG icons in the scrolling transcript. The row holds its own height because
+// the stack pull below is measured against it: a message that hides its button
+// must not take that space away from the burst.
 export const CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS =
-  "flex h-7 justify-end gap-1 mt-1 opacity-0 group-hover:opacity-100";
+  "flex h-7 justify-end gap-1 mt-1 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100";
 
 export const CHAT_THREAD_ASSISTANT_MESSAGE_ACTIONS_ROW_CLASS =
   "pl-1.5 @[900px]:grid @[900px]:grid-cols-[36px_minmax(0,1fr)] @[900px]:gap-2.5 @[900px]:-ml-[46px] @[900px]:pl-0";

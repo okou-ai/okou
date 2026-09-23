@@ -1939,7 +1939,7 @@ async fn populate_storage_plan(
         result.is_ok(),
         result.is_err().then_some(STORAGE_CACHE_POPULATE_FAILED),
     );
-    result
+    result.map_err(Into::into)
 }
 
 enum GuestRuntimeStatePreparation {
