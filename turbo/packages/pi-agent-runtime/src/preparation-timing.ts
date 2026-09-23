@@ -10,8 +10,6 @@ export type PiPreparationPhase =
   | "h0_metadata_preflight"
   | "resource_snapshot"
   | "credentials_route"
-  | "h0_load"
-  | "h0_validate_materialize"
   | "runtime_initialize"
   | "history"
   | "resources_prompt"
