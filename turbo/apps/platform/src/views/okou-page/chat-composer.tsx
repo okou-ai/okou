@@ -972,6 +972,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       />
       <IconTooltipButton
         type="button"
+        data-template-preview-id={`video:${item.id}`}
         aria-label={t(
           ($) => {
             return $.artifacts.templates.playVideo;
@@ -982,8 +983,6 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         )}
         className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/0 text-white opacity-100 transition-colors duration-200 hover:bg-black/25 focus-visible:bg-black/25 focus-visible:outline-none peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:!opacity-0"
         onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
           startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
@@ -1017,6 +1016,7 @@ function VideoTemplateCard({
       <div
         className={cn(
           TEMPLATE_TILE_SELECTION_FRAME,
+          TEMPLATE_TILE_PREVIEW_FOCUS,
           selected && TEMPLATE_TILE_SELECTED,
         )}
       >
