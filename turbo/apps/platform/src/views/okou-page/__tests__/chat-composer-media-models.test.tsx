@@ -845,7 +845,7 @@ test("Discard exits a blocked Image model category without clearing the draft", 
   await chooseMediaModel("Image", "GPT Image 2");
 
   await screen.findByText("Image generation is off for you");
-  click(screen.getByRole("button", { name: "Discard" }));
+  click(screen.getByText("Discard", { selector: "button" }));
 
   await waitFor(() => {
     expect(
