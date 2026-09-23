@@ -8,7 +8,7 @@ use sandbox::ExecResult;
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 
 use super::super::storage::download_storages_with_files;
-use super::super::{ExecutorConfig, guest_runtime_dir};
+use super::super::{ExecutorConfig, RunnerResult, guest_runtime_dir};
 use super::support::{
     RUN_IN_SANDBOX_TEST_TIMEOUT, api_artifact, api_storage, create_overridden_sandbox,
     minimal_context, spawn_run_in_sandbox_test, test_executor_config, test_telemetry,
@@ -200,6 +200,62 @@ fn assert_binary_calls(sandbox: &MockSandbox, expected: usize) {
     assert_eq!(delivered, expected);
 }
 
+async fn apply_with_telemetry(
+    fixture: &DeliveryFixture,
+    sandbox: &MockSandbox,
+    manifest: Manifest,
+    files: &[(String, Arc<CachedFiles>)],
+) -> RunnerResult<()> {
+    let context = minimal_context();
+    let mut telemetry = test_telemetry(&fixture.config, &context);
+    download_storages_with_files(sandbox, &context, manifest, files, &mut telemetry).await
+}
+
+#[tokio::test]
+async fn guest_apply_telemetry_attributes_one_and_three_batches() {
+    for (count, url_bytes, expected_count, expected_size, expected_positions) in [
+        (1, 604, "one", "at_most_4_kib", vec!["dedicated_only"]),
+        (
+            3,
+            35_000,
+            "three",
+            "32_to_64_kib",
+            vec!["dedicated_first", "dedicated_middle", "dedicated_last"],
+        ),
+    ] {
+        let fixture = DeliveryFixture::new(count, count, url_bytes).await;
+        let sandbox = MockSandbox::new("storage-batch-attribution");
+        let (manifest, files) = fixture.prepare(&sandbox).await;
+        let context = minimal_context();
+        let mut telemetry = test_telemetry(&fixture.config, &context);
+        download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+            .await
+            .unwrap();
+
+        let observations = telemetry.pending_ops_with_outcome_snapshot();
+        assert!(observations.iter().any(|(action, success, _, _)| {
+            action == "runner_storage_manifest_batch_encode" && *success
+        }));
+        assert!(observations.iter().any(|(action, success, outcome, _)| {
+            action == "runner_storage_manifest_batch_count"
+                && *success
+                && outcome.as_deref() == Some(expected_count)
+        }));
+        let batches = observations
+            .iter()
+            .filter(|(action, _, _, _)| action == "runner_storage_manifest_batch_apply")
+            .collect::<Vec<_>>();
+        assert_eq!(batches.len(), count);
+        assert_eq!(sandbox.storage_manifest_calls().len(), count);
+        for (batch, expected_position) in batches.iter().zip(expected_positions) {
+            assert!(batch.1);
+            assert_eq!(batch.2.as_deref(), Some(expected_position));
+            assert_eq!(batch.3.as_deref(), Some(expected_size));
+        }
+        fixture.shutdown().await;
+    }
+}
+
 #[tokio::test]
 async fn high_fanout_storage_plans_deliver_ready_files_without_refilling_archives() {
     for (count, ready) in [(7, 5), (64, 31), (122, 46), (143, 52)] {
@@ -225,7 +281,7 @@ async fn high_fanout_storage_plans_deliver_ready_files_without_refilling_archive
                     .exists()
             );
         }
-        download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        apply_with_telemetry(&fixture, &sandbox, manifest, &files)
             .await
             .unwrap();
         assert_binary_calls(&sandbox, ready);
@@ -270,7 +326,7 @@ async fn fresh_artifact_hit_retains_identity_and_delivers_decoded_files() {
         artifact.missing_root_policy.as_deref(),
         Some("preserveParentVersion")
     );
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     assert_binary_calls(&sandbox, 1);
@@ -283,7 +339,7 @@ async fn oversized_artifact_manifest_uses_preencoded_decoded_batches() {
     let sandbox = MockSandbox::new("decoded-large-artifacts");
     let (manifest, files) = fixture.prepare(&sandbox).await;
     assert_eq!(files.len(), 3);
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     assert_eq!(sandbox.storage_manifest_calls().len(), 3);
@@ -317,7 +373,7 @@ async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
     let storage_files = Arc::clone(&files[0].1);
     files.push((storage_mount.to_str().unwrap().into(), storage_files));
 
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     let mut storage_entries = 0;
@@ -392,7 +448,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         vas_version_id: Some("v1".into()),
     });
 
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     let binary_calls = sandbox
@@ -448,7 +504,7 @@ async fn decoded_selection_keeps_the_aggregate_mount_budget_across_batches() {
             .unwrap()
             .starts_with("file://")
     );
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     assert_binary_calls(&sandbox, storage_files::MAX_MOUNTS);
@@ -494,7 +550,7 @@ async fn decoded_selection_keeps_payload_framing_inside_the_aggregate_budget() {
             .unwrap()
             .starts_with("file://")
     );
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     assert_binary_calls(&sandbox, selected);
@@ -523,7 +579,7 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
         vas_storage_name: Some("preserved".into()),
         vas_version_id: Some("v1".into()),
     });
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     let calls = sandbox.storage_manifest_calls();
@@ -573,11 +629,21 @@ async fn split_decoded_delivery_stops_after_the_first_failed_helper() {
             Vec::new(),
             b"materialization failed".to_vec(),
         )));
-        let error = download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
-            .await
-            .unwrap_err();
+        let context = minimal_context();
+        let mut telemetry = test_telemetry(&fixture.config, &context);
+        let error =
+            download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+                .await
+                .unwrap_err();
         assert!(error.to_string().contains("storage download failed"));
         assert_eq!(sandbox.storage_manifest_calls().len(), failed_batch + 1);
+        let batches = telemetry
+            .pending_ops_with_outcome_snapshot()
+            .into_iter()
+            .filter(|(action, _, _, _)| action == "runner_storage_manifest_batch_apply")
+            .collect::<Vec<_>>();
+        assert_eq!(batches.len(), failed_batch + 1);
+        assert!(!batches.last().unwrap().1);
         fixture.shutdown().await;
     }
 }
@@ -623,12 +689,24 @@ async fn split_delivery_rejects_cross_batch_ownership_conflicts_before_guest_wor
                 vas_version_id: None,
             }),
         }
-        let error = download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
-            .await
-            .unwrap_err();
+        let context = minimal_context();
+        let mut telemetry = test_telemetry(&fixture.config, &context);
+        let error =
+            download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+                .await
+                .unwrap_err();
         assert!(error.to_string().contains("storage files bindings"));
         assert!(sandbox.storage_manifest_calls().is_empty());
         assert!(sandbox.write_file_calls().is_empty());
+        let observations = telemetry.pending_ops_with_outcome_snapshot();
+        assert!(observations.iter().any(|(action, success, _, _)| {
+            action == "runner_storage_manifest_batch_encode" && !success
+        }));
+        assert!(
+            observations
+                .iter()
+                .all(|(action, _, _, _)| action != "runner_storage_manifest_batch_apply")
+        );
     }
     fixture.shutdown().await;
 }
@@ -653,7 +731,7 @@ async fn oversized_ordinary_manifest_keeps_file_transport_before_decoded_batches
         vas_storage_name: None,
         vas_version_id: None,
     });
-    download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
         .await
         .unwrap();
     let writes = sandbox.write_file_calls();
@@ -699,7 +777,7 @@ async fn decoded_entry_admission_obeys_exact_canonical_json_boundary() {
         let sandbox = MockSandbox::new("decoded-boundary");
         let (manifest, files) = fixture.prepare(&sandbox).await;
         assert_eq!(files.len(), 2 - extra);
-        download_storages_with_files(&sandbox, &minimal_context(), manifest, &files)
+        apply_with_telemetry(&fixture, &sandbox, manifest, &files)
             .await
             .unwrap();
         assert_binary_calls(&sandbox, 2 - extra);
