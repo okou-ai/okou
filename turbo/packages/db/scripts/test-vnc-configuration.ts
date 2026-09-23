@@ -422,7 +422,7 @@ try {
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 4 }],
+    [{ count: 5 }],
   );
   await client.query("DELETE FROM vnc_credentials");
   console.log("VNC preservation migrations and storage constraints passed");

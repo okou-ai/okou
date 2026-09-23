@@ -544,35 +544,55 @@ test("Apple DH host editor requires SSH loopback and omits X509 trust", async ()
   await page("/connectors/vnc?add=1");
   const dialog = await screen.findByRole("dialog", { name: "Add host" });
   await choose(dialog, "Security profile", "Mac Screen Sharing (Apple DH)");
-  expect(within(dialog).queryByLabelText("TLS certificate identity")).toBeNull();
-  expect(within(dialog).queryByLabelText("Server certificate trust")).toBeNull();
+  expect(
+    within(dialog).queryByLabelText("TLS certificate identity"),
+  ).toBeNull();
+  expect(
+    within(dialog).queryByLabelText("Server certificate trust"),
+  ).toBeNull();
   expect(within(dialog).getByLabelText("Connection route")).toHaveTextContent(
     "Through saved SSH host",
   );
   await userEvent.click(within(dialog).getByLabelText("Connection route"));
-  expect(screen.queryByRole("option", { name: "Direct from Runner" })).toBeNull();
+  expect(
+    screen.queryByRole("option", { name: "Direct from Runner" }),
+  ).toBeNull();
   await userEvent.keyboard("{Escape}");
   await choose(dialog, "SSH host", "Desktop gateway · gateway.example.com:22");
-  await fill(within(dialog).getByLabelText("Display name"), "Mac Screen Sharing");
-  await fill(within(dialog).getByLabelText("RFB destination host"), "127.0.0.1");
+  await fill(
+    within(dialog).getByLabelText("Display name"),
+    "Mac Screen Sharing",
+  );
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "127.0.0.1",
+  );
   await choose(dialog, "Credential", "Create new credential");
   await fill(within(dialog).getByLabelText("Credential name"), "Mac login");
   await fill(within(dialog).getByLabelText("Username"), "operator");
   await fill(within(dialog).getByLabelText("Password"), "secret");
   click(getAction("button", "Save", dialog));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(requests).toStrictEqual([{
-    id: expect.any(String),
-    displayName: "Mac Screen Sharing",
-    host: "127.0.0.1",
-    port: 5900,
-    transport: { type: "ssh", connectionId: sshHost.id },
-    credential: { create: {
-      name: "Mac login",
-      authentication: { method: "apple_dh_username_password", username: "operator", password: "secret" },
-    } },
-    security: { type: "apple_dh" },
-  }]);
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Mac Screen Sharing",
+      host: "127.0.0.1",
+      port: 5900,
+      transport: { type: "ssh", connectionId: sshHost.id },
+      credential: {
+        create: {
+          name: "Mac login",
+          authentication: {
+            method: "apple_dh_username_password",
+            username: "operator",
+            password: "secret",
+          },
+        },
+      },
+      security: { type: "apple_dh" },
+    },
+  ]);
 });
 
 test("Switching profiles clears inline authentication drafts", async () => {

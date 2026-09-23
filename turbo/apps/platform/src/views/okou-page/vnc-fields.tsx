@@ -76,7 +76,9 @@ export function VncEndpointFields({
           required
           maxLength={VNC_HOST_MAX_LENGTH}
           pattern={
-            editor.profile === "apple_dh" ? "(127\\.0\\.0\\.1|::1)" : undefined
+            editor.profile === "apple_dh"
+              ? String.raw`(127\.0\.0\.1|::1)`
+              : undefined
           }
           defaultValue={connection?.host ?? ""}
           placeholder={t(($) => {
