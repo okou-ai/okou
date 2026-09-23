@@ -14,6 +14,8 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import type { Db, ReadonlyDb } from "../external/db";
+import { admitPiStableContextSubjects } from "./pi-stable-context-erasure.service";
+import { enterVncWrite } from "./vnc-owner-lifecycle.service";
 
 interface Owner {
   readonly orgId: string;
@@ -30,6 +32,20 @@ interface HostOwner extends Owner {
 
 interface ThreadHostOwner extends ThreadOwner {
   readonly connectionId: string;
+}
+
+async function admitRemoteAccessWrite(
+  tx: Tx,
+  owner: Owner,
+  protocol: RemoteAccessProtocol,
+): Promise<boolean> {
+  if (protocol === "vnc" && !(await enterVncWrite(tx, owner))) {
+    return false;
+  }
+  return await admitPiStableContextSubjects(tx, [
+    { subjectKind: "organization", subjectId: owner.orgId },
+    { subjectKind: "user", subjectId: owner.userId },
+  ]);
 }
 
 function toHostDefault(row: {
@@ -127,40 +143,45 @@ export async function updateRemoteHostDefault(
   protocol: RemoteAccessProtocol,
   enabled: boolean,
 ): Promise<RemoteHostDefault | null> {
-  if (protocol === "ssh") {
-    const [row] = await db
-      .update(sshConnections)
+  return await db.transaction(async (tx) => {
+    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
+      return null;
+    }
+    if (protocol === "ssh") {
+      const [row] = await tx
+        .update(sshConnections)
+        .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
+        .where(
+          and(
+            eq(sshConnections.id, owner.connectionId),
+            eq(sshConnections.orgId, owner.orgId),
+            eq(sshConnections.userId, owner.userId),
+          ),
+        )
+        .returning({
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+          defaultEnabledForChats: sshConnections.defaultEnabledForChats,
+        });
+      return row ? toHostDefault(row) : null;
+    }
+    const [row] = await tx
+      .update(vncConnections)
       .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
       .where(
         and(
-          eq(sshConnections.id, owner.connectionId),
-          eq(sshConnections.orgId, owner.orgId),
-          eq(sshConnections.userId, owner.userId),
+          eq(vncConnections.id, owner.connectionId),
+          eq(vncConnections.orgId, owner.orgId),
+          eq(vncConnections.userId, owner.userId),
         ),
       )
       .returning({
-        id: sshConnections.id,
-        displayName: sshConnections.displayName,
-        defaultEnabledForChats: sshConnections.defaultEnabledForChats,
+        id: vncConnections.id,
+        displayName: vncConnections.displayName,
+        defaultEnabledForChats: vncConnections.defaultEnabledForChats,
       });
     return row ? toHostDefault(row) : null;
-  }
-  const [row] = await db
-    .update(vncConnections)
-    .set({ defaultEnabledForChats: enabled, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(vncConnections.id, owner.connectionId),
-        eq(vncConnections.orgId, owner.orgId),
-        eq(vncConnections.userId, owner.userId),
-      ),
-    )
-    .returning({
-      id: vncConnections.id,
-      displayName: vncConnections.displayName,
-      defaultEnabledForChats: vncConnections.defaultEnabledForChats,
-    });
-  return row ? toHostDefault(row) : null;
+  });
 }
 
 export async function listThreadRemoteAccess(
@@ -240,6 +261,9 @@ export async function setThreadRemoteAccessOverride(
   enabled: boolean,
 ): Promise<ThreadRemoteHostAccess | null> {
   return await db.transaction(async (tx) => {
+    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
+      return null;
+    }
     if (!(await ownedThreadExists(tx, owner))) {
       return null;
     }
@@ -320,6 +344,9 @@ export async function clearThreadRemoteAccessOverride(
   protocol: RemoteAccessProtocol,
 ): Promise<ThreadRemoteHostAccess | null> {
   return await db.transaction(async (tx) => {
+    if (!(await admitRemoteAccessWrite(tx, owner, protocol))) {
+      return null;
+    }
     if (!(await ownedThreadExists(tx, owner))) {
       return null;
     }
