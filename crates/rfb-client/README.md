@@ -84,7 +84,7 @@ an intermediate host cannot protect an onward plaintext hop. Engine support is
 not an owner permission, product rollout or production activation decision.
 
 The earlier of the caller deadline and 30 seconds bounds the whole handshake.
-RFB version exchange, security negotiation, TLS handshake and the selected inner
+RFB version exchange, security negotiation, any selected TLS handshake, and the
 authentication/result exchange all consume that same absolute deadline rather
 than receiving per-stage budgets.
 An authentication deadline error retains only the bounded local stage active at
@@ -116,8 +116,9 @@ server formats are validated before this
 normalization. Desktop names are bounded and discarded. Only ZRLE, CopyRect, Raw,
 Cursor and DesktopSize are advertised, in that preference order.
 
-The returned `FramebufferConnection` owns the TLS stream, framebuffer, exact
-per-pixel coverage, cursor shape and one persistent zlib inflater. Call
+The returned `FramebufferConnection` owns the selected post-authentication
+stream, framebuffer, exact per-pixel coverage, cursor shape and one persistent
+zlib inflater. Call
 `update(false, deadline)` for the initial full-frame request. A full request clears
 coverage; subsequent `update(true, deadline)` calls can accumulate partial updates.
 `pixels()` returns borrowed immutable RGBA only when every pixel is known. It never

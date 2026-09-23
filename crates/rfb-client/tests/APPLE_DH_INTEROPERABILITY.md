@@ -52,6 +52,7 @@ OKOU_MAC_VNC_USER="$TEST_USER" \
 ```
 
 The forward should be bound to local loopback, use pinned SSH host identity,
-and terminate on the Mac before reaching its loopback VNC port. The test keeps
-no screenshot, password, private key or raw framebuffer artifact. A future Mac
+and terminate on the Mac before reaching its loopback VNC port. The test binary
+writes no screenshot, password, private key or raw framebuffer artifact; the
+authorized Mac fixture retains its synthetic password separately. A future Mac
 version or configuration must be retested rather than inferred from this run.

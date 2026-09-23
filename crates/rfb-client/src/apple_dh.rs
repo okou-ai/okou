@@ -166,12 +166,13 @@ async fn exchange_credentials<S: AsyncRead + AsyncWrite + Unpin>(
             stage: AuthenticationStage::AppleDhAuthentication,
         });
     }
-    let shared = Zeroizing::new(
+    let shared_form = Zeroizing::new(
         BoxedMontyForm::new(server_public, &params)
-            .pow_bounded_exp(&private, (PRIVATE_BYTES * 8) as u32)
-            .retrieve(),
+            .pow_bounded_exp(&private, (PRIVATE_BYTES * 8) as u32),
     );
     drop(private);
+    let shared = Zeroizing::new(shared_form.retrieve());
+    drop(shared_form);
     let shared_bytes = Zeroizing::new(shared.to_be_bytes());
     drop(shared);
     let client_public_bytes = Zeroizing::new(client_public.to_be_bytes());

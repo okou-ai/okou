@@ -38,7 +38,7 @@ pub use session::{Geometry, Session};
 pub use transport::AuthenticatedStream;
 pub use trust::TrustRoots;
 
-/// Maximum lifetime of the complete negotiation, including TLS and authentication.
+/// Maximum lifetime of the complete selected authentication negotiation.
 pub const MAX_HANDSHAKE_DURATION: Duration = Duration::from_secs(30);
 
 /// Per-connection sharing request sent in RFB ClientInit. The server controls
