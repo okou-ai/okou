@@ -117,14 +117,16 @@ test("Show account attention when agent access is unavailable", async () => {
       ],
     });
   });
-  mockConnectorOverviewAccountSummaries(context, () => [
-    {
-      target: account.target,
-      accountCount: 2,
-      attentionCount: 1,
-      defaultConnection: account,
-    },
-  ]);
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [
+      {
+        target: account.target,
+        accountCount: 2,
+        attentionCount: 1,
+        defaultConnection: account,
+      },
+    ];
+  });
   context.mocks.data.agents([
     listAgent("c0000000-0000-4000-a000-000000000001", "Research"),
   ]);
@@ -171,14 +173,16 @@ test("Show when every connector account needs attention", async () => {
       ],
     });
   });
-  mockConnectorOverviewAccountSummaries(context, () => [
-    {
-      target: account.target,
-      accountCount: 2,
-      attentionCount: 2,
-      defaultConnection: account,
-    },
-  ]);
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [
+      {
+        target: account.target,
+        accountCount: 2,
+        attentionCount: 2,
+        defaultConnection: account,
+      },
+    ];
+  });
   await setupAccountsPage();
 
   const card = await waitFor(() => {

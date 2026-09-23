@@ -399,16 +399,16 @@ export function mockCustomConnectorStory(
       }),
     });
   });
-  mockConnectorOverviewAccountSummaries(context, () =>
-    [...accounts.values()].map((account) => {
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [...accounts.values()].map((account) => {
       return {
         target: account.target,
         accountCount: 1,
         attentionCount: 0,
         defaultConnection: account,
       };
-    }),
-  );
+    });
+  });
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
@@ -584,13 +584,15 @@ export function mockGithubAccounts(
       ],
     });
   });
-  mockConnectorOverviewAccountSummaries(context, () => [
-    {
-      target: { kind: "builtin", connectorSlug: "github" },
-      accountCount: accounts.length,
-      attentionCount: 1,
-      defaultConnection: defaultAccount,
-    },
-  ]);
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [
+      {
+        target: { kind: "builtin", connectorSlug: "github" },
+        accountCount: accounts.length,
+        attentionCount: 1,
+        defaultConnection: defaultAccount,
+      },
+    ];
+  });
   return accounts;
 }
