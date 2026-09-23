@@ -4741,7 +4741,7 @@ function isImageFilename(filename: string): boolean {
 }
 
 const CREDITS_PER_DOLLAR = 1000;
-const CREDIT_TOP_UP_OPTIONS = [20_000, 50_000, 300_000] as const;
+const CREDIT_TOP_UP_OPTIONS = [100_000, 200_000, 300_000] as const;
 
 function formatCreditsUsd(credits: number): string {
   const dollars = credits / CREDITS_PER_DOLLAR;
