@@ -1078,6 +1078,11 @@ export {
   type ConnectorDefaultAccountBrief,
 } from "./connector-overview";
 export {
+  connectorAgentAccessContract,
+  connectorAgentAccessSchema,
+  type ConnectorAgentAccess,
+} from "./connector-agent-access";
+export {
   userPermissionGrantsContract,
   userPermissionGrantScopeSchema,
   userPermissionGrantActionSchema,
