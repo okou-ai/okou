@@ -12,8 +12,8 @@ use tracing::warn;
 
 use crate::duration::duration_ms;
 use crate::error::ApiFailureKind;
-use crate::http::HttpClient;
 use crate::resource_budget::ResourceBudget;
+use runner_provider::http::HttpClient;
 use runner_storage::ArchiveConnectionAttempt;
 use runner_types::ids::RunId;
 use runner_types::types::SandboxReuseResult;
@@ -59,9 +59,9 @@ enum OomEvidenceUploadFailure {
 }
 
 impl OomEvidenceUploadFailure {
-    fn from_request_error(error: &crate::error::RunnerError) -> Self {
+    fn from_request_error(error: &runner_provider::ProviderError) -> Self {
         match error {
-            crate::error::RunnerError::ApiTransport(error) => {
+            runner_provider::ProviderError::ApiTransport(error) => {
                 Self::from_api_failure_kind(error.failure_kind)
             }
             _ => Self::Transport,
@@ -1053,7 +1053,7 @@ async fn send_telemetry(
             warn!(run_id = %run_id, status = %resp.status(), "telemetry flush rejected");
         }
         Err(error) => match &error {
-            crate::error::RunnerError::ApiTransport(api_error) => warn!(
+            runner_provider::ProviderError::ApiTransport(api_error) => warn!(
                 run_id = %run_id,
                 error = %error,
                 endpoint = api_error.request.endpoint_label,
@@ -1081,8 +1081,8 @@ mod tests {
     use tracing_subscriber::prelude::*;
     use tracing_test_support::CapturedEvents;
 
-    use crate::http::HttpClientConfig;
     use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
+    use runner_provider::http::HttpClientConfig;
     use runner_types::types::{
         ResumeSessionHistoryDownloadSource, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
         ResumeSessionHistoryRefKind,

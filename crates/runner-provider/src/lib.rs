@@ -6,7 +6,7 @@ mod axiom_layer;
 mod connector_registry;
 mod duration;
 mod error;
-mod http;
+pub mod http;
 pub mod local_queue;
 mod profile;
 pub mod provider;
@@ -30,10 +30,7 @@ pub use error::{
     ApiBodyReadError, ApiFailureKind, ApiRequestContext, ApiStatusError, ApiTransportCause,
     ApiTransportError, ProviderError, ProviderResult,
 };
-pub use http::{
-    PreparedProviderHttpRequest, ProviderHttpClient, ProviderHttpRequest, ProviderHttpTransport,
-    provider_http_transport_error,
-};
+pub use http::{HttpClient, HttpClientConfig, normalize_api_base_url};
 pub use provider::*;
 pub use run_cancellation::{
     DuplicateRunCancellationRegistration, RunCancellationHandle, RunCancellationMode,

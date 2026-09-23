@@ -305,7 +305,7 @@ pub(crate) fn validate_runner_hostname(value: &str) -> RunnerResult<()> {
 /// guest-visible config and log-adjacent paths, so require HTTPS outside the
 /// loopback development boundary and reject sensitive URL components.
 pub(crate) fn normalize_api_base_url(value: &str) -> RunnerResult<String> {
-    runner_executor::http::normalize_api_base_url(value).map_err(Into::into)
+    runner_provider::http::normalize_api_base_url(value).map_err(Into::into)
 }
 
 async fn check_path_exists(path: &Path, label: &str) -> RunnerResult<()> {

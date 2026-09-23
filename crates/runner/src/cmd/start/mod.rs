@@ -962,7 +962,7 @@ async fn run_start_with_home(
         let group_name = group.clone();
         let profiles: Vec<String> = runner_config.profiles.keys().cloned().collect();
         let provider = ApiProvider::new(
-            runner_provider::ProviderHttpClient::new(http.clone()),
+            http.clone(),
             server.token,
             ApiProviderConfig {
                 ably_side_message_handler: ssh

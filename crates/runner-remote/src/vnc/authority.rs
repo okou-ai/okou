@@ -13,9 +13,8 @@ use zeroize::Zeroizing;
 use super::Failure;
 use runner_types::ids::RunId;
 
-use crate::RemoteApiRequestFactory;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
-use std::sync::Arc;
+use runner_provider::HttpClient;
 
 const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;
@@ -23,7 +22,7 @@ const MAX_CA_CERTIFICATES: usize = 8;
 const MAX_PLAIN_USERNAME_BYTES: usize = 255;
 
 pub(super) struct Authority {
-    http: Arc<dyn RemoteApiRequestFactory>,
+    http: HttpClient,
     transport: reqwest::Client,
     token: Zeroizing<String>,
     identity: RunnerProcessIdentity,
@@ -48,7 +47,7 @@ pub(super) enum Transport {
 
 impl Authority {
     pub(super) fn new(
-        http: Arc<dyn RemoteApiRequestFactory>,
+        http: HttpClient,
         token: String,
         identity: RunnerProcessIdentity,
     ) -> Result<Self, Failure> {
