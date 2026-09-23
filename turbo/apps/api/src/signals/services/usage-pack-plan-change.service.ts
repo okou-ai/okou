@@ -751,7 +751,8 @@ function subscriptionChangeRecurringPreviewParams(args: {
   const attachedSchedule = args.prepared.attachedSchedule;
   if (
     attachedSchedule &&
-    (args.prepared.hasScheduledChanges || args.prepared.existingScheduleId)
+    (args.prepared.hasScheduledChanges ||
+      (args.prepared.existingScheduleId && args.prepared.hasImmediateChanges))
   ) {
     return {
       schedule: attachedSchedule.id,
@@ -2780,6 +2781,15 @@ function schedulePhaseParamWithItems(
   };
 }
 
+function copiedSchedulePhaseItems(
+  phase: StripeSchedulePhase,
+): readonly StripeSchedulePhaseItemParam[] {
+  if (!phase.items) {
+    throw new Error("Stripe subscription schedule phase has no items");
+  }
+  return phase.items.map(schedulePhaseItem);
+}
+
 function usagePackScheduleItems(
   phase: StripeSchedulePhase,
   targetPlanPriceId: string,
@@ -2822,6 +2832,23 @@ function usagePackScheduleItems(
   ];
 }
 
+function currentUsagePackScheduleItems(
+  phase: StripeSchedulePhase,
+  planPriceId: string,
+  quantities: ReadonlyMap<string, number>,
+): readonly StripeSchedulePhaseItemParam[] {
+  const actual = schedulePhaseUsagePackQuantityEntries(phase);
+  const expected = usagePackQuantityEntries([
+    { priceId: planPriceId, quantity: 1 },
+    ...[...quantities].map(([priceId, quantity]) => {
+      return { priceId, quantity };
+    }),
+  ]);
+  return actual && expected && usagePackQuantityEntriesMatch(actual, expected)
+    ? copiedSchedulePhaseItems(phase)
+    : usagePackScheduleItems(phase, planPriceId, quantities);
+}
+
 function deferredUsagePackChangeScheduleParams(args: {
   readonly subscription: StripeSubscription;
   readonly schedule: StripeSubscriptionSchedule;
@@ -2847,7 +2874,7 @@ function deferredUsagePackChangeScheduleParams(args: {
     // Stripe may keep the old phase items after a direct subscription update.
     // Rebuild every pre-boundary phase from the paid current configuration so
     // updating the schedule cannot undo an immediate upgrade.
-    const currentItems = usagePackScheduleItems(
+    const currentItems = currentUsagePackScheduleItems(
       phase,
       args.currentPlanPriceId,
       args.currentQuantities,
@@ -2894,7 +2921,7 @@ function deferredUsagePackChangeScheduleParams(args: {
       schedulePhaseParamWithItems(finalPhase, {
         startDate: finalPhase.end_date,
         endDate: args.effectiveAt,
-        items: usagePackScheduleItems(
+        items: currentUsagePackScheduleItems(
           finalPhase,
           args.currentPlanPriceId,
           args.currentQuantities,
