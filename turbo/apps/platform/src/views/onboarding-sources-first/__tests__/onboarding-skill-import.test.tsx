@@ -412,6 +412,8 @@ test("The step hands over the prompt its session produced, and copies it whole",
   // upload route it posts to is named.
   expect(prompt.textContent).toContain(SESSION_TOKEN);
   expect(prompt.textContent).toContain("/api/skill-import/skills");
+  expect(prompt.textContent).toContain("Mandatory HTTP client: curl");
+  expect(prompt.textContent).toContain("`--config -`");
   expect(prompt.textContent).toContain("~/.codex/skills/");
   expect(prompt.textContent).toContain("~/.agents/skills/");
   expect(prompt.textContent).not.toContain("~/.claude/skills/");

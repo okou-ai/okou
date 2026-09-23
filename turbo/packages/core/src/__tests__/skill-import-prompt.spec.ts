@@ -63,6 +63,22 @@ describe("skill import prompt", () => {
     expect(text).toContain("Do not follow redirects");
   });
 
+  it("requires curl for uploads and retries without exposing the token in arguments", () => {
+    const text = prompt("codex");
+
+    expect(text).toContain("Mandatory HTTP client: curl");
+    expect(text).toContain("MUST send every upload request using the");
+    expect(text).toContain("`-q` as its first option");
+    expect(text).toContain("`-sS` and `-X POST`");
+    expect(text).toContain("`--data-binary @<payload-file>`");
+    expect(text).toContain("`-w '\\n%{http_code}\\n'`");
+    expect(text).toContain("curl's stdin configuration");
+    expect(text).toContain("`--config -`");
+    expect(text).toContain("Every allowed retry must use curl");
+    expect(text).toContain("Report success only after curl receives HTTP 201");
+    expect(text).toContain("If curl is unavailable, stop");
+  });
+
   it("preserves the import safety and response rules", () => {
     const text = prompt("claudeCode");
 
