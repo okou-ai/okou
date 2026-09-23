@@ -207,9 +207,10 @@ pub struct CliFailureDiagnostic {
     /// High-level source of the event-derived failure detail.
     ///
     /// Values produced by [`execute_cli_with_active_input_for_config`] use
-    /// `ClaudeResult` for Claude Code terminal result events and `CodexJsonl`
-    /// for Codex compatibility JSONL failure events. The final run diagnostic
-    /// may still prefer stderr when this event message is generic.
+    /// `ClaudeResult` for Claude Code terminal result events, `PiResult` for Pi
+    /// terminal result events, and `CodexJsonl` for Codex compatibility JSONL
+    /// failure events. The final run diagnostic may select stderr for a generic
+    /// event message or use an exit-code fallback when no detail is available.
     pub source: FailureDetailSource,
 
     /// Optional structured failure reason parsed from supported CLI payloads.
