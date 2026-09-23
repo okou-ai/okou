@@ -71,20 +71,14 @@ while IFS= read -r run; do
 
   job_status=$(jq -er '.status' <<<"$job")
   job_conclusion=$(jq -r '.conclusion // empty' <<<"$job")
-  if [[ "$job_status" != completed || "$job_conclusion" == success ]]; then
+  # Only a skipped job proves its upload step never ran. A failed, cancelled,
+  # or timed-out job may have written ready.json before a later step failed;
+  # keep polling the CDN in those cases.
+  if [[ "$job_status" != completed || "$job_conclusion" != skipped ]]; then
     echo pending
     exit 0
   fi
-  case "$job_conclusion" in
-    failure|cancelled|skipped|timed_out|action_required|startup_failure)
-      # Other runs for this SHA may still publish the same artifact.
-      ;;
-    *)
-      # Unknown GitHub conclusions are not proof that publication is over.
-      echo pending
-      exit 0
-      ;;
-  esac
+  # Other runs for this SHA may still publish the same artifact.
 done <<<"$run_rows"
 
 echo unavailable

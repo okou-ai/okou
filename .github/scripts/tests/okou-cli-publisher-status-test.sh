@@ -19,7 +19,7 @@ case "$*" in
     [[ "$*" =~ /runs/([0-9]+)/jobs ]] || exit 96
     run_id="${BASH_REMATCH[1]}"
     case "$MOCK_CASE" in
-      skipped|failed|success|queued|older_active|older_success|all_skipped)
+      skipped|failed|cancelled|timed_out|success|queued|older_active|older_success|all_skipped)
         job_case="$MOCK_CASE"
         case "$MOCK_CASE:$run_id" in
           older_active:11|older_success:11|all_skipped:*) job_case=skipped ;;
@@ -29,6 +29,8 @@ case "$*" in
         case "$job_case" in
           skipped) status=completed; conclusion=skipped ;;
           failed) status=completed; conclusion=failure ;;
+          cancelled) status=completed; conclusion=cancelled ;;
+          timed_out) status=completed; conclusion=timed_out ;;
           success) status=completed; conclusion=success ;;
           queued) status=queued; conclusion=null ;;
         esac
@@ -101,7 +103,9 @@ assert_status terminal_no_job unavailable
 assert_status queued pending
 assert_status success pending
 assert_status skipped unavailable
-assert_status failed unavailable
+assert_status failed pending
+assert_status cancelled pending
+assert_status timed_out pending
 assert_status older_active pending
 assert_status older_success pending
 assert_status all_skipped unavailable
@@ -136,7 +140,7 @@ grep -qx 'found=false' <<< "$download_output" || {
 
 # An active producer or API error must preserve the existing wait. The sleep
 # mock stops the loop immediately, so this test never actually waits.
-for mock_case in none queued api_error jobs_api_error; do
+for mock_case in none queued failed cancelled api_error jobs_api_error; do
   if MOCK_CASE="$mock_case" OUTPUT_DIR="$test_root/output" \
     ARTIFACT_REQUIRED=false CHECK_PUBLISHER_STATUS=true WAIT_SECONDS=600 \
     bash "$SCRIPT_DIR/download-okou-cli-artifact.sh" > "$test_root/download.log" 2>&1; then
