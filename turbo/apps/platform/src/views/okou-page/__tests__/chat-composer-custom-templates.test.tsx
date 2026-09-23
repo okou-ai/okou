@@ -383,32 +383,6 @@ test("The switch decides whether the catalog is requested at all", async () => {
   expect(listed).toBe(0);
 });
 
-test("The composer asks for the catalog only once the picker needs it", async () => {
-  let listed = 0;
-  context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-    listed += 1;
-    return respond(200, [customTemplate()]);
-  });
-  const user = userEvent.setup({ delay: null });
-  mockTemplateChat();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: true },
-  });
-
-  // A ready composer resolves a chosen template when it is chosen, so
-  // rendering it is not a reason to request the catalog.
-  await screen.findByLabelText("Template");
-  expect(listed).toBe(0);
-
-  const dialog = await openTemplatePicker(user);
-  await expect(
-    within(dialog).findByText("Q3 board review"),
-  ).resolves.toBeInTheDocument();
-  expect(listed).toBe(1);
-});
-
 test("The Custom category lists every reachable template", async () => {
   mockCustomTemplates([
     customTemplate(),

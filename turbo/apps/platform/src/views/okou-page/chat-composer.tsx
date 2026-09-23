@@ -8765,7 +8765,7 @@ function useComposerTemplatePicker(
   );
   const loadCustomTemplates = useSet(loadCustomTemplateCatalog$);
   const notifyDraftChanged = useComposerDraftChange(signals);
-  const rootSignal = useGet(rootSignal$);
+  const pageSignal = useGet(pageSignal$);
   const insert = (
     value: GenerationTemplateRequest,
     attachment: ComposerTemplateAttachment | undefined,
@@ -8798,11 +8798,11 @@ function useComposerTemplatePicker(
               ? selectedComposerTemplateAttachment(
                   value,
                   [],
-                  await loadCustomTemplates(rootSignal),
+                  await loadCustomTemplates(pageSignal),
                 )
               : selectedComposerTemplateAttachment(
                   value,
-                  await loadImportedTemplates(rootSignal),
+                  await loadImportedTemplates(pageSignal),
                 );
           insert(value, attachment);
         })(),
