@@ -900,6 +900,16 @@ async function deleteUserData(
     .delete(browserUserActionRequests)
     .where(eq(browserUserActionRequests.userId, userId));
   await deleteClerkAgentLifecycleData(db, { kind: "user", userId });
+  // VNC references were removed before user cleanup. Delete only this user's
+  // SSH resources and personal Access configurations; organization Access
+  // configurations have no user owner and must survive creator deletion.
+  await db.transaction(async (tx) => {
+    await tx.delete(sshConnections).where(eq(sshConnections.userId, userId));
+    await tx.delete(sshCredentials).where(eq(sshCredentials.userId, userId));
+    await tx
+      .delete(cloudflareAccessConfigs)
+      .where(eq(cloudflareAccessConfigs.userId, userId));
+  });
   await db.transaction(async (tx) => {
     await deleteStoragesWithPiMemoryCandidates(tx, eq(storages.userId, userId));
   });

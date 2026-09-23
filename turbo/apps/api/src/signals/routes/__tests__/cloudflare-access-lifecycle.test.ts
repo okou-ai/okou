@@ -9,6 +9,7 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { countUserSshAccessResourcesFixture } from "../../../test-fixtures/ssh-access-owner-lifecycle";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cloudflareAccessRoutes } from "../cloudflare-access";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -116,10 +117,46 @@ test("creator erasure preserves shared Access and another member's SSH host", as
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();
+  const personal = (
+    await accept(
+      configs().create({
+        headers,
+        query,
+        body: {
+          id: randomUUID(),
+          scope: "personal",
+          name: "Personal gateway",
+          credentials: {
+            clientId: "personal-id",
+            clientSecret: "personal-secret",
+          },
+        },
+      }),
+      [201],
+    )
+  ).body;
+  await createHost(personal.id);
   const member = await owner(creator.orgId, "member");
   const host = await createHost(shared.id);
 
+  expect(
+    await countUserSshAccessResourcesFixture(creator.userId),
+  ).toStrictEqual({
+    configs: 1,
+    hosts: 1,
+    credentials: 1,
+  });
   await webhook("user.deleted", creator.userId);
+
+  // The deleted user cannot authenticate to list their own resources. This
+  // narrow fixture verifies that encrypted personal state was actually erased.
+  expect(
+    await countUserSshAccessResourcesFixture(creator.userId),
+  ).toStrictEqual({
+    configs: 0,
+    hosts: 0,
+    credentials: 0,
+  });
 
   mocks.clerk.session(member.userId, member.orgId, "org:member");
   expect(
