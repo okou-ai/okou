@@ -1786,8 +1786,8 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 
     const unauthenticatedConnectStatus =
       await integrations.requestSlackConnectStatus(null, [401]);
-    expect(unauthenticatedConnectStatus.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedConnectStatus.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const connectStatus = await integrations.requestSlackConnectStatus(
@@ -1826,16 +1826,19 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       null,
       [401],
     );
-    expect(unauthenticatedChannels.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedChannels.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const missingChannels = await integrations.requestListSlackChannels(
       admin,
       [404],
     );
-    expect(missingChannels.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
+    expect(missingChannels.body).toStrictEqual({
+      error: {
+        message: "No Slack installation found for this org",
+        code: "NOT_FOUND",
+      },
     });
 
     const unauthenticatedMessage = await integrations.requestSendSlackMessage(
@@ -2811,7 +2814,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       // organization, so it also pins that the note reads the same
       // override-aware evaluation as `# Agent Tools`.
       const privateArtifactRule =
-        "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private `/artifacts/...` address is not openable from Slack, so a link alone shows the user nothing. When you judge that Slack can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou slack upload-file` so the user has something they can open there. If you upload it, also keep the original private artifact address in the final reply so the owner can open it after returning to the web app.";
+        "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private `/artifacts/...` address is not openable from Slack, so a link alone shows the user nothing. When you judge that Slack can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou slack upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou slack upload-file`, so the owner can open the original artifact after returning to the web app.";
       if (privateFiles) {
         expect(canonicalInputRun.appendSystemPrompt).toContain(
           privateArtifactRule,
@@ -6616,8 +6619,8 @@ describe("INT-02: Telegram integration", () => {
       {},
       [401],
     );
-    expect(unauthenticatedAvatar.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedAvatar.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const missingAvatar = await integrations.requestTelegramAvatar(

@@ -26,7 +26,7 @@ function SkeletonWordmark() {
   return (
     <div
       aria-hidden="true"
-      className="flex h-[74px] items-center justify-center gap-3"
+      className="flex h-[74px] items-center justify-center gap-3 max-sm:scale-80"
     >
       {skeletonGlyphs.map((glyph) => {
         return (

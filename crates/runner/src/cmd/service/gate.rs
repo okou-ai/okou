@@ -362,6 +362,31 @@ exit 2
     // -----------------------------------------------------------------
 
     #[tokio::test]
+    async fn read_runner_status_from_lifecycle_writer() {
+        let dir = tempfile::tempdir().unwrap();
+        let tracker =
+            crate::status::StatusTracker::new(dir.path().join("status.json"), 4, None, None);
+        let run_id = RunId::new_v4();
+        tracker.write_initial().await.unwrap();
+        tracker
+            .add_preparing_run(run_id, sandbox::SandboxId::new_v4())
+            .await
+            .unwrap();
+        tracker
+            .set_mode(crate::lifecycle::RunnerMode::Running)
+            .await
+            .unwrap();
+
+        let status = read_runner_status(dir.path()).await.unwrap();
+        assert_eq!(status.mode, "running");
+        assert_eq!(status.run_ids, vec![run_id]);
+        assert_eq!(
+            decide_gate(&status),
+            GateDecision::Refuse { draining: false }
+        );
+    }
+
+    #[tokio::test]
     async fn read_runner_status_missing_file() {
         let dir = tempfile::tempdir().unwrap();
         assert!(read_runner_status(dir.path()).await.is_err());
@@ -495,7 +520,7 @@ exit 2
     #[tokio::test]
     async fn read_runner_status_full_runner_payload() {
         // Guard against schema drift: status.json written by StatusTracker
-        // (crates/runner/src/status.rs) contains more fields than the ones
+        // (crates/runner-lifecycle/src/status.rs) contains more fields than the ones
         // we care about. The decoder must tolerate the full payload.
         let dir = tempfile::tempdir().unwrap();
         let s = r#"{

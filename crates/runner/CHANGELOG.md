@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.213.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.4...runner-rs-v0.213.5) (2026-09-23)
+
+## [0.213.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.3...runner-rs-v0.213.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* **model-provider:** authorize codex oauth across chatgpt backend api ([#36344](https://github.com/okou-ai/okou/issues/36344)) ([300433e](https://github.com/okou-ai/okou/commit/300433e7d394945f21005ab74edcb960257587d2))
+* **runner:** roll back codex cli to 0.155.1 ([#36381](https://github.com/okou-ai/okou/issues/36381)) ([dec5cc8](https://github.com/okou-ai/okou/commit/dec5cc80c5cc4e1b6abe56b829defe1e02f4e4f5))
+
+
+### Refactoring
+
+* **runner:** extract runner-lifecycle crate ([#36367](https://github.com/okou-ai/okou/issues/36367)) ([8723701](https://github.com/okou-ai/okou/commit/8723701a50a0b0c17b4486412cbecf89b914dda1))
+
 ## [0.213.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.2...runner-rs-v0.213.3) (2026-09-23)
 
 

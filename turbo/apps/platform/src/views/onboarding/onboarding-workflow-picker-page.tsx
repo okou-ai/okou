@@ -208,7 +208,9 @@ function WorkflowCard({
           {workflow.description}
         </span>
       </span>
-      <span className="relative z-10 flex items-center gap-3">
+      {/* This positioned footer follows the whole-card button, so tree order
+          already keeps its controls above that button. */}
+      <span className="relative flex items-center gap-3">
         <WorkflowConnectorPills connectorSlugs={workflow.connectorSlugs} />
         <IconTooltipButton
           type="button"

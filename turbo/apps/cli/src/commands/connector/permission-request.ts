@@ -25,6 +25,7 @@ import {
   printCallbackTurnInstruction,
 } from "./action-url";
 import {
+  addAwsDiagnosticOptions,
   buildConnectorUrlDiagnosticRequest,
   resolveConnectorCheckDiagnostic,
   validateDiagnosticUrl,
@@ -35,6 +36,47 @@ import {
   customConnectorSettingsGuidance,
 } from "./custom-connector-guidance";
 import { resolveDiagnosticConnectorSelector } from "./diagnostic-connector-selector";
+
+interface AwsDiagnosticOptionValues {
+  readonly awsService?: string;
+  readonly awsAction?: string;
+  readonly awsTarget?: string;
+  readonly awsQueryParam?: readonly string[];
+  readonly awsHeaderPresent?: readonly string[];
+}
+
+function assertAwsDiagnosticOptionsSupported(args: {
+  readonly selector: string;
+  readonly permission: string;
+  readonly url: string | undefined;
+  readonly options: AwsDiagnosticOptionValues;
+}): void {
+  const { options } = args;
+  const awsSelectorsSupplied =
+    options.awsService !== undefined ||
+    options.awsAction !== undefined ||
+    options.awsTarget !== undefined ||
+    (options.awsQueryParam?.length ?? 0) > 0 ||
+    (options.awsHeaderPresent?.length ?? 0) > 0;
+  if (!awsSelectorsSupplied) return;
+  if (args.url === undefined) {
+    throw new Error("AWS diagnostic selectors can only be used with --url.");
+  }
+  if (
+    isBrowserPermissionTarget({
+      connectorSlug: args.selector,
+      permission: args.permission,
+    }) ||
+    isComputerUsePermissionTarget({
+      connectorSlug: args.selector,
+      permission: args.permission,
+    })
+  ) {
+    throw new Error(
+      "AWS diagnostic selectors are only supported for connector URL permission checks.",
+    );
+  }
+}
 
 function permissionDescription(permission: string): string {
   return permission === UNKNOWN_PERMISSION_GRANT
@@ -301,38 +343,40 @@ const callbackPromptNotes = callbackPromptAvailable
   ? `  - Use --callback-prompt only when this turn needs exactly one connector or permission action\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
   : "";
 
-export const permissionRequestCommand = new Command()
-  .name("permission-request")
-  .description(
-    "Request builtin permissions or Browser/Computer Use authorization",
-  )
-  .argument(
-    "<selector>",
-    "Connector slug, custom UUID, unique display name, browser, or computer-use; builtin:/custom: prefixes accepted",
-  )
-  .addOption(
-    new Option(
-      "--permission <name>",
-      "The permission name to request",
-    ).makeOptionMandatory(),
-  )
-  .addOption(
-    new Option(
-      "--agent <id>",
-      "Agent ID whose permission page should be opened (must match OKOU_AGENT_ID inside a run)",
+export const permissionRequestCommand = addAwsDiagnosticOptions(
+  new Command()
+    .name("permission-request")
+    .description(
+      "Request builtin permissions or Browser/Computer Use authorization",
+    )
+    .argument(
+      "<selector>",
+      "Connector slug, custom UUID, unique display name, browser, or computer-use; builtin:/custom: prefixes accepted",
+    )
+    .addOption(
+      new Option(
+        "--permission <name>",
+        "The permission name to request",
+      ).makeOptionMandatory(),
+    )
+    .addOption(
+      new Option(
+        "--agent <id>",
+        "Agent ID whose permission page should be opened (must match OKOU_AGENT_ID inside a run)",
+      ),
+    )
+    .addOption(
+      new Option(
+        "--url <URL>",
+        "The failed request URL reported to okou connector check",
+      ),
+    )
+    .addOption(
+      new Option("--method <METHOD>", "The failed request HTTP method").default(
+        "GET",
+      ),
     ),
-  )
-  .addOption(
-    new Option(
-      "--url <URL>",
-      "The failed request URL reported to okou connector check",
-    ),
-  )
-  .addOption(
-    new Option("--method <METHOD>", "The failed request HTTP method").default(
-      "GET",
-    ),
-  )
+)
   .addOption(callbackPromptOption)
   .addHelpText(
     "after",
@@ -345,6 +389,9 @@ ${callbackPromptExample}  okou connector permission-request gmail --permission m
   okou connector permission-request browser --permission browser:write
 
 Notes:
+  - AWS options mirror connector check; they preserve the described AWS
+    operation when this command rechecks a named permission. They do not verify
+    a SigV4 signature or send a request to AWS; never include secrets.
   - Plan the concrete connector operations needed for this task; do not request hypothetical future access
   - Check okou whoami --permissions first and skip permissions already allowed
   - First run okou connector check --url <FAILED_URL> --method <METHOD>; use its firewall-denial URL and omit secret query strings or fragments
@@ -379,6 +426,11 @@ ${callbackPromptNotes}  - When multiple connector or permission actions are need
           agent?: string;
           url?: string;
           method: string;
+          awsService?: string;
+          awsAction?: string;
+          awsTarget?: string;
+          awsQueryParam?: string[];
+          awsHeaderPresent?: string[];
           callbackPrompt?: string;
         },
       ) => {
@@ -386,6 +438,12 @@ ${callbackPromptNotes}  - When multiple connector or permission actions are need
         if (opts.url !== undefined) {
           validateDiagnosticUrl(opts.url);
         }
+        assertAwsDiagnosticOptionsSupported({
+          selector,
+          permission: opts.permission,
+          url: opts.url,
+          options: opts,
+        });
         if (
           isBrowserPermissionTarget({
             connectorSlug: selector,
@@ -437,6 +495,21 @@ ${callbackPromptNotes}  - When multiple connector or permission actions are need
           url: opts.url,
           method: opts.method,
           connector: connectorSlug,
+          ...(opts.awsService === undefined
+            ? {}
+            : { awsService: opts.awsService }),
+          ...(opts.awsAction === undefined
+            ? {}
+            : { awsAction: opts.awsAction }),
+          ...(opts.awsTarget === undefined
+            ? {}
+            : { awsTarget: opts.awsTarget }),
+          ...(opts.awsQueryParam === undefined
+            ? {}
+            : { awsQueryParam: opts.awsQueryParam }),
+          ...(opts.awsHeaderPresent === undefined
+            ? {}
+            : { awsHeaderPresent: opts.awsHeaderPresent }),
         });
         const diagnostic = await diagnoseConnectorCheck(diagnosticRequest);
         const result = resolveConnectorCheckDiagnostic(
@@ -460,6 +533,12 @@ ${callbackPromptNotes}  - When multiple connector or permission actions are need
           method: diagnosticRequest.method,
           url: diagnosticRequest.url,
         });
+
+        if (diagnosticRequest.aws !== undefined) {
+          console.log(
+            "AWS selectors describe the intended operation only; no SigV4 signature was validated and no AWS request was sent.",
+          );
+        }
 
         await outputPermissionRequestMessage(
           result.connector.target.connectorSlug,

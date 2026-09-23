@@ -112,9 +112,8 @@ export const chatEvents = pgTable(
     runEventSequenceNumber: integer("run_event_sequence_number"),
     /**
      * Upstream run-event ID or a deterministic seed for synthesized rows.
-     * `queue:queued`, `queue:dequeued`, and `thinking:initial` seed stable
-     * primary keys for non-agent rows. `thinking:initial` also distinguishes
-     * our placeholder from real agent thinking stored in the same leaf.
+     * `queue:queued` and `queue:dequeued` seed stable primary keys for
+     * non-agent rows. Historical `thinking:initial` rows remain readable.
      */
     runEventId: text("run_event_id"),
     /** Strictly increasing thread position; it may start above 1 and have gaps. */

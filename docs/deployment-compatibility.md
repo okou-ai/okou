@@ -1,5 +1,38 @@
 # Deployment Compatibility
 
+## Chat thread snapshot R2 handoff (2026-09-23)
+
+Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
+`chat_thread_snapshots`. Existing rows continue to carry the legacy
+`chat_threads` JSONB and the API returns the same inline snapshot for them.
+The new API can return a short-lived,
+scope-checked download URL for a row with an object key; the new App and CLI
+materialize that object before caching or replaying its paired event cursor.
+
+The global compaction cron writes R2 snapshots as soon as this API deploys.
+Production promotes the API before the App, and previously loaded App bundles
+can remain open. The API therefore reads the R2 archive and serves the legacy
+inline response to clients that do not send `X-Chat-Thread-Snapshot-R2: 1`.
+The new App and CLI send that capability header and receive the short-lived R2
+URL. Package versions alone cannot identify the capability because older
+deployments use the same versions. This compatibility read does not access the
+retired JSONB payload.
+
+The compaction job writes a compressed,
+content-addressed JSON snapshot to R2 and publishes its object key together
+with the event cursor. It stores an empty JSONB array instead of the retired
+projection. Rows without an object key remain readable through the legacy
+JSONB response until the job backfills them. A failed upload or a losing
+conditional database update leaves the prior snapshot and cursor intact.
+
+The hourly job also removes unreferenced snapshot objects older than seven
+days in bounded hash partitions. It retains objects referenced by a current
+snapshot or a user export. Rolling back to an API that only understands inline
+JSONB after the first R2 write would leave R2-backed snapshots unreadable;
+the production rollback resolver enforces the canonical main commit that first
+introduced `chat-thread-snapshot-object.ts` as the API reader floor. Recovery
+must stay at or above that floor or roll forward.
+
 ## Artifact catalog API handoff (2026-09-23)
 
 The API now enqueues file catalog work in the same transaction as its ordinary
@@ -42,6 +75,37 @@ they interact with these frontend, backend, or runner boundaries.
 New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
+
+## User preference initialization (2026-09-23)
+
+`GET /api/user-preferences` now returns `409 USER_PREFERENCES_UNINITIALIZED`
+when the member lacks either a valid timezone or a locale. The App accepts that
+response, then calls `POST /api/user-preferences/initialize` with browser
+timezone and the locale selected during initial resource loading. It uses the
+POST result directly. An invalid or unavailable browser timezone falls back to
+`America/Los_Angeles`; an unsupported browser locale falls back to `en-US`.
+The App also initializes if an older API returns `200` with a missing field.
+
+The App Worker prefetches a successful GET into the HTML, which the App consumes
+without another browser GET. Prefetch is best effort, bounded to 500 ms, and
+does not embed `409`; the client GET remains the fallback when prefetch misses.
+
+The new API continues to accept the older App's optional timezone-only POST.
+An empty body fills missing timezone and locale with Pacific Time and English.
+Initialization preserves each already stored field independently, so a member
+missing only locale keeps their timezone and vice versa. Concurrent writes to
+missing fields remain last-writer-wins without a transaction. Against the old
+API, a new App may receive an initialize result with no locale; it then uses
+the regular preferences update to save locale before returning preferences.
+An old App that reads preferences before its startup POST against the new API
+can temporarily receive `409`; its existing POST then initializes the member.
+
+Morning Brief enrollment remains a separate durable obligation. The POST
+attempts it after saving missing preferences, and the enrollment worker admits up to
+20 timezone-bearing members without enrollment rows on each tick before
+processing due work. Qualification checks the Clerk membership and rollout
+boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
+recreated. No schema migration is needed.
 
 ## Pi 0.87.1 model admission (2026-09-23)
 

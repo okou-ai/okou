@@ -879,18 +879,11 @@ interface RuntimeSelectionLoad {
 }
 
 interface RuntimeSelectionBuildResult {
-  readonly key: string;
   readonly load: RuntimeSelectionLoad;
-  readonly cacheable: boolean;
+  readonly cacheOutcome: "hit" | "miss" | "not_applicable";
 }
 
 interface RuntimeSelectionCache {
-  completed:
-    | {
-        readonly key: string;
-        readonly load: RuntimeSelectionLoad;
-      }
-    | undefined;
   inFlight:
     | {
         readonly key: string;
@@ -900,8 +893,77 @@ interface RuntimeSelectionCache {
 }
 
 const runtimeSelectionCache = singleton((): RuntimeSelectionCache => {
-  return { completed: undefined, inFlight: undefined };
+  return { inFlight: undefined };
 });
+
+// Validated projection rows are cached per connector rather than per requested
+// slug set: callers ask for different combinations (each user's or agent's
+// connectors), so whole-set keys rarely repeat, while individual connectors do.
+// Entries belong to exactly one projection generation and are dropped when the
+// ready projection identity changes.
+const PROJECTED_CONNECTOR_CACHE_CAPACITY = 256;
+
+interface ProjectedConnectorCache {
+  identityKey: string | undefined;
+  readonly connectors: Map<ConnectorSlug, ConnectorCatalogArtifactConnector>;
+}
+
+const projectedConnectorCache = singleton((): ProjectedConnectorCache => {
+  return { identityKey: undefined, connectors: new Map() };
+});
+
+function projectedConnectorCacheFor(
+  identity: ConnectorCatalogRuntimeProjectionIdentity,
+): Map<ConnectorSlug, ConnectorCatalogArtifactConnector> {
+  const cache = projectedConnectorCache();
+  const identityKey = projectionIdentityKey(identity);
+  if (cache.identityKey !== identityKey) {
+    cache.identityKey = identityKey;
+    cache.connectors.clear();
+  }
+  return cache.connectors;
+}
+
+function takeCachedProjectedConnectors(
+  identity: ConnectorCatalogRuntimeProjectionIdentity,
+  connectorSlugs: readonly ConnectorSlug[],
+): {
+  readonly cached: readonly ConnectorCatalogArtifactConnector[];
+  readonly uncachedSlugs: readonly ConnectorSlug[];
+} {
+  const connectors = projectedConnectorCacheFor(identity);
+  const cached: ConnectorCatalogArtifactConnector[] = [];
+  const uncachedSlugs: ConnectorSlug[] = [];
+  for (const connectorSlug of connectorSlugs) {
+    const connector = connectors.get(connectorSlug);
+    if (connector === undefined) {
+      uncachedSlugs.push(connectorSlug);
+      continue;
+    }
+    // Re-insert to mark the entry as most recently used.
+    connectors.delete(connectorSlug);
+    connectors.set(connectorSlug, connector);
+    cached.push(connector);
+  }
+  return { cached, uncachedSlugs };
+}
+
+function rememberProjectedConnectors(
+  identity: ConnectorCatalogRuntimeProjectionIdentity,
+  fetched: readonly ConnectorCatalogArtifactConnector[],
+): void {
+  const connectors = projectedConnectorCacheFor(identity);
+  for (const connector of fetched) {
+    connectors.delete(connector.slug);
+    connectors.set(connector.slug, connector);
+  }
+  for (const connectorSlug of connectors.keys()) {
+    if (connectors.size <= PROJECTED_CONNECTOR_CACHE_CAPACITY) {
+      break;
+    }
+    connectors.delete(connectorSlug);
+  }
+}
 
 interface RuntimeSelectionObservationHistory {
   identityDigest: string | undefined;
@@ -983,12 +1045,10 @@ async function completeRuntimeSelectionBuildFallback(args: {
   readonly timing: ConnectorCatalogLoadTiming;
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
   readonly metadataConnectorSlugs: readonly ConnectorSlug[];
-  readonly key: string;
   readonly reason: ConnectorCatalogRuntimeProjectionFallbackReason;
 }): Promise<RuntimeSelectionBuildResult> {
   return {
-    key: args.key,
-    cacheable: false,
+    cacheOutcome: "not_applicable",
     load: await completeRuntimeSelectionFallback(args),
   };
 }
@@ -1054,33 +1114,32 @@ async function buildProjectedRuntimeSelection(args: {
   let projection = args.projection;
   const selectedConnectorSlugs = requestedProjectionConnectorSlugs(args);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const key = runtimeSelectionProjectionKey({
-      identity: projection.identity,
-      runtimeConnectorSlugs: args.runtimeConnectorSlugs,
-      metadataConnectorSlugs: args.metadataConnectorSlugs,
-    });
+    const { cached, uncachedSlugs } = takeCachedProjectedConnectors(
+      projection.identity,
+      selectedConnectorSlugs,
+    );
+    const cacheOutcome = uncachedSlugs.length === 0 ? "hit" : "miss";
     const rows = await readProjectedRuntimeRows({
       db: args.db,
       timing: args.timing,
       projection,
-      connectorSlugs: selectedConnectorSlugs,
+      connectorSlugs: uncachedSlugs,
     });
     if (rows.kind === "fallback") {
       return await completeRuntimeSelectionBuildFallback({
         ...args,
-        key,
         reason: rows.reason,
       });
     }
     if (rows.missingConnectorSlugs.length === 0) {
+      rememberProjectedConnectors(projection.identity, rows.connectors);
       const selection = materializeProjectedRuntimeSelection({
         ...args,
         projection,
-        connectors: rows.connectors,
+        connectors: [...cached, ...rows.connectors],
       });
       return {
-        key,
-        cacheable: true,
+        cacheOutcome,
         load: {
           selection,
           source: "projection",
@@ -1114,7 +1173,6 @@ async function buildProjectedRuntimeSelection(args: {
     if (latest.kind === "fallback") {
       return await completeRuntimeSelectionBuildFallback({
         ...args,
-        key,
         reason: latest.reason,
       });
     }
@@ -1128,32 +1186,33 @@ async function buildProjectedRuntimeSelection(args: {
       }
       return await completeRuntimeSelectionBuildFallback({
         ...args,
-        key,
         reason: "unstable",
       });
     }
     if (actualConnectorCount !== projection.identity.connectorCount) {
       return await completeRuntimeSelectionBuildFallback({
         ...args,
-        key,
         reason: "incomplete",
       });
     }
     if (confirmedRows?.kind === "fallback") {
       return await completeRuntimeSelectionBuildFallback({
         ...args,
-        key,
         reason: confirmedRows.reason,
       });
     }
+    const fetchedConnectors = [
+      ...rows.connectors,
+      ...(confirmedRows?.connectors ?? []),
+    ];
+    rememberProjectedConnectors(projection.identity, fetchedConnectors);
     const selection = materializeProjectedRuntimeSelection({
       ...args,
       projection,
-      connectors: [...rows.connectors, ...(confirmedRows?.connectors ?? [])],
+      connectors: [...cached, ...fetchedConnectors],
     });
     return {
-      key,
-      cacheable: true,
+      cacheOutcome,
       load: {
         selection,
         source: "projection",
@@ -1223,15 +1282,6 @@ export async function loadConnectorRuntimeSelection(
       observeRuntimeSelection(identity.projection.identity, key),
     );
     const cache = runtimeSelectionCache();
-    if (cache.completed?.key === key) {
-      timing.recordMaterializedConnectorCount(0);
-      timing.recordProjectionResult({
-        source: cache.completed.load.source,
-        cacheOutcome: "hit",
-        fallbackReason: cache.completed.load.fallbackReason,
-      });
-      return cache.completed.load.selection;
-    }
     if (cache.inFlight?.key === key) {
       const result = await cache.inFlight.promise;
       timing.recordMaterializedConnectorCount(0);
@@ -1254,12 +1304,9 @@ export async function loadConnectorRuntimeSelection(
       clearRuntimeSelectionInFlight(cache, key, promise);
     });
     clearRuntimeSelectionInFlight(cache, key, promise);
-    if (result.cacheable) {
-      cache.completed = { key: result.key, load: result.load };
-    }
     timing.recordProjectionResult({
       source: result.load.source,
-      cacheOutcome: "miss",
+      cacheOutcome: result.cacheOutcome,
       fallbackReason: result.load.fallbackReason,
     });
     return result.load.selection;

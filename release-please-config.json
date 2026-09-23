@@ -128,6 +128,9 @@
         "crates/runner-host": {
             "release-type": "rust"
         },
+        "crates/runner-lifecycle": {
+            "release-type": "rust"
+        },
         "crates/runner-network": {
             "release-type": "rust"
         },

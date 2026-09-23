@@ -1277,14 +1277,6 @@ describe("CHAT-02: completed chat callback", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization");
     }
-    // Opening copy is the producer accounts keep when thread activity
-    // summaries are off, so pin the switch instead of following its generally
-    // available default: this case is about the other generations degrading.
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ThreadActivitySummary]: false },
-    );
     mockOptionalEnv("OPENROUTER_API_KEY", "bdd-openrouter-key");
     chatCallbacks.mockOpenRouterCompletions((body) => {
       const system = body.messages[0]?.content ?? "";
@@ -1341,13 +1333,6 @@ describe("CHAT-02: completed chat callback", () => {
     ).toContainEqual(
       expect.objectContaining({ body: "Your task is complete" }),
     );
-    // Only the four are rejected, so the optional progress copy still lands:
-    // the degradations are scoped to the generations the provider refused.
-    expect(
-      events.events.some((event) => {
-        return event.runEventId === "thinking:initial";
-      }),
-    ).toBeTruthy();
   });
 
   it.each([

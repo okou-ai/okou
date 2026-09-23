@@ -4,6 +4,7 @@ import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/run
 import type { ConnectorCheckPolicy } from "@okouai/api-contracts/contracts/connector-check";
 
 import {
+  addAwsDiagnosticOptions,
   buildDiagnosticRequest,
   connectorCheckRetryCommand,
   connectorPermissionRequestCommand,
@@ -607,42 +608,44 @@ function printEnvironmentPermissionDiagnostic(
   console.log("");
 }
 
-export const checkConnectorCommand = new Command()
-  .name("check")
-  .description(
-    "Diagnose builtin/custom routing, account configuration, and run permissions",
-  )
-  .option("--json", "Output connector diagnostics and next actions as JSON")
-  .addOption(
-    new Option(
-      "--env-name <ENV_NAME>",
-      "Builtin connector environment name (e.g. GITHUB_TOKEN)",
+export const checkConnectorCommand = addAwsDiagnosticOptions(
+  new Command()
+    .name("check")
+    .description(
+      "Diagnose builtin/custom routing, account configuration, and run permissions",
+    )
+    .option("--json", "Output connector diagnostics and next actions as JSON")
+    .addOption(
+      new Option(
+        "--env-name <ENV_NAME>",
+        "Builtin connector environment name (e.g. GITHUB_TOKEN)",
+      ),
+    )
+    .addOption(
+      new Option(
+        "--url <URL>",
+        "A full URL to diagnose — matches connector ownership, route environment names, and permission (e.g. https://api.github.com/repos/owner/repo)",
+      ),
+    )
+    .addOption(
+      new Option(
+        "--connector <selector>",
+        "Select a unique slug, custom UUID, or display name; qualify collisions with builtin: or custom:",
+      ),
+    )
+    .addOption(
+      new Option(
+        "--method <METHOD>",
+        "HTTP method to use when matching permissions with --url",
+      ).default("GET"),
+    )
+    .addOption(
+      new Option(
+        "--check-permission <name>",
+        "Permission to check with --env-name only (e.g. contents:read)",
+      ),
     ),
-  )
-  .addOption(
-    new Option(
-      "--url <URL>",
-      "A full URL to diagnose — matches connector ownership, route environment names, and permission (e.g. https://api.github.com/repos/owner/repo)",
-    ),
-  )
-  .addOption(
-    new Option(
-      "--connector <selector>",
-      "Select a unique slug, custom UUID, or display name; qualify collisions with builtin: or custom:",
-    ),
-  )
-  .addOption(
-    new Option(
-      "--method <METHOD>",
-      "HTTP method to use when matching permissions with --url",
-    ).default("GET"),
-  )
-  .addOption(
-    new Option(
-      "--check-permission <name>",
-      "Permission to check with --env-name only (e.g. contents:read)",
-    ),
-  )
+)
   .addHelpText(
     "after",
     `
@@ -653,6 +656,11 @@ Scope:
   URL mode discovers builtin and custom route owners. Use --connector with a
   full slug, custom UUID, or exact unique display name; qualify collisions with
   builtin: or custom:. Find UUIDs with connector custom list.
+  AWS URL diagnostics can use --aws-service, --aws-action, --aws-target,
+  repeated --aws-query-param, and repeated --aws-header-present. These selectors
+  describe the intended operation only: no SigV4 signature is validated and no
+  AWS request is sent. Do not include secrets in selector values; explicit
+  bounded selectors may appear in JSON output and generated follow-up commands.
   --connector and --method require --url. URL permissions are derived from the
   request, so --check-permission cannot be combined with --url. Diagnose the
   failed request before trying ad hoc credential or permission fixes. Prefer the
@@ -669,6 +677,7 @@ Examples:
   okou connector check --url https://api.acme.example/v1/items --connector custom:<connector-id>
   okou connector check --url https://api.acme.example/v1/items --connector _acme-search
   okou connector check --url https://slack.com/api/chat.postMessage --method POST
+  okou connector check --url https://sts.us-west-2.amazonaws.com/ --method POST --connector aws --aws-service sts --aws-action GetCallerIdentity
   okou connector check --env-name SLACK_TOKEN --check-permission chat:write
 
 How connectors work:

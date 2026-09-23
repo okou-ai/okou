@@ -97,12 +97,25 @@ export type OnboardingRecommendationConnectorSlug = z.infer<
   typeof onboardingRecommendationConnectorSlugSchema
 >;
 
+/** A short, evidence-based portrait from the same sources as the first task. */
+export const onboardingUserProfileSchema = z
+  .object({
+    overview: z.string().trim().min(1).max(240),
+    professionalIdentity: z.array(z.string().trim().min(1).max(180)).max(3),
+    communicationStyle: z.array(z.string().trim().min(1).max(180)).max(3),
+    priorities: z.array(z.string().trim().min(1).max(180)).max(3),
+  })
+  .strict();
+
+export type OnboardingUserProfile = z.infer<typeof onboardingUserProfileSchema>;
+
 export const onboardingRecommendationSchema = z
   .object({
     kind: z.enum(["task", "workflow"]),
     title: z.string().trim().min(1).max(120),
     outcome: z.string().trim().min(1).max(240),
     prompt: z.string().trim().min(1).max(1000),
+    profile: onboardingUserProfileSchema,
   })
   .strict();
 

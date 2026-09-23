@@ -170,6 +170,7 @@ export function createChatThreadSharingSignals(
     "autoScroll$" | "readRenderedThreadScrollPosition$"
   >,
   allChatGroups$: Computed<ChatEventGroup[]>,
+  closeFeedbackSelection$: Command<void, []>,
 ): ChatThreadSharingSignals {
   const internalPhase$ = state<SharedThreadSelectionPhase>("idle");
   const internalSelectedGroups$ = state<ReadonlyMap<string, SelectedGroup>>(
@@ -196,6 +197,7 @@ export function createChatThreadSharingSignals(
       scroll.readRenderedThreadScrollPosition$,
       "[data-chat-run-work-history], [data-chat-run-status-tail]",
     );
+    set(closeFeedbackSelection$);
     set(internalSelectedGroups$, new Map());
     set(internalCreatedSharedThreadId$, null);
     set(internalPhase$, "selecting");

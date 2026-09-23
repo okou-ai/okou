@@ -265,8 +265,7 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
           ? { kind: "chat-thread-event" }
           : null;
     if (dataKey?.kind === "chat-event") {
-      // A native delivery has no Run terminal event. Refresh its server unread
-      // watermark before the tab handles the message-created invalidation.
+      // Refresh indicators before the tab handles the message invalidation.
       set(reloadWorkerComputed$, "chat-thread-indicators");
     }
     if (dataKey) {

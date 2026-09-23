@@ -182,6 +182,32 @@ function MorningBriefDeliveryStatus({
   );
 }
 
+function MorningBriefLastDelivery({
+  preference,
+}: {
+  readonly preference: MorningBriefPreferenceResponse | undefined;
+}) {
+  const { t } = useTranslation();
+  if (!preference?.lastDeliveredAt) {
+    return null;
+  }
+  const date = new Intl.DateTimeFormat(currentLocale(), {
+    dateStyle: "medium",
+    timeStyle: "short",
+    ...(preference.timezone ? { timeZone: preference.timezone } : {}),
+  }).format(new Date(preference.lastDeliveredAt));
+  return (
+    <span className="text-xs text-muted-foreground">
+      {t(
+        ($) => {
+          return $.settings.preferences.morningBrief.lastDelivered;
+        },
+        { date },
+      )}
+    </span>
+  );
+}
+
 /**
  * Enabling while a reason is reported returns the unchanged preference, so the
  * switch would silently spring back. The reason copy explains what to fix.
@@ -270,6 +296,7 @@ export function MorningBriefSettings() {
               mutationFailed={mutationFailed}
             />
             <MorningBriefDeliveryStatus preference={preference} />
+            <MorningBriefLastDelivery preference={preference} />
           </div>
         }
       >

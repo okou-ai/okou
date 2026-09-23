@@ -1633,12 +1633,40 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it.each([
-    ["okou-1.0", "@preset/okou-1-0"],
-    ["okou-1.0-pro", "@preset/okou-1-0-pro"],
-    ["okou-1.0-max", "@preset/okou-1-0-max"],
+    {
+      model: "okou-1.0",
+      preset: "@preset/okou-1-0",
+      displayName: "Okou 1.0",
+      sourceModel: "GPT-6 Luna",
+      sourceModelId: "openai/gpt-6-luna",
+      reasoningEffort: "max",
+    },
+    {
+      model: "okou-1.0-pro",
+      preset: "@preset/okou-1-0-pro",
+      displayName: "Okou 1.0 Pro",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "low",
+    },
+    {
+      model: "okou-1.0-max",
+      preset: "@preset/okou-1-0-max",
+      displayName: "Okou 1.0 Max",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "high",
+    },
   ] as const)(
-    "routes built-in %s only through its OpenRouter Preset",
-    async (model, preset) => {
+    "routes built-in $model only through its OpenRouter Preset",
+    async ({
+      model,
+      preset,
+      displayName,
+      sourceModel,
+      sourceModelId,
+      reasoningEffort,
+    }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await seedBuiltInModelCandidateKeys(context, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
@@ -1674,7 +1702,24 @@ describe("CHAT-02: model-first provider policies", () => {
         wireApi: "responses",
         supportsWebsockets: false,
       });
-      expect(claim.codexRuntimeConfig?.modelCatalog).toBeUndefined();
+      expect(claim.codexRuntimeConfig?.modelCatalog?.models).toHaveLength(1);
+      expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
+        expect.objectContaining({
+          slug: preset,
+          display_name: displayName,
+          description: expect.stringContaining(
+            `${sourceModel} (${sourceModelId})`,
+          ),
+          default_reasoning_level: reasoningEffort,
+          supported_reasoning_levels: [
+            expect.objectContaining({ effort: reasoningEffort }),
+          ],
+          supports_reasoning_effort_updates: false,
+          context_window: 1_050_000,
+          max_context_window: 1_050_000,
+          effective_context_window_percent: 87,
+        }),
+      ]);
       expect(environment.OKOU_REASONING_EFFORT).toBeUndefined();
       expect(environment.OKOU_CODEX_SERVICE_TIER).toBeUndefined();
       await cancelChatRun(actor, run.runId);

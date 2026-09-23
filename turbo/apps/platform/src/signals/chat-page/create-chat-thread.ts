@@ -213,10 +213,7 @@ import {
   type BrowserLifecycleOptimisticEvents,
 } from "./browser-session-block.ts";
 import { createChatThreadContainerSignals } from "./chat-thread-container.ts";
-import {
-  createThreadActivitySummarySignals,
-  type ThinkingSummaries,
-} from "./thread-activity-summary.ts";
+import { createThreadActivitySummarySignals } from "./thread-activity-summary.ts";
 import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.ts";
 import {
   messageDocumentToPrompt,
@@ -281,63 +278,7 @@ function isInputChatEvent(
 // Thinking-indicator constants and helpers
 // ---------------------------------------------------------------------------
 
-const THINKING_PHRASE_COUNT = 10;
 const DONE_PHRASE_COUNT = 8;
-
-function thinkingPhrase(index: number): string {
-  switch (index) {
-    case 0: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.brewing;
-      });
-    }
-    case 1: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.piecingTogether;
-      });
-    }
-    case 2: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.spinningUp;
-      });
-    }
-    case 3: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.onIt;
-      });
-    }
-    case 4: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.assembling;
-      });
-    }
-    case 5: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.sketching;
-      });
-    }
-    case 6: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.mapping;
-      });
-    }
-    case 7: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.wiring;
-      });
-    }
-    case 8: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.shaping;
-      });
-    }
-    default: {
-      return i18n.t(($) => {
-        return $.chat.run.thinking.tuningIn;
-      });
-    }
-  }
-}
 
 function formatDonePhrase(lastEvent: ChatEvent | undefined): string {
   const time = lastEvent
@@ -1333,8 +1274,6 @@ function lastRunThinkingEvent(
 
 interface ThinkingIndicatorProjection {
   readonly mode: ThinkingIndicatorMode;
-  readonly thinkingEventId: string | null;
-  readonly thinkingText: string | null;
 }
 
 function assistantGroupOnlyHasThinking(
@@ -1395,7 +1334,7 @@ function thinkingIndicatorProjectionFromGroups(
   const { activeGroups } = groups;
   const lastGroup = activeGroups.at(-1);
   if (!lastGroup) {
-    return { mode: null, thinkingEventId: null, thinkingText: null };
+    return { mode: null };
   }
   const lastIsAssistant = lastGroup.role === "assistant";
   const lastAssistantEvent = lastIsAssistant
@@ -1421,7 +1360,7 @@ function thinkingIndicatorProjectionFromGroups(
       running,
     })
   ) {
-    return { mode: null, thinkingEventId: null, thinkingText: null };
+    return { mode: null };
   }
 
   const mode = resolveThinkingIndicatorMode({
@@ -1430,17 +1369,7 @@ function thinkingIndicatorProjectionFromGroups(
     queued,
     running,
   });
-  const thinkingText =
-    !queued &&
-    running &&
-    rawThinkingEvent?.event.eventType === "output.thinking"
-      ? rawThinkingEvent.event.thinking?.trim() || null
-      : null;
-  return {
-    mode,
-    thinkingEventId: thinkingText ? (rawThinkingEvent?.event.id ?? null) : null,
-    thinkingText,
-  };
+  return { mode };
 }
 
 function latestRecommendedFollowupsFromGroups(
@@ -1517,12 +1446,6 @@ function createEventSemanticSignals(
       return (await get(thinkingIndicatorProjection$)).mode;
     },
   );
-  const thinkingText$ = computed(async (get): Promise<string | null> => {
-    return (await get(thinkingIndicatorProjection$)).thinkingText;
-  });
-  const thinkingEventId$ = computed(async (get): Promise<string | null> => {
-    return (await get(thinkingIndicatorProjection$)).thinkingEventId;
-  });
   const recommendedFollowupSource$ = computed(
     (get): Promise<RecommendedFollowupSource | null> => {
       return Promise.resolve(
@@ -1540,8 +1463,6 @@ function createEventSemanticSignals(
   return {
     hasEvents$,
     thinkingIndicatorMode$,
-    thinkingEventId$,
-    thinkingText$,
     recommendedFollowupSource$,
     donePhrase$,
   };
@@ -2318,12 +2239,9 @@ interface MarkThreadReadDeps {
 /**
  * The newest instant this open thread has to be read through.
  *
- * A Run leaves a terminal event in the local projection, so its timestamp is
- * available without asking the server. A native Morning Brief delivery has no
- * Run and no terminal event at all, so its unread state only exists in the
- * server watermark. Taking the later of the two covers a thread whose only
- * unread is native, a second native delivery arriving while the thread is
- * open, and a Run finishing after a native delivery.
+ * A Run leaves a terminal event in the local projection. The server may have
+ * observed a newer terminal event than the local projection, so read through
+ * the later of the two timestamps.
  */
 function createUnreadThroughAt$(
   threadId: string,
@@ -3734,50 +3652,18 @@ function createCancelRunWithQueuedRecall({
 
 function createThinkingIndicatorSignals(
   activity: ReturnType<typeof createThreadActivitySummarySignals>,
-  messages: Pick<MessageListSignals, "thinkingText$" | "thinkingEventId$">,
 ) {
-  const thinkingPhraseIndex = Math.floor(Math.random() * THINKING_PHRASE_COUNT);
   const thinkingPhrase$ = computed((get) => {
     get(locale$);
-    return get(activity.enabled$)
-      ? i18n.t(($) => {
-          return $.chat.run.thinking.default;
-        })
-      : thinkingPhrase(thinkingPhraseIndex);
+    return i18n.t(($) => {
+      return $.chat.run.thinking.default;
+    });
   });
-  const thinkingSummaries$ = computed(
-    async (get): Promise<ThinkingSummaries | null> => {
-      if (get(activity.enabled$)) {
-        return await get(activity.thinkingSummaries$);
-      }
-      const text = await get(messages.thinkingText$);
-      const eventId = await get(messages.thinkingEventId$);
-      if (!text || !eventId) {
-        return null;
-      }
-      return {
-        runId: eventId,
-        messages: [
-          ...new Set(
-            text
-              .split(/\r?\n/u)
-              .map((line) => {
-                return line.trim();
-              })
-              .filter(Boolean),
-          ),
-        ].map((line) => {
-          return { id: line, text: line };
-        }),
-      };
-    },
-  );
-  const thinkingRunId$ = computed(async (get) => {
-    return get(activity.enabled$)
-      ? get(activity.thinkingRunId$)
-      : await get(messages.thinkingEventId$);
-  });
-  return { thinkingPhrase$, thinkingSummaries$, thinkingRunId$ };
+  return {
+    thinkingPhrase$,
+    thinkingSummaries$: activity.thinkingSummaries$,
+    thinkingRunId$: activity.thinkingRunId$,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -4134,6 +4020,7 @@ export function createChatPanelSignals(
     threadId,
     messages.scroll,
     messagePipeline.allChatGroups$,
+    feedback.close$,
   );
   const locator = createChatConversationLocatorSignals({
     threadId,
@@ -4188,7 +4075,7 @@ export function createChatPanelSignals(
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),
     subscribeChatThread$: runTracking.subscribeChatThread$,
-    ...createThinkingIndicatorSignals(activity, messages),
+    ...createThinkingIndicatorSignals(activity),
     artifacts$: messages.artifacts$,
     reloadArtifacts$: messages.reloadArtifacts$,
   };

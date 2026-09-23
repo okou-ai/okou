@@ -11,7 +11,6 @@ import { welcomeChatThreadsContract } from "@okouai/api-contracts/contracts/welc
 import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { SUPPORTED_USER_LOCALES } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
 import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 
@@ -29,7 +28,6 @@ import { modelProvidersRoutes } from "../model-providers";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext({ connectorCatalog: true });
@@ -67,19 +65,6 @@ function metadataClient() {
   );
 }
 
-async function enable(actor: ApiTestUser, value = true) {
-  if (!actor.orgId) {
-    throw new Error("Expected a workspace");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId: actor.orgId },
-    {
-      [FeatureSwitchKey.WelcomeThread]: value,
-    },
-  );
-}
-
 async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
@@ -89,7 +74,6 @@ async function fixture() {
   const agentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Editable agent name must not replace the public brand",
   });
-  await enable(actor);
   return { actor, agentId };
 }
 
@@ -138,36 +122,6 @@ describe("POST /api/welcome-chat-threads", () => {
     expect(response.status).toBe(401);
   });
 
-  it("does not create a thread while the persisted switch is disabled", async () => {
-    const clientThreadId = randomUUID();
-    const { actor } = await fixture();
-    await enable(actor, false);
-    await accept(
-      welcomeClient().create({
-        headers: headers(actor),
-        body: { clientThreadId },
-      }),
-      [403],
-    );
-    await accept(
-      metadataClient().get({
-        headers: headers(actor),
-        params: { id: clientThreadId },
-      }),
-      [404],
-    );
-    await expect(createdEvents(actor, clientThreadId)).resolves.toStrictEqual(
-      [],
-    );
-  });
-
-  it("creates the requested thread while the persisted switch is enabled", async () => {
-    const clientThreadId = randomUUID();
-    const { actor } = await fixture();
-    await enable(actor);
-    expect((await create(actor, clientThreadId)).body.id).toBe(clientThreadId);
-  });
-
   it("requires write capability and current membership for agent credentials", async () => {
     const { actor } = await fixture();
     if (!actor.orgId) {
@@ -214,7 +168,6 @@ describe("POST /api/welcome-chat-threads", () => {
 
   it("reports an unavailable default agent without provisioning or creating a thread", async () => {
     const actor = bdd.user();
-    await enable(actor);
     const clientThreadId = randomUUID();
     const unavailable = await accept(
       welcomeClient().create({
@@ -242,7 +195,6 @@ describe("POST /api/welcome-chat-threads", () => {
     // coverage for historical data through the explicit legacy fixture.
     await seedLegacyPrivateDefaultAgentFixture(agentId);
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
-    await enable(member);
     const clientThreadId = randomUUID();
     const rejected = await accept(
       welcomeClient().create({
@@ -340,7 +292,6 @@ describe("POST /api/welcome-chat-threads", () => {
     );
     expect(selections.body.selections).toStrictEqual([]);
     context.mocks.ably.publish.mockResolvedValue(undefined);
-    await enable(actor, false);
     await expect(
       chat.listThreadEventRows(actor, body.id),
     ).resolves.toStrictEqual(rows);
