@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}}日連続",
-        "title": "はじめる",
+        "title": "クレジットをもっと獲得",
         "toGo": "残り {{amount}}",
         "workflow": {
           "action": "作成",

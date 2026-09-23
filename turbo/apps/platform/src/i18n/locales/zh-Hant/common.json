@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "連續 {{amount}} 天",
-        "title": "快速上手",
+        "title": "獲得更多積分",
         "toGo": "還差 {{amount}}",
         "workflow": {
           "action": "搭建",

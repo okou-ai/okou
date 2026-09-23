@@ -1515,7 +1515,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} Tage in Folge",
-        "title": "Einstieg",
+        "title": "Mehr Guthaben erhalten",
         "toGo": "Noch {{amount}}",
         "workflow": {
           "action": "Bauen",

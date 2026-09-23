@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Sequência de {{amount}} dias",
-        "title": "Primeiros passos",
+        "title": "Obtenha mais créditos",
         "toGo": "Faltam {{amount}}",
         "workflow": {
           "action": "Criar",
