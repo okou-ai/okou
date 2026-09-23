@@ -3,6 +3,7 @@ import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Toolbar } from "@base-ui/react/toolbar";
+import { Field } from "@base-ui/react/field";
 import type {
   FormEvent,
   MouseEvent as ReactMouseEvent,
@@ -3222,7 +3223,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
       renderedGroupsReady.state === "hasData" &&
       renderedGroupsReady.data);
   const scrollContentOnRef = useSet(thread.scrollContentOnRef$);
-  const sharingPhase = useGet(thread.sharing.phase$);
 
   return withChatScrollLayout(
     <main className={CHAT_THREAD_CONTENT_MAIN_CLASS}>
@@ -3233,7 +3233,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
           CHAT_THREAD_MESSAGE_LIST_CLASS,
           // Preserve the mounted layout for scroll restoration while loading.
           !showTranscript && "invisible",
-          sharingPhase !== "idle" && "pr-10 lg:pr-0",
         )}
       >
         <ChatThreadSessionError thread={thread} />
@@ -5696,15 +5695,6 @@ function shareableEventFromChatEvent(
     : null;
 }
 
-function clickTargetsExistingInteraction(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element &&
-    target.closest(
-      'a, button, input, textarea, select, [role="button"], [contenteditable="true"]',
-    ) !== null
-  );
-}
-
 function SelectablePagedGroupRow({
   group,
   thread,
@@ -5725,7 +5715,7 @@ function SelectablePagedGroupRow({
       group={displayGroup}
       thread={thread}
       modelChanges={modelChanges}
-      stackFirstOnPrevious={stackFirstOnPrevious}
+      stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
       runWorkSection={sharing ? undefined : runWorkSection}
       runIndicatorMode={sharing ? undefined : runIndicatorMode}
       statusTailEvents={sharing ? undefined : statusTailEvents}
@@ -5781,36 +5771,37 @@ function SelectablePagedGroupRow({
               .join(" ")
           : undefined
       }
-      className={cn(
-        // Every row in the transcript is otherwise a direct child of the
-        // message list's flex column. This wrapper interrupts that column, so
-        // it carries the same rhythm itself; without it a group holding a burst
-        // of user messages renders them with no gap at all.
-        "relative -my-1 flex flex-col rounded-lg py-1 transition-colors",
-        CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
-        phase === "selecting" && "cursor-pointer hover:bg-state-hover",
-      )}
-      onClick={(event) => {
-        if (!clickTargetsExistingInteraction(event.target)) {
-          toggleGroup();
-        }
-      }}
+      className="relative -my-1 flex flex-col gap-2 rounded-lg py-1"
     >
-      {content}
-      <Checkbox
-        checked={checked}
-        disabled={phase !== "selecting"}
-        aria-label={t(($) => {
-          return allSelected
-            ? $.chat.sharing.deselectGroup
-            : $.chat.sharing.selectGroup;
-        })}
-        className="absolute -right-9 top-1/2 -translate-y-1/2 lg:-right-10"
-        onClick={(event) => {
-          event.stopPropagation();
-        }}
-        onCheckedChange={toggleGroup}
-      />
+      {/* The full-width label owns selection. Message content stays outside
+          it so text selection, links, and message actions keep their owners. */}
+      <Field.Root className="relative" disabled={phase !== "selecting"}>
+        <Field.Label
+          className={cn(
+            buttonVariants({ variant: "quiet", size: "lg" }),
+            "w-full justify-start pr-10 pl-3 data-disabled:pointer-events-none data-disabled:opacity-50",
+          )}
+        >
+          {t(($) => {
+            return allSelected
+              ? $.chat.sharing.deselectGroup
+              : $.chat.sharing.selectGroup;
+          })}
+        </Field.Label>
+        <Checkbox
+          checked={checked}
+          disabled={phase !== "selecting"}
+          className="absolute top-1/2 right-3 -translate-y-1/2"
+          onCheckedChange={toggleGroup}
+        />
+      </Field.Root>
+      <div
+        // Preserve the message list's rhythm inside this group, including
+        // the gaps that back-to-back user bubbles stack into.
+        className={cn("flex flex-col", CHAT_THREAD_MESSAGE_ROW_GAP_CLASS)}
+      >
+        {content}
+      </div>
     </div>
   );
 }
