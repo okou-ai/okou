@@ -1,4 +1,5 @@
 import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -26,8 +27,8 @@ import {
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import {
+  selectedBuiltinConnectorCatalogItem$,
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
@@ -567,13 +568,26 @@ export function GetStartedQuestIntroDialog({
  */
 function QuestConnectModal() {
   const selectedSlug = useGet(selectedBuiltinConnectorSlug$);
+  return selectedSlug === null ? null : (
+    <SelectedQuestConnectModal connectorSlug={selectedSlug} />
+  );
+}
+
+/** Mounted once a connector is picked; the only reader of its catalog entry. */
+function SelectedQuestConnectModal({
+  connectorSlug,
+}: {
+  connectorSlug: ConnectorSlug;
+}) {
   const setSelectedSlug = useSet(setSelectedBuiltinConnectorSlug$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const selectedLoadable = useLastLoadable(
+    selectedBuiltinConnectorCatalogItem$,
+  );
+  // The last value is kept across a reload, and dropped once the pick changes.
   const selected =
-    selectedSlug !== null && catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.connectors.find((connector) => {
-          return connector.slug === selectedSlug;
-        })
+    selectedLoadable.state === "hasData" &&
+    selectedLoadable.data?.slug === connectorSlug
+      ? selectedLoadable.data
       : undefined;
   const accountOptions = defaultBuiltinConnectorAccountOptions(selected);
   if (!selected || !accountOptions) {

@@ -50,37 +50,33 @@ test("SSH connection failures do not add Chat-only indicators or change order or
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
   const trigger = await findFastControl("button", "Connectors");
-  expect(within(trigger).queryByRole("img", { name: "SSH" })).toBeNull();
   click(trigger);
   await screen.findByLabelText("Remove SSH");
-  await within(trigger).findByRole("img", { name: "SSH" });
   expect(within(trigger).queryByRole("status")).toBeNull();
-  expect(triggerIcons(trigger)).toStrictEqual([
-    "https://icons.example.test/github.svg",
-    "SSH",
-  ]);
-  const row = within(screen.getByRole("list", { name: "Connectors" }))
-    .getAllByRole("listitem")
-    .at(-1);
-  expect(row).toBeDefined();
+  const rows = within(
+    screen.getByRole("list", { name: "Connectors" }),
+  ).getAllByRole("listitem");
+  expect(
+    rows.map((row) => {
+      return row.textContent;
+    }),
+  ).toStrictEqual(["GitHub", "SSH"]);
+  const row = rows.at(-1);
   if (!row) {
     throw new Error("Missing SSH service row");
   }
   expect(within(row).queryByRole("status")).toBeNull();
   expect(within(row).getByLabelText("Remove SSH")).toBeInTheDocument();
+  expect(screen.getByLabelText("Remove GitHub")).toBeInTheDocument();
 });
-
-function triggerIcons(trigger: HTMLElement) {
-  return [...trigger.querySelectorAll('img, svg[role="img"]')].map((icon) => {
-    return icon.getAttribute("src") ?? icon.getAttribute("aria-label");
-  });
-}
 
 async function loadSshAccess(trigger: HTMLElement): Promise<void> {
   click(trigger);
-  await screen.findByLabelText("Remove SSH");
-  await within(trigger).findByRole("img", { name: "SSH" });
+  const toggle = await screen.findByLabelText("Remove SSH");
   click(trigger);
+  await waitFor(() => {
+    expect(toggle).not.toBeInTheDocument();
+  });
 }
 
 test("Opening services retains SSH while refreshing and applies the confirmed grant", async () => {
@@ -106,8 +102,6 @@ test("Opening services retains SSH while refreshing and applies the confirmed gr
   });
   const trigger = await findFastControl("button", "Connectors");
   await loadSshAccess(trigger);
-  const expected = ["https://icons.example.test/github.svg", "SSH"];
-  expect(triggerIcons(trigger)).toStrictEqual(expected);
   refreshing = true;
   context.mocks.ably.trigger("ssh:changed", { orgId: "org_default" });
   click(trigger);
@@ -117,78 +111,50 @@ test("Opening services retains SSH while refreshing and applies the confirmed gr
       "true",
     );
   });
-  expect(triggerIcons(trigger)).toStrictEqual(expected);
+  expect(screen.getByLabelText("Remove GitHub")).toBeInTheDocument();
   enabled = false;
   refresh.resolve();
   await screen.findByLabelText("Add SSH");
-  expect(triggerIcons(trigger)).toStrictEqual([
-    "https://icons.example.test/github.svg",
-  ]);
+  expect(screen.getByLabelText("Remove GitHub")).toBeInTheDocument();
 });
 
-test.each([2, 3])(
-  "SSH follows all builtin services and does not displace %s builtin trigger icons",
-  async (count) => {
-    const user = userEvent.setup({ delay: null });
-    const catalog = [
-      builtinConnector({ slug: github, label: "GitHub" }),
-      builtinConnector({ slug: slack, label: "Slack" }),
-      builtinConnector({ slug: gmail, label: "Gmail" }),
-    ].slice(0, count);
-    installComposerConnectorFixture({
-      catalog,
-      builtinAuthorizations: {
-        [SCOUT_AGENT_ID]: catalog.map((connector) => {
-          return connector.slug;
-        }),
-      },
-    });
-    context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
-      return respond(200, { configuredCount: 1 });
-    });
-    context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
-      return respond(200, { enabled: true });
-    });
-    await setupPage({
-      context,
-      path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    });
-    const trigger = await findFastControl("button", "Connectors");
-    click(trigger);
-    await screen.findByLabelText("Remove SSH");
-    const list = screen.getByRole("list", { name: "Connectors" });
-    const rows = within(list).getAllByRole("listitem");
-    expect(rows.at(-1)).toHaveTextContent("SSH");
-    expect(
-      rows.slice(0, count).every((row) => {
-        return !row.textContent?.includes("SSH");
+test("SSH follows all builtin services in the Connectors menu", async () => {
+  const catalog = [
+    builtinConnector({ slug: github, label: "GitHub" }),
+    builtinConnector({ slug: slack, label: "Slack" }),
+    builtinConnector({ slug: gmail, label: "Gmail" }),
+  ];
+  installComposerConnectorFixture({
+    catalog,
+    builtinAuthorizations: {
+      [SCOUT_AGENT_ID]: catalog.map((connector) => {
+        return connector.slug;
       }),
-    ).toBeTruthy();
-    const icons = catalog.map((connector) => {
-      return `https://icons.example.test/${connector.slug}.svg`;
-    });
-    await waitFor(() => {
-      expect(triggerIcons(trigger)).toStrictEqual(icons.slice(0, 2));
-    });
-    await user.click(
-      await screen.findByRole("switch", {
-        name: "Cloud browser",
-        checked: true,
+    },
+  });
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 1 });
+  });
+  context.mocks.api(agentSshAccessContract.get, ({ respond }) => {
+    return respond(200, { enabled: true });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+  });
+  click(await findFastControl("button", "Connectors"));
+  await screen.findByLabelText("Remove SSH");
+  const list = screen.getByRole("list", { name: "Connectors" });
+  expect(
+    within(list)
+      .getAllByRole("listitem")
+      .map((row) => {
+        return row.textContent;
       }),
-    );
-    await screen.findByRole("switch", {
-      name: "Cloud browser",
-      checked: false,
-    });
-    await waitFor(() => {
-      expect(triggerIcons(trigger)).toStrictEqual(
-        [...icons, "SSH"].slice(0, 3),
-      );
-    });
-  },
-);
+  ).toStrictEqual(["GitHub", "Slack", "Gmail", "SSH"]);
+});
 
-test("Switching Agents does not retain the previous Agent's enabled SSH icon", async () => {
+test("Switching Agents does not retain the previous Agent's enabled SSH access", async () => {
   installComposerConnectorFixture();
   context.mocks.data.userPreferences({
     pinnedAgentIds: [SCOUT_AGENT_ID, OTHER_AGENT_ID],
@@ -209,10 +175,9 @@ test("Switching Agents does not retain the previous Agent's enabled SSH icon", a
   await waitFor(() => {
     expect(window.location.pathname).toBe(`/agents/${OTHER_AGENT_ID}/chat`);
   });
-  const otherTrigger = await findFastControl("button", "Connectors");
-  click(otherTrigger);
+  click(await findFastControl("button", "Connectors"));
   await screen.findByLabelText("Add SSH");
-  expect(within(otherTrigger).queryByRole("img", { name: "SSH" })).toBeNull();
+  expect(screen.queryByLabelText("Remove SSH")).toBeNull();
 });
 
 test("Changing user clears retained SSH presentation while the new owner loads", async () => {
@@ -233,8 +198,8 @@ test("Changing user clears retained SSH presentation while the new owner loads",
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
-  const trigger = await findFastControl("button", "Connectors");
-  await loadSshAccess(trigger);
+  click(await findFastControl("button", "Connectors"));
+  await screen.findByLabelText("Remove SSH");
   changing = true;
   act(() => {
     clerk.user(
@@ -244,13 +209,12 @@ test("Changing user clears retained SSH presentation while the new owner loads",
     clerk.stateChanged();
   });
   await waitFor(() => {
-    expect(screen.queryByRole("img", { name: "SSH" })).toBeNull();
+    expect(screen.queryByLabelText("Remove SSH")).toBeNull();
   });
+  expect(screen.queryByLabelText("Add SSH")).toBeNull();
   nextOwner.resolve();
-  const nextTrigger = await findFastControl("button", "Connectors");
-  click(nextTrigger);
-  await screen.findByLabelText("Add SSH");
-  expect(within(nextTrigger).queryByRole("img", { name: "SSH" })).toBeNull();
+  await expect(screen.findByLabelText("Add SSH")).resolves.toBeInTheDocument();
+  expect(screen.queryByLabelText("Remove SSH")).toBeNull();
 });
 
 test("Changing workspace reloads the chat page before using the new SSH owner", async () => {

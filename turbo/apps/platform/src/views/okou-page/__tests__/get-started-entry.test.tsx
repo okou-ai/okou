@@ -1121,3 +1121,78 @@ test("Checking in confirms the reward instead of closing silently", async () => 
     ),
   ).toBeInTheDocument();
 });
+
+test("The quest entry leaves the connector catalog unread until the connector step opens", async () => {
+  configureQuestPage(context, "admin");
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, {
+      connectors: [catalogItem("gmail", "Gmail", "auth-code")],
+    });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  // The intro dialog and its connect flow are mounted beside the entry, but
+  // nothing is picked yet, so nothing asks for the catalog.
+  await openQuestPanel();
+  expect(statusReads).toBe(0);
+
+  click(screen.getByTestId("get-started-quest-connector"));
+  const picker = await screen.findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(statusReads).toBe(1);
+});
+
+test("A connector that needs a choice opens its connect dialog from its own catalog entry", async () => {
+  configureQuestPage(context, "admin");
+  const oauth = catalogItem("notion", "Notion", "auth-code");
+  const firstMethod = oauth.authMethods[0];
+  if (!firstMethod) {
+    throw new Error("Missing auth method");
+  }
+  // Two browser methods leave nothing to start in one press.
+  const notion: PublicConnectorCatalogStatusItem = {
+    ...oauth,
+    authMethods: [
+      firstMethod,
+      { ...firstMethod, id: "workspace-oauth", label: "Notion workspace" },
+    ],
+    singleAuthCodeAuthMethodId: null,
+  };
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, { connectors: [notion] });
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const tile = await screen.findByTestId("quest-connector-notion");
+  // Installed once the picker has its catalog: the slug route would also match
+  // the catalog's other paths.
+  const itemReads: string[] = [];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    itemReads.push(params.connectorSlug);
+    return respond(200, { connector: notion });
+  });
+  click(tile);
+
+  await expect(
+    screen.findByRole("dialog", { name: "Notion" }),
+  ).resolves.toBeInTheDocument();
+  expect(itemReads).toStrictEqual(["notion"]);
+});
