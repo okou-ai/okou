@@ -9,14 +9,14 @@ import {
 } from "../feature-switch";
 
 describe("FeatureSwitchKey", () => {
-  it("uses the canonical internal switch names", () => {
+  it("uses the canonical switch names", () => {
     expect(FeatureSwitchKey.PersonalModelProviderAccounts).toBe(
-      "_multipleSubscriptions",
+      "multipleSubscriptions",
     );
     expect(FeatureSwitchKey.Dummy).toBe("_dummy");
     expect(FeatureSwitchKey.Lab).toBe("_lab");
     expect(FeatureSwitchKey.SidebarSubscriptionUsage).toBe(
-      "_sidebarSubscriptionUsage",
+      "sidebarSubscriptionUsage",
     );
     expect(FeatureSwitchKey.FeishuIntegration).toBe("_feishuIntegration");
     expect(FeatureSwitchKey.ChatPreference).toBe("chatPreference");
@@ -109,6 +109,25 @@ describe("isFeatureEnabled", () => {
         "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
       rolloutStage: "alpha",
     });
+  });
+
+  it("enables Pi loop by default for every organization and honors explicit overrides", () => {
+    for (const context of [
+      {},
+      { orgId: "org_nonexistent" },
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureEnabled(FeatureSwitchKey.PiLoop, context)).toBe(true);
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PiLoop, {
+          ...context,
+          overrides: { [FeatureSwitchKey.PiLoop]: false },
+        }),
+      ).toBe(false);
+    }
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.PiLoop]?.rolloutStage,
+    ).toBe("released");
   });
 
   it("keeps chat thread archiving disabled by default and honors explicit overrides", () => {
@@ -441,13 +460,9 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("should keep the simple Morning Brief implementation switch off for everyone", () => {
+  it("should select simple Morning Brief for staff while preserving preferences and overrides", () => {
     expect(FeatureSwitchKey.SimpleMorningBrief).toBe("simpleMorningBrief");
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
         isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context),
       ).toBe(false);
@@ -457,6 +472,17 @@ describe("isFeatureEnabled", () => {
         true,
       );
     }
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, staff)).toBe(
+      true,
+    );
+    expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, staff)).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      }),
+    ).toBe(false);
     expect(
       isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
         orgId: "org_nonexistent",
@@ -466,7 +492,7 @@ describe("isFeatureEnabled", () => {
     expect(
       getFeatureSwitchMetadata()[FeatureSwitchKey.SimpleMorningBrief]
         ?.rolloutStage,
-    ).toBe("alpha");
+    ).toBe("beta");
   });
 
   it("should return true when orgId matches even if userId does not", () => {
@@ -538,7 +564,7 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(false);
+    expect(otherOrgStates[FeatureSwitchKey.PiLoop]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PaidToolControls]).toBe(false);
@@ -684,6 +710,12 @@ describe("getFeatureSwitchMetadata", () => {
     expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
       "beta",
     );
+    expect(
+      metadata[FeatureSwitchKey.PersonalModelProviderAccounts].rolloutStage,
+    ).toBe("beta");
+    expect(
+      metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
+    ).toBe("beta");
     expect(metadata[FeatureSwitchKey.AhrefsConnector].rolloutStage).toBe(
       "alpha",
     );

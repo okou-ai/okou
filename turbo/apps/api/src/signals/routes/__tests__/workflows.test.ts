@@ -628,6 +628,14 @@ describe("workflows", () => {
     const owner = user({ orgRole: "org:admin" });
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
     await enableWorkflowRuns(owner);
+    if (!owner.orgId) {
+      throw new Error("Expected a workflow owner organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: member.userId, orgId: owner.orgId, orgRole: "org:member" },
+      { [FeatureSwitchKey.PiLoop]: false },
+    );
     const publicAgent = await createAgent(owner, {
       displayName: "Public Workflow Agent",
       visibility: "public",

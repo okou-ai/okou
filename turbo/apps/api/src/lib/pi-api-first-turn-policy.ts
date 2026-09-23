@@ -1,5 +1,4 @@
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { PI_API_FIRST_TURN_SESSION_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import type {
   PiApiFirstTurnOwnershipStage,
   PiApiModelFailureDiagnostic,
@@ -20,8 +19,6 @@ type PiApiFirstTurnErrorCode =
   | "PI_API_RESOURCE_PREPARATION_FAILED"
   | "PI_API_RESOURCE_UNSUPPORTED"
   | "PI_API_SANDBOX_FALLBACK_FAILED"
-  | "PI_H0_DECOMPRESSION_FAILED"
-  | "PI_H0_DOWNLOAD_FAILED"
   | "PI_H0_ENCODING_UNSUPPORTED"
   | "PI_H0_HASH_MISMATCH"
   | "PI_H0_JSONL_INVALID"
@@ -114,6 +111,7 @@ type PiSandboxFallbackReason =
 
 export type PiSandboxFirstReason =
   | PiSandboxFallbackReason
+  | "resume_history"
   | "active_input"
   | "api_model_failed"
   | "api_attempt_timed_out";
@@ -150,15 +148,17 @@ export function normalizedSandboxFallbackFailure(
   );
 }
 
-/** Metadata has already passed the native raw/encoded bounds and encoding checks. */
-export function decideApiFirstTurnHistory(metadata: {
-  readonly rawSize: number;
-  readonly encodedSize: number;
+/**
+ * Only a strictly first turn may run the API model.
+ *
+ * Any resume session — blob-backed or inline — is Sandbox's to continue: it
+ * already materializes resume history, so reconstructing it here bought
+ * nothing the handoff needs. Apply this before any preparation IO starts.
+ */
+export function decideApiFirstTurnEligibility(facts: {
+  readonly hasResumeSession: boolean;
 }): "api" | "sandbox" {
-  return metadata.rawSize <= PI_API_FIRST_TURN_SESSION_MAX_BYTES &&
-    metadata.encodedSize <= PI_API_FIRST_TURN_SESSION_MAX_BYTES
-    ? "api"
-    : "sandbox";
+  return facts.hasResumeSession ? "sandbox" : "api";
 }
 
 type ApiFirstTurnCommitDecision =

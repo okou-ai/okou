@@ -26,7 +26,10 @@ import {
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
 import { setupAgentChatKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
-import { subscribeHomeTaskRecommendations$ } from "./home-task-recommendations.ts";
+import {
+  enterHomeTaskRecommendations$,
+  subscribeHomeTaskRecommendations$,
+} from "./home-task-recommendations.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -41,6 +44,7 @@ export const setupAgentChatPage$ = command(
     set(setChatAgentId$, agentId);
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
+    set(enterHomeTaskRecommendations$);
     set(get(agentChatComposerSignals$).voice.setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
     const firstGreetingVisit = set(startChatGreetingVisit$);

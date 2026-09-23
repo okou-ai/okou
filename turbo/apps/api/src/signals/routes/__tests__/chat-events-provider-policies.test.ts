@@ -9,7 +9,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
@@ -922,7 +922,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
     const pricing = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
+    const checkpointObjects = mockPiCheckpointObjectStore();
     mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-link");
     mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
     mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
@@ -977,7 +977,12 @@ describe("CHAT-02: model-first provider policies", () => {
       pricing,
     );
     await flushWaitUntilForTest();
-    expect((await api.readRun(actor, untraced.runId)).status).toBe("completed");
+    expect(
+      checkpointObjects.has(
+        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${untraced.runId}/manifest.json`,
+      ),
+    ).toBeTruthy();
+    expect((await api.readRun(actor, untraced.runId)).status).toBe("pending");
     await expect(
       api.readRun(actor, untraced.runId),
     ).resolves.not.toHaveProperty("langfuseTraceUrl");
@@ -995,6 +1000,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await expect(api.readRun(actor, traced.runId)).resolves.not.toHaveProperty(
       "langfuseTraceUrl",
     );
+    await cancelChatRun(actor, untraced.runId);
   });
 
   it("relays admitted run traces with platform credentials after runner claim", async () => {

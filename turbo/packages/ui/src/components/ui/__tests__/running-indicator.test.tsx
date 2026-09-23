@@ -63,9 +63,10 @@ describe("RunningIndicator", () => {
   });
 
   it("keeps the center and ripple layers concentric", () => {
-    render(<RunningIndicator />);
+    render(<RunningIndicator data-testid="running-indicator" />);
 
-    const indicator = screen.getByLabelText("Running");
+    const indicator = screen.getByTestId("running-indicator");
+    expect(indicator).toHaveAttribute("aria-hidden", "true");
     expect(indicator.children).toHaveLength(2);
 
     for (const layer of indicator.children) {
@@ -83,13 +84,13 @@ describe("RunningIndicator", () => {
   });
 
   it("sets the resting offset through transform, not translate or scale", () => {
-    render(<RunningIndicator />);
+    render(<RunningIndicator data-testid="running-indicator" />);
 
     // The keyframes animate `transform`. Tailwind's `translate-*` and `scale-*`
     // utilities set the individual CSS properties, which compose on top of the
     // animation instead of being replaced by it and double the centring offset
     // for the whole cycle.
-    for (const layer of screen.getByLabelText("Running").children) {
+    for (const layer of screen.getByTestId("running-indicator").children) {
       expect(layer.getAttribute("class")).not.toMatch(
         /(^|\s)-?translate-[xy]-/,
       );
@@ -98,9 +99,9 @@ describe("RunningIndicator", () => {
   });
 
   it("keeps a distinct resting state before animations start", () => {
-    render(<RunningIndicator />);
+    render(<RunningIndicator data-testid="running-indicator" />);
 
-    const [center, ripple] = screen.getByLabelText("Running").children;
+    const [center, ripple] = screen.getByTestId("running-indicator").children;
     expect(center).toHaveClass(
       "[transform:translate(-50%,-50%)_scale(0.64)]",
       "opacity-[0.34]",
@@ -115,20 +116,20 @@ describe("RunningIndicator", () => {
     const now = vi.spyOn(Date, "now");
 
     now.mockReturnValue(125);
-    const first = render(<RunningIndicator label="First running" />);
+    const first = render(<RunningIndicator data-testid="first-running" />);
 
     now.mockReturnValue(725);
-    const second = render(<RunningIndicator label="Second running" />);
+    const second = render(<RunningIndicator data-testid="second-running" />);
 
     const firstDelay = Number.parseInt(
       first
-        .getByLabelText("First running")
+        .getByTestId("first-running")
         .style.getPropertyValue("--running-indicator-delay"),
       10,
     );
     const secondDelay = Number.parseInt(
       second
-        .getByLabelText("Second running")
+        .getByTestId("second-running")
         .style.getPropertyValue("--running-indicator-delay"),
       10,
     );

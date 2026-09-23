@@ -292,6 +292,7 @@ const cronPruneStoragePresignedUrlsResponseSchema = z.object({
   presentationTemplatePreview: storagePresignedUrlPruneResultSchema,
   // Old API versions omit this scope during rolling deployment.
   artifactRead: storagePresignedUrlPruneResultSchema.optional(),
+  privateArtifactPreview: storagePresignedUrlPruneResultSchema.optional(),
 });
 
 const cronMaterializeMemorySummariesResponseSchema = z.object({
@@ -365,6 +366,22 @@ export const cronCompactChatThreadSnapshotsContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Compact chat thread snapshots from lifecycle events",
+  },
+});
+
+export const cronReconcileArtifactCatalogContract = c.router({
+  reconcile: {
+    method: "GET",
+    path: "/api/cron/reconcile-artifact-catalog",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        processed: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Reconcile a bounded batch of pending artifact catalog files",
   },
 });
 

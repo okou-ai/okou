@@ -567,7 +567,7 @@ impl DeferredUploadPhase {
                 }
             }
             let outcome = network_logs::upload_network_logs(
-                &exec_config.http,
+                &crate::network_log_http_adapter::NetworkLogHttpAdapter(&exec_config.http),
                 run_id,
                 &sandbox_token,
                 &network_log_path,

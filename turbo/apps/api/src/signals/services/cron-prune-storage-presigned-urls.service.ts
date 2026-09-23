@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 import {
   PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
+  PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
   pruneStoragePresignedUrls$,
   READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
   SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
@@ -16,6 +17,7 @@ export const pruneStoragePresignedUrlCache$ = command(
       readOnly,
       presentationTemplatePreview,
       artifactRead,
+      privateArtifactPreview,
     ] = await Promise.all([
       set(
         pruneStoragePresignedUrls$,
@@ -58,6 +60,15 @@ export const pruneStoragePresignedUrlCache$ = command(
         { db, scope: "artifact_read", limit: 512 },
         signal,
       ),
+      set(
+        pruneStoragePresignedUrls$,
+        {
+          db,
+          scope: "private_artifact_preview",
+          limit: PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
+        },
+        signal,
+      ),
     ]);
     signal.throwIfAborted();
     return {
@@ -66,6 +77,7 @@ export const pruneStoragePresignedUrlCache$ = command(
       readOnly,
       presentationTemplatePreview,
       artifactRead,
+      privateArtifactPreview,
     };
   },
 );

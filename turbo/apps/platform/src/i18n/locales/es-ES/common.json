@@ -2018,9 +2018,13 @@
       "title": "Reenviar a"
     },
     "homeTasks": {
+      "empty": "Aún no hay tareas sugeridas",
       "existingThread": "Continuar chat",
+      "exploreWorkflow": "Explorar flujo de trabajo",
       "heading": "Retomado de tu trabajo reciente",
-      "newThread": "Chat nuevo"
+      "newTasksAvailable": "Hay nuevas tareas",
+      "newThread": "Chat nuevo",
+      "reload": "Recargar tareas"
     },
     "mail": {
       "bcc": "BCC",

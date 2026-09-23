@@ -828,20 +828,25 @@ async fn run_start_with_home(
         .unwrap_or(1);
 
     // Start proxy before factory so proxy_port is available for netns pool.
-    let (mut mitm, mitm_crash_rx) = proxy::MitmProxy::new(proxy::ProxyConfig {
-        mitmdump_bin: home.mitmdump_bin(deps::MITMPROXY_VERSION),
-        ca_dir: runner_config.ca_dir.clone(),
-        ca_lock_path: home.ca_lock(),
-        addon_dir: paths.mitm_addon_dir(),
-        registry_path: paths.proxy_registry(),
-        registry_lock_path: paths.proxy_registry_lock(),
-        builtin_firewall_catalog_cache_path: paths.builtin_firewall_catalog_cache(),
-        runtime_dir: paths.mitmdump_runtime_dir(),
-        runtime_lock_path: paths.mitmdump_runtime_lock(),
-        api_url: Some(server.url.clone()),
-        client_session_id: runner_client_session_id,
-        runner_token: local_group_dir.is_none().then(|| server.token.clone()),
-    })
+    let (mut mitm, mitm_crash_rx) = proxy::MitmProxy::new(
+        proxy::ProxyConfig {
+            mitmdump_bin: home.mitmdump_bin(deps::MITMPROXY_VERSION),
+            ca_dir: runner_config.ca_dir.clone(),
+            ca_lock_path: home.ca_lock(),
+            addon_dir: paths.mitm_addon_dir(),
+            registry_path: paths.proxy_registry(),
+            registry_lock_path: paths.proxy_registry_lock(),
+            builtin_firewall_catalog_cache_path: paths.builtin_firewall_catalog_cache(),
+            runtime_dir: paths.mitmdump_runtime_dir(),
+            runtime_lock_path: paths.mitmdump_runtime_lock(),
+            api_url: Some(server.url.clone()),
+            client_session_id: runner_client_session_id,
+            client_version: env!("CARGO_PKG_VERSION"),
+            system_ca_bundle: deps::SYSTEM_CA_BUNDLE,
+            runner_token: local_group_dir.is_none().then(|| server.token.clone()),
+        },
+        crate::ADDON_FILES,
+    )
     .await?;
     mitm.start().await?;
     info!(port = mitm.port(), "proxy ready");
@@ -2845,7 +2850,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let phase = teardown.phase_start("dns_stop");
     if let Err(error) = dns_handle.stop().await {
         error!(%error, "DNS cleanup failed during shutdown");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("dns_stop", phase);
 
@@ -2873,7 +2878,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let phase = teardown.phase_start("kmsg_stop");
     if let Err(error) = kmsg_handle.stop().await {
         error!(%error, "kmsg cleanup failed during shutdown");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("kmsg_stop", phase);
     let phase = teardown.phase_start("memory_prefetch_drain");

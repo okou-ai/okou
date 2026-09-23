@@ -108,6 +108,32 @@ interface UsageResetWindow {
   readonly limitWindowSeconds: number | null;
 }
 
+/**
+ * Typed error thrown when the ChatGPT usage GET answers with a non-2xx status.
+ * It carries the HTTP status so best-effort callers can tell an upstream outage
+ * apart from an authentication rejection without parsing the message, and
+ * without matching an unrelated error that happens to expose a status. Matches
+ * the project pattern (Error with `name`-tagged narrowing) from
+ * `codex-auth-json-parser.ts`. Not exported — callers narrow via the
+ * `isCodexUsageRequestError` type guard.
+ */
+interface CodexUsageRequestError extends Error {
+  readonly name: "CodexUsageRequestError";
+  readonly status: number;
+}
+
+function createCodexUsageRequestError(status: number): CodexUsageRequestError {
+  const err = new Error(`Codex usage request failed with status ${status}`);
+  err.name = "CodexUsageRequestError";
+  return Object.assign(err, { status }) as CodexUsageRequestError;
+}
+
+export function isCodexUsageRequestError(
+  v: unknown,
+): v is CodexUsageRequestError {
+  return v instanceof Error && v.name === "CodexUsageRequestError";
+}
+
 function nonEmptyString(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : null;
@@ -330,9 +356,7 @@ export async function fetchCodexUsageMetadata(
   });
 
   if (!response.ok) {
-    throw new Error(
-      `Codex usage request failed with status ${response.status}`,
-    );
+    throw createCodexUsageRequestError(response.status);
   }
 
   const parsed = codexUsageResponseSchema.safeParse(await response.json());

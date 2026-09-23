@@ -4,29 +4,7 @@ pub(crate) mod ignored_child;
 pub(crate) mod raw_http;
 pub(crate) mod session_history;
 
-#[derive(Clone)]
-pub(crate) struct ReapGate {
-    pub(crate) entered: std::sync::Arc<tokio::sync::Notify>,
-    pub(crate) release: std::sync::Arc<tokio::sync::Semaphore>,
-}
-
-impl ReapGate {
-    pub(crate) fn new() -> Self {
-        Self {
-            entered: Default::default(),
-            release: std::sync::Arc::new(tokio::sync::Semaphore::new(0)),
-        }
-    }
-
-    pub(crate) async fn wait(&self) {
-        self.entered.notify_one();
-        self.release
-            .acquire()
-            .await
-            .expect("reap gate closed")
-            .forget();
-    }
-}
+pub(crate) use runner_network::ReapGate;
 
 pub(crate) fn workspace_image_cache_key(reuse_key: &str, working_dir: &str) -> String {
     runner_host::paths::scoped_workspace_image_cache_key(

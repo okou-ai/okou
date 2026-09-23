@@ -593,7 +593,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
   });
 });
 
-test("retains only the committed Codex run's exact account and rejects a new retry", async () => {
+test("retains the committed Codex account and uses the current account for a new retry", async () => {
   const run = await dispatchMaintenance("codex-oauth-token", "member");
   if (!run.provider) {
     throw new Error("Missing subscription fixture");
@@ -632,21 +632,39 @@ test("retains only the committed Codex run's exact account and rejects a new ret
   if (!retry?.retryAt) {
     throw new Error("Missing scheduled retry");
   }
+  let retryRunId: string | undefined;
   await withMockNowForTest(new Date(retry.retryAt.getTime() + 1), async () => {
     const result = await createStore().set(
       executePiMemoryPhase2Work$,
       { scope: run.scope, currentTime: nowDate() },
       context.signal,
     );
-    expect(result).toMatchObject({
-      outcome: "failed",
-      errorClass: "credential_unavailable",
+    expect(result.outcome).toBe("dispatched");
+    if (result.outcome !== "dispatched") {
+      throw new Error("Expected retry to use the replacement account");
+    }
+    retryRunId = result.runId;
+    const [retryRun] = await db()
+      .select({
+        providerId: agentRuns.modelProviderId,
+        sessionId: agentRuns.sessionId,
+      })
+      .from(agentRuns)
+      .where(eq(agentRuns.id, result.runId));
+    if (!retryRun) {
+      throw new Error("Missing retry maintenance run");
+    }
+    expect(retryRun.providerId).toBe(replacement.binding.modelProviderId);
+    onTestFinished(async () => {
+      await db()
+        .delete(agentSessions)
+        .where(eq(agentSessions.id, retryRun.sessionId));
     });
   });
   await expect(readPhase2Job(run.scope)).resolves.toMatchObject({
     completedRevision: 0,
-    maintenanceRunId: null,
-    retryCount: 2,
+    maintenanceRunId: retryRunId,
+    retryCount: 1,
   });
 });
 

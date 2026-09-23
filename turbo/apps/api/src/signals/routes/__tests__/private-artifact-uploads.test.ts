@@ -328,6 +328,15 @@ describe("private artifact uploads", () => {
         signingDate: new Date("2026-09-09T12:00:00.000Z"),
       },
     });
+    const reference = new URL(url).pathname.slice("/artifacts/".length);
+    const resolved = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference },
+      }),
+      [200],
+    );
+    expect(resolved.body.url).toBe(preview.body.url);
     const downloaded = await accept(
       api()(webFilesContract).download({ headers, query: { file_id: id } }),
       [200],
@@ -368,6 +377,18 @@ describe("private artifact uploads", () => {
       [200],
     );
     expect(refreshed.body).toStrictEqual({
+      url: "https://private-r2.example/report.html?signature=two",
+      publicUrl: null,
+      previewImageUrl: null,
+      expiresAt: "2026-09-12T12:00:00.000Z",
+    });
+
+    mockNow(new Date("2026-09-11T11:50:00.123Z"));
+    const nearExpiry = await accept(
+      api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
+      [200],
+    );
+    expect(nearExpiry.body).toStrictEqual({
       url: "https://private-r2.example/report.html?signature=two",
       publicUrl: null,
       previewImageUrl: null,

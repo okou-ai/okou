@@ -129,6 +129,12 @@ export const resolveSharedThreadArtifactReference$ = command(
       }
       return {
         ...preview,
+        expiresAt: new Date(
+          Math.min(
+            Date.parse(preview.expiresAt),
+            Date.parse(download.expiresAt),
+          ),
+        ).toISOString(),
         downloadUrl: download.url,
         filename: target.filename,
         contentType: target.contentType,
