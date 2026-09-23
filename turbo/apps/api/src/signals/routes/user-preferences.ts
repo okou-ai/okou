@@ -1,13 +1,15 @@
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { and, eq } from "drizzle-orm";
-import { writeDb$ } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { command, computed } from "ccstate";
 import {
   DEFAULT_USER_LOCALE,
   USER_PREFERENCES_UNINITIALIZED,
+  userLocaleSchema,
   userPreferencesContract,
+  type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 
 import { badRequestMessage } from "../../lib/error";
@@ -30,6 +32,10 @@ import { prepareMorningBriefEnrollment } from "../services/morning-brief-enrollm
 import { settle, tapError } from "../utils";
 
 const L = logger("user-preferences");
+
+function isValidUserLocale(locale: string | null): locale is UserLocale {
+  return locale !== null && userLocaleSchema.safeParse(locale).success;
+}
 
 const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
 
@@ -68,7 +74,7 @@ const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   if (
     preferences.timezone === null ||
     !isValidTimeZone(preferences.timezone) ||
-    preferences.locale === null
+    !isValidUserLocale(preferences.locale)
   ) {
     return {
       status: 409 as const,
@@ -141,6 +147,60 @@ const updateUserPreferencesInner$ = command(
 const initializeUserPreferencesBody$ = bodyResultOf(
   userPreferencesContract.initialize,
 );
+async function fillMissingUserPreferenceFields(
+  db: Db,
+  identity: { readonly orgId: string; readonly userId: string },
+  existing:
+    | Pick<typeof orgMembersMetadata.$inferSelect, "timezone" | "locale">
+    | undefined,
+  requested: { readonly timezone?: string; readonly locale?: UserLocale },
+): Promise<
+  | {
+      readonly kind: "unchanged";
+      readonly timezone: string;
+      readonly locale: UserLocale;
+    }
+  | { readonly kind: "invalid-timezone" }
+  | { readonly kind: "written" }
+> {
+  const existingTimezone = existing?.timezone ?? null;
+  const existingLocale = existing?.locale ?? null;
+  if (
+    existingTimezone !== null &&
+    isValidTimeZone(existingTimezone) &&
+    isValidUserLocale(existingLocale)
+  ) {
+    return {
+      kind: "unchanged",
+      timezone: existingTimezone,
+      locale: existingLocale,
+    };
+  }
+  const timezoneMissing =
+    !existingTimezone || !isValidTimeZone(existingTimezone);
+  const localeMissing = !isValidUserLocale(existingLocale);
+  const timezone = requested.timezone ?? DEFAULT_USER_TIMEZONE;
+  const locale = requested.locale ?? DEFAULT_USER_LOCALE;
+  if (!isValidTimeZone(timezone)) {
+    return { kind: "invalid-timezone" };
+  }
+  await db
+    .insert(orgMembersMetadata)
+    .values({
+      ...identity,
+      timezone: timezoneMissing ? timezone : existingTimezone,
+      locale: localeMissing ? locale : existingLocale,
+    })
+    .onConflictDoUpdate({
+      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+      set: {
+        ...(timezoneMissing && { timezone }),
+        ...(localeMissing && { locale }),
+      },
+    });
+  return { kind: "written" };
+}
+
 const initializeUserPreferencesInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -165,41 +225,28 @@ const initializeUserPreferencesInner$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    const timezoneMissing =
-      !existing?.timezone || !isValidTimeZone(existing.timezone);
-    const localeMissing = !existing?.locale;
-    if (!timezoneMissing && !localeMissing) {
+    const writeOutcome = await fillMissingUserPreferenceFields(
+      db,
+      identity,
+      existing,
+      body.data,
+    );
+    signal.throwIfAborted();
+    if (writeOutcome.kind === "unchanged") {
       const current = await get(userPreferences(identity));
       signal.throwIfAborted();
       return {
         status: 200 as const,
         body: {
           ...current,
-          timezone: existing.timezone,
-          locale: existing.locale,
+          timezone: writeOutcome.timezone,
+          locale: writeOutcome.locale,
         },
       };
     }
-    const timezone = body.data.timezone ?? DEFAULT_USER_TIMEZONE;
-    const locale = body.data.locale ?? DEFAULT_USER_LOCALE;
-    if (!isValidTimeZone(timezone)) {
+    if (writeOutcome.kind === "invalid-timezone") {
       return badRequestMessage("Invalid timezone");
     }
-    await db
-      .insert(orgMembersMetadata)
-      .values({
-        ...identity,
-        timezone: timezoneMissing ? timezone : existing.timezone,
-        locale: localeMissing ? locale : existing.locale,
-      })
-      .onConflictDoUpdate({
-        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-        set: {
-          ...(timezoneMissing && { timezone }),
-          ...(localeMissing && { locale }),
-        },
-      });
-    signal.throwIfAborted();
     await prepareMorningBriefEnrollment(db, identity);
     signal.throwIfAborted();
     const enrollment = await settle(
