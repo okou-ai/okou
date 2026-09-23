@@ -1,8 +1,9 @@
-import { Cloud, Plug } from "lucide-react";
+import { Plug } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
+import { CloudflareAccessIcon } from "./components/cloudflare-access-icon.tsx";
 import {
   DetailPageBreadcrumbBar,
   DetailPageHeader,
@@ -41,7 +42,7 @@ export function CloudflareAccessConnectorPage() {
       <DetailPageHeader>
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gray-50 text-muted-foreground sm:h-16 sm:w-16">
-            <Cloud size={28} aria-hidden="true" />
+            <CloudflareAccessIcon size={28} />
           </span>
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-tight text-foreground sm:text-xl">

@@ -1,8 +1,9 @@
-import { Cloud, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { ROUTES } from "../../../../signals/route-paths.ts";
 import { Link } from "../../../router/link.tsx";
+import { CloudflareAccessIcon } from "../cloudflare-access-icon.tsx";
 import {
   ConnectorEntryCard,
   ConnectorEntryStatus,
@@ -19,7 +20,7 @@ export function CloudflareAccessConnectorCard({
   });
   return (
     <ConnectorEntryCard
-      icon={<Cloud size={20} aria-hidden="true" />}
+      icon={<CloudflareAccessIcon size={20} />}
       label={label}
       description={t(($) => {
         return $.cloudflareAccess.description;
