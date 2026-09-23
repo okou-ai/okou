@@ -177,7 +177,9 @@ export async function getChatThreadSnapshot(
       objectKey: chatThreadSnapshots.objectKey,
       latestEventId: chatThreadSnapshots.latestEventId,
       latestSeqId: chatThreadSnapshots.latestEventSeqId,
-      // A remote row must not detoast or transfer its retired JSONB payload.
+      // DB -> new API: old rows retain JSONB until backfill. Remove this
+      // branch after a zero-row census and old writers/rollback targets are
+      // excluded (follow-up #36375). R2 rows must not detoast the JSONB.
       chatThreads:
         sql`CASE WHEN ${chatThreadSnapshots.objectKey} IS NULL THEN ${chatThreadSnapshots.chatThreads} ELSE NULL END`
           .mapWith(nullableDriverValueDecoder(chatThreadSnapshots.chatThreads))

@@ -29,7 +29,9 @@ The hourly job also removes unreferenced snapshot objects older than seven
 days in bounded hash partitions. It retains objects referenced by a current
 snapshot or a user export. Rolling back to an API that only understands inline
 JSONB after the first R2 write would leave R2-backed snapshots unreadable;
-recovery must roll forward or restore this reader before serving snapshots.
+the production rollback resolver enforces the canonical main commit that first
+introduced `chat-thread-snapshot-object.ts` as the API reader floor. Recovery
+must stay at or above that floor or roll forward.
 
 ## Artifact catalog API handoff (2026-09-23)
 

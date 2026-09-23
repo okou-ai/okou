@@ -136,6 +136,8 @@ export async function getChatThreadSnapshot(): Promise<ChatThreadSnapshot> {
         latestSeqId: result.body.latestSeqId,
       };
     }
+    // New CLI -> old API or an unbackfilled DB row: remove this inline branch
+    // after the old API floor and legacy-row census gates pass (#36375).
     return {
       chatThreads: result.body.chatThreads,
       latestEventId: result.body.latestEventId,

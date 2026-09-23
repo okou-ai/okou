@@ -1046,6 +1046,8 @@ export class SharedDatabaseWorkerRuntime {
       throw new SharedDatabaseHttpError(snapshot.status);
     }
     if ("chatThreads" in snapshot.body) {
+      // New App -> old API or an unbackfilled DB row: keep inline responses
+      // until old API targets and legacy rows are gone (follow-up #36375).
       return snapshot.body;
     }
     const response = await fetchResource(snapshot.body.url, {}, signal);

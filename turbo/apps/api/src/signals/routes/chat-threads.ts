@@ -117,8 +117,10 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
     const supportsR2Url =
       get(request$).header(CHAT_THREAD_SNAPSHOT_R2_HEADER) === "1";
     if (!supportsR2Url) {
-      // Older loaded App bundles and CLI releases still require the inline
-      // response. Read it from R2 without detoasting the retired JSONB column.
+      // Old App/CLI -> new API: loaded clients without this capability still
+      // require inline data. Remove after distinct replacement versions are
+      // deployed and client floors exclude the old builds (follow-up #36375).
+      // Read R2 without detoasting the retired JSONB column meanwhile.
       const body = await get(
         downloadS3Buffer(
           env("R2_USER_STORAGES_BUCKET_NAME"),
