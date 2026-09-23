@@ -742,13 +742,22 @@ impl StorageCacheBackgroundFillCoordinator {
     pub async fn wait_idle_for_test(&self) {
         loop {
             let (send, receive) = oneshot::channel();
-            self.lifecycle
+            let sent = self
+                .lifecycle
                 .inner
                 .commands
                 .send(BackgroundFillCommand::Checkpoint(send))
-                .await
-                .unwrap();
-            if receive.await.unwrap() == (0, 0) {
+                .await;
+            assert!(
+                sent.is_ok(),
+                "background fill supervisor stopped before checkpoint"
+            );
+            let counts = receive.await;
+            assert!(
+                counts.is_ok(),
+                "background fill supervisor dropped checkpoint"
+            );
+            if matches!(counts, Ok((0, 0))) {
                 return;
             }
             // Observe a coordinator checkpoint without busy-spinning while a
