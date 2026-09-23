@@ -246,9 +246,8 @@ test("The switch decides whether the catalog is requested at all", async () => {
 
   await openCustomPanel(false);
 
-  // The composer resolves the selected-template chip against this catalog on
-  // every render, for every member. Hiding the Custom tab is not enough — a
-  // member without the feature must not have asked for it.
+  // Hiding the Custom tab is not enough — a member without the feature must
+  // not have asked for the catalog at all.
   expect(listed).toBe(0);
 });
 

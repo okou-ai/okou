@@ -1,5 +1,26 @@
 # Changelog
 
+## [8.704.0](https://github.com/okou-ai/okou/compare/core-v8.703.1...core-v8.704.0) (2026-09-23)
+
+
+### Features
+
+* initialize user preferences on first read ([#36215](https://github.com/okou-ai/okou/issues/36215)) ([524db18](https://github.com/okou-ai/okou/commit/524db18c20b40d68bad99c77e7882fd12daad9e8))
+* **pi:** upgrade to 0.87.1 and admit new models ([#36239](https://github.com/okou-ai/okou/issues/36239)) ([4a51b9b](https://github.com/okou-ai/okou/commit/4a51b9be36b393c55a9339250fd1d9d692f14a7d))
+* scope onboarding skill import to selected tool ([#36307](https://github.com/okou-ai/okou/issues/36307)) ([6739639](https://github.com/okou-ai/okou/commit/6739639b664ae6e327e09095e8bd4c7839c44e03))
+
+
+### Refactoring
+
+* remove welcomeThread feature switch ([#36378](https://github.com/okou-ai/okou/issues/36378)) ([6fcec15](https://github.com/okou-ai/okou/commit/6fcec15ebdcb6d8b7ceda9da9fced7b0467ae05c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.0
+
 ## [8.703.1](https://github.com/okou-ai/okou/compare/core-v8.703.0...core-v8.703.1) (2026-09-23)
 
 

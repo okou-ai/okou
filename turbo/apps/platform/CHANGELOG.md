@@ -11,6 +11,50 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.950.0](https://github.com/okou-ai/okou/compare/app-v0.949.1...app-v0.950.0) (2026-09-23)
+
+
+### Features
+
+* initialize user preferences on first read ([#36215](https://github.com/okou-ai/okou/issues/36215)) ([524db18](https://github.com/okou-ai/okou/commit/524db18c20b40d68bad99c77e7882fd12daad9e8))
+* move chat thread snapshots to r2 ([#36320](https://github.com/okou-ai/okou/issues/36320)) ([f5f5d6a](https://github.com/okou-ai/okou/commit/f5f5d6aec5358f740258c478dda7215485bc26b9))
+* **onboarding:** show generated user profile before slack ([#36361](https://github.com/okou-ai/okou/issues/36361)) ([abeeb80](https://github.com/okou-ai/okou/commit/abeeb80551532438a7fe68733e20aff1b87a89b8))
+* **platform:** animate okou skeleton wordmark ([#36341](https://github.com/okou-ai/okou/issues/36341)) ([81ce48e](https://github.com/okou-ai/okou/commit/81ce48e7087d30177a7873c1f1d61124f3c5a9bd))
+* scope onboarding skill import to selected tool ([#36307](https://github.com/okou-ai/okou/issues/36307)) ([6739639](https://github.com/okou-ai/okou/commit/6739639b664ae6e327e09095e8bd4c7839c44e03))
+
+
+### Bug Fixes
+
+* add inline recovery actions for chat errors ([#36069](https://github.com/okou-ai/okou/issues/36069)) ([35c5e76](https://github.com/okou-ai/okou/commit/35c5e7694b16a0d6b164e73c29460b07c79301c8))
+* **app:** use native video template preview interactions ([#36327](https://github.com/okou-ai/okou/issues/36327)) ([241057b](https://github.com/okou-ai/okou/commit/241057b02f2167411e3c9bb78113b3639314e672))
+* **platform:** hide selection actions while sharing messages ([#36374](https://github.com/okou-ai/okou/issues/36374)) ([0998ad8](https://github.com/okou-ai/okou/commit/0998ad8d15816802b17de1bbd81f600644e49c94))
+* **platform:** keep template card actions in tree order ([#36346](https://github.com/okou-ai/okou/issues/36346)) ([1fb2722](https://github.com/okou-ai/okou/commit/1fb27220dfb9eb7094a15e625c6c277149a7e2f3))
+
+
+### Refactoring
+
+* **app:** remove redundant chat row menu interception ([#36326](https://github.com/okou-ai/okou/issues/36326)) ([bc8b659](https://github.com/okou-ai/okou/commit/bc8b6594af5cf05ca5d1bfeea59494946c52193e))
+* **platform:** give avatar voice actions native buttons ([#36289](https://github.com/okou-ai/okou/issues/36289)) ([ed26057](https://github.com/okou-ai/okou/commit/ed26057291fd898595179b30d7f475ea647f17ad))
+* **platform:** give shared message groups native selection rows ([#36334](https://github.com/okou-ai/okou/issues/36334)) ([92f4686](https://github.com/okou-ai/okou/commit/92f4686f6fd3b38ebe7858af1b59228e48240c1d))
+* **platform:** share filter and permission selection controls ([#36336](https://github.com/okou-ai/okou/issues/36336)) ([9988ba5](https://github.com/okou-ai/okou/commit/9988ba57146755841220bf70c39beef621a79f35))
+* **platform:** simplify image navigation stacking ([#36362](https://github.com/okou-ai/okou/issues/36362)) ([efc0ddc](https://github.com/okou-ai/okou/commit/efc0ddce8ab07e5fbd9cf6305e6609af6fd0bc19))
+* **platform:** use native agent row menu activation ([#36331](https://github.com/okou-ai/okou/issues/36331)) ([8505edb](https://github.com/okou-ai/okou/commit/8505edbf459dff92420d62beb0a240e76945020a))
+* remove welcomeThread feature switch ([#36378](https://github.com/okou-ai/okou/issues/36378)) ([6fcec15](https://github.com/okou-ai/okou/commit/6fcec15ebdcb6d8b7ceda9da9fced7b0467ae05c))
+
+
+### Performance Improvements
+
+* **indicators:** bound reads and show morning brief delivery time ([#36317](https://github.com/okou-ai/okou/issues/36317)) ([c3b62b1](https://github.com/okou-ai/okou/commit/c3b62b1b68e6e2b1b4805e9f582d92d764239e87))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.0
+    * @okouai/core bumped to 8.704.0
+    * @okouai/ui bumped to 1.11.10
+
 ## [0.949.1](https://github.com/okou-ai/okou/compare/app-v0.949.0...app-v0.949.1) (2026-09-23)
 
 
