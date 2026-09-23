@@ -6,8 +6,8 @@
 #   1. Sign up a new test account through hosted Clerk
 #   2. Sign out, then sign in with the same account
 #
-# Tests 3-11 (token sign-in, onboarding, chat, team, automation) are covered
-# by the Playwright suite and have been removed from this file.
+# The separate Playwright smoke signs in, completes onboarding, and verifies a
+# chat reply. Platform Vitest owns app page behavior outside that deployed path.
 #
 # Required env vars:
 #   OKOU_API_BACKEND_URL - API URL and local fallback for the auth URL

@@ -324,10 +324,15 @@ export const deleteCustomTemplate$ = command(
   },
 );
 
-/** Opening the picker always starts from a clean list and no open template. */
-export const resetCustomTemplatePicker$ = command(({ set }) => {
+/** Reopening the current category clears its filters and detail view. */
+export const resetCustomTemplatePickerView$ = command(({ set }) => {
   set(internalSearchQuery$, "");
   set(internalKindFilter$, null);
   set(internalOpenTemplate$, null);
+});
+
+/** Opening the picker always starts from a clean list and a fresh catalog. */
+export const resetCustomTemplatePicker$ = command(({ set }) => {
+  set(resetCustomTemplatePickerView$);
   set(reloadCustomTemplates$);
 });

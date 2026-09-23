@@ -10,6 +10,7 @@ import { SharedWorkerFailureDialog } from "./components/shared-worker-failure-di
 import { InspectLogFileInput } from "./inspect-log-file-input.tsx";
 import { listenForceUpgradeDialog$ } from "../signals/force-upgrade.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
+import { theme$ } from "../signals/theme.ts";
 import { handleInvitationRedirect$ } from "../signals/invitation-redirect.ts";
 import { pollInstatusIssues$ } from "../signals/instatus-status.ts";
 import { handleBillingRedirect$ } from "../signals/okou-page/billing.ts";
@@ -26,6 +27,7 @@ import "./css/index.css";
 
 function AppToaster() {
   const signal = useGet(rootSignal$);
+  const theme = useGet(theme$);
   const handleBillingRedirect = useSet(handleBillingRedirect$);
   const handleInvitationRedirect = useSet(handleInvitationRedirect$);
 
@@ -44,6 +46,7 @@ function AppToaster() {
 
   return (
     <Toaster
+      theme={theme}
       position="top-center"
       visibleToasts={1}
       duration={IN_VITEST ? Infinity : undefined}

@@ -873,7 +873,7 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
-  "8069b08a-6eea-4a0d-b5e8-f5bdf66eecfb";
+  "3309e929-944d-4a10-a647-b4c9387c35bd";
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
@@ -912,6 +912,126 @@ export interface RelationalSweepBinding {
     readonly sinkId: string;
     readonly itemKey: string;
   }[];
+}
+
+/** The catalog has no foreign keys to its five sources. Remove projections
+ * while every source row is still present, including rows the generic sweep
+ * will delete through a parent cascade. A catalog author can differ from the
+ * source owner, so filtering `artifacts.author_user_id` is insufficient.
+ *
+ * Lock in the projector's order: generated media before its file, and a site
+ * before its presentation. Projectors that started before the sweep then
+ * finish before this deletion; projectors that start later see the source gone.
+ */
+export async function deleteErasedArtifactCatalog(
+  tx: Tx,
+  subjectId: string,
+): Promise<number> {
+  const affectedRuns = sql`
+    SELECT run.id FROM agent_runs run
+    WHERE run.user_id = ${subjectId}
+      OR EXISTS (
+        SELECT 1 FROM agent_sessions session
+        WHERE session.id = run.session_id
+          AND (
+            session.user_id = ${subjectId}
+            OR EXISTS (
+              SELECT 1 FROM agents agent
+              WHERE agent.id = session.agent_id AND agent.owner = ${subjectId}
+            )
+          )
+      )
+  `;
+  const affectedFiles = sql`
+    SELECT file.id FROM run_uploaded_files file
+    WHERE file.user_id = ${subjectId}
+      OR file.run_id IN (${affectedRuns})
+  `;
+  const affectedSites = sql`
+    SELECT site.id FROM hosted_sites site WHERE site.user_id = ${subjectId}
+  `;
+  const affectedImages = sql`
+    SELECT image.id FROM image_artifacts image
+    WHERE image.file_id IN (${affectedFiles})
+      OR EXISTS (
+        SELECT 1 FROM built_in_generation_jobs job
+        WHERE job.id = image.generation_job_id AND job.user_id = ${subjectId}
+      )
+  `;
+  const affectedVideos = sql`
+    SELECT video.id FROM video_artifacts video
+    WHERE video.file_id IN (${affectedFiles})
+      OR EXISTS (
+        SELECT 1 FROM built_in_generation_jobs job
+        WHERE job.id = video.generation_job_id AND job.user_id = ${subjectId}
+      )
+  `;
+  const affectedPresentations = sql`
+    SELECT presentation.id FROM presentation_artifacts presentation
+    WHERE presentation.hosted_site_id IN (${affectedSites})
+      OR EXISTS (
+        SELECT 1 FROM built_in_generation_jobs job
+        WHERE job.id = presentation.generation_job_id
+          AND job.user_id = ${subjectId}
+      )
+  `;
+
+  // Count the locked subquery so a large account does not load every id into
+  // the API process. These locks are held through the catalog and source DELETEs.
+  await tx.execute(sql`
+    SELECT count(*) FROM (
+      SELECT image.id FROM image_artifacts image
+      WHERE image.id IN (${affectedImages}) ORDER BY image.id FOR UPDATE
+    ) locked
+  `);
+  await tx.execute(sql`
+    SELECT count(*) FROM (
+      SELECT video.id FROM video_artifacts video
+      WHERE video.id IN (${affectedVideos}) ORDER BY video.id FOR UPDATE
+    ) locked
+  `);
+  await tx.execute(sql`
+    SELECT count(*) FROM (
+      SELECT site.id FROM hosted_sites site
+      WHERE site.id IN (${affectedSites})
+        OR EXISTS (
+          SELECT 1 FROM presentation_artifacts presentation
+          JOIN built_in_generation_jobs job
+            ON job.id = presentation.generation_job_id
+          WHERE presentation.hosted_site_id = site.id
+            AND job.user_id = ${subjectId}
+        )
+      ORDER BY site.id FOR UPDATE
+    ) locked
+  `);
+  await tx.execute(sql`
+    SELECT count(*) FROM (
+      SELECT presentation.id FROM presentation_artifacts presentation
+      WHERE presentation.id IN (${affectedPresentations})
+      ORDER BY presentation.id FOR UPDATE
+    ) locked
+  `);
+  await tx.execute(sql`
+    SELECT count(*) FROM (
+      SELECT file.id FROM run_uploaded_files file
+      WHERE file.id IN (${affectedFiles})
+      ORDER BY file.id FOR UPDATE
+    ) locked
+  `);
+
+  const deleted = await tx.execute(sql`
+    DELETE FROM artifacts catalog
+    WHERE (catalog.kind = 'file' AND catalog.entity_id IN (${affectedFiles}))
+      OR (catalog.kind = 'hosted-site'
+        AND catalog.entity_id IN (${affectedSites}))
+      OR (catalog.kind = 'image'
+        AND catalog.entity_id IN (${affectedImages}))
+      OR (catalog.kind = 'video'
+        AND catalog.entity_id IN (${affectedVideos}))
+      OR (catalog.kind = 'presentation'
+        AND catalog.entity_id IN (${affectedPresentations}))
+  `);
+  return deleted.rowCount ?? 0;
 }
 
 /** Deletes the account's relational graph in one transaction.
@@ -960,7 +1080,7 @@ export async function sweepRelationalErasure(
         return [root.table, root.predicate];
       }),
     );
-    let deleted = 0;
+    let deleted = await deleteErasedArtifactCatalog(tx, subject.subjectId);
     const blobReferences = new Map<string, number>();
     let deletedConversations = 0;
     const retainRemovedHash = (hash: string | null): void => {

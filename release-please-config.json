@@ -134,6 +134,9 @@
         "crates/runner-provider": {
             "release-type": "rust"
         },
+        "crates/runner-remote": {
+            "release-type": "rust"
+        },
         "crates/runner-storage": {
             "release-type": "rust"
         },

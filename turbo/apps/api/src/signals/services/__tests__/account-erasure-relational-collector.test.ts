@@ -29,6 +29,7 @@ import {
   catalogueForeignKeys,
   catalogueTables,
   createRelationalErasureCollector,
+  deleteErasedArtifactCatalog,
   planRelationalErasure,
   relationalErasureResidual,
   type RelationalDescendantPath,
@@ -810,6 +811,174 @@ describe("dormant relational sweep", () => {
     expect(theirThreads.rows).toStrictEqual([{ rows: 1 }]);
   });
 
+  it("removes source catalog rows across Agent, run and site cascades without deleting a survivor's catalog", async () => {
+    const mine = account("catalog_mine");
+    const theirs = account("catalog_theirs");
+    const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
+    const agentId = randomUUID();
+    const sessionId = randomUUID();
+    const runId = randomUUID();
+    const generationJobId = randomUUID();
+    const presentationJobId = randomUUID();
+    const fileId = randomUUID();
+    const imageId = randomUUID();
+    const videoId = randomUUID();
+    const siteId = randomUUID();
+    const survivorSiteId = randomUUID();
+    const presentationId = randomUUID();
+    const survivorFileId = randomUUID();
+    const survivorCatalogId = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM artifacts WHERE org_id = ${orgId}`);
+      await db.execute(sql`DELETE FROM hosted_sites WHERE org_id = ${orgId}`);
+      await db.execute(sql`DELETE FROM agent_sessions WHERE id = ${sessionId}`);
+      await db.execute(sql`DELETE FROM agents WHERE id = ${agentId}`);
+      await db.execute(sql`
+        DELETE FROM built_in_generation_jobs
+        WHERE id IN (${generationJobId}, ${presentationJobId})
+      `);
+      await db.execute(
+        sql`DELETE FROM run_uploaded_files WHERE id = ${survivorFileId}`,
+      );
+    });
+
+    // The account owns the Agent, while another user owns the session, run,
+    // file, and catalog. Deleting the Agent cascades all three source rows.
+    await db.execute(sql`
+      INSERT INTO agents (id, org_id, owner, name)
+      VALUES (${agentId}, ${orgId}, ${mine}, 'erasure catalog source')
+    `);
+    await db.execute(sql`
+      INSERT INTO agent_sessions (id, user_id, org_id, agent_id)
+      VALUES (${sessionId}, ${theirs}, ${orgId}, ${agentId})
+    `);
+    await db.execute(sql`
+      INSERT INTO agent_runs (id, session_id, user_id, org_id, status, prompt)
+      VALUES (${runId}, ${sessionId}, ${theirs}, ${orgId}, 'completed', 'catalog sweep')
+    `);
+    await db.execute(sql`
+      INSERT INTO run_uploaded_files
+        (id, run_id, source, external_id, user_id, org_id, url)
+      VALUES
+        (${fileId}, ${runId}, 'test', ${fileId}, ${theirs}, ${orgId},
+         ${`https://files.example.test/${fileId}`}),
+        (${survivorFileId}, NULL, 'test', ${survivorFileId}, ${theirs}, ${orgId},
+         ${`https://files.example.test/${survivorFileId}`})
+    `);
+    await db.execute(sql`
+      INSERT INTO image_artifacts (id, file_id) VALUES (${imageId}, ${fileId})
+    `);
+    await db.execute(sql`
+      INSERT INTO built_in_generation_jobs
+        (id, type, org_id, user_id, request)
+      VALUES
+        (${generationJobId}, 'video', ${orgId}, ${mine}, '{}'::jsonb),
+        (${presentationJobId}, 'presentation', ${orgId}, ${mine}, '{}'::jsonb)
+    `);
+    await db.execute(sql`
+      INSERT INTO video_artifacts (id, file_id, generation_job_id)
+      VALUES (${videoId}, ${survivorFileId}, ${generationJobId})
+    `);
+    await db.execute(sql`
+      INSERT INTO hosted_sites
+        (id, org_id, user_id, slug, public_brand, public_slug)
+      VALUES
+        (${siteId}, ${orgId}, ${mine}, ${`s-${siteId.slice(0, 8)}`},
+         'vm0', ${`p-${siteId}`}),
+        (${survivorSiteId}, ${orgId}, ${theirs},
+         ${`s-${survivorSiteId.slice(0, 8)}`}, 'vm0', ${`p-${survivorSiteId}`})
+    `);
+    await db.execute(sql`
+      INSERT INTO presentation_artifacts
+        (id, hosted_site_id, generation_job_id)
+      VALUES (${presentationId}, ${survivorSiteId}, ${presentationJobId})
+    `);
+    await db.execute(sql`
+      INSERT INTO artifact_catalog_pending_files
+        (file_id, org_id, author_user_id)
+      VALUES (${fileId}, ${orgId}, ${theirs})
+      ON CONFLICT (file_id) DO NOTHING
+    `);
+    const sourceCatalog = [
+      ["file", fileId],
+      ["image", imageId],
+      ["video", videoId],
+      ["hosted-site", siteId],
+      ["presentation", presentationId],
+    ] as const;
+    for (const [kind, entityId] of sourceCatalog) {
+      await db.execute(sql`
+        INSERT INTO artifacts
+          (org_id, author_user_id, kind, entity_id, logical_key,
+           projection_created_at, title)
+        VALUES (${orgId}, ${theirs}, ${kind}, ${entityId},
+                ${`sweep:${entityId}`}, now(), ${kind})
+      `);
+    }
+    await db.execute(sql`
+      INSERT INTO artifacts
+        (id, org_id, author_user_id, kind, entity_id, logical_key,
+         projection_created_at, title)
+      VALUES (${survivorCatalogId}, ${orgId}, ${theirs}, 'file',
+              ${survivorFileId}, ${`sweep:${survivorFileId}`}, now(),
+              'survivor')
+    `);
+
+    // Prove the explicit operation while its sources still exist. The legacy
+    // AFTER DELETE triggers cannot satisfy this assertion. Roll back so the
+    // full fenced sweep below starts from the same persisted fixture.
+    const rollback = new Error("rollback explicit catalog assertion");
+    await expect(
+      db.transaction(async (tx) => {
+        await expect(deleteErasedArtifactCatalog(tx, mine)).resolves.toBe(5);
+        const catalogAfterCleanup = await tx.execute(sql`
+          SELECT id FROM artifacts WHERE org_id = ${orgId}
+        `);
+        expect(catalogAfterCleanup.rows).toStrictEqual([
+          { id: survivorCatalogId },
+        ]);
+        const sourcesBeforeDeletion = await tx.execute(sql`
+          SELECT
+            (SELECT count(*)::int FROM run_uploaded_files
+             WHERE id = ${fileId}) AS files,
+            (SELECT count(*)::int FROM hosted_sites
+             WHERE id = ${siteId}) AS sites,
+            (SELECT count(*)::int FROM video_artifacts
+             WHERE id = ${videoId}) AS videos,
+            (SELECT count(*)::int FROM presentation_artifacts
+             WHERE id = ${presentationId}) AS presentations
+        `);
+        expect(sourcesBeforeDeletion.rows).toStrictEqual([
+          { files: 1, sites: 1, videos: 1, presentations: 1 },
+        ]);
+        throw rollback;
+      }),
+    ).rejects.toBe(rollback);
+
+    const plan = await planRelationalErasure(db);
+    await drive(mine, { ...plan, unattributableDescendants: [] });
+    const catalogs = await db.execute(sql`
+      SELECT id, entity_id AS "entityId" FROM artifacts WHERE org_id = ${orgId}
+    `);
+    expect(catalogs.rows).toStrictEqual([
+      { id: survivorCatalogId, entityId: survivorFileId },
+    ]);
+    const pending = await db.execute(sql`
+      SELECT count(*)::int AS rows FROM artifact_catalog_pending_files
+      WHERE file_id = ${fileId}
+    `);
+    expect(pending.rows).toStrictEqual([{ rows: 0 }]);
+    const sources = await db.execute(sql`
+      SELECT count(*)::int AS rows FROM run_uploaded_files
+      WHERE id IN (${fileId}, ${survivorFileId})
+    `);
+    expect(sources.rows).toStrictEqual([{ rows: 1 }]);
+    const sites = await db.execute(sql`
+      SELECT id FROM hosted_sites WHERE org_id = ${orgId}
+    `);
+    expect(sites.rows).toStrictEqual([{ id: survivorSiteId }]);
+  });
+
   it("refuses to verify while rows remain unattributable", async () => {
     const subjectId = account("gated");
     const plan = await planRelationalErasure(db);
@@ -874,10 +1043,13 @@ describe("dormant relational sweep", () => {
     expect(finished.state).toBe("verified_no_applicable_data");
   });
 
-  it("refuses a handler whose version is not the registered collector", async () => {
+  it("refuses work captured for the pre-catalog-cleanup collector", async () => {
     const subjectId = account("skew");
     const plan = await planRelationalErasure(db);
-    const { job } = await sealedJob(subjectId, randomUUID());
+    const { job } = await sealedJob(
+      subjectId,
+      "0a4f9d63-2b17-45c8-9e0a-7f31c6d8b204",
+    );
     const [collector] = await claimErasureWork(db, job.id, "inventory");
     expect(collector).toBeDefined();
     if (collector) {

@@ -21,11 +21,13 @@ interface PaidToolNoticeRow {
   readonly kind: "pending" | "settled";
   readonly message: string;
   readonly action: { readonly label: string; readonly run: () => void } | null;
+  readonly discard?: { readonly label: string; readonly run: () => void };
 }
 
 /** Only called behind the rollout gate, so an unreleased member reads nothing. */
 function usePaidToolNoticeRow(
   tools: readonly PaidToolId[],
+  onDiscardImage?: () => void,
 ): PaidToolNoticeRow | null {
   const { t } = useTranslation();
   const disabled = useLoadable(disabledPaidTools$);
@@ -66,6 +68,16 @@ function usePaidToolNoticeRow(
   return {
     kind: "settled",
     message: blocked.map(paidToolDisabledMessage).join(" "),
+    ...(blocked.includes("image-generation") && onDiscardImage
+      ? {
+          discard: {
+            label: t(($) => {
+              return $.settings.shared.discard;
+            }),
+            run: onDiscardImage,
+          },
+        }
+      : {}),
     action: {
       label: t(($) => {
         return $.settings.paidTools.openSettings;
@@ -124,11 +136,13 @@ function PaidToolNotice({ tools }: { readonly tools: readonly PaidToolId[] }) {
 function ComposerPaidToolNoticeContent({
   tools,
   fallback,
+  onDiscardImage,
 }: {
   readonly tools: readonly PaidToolId[];
   readonly fallback: ReactNode;
+  readonly onDiscardImage?: () => void;
 }) {
-  const row = usePaidToolNoticeRow(tools);
+  const row = usePaidToolNoticeRow(tools, onDiscardImage);
   // The tray holds one row. A read in flight has nothing to say yet, so the
   // notice it would replace keeps the tray until the read settles.
   if (!row || row.kind === "pending") {
@@ -139,16 +153,31 @@ function ComposerPaidToolNoticeContent({
       <span className="min-w-0 max-w-full text-muted-foreground">
         {row.message}
       </span>
-      {row.action && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="ml-auto shrink-0 text-xs font-medium text-foreground"
-          onClick={row.action.run}
-        >
-          {row.action.label}
-        </Button>
+      {(row.discard || row.action) && (
+        <div className="ml-auto flex shrink-0 items-center">
+          {row.discard && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="xs"
+              className="bg-transparent text-xs font-normal text-gray-700 hover:bg-state-hover active:bg-state-pressed"
+              onClick={row.discard.run}
+            >
+              {row.discard.label}
+            </Button>
+          )}
+          {row.action && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="text-xs font-medium text-foreground"
+              onClick={row.action.run}
+            >
+              {row.action.label}
+            </Button>
+          )}
+        </div>
       )}
     </ComposerNoticeTray>,
   );
@@ -162,12 +191,18 @@ function ComposerPaidToolNoticeContent({
 export function ComposerPaidToolNotice({
   tools,
   fallback,
+  onDiscardImage,
 }: {
   readonly tools: readonly PaidToolId[];
   readonly fallback: ReactNode;
+  readonly onDiscardImage?: () => void;
 }) {
   return usePaidToolNoticeEnabled(tools) ? (
-    <ComposerPaidToolNoticeContent tools={tools} fallback={fallback} />
+    <ComposerPaidToolNoticeContent
+      tools={tools}
+      fallback={fallback}
+      onDiscardImage={onDiscardImage}
+    />
   ) : (
     fallback
   );

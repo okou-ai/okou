@@ -831,6 +831,32 @@ test("Selecting an image model in the desktop picker shows the disabled tool not
   ).not.toBeInTheDocument();
 });
 
+test("Discard exits a blocked Image model category without clearing the draft", async () => {
+  context.mocks.api(paidToolsContract.get, ({ respond }) => {
+    return respond(200, { disabledTools: ["image-generation"] });
+  });
+  setDesktopViewport();
+  await openTemporaryImageModelChat("flyout", {
+    [FeatureSwitchKey.PaidToolControls]: true,
+    [FeatureSwitchKey.SettingsToolsTab]: true,
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "Create a launch scene");
+  await chooseMediaModel("Image", "GPT Image 2");
+
+  await screen.findByText("Image generation is off for you");
+  click(screen.getByText("Discard", { selector: "button" }));
+
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Image generation is off for you"),
+    ).not.toBeInTheDocument();
+  });
+  expect(editor).toHaveTextContent("Create a launch scene");
+  await openPicker();
+  expect(category("Chat")).toHaveAttribute("aria-expanded", "true");
+});
+
 test("Save a temporary image model as the default for future chats", async () => {
   const { preferenceUpdates } = await openTemporaryImageModelChat("menu");
   await chooseMenuMediaModel("Image", "GPT Image 2");

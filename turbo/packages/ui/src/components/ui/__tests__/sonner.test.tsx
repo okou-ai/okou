@@ -7,6 +7,39 @@ describe("Toaster", () => {
     toast.dismiss();
   });
 
+  it("preserves caller surface, toast options, icons and per-toast button styles", async () => {
+    render(
+      <Toaster
+        style={{ "--normal-bg": "rebeccapurple" } as React.CSSProperties}
+        icons={{ warning: <span>Custom warning icon</span> }}
+        toastOptions={{
+          duration: Infinity,
+          style: { background: "navy", color: "white" },
+          actionButtonStyle: { color: "yellow" },
+        }}
+      />,
+    );
+
+    toast.warning("Caller colors", {
+      action: { label: "Open", onClick: () => {} },
+      actionButtonStyle: { color: "lime" },
+    });
+
+    const message = await screen.findByText("Caller colors");
+    expect(message.closest("[data-sonner-toast]")).toHaveStyle({
+      background: "navy",
+      color: "white",
+    });
+    const toaster = message.closest<HTMLOListElement>("[data-sonner-toaster]");
+    expect(toaster?.style.getPropertyValue("--normal-bg")).toBe(
+      "rebeccapurple",
+    );
+    expect(screen.getByText("Custom warning icon")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open" })).toHaveStyle({
+      color: "lime",
+    });
+  });
+
   it("portals toast UI to body above app stacking contexts", async () => {
     const { container } = render(<Toaster />);
 
