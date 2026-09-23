@@ -6676,6 +6676,7 @@
         "checkEmailSubscription": "Consulta la suscripción por correo de arriba para ver el estado de entrega.",
         "conflict": "Morning Brief no está disponible temporalmente porque el estado de su instalación no es coherente. Vuelve a intentarlo cuando finalice la conciliación.",
         "description": "Prioridades diarias a las 7:00 en tu zona horaria.",
+        "lastDelivered": "Última entrega: {{date}}",
         "loading": "Cargando la configuración de Morning Brief...",
         "missingDefaultAgent": "Elige un Agente predeterminado que se pueda utilizar antes de activar Morning Brief.",
         "missingTimezone": "Establece una zona horaria válida antes de activar Morning Brief.",

@@ -6613,6 +6613,7 @@
         "checkEmailSubscription": "Prüfe oben dein E-Mail-Abonnement für den Zustellstatus.",
         "conflict": "Morning Brief ist vorübergehend nicht verfügbar, da der Installationsstatus inkonsistent ist. Versuchen Sie es erneut, wenn die Abstimmung abgeschlossen ist.",
         "description": "Tägliche Prioritäten um 7 Uhr in deiner Zeitzone.",
+        "lastDelivered": "Zuletzt zugestellt: {{date}}",
         "loading": "Morning-Brief-Einstellungen werden geladen...",
         "missingDefaultAgent": "Wählen Sie einen verwendbaren Standard-Agenten aus, bevor Sie Morning Brief aktivieren.",
         "missingTimezone": "Legen Sie eine gültige Zeitzone fest, bevor Sie Morning Brief aktivieren.",
