@@ -25,6 +25,11 @@ interface ComputerUseHostSessionBarrier extends TransactionBarrier {
 export async function withComputerUseHostSessionBarrierFixture<T>(
   args: {
     readonly orgId: string;
+    /**
+     * `locked-host` pauses right after the locked host read has executed, so
+     * the transaction holds its host row lock while another session runs.
+     * `commit` pauses before the COMMIT of a transaction that locked the host.
+     */
     readonly stopAt: "locked-host" | "commit";
     readonly work: (barrier: ComputerUseHostSessionBarrier) => Promise<T>;
   },
@@ -38,6 +43,7 @@ export async function withComputerUseHostSessionBarrierFixture<T>(
   let statements: readonly string[] = [];
   return await withDatabaseTransactionBarrierFixture(
     {
+      pauseAfter: args.stopAt === "locked-host",
       observe: (queryArgs, receiver) => {
         const text = barrierQueryText(queryArgs);
         if (text.startsWith("begin")) {
@@ -84,21 +90,26 @@ export async function withComputerUseHostSessionBarrierFixture<T>(
   );
 }
 
-function isLockedHostRead(queryArgs: unknown[]): boolean {
-  const text = barrierQueryText(queryArgs);
+/** The row-lock clause of a host read, such as `no key update`, if any. */
+function hostRowLock(statement: string): string | null {
+  if (
+    !statement.startsWith("select") ||
+    !statement.includes('from "computer_use_hosts"')
+  ) {
+    return null;
+  }
   return (
-    text.startsWith("select") &&
-    text.includes('from "computer_use_hosts"') &&
-    text.includes("for update")
+    / for (no key update|update|key share|share)\b/.exec(statement)?.[1] ?? null
   );
+}
+
+function isLockedHostRead(queryArgs: unknown[]): boolean {
+  return hostRowLock(barrierQueryText(queryArgs)) !== null;
 }
 
 function lockedHost(transaction: SelectedTransaction): boolean {
   return transaction.statements.some((statement) => {
-    return (
-      statement.includes('from "computer_use_hosts"') &&
-      statement.includes("for update")
-    );
+    return hostRowLock(statement) !== null;
   });
 }
 
@@ -113,9 +124,10 @@ export function classifyComputerUseHostSessionSql(
     statement.includes('from "computer_use_hosts"') &&
     statement.includes('"computer_use_hosts"."token_hash" =')
   ) {
-    return statement.includes("for update")
-      ? "LOCKED HOST ROW BY TOKEN"
-      : "UNLOCKED HOST IDENTITY BY TOKEN";
+    const lock = hostRowLock(statement);
+    return lock === null
+      ? "UNLOCKED HOST IDENTITY BY TOKEN"
+      : `LOCKED HOST ROW BY TOKEN FOR ${lock.toUpperCase()}`;
   }
   if (statement.startsWith('update "computer_use_hosts"')) {
     return "HOST UPDATE";
