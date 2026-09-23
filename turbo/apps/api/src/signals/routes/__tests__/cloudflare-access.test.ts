@@ -448,7 +448,60 @@ describe("organization Cloudflare Access", () => {
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
     ).toStrictEqual([]);
+    await accept(
+      configs().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name: "Old request shape",
+          scope: "organization",
+          credentials: token,
+        },
+      }),
+      [404],
+    );
+    await accept(
+      configs().delete({
+        headers,
+        params: { configId: shared.id },
+        body: { expectedRevision: 1 },
+      }),
+      [404],
+    );
     const privateConfig = await config("Admin private");
+    expect(privateConfig).toStrictEqual({
+      id: privateConfig.id,
+      name: "Admin private",
+      revision: 1,
+      generation: 1,
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+      sshHosts: [],
+    });
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toStrictEqual([privateConfig]);
+    const renamedPrivate = await accept(
+      configs().update({
+        headers,
+        params: { configId: privateConfig.id },
+        body: { expectedRevision: 1, name: "Renamed private gateway" },
+      }),
+      [200],
+    );
+    expect(renamedPrivate.body).toStrictEqual({
+      ...privateConfig,
+      name: "Renamed private gateway",
+      revision: 2,
+      updatedAt: expect.any(String),
+    });
+    expect(
+      (await accept(configs().list({ headers }), [200])).body.configs,
+    ).toStrictEqual([renamedPrivate.body]);
+    expect(
+      (await accept(configs().list({ headers, query: scoped }), [200])).body
+        .configs,
+    ).toContainEqual({ ...renamedPrivate.body, scope: "personal" });
 
     const first = owner({ orgId: admin.orgId });
     const firstHost = await host(shared.id);
@@ -664,6 +717,122 @@ describe("organization Cloudflare Access", () => {
       }),
       [204],
     );
+  });
+
+  it("serializes shared rotation and deletion with SSH binding", async () => {
+    owner({}, "org:admin");
+    const shared = (
+      await accept(
+        configs().create({
+          headers,
+          query: scoped,
+          body: {
+            id: randomUUID(),
+            name: "Shared gateway",
+            scope: "organization",
+            credentials: token,
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const direct = await host();
+    const [rotated, bound] = await Promise.all([
+      accept(
+        configs().update({
+          headers,
+          query: scoped,
+          params: { configId: shared.id },
+          body: {
+            expectedRevision: 1,
+            credentials: { ...token, clientSecret: "rotated-canary" },
+          },
+        }),
+        [200],
+      ),
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: direct.id },
+          body: {
+            expectedGeneration: direct.generation,
+            port: 443,
+            transport: { type: "cloudflare_access", configId: shared.id },
+          },
+        }),
+        [200],
+      ),
+    ]);
+    expect(rotated.body).toMatchObject({ revision: 2, generation: 2 });
+    expect(bound.body).toMatchObject({
+      transport: { type: "cloudflare_access", configId: shared.id },
+    });
+    const afterRotation = (
+      await accept(connections().list({ headers }), [200])
+    ).body.connections.find((connection) => {
+      return connection.id === direct.id;
+    });
+    expect([direct.generation + 1, direct.generation + 2]).toContain(
+      afterRotation?.generation,
+    );
+
+    const candidate = (
+      await accept(
+        configs().create({
+          headers,
+          query: scoped,
+          body: {
+            id: randomUUID(),
+            name: "Candidate gateway",
+            scope: "organization",
+            credentials: token,
+          },
+        }),
+        [201],
+      )
+    ).body;
+    if (!afterRotation) {
+      throw new Error("Missing protected SSH host after shared rotation");
+    }
+    const [rebound, deleted] = await Promise.all([
+      accept(
+        connections().update({
+          headers,
+          params: { connectionId: direct.id },
+          body: {
+            expectedGeneration: afterRotation.generation,
+            transport: { type: "cloudflare_access", configId: candidate.id },
+          },
+        }),
+        [200, 404],
+      ),
+      accept(
+        configs().delete({
+          headers,
+          query: scoped,
+          params: { configId: candidate.id },
+          body: { expectedRevision: 1 },
+        }),
+        [204, 409],
+      ),
+    ]);
+    expect([rebound.status, deleted.status]).toSatisfy((statuses: number[]) => {
+      return (
+        (statuses[0] === 200 && statuses[1] === 409) ||
+        (statuses[0] === 404 && statuses[1] === 204)
+      );
+    });
+    const finalHost = (
+      await accept(connections().list({ headers }), [200])
+    ).body.connections.find((connection) => {
+      return connection.id === direct.id;
+    });
+    expect(finalHost).toMatchObject({
+      transport: {
+        type: "cloudflare_access",
+        configId: rebound.status === 200 ? candidate.id : shared.id,
+      },
+    });
   });
 });
 
