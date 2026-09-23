@@ -6,7 +6,7 @@ import { normalizeBuildCommitSha } from "../../lib/build-info";
 import { logger } from "../../lib/log";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { safeSync } from "../utils";
+import { settleIncludingAbort } from "../utils";
 
 export type AdmissionLockLeaf =
   | "official_workflow"
@@ -99,7 +99,7 @@ export class AdmissionAttemptTiming {
     this.callbackFinishedAt = this.nowMs();
   }
 
-  finish(outcome: AdmissionAttemptOutcome): void {
+  async finish(outcome: AdmissionAttemptOutcome): Promise<void> {
     if (this.finished) {
       return;
     }
@@ -108,7 +108,7 @@ export class AdmissionAttemptTiming {
     if (!this.transactionStartedRecorded) {
       this.record(
         "api_dispatch_admission_transaction_setup",
-        finishedAt - this.startedAt,
+        Math.max(0, finishedAt - this.startedAt),
       );
     }
     if (this.heldStartedAt !== undefined) {
@@ -132,7 +132,7 @@ export class AdmissionAttemptTiming {
       this.record("api_dispatch_admission_lock_overlap", breakdown.overlapMs);
     }
 
-    const emission = safeSync(() => {
+    const emission = await settleIncludingAbort(() => {
       const persisted = outcome === "pending" || outcome === "queued";
       const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
       const dimensions = {
@@ -169,7 +169,7 @@ export class AdmissionAttemptTiming {
         }),
       );
     });
-    if ("error" in emission) {
+    if (!emission.ok) {
       L.warn("Failed to record admission attempt timing", {
         error: emission.error,
       });

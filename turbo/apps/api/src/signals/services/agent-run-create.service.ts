@@ -9036,7 +9036,7 @@ async function bindPreparedPiMemoryPhase2MaintenanceRun(
 
 async function validateCapturedSubscriptionAccount(
   tx: Tx,
-  args: CommitPreparedLaunchArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   validatedThreadSession: ValidatedThreadSessionSnapshot | undefined,
 ) {
   const provider = args.context.modelProvider;
@@ -9045,46 +9045,48 @@ async function validateCapturedSubscriptionAccount(
     isPersonalSubscriptionProviderType(provider.type) &&
     provider.credentialOwner === "member"
   ) {
-    if (
-      !args.identity.shouldCreateSession &&
-      (!validatedThreadSession ||
-        args.createArgs.threadSessionResolution?.expected.sessionId !==
-          args.identity.sessionId)
-    ) {
-      // Unvalidated/session-only launches still acquire this FK lock when
-      // inserting the run. A completion can hold the session before cleanup,
-      // so acquire it before the provider lock too.
-      await tx
-        .select({ id: agentSessions.id })
-        .from(agentSessions)
-        .where(eq(agentSessions.id, args.identity.sessionId))
-        .for("key share");
-    }
     const type = provider.type;
-    const account = await args.timing.measure(
-      "api_dispatch_subscription_validate_admission",
-      "nested",
-      async () => {
-        return await validatePersonalSubscriptionAdmission(
-          {
-            db: tx,
-            orgId: args.createArgs.orgId,
-            userId: args.createArgs.userId,
-            type,
-            sourceId: provider.id ?? undefined,
-            featureSwitchContext: args.context.featureSwitchContext,
-          },
-          args.subscriptionAdmission,
-        );
-      },
-      { subscription_provider_type: type },
-    );
-    if (!account) {
-      return conflict(
-        "The selected subscription account was disconnected. Reconnect it before starting another run.",
+    return await args.admissionTiming.measureLeaf("subscription", async () => {
+      if (
+        !args.identity.shouldCreateSession &&
+        (!validatedThreadSession ||
+          args.createArgs.threadSessionResolution?.expected.sessionId !==
+            args.identity.sessionId)
+      ) {
+        // Unvalidated/session-only launches still acquire this FK lock when
+        // inserting the run. A completion can hold the session before cleanup,
+        // so acquire it before the provider lock too.
+        await tx
+          .select({ id: agentSessions.id })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, args.identity.sessionId))
+          .for("key share");
+      }
+      const account = await args.timing.measure(
+        "api_dispatch_subscription_validate_admission",
+        "nested",
+        async () => {
+          return await validatePersonalSubscriptionAdmission(
+            {
+              db: tx,
+              orgId: args.createArgs.orgId,
+              userId: args.createArgs.userId,
+              type,
+              sourceId: provider.id ?? undefined,
+              featureSwitchContext: args.context.featureSwitchContext,
+            },
+            args.subscriptionAdmission,
+          );
+        },
+        { subscription_provider_type: type },
       );
-    }
-    return { identity: personalSubscriptionAccountIdentity(account) };
+      if (!account) {
+        return conflict(
+          "The selected subscription account was disconnected. Reconnect it before starting another run.",
+        );
+      }
+      return { identity: personalSubscriptionAccountIdentity(account) };
+    });
   }
   return undefined;
 }
@@ -9173,19 +9175,11 @@ async function commitPreparedLaunchUnderLock(
         return validate(tx);
       });
     }
-    const subscriptionProvider = args.context.modelProvider;
-    const failure =
-      subscriptionProvider &&
-      isPersonalSubscriptionProviderType(subscriptionProvider.type) &&
-      subscriptionProvider.credentialOwner === "member"
-        ? await args.admissionTiming.measureLeaf("subscription", () => {
-            return validateCapturedSubscriptionAccount(
-              tx,
-              args,
-              threadSessionValidation,
-            );
-          })
-        : undefined;
+    const failure = await validateCapturedSubscriptionAccount(
+      tx,
+      args,
+      threadSessionValidation,
+    );
     if (failure && "identity" in failure) {
       capturedIdentity = failure.identity;
     } else if (failure) {
@@ -9436,7 +9430,7 @@ async function commitPreparedLaunch(
         transactionReturnedAt,
       );
     }
-    admissionTiming.finish(outcome);
+    await admissionTiming.finish(outcome);
     if (!settledTransaction.ok) {
       throw settledTransaction.error;
     }

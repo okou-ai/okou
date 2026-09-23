@@ -6,7 +6,7 @@ The run-creation path emits an additive, attempt-scoped timing series to the san
 
 Join the new events by `run_id`, `commit_invocation`, and `transaction_attempt`. Both ordinal dimensions are bounded (`1`, `2`, `3`, `4_plus`). `commit_invocation` distinguishes queue-payload retry calls; `transaction_attempt` distinguishes fresh compute-ownership transactions within one call. `api_commit_sha`, `runner_group`, `profile`, and `trigger_source` identify the API cohort. A generated `run_id` can be present even when the run was not persisted: use `run_persisted` and `admission_outcome`, not the generic timing-event `success` field, to classify attempts.
 
-`admission_outcome` is one of `pending`, `queued`, `rejected`, `thread_session_snapshot_stale`, `queue_first_claim_lost`, `queue_payload_required`, or `rolled_back`. `queue_payload_required` is an intermediate result that may be followed by another `commit_invocation`. A `rolled_back` event includes a transaction that failed after the callback returned but before commit completed. A checkout/`BEGIN` failure can produce only a transaction-setup event, with no held-time event.
+`admission_outcome` is one of `pending`, `queued`, `rejected`, `thread_session_snapshot_stale`, `queue_first_claim_lost`, `queue_payload_required`, or `rolled_back`. `queue_payload_required` is an intermediate result that may be followed by another `commit_invocation`. `rolled_back` covers a rejected transaction, including a failure after the callback returned but before commit completed. A checkout/`BEGIN` failure can produce only a transaction-setup event, with no held-time event.
 
 ## Boundaries
 
