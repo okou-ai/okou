@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq, inArray, max, sql } from "drizzle-orm";
+import { and, eq, inArray, max, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../lib/db";
@@ -83,6 +83,48 @@ export async function readChatThreadCursorsFixture(
       return [row.id, row.lastReadAt?.toISOString() ?? null];
     }),
   );
+}
+
+/**
+ * Complete unread state for the terminal rows seeded by this fixture. The
+ * public indicators endpoint intentionally returns only the latest 50 unread
+ * threads from seven days and cannot verify a 100+ thread bulk update. This
+ * fixture reads only the known test thread ids; the write under test still
+ * enters through the production API.
+ */
+export async function readSeededUnreadThreadIdsFixture(
+  threadIds: readonly string[],
+): Promise<ReadonlySet<string>> {
+  if (threadIds.length === 0) {
+    return new Set();
+  }
+  const [cursors, terminalEvents] = await Promise.all([
+    readChatThreadCursorsFixture(threadIds),
+    db()
+      .select({
+        threadId: chatEvents.chatThreadId,
+        createdAt: chatEvents.createdAt,
+      })
+      .from(chatEvents)
+      .where(
+        and(
+          inArray(chatEvents.chatThreadId, [...threadIds]),
+          eq(chatEvents.eventType, "run.completed"),
+        ),
+      ),
+  ]);
+  const unreadThreadIds = new Set<string>();
+  for (const event of terminalEvents) {
+    const lastReadAt = cursors.get(event.threadId);
+    if (
+      lastReadAt !== undefined &&
+      (lastReadAt === null ||
+        event.createdAt.getTime() > Date.parse(lastReadAt))
+    ) {
+      unreadThreadIds.add(event.threadId);
+    }
+  }
+  return unreadThreadIds;
 }
 
 /**

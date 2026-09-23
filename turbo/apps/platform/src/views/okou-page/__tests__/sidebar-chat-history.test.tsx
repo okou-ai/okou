@@ -316,7 +316,7 @@ test("Fade a clipped chat title and pace its scroll by the hidden distance", asy
   );
 });
 
-test("Filter unread conversations when a rollback API omits unreadAt", async () => {
+test("Filter unread conversations using indicator timestamps", async () => {
   prepareDefaultAgent();
   const pinnedUnreadThread = createThread(
     AUTOMATION_THREAD_ID,
@@ -351,18 +351,10 @@ test("Filter unread conversations when a rollback API omits unreadAt", async () 
         [INCIDENT_THREAD_ID]: "unread",
         [EXISTING_THREAD_ID]: "active",
       },
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ query, respond }) => {
-    expect(query.agentId).toBe(AGENT_ID);
-    return respond(200, {
-      unreads: [
-        {
-          threadId: AUTOMATION_THREAD_ID,
-          unreadAt: "2026-03-10T00:04:00Z",
-        },
-        { threadId: INCIDENT_THREAD_ID, unreadAt: "2026-03-10T00:05:00Z" },
-      ],
+      unreadAt: {
+        [AUTOMATION_THREAD_ID]: "2026-03-10T00:04:00Z",
+        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
+      },
     });
   });
 
