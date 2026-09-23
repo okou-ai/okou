@@ -238,7 +238,6 @@ describe("auth tokens", () => {
     [FeatureSwitchKey.PrivateArtifacts, "artifact:write"],
     [FeatureSwitchKey.Banking, "banking:read"],
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
-    [FeatureSwitchKey.RunUsage, "run-usage:read"],
     [FeatureSwitchKey.VncAccess, "vnc:read"],
     [FeatureSwitchKey.VncAccess, "vnc:write"],
   ] as const)(
@@ -262,6 +261,12 @@ describe("auth tokens", () => {
       expect(verifyOkouToken(enabledToken)?.capabilities).toContain(capability);
     },
   );
+
+  it("grants current-run usage by default", () => {
+    const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+
+    expect(verifyOkouToken(token)?.capabilities).toContain("run-usage:read");
+  });
 
   it("includes Slack read and write capabilities in okou-scoped tokens", () => {
     const token = generateOkouToken("user_slack", "run_slack", "org_slack");

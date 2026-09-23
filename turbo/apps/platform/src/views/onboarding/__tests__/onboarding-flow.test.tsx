@@ -5,6 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
@@ -263,6 +264,24 @@ function buttonByAriaLabel(
     throw new Error(`Button not found for aria-label ${label}`);
   }
   return button;
+}
+
+/**
+ * The empty space of an illustration card's thumbnail strip. The strip scrolls
+ * above the full-card selection button, so the gap reaches that button through
+ * its own label rather than by bubbling; resolving it from the button's id
+ * fails loudly when that association breaks.
+ */
+function thumbnailStripGap(select: HTMLElement): HTMLElement {
+  const card = select.closest("article");
+  if (!card) {
+    throw new Error("Illustration template card not found");
+  }
+  const gap = card.querySelector<HTMLElement>(`label[for="${select.id}"]`);
+  if (!gap) {
+    throw new Error("Illustration thumbnail strip gap not found");
+  }
+  return gap;
 }
 
 function chooseTemplate(
@@ -1326,6 +1345,183 @@ test("A presentation template can be previewed and selected from a deep link", a
   expect(
     screen.getByLabelText("Presentation content and instruction"),
   ).toBeVisible();
+  expect(new URLSearchParams(search()).get("template")).toBe(template.slug);
+});
+
+test.each([
+  { key: "Enter", sequence: "{Enter}" },
+  { key: "Space", sequence: "[Space]" },
+])(
+  "Illustration card $key selects without changing its preview or continuing",
+  async ({ sequence }) => {
+    const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
+    const previouslySelected = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
+    const user = userEvent.setup();
+    mockOnboardingNeeded();
+    await setupPage({
+      context,
+      path: "/onboarding/image-template?choice=images",
+    });
+    await expect(
+      screen.findByRole("heading", {
+        name: "Pick an illustration template to start from",
+      }),
+    ).resolves.toBeInTheDocument();
+    const select = buttonByAriaLabel(
+      `Select ${template.title} illustration template`,
+    );
+    const previousSelect = buttonByAriaLabel(
+      `Select ${previouslySelected.title} illustration template`,
+    );
+    const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
+    const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
+
+    click(previousSelect);
+    expect(previousSelect).toHaveAttribute("aria-pressed", "true");
+    click(secondVariant);
+    expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+    expect(select).toHaveAttribute("aria-pressed", "false");
+
+    select.focus();
+    await user.keyboard("{Tab}");
+    expect(firstVariant).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(select).toHaveFocus();
+    await user.keyboard(sequence);
+
+    expect(select).toHaveAttribute("aria-pressed", "true");
+    expect(previousSelect).toHaveAttribute("aria-pressed", "false");
+    expect(firstVariant).toHaveAttribute("aria-pressed", "false");
+    expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+    expect(pathname()).toBe("/onboarding/image-template");
+    expect(buttonByText("Continue")).toBeEnabled();
+
+    click(buttonByText("Continue"));
+    await expect(
+      screen.findByRole("heading", {
+        name: "Select one automation you would like to have a try",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe("/onboarding/image-run");
+    expect(new URLSearchParams(search()).get("template")).toBe(template.slug);
+  },
+);
+
+test.each([
+  { key: "Enter", sequence: "{Enter}" },
+  { key: "Space", sequence: "[Space]" },
+])(
+  "Illustration card variant $key changes only the preview before Continue",
+  async ({ sequence }) => {
+    const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
+    const selectedTemplate = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
+    const nextImage = template.previewImages[1];
+    if (!nextImage) {
+      throw new Error("Expected a second illustration preview");
+    }
+    const user = userEvent.setup();
+    mockOnboardingNeeded();
+    await setupPage({
+      context,
+      path: "/onboarding/image-template?choice=images",
+    });
+    await expect(
+      screen.findByRole("heading", {
+        name: "Pick an illustration template to start from",
+      }),
+    ).resolves.toBeInTheDocument();
+    const select = buttonByAriaLabel(
+      `Select ${template.title} illustration template`,
+    );
+    const selected = buttonByAriaLabel(
+      `Select ${selectedTemplate.title} illustration template`,
+    );
+    const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
+    const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
+    const card = select.closest("article");
+    if (!card) {
+      throw new Error("Illustration template card not found");
+    }
+
+    click(selected);
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(firstVariant).toHaveAttribute("aria-pressed", "true");
+    select.focus();
+    await user.keyboard("{Tab}");
+    expect(firstVariant).toHaveFocus();
+    await user.keyboard("{Tab}");
+    expect(secondVariant).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(firstVariant).toHaveFocus();
+    await user.keyboard("{Tab}");
+    expect(secondVariant).toHaveFocus();
+    await user.keyboard(sequence);
+
+    expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+    expect(firstVariant).toHaveAttribute("aria-pressed", "false");
+    expect(card.querySelector("img")).toHaveAttribute(
+      "src",
+      expect.stringContaining(new URL(nextImage).pathname),
+    );
+    expect(select).toHaveAttribute("aria-pressed", "false");
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(pathname()).toBe("/onboarding/image-template");
+    expect(buttonByText("Continue")).toBeEnabled();
+
+    click(buttonByText("Continue"));
+    await expect(
+      screen.findByRole("heading", {
+        name: "Select one automation you would like to have a try",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe("/onboarding/image-run");
+    expect(new URLSearchParams(search()).get("template")).toBe(
+      selectedTemplate.slug,
+    );
+  },
+);
+
+test("An illustration thumbnail strip gap selects the card it belongs to", async () => {
+  const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
+  const previouslySelected = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
+  mockOnboardingNeeded();
+  await setupPage({
+    context,
+    path: "/onboarding/image-template?choice=images",
+  });
+  await expect(
+    screen.findByRole("heading", {
+      name: "Pick an illustration template to start from",
+    }),
+  ).resolves.toBeInTheDocument();
+  const select = buttonByAriaLabel(
+    `Select ${template.title} illustration template`,
+  );
+  const previousSelect = buttonByAriaLabel(
+    `Select ${previouslySelected.title} illustration template`,
+  );
+  const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
+  const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
+
+  click(previousSelect);
+  click(secondVariant);
+  expect(select).toHaveAttribute("aria-pressed", "false");
+  expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+
+  click(thumbnailStripGap(select));
+
+  expect(select).toHaveAttribute("aria-pressed", "true");
+  expect(previousSelect).toHaveAttribute("aria-pressed", "false");
+  expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+  expect(firstVariant).toHaveAttribute("aria-pressed", "false");
+  expect(pathname()).toBe("/onboarding/image-template");
+
+  click(buttonByText("Continue"));
+  await expect(
+    screen.findByRole("heading", {
+      name: "Select one automation you would like to have a try",
+    }),
+  ).resolves.toBeInTheDocument();
   expect(new URLSearchParams(search()).get("template")).toBe(template.slug);
 });
 

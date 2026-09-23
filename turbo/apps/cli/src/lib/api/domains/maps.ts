@@ -1,31 +1,17 @@
-import { ApiRequestError, getBaseUrl } from "../core/client-factory";
-import { getActiveToken } from "../config";
+import type {
+  MapsSearchRequest,
+  MapsSearchResponse,
+} from "@okouai/api-contracts/contracts/maps";
+
 import { headersWithCliClientHeaders } from "../client-headers";
-
-type MapsOperation =
-  | "geocode"
-  | "reverse-geocode"
-  | "directions"
-  | "places/search"
-  | "places/details"
-  | "osm/download"
-  | "osm/render";
-
-export interface MapsResponse {
-  readonly operation?: string;
-  readonly provider?: string;
-  readonly creditsCharged?: number;
-  readonly billingCategory?: string;
-  readonly billingQuantity?: number;
-  readonly result?: unknown;
-}
+import { getActiveToken } from "../config";
+import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 
 function authenticatedJsonHeaders(token: string): Record<string, string> {
-  const headers: Record<string, string> = {
+  return {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
   };
-  return headers;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -60,17 +46,16 @@ async function parseErrorBody(
   return { message, code };
 }
 
-export async function callMaps(
-  operation: MapsOperation,
-  body: Record<string, unknown>,
-): Promise<MapsResponse> {
+export async function callMapsSearch(
+  body: MapsSearchRequest,
+): Promise<MapsSearchResponse> {
   const baseUrl = await getBaseUrl();
   const token = await getActiveToken();
   if (!token) {
     throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
   }
 
-  const response = await fetch(new URL(`/api/maps/${operation}`, baseUrl), {
+  const response = await fetch(new URL("/api/maps/search", baseUrl), {
     method: "POST",
     headers: headersWithCliClientHeaders(authenticatedJsonHeaders(token)),
     body: JSON.stringify(body),
@@ -81,5 +66,5 @@ export async function callMaps(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return (await response.json()) as MapsResponse;
+  return (await response.json()) as MapsSearchResponse;
 }

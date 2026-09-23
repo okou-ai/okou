@@ -2,7 +2,7 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -195,7 +195,7 @@ function ByokBadge({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -455,7 +455,12 @@ function modelFirstSelectionFromInteraction(
   raw: string,
   currentSelection: ModelProviderSelection | null,
 ): ModelProviderSelection | null | undefined {
+  // Fast uses a hidden selected-value marker, distinct from its toggle option.
+  // Replaying that value must not parse it as the inherit-default sentinel.
   if (currentSelection?.codexServiceTier === "fast") {
+    if (raw === modelFirstSelectValue(currentSelection)) {
+      return undefined;
+    }
     if (raw === currentSelection.selectedModel) {
       return undefined;
     }
@@ -566,7 +571,7 @@ function ModelFirstPolicyRow({
             showSelectedIndicator={fastSelected}
           />
         </SelectItem>
-        <TooltipProvider delayDuration={800} skipDelayDuration={0}>
+        <TooltipProvider delay={800} timeout={0}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1094,7 +1099,9 @@ function ModelFirstSelectPicker({
       ) => void)
     | undefined;
   modal: boolean | undefined;
-  onValueChange: (raw: string) => void;
+  onValueChange: NonNullable<
+    ComponentProps<typeof Select<string>>["onValueChange"]
+  >;
 }) {
   return (
     <Select
@@ -1326,7 +1333,18 @@ function EnabledExplicitModelFirstModelPicker(
     placeholder: props.placeholder,
     fastLabel: props.fastLabel,
   });
-  const handleRawValueChange = (raw: string) => {
+  const handleRawValueChange: NonNullable<
+    ComponentProps<typeof Select<string>>["onValueChange"]
+  > = (raw, details) => {
+    if (raw === null) {
+      details.cancel();
+      return;
+    }
+    // Replaying the displayed selection must not save a model preference.
+    // Explicit item presses still reach the command, including failed saves.
+    if (raw === state.selectValue && details.reason === "none") {
+      return;
+    }
     const selection = modelFirstSelectionFromInteraction(raw, state.selection);
     if (selection !== undefined) {
       handleSelectionChange(selection);

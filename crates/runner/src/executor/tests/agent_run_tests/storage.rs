@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
+use guest_contracts::{storage_files, storage_manifest::Manifest};
 use sandbox::{SandboxError, SandboxOperation, SandboxOperationReason};
 use sandbox_mock::MockLifecycleGate;
 
@@ -101,6 +103,121 @@ async fn run_in_sandbox_runs_guest_storage_apply_for_cached_instruction_normaliz
             .all(|(action, _, _)| action != "storage_download"),
         "runner telemetry should not use the guest-storage-apply per-entry metric name: {ops:?}"
     );
+}
+
+#[tokio::test]
+async fn run_in_sandbox_applies_decoded_artifact_before_agent_spawn() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = test_executor_config(dir.path()).await;
+    let name = "artifact";
+    let version = "v1";
+    let archive_dir = config.home.storage_cache_dir(name, version);
+    std::fs::create_dir_all(&archive_dir).unwrap();
+    std::fs::write(archive_dir.join("archive.tar.gz"), extracted_archive()).unwrap();
+    drop(runner_host::lock::open_lock_file(&config.home.storage_lock(name, version)).unwrap());
+    config
+        .decoded_cache
+        .warm_from_archive(name, version)
+        .await
+        .unwrap();
+    std::fs::remove_file(archive_dir.join("archive.tar.gz")).unwrap();
+
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let start_process_gate = MockLifecycleGate::new();
+    overrides.set_start_process_lifecycle_gate(start_process_gate.clone());
+    let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
+    let mut ctx = minimal_context();
+    let mount = "/home/user/workspace";
+    let mut artifact = api_artifact(
+        name,
+        mount,
+        "artifact-storage-id",
+        version,
+        "http://127.0.0.1:9/archive-must-not-open.tar.gz",
+    );
+    artifact.missing_root_policy = Some(ArtifactEntryMissingRootPolicy::PreserveParentVersion);
+    ctx.storage_manifest = Some(StorageManifest {
+        storages: Vec::new(),
+        artifacts: vec![artifact],
+    });
+    let fingerprints = StorageFingerprints::from_manifest(ctx.storage_manifest.as_ref().unwrap());
+    assert!(
+        fingerprints
+            .artifacts
+            .get(mount)
+            .unwrap()
+            .matches(name, version)
+    );
+    let mut telemetry = test_telemetry(&config, &ctx);
+
+    {
+        let run = run_in_sandbox(
+            sandbox.as_ref(),
+            &ctx,
+            &config,
+            RunStart {
+                restore_guest_state: false,
+                reuse_result: SandboxReuseResult::PoolMiss,
+                workspace_reuse_result: runner_types::types::WorkspaceReuseResult::NotConfigured,
+                prev_storage: None,
+            },
+            &mut telemetry,
+            RunControls::new(tokio_util::sync::CancellationToken::new(), None),
+        );
+        tokio::pin!(run);
+        tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, async {
+            tokio::select! {
+                result = &mut run => {
+                    let _ = result;
+                    panic!("run finished before the agent start-process barrier");
+                },
+                entered = start_process_gate.wait_entered(1, RUN_IN_SANDBOX_TEST_TIMEOUT) => {
+                    entered.expect("run should reach the agent start-process barrier");
+                }
+            }
+        })
+        .await
+        .expect("run should reach the agent start-process barrier");
+
+        let calls = overrides.storage_manifest_calls();
+        assert_eq!(calls.len(), 1);
+        let (json, payload) = storage_files::split_input(&calls[0].manifest_json).unwrap();
+        let manifest: Manifest = serde_json::from_slice(json).unwrap();
+        assert!(manifest.storages.is_empty());
+        assert_eq!(manifest.artifacts.len(), 1);
+        let applied = &manifest.artifacts[0];
+        assert_eq!(applied.mount_path, mount);
+        assert_eq!(applied.vas_storage_name.as_deref(), Some(name));
+        assert_eq!(
+            applied.vas_storage_id.as_deref(),
+            Some("artifact-storage-id")
+        );
+        assert_eq!(applied.vas_version_id.as_deref(), Some(version));
+        assert_eq!(
+            applied.missing_root_policy.as_deref(),
+            Some("preserveParentVersion")
+        );
+        let files = storage_files::decode(payload).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].mount_path, mount);
+        assert_eq!(files[0].files[0].content, b"content");
+        assert_eq!(files[0].files[0].mode, 0o755);
+        assert_eq!(files[0].files[0].mtime, 1234);
+
+        start_process_gate.release_one();
+        tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, &mut run)
+            .await
+            .expect("decoded artifact run should complete after agent spawn")
+            .unwrap();
+    }
+
+    assert_eq!(overrides.start_agent_process_calls().len(), 1);
+    assert_successful_action_once(
+        &telemetry.pending_ops_snapshot(),
+        "storage_cache_artifact_decoded",
+    );
+    config.background_fill.shutdown().await;
+    config.decoded_cache.shutdown().await;
 }
 
 #[tokio::test]

@@ -351,7 +351,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "maps",
-    description: "Use managed Okou maps services",
+    description: "Search places and routes with Google Maps grounding",
     load: async () => {
       return (await import("./commands/maps")).mapsCommand;
     },
@@ -611,7 +611,7 @@ export function buildHelpText(
     ),
     ...commandExampleIfVisible(
       "maps",
-      '  Get directions?       okou maps directions --origin "SFO" --destination "Mountain View" --json',
+      '  Search maps?          okou maps search "coffee near Union Square" --json',
       payload,
     ),
     ...commandExampleIfVisible(

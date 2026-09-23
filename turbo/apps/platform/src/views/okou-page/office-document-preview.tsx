@@ -34,22 +34,28 @@ export function OfficeDocumentPreview({
 
   // Private documents give the viewer only the expiring resource URL.
   // Historical public documents keep their existing viewer URL.
+  // Office Online gives its full-size inner frame a one-pixel hover border.
+  // Its box sizing differs between Word and PowerPoint, so bleed the iframe
+  // one pixel past every edge and clip the viewer-owned border without
+  // blocking interaction with the cross-origin document.
   return (
-    <AutoFocusedArtifactIframe
-      focusKey={focusKey}
-      focusOnMount={focusOnMount}
-      src={officeDocumentViewerUrl(resourceUrl)}
-      title={t(
-        ($) => {
-          return $.artifacts.preview.dialogLabel;
-        },
-        { filename },
-      )}
-      referrerPolicy="no-referrer"
-      scrolling="yes"
-      allowFullScreen
-      className="block h-full min-h-0 w-full border-0 bg-background"
-      data-testid={testId}
-    />
+    <div className="relative h-full min-h-0 w-full overflow-hidden">
+      <AutoFocusedArtifactIframe
+        focusKey={focusKey}
+        focusOnMount={focusOnMount}
+        src={officeDocumentViewerUrl(resourceUrl)}
+        title={t(
+          ($) => {
+            return $.artifacts.preview.dialogLabel;
+          },
+          { filename },
+        )}
+        referrerPolicy="no-referrer"
+        scrolling="yes"
+        allowFullScreen
+        className="absolute -left-px -top-px block h-[calc(100%+2px)] min-h-0 w-[calc(100%+2px)] border-0 bg-background"
+        data-testid={testId}
+      />
+    </div>
   );
 }

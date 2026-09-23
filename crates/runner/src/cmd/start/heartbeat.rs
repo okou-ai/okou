@@ -10,12 +10,12 @@ use crate::config::ProfileConfig;
 use crate::error::{RunnerError, RunnerResult};
 use crate::idle_pool::IdlePool;
 use crate::lifecycle::RunnerMode;
-use crate::provider::JobProvider;
 use crate::resource_budget::ResourceBudget;
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceImageCache, cap_held_workspace_states,
 };
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::JobProvider;
 use runner_types::types::{
     HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_HELD_SANDBOX_STATES,
     MAX_WORKSPACE_CACHES_PER_REUSE_KEY,
@@ -810,7 +810,7 @@ mod tests {
     use crate::idle_pool::{
         IdlePoolConfig, ParkResult, ParkedIdleCandidate, test_support::ParkedIdleCandidateBuilder,
     };
-    use crate::provider::mock::MockJobProvider;
+    use crate::provider_test_support::MockJobProvider;
     use crate::workspace_image_cache::{
         WorkspaceCacheTerminalStatus, WorkspaceImageLeaseIdentity, WorkspaceImagePrepareRequest,
     };

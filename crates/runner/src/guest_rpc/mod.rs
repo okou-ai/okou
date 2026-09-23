@@ -52,7 +52,7 @@ impl Runtime {
         let usage = self
             .usage
             .as_ref()
-            .and_then(|runtime| runtime.for_context(context));
+            .map(|runtime| runtime.for_context(context));
         Some(self.start_with_usage(
             acceptor,
             sandbox.id().to_owned(),

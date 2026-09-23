@@ -1,21 +1,23 @@
-# Google Cloud LLM identity and voice routing
+# Google Cloud LLM identity, voice, and Maps Grounding routing
 
-Gemini-backed voice operations use native Google `generateContent`, authenticated
-with the API deployment's Vercel workload identity. The identities and
-`GCP_LLM_*` configuration are reusable for future Google Cloud LLM operations;
-this migration changes voice only. It covers partial/final audio transcription,
-ASR overlap reconciliation, text finalization, and `/api/voice-io/polish`.
-GPT Audio recognition stays on OpenRouter, dedicated ASR stays on its selected
-OpenRouter/fal provider, and generic chat/image/LLM consumers retain their routing.
+Gemini-backed voice operations and the built-in Maps search use native Google
+`generateContent`, authenticated with the API deployment's Vercel workload
+identity. Voice covers partial/final audio transcription, ASR overlap
+reconciliation, text finalization, and `/api/voice-io/polish`. Maps exposes only
+`POST /api/maps/search` / `okou maps search`, using Gemini 2.5 Flash with native
+Google Maps Grounding. GPT Audio recognition stays on OpenRouter, dedicated ASR
+stays on its selected OpenRouter/fal provider, and generic chat/image/LLM
+consumers retain their routing.
 
 ## Configuration
 
 Voice input and Google Cloud routing are fully rolled out. Both voice API routes
-require a signed-in user with an active organization; audio-input quota and
-request limits continue to apply. All Gemini voice steps, including independent
-text polish, use Google Cloud without a routing override. GPT Audio
-recognition and dedicated ASR retain their selected providers. Failures never
-change the selected provider.
+and Maps search require a signed-in user with an active organization; their
+existing quota, credit, and request limits continue to apply. All Gemini voice
+steps, including independent text polish, use Google Cloud without a routing
+override. Maps search likewise has no provider fallback. GPT Audio recognition
+and dedicated ASR retain their selected providers. Failures never change the
+selected provider.
 
 The active billed project is `vm0-ai-488909` (number `662642595011`). The separate
 project `vm0-ai` is deprecated. These values are GitHub Actions **Variables**:
@@ -34,8 +36,8 @@ to API deployments through the existing Vercel build/runtime environment path.
 There are no `_DEV`/`_PROD` source keys or new GCP Secrets. Do not supply static
 Google credentials, a Gemini API key, or a Vercel OIDC token through this action.
 All three settings are validated together when a Google LLM operation is needed;
-incomplete configuration returns `NOT_CONFIGURED` before
-starting an ASR step whose finalization needs Gemini.
+incomplete configuration returns `NOT_CONFIGURED` before starting an ASR step
+whose finalization needs Gemini or before Maps calls Google.
 
 Vercel project `vm0-api` (`prj_6mw0CgYjECVrJV57VJ47VN03B4UR`) belongs to team
 `okou` (`team_WRqI0kCoX5KcRInRWgZ1nBF0`), with OIDC enabled and team issuer mode.
@@ -59,12 +61,58 @@ Provider `vercel` uses issuer `https://oidc.vercel.com/okou`, allowed token
 audience `https://vercel.com/okou`, and `google.subject=assertion.sub`. Its
 condition checks the exact immutable Vercel team/project IDs above and the two
 subjects. The STS audience is `//iam.googleapis.com/` followed by the full
-provider resource; it differs from the Vercel token audience. The required IAM,
-STS, IAM Credentials, and Vertex AI APIs and billing are enabled.
+provider resource; it differs from the Vercel token audience. The shared IAM, STS, IAM Credentials, and Vertex AI prerequisites and billing are
+enabled. Maps additionally requires the Maps Grounding API and project access;
+that entitlement must be verified with the bounded preview smoke test before
+rollout.
 
 The old `gemini-voice-prod/dev` accounts have been deleted. Preserve the unrelated
 `gemini-image-prod` account and historical `vercel/vercel` federation resources.
 No service-account key, Owner/Editor role, or broad Token Creator grant is needed.
+
+## Global Maps Grounding requests
+
+Maps sends one bounded `v1beta1` request to the global Vertex endpoint for
+`gemini-2.5-flash`, with native `googleMaps` place and routing grounding enabled.
+It never uses a user Google account, a static Maps key, the independent Google
+Maps OAuth connector, or the retired direct Geocoding, Directions, Places, and
+Routes APIs. OpenStreetMap download and rendering are also retired rather than
+used as a hidden fallback.
+
+The request includes only the caller's bounded query, an optional explicit
+latitude/longitude pair, and an optional language code. No server-IP or proxy
+header supplies location. The model is instructed to refuse high-risk Maps uses
+and never treat retrieved place or review text as instructions. Provider safety
+blocks, non-STOP candidates, malformed output, invalid source domains, and
+invalid UTF-8 byte citation ranges fail closed without returning partial grounded
+content.
+
+The response is Gemini's display-ready answer. Google Maps source titles and
+HTTPS links remain in provider order, with `Google Maps` attribution and the
+provider's citation ranges expressed as UTF-8 byte offsets. Human-readable CLI
+output places those sources immediately after the answer. Responses use
+`Cache-Control: private, no-store`; the route does not create a run, chat event,
+memory, snapshot, embedding, search-index row, or other retained copy. Agent
+guidance requires the answer to be reproduced without another model rewriting
+it. The separate user-managed Google Maps OAuth connector remains unchanged and
+is never a fallback.
+
+Billing combines the published $25 per 1,000 grounded-prompt list rate with
+Gemini 2.5 Flash's $0.30 per million original-input tokens and $2.50 per million
+output tokens. `toolUsePromptTokenCount` is excluded because Maps-provided input
+is uncharged. The components become one `provider_cost_usd_micros` quantity;
+usage pricing converts that quantity once at 1,250 credits/USD, applying the 25%
+managed-service markup exactly once. Vertex does not identify whether a request
+used the shared no-charge allowance, so Okou consistently uses published list
+cost. Historical Maps price rows remain only for old ledger interpretation and
+rolling-deploy compatibility.
+
+The Google prohibition is on distributing or marketing the Customer Application
+in a Prohibited Territory, not on asking about a destination there. Enforce that
+at the trusted product-distribution edge; do not guess end-user geography from
+the query, destination coordinates, server IP, or untrusted forwarded headers.
+Production rollout remains blocked until that external distribution control and
+the project's live Maps Grounding entitlement are verified.
 
 ## Oregon preference and request settings
 

@@ -1,57 +1,44 @@
 import type {
-  MapsDirectionsRequest,
-  MapsGeocodeRequest,
-  MapsPlacesDetailsRequest,
-  MapsPlacesSearchRequest,
-  MapsResponse,
-  MapsReverseGeocodeRequest,
+  MapsSearchRequest,
+  MapsSearchResponse,
 } from "@okouai/api-contracts/contracts/maps";
 import { command } from "ccstate";
 
 import type { AuthContext } from "../../types/auth";
-import { env } from "../../lib/env";
-import { safeJsonParse } from "../utils";
+import { requestSignal$ } from "../context/hono";
+import { GcpLlmAuthError, gcpLlmConfiguration } from "../external/gcp-llm-auth";
+import {
+  generateVertexMapsSearch,
+  VERTEX_MAPS_MODEL,
+  VERTEX_MAPS_PROVIDER,
+  VertexMapsError,
+  type VertexMapsResult,
+} from "../external/vertex-maps";
+import { settle } from "../utils";
 import {
   checkManagedCredits$,
   recordManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
-const PROVIDER = "google-maps";
 const USAGE_KIND = "maps";
-const GEOCODING_CATEGORY = "geocoding";
-const DIRECTIONS_CATEGORY = "routes.directions";
-const DIRECTIONS_ADVANCED_CATEGORY = "routes.directions.advanced";
-const PLACES_TEXT_SEARCH_PRO_CATEGORY = "places.text_search.pro";
-const PLACES_TEXT_SEARCH_ENTERPRISE_CATEGORY = "places.text_search.enterprise";
-const PLACES_DETAILS_ESSENTIALS_CATEGORY = "places.details.essentials";
-const PLACES_DETAILS_PRO_CATEGORY = "places.details.pro";
-const PLACES_DETAILS_ENTERPRISE_CATEGORY = "places.details.enterprise";
+const BILLING_CATEGORY = "provider_cost_usd_micros";
+const MICRO_USD_PER_USD = 1_000_000;
+// Bill published list cost because Vertex does not identify whether this
+// request consumed the shared daily no-charge allowance.
+const MAPS_GROUNDED_PROMPT_COST_MICROS = 25_000;
+const TOKEN_PRICE_DENOMINATOR = 10n;
+const INPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD = 3n;
+const OUTPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD = 25n;
+const PREFLIGHT_PROVIDER_COST_MICROS = 50_000;
 
-const GOOGLE_GEOCODING_URL =
-  "https://maps.googleapis.com/maps/api/geocode/json";
-const GOOGLE_DIRECTIONS_URL =
-  "https://maps.googleapis.com/maps/api/directions/json";
-const GOOGLE_PLACES_SEARCH_TEXT_URL =
-  "https://places.googleapis.com/v1/places:searchText";
-const GOOGLE_PLACES_DETAILS_BASE_URL = "https://places.googleapis.com/v1/";
+interface AuthedMapsSearchArgs {
+  readonly auth: AuthContext & { readonly orgId: string };
+  readonly body: MapsSearchRequest;
+}
 
-const PLACE_SEARCH_PRO_FIELD_MASK =
-  "places.id,places.name,places.displayName,places.formattedAddress,places.location,places.types";
-const PLACE_SEARCH_ENTERPRISE_FIELD_MASK = `${PLACE_SEARCH_PRO_FIELD_MASK},places.googleMapsUri,places.priceLevel,places.priceRange`;
-const PLACE_DETAILS_ESSENTIALS_FIELD_MASK =
-  "id,name,formattedAddress,location,types,viewport,plusCode";
-const PLACE_DETAILS_PRO_FIELD_MASK =
-  "id,name,displayName,formattedAddress,location,types,viewport,plusCode,googleMapsUri,businessStatus";
-const PLACE_DETAILS_ENTERPRISE_FIELD_MASK = `${PLACE_DETAILS_PRO_FIELD_MASK},priceLevel,priceRange,rating,userRatingCount,regularOpeningHours,currentOpeningHours,websiteUri,nationalPhoneNumber`;
-const DEFAULT_LOCATION_BIAS_RADIUS_METERS = 50_000;
-
-type ErrorStatus = 400 | 402 | 502 | 503;
-type PlaceSearchFieldset = MapsPlacesSearchRequest["fields"];
-type PlaceDetailFieldset = MapsPlacesDetailsRequest["fields"];
-
-export interface MapsErrorResponse {
-  readonly status: ErrorStatus;
+interface MapsErrorResponse {
+  readonly status: 502 | 503;
   readonly body: {
     readonly error: {
       readonly message: string;
@@ -60,231 +47,54 @@ export interface MapsErrorResponse {
   };
 }
 
-interface MapsUsageArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId?: string;
-  readonly provider?: string;
-  readonly category: string;
-}
-
-type MapsCommandResponse =
-  | { readonly status: 200; readonly body: MapsResponse }
+type MapsSearchCommandResponse =
+  | { readonly status: 200; readonly body: MapsSearchResponse }
   | MapsErrorResponse
   | ManagedUsageErrorResponse;
-
-interface CompleteGoogleMapsResultArgs {
-  readonly operation: MapsResponse["operation"];
-  readonly result: unknown | MapsErrorResponse;
-  readonly billingCategory: string;
-  readonly validateLegacyGoogleStatus?: boolean;
-  readonly recordUsage: () => Promise<number>;
-}
-
-interface MapsCreditCheckArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId?: string;
-  readonly provider?: string;
-  readonly category: string;
-}
-
-interface AuthedMapsArgs<TBody> {
-  readonly auth: AuthContext & { readonly orgId: string };
-  readonly body: TBody;
-}
-
-interface LatLng {
-  readonly latitude: number;
-  readonly longitude: number;
-}
-
-interface LocationBias {
-  readonly circle: {
-    readonly center: LatLng;
-    readonly radius: number;
-  };
-}
 
 function errorBody(message: string, code: string) {
   return { error: { message, code } };
 }
 
-function badRequest(message: string): MapsErrorResponse {
-  return { status: 400, body: errorBody(message, "BAD_REQUEST") };
-}
-
-function badGateway(message: string, code = "GOOGLE_MAPS_ERROR") {
-  return { status: 502 as const, body: errorBody(message, code) };
+function badGateway(message: string, code: string): MapsErrorResponse {
+  return { status: 502, body: errorBody(message, code) };
 }
 
 function serviceUnavailable(message: string, code: string): MapsErrorResponse {
   return { status: 503, body: errorBody(message, code) };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isMapsErrorResponse(value: unknown): value is MapsErrorResponse {
-  return (
-    isRecord(value) &&
-    typeof value.status === "number" &&
-    isRecord(value.body) &&
-    isRecord(value.body.error)
+function providerError(error: unknown): MapsErrorResponse {
+  if (error instanceof VertexMapsError) {
+    if (error.status === 429) {
+      return serviceUnavailable(
+        "Google Maps grounding is temporarily rate limited",
+        "MAPS_RATE_LIMITED",
+      );
+    }
+    if (error.temporary) {
+      return serviceUnavailable(
+        "Google Maps grounding is temporarily unavailable",
+        "MAPS_PROVIDER_UNAVAILABLE",
+      );
+    }
+    if (error.reason === "blocked") {
+      return badGateway(
+        "Google Maps grounding could not answer this request",
+        "MAPS_GROUNDING_BLOCKED",
+      );
+    }
+  }
+  if (error instanceof GcpLlmAuthError && error.temporary) {
+    return serviceUnavailable(
+      "Google Maps grounding is temporarily unavailable",
+      "MAPS_PROVIDER_UNAVAILABLE",
+    );
+  }
+  return badGateway(
+    "Google Maps grounding failed to produce a usable response",
+    "MAPS_GROUNDING_ERROR",
   );
-}
-
-async function readResponseBody(response: Response): Promise<unknown> {
-  const text = await response.text();
-  if (!text) {
-    return null;
-  }
-
-  const parsed = safeJsonParse(text);
-  return parsed === undefined ? text : parsed;
-}
-
-function googleErrorMessage(body: unknown): string {
-  if (isRecord(body)) {
-    const error = body.error;
-    if (isRecord(error) && typeof error.message === "string") {
-      return error.message;
-    }
-    if (typeof body.error_message === "string") {
-      return body.error_message;
-    }
-    if (typeof body.status === "string") {
-      return `Google Maps request failed with status ${body.status}`;
-    }
-  }
-  if (typeof body === "string" && body.trim()) {
-    return body;
-  }
-  return "Google Maps request failed";
-}
-
-async function fetchGoogleJson(
-  url: URL,
-  init: RequestInit,
-): Promise<unknown | MapsErrorResponse> {
-  const response = await fetch(url, init);
-  const body = await readResponseBody(response);
-  if (!response.ok) {
-    return badGateway(googleErrorMessage(body));
-  }
-  return body;
-}
-
-function legacyMapsFailure(body: unknown): MapsErrorResponse | null {
-  if (!isRecord(body) || typeof body.status !== "string") {
-    return null;
-  }
-  if (body.status === "OK" || body.status === "ZERO_RESULTS") {
-    return null;
-  }
-  return badGateway(googleErrorMessage(body), body.status);
-}
-
-function withApiKey(url: string, apiKey: string): URL {
-  const target = new URL(url);
-  target.searchParams.set("key", apiKey);
-  return target;
-}
-
-function maybeSetParam(
-  params: URLSearchParams,
-  name: string,
-  value: string | undefined,
-): void {
-  if (value !== undefined) {
-    params.set(name, value);
-  }
-}
-
-function normalizeDepartureTime(value: string): string {
-  if (value === "now") {
-    return value;
-  }
-  const parsed = Date.parse(value);
-  if (Number.isFinite(parsed)) {
-    return String(Math.floor(parsed / 1000));
-  }
-  return value;
-}
-
-function parseLocation(value: string): LatLng | null {
-  const [latRaw, lngRaw, extra] = value.split(",");
-  if (extra !== undefined || latRaw === undefined || lngRaw === undefined) {
-    return null;
-  }
-  const latitude = Number(latRaw.trim());
-  const longitude = Number(lngRaw.trim());
-  if (
-    !Number.isFinite(latitude) ||
-    latitude < -90 ||
-    latitude > 90 ||
-    !Number.isFinite(longitude) ||
-    longitude < -180 ||
-    longitude > 180
-  ) {
-    return null;
-  }
-  return { latitude, longitude };
-}
-
-function locationBiasFromOptions(
-  location: string | undefined,
-  radius: number | undefined,
-): LocationBias | MapsErrorResponse | undefined {
-  if (radius !== undefined && location === undefined) {
-    return badRequest("location is required when radius is provided");
-  }
-  if (location === undefined) {
-    return undefined;
-  }
-
-  const center = parseLocation(location);
-  if (!center) {
-    return badRequest("location must be formatted as lat,lng");
-  }
-
-  return {
-    circle: {
-      center,
-      radius: radius ?? DEFAULT_LOCATION_BIAS_RADIUS_METERS,
-    },
-  };
-}
-
-function placeSearchFieldMask(fields: PlaceSearchFieldset): string {
-  return fields === "enterprise"
-    ? PLACE_SEARCH_ENTERPRISE_FIELD_MASK
-    : PLACE_SEARCH_PRO_FIELD_MASK;
-}
-
-function placeSearchBillingCategory(fields: PlaceSearchFieldset): string {
-  return fields === "enterprise"
-    ? PLACES_TEXT_SEARCH_ENTERPRISE_CATEGORY
-    : PLACES_TEXT_SEARCH_PRO_CATEGORY;
-}
-
-function placeDetailsFieldMask(fields: PlaceDetailFieldset): string {
-  if (fields === "enterprise") {
-    return PLACE_DETAILS_ENTERPRISE_FIELD_MASK;
-  }
-  return fields === "pro"
-    ? PLACE_DETAILS_PRO_FIELD_MASK
-    : PLACE_DETAILS_ESSENTIALS_FIELD_MASK;
-}
-
-function placeDetailsBillingCategory(fields: PlaceDetailFieldset): string {
-  if (fields === "enterprise") {
-    return PLACES_DETAILS_ENTERPRISE_CATEGORY;
-  }
-  return fields === "pro"
-    ? PLACES_DETAILS_PRO_CATEGORY
-    : PLACES_DETAILS_ESSENTIALS_CATEGORY;
 }
 
 function runIdForUsage(auth: AuthContext): string | undefined {
@@ -293,386 +103,133 @@ function runIdForUsage(auth: AuthContext): string | undefined {
     : undefined;
 }
 
-export const checkMapsCredits$ = command(
-  async (
-    { set },
-    args: MapsCreditCheckArgs,
-    signal: AbortSignal,
-  ): Promise<ManagedUsageErrorResponse | null> => {
-    const provider = args.provider ?? PROVIDER;
-    return await set(
-      checkManagedCredits$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        runId: args.runId,
-        resource: {
-          kind: USAGE_KIND,
-          provider,
-          category: args.category,
-        },
-        label: "Okou Maps",
-      },
-      signal,
-    );
-  },
-);
-
-export const recordMapsUsage$ = command(
-  async (
-    { set },
-    args: MapsUsageArgs,
-    signal: AbortSignal,
-  ): Promise<number> => {
-    return await set(
-      recordManagedUsage$,
-      {
-        actor: {
-          orgId: args.orgId,
-          userId: args.userId,
-          ...(args.runId ? { runId: args.runId } : {}),
-        },
-        resource: {
-          kind: USAGE_KIND,
-          provider: args.provider ?? PROVIDER,
-          category: args.category,
-        },
-        label: "maps",
-      },
-      signal,
-    );
-  },
-);
-
-async function completeGoogleMapsResult(
-  args: CompleteGoogleMapsResultArgs,
-): Promise<MapsCommandResponse> {
-  if (isMapsErrorResponse(args.result)) {
-    return args.result;
+function providerCostMicros(result: VertexMapsResult): number {
+  const tokenCostTenths =
+    BigInt(result.usage.inputTokens) * INPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD +
+    BigInt(result.usage.outputTokens) * OUTPUT_TOKEN_PRICE_TENTHS_OF_MICRO_USD;
+  const tokenCostMicros =
+    (tokenCostTenths + TOKEN_PRICE_DENOMINATOR - 1n) / TOKEN_PRICE_DENOMINATOR;
+  const groundingCostMicros = result.grounded
+    ? MAPS_GROUNDED_PROMPT_COST_MICROS
+    : 0;
+  const total = tokenCostMicros + BigInt(groundingCostMicros);
+  if (total > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error("Google Maps grounding provider cost is too large");
   }
-  if (args.validateLegacyGoogleStatus) {
-    const failure = legacyMapsFailure(args.result);
-    if (failure) {
-      return failure;
-    }
-  }
-
-  const creditsCharged = await args.recordUsage();
-  const body: MapsResponse = {
-    operation: args.operation,
-    provider: PROVIDER,
-    creditsCharged,
-    billingCategory: args.billingCategory,
-    billingQuantity: 1,
-    result: args.result,
-  };
-  return { status: 200 as const, body };
+  return Number(total);
 }
 
-export const mapsGeocode$ = command(
+function successBody(
+  request: MapsSearchRequest,
+  result: VertexMapsResult,
+  billingQuantity: number,
+  creditsCharged: number,
+): MapsSearchResponse {
+  return {
+    query: request.query,
+    ...(request.location ? { location: request.location } : {}),
+    ...(request.languageCode ? { languageCode: request.languageCode } : {}),
+    provider: VERTEX_MAPS_PROVIDER,
+    model: VERTEX_MAPS_MODEL,
+    billingCategory: BILLING_CATEGORY,
+    billingQuantity,
+    providerCostUsd: billingQuantity / MICRO_USD_PER_USD,
+    creditsCharged,
+    answer: result.answer,
+    sources: [...result.sources],
+    citations: [...result.citations],
+    ...(result.sources.length > 0
+      ? { attribution: "Google Maps" as const }
+      : {}),
+    usage: result.usage,
+  };
+}
+
+export const mapsSearch$ = command(
   async (
-    { set },
-    args: AuthedMapsArgs<MapsGeocodeRequest>,
+    { get, set },
+    args: AuthedMapsSearchArgs,
     signal: AbortSignal,
-  ) => {
-    const apiKey = env("OKOU_MAPS_GOOGLE_MAPS_TOKEN");
-    if (!apiKey) {
+  ): Promise<MapsSearchCommandResponse> => {
+    if (!gcpLlmConfiguration()) {
       return serviceUnavailable(
-        "Okou Maps Google Maps provider is not configured",
+        "Okou Google Maps grounding is not configured",
         "NOT_CONFIGURED",
       );
     }
 
+    const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
+    requestSignal.throwIfAborted();
+    const runId = runIdForUsage(args.auth);
     const creditError = await set(
-      checkMapsCredits$,
+      checkManagedCredits$,
       {
         orgId: args.auth.orgId,
         userId: args.auth.userId,
-        runId: runIdForUsage(args.auth),
-        category: GEOCODING_CATEGORY,
-      },
-      signal,
-    );
-    if (creditError) {
-      return creditError;
-    }
-
-    const url = withApiKey(GOOGLE_GEOCODING_URL, apiKey);
-    url.searchParams.set("address", args.body.address);
-    maybeSetParam(url.searchParams, "region", args.body.region);
-    const result = await fetchGoogleJson(url, { signal });
-    return completeGoogleMapsResult({
-      operation: "geocode",
-      result,
-      billingCategory: GEOCODING_CATEGORY,
-      validateLegacyGoogleStatus: true,
-      recordUsage: () => {
-        return set(
-          recordMapsUsage$,
-          {
-            orgId: args.auth.orgId,
-            userId: args.auth.userId,
-            runId: runIdForUsage(args.auth),
-            category: GEOCODING_CATEGORY,
-          },
-          signal,
-        );
-      },
-    });
-  },
-);
-
-export const mapsReverseGeocode$ = command(
-  async (
-    { set },
-    args: AuthedMapsArgs<MapsReverseGeocodeRequest>,
-    signal: AbortSignal,
-  ) => {
-    const apiKey = env("OKOU_MAPS_GOOGLE_MAPS_TOKEN");
-    if (!apiKey) {
-      return serviceUnavailable(
-        "Okou Maps Google Maps provider is not configured",
-        "NOT_CONFIGURED",
-      );
-    }
-
-    const creditError = await set(
-      checkMapsCredits$,
-      {
-        orgId: args.auth.orgId,
-        userId: args.auth.userId,
-        runId: runIdForUsage(args.auth),
-        category: GEOCODING_CATEGORY,
-      },
-      signal,
-    );
-    if (creditError) {
-      return creditError;
-    }
-
-    const url = withApiKey(GOOGLE_GEOCODING_URL, apiKey);
-    url.searchParams.set("latlng", `${args.body.lat},${args.body.lng}`);
-    const result = await fetchGoogleJson(url, { signal });
-    return completeGoogleMapsResult({
-      operation: "reverse-geocode",
-      result,
-      billingCategory: GEOCODING_CATEGORY,
-      validateLegacyGoogleStatus: true,
-      recordUsage: () => {
-        return set(
-          recordMapsUsage$,
-          {
-            orgId: args.auth.orgId,
-            userId: args.auth.userId,
-            runId: runIdForUsage(args.auth),
-            category: GEOCODING_CATEGORY,
-          },
-          signal,
-        );
-      },
-    });
-  },
-);
-
-export const mapsDirections$ = command(
-  async (
-    { set },
-    args: AuthedMapsArgs<MapsDirectionsRequest>,
-    signal: AbortSignal,
-  ) => {
-    const apiKey = env("OKOU_MAPS_GOOGLE_MAPS_TOKEN");
-    if (!apiKey) {
-      return serviceUnavailable(
-        "Okou Maps Google Maps provider is not configured",
-        "NOT_CONFIGURED",
-      );
-    }
-
-    const billingCategory =
-      args.body.departureTime === undefined
-        ? DIRECTIONS_CATEGORY
-        : DIRECTIONS_ADVANCED_CATEGORY;
-    const creditError = await set(
-      checkMapsCredits$,
-      {
-        orgId: args.auth.orgId,
-        userId: args.auth.userId,
-        runId: runIdForUsage(args.auth),
-        category: billingCategory,
-      },
-      signal,
-    );
-    if (creditError) {
-      return creditError;
-    }
-
-    const url = withApiKey(GOOGLE_DIRECTIONS_URL, apiKey);
-    url.searchParams.set("origin", args.body.origin);
-    url.searchParams.set("destination", args.body.destination);
-    url.searchParams.set("mode", args.body.mode);
-    if (args.body.departureTime !== undefined) {
-      url.searchParams.set(
-        "departure_time",
-        normalizeDepartureTime(args.body.departureTime),
-      );
-    }
-    const result = await fetchGoogleJson(url, { signal });
-    return completeGoogleMapsResult({
-      operation: "directions",
-      result,
-      billingCategory,
-      validateLegacyGoogleStatus: true,
-      recordUsage: () => {
-        return set(
-          recordMapsUsage$,
-          {
-            orgId: args.auth.orgId,
-            userId: args.auth.userId,
-            runId: runIdForUsage(args.auth),
-            category: billingCategory,
-          },
-          signal,
-        );
-      },
-    });
-  },
-);
-
-export const mapsPlacesSearch$ = command(
-  async (
-    { set },
-    args: AuthedMapsArgs<MapsPlacesSearchRequest>,
-    signal: AbortSignal,
-  ) => {
-    const apiKey = env("OKOU_MAPS_GOOGLE_MAPS_TOKEN");
-    if (!apiKey) {
-      return serviceUnavailable(
-        "Okou Maps Google Maps provider is not configured",
-        "NOT_CONFIGURED",
-      );
-    }
-
-    const locationBias = locationBiasFromOptions(
-      args.body.location,
-      args.body.radius,
-    );
-    if (isMapsErrorResponse(locationBias)) {
-      return locationBias;
-    }
-
-    const billingCategory = placeSearchBillingCategory(args.body.fields);
-    const creditError = await set(
-      checkMapsCredits$,
-      {
-        orgId: args.auth.orgId,
-        userId: args.auth.userId,
-        runId: runIdForUsage(args.auth),
-        category: billingCategory,
-      },
-      signal,
-    );
-    if (creditError) {
-      return creditError;
-    }
-
-    const requestBody = {
-      textQuery: args.body.query,
-      maxResultCount: args.body.limit,
-      ...(args.body.region ? { regionCode: args.body.region } : {}),
-      ...(locationBias ? { locationBias } : {}),
-    };
-    const result = await fetchGoogleJson(
-      new URL(GOOGLE_PLACES_SEARCH_TEXT_URL),
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": placeSearchFieldMask(args.body.fields),
+        ...(runId ? { runId } : {}),
+        resource: {
+          kind: USAGE_KIND,
+          provider: VERTEX_MAPS_PROVIDER,
+          category: BILLING_CATEGORY,
+          quantity: PREFLIGHT_PROVIDER_COST_MICROS,
         },
-        body: JSON.stringify(requestBody),
-        signal,
+        label: "Okou Google Maps grounding",
       },
+      requestSignal,
     );
-    return completeGoogleMapsResult({
-      operation: "places.search",
-      result,
-      billingCategory,
-      recordUsage: () => {
-        return set(
-          recordMapsUsage$,
-          {
-            orgId: args.auth.orgId,
-            userId: args.auth.userId,
-            runId: runIdForUsage(args.auth),
-            category: billingCategory,
-          },
-          signal,
-        );
-      },
-    });
-  },
-);
-
-export const mapsPlacesDetails$ = command(
-  async (
-    { set },
-    args: AuthedMapsArgs<MapsPlacesDetailsRequest>,
-    signal: AbortSignal,
-  ) => {
-    const apiKey = env("OKOU_MAPS_GOOGLE_MAPS_TOKEN");
-    if (!apiKey) {
-      return serviceUnavailable(
-        "Okou Maps Google Maps provider is not configured",
-        "NOT_CONFIGURED",
-      );
-    }
-
-    const billingCategory = placeDetailsBillingCategory(args.body.fields);
-    const creditError = await set(
-      checkMapsCredits$,
-      {
-        orgId: args.auth.orgId,
-        userId: args.auth.userId,
-        runId: runIdForUsage(args.auth),
-        category: billingCategory,
-      },
-      signal,
-    );
+    signal.throwIfAborted();
+    requestSignal.throwIfAborted();
     if (creditError) {
       return creditError;
     }
 
-    const placeId = args.body.placeId.replace(/^places\//, "");
-    const result = await fetchGoogleJson(
-      new URL(
-        `places/${encodeURIComponent(placeId)}`,
-        GOOGLE_PLACES_DETAILS_BASE_URL,
+    const generated = await settle(
+      generateVertexMapsSearch(args.body, requestSignal),
+    );
+    signal.throwIfAborted();
+    if (!generated.ok) {
+      return providerError(generated.error);
+    }
+    if (generated.value === null) {
+      return serviceUnavailable(
+        "Okou Google Maps grounding is not configured",
+        "NOT_CONFIGURED",
+      );
+    }
+
+    // A parsed provider result has incurred billable work. From this point,
+    // client disconnect no longer owns settlement; the command owner does.
+    const billingQuantity = providerCostMicros(generated.value);
+    const creditsCharged =
+      billingQuantity === 0
+        ? 0
+        : await set(
+            recordManagedUsage$,
+            {
+              actor: {
+                orgId: args.auth.orgId,
+                userId: args.auth.userId,
+                ...(runId ? { runId } : {}),
+              },
+              resource: {
+                kind: USAGE_KIND,
+                provider: VERTEX_MAPS_PROVIDER,
+                category: BILLING_CATEGORY,
+                quantity: billingQuantity,
+              },
+              label: "Google Maps grounding",
+            },
+            // Provider work has completed, so client disconnect must not skip billing.
+            signal,
+          );
+    return {
+      status: 200,
+      body: successBody(
+        args.body,
+        generated.value,
+        billingQuantity,
+        creditsCharged,
       ),
-      {
-        headers: {
-          "X-Goog-Api-Key": apiKey,
-          "X-Goog-FieldMask": placeDetailsFieldMask(args.body.fields),
-        },
-        signal,
-      },
-    );
-    return completeGoogleMapsResult({
-      operation: "places.details",
-      result,
-      billingCategory,
-      recordUsage: () => {
-        return set(
-          recordMapsUsage$,
-          {
-            orgId: args.auth.orgId,
-            userId: args.auth.userId,
-            runId: runIdForUsage(args.auth),
-            category: billingCategory,
-          },
-          signal,
-        );
-      },
-    });
+    };
   },
 );

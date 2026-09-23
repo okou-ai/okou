@@ -20,8 +20,6 @@ import { updateCloudBrowserEnabledByDefault$ } from "../../../../../signals/okou
 import { updateSendMode$ } from "../../../../../signals/okou-page/settings/send-mode-preference.ts";
 import { ModelProviderPicker } from "../../model-provider-picker.tsx";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
-import { SettingsSectionHeading } from "../settings-section-heading.tsx";
-import { PaidToolsSection } from "./paid-tools-section.tsx";
 
 const SEND_OPTIONS: readonly SendMode[] = ["enter", "cmd-enter"];
 
@@ -163,37 +161,18 @@ export function SendModePreference() {
 }
 
 export function ChatSection() {
-  const { t } = useTranslation();
   const features = useGet(featureSwitch$);
   const showChatPreferences =
     features[FeatureSwitchKey.ChatPreference] ?? false;
-  const showPaidTools =
-    showChatPreferences &&
-    (features[FeatureSwitchKey.PaidToolControls] ?? false);
-
   return (
-    <div className="flex flex-col gap-8">
+    <section className="flex flex-col gap-3">
       {showChatPreferences ? (
-        <section className="flex flex-col gap-3">
+        <>
           <DefaultModelPreference />
           <CloudBrowserDefaultPreference />
           <SendModePreference />
-        </section>
+        </>
       ) : null}
-
-      {showPaidTools ? (
-        <section className="flex flex-col gap-3">
-          <SettingsSectionHeading
-            title={t(($) => {
-              return $.settings.paidTools.title;
-            })}
-            description={t(($) => {
-              return $.settings.paidTools.description;
-            })}
-          />
-          <PaidToolsSection />
-        </section>
-      ) : null}
-    </div>
+    </section>
   );
 }

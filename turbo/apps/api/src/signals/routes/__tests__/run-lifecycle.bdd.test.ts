@@ -1136,42 +1136,28 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     }
   });
 
-  it.each([false, true])(
-    "advertises current Run usage only while its feature is enabled (%s)",
-    async (enabled) => {
-      const api = createRunsApi(context);
-      const connectors = createConnectorBddApi(context);
-      const { actor, agentId, runnerGroup } = await entitledRunActor();
-      await connectors.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.RunUsage]: enabled,
-      });
+  it("advertises current Run usage and grants its Run capability", async () => {
+    const api = createRunsApi(context);
+    const { actor, agentId, runnerGroup } = await entitledRunActor();
+    const created = await api.createRun(actor, {
+      agentId,
+      prompt: "inspect this Run's provider-token usage",
+      modelProvider: "anthropic-api-key",
+    });
+    await api.heartbeatRunner(runnerGroup);
+    const claim = await api.claimRunnerJob(created.runId);
+    const prompt = claim.appendSystemPrompt ?? "";
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected a minted Run token");
+    }
 
-      const created = await api.createRun(actor, {
-        agentId,
-        prompt: "inspect this Run's provider-token usage",
-        modelProvider: "anthropic-api-key",
-      });
-      await api.heartbeatRunner(runnerGroup);
-      const claim = await api.claimRunnerJob(created.runId);
-      const prompt = claim.appendSystemPrompt ?? "";
-      const token = claim.platformEnvironment.OKOU_TOKEN;
-      if (!token) {
-        throw new Error("Expected a minted Run token");
-      }
-
-      expect(
-        prompt
-          .split("\n")
-          .includes(
-            "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
-          ),
-      ).toBe(enabled);
-      expect(
-        verifyOkouToken(token)?.capabilities.includes("run-usage:read"),
-      ).toBe(enabled);
-      await api.requestCancelRun(actor, created.runId, [200]);
-    },
-  );
+    expect(prompt.split("\n")).toContain(
+      "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
+    );
+    expect(verifyOkouToken(token)?.capabilities).toContain("run-usage:read");
+    await api.requestCancelRun(actor, created.runId, [200]);
+  });
 
   it("advertises Lark messaging only while the organization rollout is enabled", async () => {
     const api = createRunsApi(context);
@@ -5980,14 +5966,14 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       onboardingPaymentPending: false,
     });
     const modelPolicies = await misc.listModelPolicies(actor);
-    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-6-luna");
     expect(
       modelPolicies.policies.find((policy) => {
-        return policy.model === "gpt-5.6-luna";
+        return policy.model === "gpt-6-luna";
       }),
     ).toMatchObject({ isDefault: true });
 
-    await seedBuiltInModelKey("gpt-5.6-luna");
+    await seedBuiltInModelKey("gpt-6-luna");
     const sent = await chat.requestSendEvent(
       actor,
       { agentId, prompt: "limited-free default model run" },
@@ -5999,9 +5985,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(sent.body.runId);
     expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-6-luna" });
     expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
-    expect(claim.modelUsageProvider).toBe("gpt-5.6-luna");
+    expect(claim.modelUsageProvider).toBe("gpt-6-luna");
     await api.requestCancelRun(actor, sent.body.runId, [200]);
 
     // Model access follows the configured route. A seeded Built-in route the
@@ -6068,7 +6054,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: selectedModel });
     expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
 
     expect(
@@ -13883,7 +13869,7 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "A matching completion starts a new run in the workflow's automation thread rather than resuming the current run",
       "the automation remains enabled for future matching completions until disabled or removed",
       "run `okou intro` first",
-      "okou maps --help",
+      'okou maps search "<query>"',
       "Public-web search, current public facts, and source discovery",
       "okou web-search <query>",
       "framework-native web search tool is exposed",

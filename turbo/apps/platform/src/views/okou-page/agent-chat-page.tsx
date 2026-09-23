@@ -13,10 +13,7 @@ import {
   TooltipTrigger,
 } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
-import {
-  currentChatAgentId$,
-  currentChatAgentDisplayName$,
-} from "../../signals/agent-chat.ts";
+import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import {
   setAgentPinned$,
   currentChatAgentPinned$,
@@ -37,7 +34,6 @@ import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-compose
 import { avatarTextureEnabled$ } from "../../signals/external/feature-switch.ts";
 import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
-import { assistantName$ } from "../../signals/branding.ts";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 
@@ -69,7 +65,6 @@ function localizedAnonymousTaglines(t: TFunction<"common">): string[] {
 
 function localizedUserTaglines(
   t: TFunction<"common">,
-  agentName: string,
   userName: string,
 ): string[] {
   return [
@@ -96,15 +91,6 @@ function localizedUserTaglines(
         return $.chat.agentPage.taglines.whatsOnYourMind;
       },
       { userName },
-    ),
-    t(
-      ($) => {
-        return $.chat.agentPage.taglines.letsRoll;
-      },
-      {
-        agentName,
-        userName,
-      },
     ),
     t(
       ($) => {
@@ -188,17 +174,15 @@ function localizedUserTaglines(
 }
 
 function useTagline(
-  agentName: string | null | undefined,
   userName: string | null | undefined,
   index: number,
 ): string {
   const { t } = useTranslation();
-  const assistantName = useGet(assistantName$);
-  if (agentName === undefined || userName === undefined) {
+  if (userName === undefined) {
     return "";
   }
   const taglines = userName
-    ? localizedUserTaglines(t, agentName ?? assistantName, userName)
+    ? localizedUserTaglines(t, userName)
     : localizedAnonymousTaglines(t);
   return taglines[index % taglines.length];
 }
@@ -285,7 +269,7 @@ function PinPill() {
     );
   };
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -364,7 +348,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   return (
     <div className="relative shrink-0">
       {agentId ? (
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -427,9 +411,6 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
 
 export function AgentChatPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
-  const currentChatAgentDisplayName = useLastResolved(
-    currentChatAgentDisplayName$,
-  );
 
   const pageSignal = useGet(pageSignal$);
   const user = useLastResolved(user$);
@@ -441,11 +422,7 @@ export function AgentChatPage() {
   const setInput = useSet(composerSignals.draft.setDraftInput$);
   const saveDraft = useSet(composerSignals.draft.save$);
   const taglineIndex = useGet(chatPageTaglineIndex$);
-  const tagline = useTagline(
-    currentChatAgentDisplayName,
-    userFirstName,
-    taglineIndex,
-  );
+  const tagline = useTagline(userFirstName, taglineIndex);
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
@@ -484,10 +461,10 @@ export function AgentChatPage() {
               its final width on the first frame, so it is centered once and
               never moves again. */}
           <div className="flex min-h-14 w-full justify-center my-auto sm:my-0">
-            {/* The async agent identity and name leave the first renders
-                incomplete. Reserve the finished row's height, but do not let
-                the avatar run a throwaway entrance before the real greeting
-                can mount under its final identity. */}
+            {/* The async agent identity and user profile leave the first
+                renders incomplete. Reserve the finished row's height, but do
+                not let the avatar run a throwaway entrance before the real
+                greeting can mount under its final identity. */}
             {currentChatAgentId === undefined || tagline === "" ? null : (
               <div
                 key={greetingIdentity}
@@ -539,14 +516,13 @@ export function AgentChatPage() {
           {/* Above the generic starting points and below the composer: these
               cards describe the member's own unfinished work, so they are only
               worth the position when there are any, and the section renders
-              nothing when there are not. */}
-          {/* `order-1` keeps the mobile column greeting, recommendations,
-              starting points, composer: the composer's own `order-3` is what
-              holds it at the bottom within thumb reach, so this section takes
-              the step above the chips rather than sharing theirs. */}
-          <div className="order-1 sm:order-none">
-            <HomeTaskRecommendations agentId={currentChatAgentId} />
-          </div>
+              nothing when there are not. It is mounted bare rather than in a
+              wrapper: a wrapper would stay a flex item after the section
+              returned null, and the column's own `gap` would then be charged
+              twice — the 80px the composer sat above the chips was two 40px
+              steps with an empty box between them, not one deliberate step.
+              The ordering the wrapper carried moved onto the section itself. */}
+          <HomeTaskRecommendations agentId={currentChatAgentId} />
 
           <div className="order-2 sm:order-none">
             {taskChipsEnabled ? (

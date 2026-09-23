@@ -580,7 +580,7 @@ test("Show the three-column chat navigation and actions", async () => {
   const list = screen.getByTestId("chat-list-column");
   expect(within(list).getByText("Chat")).toBeInTheDocument();
   const searchButton = within(list).getByLabelText("Search workspace");
-  const chatThreadsTitle = within(list).getByText("Chats with Okou");
+  const chatThreadsTitle = buttonByText("Chats with Okou", list);
   if (!searchButton.parentElement || !chatThreadsTitle.parentElement) {
     throw new Error("Chat action headers not found");
   }

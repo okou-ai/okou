@@ -4,7 +4,7 @@ import { createStore } from "ccstate";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { mapsContract } from "@okouai/api-contracts/contracts/maps";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
-import { HttpResponse, http } from "msw";
+import { http } from "msw";
 import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -23,6 +23,10 @@ import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  VERTEX_MAPS_URL,
+  vertexMapsResponse,
+} from "./helpers/google-maps-grounding";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   deleteBillingAttribution$,
@@ -51,15 +55,13 @@ const store = createStore();
  */
 
 const DAY_MS = 86_400_000;
-const GOOGLE_GEOCODING_URL =
-  "https://maps.googleapis.com/maps/api/geocode/json";
-const MAPS_GEOCODING_PRICING_ROWS = [
+const MAPS_GROUNDING_PRICING_ROWS = [
   {
     kind: "maps",
-    provider: "google-maps",
-    category: "geocoding",
-    unitPrice: 6,
-    unitSize: 1,
+    provider: "google-maps-grounding",
+    category: "provider_cost_usd_micros",
+    unitPrice: 1250,
+    unitSize: 1_000_000,
   },
 ] as const satisfies readonly UsagePricingRow[];
 const MODEL_TOKEN_CATEGORIES = {
@@ -1076,24 +1078,16 @@ describe("GET /api/usage/record", () => {
     ]);
   });
 
-  it("uses settlement time consistently for rows, totals, and breakdowns", async () => {
+  it("uses Maps grounding settlement time consistently for rows, totals, and breakdowns", async () => {
     const fixture = await entitledRecordActor();
     billing.configureMapsProvider();
     const pricing = await createUsagePricingFixture({
-      configured: MAPS_GEOCODING_PRICING_ROWS,
+      configured: MAPS_GROUNDING_PRICING_ROWS,
     });
     onTestFinished(pricing.cleanup);
     server.use(
-      http.get(GOOGLE_GEOCODING_URL, () => {
-        return HttpResponse.json({
-          status: "OK",
-          results: [
-            {
-              formatted_address: "1 Infinite Loop, Cupertino, CA",
-              geometry: { location: { lat: 37.3317, lng: -122.0301 } },
-            },
-          ],
-        });
+      http.post(VERTEX_MAPS_URL, () => {
+        return vertexMapsResponse();
       }),
     );
 
@@ -1113,14 +1107,18 @@ describe("GET /api/usage/record", () => {
       routes: mapsRoutes,
       usagePricingResolution: pricing.resolution,
     })(mapsContract);
-    const geocode = await accept(
-      maps.geocode({
+    const search = await accept(
+      maps.search({
         headers: { authorization: `Bearer ${mapsToken}` },
-        body: { address: "1 Infinite Loop, Cupertino" },
+        body: { query: "coffee near 1 Infinite Loop, Cupertino" },
       }),
       [200],
     );
-    expect(geocode.body.creditsCharged).toBe(6);
+    expect(search.headers.get("cache-control")).toBe("private, no-store");
+    expect(search.body).toMatchObject({
+      billingQuantity: 25_155,
+      creditsCharged: 32,
+    });
 
     mockNow(new Date(settledAt.getTime() + 60_000));
     mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
@@ -1135,21 +1133,21 @@ describe("GET /api/usage/record", () => {
 
     expect(response.body.rows).toHaveLength(1);
     expect(response.body.pagination.total).toBe(1);
-    expect(response.body.totalCredits).toBe(6);
+    expect(response.body.totalCredits).toBe(32);
     expect(response.body.rows[0]).toMatchObject({
       threadId: null,
-      credits: 6,
+      credits: 32,
       tokens: 0,
     });
     expect(response.body.rows[0]?.breakdown).toStrictEqual([
       {
         kind: "other",
-        credits: 6,
+        credits: 32,
         providers: [
           {
-            provider: "google-maps",
-            credits: 6,
-            usageKinds: [{ kind: "maps", credits: 6 }],
+            provider: "google-maps-grounding",
+            credits: 32,
+            usageKinds: [{ kind: "maps", credits: 32 }],
           },
         ],
       },

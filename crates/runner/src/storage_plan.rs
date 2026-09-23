@@ -119,6 +119,37 @@ struct ArtifactPlanEntry {
     action: ArtifactAction,
 }
 
+impl ArtifactPlanEntry {
+    fn into_guest_entry(self) -> wire::ArtifactEntry {
+        let (archive_url, empty, cached) = match self.action {
+            ArtifactAction::Download { source } => (Some(source.wire_url()), false, false),
+            ArtifactAction::ReuseOrRepair { source } => (Some(source.wire_url()), false, true),
+            ArtifactAction::PrepareEmpty { cached } => (None, true, cached),
+        };
+        wire::ArtifactEntry {
+            mount_path: self.mount_path,
+            archive_url,
+            empty,
+            cached,
+            vas_storage_name: Some(self.vas_storage_name),
+            vas_storage_id: Some(self.vas_storage_id),
+            vas_version_id: Some(self.vas_version_id),
+            missing_root_policy: self.missing_root_policy.map(missing_root_policy_wire_value),
+        }
+    }
+
+    fn is_decoded_download(&self) -> bool {
+        !self.vas_storage_name.is_empty()
+            && !self.vas_storage_id.is_empty()
+            && !self.vas_version_id.is_empty()
+            && matches!(
+                &self.action,
+                ArtifactAction::Download { source }
+                    if source.remote_url().is_some_and(|url| !url.is_empty() && url != "null")
+            )
+    }
+}
+
 #[derive(Debug, Clone)]
 enum ArtifactAction {
     Download { source: ArchiveSource },
@@ -168,6 +199,10 @@ impl ArchiveHandle {
             ArchiveKind::Artifact => "artifact",
         };
         (kind, self.index)
+    }
+
+    pub(crate) const fn is_artifact(self) -> bool {
+        matches!(self.kind, ArchiveKind::Artifact)
     }
 
     #[cfg(test)]
@@ -367,61 +402,88 @@ impl StoragePlan {
     }
 
     pub(crate) fn has_decoded(&self, handle: ArchiveHandle) -> bool {
-        matches!(handle.kind, ArchiveKind::Storage)
-            && self.storages.get(handle.index).is_some_and(|entry| {
-                self.decoded
-                    .iter()
-                    .any(|(mount, _)| mount == &entry.mount_path)
-            })
+        self.entry_mount(handle)
+            .is_some_and(|entry_mount| self.decoded.iter().any(|(mount, _)| mount == entry_mount))
     }
 
     pub(crate) fn decoded_archive_retirement_candidate(&self, handle: ArchiveHandle) -> bool {
-        matches!(handle.kind, ArchiveKind::Storage)
-            && self.storages.get(handle.index).is_some_and(|entry| {
-                self.decoded.iter().any(|(mount, files)| {
-                    mount == &entry.mount_path && files.archive_retirement_candidate
-                })
-            })
+        self.entry_mount(handle).is_some_and(|entry_mount| {
+            self.decoded
+                .iter()
+                .any(|(mount, files)| mount == entry_mount && files.archive_retirement_candidate)
+        })
     }
 
     /// A ready mount must fit one bounded request before its archive is omitted.
     /// The executor batches larger combined manifests after source resolution.
     pub(crate) fn decoded_entry_fits(&self, handle: ArchiveHandle) -> RunnerResult<bool> {
-        if !matches!(handle.kind, ArchiveKind::Storage) {
-            return Ok(false);
-        }
-        let Some(entry) = self.storages.get(handle.index) else {
-            return Ok(false);
-        };
-        let manifest = wire::Manifest {
-            storages: vec![entry.clone().into_guest_entry()],
-            artifacts: Vec::new(),
-            cleanup_paths: Vec::new(),
-            instruction_cleanups: Vec::new(),
+        let manifest = match handle.kind {
+            ArchiveKind::Storage => {
+                let Some(entry) = self.storages.get(handle.index) else {
+                    return Ok(false);
+                };
+                if !matches!(entry.action, StorageAction::Download { .. }) {
+                    return Ok(false);
+                }
+                wire::Manifest {
+                    storages: vec![entry.clone().into_guest_entry()],
+                    artifacts: Vec::new(),
+                    cleanup_paths: Vec::new(),
+                    instruction_cleanups: Vec::new(),
+                }
+            }
+            ArchiveKind::Artifact => {
+                let Some(entry) = self.artifacts.get(handle.index) else {
+                    return Ok(false);
+                };
+                if !entry.is_decoded_download() {
+                    return Ok(false);
+                }
+                wire::Manifest {
+                    storages: Vec::new(),
+                    artifacts: vec![entry.clone().into_guest_entry()],
+                    cleanup_paths: Vec::new(),
+                    instruction_cleanups: Vec::new(),
+                }
+            }
         };
         let bytes = serde_json::to_vec(&manifest)
             .map_err(|error| RunnerError::Internal(format!("manifest JSON: {error}")))?;
         Ok(bytes.len() <= guest_contracts::storage_files::MAX_MANIFEST_BYTES)
     }
 
-    pub(crate) fn is_ordinary_storage_download(&self, handle: ArchiveHandle) -> bool {
-        matches!(handle.kind, ArchiveKind::Storage)
-            && self
+    pub(crate) fn is_decoded_download(&self, handle: ArchiveHandle) -> bool {
+        match handle.kind {
+            ArchiveKind::Storage => self
                 .storages
                 .get(handle.index)
-                .is_some_and(|entry| matches!(entry.action, StorageAction::Download { .. }))
+                .is_some_and(|entry| matches!(entry.action, StorageAction::Download { .. })),
+            ArchiveKind::Artifact => self
+                .artifacts
+                .get(handle.index)
+                .is_some_and(ArtifactPlanEntry::is_decoded_download),
+        }
     }
 
     pub(crate) fn decoded_mount(&self, handle: ArchiveHandle) -> Option<&str> {
-        if !matches!(handle.kind, ArchiveKind::Storage) {
-            return None;
-        }
-        let entry = self.storages.get(handle.index)?;
-        if !matches!(entry.action, StorageAction::Download { .. }) {
-            return None;
-        }
-        let target = PathBuf::from(&entry.mount_path);
-        if entry.mount_path.len() > guest_contracts::storage_files::MAX_PATH_BYTES
+        let mount_path = match handle.kind {
+            ArchiveKind::Storage => {
+                let entry = self.storages.get(handle.index)?;
+                if !matches!(entry.action, StorageAction::Download { .. }) {
+                    return None;
+                }
+                entry.mount_path.as_str()
+            }
+            ArchiveKind::Artifact => {
+                let entry = self.artifacts.get(handle.index)?;
+                if !entry.is_decoded_download() {
+                    return None;
+                }
+                entry.mount_path.as_str()
+            }
+        };
+        let target = PathBuf::from(mount_path);
+        if mount_path.len() > guest_contracts::storage_files::MAX_PATH_BYTES
             || !target.is_absolute()
             || target.components().any(|part| {
                 !matches!(
@@ -433,7 +495,7 @@ impl StoragePlan {
             return None;
         }
         for (index, other) in self.storages.iter().enumerate() {
-            if index == handle.index {
+            if matches!(handle.kind, ArchiveKind::Storage) && index == handle.index {
                 continue;
             }
             if guest_contracts::storage_files::decoded_mount_conflicts(
@@ -449,7 +511,10 @@ impl StoragePlan {
                 return None;
             }
         }
-        for other in &self.artifacts {
+        for (index, other) in self.artifacts.iter().enumerate() {
+            if matches!(handle.kind, ArchiveKind::Artifact) && index == handle.index {
+                continue;
+            }
             if guest_contracts::storage_files::decoded_mount_conflicts(
                 &target,
                 std::path::Path::new(&other.mount_path),
@@ -460,7 +525,20 @@ impl StoragePlan {
                 return None;
             }
         }
-        Some(&entry.mount_path)
+        Some(mount_path)
+    }
+
+    fn entry_mount(&self, handle: ArchiveHandle) -> Option<&str> {
+        match handle.kind {
+            ArchiveKind::Storage => self
+                .storages
+                .get(handle.index)
+                .map(|entry| entry.mount_path.as_str()),
+            ArchiveKind::Artifact => self
+                .artifacts
+                .get(handle.index)
+                .map(|entry| entry.mount_path.as_str()),
+        }
     }
 
     pub(crate) fn add_decoded(
@@ -635,29 +713,7 @@ impl StoragePlan {
             artifacts: self
                 .artifacts
                 .into_iter()
-                .map(|entry| {
-                    let (archive_url, empty, cached) = match entry.action {
-                        ArtifactAction::Download { source } => {
-                            (Some(source.wire_url()), false, false)
-                        }
-                        ArtifactAction::ReuseOrRepair { source } => {
-                            (Some(source.wire_url()), false, true)
-                        }
-                        ArtifactAction::PrepareEmpty { cached } => (None, true, cached),
-                    };
-                    wire::ArtifactEntry {
-                        mount_path: entry.mount_path,
-                        archive_url,
-                        empty,
-                        cached,
-                        vas_storage_name: Some(entry.vas_storage_name),
-                        vas_storage_id: Some(entry.vas_storage_id),
-                        vas_version_id: Some(entry.vas_version_id),
-                        missing_root_policy: entry
-                            .missing_root_policy
-                            .map(missing_root_policy_wire_value),
-                    }
-                })
+                .map(ArtifactPlanEntry::into_guest_entry)
                 .collect(),
             cleanup_paths: self.cleanup_paths,
             instruction_cleanups: self

@@ -232,8 +232,9 @@ export function ComposerVisualizationOptions({
     <section
       // Two groups, so they take the air the other panels put between their own
       // two: a shelf's `gap-3` is what a title keeps from its row, not what one
-      // group keeps from the next.
-      className="flex min-w-0 flex-col gap-12"
+      // group keeps from the next. Tracks the panel gap in `composer-task-chips`
+      // — the two modes have to read as the same surface.
+      className="flex min-w-0 flex-col gap-10"
       role="region"
       aria-label={copy.panelLabel}
     >

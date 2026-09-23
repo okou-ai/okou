@@ -4,10 +4,11 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { agentVncAccess } from "@okouai/db/schema/agent-vnc-access";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull, or } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
@@ -124,10 +125,22 @@ export async function listRunVncHosts(
       ),
     )
     .leftJoin(
+      agentSshAccess,
+      and(
+        eq(agentSshAccess.agentId, agents.id),
+        eq(agentSshAccess.orgId, agentRuns.orgId),
+        eq(agentSshAccess.userId, agentRuns.userId),
+      ),
+    )
+    .leftJoin(
       vncConnections,
       and(
         eq(vncConnections.orgId, agentRuns.orgId),
         eq(vncConnections.userId, agentRuns.userId),
+        or(
+          eq(vncConnections.transportType, "direct"),
+          isNotNull(agentSshAccess.agentId),
+        ),
       ),
     )
     .leftJoin(

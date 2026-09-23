@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.98.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.97.0...guest-agent-v0.98.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
+## [0.97.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.96.0...guest-agent-v0.97.0) (2026-09-23)
+
+
+### Features
+
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+
+
+### Refactoring
+
+* **runner:** extract provider coordination crate ([#36148](https://github.com/okou-ai/okou/issues/36148)) ([789a24f](https://github.com/okou-ai/okou/commit/789a24f6632566071af38533d4df58a0ef0c0c75))
+
+## [0.96.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.95.1...guest-agent-v0.96.0) (2026-09-22)
+
+
+### Features
+
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
 ## [0.95.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.95.0...guest-agent-v0.95.1) (2026-09-22)
 
 

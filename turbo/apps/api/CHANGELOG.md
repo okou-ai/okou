@@ -8,6 +8,91 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.661.0](https://github.com/okou-ai/okou/compare/api-v1.660.0...api-v1.661.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.495.0
+    * @okouai/core bumped to 8.702.0
+    * @okouai/db bumped to 1.288.1
+    * @okouai/pi-agent-runtime bumped to 1.39.0
+
+## [1.660.0](https://github.com/okou-ai/okou/compare/api-v1.659.1...api-v1.660.0) (2026-09-23)
+
+
+### Features
+
+* add manual usage reset for claude code subscriptions ([#36165](https://github.com/okou-ai/okou/issues/36165)) ([741e209](https://github.com/okou-ai/okou/commit/741e2092ecb9b944dc41e155cb58787d3316673b))
+* **api-contracts:** add gpt-6-luna run model ([#36164](https://github.com/okou-ai/okou/issues/36164)) ([c86fa91](https://github.com/okou-ai/okou/commit/c86fa91e4a13f42951502f19208277d9b71241e9))
+* **api:** default new organizations to gpt-6 luna ([#36166](https://github.com/okou-ai/okou/issues/36166)) ([a202943](https://github.com/okou-ai/okou/commit/a20294342f008216e87fc242b0e03ff32ea30124))
+
+
+### Refactoring
+
+* **api:** retire ssh-owned cloudflare access compatibility ([#36157](https://github.com/okou-ai/okou/issues/36157)) ([c58ef67](https://github.com/okou-ai/okou/commit/c58ef67af9fbe0607bd35b97f9132af45f9bbf22))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.494.0
+    * @okouai/core bumped to 8.701.0
+    * @okouai/db bumped to 1.288.0
+    * @okouai/pi-agent-runtime bumped to 1.38.0
+
+## [1.659.1](https://github.com/okou-ai/okou/compare/api-v1.659.0...api-v1.659.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+
+### Performance Improvements
+
+* **api:** batch storage manifest cache lookups ([#36140](https://github.com/okou-ai/okou/issues/36140)) ([1f8ee78](https://github.com/okou-ai/okou/commit/1f8ee78ce8927e72a330e238aa0ddcb6a43f2c8c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.700.2
+    * @okouai/db bumped to 1.287.2
+    * @okouai/pi-agent-runtime bumped to 1.37.1
+
+## [1.659.0](https://github.com/okou-ai/okou/compare/api-v1.658.0...api-v1.659.0) (2026-09-22)
+
+
+### Features
+
+* expose ssh-backed vnc access ([#36116](https://github.com/okou-ai/okou/issues/36116)) ([05910d3](https://github.com/okou-ai/okou/commit/05910d386aebd37b12637adf5dea4a935c9a0198))
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
+
+### Bug Fixes
+
+* **platform:** resolve optimistic file previews directly ([#36141](https://github.com/okou-ai/okou/issues/36141)) ([f7d300f](https://github.com/okou-ai/okou/commit/f7d300fb8d5a15bd67d5f5b882a92b41e9bdd8b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.493.0
+    * @okouai/core bumped to 8.700.1
+    * @okouai/db bumped to 1.287.1
+    * @okouai/pi-agent-runtime bumped to 1.37.0
+
 ## [1.658.0](https://github.com/okou-ai/okou/compare/api-v1.657.0...api-v1.658.0) (2026-09-22)
 
 

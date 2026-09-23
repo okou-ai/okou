@@ -89,8 +89,8 @@ const ORG_SENTINEL_USER_ID = "__org__";
 
 const ONBOARDING_MODEL_POLICY_SEEDS = {
   codex: {
-    models: ["gpt-5.6-luna", "gpt-6-astra", "gpt-5.6-sol"],
-    defaultModel: "gpt-5.6-luna",
+    models: ["gpt-6-luna", "gpt-6-astra", "gpt-5.6-sol"],
+    defaultModel: "gpt-6-luna",
     providerType: "codex-oauth-token",
   },
   claudeCode: {
@@ -1304,20 +1304,31 @@ export async function initializeOnboardingOrgModelPolicies(
   await lockPolicyWrites(db, orgId);
   const existing = await loadRows(db, orgId, true);
   const standardSeed = getDefaultOrgModelPolicySeed();
-  const hasOnlyStandardSeed =
-    existing.length === standardSeed.length &&
-    standardSeed.every((seed) => {
-      const row = existing.find((candidate) => {
-        return candidate.model === seed.model;
-      });
-      return (
-        row?.isDefault === seed.isDefault &&
-        row.defaultProviderType === seed.defaultProviderType &&
-        row.credentialScope === seed.credentialScope &&
-        row.modelProviderId === null &&
-        row.modelProviderSurfaceId === null
-      );
-    });
+  // An older API may have written this untouched seed before onboarding finishes.
+  // Remove after old API writers drain and no incomplete org retains that seed;
+  // track the removal in #36167.
+  const previousSeed = standardSeed.map((seed) => {
+    return seed.model === "gpt-6-luna"
+      ? { ...seed, model: "gpt-5.6-luna" as const }
+      : seed;
+  });
+  const hasOnlyStandardSeed = [standardSeed, previousSeed].some((seedRows) => {
+    return (
+      existing.length === seedRows.length &&
+      seedRows.every((seed) => {
+        const row = existing.find((candidate) => {
+          return candidate.model === seed.model;
+        });
+        return (
+          row?.isDefault === seed.isDefault &&
+          row.defaultProviderType === seed.defaultProviderType &&
+          row.credentialScope === seed.credentialScope &&
+          row.modelProviderId === null &&
+          row.modelProviderSurfaceId === null
+        );
+      })
+    );
+  });
   if (existing.length > 0 && !hasOnlyStandardSeed) {
     return;
   }

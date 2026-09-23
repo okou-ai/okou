@@ -379,8 +379,6 @@ impl MitmProxy {
             registry_path: self.config.registry_path.clone(),
             lock_path: self.config.registry_lock_path.clone(),
             control: self.control.clone(),
-            #[cfg(test)]
-            connector_runtime_update_attempt_tx: None,
         }
     }
 

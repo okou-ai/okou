@@ -398,7 +398,7 @@ export function CreditAdditionTable({
           })}
         </span>
       </div>
-      <TooltipProvider delayDuration={100}>
+      <TooltipProvider delay={100}>
         {grants.map((grant) => {
           return (
             <Tooltip key={grant.id}>
@@ -476,7 +476,7 @@ function CreditBreakdownBar({
     return null;
   }
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delay={100}>
       <div className="mt-4 flex h-2 w-full gap-[3px]">
         {segments.map((s) => {
           const color = colorForSegment(s);
@@ -700,7 +700,7 @@ export function MemberUsageTable({
   );
 
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delay={100}>
       <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         {/* Header */}
         <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-2.5 text-[13px] font-medium text-foreground">

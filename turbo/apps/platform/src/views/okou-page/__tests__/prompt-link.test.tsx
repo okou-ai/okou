@@ -152,7 +152,7 @@ test("A prompt route starts a chat with its selected model", async () => {
   const capture = capturePromptLaunch();
   await setupPage({
     context,
-    path: "/prompt?prompt=Compare%20the%20launch%20options&model=gpt-5.6-luna&connector=github",
+    path: "/prompt?prompt=Compare%20the%20launch%20options&model=gpt-6-astra&connector=github",
   });
 
   const send = await waitForPromptLaunch("Compare the launch options", capture);
@@ -160,7 +160,7 @@ test("A prompt route starts a chat with its selected model", async () => {
 
   expect(capture.createdThreads[0]).toStrictEqual({
     connectorSelections: undefined,
-    model: "gpt-5.6-luna",
+    model: "gpt-6-astra",
   });
   expect(send.prompt).toBe("Compare the launch options");
   expect(parts).toContainEqual({
@@ -169,7 +169,7 @@ test("A prompt route starts a chat with its selected model", async () => {
   });
   expect(parts).toContainEqual({
     type: "model",
-    selectedModel: "gpt-5.6-luna",
+    selectedModel: "gpt-6-astra",
   });
   expect(JSON.stringify(parts)).not.toContain("github");
   expect(search()).toBe("");
@@ -220,10 +220,10 @@ test("A prompt link starts a presentation chat with its selected template", asyn
       },
     },
   });
-  expect(capture.createdThreads[0]?.model).toBe("gpt-5.6-luna");
+  expect(capture.createdThreads[0]?.model).toBe("gpt-6-luna");
   expect(userMessageParts(send)).toContainEqual({
     type: "model",
-    selectedModel: "gpt-5.6-luna",
+    selectedModel: "gpt-6-luna",
   });
 });
 
