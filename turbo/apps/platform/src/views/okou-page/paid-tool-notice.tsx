@@ -160,7 +160,7 @@ function ComposerPaidToolNoticeContent({
               type="button"
               variant="secondary"
               size="xs"
-              className="text-xs font-medium"
+              className="border border-control-border text-xs font-medium"
               onClick={row.discard.run}
             >
               {row.discard.label}
