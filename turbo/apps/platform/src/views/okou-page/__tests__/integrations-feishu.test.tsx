@@ -8,6 +8,7 @@ import {
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -577,13 +578,18 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
   });
 
   it(`${provider.name} setup advances when callback verification arrives`, async () => {
+    const user = userEvent.setup({ delay: null });
+    const clipboard = context.mocks.browser.clipboardWriteText();
     let callbackVerified = false;
     let isConnected = false;
+    let callbackUrl = "";
+    let oauthRedirectUrl = "";
     context.mocks.api(connectContract.getStatus, ({ respond }) => {
       const installation = completedInstallation({
         isConnected,
         appId: "cli_feishu",
-        oauthRedirectUrl: `https://app.okou.test${provider.callbackPath}`,
+        oauthRedirectUrl,
+        callbackUrl,
         callbackVerified,
         messageReceived: false,
         tenantKey: null,
@@ -597,7 +603,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
         isAdmin: true,
         installationId: INSTALLATION_ID,
         appId: "cli_feishu",
-        callbackUrl: `https://api.okou.test/api/webhooks/feishu/events/${INSTALLATION_ID}`,
+        callbackUrl,
         callbackVerified,
         messageReceived: false,
         tenantKey: null,
@@ -621,15 +627,59 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(
       screen.getByText("Configure the OAuth redirect URL"),
     ).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue(`https://app.okou.test${provider.callbackPath}`),
-    ).toBeInTheDocument();
+    const redirectInput = screen.getByRole("textbox", {
+      name: "OAuth redirect URL",
+    });
+    expect(redirectInput).toHaveValue("");
+    expect(redirectInput).toHaveProperty("readOnly", true);
+    expect(redirectInput).toBeEnabled();
+    oauthRedirectUrl = `https://app.okou.test${provider.callbackPath}`;
+    context.mocks.ably.trigger("feishu:changed");
+    await waitFor(() => {
+      expect(
+        screen.getByRole("textbox", { name: "OAuth redirect URL" }),
+      ).toHaveValue(oauthRedirectUrl);
+    });
+    await user.click(redirectInput);
+    await user.keyboard("{Control>}a{/Control}");
+    expect(redirectInput).toHaveFocus();
+    expect(redirectInput).toHaveProperty("selectionStart", 0);
+    expect(redirectInput).toHaveProperty(
+      "selectionEnd",
+      oauthRedirectUrl.length,
+    );
+    click(getAction("button", "Copy"));
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([oauthRedirectUrl]);
+    });
+    expect(redirectInput).toHaveValue(oauthRedirectUrl);
     click(getAction("button", "Next"));
     expect(screen.getByText("Import app and user scopes")).toBeInTheDocument();
     click(getAction("button", "Next"));
     expect(screen.getByText("Configure event delivery")).toBeInTheDocument();
     expect(screen.getAllByText("Waiting for callback")).not.toHaveLength(0);
     expect(document.body).toHaveTextContent("im.message.receive_v1");
+    const callbackInput = screen.getByRole("textbox", { name: "Callback URL" });
+    expect(callbackInput).toHaveValue("");
+    expect(callbackInput).toHaveProperty("readOnly", true);
+    expect(callbackInput).toBeEnabled();
+    callbackUrl = `https://api.okou.test/api/webhooks/${platform}/events/${INSTALLATION_ID}`;
+    context.mocks.ably.trigger("feishu:changed");
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Callback URL" })).toHaveValue(
+        callbackUrl,
+      );
+    });
+    await user.click(callbackInput);
+    await user.keyboard("{Control>}a{/Control}");
+    expect(callbackInput).toHaveFocus();
+    expect(callbackInput).toHaveProperty("selectionStart", 0);
+    expect(callbackInput).toHaveProperty("selectionEnd", callbackUrl.length);
+    click(getAction("button", "Copy"));
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([oauthRedirectUrl, callbackUrl]);
+    });
+    expect(getAction("button", "Waiting for callback")).toBeDisabled();
     callbackVerified = true;
     isConnected = true;
     context.mocks.ably.trigger("feishu:changed");
@@ -637,6 +687,9 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     await expect(
       screen.findByText("Callback verified"),
     ).resolves.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Callback URL" })).toHaveValue(
+      callbackUrl,
+    );
     expect(
       screen.getByText(`${provider.name} connected successfully`),
     ).toBeInTheDocument();

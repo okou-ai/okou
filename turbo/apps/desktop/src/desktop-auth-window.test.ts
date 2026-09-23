@@ -789,17 +789,15 @@ describe("Interactive sign-in deadlines", () => {
     );
     server.listen({ onUnhandledRequest: "error" });
     try {
-      // Zero is the shortest delay this deadline can carry, and the window arms
-      // it while `consumeCode` is still synchronous, so a timer queued below it
-      // cannot run first.
+      // A hidden restore would arm the window's zero-delay timeout here. An
+      // interactive sign-in must leave that external clock boundary untouched.
       const { session, refreshes } = setup(0);
+      const timeout = vi.spyOn(globalThis, "setTimeout");
       const pending = session.consumeCode("code");
       const window = currentWindow();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(timeout).not.toHaveBeenCalledWith(expect.any(Function), 0);
+      timeout.mockRestore();
 
-      // Getting this far is the proof: an armed deadline would already have
-      // settled the attempt, and the sign-in that outlasted it still completes.
       navigate(window, "/desktop-auth/token");
       await deliver(window);
       navigate(window, "/");

@@ -404,7 +404,12 @@ function SettingsDialog({
                 }
               }}
             >
-              <SelectTrigger className="h-9 w-full">
+              <SelectTrigger
+                className="h-9 w-full"
+                aria-label={t(($) => {
+                  return $.settings.dialog.sectionNavigation;
+                })}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

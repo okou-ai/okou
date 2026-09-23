@@ -1467,20 +1467,7 @@
             "title": "Work with {{assistantName}} where your team already talks"
           },
           "workflow": {
-            "browse": "Browse templates",
-            "confirm": "Give me one to try",
             "description": "Turn a job you repeat into a workflow the team can run.",
-            "prompt": "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
-            "promptConfirm": "Send it to {{assistantName}}",
-            "promptDescription": "Send this to {{assistantName}} as it is, or change the wording first.",
-            "promptOutcome": "It reads the sources, groups what it finds and replies with the table. If the result is right, it offers to keep the run as a workflow.",
-            "promptTitle": "Ask the way you would ask a colleague",
-            "stepRun": "Run it once",
-            "stepRunDescription": "You see the finished work before you commit to anything.",
-            "stepSave": "Save it, then give it a schedule",
-            "stepSaveDescription": "It runs without anyone asking, and any teammate can run it too.",
-            "stepTemplate": "Start from a template",
-            "stepTemplateDescription": "Pick one close to your job instead of starting from a blank page.",
             "title": "One good run becomes something the team keeps"
           }
         },
@@ -6027,6 +6014,7 @@
         "personal": "Personal",
         "workspace": "Workspace"
       },
+      "sectionNavigation": "Settings section",
       "sections": {
         "billing": {
           "description": "Manage your plan and payment method.",
@@ -7745,6 +7733,7 @@
       },
       "notFound": "Workflow not found.",
       "refineWith": "Refine with {{agent}}",
+      "sectionNavigation": "Workflow details section",
       "shadow": {
         "end": "for you. This workflow is shadowed by the same-slug priority rule.",
         "resolvesTo": "currently resolves to"

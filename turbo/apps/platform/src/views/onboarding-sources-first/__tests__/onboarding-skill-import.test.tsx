@@ -328,7 +328,7 @@ test("Refreshing the skills step restores the chosen tool", async () => {
   context.store.set(
     draftStorage.set$,
     JSON.stringify({
-      version: 1,
+      version: 2,
       orgId: "org_default",
       userId: "test-user-123",
       industry: "marketing",
@@ -336,6 +336,8 @@ test("Refreshing the skills step restores the chosen tool", async () => {
       provider: "claudeCode",
       startingPromptDraft: "Draft my launch plan",
       startingPromptKey: "marketing:gmail",
+      recommendationJobId: null,
+      recommendationStartedAt: null,
     }),
   );
 
@@ -363,7 +365,7 @@ test("A saved draft from another user cannot select the current user's tool", as
   context.store.set(
     draftStorage.set$,
     JSON.stringify({
-      version: 1,
+      version: 2,
       orgId: "org_default",
       userId: "another-user",
       industry: "marketing",
@@ -371,6 +373,8 @@ test("A saved draft from another user cannot select the current user's tool", as
       provider: "claudeCode",
       startingPromptDraft: "",
       startingPromptKey: "",
+      recommendationJobId: null,
+      recommendationStartedAt: null,
     }),
   );
 

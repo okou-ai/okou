@@ -103,6 +103,18 @@ function browserInputAction(
   };
 }
 
+function mockPendingPreflight(onCheck?: () => void) {
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    ({ params, body, respond }) => {
+      expect(params.requestToken).toBe(BROWSER_INPUT_TOKEN);
+      expect(body).toStrictEqual({});
+      onCheck?.();
+      return respond(200, browserInputAction("pending"));
+    },
+  );
+}
+
 function browserInputUrl(
   args: {
     readonly agentId?: string;
@@ -594,6 +606,7 @@ test("Apply native browser input before continuing with stable callback IDs", as
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, browserInputAction(state));
   });
+  mockPendingPreflight();
   context.mocks.api(
     browserUserActionsContract.apply,
     ({ body, params, respond }) => {
@@ -617,7 +630,7 @@ test("Apply native browser input before continuing with stable callback IDs", as
   const dialog = await screen.findByRole("dialog", {
     name: "Enter information in browser",
   });
-  const form = within(dialog).getByRole("form", {
+  const form = await within(dialog).findByRole("form", {
     name: "Enter information in browser",
   });
   expect(within(form).getByText("https://accounts.example.test")).toBeVisible();
@@ -659,6 +672,7 @@ test("Share one action state across equivalent absolute and relative URLs", asyn
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, browserInputAction(state));
   });
+  mockPendingPreflight();
   context.mocks.api(browserUserActionsContract.apply, ({ respond }) => {
     state = "succeeded";
     return respond(200, browserInputAction(state));
@@ -676,6 +690,9 @@ test("Share one action state across equivalent absolute and relative URLs", asyn
   const dialog = await screen.findByRole("dialog", {
     name: "Enter information in browser",
   });
+  await within(dialog).findByRole("form", {
+    name: "Enter information in browser",
+  });
   await fill(
     within(dialog).getByLabelText("Account email"),
     "user@example.test",
@@ -688,12 +705,44 @@ test("Share one action state across equivalent absolute and relative URLs", asyn
   });
 });
 
+test("An inline preflight mismatch closes the editable path and shows the agent guidance", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  installCapabilityChat({
+    events: completedConversation(`[Enter details](${browserInputUrl()})`),
+  });
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, browserInputAction(state));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    state = "stale";
+    return respond(200, browserInputAction(state));
+  });
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await readyChat();
+  click(await findButton("Enter information"));
+  await expect(screen.findByText("Fields changed")).resolves.toBeVisible();
+  expect(screen.queryByRole("form")).toBeNull();
+  expect(
+    screen.getByText("Ask the agent to create a new request."),
+  ).toBeVisible();
+});
+
 test("Closing the browser input dialog keeps non-password values only", async () => {
+  let preflightCount = 0;
   installCapabilityChat({
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, browserInputAction("pending"));
+  });
+  mockPendingPreflight(() => {
+    preflightCount += 1;
   });
 
   await setupPage({
@@ -706,6 +755,9 @@ test("Closing the browser input dialog keeps non-password values only", async ()
 
   click(await findButton("Enter information"));
   const firstDialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await within(firstDialog).findByRole("form", {
     name: "Enter information in browser",
   });
   await fill(
@@ -728,6 +780,10 @@ test("Closing the browser input dialog keeps non-password values only", async ()
   const reopenedDialog = await screen.findByRole("dialog", {
     name: "Enter information in browser",
   });
+  await within(reopenedDialog).findByRole("form", {
+    name: "Enter information in browser",
+  });
+  expect(preflightCount).toBe(2);
   expect(within(reopenedDialog).getByLabelText("Account email")).toHaveValue(
     "user@example.test",
   );
@@ -752,6 +808,7 @@ test("Cancel browser input before sending the fixed cancellation callback", asyn
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, browserInputAction(state));
   });
+  mockPendingPreflight();
   context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
     ordering.push("cancel");
     state = "cancelled";

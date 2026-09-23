@@ -26,6 +26,7 @@ import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
   PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
   assertPiNativeCredential,
   materializePiExecutionRoute,
   normalizePiExecutionRoute,
@@ -7515,15 +7516,13 @@ function assemblePiLaunchResources(args: {
           args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
-        // The rootfs-installed CLI is used only for this exact runtime build;
-        // anything else launches the commit-addressed package (#35967). This
-        // launch config is persisted in the encrypted queue payload and decoded
-        // by whichever API instance serves the claim through the strict
-        // `piApiFirstTurnConfigSchema`, so the tolerant reader shipped first in
-        // 8d8f3a3e14d23f7471e0773bd9acb988f59217af (api 1.657.0), which the
-        // production rollback resolver now enforces as the API floor.
+        // The installed CLI must have this session construction and meet the
+        // CLI floor; otherwise the guest uses the commit-addressed package.
+        // The queued launch config is decoded by a strict API reader, so the
+        // production rollback floor includes the digest reader in 322efb6d.
         requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
         minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+        requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
       },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined

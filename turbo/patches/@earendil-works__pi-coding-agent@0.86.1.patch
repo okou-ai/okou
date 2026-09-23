@@ -533,7 +533,7 @@ index 7241668..293d1f1 100644
      }
  }
 diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
-index d4f306e..f874ee5 100644
+index d4f306e..840d2d1 100644
 --- a/dist/modes/json-event.d.ts
 +++ b/dist/modes/json-event.d.ts
 @@ -9,6 +9,11 @@ type ToJsonAssistantMessageEvent<T> = T extends {
@@ -548,8 +548,21 @@ index d4f306e..f874ee5 100644
  } : WithoutPartial<T>;
  type MessageUpdateEvent = Extract<AgentSessionEvent, {
      type: "message_update";
-@@ -24,9 +29,10 @@ export type JsonAgentSessionEvent = Exclude<AgentSessionEvent, {
- }> | JsonMessageUpdateEvent;
+@@ -18,15 +23,28 @@ type JsonMessageUpdateEvent = {
+     usage: Usage;
+     assistantMessageEvent: ToJsonAssistantMessageEvent<MessageUpdateEvent["assistantMessageEvent"]>;
+ };
++type AgentEndEvent = Extract<AgentSessionEvent, {
++    type: "agent_end";
++}>;
++type JsonAgentEndEvent = Omit<AgentEndEvent, "messages">;
+ /** Session event shape emitted by the JSON and RPC stdout protocols. */
+ export type JsonAgentSessionEvent = Exclude<AgentSessionEvent, {
+     type: "message_update";
+-}> | JsonMessageUpdateEvent;
++} | {
++    type: "agent_end";
++}> | JsonMessageUpdateEvent | JsonAgentEndEvent;
  /**
   * Remove cumulative assistant snapshots from streaming wire events.
 - * `message_start` provides the initial message, deltas build it, and
@@ -559,11 +572,17 @@ index d4f306e..f874ee5 100644
 + * value. Anthropic `text_start` retains initial block text because it may not
 + * be repeated as a delta. Cumulative usage, tool-call ids, and tool names remain
 + * available because their size is constant.
++ *
++ * `agent_end` drops `messages` for the same reason. That array is the agent
++ * loop's return value for embedders, but a streaming consumer has already
++ * received every message in it as an individual `message_end`, so on the wire
++ * it is a duplicate whose size grows with the run. The event itself is kept as
++ * a loop boundary, with `willRetry` intact.
   */
  export declare function toJsonEvent(event: MessageUpdateEvent): JsonMessageUpdateEvent;
  export declare function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent;
 diff --git a/dist/modes/json-event.js b/dist/modes/json-event.js
-index b2671b8..c593764 100644
+index b2671b8..6537158 100644
 --- a/dist/modes/json-event.js
 +++ b/dist/modes/json-event.js
 @@ -7,6 +7,11 @@ function toJsonAssistantMessageEvent(event) {
@@ -576,6 +595,17 @@ index b2671b8..c593764 100644
 +        return text?.type === "text" && text.text ? { ...deltaEvent, initialText: text.text } : deltaEvent;
 +    }
      if (!("partial" in event)) {
+         return event;
+     }
+@@ -14,6 +19,10 @@ function toJsonAssistantMessageEvent(event) {
+     return deltaEvent;
+ }
+ export function toJsonEvent(event) {
++    if (event.type === "agent_end") {
++        const { messages: _messages, ...boundaryEvent } = event;
++        return boundaryEvent;
++    }
+     if (event.type !== "message_update") {
          return event;
      }
 diff --git a/dist/utils/child-process.d.ts b/dist/utils/child-process.d.ts

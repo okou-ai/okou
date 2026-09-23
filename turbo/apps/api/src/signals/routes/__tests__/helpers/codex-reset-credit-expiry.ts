@@ -97,7 +97,6 @@ export function createCodexExpiryFixture(context: TestContext) {
       auth?: ReturnType<typeof credentials>;
       orgId?: string;
       userId?: string;
-      priority?: boolean;
     } = {},
   ) {
     const owner = {
@@ -112,8 +111,6 @@ export function createCodexExpiryFixture(context: TestContext) {
     await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.PersonalModelProviderAccounts]:
         options.accounts ?? false,
-      [FeatureSwitchKey.PersonalSubscriptionPriority]:
-        options.priority ?? false,
     });
     const client = (signal?: AbortSignal) => {
       return setupApp({ context, routes, signal, rethrowErrors: true })(

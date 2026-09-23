@@ -583,6 +583,28 @@ export default [
       "src/**/__tests__/**/*.ts",
       "src/**/*.test.ts",
       "src/test-fixtures/**/*.ts",
+    ],
+    rules: {
+      "ccstate/no-test-delay": [
+        "error",
+        {
+          allowed: [
+            {
+              file: "src/signals/routes/__tests__/morning-brief-composition.test.ts",
+              kinds: ["delay"],
+              reason:
+                "Issue #35737 verifies successful provider reads before a real source deadline; #35594 tracks replacing the pacing with a controlled deadline signal.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "src/**/__tests__/**/*.ts",
+      "src/**/*.test.ts",
+      "src/test-fixtures/**/*.ts",
       "src/signals/routes/test-*.ts",
     ],
     rules: {
@@ -658,6 +680,12 @@ export default [
       // a schema fixture would defeat the point of a layer that exists because
       // TypeScript exports are not the database.
       "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
+      // The hosted-site object sink proves bytes do not outlive the catalog row
+      // that named them, so its central case deletes the deployment row before
+      // any object is touched. No endpoint can construct a captured locator
+      // whose row is already gone, and object absence is read back from the
+      // provider rather than from a response this API serves.
+      "src/signals/services/__tests__/account-erasure-hosted-site-collector.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
@@ -673,6 +701,10 @@ export default [
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
       "src/signals/services/__tests__/pi-resource-snapshot.service.test.ts",
+      // The API-owned first-turn projection has no endpoint that returns its
+      // private execution context. Route tests cover the queued launch config;
+      // this focused check preserves the digest across the projection itself.
+      "src/signals/services/__tests__/pi-api-first-turn-config.test.ts",
       // Stable-context projection bytes are shared with persisted artifacts,
       // while PostgreSQL generation/CAS and lease races have no production
       // endpoint that can construct or observe their exact transition matrix.

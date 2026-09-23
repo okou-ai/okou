@@ -197,12 +197,15 @@ export function createFirewallApi(context: TestContext) {
     },
 
     mockTestOauthTokenRefresh(
-      handler: () => Response | Promise<Response>,
+      handler: (request: Request) => Response | Promise<Response>,
     ): void {
       server.use(
-        http.post("http://localhost:3000/api/test/oauth-provider/token", () => {
-          return handler();
-        }),
+        http.post(
+          "http://localhost:3000/api/test/oauth-provider/token",
+          ({ request }) => {
+            return handler(request);
+          },
+        ),
       );
     },
 

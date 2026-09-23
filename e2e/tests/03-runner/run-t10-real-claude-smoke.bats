@@ -21,6 +21,7 @@ setup_file() {
     policies="$(runner_api_curl "/api/model-policies")"
     policy_payload="$(jq -c --arg model "$REAL_PI_MODEL" '
         {
+            revision,
             policies: (
                 [.policies[] |
                     select(.model != $model) |

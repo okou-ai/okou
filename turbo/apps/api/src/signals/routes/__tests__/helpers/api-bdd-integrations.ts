@@ -1297,12 +1297,19 @@ export function createBddIntegrationApi(context: TestContext) {
         }),
         [200, 201],
       );
+      const snapshot = await accept(
+        setupApp({ context, routes: modelPoliciesRoutes })(
+          modelPoliciesMainContract,
+        ).list({ headers: authenticate(context, routeMocks, actor) }),
+        [200],
+      );
       await accept(
         setupApp({ context, routes: modelPoliciesRoutes })(
           modelPoliciesMainContract,
         ).update({
           headers: authenticate(context, routeMocks, actor),
           body: {
+            revision: snapshot.body.revision,
             policies: [
               {
                 model: "claude-sonnet-5",

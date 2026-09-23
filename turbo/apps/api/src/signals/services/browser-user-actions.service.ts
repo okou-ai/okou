@@ -33,6 +33,7 @@ import {
   BrowserUseUserActionValidationError,
   BrowserUseUserActionMutationError,
   getBrowserUseSession,
+  preflightBrowserUseUserAction,
   validateBrowserUseUserAction,
 } from "./browser-use.service";
 import {
@@ -994,6 +995,137 @@ function exactInputTarget(
     pageUrlHash: payload.target.pageUrlHash,
   };
 }
+
+async function markPendingBrowserUserActionStale(
+  db: Db,
+  row: RequestRow,
+): Promise<RequestRow | null> {
+  const [stale] = await db
+    .update(browserUserActionRequests)
+    .set({ status: "stale", completedAt: nowDate() })
+    .where(
+      and(
+        eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
+        eq(browserUserActionRequests.status, "pending"),
+      ),
+    )
+    .returning();
+  return stale ?? null;
+}
+
+export const preflightBrowserUserAction$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly requestToken: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ServiceResult<BrowserUserActionResponse>> => {
+    const db = set(writeDb$);
+    const located = await loadOwnedRequest(db, args);
+    signal.throwIfAborted();
+    if (!located) {
+      return notFound();
+    }
+    const admitted = await withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: located.chatThreadId,
+        authorize: (identity) => {
+          return authorized(located, identity);
+        },
+        threadLock: "update",
+      },
+      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
+        const operationDb = tx as Db;
+        const current = await loadExactRequest(operationDb, located);
+        if (!current) {
+          return notFound();
+        }
+        const payload = decodePayload(current);
+        if (!payload) {
+          return conflict(
+            "Browser user-action request payload is unavailable",
+            "BROWSER_USER_ACTION_UNAVAILABLE",
+          );
+        }
+        if (payload.kind !== "input") {
+          return conflict("This Browser request does not accept input values");
+        }
+        if (current.status !== "pending") {
+          return conflict("Browser input is no longer pending");
+        }
+        const leased = await touchExactProvider(operationDb, current);
+        if (!leased) {
+          return expired();
+        }
+        const provider = await settle(
+          getBrowserUseSession(current.providerSessionId, signal),
+        );
+        signal.throwIfAborted();
+        if (!provider.ok) {
+          return providerFailure(provider.error);
+        }
+        if (provider.value.status === "stopped") {
+          const stale = await markPendingBrowserUserActionStale(
+            operationDb,
+            current,
+          );
+          return stale
+            ? {
+                kind: "ok",
+                value: publicRequest(stale, args.requestToken, payload),
+              }
+            : conflict("Browser input state changed during preflight");
+        }
+        if (!provider.value.cdpUrl) {
+          return providerFailure(new Error("Browser provider is not active"));
+        }
+        const target = exactInputTarget(payload);
+        const checked = await settle(
+          preflightBrowserUseUserAction(
+            provider.value.cdpUrl,
+            {
+              ...target,
+              fields: payload.target.fields.map((field) => {
+                return {
+                  backendNodeId: field.backendNodeId,
+                  fingerprint: field.fingerprint,
+                };
+              }),
+            },
+            signal,
+          ),
+        );
+        signal.throwIfAborted();
+        if (!checked.ok) {
+          return providerFailure(checked.error);
+        }
+        if (checked.value === "stale") {
+          const stale = await markPendingBrowserUserActionStale(
+            operationDb,
+            current,
+          );
+          if (!stale) {
+            return conflict("Browser input state changed during preflight");
+          }
+          return {
+            kind: "ok",
+            value: publicRequest(stale, args.requestToken, payload),
+          };
+        }
+        return {
+          kind: "ok",
+          value: publicRequest(current, args.requestToken, payload),
+        };
+      },
+      signal,
+    );
+    return admitted.outcome === "written" ? admitted.value : notFound();
+  },
+);
 
 async function claimBrowserUserAction(
   db: Db,

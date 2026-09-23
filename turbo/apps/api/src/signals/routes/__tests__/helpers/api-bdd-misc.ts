@@ -623,13 +623,25 @@ export function createMiscRoutesApi(context: TestContext) {
       statuses: readonly (200 | 400 | 401 | 403 | 404 | 500)[],
       revision?: string,
     ) {
+      // The write precondition is mandatory, so default to the revision this
+      // actor can read right now unless the caller pinned one.
+      const resolvedRevision =
+        revision ??
+        (
+          await accept(
+            setupApp({ context, routes: modelPoliciesRoutes })(
+              modelPoliciesMainContract,
+            ).list({ headers: authenticate(context, actor) }),
+            [200],
+          )
+        ).body.revision;
       return await accept(
         setupApp({ context, routes: modelPoliciesRoutes })(
           modelPoliciesMainContract,
         ).update({
           headers: authenticate(context, actor),
           body: {
-            revision,
+            revision: resolvedRevision,
             policies: policies.map((policy) => {
               return {
                 model: policy.model,

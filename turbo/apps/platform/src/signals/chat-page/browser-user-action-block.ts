@@ -17,7 +17,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef, onRejection } from "../utils.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -68,6 +68,9 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
+  readonly entryState$: Computed<"idle" | "checking" | "ready" | "unavailable">;
+  readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
+  readonly endEntry$: Command<void, []>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly clearDraft$: Command<void, []>;
@@ -83,6 +86,63 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly complete$: Command<Promise<void>, [AbortSignal]>;
   readonly cancel$: Command<Promise<void>, [AbortSignal]>;
   readonly continue$: Command<Promise<void>, [AbortSignal]>;
+}
+
+function createEntrySignals(
+  descriptor: BrowserUserActionDescriptor,
+  refresh$: BrowserUserActionSignals["refresh$"],
+): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$" | "endEntry$"> {
+  const internalState$ = state<"idle" | "checking" | "ready" | "unavailable">(
+    "idle",
+  );
+  const resetEntrySignal$ = resetSignal();
+  const beginEntry$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const operationSignal = set(resetEntrySignal$, signal);
+    set(internalState$, "checking");
+    const checked = await settle(
+      accept(
+        get(apiClient$)(browserUserActionsContract).preflight({
+          params: { requestToken: descriptor.requestToken },
+          body: {},
+          fetchOptions: { signal: operationSignal },
+        }),
+        [200, 403, 404, 409, 410, 502, 503],
+        operationSignal,
+      ),
+      operationSignal,
+    );
+    signal.throwIfAborted();
+    operationSignal.throwIfAborted();
+    if (!checked.ok) {
+      set(internalState$, "unavailable");
+      return;
+    }
+    if (
+      checked.value.status === 200 &&
+      actionMatches(checked.value.body, descriptor) &&
+      checked.value.body.kind === "input" &&
+      checked.value.body.state === "pending"
+    ) {
+      set(internalState$, "ready");
+      return;
+    }
+    set(internalState$, "unavailable");
+    const status: number = checked.value.status;
+    if (status !== 502 && status !== 503) {
+      set(refresh$);
+    }
+  });
+  const endEntry$ = command(({ set }) => {
+    set(resetEntrySignal$);
+    set(internalState$, "idle");
+  });
+  return {
+    entryState$: computed((get) => {
+      return get(internalState$);
+    }),
+    beginEntry$,
+    endEntry$,
+  };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -666,6 +726,7 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
+  const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals(
     descriptor,
@@ -677,6 +738,7 @@ export function createBrowserUserActionSignals(
   return {
     ...descriptor,
     ...requestSignals,
+    ...entrySignals,
     ...draftSignals,
     ...mutationSignals,
   };

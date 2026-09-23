@@ -20,7 +20,6 @@ import {
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
@@ -159,7 +158,6 @@ async function prepareModelRoutingFacts(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly selectedModel: string | null;
-  readonly featureSwitchContext?: FeatureSwitchContext;
 }): Promise<ModelRoutingFacts> {
   const policyFactsPromise =
     params.userId === "__no_preference__"
@@ -167,12 +165,7 @@ async function prepareModelRoutingFacts(params: {
       : ensureOrgModelPolicyFacts(params.db, params.orgId, params.userId);
   const [policyFacts, member] = await Promise.all([
     policyFactsPromise,
-    prepareMemberModelRouteContext(
-      params.db,
-      params.orgId,
-      params.userId,
-      params.featureSwitchContext,
-    ),
+    prepareMemberModelRouteContext(params.db, params.orgId, params.userId),
   ]);
   return Object.freeze({
     identity: Object.freeze({
@@ -223,14 +216,12 @@ export async function resolveDefaultModelFirstPin(
   db: Db,
   orgId: string,
   userId: string,
-  options?: { readonly featureSwitchContext?: FeatureSwitchContext },
 ): Promise<DefaultModelFirstPin> {
   const facts = await prepareModelRoutingFacts({
     db,
     orgId,
     userId,
     selectedModel: null,
-    featureSwitchContext: options?.featureSwitchContext,
   });
   const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
   if (userId !== "__no_preference__") {
@@ -305,7 +296,6 @@ export async function resolvePersistedModelFirstRoute(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly selectedModel: string | null;
-  readonly featureSwitchContext?: FeatureSwitchContext;
 }): Promise<PersistedModelFirstRouteResolution> {
   const facts = await prepareModelRoutingFacts(params);
   const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
@@ -365,7 +355,6 @@ export async function resolveModelSelectionPin(params: {
   readonly orgId: string;
   readonly userId: string;
   readonly modelSelection: ModelSelectionRequest;
-  readonly featureSwitchContext?: FeatureSwitchContext;
 }): Promise<
   | ModelFirstPin
   | ReturnType<typeof badRequestMessage>
@@ -419,7 +408,6 @@ export async function resolveModelSelectionPin(params: {
     orgId,
     userId,
     selectedModel: modelSelection.selectedModel,
-    featureSwitchContext: params.featureSwitchContext,
   });
   // Resolve the configured route without plan filtering first. Model access is
   // decided from that route so BYOK never inherits a built-in-only model gate.

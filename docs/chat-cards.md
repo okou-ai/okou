@@ -668,8 +668,12 @@ actionable. Malformed, mismatched, unsupported, expired, or feature-disabled
 requests render an inert state.
 
 The fixed-height transcript card opens its native controls in
-`ChatCardDetails`; the authenticated full-page route renders the same form and
-signals directly. Repeated occurrences of an equivalent action share one
+`ChatCardDetails`; the authenticated full-page route exposes the same form
+after an explicit entry action. Both entries call the token-only Browser
+preflight before mounting any editable field. A confirmed page or control
+change makes the request stale; a temporary provider failure leaves a Retry
+action. The form does not poll while open, and submit revalidates the exact
+target before writing. Repeated occurrences of an equivalent action share one
 thread-scoped signals object, including the in-memory draft and mutation lock.
 Closing the dialog preserves text, username, and one-time-code fields for that
 page lifetime but clears password fields. Terminal and non-retryable states
