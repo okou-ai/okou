@@ -589,68 +589,87 @@ test("Show only the connector actions that are useful in chat", async () => {
   expect(accessRow(screen.getByLabelText("Add Axiom"))).toBe(axiomRow);
 });
 
-test("Use the shortest valid connector setup from chat", async () => {
-  const user = userEvent.setup({ delay: null });
-  const fixture = installComposerConnectorFixture({
-    catalog: [
-      builtinConnector({
-        slug: GOOGLE_ANALYTICS_SLUG,
-        label: "Google Analytics",
-        connected: false,
-        authMethods: [oauthAuthMethod()],
-      }),
-    ],
-  });
-  const authWindow = createAuthWindow();
-  const browserOpen = context.mocks.browser.open(authWindow);
-
-  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
-
-  await loadComposer();
-  await openConnectors(user);
-  const catalog = await openAddConnectors(user);
-  await user.type(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-    "Google Analytics",
-  );
-  await user.click(
-    await findFastControl("button", "Connect Google Analytics", catalog),
-  );
-  await waitFor(() => {
-    expect(fixture.oauthConnectionRequests).toHaveLength(1);
-    expect(fixture.oauthConnectionRequests[0]).toMatchObject({
-      connectorSlug: GOOGLE_ANALYTICS_SLUG,
-      authMethod: "oauth",
-      agentId: SCOUT_AGENT_ID,
-      authorizeAgent: true,
+test.each(["pointer", "Enter", "Space"] as const)(
+  "Start connector setup from chat with %s",
+  async (activation) => {
+    const user = userEvent.setup({ delay: null });
+    const fixture = installComposerConnectorFixture({
+      catalog: [
+        builtinConnector({
+          slug: GOOGLE_ANALYTICS_SLUG,
+          label: "Google Analytics",
+          connected: false,
+          authMethods: [oauthAuthMethod()],
+        }),
+      ],
     });
-    expect(authWindow.location.href).toBe(
-      "https://accounts.example.test/google-analytics",
+    const authWindow = createAuthWindow();
+    const browserOpen = context.mocks.browser.open(authWindow);
+
+    await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+
+    await loadComposer();
+    await openConnectors(user);
+    const catalog = await openAddConnectors(user);
+    await user.type(
+      within(catalog).getByPlaceholderText("Find connectors..."),
+      "Google Analytics",
     );
-  });
-  expect(browserOpen.calls).toHaveLength(1);
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(screen.queryByRole("dialog", { name: "Google Analytics" })).toBeNull();
-  expect(within(catalog).getByRole("status")).toHaveTextContent(
-    "Connecting...",
-  );
-  expect(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-  ).toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Connecting your account" }),
-  ).toBeNull();
-  authWindow.close();
-  await waitFor(() => {
+    const connect = await findFastControl(
+      "button",
+      "Connect Google Analytics",
+      catalog,
+    );
+    connect.focus();
+    if (activation === "Space") {
+      await user.keyboard("[Space>]");
+    }
     expect(within(catalog).queryByRole("status")).toBeNull();
-  });
-  await expect(
-    findFastControl("button", "Connect Google Analytics", catalog),
-  ).resolves.toBeEnabled();
-  expect(
-    within(catalog).getByPlaceholderText("Find connectors..."),
-  ).toHaveValue("Google Analytics");
-});
+    expect(authWindow.location.href).toBe("about:blank");
+    if (activation === "pointer") {
+      await user.click(connect);
+    } else {
+      await user.keyboard(activation === "Space" ? "[/Space]" : "{Enter}");
+    }
+    await waitFor(() => {
+      expect(fixture.oauthConnectionRequests).toHaveLength(1);
+      expect(fixture.oauthConnectionRequests[0]).toMatchObject({
+        connectorSlug: GOOGLE_ANALYTICS_SLUG,
+        authMethod: "oauth",
+        agentId: SCOUT_AGENT_ID,
+        authorizeAgent: true,
+      });
+      expect(authWindow.location.href).toBe(
+        "https://accounts.example.test/google-analytics",
+      );
+    });
+    expect(browserOpen.calls).toHaveLength(1);
+    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+    expect(
+      screen.queryByRole("dialog", { name: "Google Analytics" }),
+    ).toBeNull();
+    expect(within(catalog).getByRole("status")).toHaveTextContent(
+      "Connecting...",
+    );
+    expect(connect).toBeDisabled();
+    expect(
+      within(catalog).getByPlaceholderText("Find connectors..."),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("dialog", { name: "Connecting your account" }),
+    ).toBeNull();
+    authWindow.close();
+    await waitFor(() => {
+      expect(within(catalog).queryByRole("status")).toBeNull();
+    });
+    await expect(
+      findFastControl("button", "Connect Google Analytics", catalog),
+    ).resolves.toBeEnabled();
+    expect(
+      within(catalog).getByPlaceholderText("Find connectors..."),
+    ).toHaveValue("Google Analytics");
+  },
+);
 
 test.each([null, "Close", "Escape", "backdrop"] as const)(
   "Keep chat OAuth in one dialog, with explicit cancellation and outside-press protection (%s)",
