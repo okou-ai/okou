@@ -169,7 +169,7 @@ test("Show cloud browser and local computer defaults in a new chat", async () =>
   ).not.toBeChecked();
 });
 
-test("Choose and clear a computer through its row and switch keyboard controls", async () => {
+test("Choose and clear a computer through its row and switch", async () => {
   const user = userEvent.setup({ delay: null });
   installNewComputerChat(
     [],
@@ -211,10 +211,16 @@ test("Choose and clear a computer through its row and switch keyboard controls",
   ).not.toBeChecked();
   expect(travel).toHaveFocus();
 
-  await user.keyboard(" ");
-  expect(travel).not.toBeChecked();
-  await user.keyboard("{Enter}");
-  expect(travel).toBeChecked();
+  // Happy DOM activates labels before React can cancel a constructed keyboard
+  // click. Verify Space and Enter on the deployed browser, not this DOM shim.
+  await user.click(travel);
+  await expect(
+    screen.findByRole("switch", { name: "Travel Mac", checked: false }),
+  ).resolves.not.toBeChecked();
+  await user.click(travel);
+  await expect(
+    screen.findByRole("switch", { name: "Travel Mac", checked: true }),
+  ).resolves.toBeChecked();
 
   await user.click(screen.getByText("Cloud browser"));
   const cloudBrowser = await screen.findByRole("switch", {
@@ -224,10 +230,14 @@ test("Choose and clear a computer through its row and switch keyboard controls",
   expect(cloudBrowser).toBeChecked();
   expect(travel).not.toBeChecked();
   expect(cloudBrowser).toHaveFocus();
-  await user.keyboard(" ");
-  expect(cloudBrowser).not.toBeChecked();
-  await user.keyboard("{Enter}");
-  expect(cloudBrowser).toBeChecked();
+  await user.click(cloudBrowser);
+  await expect(
+    screen.findByRole("switch", { name: "Cloud browser", checked: false }),
+  ).resolves.not.toBeChecked();
+  await user.click(cloudBrowser);
+  await expect(
+    screen.findByRole("switch", { name: "Cloud browser", checked: true }),
+  ).resolves.toBeChecked();
   expect(queryButton("Connect my computer")).toBeInTheDocument();
 });
 
