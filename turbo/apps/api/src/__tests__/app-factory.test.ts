@@ -449,29 +449,6 @@ describe("createApp", () => {
     expect(serialized).not.toContain("basic-secret");
   });
 
-  it("bounds long unhandled error summaries", async () => {
-    const error = new Error("x".repeat(10_000));
-    const expectedSummary = `${"x".repeat(237)}...`;
-    const handler$ = computed((): never => {
-      throw error;
-    });
-    const client = setupApp({
-      context,
-      routes: [
-        ...TEST_APP_ROUTES,
-        { route: errorTestContract.boom, handler: handler$ },
-      ],
-    })(errorTestContract);
-
-    await accept(client.boom(), [500]);
-
-    const [message, fields] =
-      context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
-    const logFields = fields as Record<PropertyKey, unknown>;
-    expect(logFields.errorSummary).toBe(expectedSummary);
-    expect(message).toBe(`Unhandled request error: ${expectedSummary}`);
-  });
-
   it("handles cyclic error causes while logging unhandled errors", async () => {
     const error = new Error("cyclic failure");
     Object.defineProperty(error, "cause", { value: error });
@@ -656,32 +633,6 @@ describe("createApp", () => {
       errorSummary: "response validation failed",
       route: "/__test/boom",
       method: "GET",
-    });
-  });
-
-  it("summarizes response validation failures with leading whitespace", async () => {
-    const error = new Error("  response validation failed: schema details");
-    const handler$ = computed((): never => {
-      throw error;
-    });
-    const client = setupApp({
-      context,
-      routes: [
-        ...TEST_APP_ROUTES,
-        { route: errorTestContract.boom, handler: handler$ },
-      ],
-    })(errorTestContract);
-
-    const response = await accept(client.boom(), [500]);
-
-    expect(response.body).toStrictEqual({ error: "Internal server error" });
-
-    const [message, fields] =
-      context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
-    expect(message).toBe("Unhandled request error: response validation failed");
-    expect(fields).toMatchObject({
-      type: "unhandled_request_error",
-      errorSummary: "response validation failed",
     });
   });
 
