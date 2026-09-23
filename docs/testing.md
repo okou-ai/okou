@@ -88,8 +88,8 @@ without a new change, failure, or unresolved concern.
 
 ## CI Duration Warning
 
-The root Vitest CI reporter emits a GitHub warning when one test file spends
-30 seconds or more executing tests. The budget measures accumulated test time
+The root and Desktop Vitest CI reporters emit a GitHub warning when one test
+file spends 30 seconds or more executing tests. The budget measures accumulated test time
 inside the file, separate from environment and transform overhead. Investigate
 fixed sleeps, broad fixtures, and repeated real deadlines when a warning
 appears. Keep real database and process deadline tests when their timing is the
