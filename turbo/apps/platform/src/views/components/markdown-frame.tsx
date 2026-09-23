@@ -20,16 +20,15 @@ export function MarkdownFrame({
       data-color-mode={theme}
       className={cn(
         "wmde-markdown",
-        "min-w-0 max-w-full !bg-transparent !text-foreground text-sm",
+        "min-w-0 max-w-full bg-transparent! text-foreground!",
+        // The vendor's unlayered typography outranks normal utilities. Keep
+        // caller-supplied runtime typography authoritative when it is present.
+        style?.fontSize === undefined && "text-[0.875rem]!",
+        style?.lineHeight === undefined && "leading-normal!",
+        style?.fontFamily === undefined && "font-family-sans!",
         className,
       )}
-      style={{
-        backgroundColor: "transparent",
-        fontSize: "0.875rem",
-        lineHeight: "1.5",
-        fontFamily: "var(--font-family-sans)",
-        ...style,
-      }}
+      style={style}
     >
       {children}
     </div>

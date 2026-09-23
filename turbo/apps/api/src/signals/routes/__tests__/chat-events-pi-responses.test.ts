@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from "node:crypto";
-import { MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS } from "@okouai/api-contracts/contracts/model-price-tiers";
 import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -75,6 +74,7 @@ const {
   upsertOrgModelProvider,
   claimGptPiSandbox,
   mockPiCheckpointObjectStore,
+  completeSandboxFirstPiRun,
   expectNoPiApiFirstTurnArtifacts,
   piS3Object,
   publishPendingPiInstructions,
@@ -169,6 +169,34 @@ function expectApiKeyGptSandboxCarrier(
     sourceUserId: "__org__",
     metadataKey: route.type,
   });
+}
+
+async function expectApiKeyGptSandboxCredential(
+  claim: Awaited<ReturnType<typeof api.claimRunnerJob>>,
+  sandboxHeaders: { readonly authorization: string },
+  route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
+  secret: string,
+): Promise<void> {
+  if (!claim.encryptedSecrets) {
+    throw new Error("Expected API-key claim credentials");
+  }
+  const credential = await createFirewallApi(context).requestFirewallAuth(
+    sandboxHeaders,
+    {
+      encryptedSecrets: claim.encryptedSecrets,
+      authHeaders: {
+        Authorization: `Bearer ${secretTemplate(route.secretName)}`,
+      },
+      secretConnectorMap: claim.secretConnectorMap ?? undefined,
+      secretConnectorMetadataMap: claim.secretConnectorMetadataMap ?? undefined,
+    },
+    [200],
+  );
+  if (credential.status !== 200) {
+    throw new Error("Expected API-key firewall credential");
+  }
+  expect(credential.body.headers.Authorization).toBe(`Bearer ${secret}`);
+  expect(credential.body.resolvedSecrets).toStrictEqual([route.secretName]);
 }
 
 describe("CHAT-02: model-first provider policies", () => {
@@ -560,8 +588,8 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it("resumes pre-migration OpenRouter Chat JSONL through API-first Responses", async () => {
-    const { actor, agentId } = await entitledChatActor();
+  it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
     const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
@@ -693,55 +721,51 @@ describe("CHAT-02: model-first provider policies", () => {
         usagePricingResolution,
       );
     });
-    await waitForRunStatus(actor, second.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-
-    expect(modelRequests).toHaveLength(2);
-    const resumedRequest = modelRequests[1];
-    expect(resumedRequest).toMatchObject({ store: false });
-    expect(resumedRequest).not.toHaveProperty("previous_response_id");
-    const resumedInput = JSON.stringify(resumedRequest);
+    expect(modelRequests).toHaveLength(1);
+    const manifestBytes = checkpointObjects.get(
+      `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`,
+    );
+    if (!manifestBytes) {
+      throw new Error("Expected historical Pi resume manifest");
+    }
+    const manifest = piApiFirstTurnManifestSchema.parse(
+      JSON.parse(manifestBytes.toString("utf8")),
+    );
+    expect(manifest).toMatchObject({
+      schemaVersion: 4,
+      mode: "sandbox-first",
+      baseSession: { sessionId: first.threadId, sha256: legacyHash },
+      session: {
+        sessionId: first.threadId,
+        sha256: legacyHash,
+        rawSize: Buffer.byteLength(legacyJsonl),
+      },
+    });
+    if (manifest.schemaVersion !== 4) {
+      throw new Error("Expected referenced historical Pi session");
+    }
+    expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
+      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`,
+    );
     for (const marker of [
       "legacy API user context",
       "legacy API reasoning context",
-      "legacy API assistant context",
       "legacy API tool output",
       "legacy API tool conclusion",
-      prompt,
     ]) {
-      expect(occurrences(resumedInput, marker)).toBe(1);
+      expect(occurrences(legacyJsonl, marker)).toBe(1);
     }
-    const resumedSession = [...checkpointObjects.values()].find((bytes) => {
-      return bytes.toString("utf8").includes("post-migration API answer");
-    });
-    if (!resumedSession) {
-      throw new Error("Expected the migrated Responses H1 checkpoint");
-    }
-    const resumedJsonl = resumedSession.toString("utf8");
-    for (const marker of [
-      "legacy API reasoning context",
-      "legacy API tool output",
-      prompt,
-      "post-migration API answer",
-    ]) {
-      expect(occurrences(resumedJsonl, marker)).toBe(1);
-    }
-    expect(
-      MemoryPiSession.fromJsonl(resumedJsonl).hasPendingToolCalls(),
-    ).toBeFalsy();
+    const claim = await claimChatRun(runnerGroup, second.runId);
+    await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   }, 90_000);
 
   it.each(GPT_PI_BDD_MODELS)(
-    "reuses one OpenRouter Responses Pi session across standard, fast, and long-context turns for %s",
+    "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for %s",
     async (selectedModel) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       const orgId = requireOrgId(actor);
       const usagePricingResolution = await createGptUsagePricingResolution();
-      const longContextInputTokens =
-        MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS[selectedModel];
-      if (longContextInputTokens === undefined) {
-        throw new Error("Expected the Terra long-context pricing threshold");
-      }
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
         actor,
         selectedModel,
@@ -758,15 +782,14 @@ describe("CHAT-02: model-first provider policies", () => {
       const prompts = [
         "start standard Terra in the canonical Pi session",
         "continue fast Terra in the same Pi session",
-        "continue long-context Terra in the same Pi session",
+        "return to standard Terra in the same Pi session",
       ] as const;
       const answers = [
         "first standard Terra answer",
         "fast Terra answer",
-        "long-context Terra answer",
+        "returned standard Terra answer",
       ] as const;
       const modelRequests: unknown[] = [];
-      const observedTiers = ["default", "priority", "flex"] as const;
       server.use(
         http.post(
           "https://openrouter.ai/api/v1/responses",
@@ -784,22 +807,16 @@ describe("CHAT-02: model-first provider policies", () => {
               piResponsesTextSse(
                 answer,
                 requestIndex,
-                requestIndex === 2
-                  ? {
-                      input_tokens: longContextInputTokens,
-                      output_tokens: 3,
-                      total_tokens: longContextInputTokens + 3,
-                    }
-                  : {
-                      input_tokens: 10,
-                      output_tokens: 3,
-                      total_tokens: 13,
-                      input_tokens_details: {
-                        cached_tokens: 3,
-                        cache_write_tokens: 2,
-                      },
-                    },
-                observedTiers[requestIndex],
+                {
+                  input_tokens: 10,
+                  output_tokens: 3,
+                  total_tokens: 13,
+                  input_tokens_details: {
+                    cached_tokens: 3,
+                    cache_write_tokens: 2,
+                  },
+                },
+                "default",
               ),
               { headers: { "content-type": "text/event-stream" } },
             );
@@ -843,8 +860,22 @@ describe("CHAT-02: model-first provider policies", () => {
           usagePricingResolution,
         );
       });
-      await waitForRunStatus(actor, fast.runId, "completed", 10_000);
       await flushWaitUntilForTest();
+      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
+      expect(fastClaim.claim.piModelConfig).toMatchObject({
+        model: `openai/${selectedModel}`,
+        serviceTier: "priority",
+      });
+      await completeSandboxFirstPiRun({
+        actor,
+        answer: answers[1],
+        checkpointObjects,
+        claim: fastClaim,
+        prompt: prompts[1],
+        run: fast,
+        responsesModel: { provider: "openai", model: selectedModel },
+        usagePricingResolution,
+      });
       const fastBinding = await readThreadSessionBinding(
         context,
         first.threadId,
@@ -869,8 +900,24 @@ describe("CHAT-02: model-first provider policies", () => {
           usagePricingResolution,
         );
       });
-      await waitForRunStatus(actor, returned.runId, "completed", 10_000);
       await flushWaitUntilForTest();
+      const returnedClaim = await claimChatRun(runnerGroup, returned.runId);
+      expect(returnedClaim.claim.piModelConfig).toMatchObject({
+        model: `openai/${selectedModel}`,
+      });
+      expect(returnedClaim.claim.piModelConfig).not.toHaveProperty(
+        "serviceTier",
+      );
+      await completeSandboxFirstPiRun({
+        actor,
+        answer: answers[2],
+        checkpointObjects,
+        claim: returnedClaim,
+        prompt: prompts[2],
+        run: returned,
+        responsesModel: { provider: "openai", model: selectedModel },
+        usagePricingResolution,
+      });
       const returnedBinding = await readThreadSessionBinding(
         context,
         first.threadId,
@@ -885,14 +932,7 @@ describe("CHAT-02: model-first provider policies", () => {
         conversation_run_id: returned.runId,
       });
 
-      expect(modelRequests).toHaveLength(3);
-      const requestTiers = modelRequests.map((body) => {
-        return z
-          .object({ service_tier: z.literal("priority").optional() })
-          .passthrough()
-          .parse(body).service_tier;
-      });
-      expect(requestTiers).toStrictEqual([undefined, "priority", undefined]);
+      expect(modelRequests).toHaveLength(1);
       for (const body of modelRequests) {
         expect(body).toMatchObject({
           model: `openai/${selectedModel}`,
@@ -901,17 +941,8 @@ describe("CHAT-02: model-first provider policies", () => {
         });
         expect(body).not.toHaveProperty("previous_response_id");
       }
-      for (const [requestIndex, expectedTurns] of [
-        [0, [prompts[0]]],
-        [1, [prompts[0], answers[0], prompts[1]]],
-        [2, [prompts[0], answers[0], prompts[1], answers[1], prompts[2]]],
-      ] as const) {
-        const input = JSON.stringify(modelRequests[requestIndex]);
-        for (const turn of expectedTurns) {
-          expect(occurrences(input, turn)).toBe(1);
-        }
-        expect(occurrences(input, answers[requestIndex])).toBe(0);
-      }
+      expect(occurrences(JSON.stringify(modelRequests[0]), prompts[0])).toBe(1);
+      expect(occurrences(JSON.stringify(modelRequests[0]), answers[0])).toBe(0);
 
       for (const run of [first, fast, returned]) {
         await expect(
@@ -937,18 +968,8 @@ describe("CHAT-02: model-first provider policies", () => {
         cacheRead: 3,
         cacheCreation: 2,
       });
-      await expectPiApiUsage(fast.runId, selectedModel, ".fast", {
-        input: 5,
-        output: 3,
-        cacheRead: 3,
-        cacheCreation: 2,
-      });
-      await expectPiApiUsage(returned.runId, selectedModel, ".long_context", {
-        input: longContextInputTokens,
-        output: 3,
-        cacheRead: 0,
-        cacheCreation: 0,
-      });
+      await expectNoBuiltInModelUsage(fast.runId);
+      await expectNoBuiltInModelUsage(returned.runId);
 
       const visibleTurns = [
         { runId: first.runId, prompt: prompts[0], answer: answers[0] },
@@ -1399,7 +1420,6 @@ describe("CHAT-02: model-first provider policies", () => {
     "runs $name API-key $tier through API-first and generation-$generation Sandbox with $outcome and credential rotation",
     async (route) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const firewall = createFirewallApi(context);
       chatCallbacks.failIfChatCallbackRouteIsFetched();
       const initialSecret = `${route.type}-initial-secret`;
       const providerId = await configureApiKeyGptPiModel(
@@ -1407,6 +1427,7 @@ describe("CHAT-02: model-first provider policies", () => {
         route,
         initialSecret,
       );
+      const usagePricingResolution = await createGptUsagePricingResolution();
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const providerRequests: {
@@ -1484,31 +1505,12 @@ describe("CHAT-02: model-first provider policies", () => {
       expect(claim.piSessionId).toBe(first.threadId);
       expectApiKeyGptSandboxCarrier(claim, route, route.tier);
       expect(JSON.stringify(claim)).not.toContain(initialSecret);
-      if (!claim.encryptedSecrets) {
-        throw new Error("Expected API-key Terra claim credentials");
-      }
-      const sandboxCredential = await firewall.requestFirewallAuth(
+      await expectApiKeyGptSandboxCredential(
+        claim,
         sandboxHeaders,
-        {
-          encryptedSecrets: claim.encryptedSecrets,
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate(route.secretName)}`,
-          },
-          secretConnectorMap: claim.secretConnectorMap ?? undefined,
-          secretConnectorMetadataMap:
-            claim.secretConnectorMetadataMap ?? undefined,
-        },
-        [200],
+        route,
+        initialSecret,
       );
-      if (sandboxCredential.status !== 200) {
-        throw new Error("Expected exact API-key Terra firewall credential");
-      }
-      expect(sandboxCredential.body.headers.Authorization).toBe(
-        `Bearer ${initialSecret}`,
-      );
-      expect(sandboxCredential.body.resolvedSecrets).toStrictEqual([
-        route.secretName,
-      ]);
 
       const manifestBytes = checkpointObjects.get(manifestKey);
       const h1Bytes = checkpointObjects.get(sessionKey);
@@ -1682,26 +1684,38 @@ describe("CHAT-02: model-first provider policies", () => {
         model: route.selectedModel,
         runOptions: { codexServiceTier: route.tier },
       });
-      await waitForRunStatus(actor, followUp.runId, "completed");
       await flushWaitUntilForTest();
-      expect(providerRequests).toHaveLength(2);
-      expectApiKeyGptRequest(
-        providerRequests[1],
-        route,
-        initialSecret,
-        route.tier,
+      expect(providerRequests).toHaveLength(1);
+      const followUpManifestBytes = checkpointObjects.get(
+        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${followUp.runId}/manifest.json`,
       );
-      expect(providerRequests[1]).toMatchObject({
-        authorization: `Bearer ${initialSecret}`,
-        body: {
-          model: route.runtimeModel,
-          store: false,
-          stream: true,
-        },
+      if (!followUpManifestBytes) {
+        throw new Error("Expected API-key resume manifest");
+      }
+      expect(
+        piApiFirstTurnManifestSchema.parse(
+          JSON.parse(followUpManifestBytes.toString("utf8")),
+        ),
+      ).toMatchObject({
+        schemaVersion: 4,
+        mode: "sandbox-first",
+        baseSession: { sessionId: first.threadId, sha256: h2Hash },
       });
-      expect(JSON.stringify(providerRequests[1]?.body)).toContain(
-        sandboxToolResult,
-      );
+      const followUpClaim = await claimChatRun(runnerGroup, followUp.runId);
+      expectApiKeyGptSandboxCarrier(followUpClaim.claim, route, route.tier);
+      await completeSandboxFirstPiRun({
+        actor,
+        run: followUp,
+        claim: followUpClaim,
+        checkpointObjects,
+        prompt: followUpPrompt,
+        answer: `${route.name} Sandbox follow-up`,
+        responsesModel: {
+          provider: "openai",
+          model: route.runtimeModel,
+        },
+        usagePricingResolution,
+      });
       await expect(
         readThreadSessionConversation(context, first.threadId),
       ).resolves.toMatchObject({
@@ -1725,28 +1739,29 @@ describe("CHAT-02: model-first provider policies", () => {
           runOptions: { codexServiceTier: route.tier },
         });
       });
-      await waitForRunStatus(actor, rotated.runId, "completed");
       await flushWaitUntilForTest();
-      expect(providerRequests).toHaveLength(3);
-      expectApiKeyGptRequest(
-        providerRequests[2],
+      expect(providerRequests).toHaveLength(1);
+      const rotatedClaim = await claimChatRun(runnerGroup, rotated.runId);
+      expectApiKeyGptSandboxCarrier(rotatedClaim.claim, route, route.tier);
+      await expectApiKeyGptSandboxCredential(
+        rotatedClaim.claim,
+        rotatedClaim.sandboxHeaders,
         route,
         rotatedSecret,
-        route.tier,
       );
-      expect(providerRequests[2]).toMatchObject({
-        authorization: `Bearer ${rotatedSecret}`,
-        body: {
+      await completeSandboxFirstPiRun({
+        actor,
+        run: rotated,
+        claim: rotatedClaim,
+        checkpointObjects,
+        prompt: `continue after rotating the ${route.name} credential`,
+        answer: `${route.name} rotated Sandbox completion`,
+        responsesModel: {
+          provider: "openai",
           model: route.runtimeModel,
-          store: false,
-          stream: true,
         },
+        usagePricingResolution,
       });
-      const rotatedBody = JSON.stringify(providerRequests[2]?.body);
-      expect(occurrences(rotatedBody, firstPrompt)).toBe(1);
-      expect(occurrences(rotatedBody, sandboxAnswer)).toBe(1);
-      expect(occurrences(rotatedBody, followUpPrompt)).toBe(1);
-      expect(rotatedBody).toContain(sandboxToolResult);
       await expect(
         readThreadSessionConversation(context, first.threadId),
       ).resolves.toMatchObject({

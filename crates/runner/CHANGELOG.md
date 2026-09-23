@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.213.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.1...runner-rs-v0.213.2) (2026-09-23)
+
+
+### Refactoring
+
+* **runner:** extract network domain crate ([#36253](https://github.com/okou-ai/okou/issues/36253)) ([af59b4b](https://github.com/okou-ai/okou/commit/af59b4bb863dbfa5760bcbb17c7f81894a4edbc4))
+
 ## [0.213.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.0...runner-rs-v0.213.1) (2026-09-23)
 
 

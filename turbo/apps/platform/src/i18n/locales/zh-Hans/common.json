@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "连续 {{amount}} 天",
-        "title": "快速上手",
+        "title": "获得更多积分",
         "toGo": "还差 {{amount}}",
         "workflow": {
           "action": "搭建",
@@ -1831,14 +1831,10 @@
       "authorizationDescription": "为这个会话之后的运行选择一台 Desktop 主机。",
       "checkingCompatibility": "正在检查兼容性",
       "cloudBrowser": "云端浏览器",
-      "connectHost": "连接 {{hostName}}",
       "connectMyComputer": "连接我的电脑",
       "dialogDescription": "这样 {{desktopProductName}} 就能替你在浏览器和各种应用里干活，连 LinkedIn、Reddit 这类没有连接器的也可以。",
       "dialogTitle": "让 {{desktopProductName}} 使用你的电脑",
-      "disableCloudBrowser": "停用云端浏览器",
-      "disconnectHost": "断开 {{hostName}}",
       "downloadMacos": "下载 macOS 版",
-      "enableCloudBrowser": "启用云端浏览器",
       "hosts": "Computer Use 主机",
       "macosRequirement": "需要搭载 Apple 芯片、运行 macOS 14 或更高版本的 Mac，不支持 Intel Mac。",
       "noOnlineComputers": "没有在线的电脑",
@@ -1974,9 +1970,13 @@
       "title": "转发到"
     },
     "homeTasks": {
+      "empty": "暂时没有推荐任务",
       "existingThread": "继续聊天",
+      "exploreWorkflow": "探索工作流",
       "heading": "从近期工作中提取",
-      "newThread": "新建聊天"
+      "newTasksAvailable": "有新任务可查看",
+      "newThread": "新建聊天",
+      "reload": "重新加载任务"
     },
     "mail": {
       "bcc": "密送",
@@ -3186,12 +3186,19 @@
       "noConnectorsAlt": "暂无连接器",
       "otherCategory": "其他",
       "remoteAccess": "远程访问",
+      "remoteControl": {
+        "connections": "连接",
+        "credentials": "凭据",
+        "type": "类型"
+      },
       "scope": {
         "aria": "连接器范围",
         "attention": "需要处理",
         "connected": "已连接",
         "custom": "自定义",
         "discover": "发现",
+        "privateNetwork": "私有网络",
+        "remoteControl": "远程控制",
         "searchConnected": "查找已连接的连接器",
         "searchCustom": "查找自定义连接器"
       },

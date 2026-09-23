@@ -389,6 +389,15 @@ test("Presentation preview keeps keyboard navigation inside its focused controls
   await waitFor(() => {
     expect(screen.getByLabelText(previewLabel)).toHaveFocus();
   });
+  const titleHint = await screen.findByText(template.title, {
+    selector: '[data-slot="tooltip-content"]',
+  });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(titleHint).not.toBeInTheDocument();
+  });
+  expect(picker).toBeInTheDocument();
+  expect(screen.getByLabelText(previewLabel)).toHaveFocus();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(picker).not.toBeInTheDocument();

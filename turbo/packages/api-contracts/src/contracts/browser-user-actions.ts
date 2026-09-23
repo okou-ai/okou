@@ -167,6 +167,7 @@ const responseBaseSchema = z.object({
   agentId: z.uuid(),
   threadId: z.uuid(),
   callbackIds: callbackIdsSchema,
+  callbackDelivered: z.boolean().optional(),
 });
 
 export const browserUserActionResponseSchema = z.discriminatedUnion("kind", [

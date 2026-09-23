@@ -303,6 +303,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Select the platform-funded simple-morning-brief pipeline instead of the Official Workflow Run. Separate from the user's Morning Brief preference.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -348,14 +349,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Run owned chat threads with the official Pi runtime, streamed session output, native session persistence, and shared memory learning across interactive and automation turns.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.PiMemory]: {
     maintainer: "lancy@okou.ai",
     description:
-      "Extract, consolidate, and recall memory for Pi threads. Off for everyone, including the staff org; enabled one user at a time through explicit overrides.",
+      "Extract, consolidate, and recall memory for Pi threads in the staff organization.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.OpenRouterUsRouting]: {
     maintainer: "liangyou@okou.ai",
@@ -483,7 +484,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ConnectorDirectory]: {
     maintainer: "tongx@okou.ai",
     description:
-      "Shelf-based connector browsing in the chat composer and on the connectors page: a Discover/Your connectors scope segment with one filter each (category and agent), category shelves and chips, per-connector detail, and keyboard navigation.",
+      "Shelf-based connector browsing with Discover, Connected, Remote control, Private network, and Custom scopes on the connectors page, plus connector discovery in the chat composer.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

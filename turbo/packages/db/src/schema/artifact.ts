@@ -91,11 +91,10 @@ export const artifacts = pgTable(
 );
 
 /**
- * Durable handoff between schema rollout and the catalog-writing API.
- *
- * The migration installs a `run_uploaded_files` trigger that queues ready rows,
- * including rows written by the previous API version after the backfill. The
- * new API drains caller-owned rows before serving the catalog.
+ * Durable handoff for catalog writes and bounded recovery. Catalog-producing
+ * file writers enqueue in their transaction; a bounded worker can replay after
+ * a later sync fails.
+ * The legacy trigger also queues rows until the trigger-retirement release.
  */
 export const artifactCatalogPendingFiles = pgTable(
   "artifact_catalog_pending_files",

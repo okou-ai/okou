@@ -60,6 +60,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
 import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
@@ -69,6 +70,7 @@ import {
   chatThreadServiceTierFromCodex,
 } from "./chat-thread-event.service";
 import { withChatThreadContentWrite } from "./chat-thread-content-erasure-admission.service";
+import { persistChatThreadDraftRow } from "./chat-thread-draft-write.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import { cancelRun$, type CancelRunResult } from "./run-cancel.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
@@ -1000,6 +1002,23 @@ export const deleteChatThread$ = command(
 );
 
 /**
+ * The legacy draft `UPDATE` matched no owned thread.
+ *
+ * `chat_threads.user_id` is not a key column, so the retained `FOR KEY SHARE`
+ * lock does not conflict with a concurrent non-key `UPDATE` that moves the
+ * thread to another account, and under READ COMMITTED the legacy statement then
+ * re-evaluates its predicate against the moved row and matches nothing. The
+ * child row staged earlier in the same transaction must not survive that, so
+ * this rolls the whole write back and the route keeps its existing 404.
+ */
+class ChatThreadDraftNotWritten extends Error {
+  constructor() {
+    super("Chat thread draft write matched no owned thread");
+    this.name = "ChatThreadDraftNotWritten";
+  }
+}
+
+/**
  * Update a chat thread's draft content + attachments.
  *
  * Ownership check via the WHERE clause; missing or cross-user thread → returns
@@ -1014,6 +1033,16 @@ export const deleteChatThread$ = command(
  * `{ updated: false }` 404 disposition, which keeps the endpoint non-oracular.
  * This route deliberately requires no organization and accepts a thread without
  * an Agent, so a legal null-Agent thread keeps its thread-user-only subject.
+ *
+ * The draft is written to `chat_thread_drafts` and to the legacy `chat_threads`
+ * columns in this one transaction, so the two can never disagree about an
+ * accepted or a rejected write. Every reader still serves the legacy columns;
+ * moving them onto the child row is the next, separately released slice of
+ * #36173. The child upsert deliberately runs first: the legacy `UPDATE` is what
+ * upgrades the hot parent row to `FOR NO KEY UPDATE`, and running it last keeps
+ * that exclusive lock held for the shortest part of the transaction. It does
+ * not remove the wait — this path still contends for the same thread row that
+ * event projection and the read cursor write.
  */
 export const updateChatThreadDraft$ = command(
   async (
@@ -1027,36 +1056,55 @@ export const updateChatThreadDraft$ = command(
     signal: AbortSignal,
   ): Promise<{ readonly updated: boolean }> => {
     const writeDb = set(writeDb$);
-    const result = await withChatThreadContentWrite(
-      writeDb,
-      {
-        chatThreadId: args.threadId,
-        authorize: (identity) => {
-          return identity.userId === args.userId;
+    const draftAttachments = args.draftAttachments
+      ? [...args.draftAttachments]
+      : null;
+    const result = await settle(
+      withChatThreadContentWrite(
+        writeDb,
+        {
+          chatThreadId: args.threadId,
+          authorize: (identity) => {
+            return identity.userId === args.userId;
+          },
         },
-      },
-      async (tx) => {
-        const updated = await tx
-          .update(chatThreads)
-          .set({
+        async (tx) => {
+          await persistChatThreadDraftRow(tx, {
+            chatThreadId: args.threadId,
             draftUserMessage: args.draftUserMessage,
-            draftAttachments: args.draftAttachments
-              ? [...args.draftAttachments]
-              : null,
-          })
-          .where(
-            and(
-              eq(chatThreads.id, args.threadId),
-              eq(chatThreads.userId, args.userId),
-            ),
-          )
-          .returning({ id: chatThreads.id });
-        return updated.length > 0;
-      },
-      signal,
+            draftAttachments,
+          });
+          const updated = await tx
+            .update(chatThreads)
+            .set({
+              draftUserMessage: args.draftUserMessage,
+              draftAttachments,
+            })
+            .where(
+              and(
+                eq(chatThreads.id, args.threadId),
+                eq(chatThreads.userId, args.userId),
+              ),
+            )
+            .returning({ id: chatThreads.id });
+          if (updated.length === 0) {
+            throw new ChatThreadDraftNotWritten();
+          }
+        },
+        signal,
+      ),
     );
     signal.throwIfAborted();
+    if (!result.ok) {
+      // The legacy statement matched no owned thread, so the transaction rolled
+      // back with the child row it had already staged and the route keeps its
+      // existing 404. Every other failure propagates unchanged.
+      if (result.error instanceof ChatThreadDraftNotWritten) {
+        return { updated: false };
+      }
+      throw result.error;
+    }
 
-    return { updated: result.outcome === "written" && result.value };
+    return { updated: result.value.outcome === "written" };
   },
 );

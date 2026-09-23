@@ -1,0 +1,41 @@
+[package]
+name = "runner-network"
+version = "0.1.1"
+edition.workspace = true
+description = "Runner proxy, DNS, CA, and network log behavior"
+
+[features]
+test-support = []
+
+[dependencies]
+runner-host.workspace = true
+runner-types.workspace = true
+sandbox-firecracker.workspace = true
+async-trait.workspace = true
+chrono = { workspace = true, features = ["now", "serde"] }
+futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
+hex = { workspace = true, features = ["std"] }
+libc = { workspace = true, features = ["std"] }
+nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
+reqwest = { workspace = true, features = ["json", "rustls"] }
+rustix = { workspace = true, features = ["fs", "linux_4_11", "process", "std", "time"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+sha2 = { workspace = true, features = ["alloc", "oid"] }
+thiserror = { workspace = true, features = ["std"] }
+tempfile = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
+tracing = { workspace = true, features = ["attributes", "std"] }
+tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
+uuid = { workspace = true, features = ["serde", "std", "v4"] }
+
+[dev-dependencies]
+api-contracts.workspace = true
+httpmock = { workspace = true, features = ["cookies"] }
+log = { workspace = true }
+tracing-test-support.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true

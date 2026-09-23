@@ -49,10 +49,6 @@ import { detach, Reason } from "../../../../signals/utils.ts";
 import { CustomConnectorIcon } from "../settings/custom-connector-icon.tsx";
 import { SettingsSectionHeading } from "../settings/settings-section-heading.tsx";
 
-const ZERO_BORDER = {
-  border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-} as const;
-
 function AddConnectionMenu() {
   const { t } = useTranslation();
   const openCreate = useSet(openCreateModelProviderConnection$);
@@ -304,7 +300,7 @@ function SurfaceEditor({
           return $.settings.models.gateways.protocols.openaiResponses;
         });
   return (
-    <div className="rounded-xl bg-muted/20 p-4" style={ZERO_BORDER}>
+    <div className="rounded-xl bg-muted/20 p-4 border border-surface-border">
       <label className="flex items-center gap-2">
         <Checkbox
           checked={surface.enabled}
@@ -545,18 +541,14 @@ export function ModelProviderConnectionsSection() {
         action={<AddConnectionMenu />}
       />
       {connections.length === 0 ? (
-        <p
-          className="rounded-xl bg-card px-4 py-5 text-sm text-muted-foreground"
-          style={ZERO_BORDER}
-        >
+        <p className="rounded-xl bg-card px-4 py-5 text-sm text-muted-foreground border border-surface-border">
           {t(($) => {
             return $.settings.models.gateways.empty;
           })}
         </p>
       ) : (
         <div
-          className="overflow-hidden rounded-xl bg-card"
-          style={ZERO_BORDER}
+          className="overflow-hidden rounded-xl bg-card border border-surface-border"
           data-testid="model-provider-connections-list"
         >
           <div className="p-2">

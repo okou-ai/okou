@@ -351,9 +351,11 @@ function CustomConnectorRow({
     />
   );
 
+  // Isolate the complete row so Access and the sibling More trigger (z-20)
+  // stay above the whole-card action (z-10) within the card's own context.
   return (
     <div
-      className="relative"
+      className="relative isolate"
       data-custom-connector-id={directoryEnabled ? connector.id : undefined}
       ref={directoryEnabled ? focusCreated : undefined}
       tabIndex={directoryEnabled ? -1 : undefined}

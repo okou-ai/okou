@@ -316,7 +316,7 @@ test("Fade a clipped chat title and pace its scroll by the hidden distance", asy
   );
 });
 
-test("Filter unread conversations when a rollback API omits unreadAt", async () => {
+test("Filter unread conversations using indicator timestamps", async () => {
   prepareDefaultAgent();
   const pinnedUnreadThread = createThread(
     AUTOMATION_THREAD_ID,
@@ -351,18 +351,10 @@ test("Filter unread conversations when a rollback API omits unreadAt", async () 
         [INCIDENT_THREAD_ID]: "unread",
         [EXISTING_THREAD_ID]: "active",
       },
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ query, respond }) => {
-    expect(query.agentId).toBe(AGENT_ID);
-    return respond(200, {
-      unreads: [
-        {
-          threadId: AUTOMATION_THREAD_ID,
-          unreadAt: "2026-03-10T00:04:00Z",
-        },
-        { threadId: INCIDENT_THREAD_ID, unreadAt: "2026-03-10T00:05:00Z" },
-      ],
+      unreadAt: {
+        [AUTOMATION_THREAD_ID]: "2026-03-10T00:04:00Z",
+        [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z",
+      },
     });
   });
 
@@ -737,9 +729,9 @@ test("Find conversations by title in workspace search", async () => {
   await fill(search, "support");
   await waitFor(() => {
     expect(
-      within(agentRowByName(dialog, "Support escalation")).getByLabelText(
-        "Running",
-      ),
+      within(dialog).getByRole("option", {
+        name: /^Support escalation Running /u,
+      }),
     ).toBeInTheDocument();
   });
   click(within(dialog).getByText("Support escalation"));
@@ -859,11 +851,9 @@ test("Keep chat navigation usable while secondary data is unavailable", async ()
       sidebar().querySelectorAll('[data-testid="sidebar-skeleton"]'),
     ).toHaveLength(0);
   });
-  expect(
-    within(threadRowByTitle("Existing conversation")).queryByLabelText(
-      "Running",
-    ),
-  ).not.toBeInTheDocument();
+  expect(threadLinkByTitle("Existing conversation")).toHaveAccessibleName(
+    "Existing conversation",
+  );
 
   indicatorResponse.resolve();
   await draftRequestStarted.promise;
@@ -1255,7 +1245,9 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   const list = await screen.findByTestId("chat-list-column");
   await waitFor(() => {
     expect(within(list).getByText("Unread conversation")).toBeInTheDocument();
-    expect(within(list).getAllByLabelText("Unread").length).toBeGreaterThan(0);
+    expect(threadLinkByTitle("Unread conversation", list)).toHaveAccessibleName(
+      "Unread conversation Unread",
+    );
   });
 
   click(within(list).getByLabelText("Open chat list menu"));
@@ -1290,7 +1282,9 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   await within(list).findByText("No unread chats");
   await waitFor(() => {
     expect(markedAgentIds).toStrictEqual([AGENT_ID]);
-    expect(within(list).queryByLabelText("Unread")).not.toBeInTheDocument();
+    expect(
+      within(list).queryByText("Unread conversation"),
+    ).not.toBeInTheDocument();
   });
 
   click(within(list).getByLabelText("Open chat list menu"));
@@ -1539,14 +1533,14 @@ async function markReleasePlanUnread(
   openThreadMenu("Release plan");
   click(menuItemByText("Mark unread"));
   await scenario.unreadSnapshotRefreshed.promise;
-  expect(
-    within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
-  ).not.toBeInTheDocument();
+  expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+    "Release plan",
+  );
   click(threadLinkByTitle("Incident notes"));
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
-    ).toBeInTheDocument();
+    expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+      "Release plan Unread",
+    );
   });
 }
 
@@ -1558,9 +1552,9 @@ async function completeHeldReleaseRead(
   await scenario.markReadStarted.promise;
   click(threadLinkByTitle("Incident notes"));
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
+    expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+      "Release plan",
+    );
   });
   scenario.markReadDeferred.resolve();
   await scenario.markReadCompleted.promise;
@@ -1569,18 +1563,18 @@ async function completeHeldReleaseRead(
 test("Mark the current conversation unread after navigating away", async () => {
   const scenario = await setupReadUnreadSidebar();
   await markReleasePlanUnread(scenario);
-  expect(
-    within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
-  ).toBeInTheDocument();
+  expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+    "Release plan Unread",
+  );
 });
 
 test("Clear an unread conversation while its read request is pending", async () => {
   const scenario = await setupReadUnreadSidebar();
   await markReleasePlanUnread(scenario);
   await completeHeldReleaseRead(scenario);
-  expect(
-    within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
-  ).not.toBeInTheDocument();
+  expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+    "Release plan",
+  );
 });
 
 test("Restore a conversation when a later realtime unread arrives", async () => {
@@ -1595,9 +1589,9 @@ test("Restore a conversation when a later realtime unread arrives", async () => 
     lastReadAt: null,
   });
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
-    ).toBeInTheDocument();
+    expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+      "Release plan Unread",
+    );
   });
 });
 
@@ -1748,8 +1742,8 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
 
   click(threadLinkByTitle("Other conversation"));
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Native brief")).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
+    expect(threadLinkByTitle("Native brief")).toHaveAccessibleName(
+      "Native brief",
+    );
   });
 });

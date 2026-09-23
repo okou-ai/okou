@@ -162,19 +162,7 @@ export default [
   {
     files: ["**/__tests__/**/*.{ts,tsx}"],
     rules: {
-      "ccstate/no-test-delay": [
-        "error",
-        {
-          allowed: [
-            {
-              file: "src/lib/__tests__/visual-viewport-keyboard.test.ts",
-              kinds: ["fakeTimer"],
-              reason:
-                "Issue #35594 tracks replacing this viewport scheduler fixture with an owned clock.",
-            },
-          ],
-        },
-      ],
+      "ccstate/no-test-delay": "error",
       "ccstate/no-manual-mock-cleanup": "error",
       "ccstate/no-get-by-role-name": "error",
       "ccstate/no-user-clear-tab": "error",

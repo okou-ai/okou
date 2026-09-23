@@ -1800,13 +1800,7 @@ function ManagedSubscriptionComparisonTooltip({
           collisionPadding={16}
           side="bottom"
           sideOffset={8}
-          className="w-[27.5rem] max-w-[calc(100vw-2rem)] rounded-[12px] border border-[hsl(var(--gray-400))] p-4 text-left font-normal"
-          style={{
-            backgroundColor: "hsl(var(--popover))",
-            color: "hsl(var(--popover-foreground))",
-            boxShadow:
-              "0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
-          }}
+          className="w-[27.5rem] max-w-[calc(100vw-2rem)] rounded-[12px] border border-[hsl(var(--gray-400))] p-4 text-left font-normal bg-popover! text-popover-foreground! shadow-[0_2px_12px_hsl(30_6%_45%/0.05),0_0_0_0.5px_hsl(30_6%_45%/0.025)]"
         >
           <p className="text-sm font-medium text-foreground">
             {comparisonTitle}

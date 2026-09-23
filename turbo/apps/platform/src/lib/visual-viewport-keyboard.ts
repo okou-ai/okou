@@ -227,6 +227,9 @@ function updateKeyboardViewportState(
 export function setupVisualViewportKeyboardState(
   signal: AbortSignal,
   resetSettledSignal: () => AbortSignal,
+  waitForSettle: (signal: AbortSignal) => Promise<void> = (settledSignal) => {
+    return delay(VIEWPORT_SETTLE_DELAY_MS, { signal: settledSignal });
+  },
 ): () => void {
   signal.throwIfAborted();
   const viewport = window.visualViewport;
@@ -254,7 +257,7 @@ export function setupVisualViewportKeyboardState(
   };
 
   const commitSettledUpdate = async (settledSignal: AbortSignal) => {
-    await delay(VIEWPORT_SETTLE_DELAY_MS, { signal: settledSignal });
+    await waitForSettle(settledSignal);
     settledSignal.throwIfAborted();
     if (settledTimerSignal !== settledSignal) {
       return;

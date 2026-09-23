@@ -1349,6 +1349,14 @@ test("organization resolution checks current original-org membership and never g
       signingDate: new Date("2026-09-09T12:00:00.000Z"),
     },
   });
+  context.mocks.s3.getSignedUrl.mockResolvedValue(
+    "https://private-r2.example/report.pdf?signature=second",
+  );
+  const repeated = await accept(
+    api()(artifactSharesContract).resolve({ headers, params: { id } }),
+    [200],
+  );
+  expect(repeated.body.url).toBe(allowed.body.url);
   await accept(
     api()(artifactSharesContract).status({ headers, body: target }),
     [404],

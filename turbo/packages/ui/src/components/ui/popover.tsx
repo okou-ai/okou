@@ -72,7 +72,6 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
       side = "bottom",
       sideOffset = 4,
       sticky,
-      style,
       ...props
     },
     ref,
@@ -98,24 +97,9 @@ const PopoverContent = React.forwardRef<HTMLDivElement, PopoverContentProps>(
             data-slot="popover-content"
             className={cn(
               anchoredPopupTransitionClassName,
-              "w-72 rounded-[12px] border border-[hsl(var(--gray-400))] bg-card p-4 text-foreground outline-none",
+              "w-72 rounded-[12px] border border-[hsl(var(--gray-400))] bg-card p-4 text-foreground shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)] outline-none",
               className,
             )}
-            style={
-              typeof style === "function"
-                ? (state) => {
-                    return {
-                      boxShadow:
-                        "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                      ...style(state),
-                    };
-                  }
-                : {
-                    boxShadow:
-                      "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                    ...style,
-                  }
-            }
             {...props}
           >
             {children}

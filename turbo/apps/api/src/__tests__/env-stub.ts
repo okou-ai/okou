@@ -74,14 +74,15 @@ vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
 vi.stubEnv("FEISHU_CALLBACK_BASE_URL", "http://localhost:3000");
 stubTestWebUrlEnvironment("http://localhost:3001");
 vi.stubEnv("APP_URL", "http://localhost:3002");
+const testApiCommit = "a".repeat(40);
 vi.stubEnv(
   "CLI_PKG_URL",
-  "https://static.okou.io/okou-cli/test-commit/package.tgz",
+  `https://static.okou.io/okou-cli/${testApiCommit}/package.tgz`,
 );
 vi.stubEnv("RESEND_API_KEY", "test-resend-key");
 vi.stubEnv("RESEND_WEBHOOK_SECRET", "whsec_test");
 vi.stubEnv("RESEND_FROM_DOMAIN", "mail.example.com");
-vi.stubEnv("GIT_COMMIT_SHA", "test-commit-sha");
+vi.stubEnv("GIT_COMMIT_SHA", testApiCommit);
 vi.stubEnv("ENV", "development");
 vi.stubEnv("AXIOM_TOKEN_SESSIONS", "xaat-test-sessions");
 vi.stubEnv("AXIOM_TOKEN_TELEMETRY", "xaat-test-telemetry");

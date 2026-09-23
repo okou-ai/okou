@@ -31,7 +31,7 @@ const DEFAULT_WARNING_ICON = (
     fill="currentColor"
     height="20"
     width="20"
-    style={{ color: "#f59e0b" }}
+    className="text-[#f59e0b]"
   >
     <path
       fillRule="evenodd"
@@ -76,15 +76,12 @@ function Toaster({ onReady, ...props }: ToasterProps) {
         toastOptions={{
           classNames: {
             toast:
-              "group toast group-[.toaster]:bg-popover group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg group-[.toaster]:!rounded-[10px] group-[.toaster]:!text-sm group-[.toaster]:!font-medium group-[.toaster]:!w-auto group-[.toaster]:!max-w-[calc(100dvw-2rem)] sm:group-[.toaster]:!max-w-none group-[.toaster]:!whitespace-normal sm:group-[.toaster]:!whitespace-nowrap group-[.toaster]:!left-auto group-[.toaster]:!top-auto group-[.toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
+              "group toast font-family-sans group-[.toaster]:bg-popover group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg group-[.toaster]:!rounded-[10px] group-[.toaster]:!text-sm group-[.toaster]:!font-medium group-[.toaster]:!w-auto group-[.toaster]:!max-w-[calc(100dvw-2rem)] sm:group-[.toaster]:!max-w-none group-[.toaster]:!whitespace-normal sm:group-[.toaster]:!whitespace-nowrap group-[.toaster]:!left-auto group-[.toaster]:!top-auto group-[.toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
             description: "group-[.toast]:text-muted-foreground",
             actionButton:
               "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
             cancelButton:
               "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
-          },
-          style: {
-            fontFamily: "var(--font-family-sans)",
           },
         }}
         {...rest}

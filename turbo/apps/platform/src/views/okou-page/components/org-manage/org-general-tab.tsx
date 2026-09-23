@@ -44,10 +44,6 @@ import {
 } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
 import { readImageDimensions } from "./read-image-dimensions.ts";
 
-const sectionCardStyle = {
-  border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-} as const;
-
 const MIN_LOGO_DIMENSION = 100;
 const MAX_LOGO_DIMENSION = 4096;
 
@@ -164,10 +160,7 @@ function ProfileSection({
           return $.settings.workspace.profile.sectionTitle;
         })}
       </h3>
-      <div
-        className="overflow-hidden rounded-xl bg-card"
-        style={sectionCardStyle}
-      >
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         {/* Logo row */}
         <div className="flex items-center justify-between gap-4 px-5 py-4">
           <div className="min-w-0">
@@ -346,10 +339,7 @@ function DangerZoneSection({ isAdmin }: { isAdmin: boolean }) {
           return $.settings.workspace.danger.sectionTitle;
         })}
       </h3>
-      <div
-        className="overflow-hidden rounded-xl bg-card"
-        style={sectionCardStyle}
-      >
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         {canLeave && (
           <>
             {/* Leave workspace */}
@@ -568,10 +558,7 @@ function GeneralTabSkeleton() {
       {/* Profile section skeleton */}
       <section className="flex flex-col gap-3">
         <div className="h-4 w-12 rounded bg-muted/50 animate-pulse" />
-        <div
-          className="overflow-hidden rounded-xl bg-card"
-          style={sectionCardStyle}
-        >
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           {/* Logo row */}
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <div className="min-w-0">
@@ -594,10 +581,7 @@ function GeneralTabSkeleton() {
       {/* Danger zone skeleton */}
       <section className="flex flex-col gap-3">
         <div className="h-4 w-20 rounded bg-muted/50 animate-pulse" />
-        <div
-          className="overflow-hidden rounded-xl bg-card"
-          style={sectionCardStyle}
-        >
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           <div className="flex items-center justify-between gap-4 px-5 py-4">
             <div className="min-w-0">
               <div className="h-4 w-28 rounded bg-muted/50 animate-pulse" />

@@ -197,6 +197,57 @@ test("The standalone route reuses the native browser input form", async () => {
   expect(document.title).toContain("Browser action");
 });
 
+test("A fresh standalone action page reads accepted callback delivery", async () => {
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, { ...action("succeeded"), callbackDelivered: true });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(
+    queryAllByRoleFast("button", document.body).some((candidate) => {
+      return candidate.textContent?.trim() === "Continue";
+    }),
+  ).toBeFalsy();
+});
+
+test("An ambiguous callback response reconciles from the accepted event read", async () => {
+  let delivered = false;
+  let reads = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    reads += 1;
+    return respond(200, {
+      ...action("succeeded"),
+      callbackDelivered: delivered,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
+    delivered = true;
+    return respond(503, {
+      error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
+    });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await screen.findByText("Information added");
+  click(button("Continue"));
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(reads).toBeGreaterThan(1);
+});
+
 test("Standalone entry waits for preflight and retries a transient failure without exposing fields", async () => {
   const entered = createDeferredPromise<void>(context.signal);
   const release = createDeferredPromise<void>(context.signal);
@@ -485,9 +536,11 @@ test("A failed Continue announces the error and remains retryable", async () => 
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
   click(button("Continue"));
-  await expect(
-    screen.findByText("The agent wasn't notified. Try Continue again."),
-  ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(
+      screen.getByText("The agent wasn't notified. Try Continue again."),
+    ).toBeVisible();
+  });
   click(button("Continue"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
@@ -535,9 +588,11 @@ test("A failed callback retries without repeating the Browser mutation", async (
   await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
   click(button("Add to browser"));
 
-  await expect(
-    screen.findByText("The agent wasn't notified. Try Continue again."),
-  ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(
+      screen.getByText("The agent wasn't notified. Try Continue again."),
+    ).toBeVisible();
+  });
   expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
   click(button("Continue"));
 

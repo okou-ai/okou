@@ -142,10 +142,6 @@ function getOAuthProviderTypes(model: SupportedRunModel): ModelProviderType[] {
   });
 }
 
-const ZERO_BORDER = {
-  border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-} as const;
-
 function getOAuthRouteKind(
   oauthTypes: ModelProviderType[],
 ): "codex" | "claude" {
@@ -336,10 +332,7 @@ function DefaultModelRow({
   return (
     <Field.Root
       data-testid="default-model-row"
-      className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-      style={{
-        border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-      }}
+      className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between border border-surface-border"
     >
       <div className="min-w-0">
         <Field.Label
@@ -387,12 +380,7 @@ function DefaultModelRow({
           }}
           disabled={disabled}
         >
-          <SelectTrigger
-            className="h-9 w-full shrink-0 rounded-lg bg-card sm:w-[280px]"
-            style={{
-              border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-            }}
-          >
+          <SelectTrigger className="h-9 w-full shrink-0 rounded-lg bg-card sm:w-[280px] border border-surface-border">
             <SelectValue
               placeholder={t(($) => {
                 return $.settings.models.policies.selectDefaultModel;
@@ -814,7 +802,7 @@ function ProviderTypeSelect({
         onChange(next);
       }}
     >
-      <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
+      <SelectTrigger className="h-10 rounded-lg border border-surface-border">
         <SelectValue placeholder={placeholder}>
           {value && (
             <div className="flex min-w-0 items-center gap-2">
@@ -984,7 +972,7 @@ function GatewayProviderSection({
           );
         }}
       >
-        <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
+        <SelectTrigger className="h-10 rounded-lg border border-surface-border">
           <SelectValue
             placeholder={t(($) => {
               return $.settings.models.policies.selectGateway;
@@ -1226,7 +1214,7 @@ function ModelSelectionField({
         }}
         disabled={disabled}
       >
-        <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
+        <SelectTrigger className="h-10 rounded-lg border border-surface-border">
           <SelectValue
             placeholder={t(($) => {
               return $.settings.models.policies.selectModel;
@@ -1890,12 +1878,7 @@ export function OrgModelPoliciesSection() {
             />
           }
         />
-        <div
-          className="overflow-hidden rounded-xl bg-card"
-          style={{
-            border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-          }}
-        >
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           <div className="hidden grid-cols-[minmax(0,1fr)_236px_96px_36px] gap-3 border-b border-border/50 px-5 py-3 text-xs font-medium text-muted-foreground lg:grid">
             <span>
               {t(($) => {

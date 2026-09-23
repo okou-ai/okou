@@ -901,12 +901,7 @@ function LegacyOAuthCredentialsSection() {
   return (
     <section className="flex flex-col gap-4">
       <PersonalModelsHeading />
-      <div
-        className="overflow-hidden rounded-xl bg-card"
-        style={{
-          border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-        }}
-      >
+      <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         {isLoading ? (
           <>
             <OAuthCredentialRowSkeleton />
@@ -1442,11 +1437,7 @@ function SubscriptionUsageRing({
       <TooltipContent
         side="bottom"
         sideOffset={8}
-        style={{
-          backgroundColor: "hsl(var(--popover))",
-          color: "hsl(var(--popover-foreground))",
-        }}
-        className="min-w-48 border shadow-md"
+        className="min-w-48 border shadow-md bg-popover! text-popover-foreground!"
       >
         <div className="flex items-center justify-between gap-4">
           <span className="font-medium text-foreground">{windowLabel}</span>

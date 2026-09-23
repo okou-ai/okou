@@ -101,11 +101,7 @@ export function UsageBreakdownBar({
               <TooltipContent
                 side="top"
                 sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="max-w-64 border shadow-md"
+                className="max-w-64 border shadow-md bg-popover! text-popover-foreground!"
               >
                 <div className="font-medium text-foreground">
                   {usageKindLabel(segment.kind)} -{" "}

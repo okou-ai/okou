@@ -142,22 +142,24 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
 
   await openComputerMenu();
   const selectedHost = await screen.findByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   expect(selectedHost).toBeChecked();
   expect(
-    screen.getByRole("switch", { name: "Enable Cloud browser" }),
+    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
   ).not.toBeChecked();
   remote.resolve();
   await page.ready;
 
   await openComputerMenu();
   const enabledCloudBrowser = await screen.findByRole("switch", {
-    name: "Disable Cloud browser",
+    name: "Cloud browser",
+    checked: true,
   });
   expect(enabledCloudBrowser).toBeChecked();
   expect(
-    screen.getByRole("switch", { name: "Connect Studio Mac" }),
+    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
   ).not.toBeChecked();
 });
 
@@ -216,7 +218,8 @@ test("Conversation configuration arriving before creation is retained", async ()
   await expectSelectedModel("GPT 5.6 Sol Fast");
   await openComputerMenu();
   const configuredHost = await screen.findByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   expect(configuredHost).toBeChecked();
 
@@ -302,7 +305,8 @@ test("Service tier and Computer Use settings update independently", async () => 
   await expectSelectedModel("GPT 5.6 Sol");
   await openComputerMenu();
   const disconnectedHost = await screen.findByRole("switch", {
-    name: "Connect Studio Mac",
+    name: "Studio Mac",
+    checked: false,
   });
   expect(disconnectedHost).not.toBeChecked();
   remote.resolve();
@@ -311,7 +315,8 @@ test("Service tier and Computer Use settings update independently", async () => 
   await expectSelectedModel("GPT 5.6 Sol Fast");
   await openComputerMenu();
   const connectedHost = await screen.findByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   expect(connectedHost).toBeChecked();
   expect(sidebarThreadTitles()).toStrictEqual(order);

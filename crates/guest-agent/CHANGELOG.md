@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.98.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.0...guest-agent-v0.98.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **guest-agent:** stop oversized pi agent_end records from losing a run ([#36119](https://github.com/okou-ai/okou/issues/36119)) ([f4bbaee](https://github.com/okou-ai/okou/commit/f4bbaee7ba5b81a95059ce31bd0e1915ee860da9))
+
 ## [0.98.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.97.0...guest-agent-v0.98.0) (2026-09-23)
 
 

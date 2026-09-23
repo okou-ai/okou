@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HTTPException } from "hono/http-exception";
@@ -22,6 +23,7 @@ import {
   requireOrgId,
   USER_OWNED_GPT_FAST_BDD_ROUTES,
   expectNoBuiltInModelUsage,
+  createGptUsagePricingResolution,
   userMessages,
   eventBackedContents,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
@@ -55,6 +57,7 @@ const {
   requestSendEventWithBearer,
   cancelBeforeLatePiResult,
   mockPiCheckpointObjectStore,
+  completeSandboxFirstPiRun,
   expectNoPiApiFirstTurnArtifacts,
   expectPiApiFirstTurnTerminalWithoutOutput,
   piS3Object,
@@ -153,6 +156,55 @@ describe("CHAT-02: run-level model overrides", () => {
         },
       });
       await cancelChatRun(f.actor, run.runId);
+    });
+
+    it("rejects an account disconnected after capture before environment preparation", async () => {
+      const f = await prepareSubscriptionThread();
+      const clientEventId = randomUUID();
+      const prompt = "reject a disconnected captured account";
+      const send = requestSendEventRaw(f.actor, {
+        agentId: f.agentId,
+        threadId: f.thread.id,
+        model: "gpt-5.6-terra",
+        prompt,
+        clientEventId,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+      });
+      const observed = observePendingSend(send);
+
+      await Promise.all([
+        f.preparation.arrival("subscription-account"),
+        f.preparation.arrival("thread-session"),
+      ]);
+      f.preparation.release("subscription-account");
+      await observed.beforeSettlement(
+        f.preparation.arrival("post-authorization-context"),
+      );
+      await authDeviceSupport.deletePersonalModelProviderAccount(
+        f.actor,
+        f.captured.accountSourceId,
+      );
+      f.preparation.release("post-authorization-context");
+      f.preparation.release("thread-session");
+      f.preparation.releaseAll();
+
+      await expect(send).resolves.toMatchObject({
+        status: 503,
+        body: { error: { code: "PROVIDER_UNAVAILABLE" } },
+      });
+      await observed.joinPhases();
+      const events = await chat.listThreadEvents(f.actor, f.thread.id);
+      expect(events.events).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.prompt",
+          id: clientEventId,
+        }),
+        expect.objectContaining({
+          eventType: "control.revoke",
+          revokesEventId: clientEventId,
+        }),
+      ]);
     });
 
     it("captures once while a stale thread snapshot retries with the same account", async () => {
@@ -960,11 +1012,12 @@ describe("CHAT-02: run-level model overrides", () => {
   it.each(USER_OWNED_GPT_FAST_BDD_ROUTES)(
     "reuses one $name Pi session across standard, Fast, and standard requests",
     async (route) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       const { secret, accountId } = await configureUserOwnedGptPiModel(
         actor,
         route,
       );
+      const pricing = await createGptUsagePricingResolution();
       mockPiResourceArchiveDownloads();
       const objects = mockPiCheckpointObjectStore();
       const requests: {
@@ -1006,8 +1059,40 @@ describe("CHAT-02: run-level model overrides", () => {
         prompt: "Terra Fast continuation",
         runOptions: { codexServiceTier: "fast" },
       });
-      await waitForRunStatus(actor, fast.runId, "completed");
       await flushWaitUntilForTest();
+      const fastManifestBytes = objects.get(
+        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${fast.runId}/manifest.json`,
+      );
+      if (!fastManifestBytes) {
+        throw new Error("Expected Fast resume handoff manifest");
+      }
+      expect(
+        piApiFirstTurnManifestSchema.parse(
+          JSON.parse(fastManifestBytes.toString("utf8")),
+        ),
+      ).toMatchObject({
+        schemaVersion: 4,
+        mode: "sandbox-first",
+        baseSession: {
+          sessionId: first.threadId,
+          sha256: expect.any(String),
+        },
+      });
+      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
+      expect(fastClaim.claim.piModelConfig).toMatchObject({
+        model: route.runtimeModel,
+        serviceTier: route.type === "codex-oauth-token" ? "fast" : "priority",
+      });
+      await completeSandboxFirstPiRun({
+        actor,
+        answer: "Terra Fast sandbox answer",
+        checkpointObjects: objects,
+        claim: fastClaim,
+        prompt: "Terra Fast continuation",
+        run: fast,
+        responsesModel: { provider: "openai", model: route.selectedModel },
+        usagePricingResolution: pricing,
+      });
       await expect(
         readThreadSessionConversation(context, first.threadId),
       ).resolves.toMatchObject({
@@ -1025,8 +1110,24 @@ describe("CHAT-02: run-level model overrides", () => {
         model: route.selectedModel,
         prompt: "Terra standard return",
       });
-      await waitForRunStatus(actor, standard.runId, "completed");
       await flushWaitUntilForTest();
+      const standardClaim = await claimChatRun(runnerGroup, standard.runId);
+      expect(standardClaim.claim.piModelConfig).toMatchObject({
+        model: route.runtimeModel,
+      });
+      expect(standardClaim.claim.piModelConfig).not.toHaveProperty(
+        "serviceTier",
+      );
+      await completeSandboxFirstPiRun({
+        actor,
+        answer: "Terra standard sandbox answer",
+        checkpointObjects: objects,
+        claim: standardClaim,
+        prompt: "Terra standard return",
+        run: standard,
+        responsesModel: { provider: "openai", model: route.selectedModel },
+        usagePricingResolution: pricing,
+      });
       await expect(
         readThreadSessionConversation(context, first.threadId),
       ).resolves.toMatchObject({
@@ -1034,14 +1135,12 @@ describe("CHAT-02: run-level model overrides", () => {
         conversation_run_id: standard.runId,
       });
 
-      expect(requests).toHaveLength(3);
+      expect(requests).toHaveLength(1);
       expect(
-        requests.map(({ body }) => {
-          return z
-            .object({ service_tier: z.literal("priority").optional() })
-            .parse(body).service_tier;
-        }),
-      ).toStrictEqual([undefined, route.wireTier, undefined]);
+        z
+          .object({ service_tier: z.literal("priority").optional() })
+          .parse(requests[0]?.body).service_tier,
+      ).toBeUndefined();
       for (const request of requests) {
         expect(request).toMatchObject({
           authorization: `Bearer ${secret}`,
@@ -1055,8 +1154,6 @@ describe("CHAT-02: run-level model overrides", () => {
         });
         expect(request.body).not.toHaveProperty("previous_response_id");
       }
-      expect(JSON.stringify(requests[1]?.body)).toContain("Terra answer 1");
-      expect(JSON.stringify(requests[2]?.body)).toContain("Terra answer 2");
       const histories = [...objects.entries()].filter(([key]) => {
         return key.endsWith(".blob");
       });

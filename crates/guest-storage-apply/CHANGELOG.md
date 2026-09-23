@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.16](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.15...guest-storage-apply-v0.24.16) (2026-09-23)
+
+
+### Bug Fixes
+
+* **runner:** use decoded files in mixed archive groups ([#36247](https://github.com/okou-ai/okou/issues/36247)) ([7a9f87e](https://github.com/okou-ai/okou/commit/7a9f87e4905e2127969b8822c93e043be7fc2389))
+
 ## [0.24.15](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.14...guest-storage-apply-v0.24.15) (2026-09-22)
 
 ## [0.24.14](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.24.13...guest-storage-apply-v0.24.14) (2026-09-22)

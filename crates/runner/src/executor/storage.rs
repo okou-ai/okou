@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use guest_contracts::storage_files::{self, StorageFile};
 use guest_contracts::storage_manifest::Manifest;
@@ -14,11 +14,13 @@ use tracing::{info, warn};
 use super::{DEFAULT_EXEC_TIMEOUT, RunnerError, RunnerResult, guest_runtime_dir};
 use crate::helper_exec::{format_helper_exec_failure, helper_exec_succeeded};
 use crate::storage_cache::decoded::CachedFiles;
+use crate::telemetry::JobTelemetry;
 use guest_contracts::guest_binary::STORAGE_APPLY_PATH;
 use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 use runner_types::types::ExecutionContext;
 
 const STORAGE_MANIFEST_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_RECORDED_STORAGE_BATCHES: usize = 16;
 
 pub(super) fn guest_storage_apply_command() -> String {
     format!("{STORAGE_APPLY_PATH} {STORAGE_MANIFEST_PATH}")
@@ -56,17 +58,114 @@ pub(super) async fn download_storages_with_files(
     context: &ExecutionContext,
     manifest: Manifest,
     files: &[(String, Arc<CachedFiles>)],
+    telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
     // Validate and encode every batch before the first storage-apply operation.
-    for input in storage_inputs(manifest, files)? {
-        apply_storage_input(sandbox, context, &input).await?;
+    let encode_started = Instant::now();
+    let inputs = storage_inputs(manifest, files);
+    telemetry.record(
+        "runner_storage_manifest_batch_encode",
+        encode_started.elapsed(),
+        inputs.is_ok(),
+        inputs.as_ref().err().map(|_| "storage_batch_encode_failed"),
+    );
+    let inputs = inputs?;
+    let batch_count = inputs.len();
+    telemetry.record_bounded_outcome(
+        "runner_storage_manifest_batch_count",
+        true,
+        batch_count_bucket(batch_count),
+        None,
+    );
+    for (index, input) in inputs.iter().enumerate() {
+        let started = Instant::now();
+        let result = apply_storage_input(sandbox, context, input).await;
+        // Keep telemetry bounded for an unusually large manifest. Always retain
+        // the final or failing batch in addition to the first observed batches.
+        if index < MAX_RECORDED_STORAGE_BATCHES || index + 1 == batch_count || result.is_err() {
+            telemetry.record_storage_apply_batch(
+                started.elapsed(),
+                result.is_ok(),
+                batch_outcome(input, index, batch_count),
+                manifest_size_bucket(input.manifest_bytes()),
+            );
+        }
+        result?;
     }
     Ok(())
 }
 
 enum StorageInput {
     Json(Vec<u8>),
-    Files(Vec<u8>),
+    Files {
+        bytes: Vec<u8>,
+        manifest_bytes: usize,
+    },
+}
+
+impl StorageInput {
+    fn manifest_bytes(&self) -> usize {
+        match self {
+            Self::Json(bytes) => bytes.len(),
+            Self::Files { manifest_bytes, .. } => *manifest_bytes,
+        }
+    }
+
+    fn uses_dedicated_transport(&self) -> bool {
+        matches!(self, Self::Files { .. })
+            || self.manifest_bytes() <= guest_control_proto::MAX_EXEC_STDIN_BYTES
+    }
+}
+
+fn batch_count_bucket(count: usize) -> &'static str {
+    match count {
+        0 => "zero",
+        1 => "one",
+        2 => "two",
+        3 => "three",
+        4..=8 => "four_to_eight",
+        9..=16 => "nine_to_sixteen",
+        _ => "seventeen_plus",
+    }
+}
+
+fn manifest_size_bucket(bytes: usize) -> &'static str {
+    match bytes {
+        0..=4_096 => "at_most_4_kib",
+        4_097..=16_384 => "4_to_16_kib",
+        16_385..=32_768 => "16_to_32_kib",
+        32_769..=65_536 => "32_to_64_kib",
+        _ => "over_64_kib",
+    }
+}
+
+fn batch_outcome(input: &StorageInput, index: usize, count: usize) -> &'static str {
+    let position = if count == 1 {
+        BatchPosition::Only
+    } else if index == 0 {
+        BatchPosition::First
+    } else if index + 1 == count {
+        BatchPosition::Last
+    } else {
+        BatchPosition::Middle
+    };
+    match (input.uses_dedicated_transport(), position) {
+        (true, BatchPosition::Only) => "dedicated_only",
+        (true, BatchPosition::First) => "dedicated_first",
+        (true, BatchPosition::Middle) => "dedicated_middle",
+        (true, BatchPosition::Last) => "dedicated_last",
+        (false, BatchPosition::Only) => "fallback_only",
+        (false, BatchPosition::First) => "fallback_first",
+        (false, BatchPosition::Middle) => "fallback_middle",
+        (false, BatchPosition::Last) => "fallback_last",
+    }
+}
+
+enum BatchPosition {
+    Only,
+    First,
+    Middle,
+    Last,
 }
 
 fn manifest_json(manifest: &Manifest) -> RunnerResult<Vec<u8>> {
@@ -75,7 +174,10 @@ fn manifest_json(manifest: &Manifest) -> RunnerResult<Vec<u8>> {
 
 fn files_input(json: &[u8], groups: &[(&str, &[StorageFile])]) -> RunnerResult<StorageInput> {
     storage_files::encode_input(json, groups)
-        .map(StorageInput::Files)
+        .map(|bytes| StorageInput::Files {
+            bytes,
+            manifest_bytes: json.len(),
+        })
         .map_err(|e| RunnerError::Internal(format!("storage files input: {e}")))
 }
 
@@ -236,14 +338,13 @@ async fn apply_storage_input(
     context: &ExecutionContext,
     input: &StorageInput,
 ) -> RunnerResult<()> {
-    let (manifest_json, has_files) = match input {
-        StorageInput::Json(bytes) => (bytes, false),
-        StorageInput::Files(bytes) => (bytes, true),
+    let manifest_json = match input {
+        StorageInput::Json(bytes) => bytes,
+        StorageInput::Files { bytes, .. } => bytes,
     };
     let run_id = context.run_id.to_string();
     let runtime_dir = guest_runtime_dir(context.run_id)?;
-    let use_dedicated =
-        has_files || manifest_json.len() <= guest_control_proto::MAX_EXEC_STDIN_BYTES;
+    let use_dedicated = input.uses_dedicated_transport();
     let transport = if use_dedicated {
         "dedicated"
     } else {

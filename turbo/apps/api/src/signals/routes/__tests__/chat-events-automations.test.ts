@@ -429,6 +429,26 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         { agentId, threadId, prompt: "continue this Automation conversation" },
         usagePricingResolution,
       );
+      await flushWaitUntilForTest();
+      const userClaim = await claimChatRun(runnerGroup, user.runId);
+      expect(userClaim.claim.piModelConfig).toMatchObject({
+        model: getProviderRuntimeModel("built-in", selectedModel),
+      });
+      await completeSandboxFirstPiRun({
+        actor,
+        run: user,
+        claim: userClaim,
+        checkpointObjects,
+        prompt: "continue this Automation conversation",
+        answer: `owned user answer for ${source}`,
+        outputTokens: 3,
+        responsesModel: {
+          provider:
+            selectedModel === "deepseek-v4.1-flash" ? "deepseek" : "openai",
+          model: getProviderRuntimeModel("built-in", selectedModel),
+        },
+        usagePricingResolution,
+      });
       await expectThreadPiTerminal(actor, threadId, user.runId);
       expect(
         (await readThreadSessionBinding(context, threadId)).agent_session_id,
@@ -445,16 +465,7 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         userId: actor.userId,
         runId: user.runId,
       });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatchObject({
-        model: getProviderRuntimeModel("built-in", selectedModel),
-      });
-      await expectPiApiUsage(user.runId, selectedModel, "", {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheCreation: 0,
-      });
+      expect(requests).toHaveLength(0);
       if (selectedModel === "gpt-5.6-terra") {
         await extractOwnedThreadPiMemory(actor, user.runId, agentId);
       }
