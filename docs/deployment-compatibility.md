@@ -20,23 +20,29 @@ surfaces are on different versions.
 ## User preference initialization (2026-09-23)
 
 `GET /api/user-preferences` now returns `409 USER_PREFERENCES_UNINITIALIZED`
-when the member has no valid timezone. The App accepts that response, then calls
-`POST /api/user-preferences/initialize` and uses its returned preferences. It
-also accepts an older API's `200` response with a null timezone and initializes
-through the same POST. A valid browser timezone is used when available;
-otherwise initialization saves `America/Los_Angeles`.
+when the member lacks either a valid timezone or a locale. The App accepts that
+response, then calls `POST /api/user-preferences/initialize` with browser
+timezone and the locale selected during initial resource loading. It uses the
+POST result directly. An invalid or unavailable browser timezone falls back to
+`America/Los_Angeles`; an unsupported browser locale falls back to `en-US`.
+The App also initializes if an older API returns `200` with a missing field.
 
-The new API continues to accept the older App's optional POST timezone. An
-empty body initializes with the Pacific fallback. Once a valid timezone is
-stored, repeated initialization returns the existing preferences without
-writing. Concurrent requests that both read an uninitialized member may write
-in either order; the last write wins. Deploying the App before the API keeps
-the old-API/new-App combination functional. An old App that reads preferences
-before its startup POST against the new API can temporarily receive the new
-409; its existing POST then initializes the member.
+The App Worker prefetches a successful GET into the HTML, which the App consumes
+without another browser GET. Prefetch is best effort, bounded to 500 ms, and
+does not embed `409`; the client GET remains the fallback when prefetch misses.
+
+The new API continues to accept the older App's optional timezone-only POST.
+An empty body fills missing timezone and locale with Pacific Time and English.
+Initialization preserves each already stored field independently, so a member
+missing only locale keeps their timezone and vice versa. Concurrent writes to
+missing fields remain last-writer-wins without a transaction. Against the old
+API, a new App may receive an initialize result with no locale; it then uses
+the regular preferences update to save locale before returning preferences.
+An old App that reads preferences before its startup POST against the new API
+can temporarily receive `409`; its existing POST then initializes the member.
 
 Morning Brief enrollment remains a separate durable obligation. The POST
-attempts it after saving a new timezone, and the enrollment worker admits up to
+attempts it after saving missing preferences, and the enrollment worker admits up to
 20 timezone-bearing members without enrollment rows on each tick before
 processing due work. Qualification checks the Clerk membership and rollout
 boundary; existing `cancelled`, `ineligible`, and `completed` rows are not

@@ -6,6 +6,8 @@ import {
   type UpdateUserPreferencesRequest,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { apiClient$ } from "../../api-client.ts";
+import { resolveInitialLocaleFallbackFromBrowser } from "../../../i18n/locale-fallback.ts";
+import { isSupportedLocale } from "../../../i18n/resources.ts";
 import { retryMorningBriefPreference$ } from "./morning-brief-preference.ts";
 import { accept } from "../../../lib/accept.ts";
 
@@ -32,31 +34,71 @@ function initialTimezone(): string {
     : DEFAULT_USER_TIMEZONE;
 }
 
+function initialLocale() {
+  // initLocale$ has already selected a usable locale before authenticated
+  // bootstrap; it may have fallen back after a resource load failure.
+  const locale = document.documentElement.lang;
+  return isSupportedLocale(locale)
+    ? locale
+    : resolveInitialLocaleFallbackFromBrowser();
+}
+
 export const userPreferences$ = computed(
   async (get): Promise<InitializedUserPreferencesResponse> => {
     get(internalReloadPreferences$);
     const createClient = get(apiClient$);
     const client = createClient(userPreferencesContract);
     const result = await accept(client.get(), [200, 409]);
-    // A previous API version returns 200 with a null timezone during rollout.
+    // An older API version may return 200 with a missing field during rollout.
     if (
       result.status === 200 &&
       result.body.timezone !== null &&
-      isValidTimeZone(result.body.timezone)
+      isValidTimeZone(result.body.timezone) &&
+      result.body.locale !== null
     ) {
-      return { ...result.body, timezone: result.body.timezone };
+      return {
+        ...result.body,
+        timezone: result.body.timezone,
+        locale: result.body.locale,
+      };
     }
+    const locale = initialLocale();
     const initialized = await accept(
-      client.initialize({ body: { timezone: initialTimezone() } }),
+      client.initialize({
+        body: {
+          timezone: initialTimezone(),
+          locale,
+        },
+      }),
       [200],
     );
     if (
       initialized.body.timezone === null ||
       !isValidTimeZone(initialized.body.timezone)
     ) {
-      throw new Error("Timezone initialization returned invalid preferences");
+      throw new Error("Initialization returned invalid preferences");
     }
-    return { ...initialized.body, timezone: initialized.body.timezone };
+    if (initialized.body.locale === null) {
+      // A previous API version accepted only timezone in initialize.
+      const updated = await accept(client.update({ body: { locale } }), [200]);
+      if (
+        updated.body.timezone === null ||
+        !isValidTimeZone(updated.body.timezone) ||
+        updated.body.locale === null
+      ) {
+        throw new Error("Locale initialization returned invalid preferences");
+      }
+      return {
+        ...updated.body,
+        timezone: updated.body.timezone,
+        locale: updated.body.locale,
+      };
+    }
+    return {
+      ...initialized.body,
+      timezone: initialized.body.timezone,
+      locale: initialized.body.locale,
+    };
   },
 );
 

@@ -403,11 +403,19 @@ test("Switching back reuses the previously loaded authentication language", asyn
   expect(clerk.localizationRequests).toStrictEqual(["fr-FR"]);
 });
 
-test("An unsupported language falls back and repairs the workspace cache", async () => {
+test("An unsupported language initializes the workspace with the default locale", async () => {
   context.mocks.browser.language("nl-NL");
   const updates: unknown[] = [];
+  const initializations: unknown[] = [];
   const initialPreferences = preferences({ locale: null });
   context.mocks.data.userPreferences(initialPreferences);
+  context.mocks.api(userPreferencesContract.initialize, ({ body, respond }) => {
+    initializations.push(body);
+    return respond(200, {
+      ...initialPreferences,
+      locale: body.locale ?? DEFAULT_LOCALE,
+    });
+  });
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     updates.push(body);
     return respond(200, { ...initialPreferences, ...body });
@@ -417,8 +425,11 @@ test("An unsupported language falls back and repairs the workspace cache", async
 
   await waitForSettings();
   await waitFor(() => {
-    expect(updates).toContainEqual({ locale: DEFAULT_LOCALE });
+    expect(initializations).toContainEqual(
+      expect.objectContaining({ locale: DEFAULT_LOCALE }),
+    );
   });
+  expect(updates).toHaveLength(0);
   expect(document.documentElement).toHaveAttribute("lang", DEFAULT_LOCALE);
   expect(screen.getByText("Language")).toBeVisible();
 });

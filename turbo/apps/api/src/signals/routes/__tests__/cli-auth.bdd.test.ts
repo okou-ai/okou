@@ -161,6 +161,13 @@ describe("AUTH-02: approval transitions and timezone", () => {
       { device_code: second.device_code, timezone: "America/Los_Angeles" },
       [200],
     );
+    const missingLocale = await support.readUninitializedPreferences(actor);
+    expect(missingLocale.body.error.code).toBe(
+      "USER_PREFERENCES_UNINITIALIZED",
+    );
+    const initialized = await support.initializePreferences(actor);
+    expect(initialized.body.timezone).toBe("America/Los_Angeles");
+    expect(initialized.body.locale).toBe("en-US");
     const afterFirstTimezone = await support.readPreferences(actor);
     expect(afterFirstTimezone.body.timezone).toBe("America/Los_Angeles");
 

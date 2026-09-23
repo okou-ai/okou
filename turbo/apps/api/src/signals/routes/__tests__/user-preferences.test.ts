@@ -38,11 +38,12 @@ test("get requires initialization and post returns the saved preferences", async
   const initialized = await accept(
     client().initialize({
       headers: headers(),
-      body: { timezone: "Asia/Tokyo" },
+      body: { timezone: "Asia/Tokyo", locale: "ja-JP" },
     }),
     [200],
   );
   expect(initialized.body.timezone).toBe("Asia/Tokyo");
+  expect(initialized.body.locale).toBe("ja-JP");
 
   const after = await accept(client().get({ headers: headers() }), [200]);
   expect(after.body).toStrictEqual(initialized.body);
@@ -50,14 +51,56 @@ test("get requires initialization and post returns the saved preferences", async
   const repeated = await accept(
     client().initialize({
       headers: headers(),
-      body: { timezone: "America/Los_Angeles" },
+      body: { timezone: "America/Los_Angeles", locale: "en-US" },
     }),
     [200],
   );
   expect(repeated.body.timezone).toBe("Asia/Tokyo");
+  expect(repeated.body.locale).toBe("ja-JP");
 });
 
-test("initialization uses Pacific Time when no timezone is provided", async () => {
+test("initialization fills only a missing locale", async () => {
+  newMember();
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { timezone: "Asia/Tokyo" },
+    }),
+    [200],
+  );
+  await accept(client().get({ headers: headers() }), [409]);
+
+  const initialized = await accept(
+    client().initialize({
+      headers: headers(),
+      body: { timezone: "America/Los_Angeles", locale: "fr-FR" },
+    }),
+    [200],
+  );
+  expect(initialized.body.timezone).toBe("Asia/Tokyo");
+  expect(initialized.body.locale).toBe("fr-FR");
+});
+
+test("initialization fills only a missing timezone", async () => {
+  newMember();
+  await accept(
+    client().update({ headers: headers(), body: { locale: "de-DE" } }),
+    [200],
+  );
+  await accept(client().get({ headers: headers() }), [409]);
+
+  const initialized = await accept(
+    client().initialize({
+      headers: headers(),
+      body: { timezone: "Asia/Tokyo", locale: "fr-FR" },
+    }),
+    [200],
+  );
+  expect(initialized.body.timezone).toBe("Asia/Tokyo");
+  expect(initialized.body.locale).toBe("de-DE");
+});
+
+test("initialization uses Pacific Time and English when no hints are provided", async () => {
   newMember();
 
   const initialized = await accept(
@@ -65,6 +108,7 @@ test("initialization uses Pacific Time when no timezone is provided", async () =
     [200],
   );
   expect(initialized.body.timezone).toBe(DEFAULT_USER_TIMEZONE);
+  expect(initialized.body.locale).toBe("en-US");
   const persisted = await accept(client().get({ headers: headers() }), [200]);
-  expect(persisted.body.timezone).toBe(DEFAULT_USER_TIMEZONE);
+  expect(persisted.body).toStrictEqual(initialized.body);
 });

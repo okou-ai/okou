@@ -194,7 +194,11 @@ describe("MISC-02: preferences, push subscription, user export, and empty logs",
 
   it("reads and writes every supported locale through the canonical contract", async () => {
     const { api, admin } = testActors();
-    await api.updatePreferences(admin, { timezone: "UTC" }, [200]);
+    await api.updatePreferences(
+      admin,
+      { timezone: "UTC", locale: "en-US" },
+      [200],
+    );
     const supportedLocales = [
       "en-US",
       "pt-BR",

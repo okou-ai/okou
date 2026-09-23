@@ -3812,6 +3812,12 @@ async function prepareProjectedBrief() {
     await cleanupCatalog();
   });
   const headers = authHeaders(actor);
+  await accept(
+    setupApp({ context, routes: userPreferencesRoutes })(
+      userPreferencesContract,
+    ).initialize({ headers, body: { locale: "en-US" } }),
+    [200],
+  );
   await setOfficialWorkflowsEnabled(actor, false);
   await setMorningBriefEnabled(actor, true);
   await setSimpleMorningBriefEnabled(actor, true);
