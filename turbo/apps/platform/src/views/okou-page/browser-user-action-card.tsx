@@ -82,20 +82,15 @@ function ActionState({
       className={cn(
         "flex w-full flex-col justify-center gap-2",
         variant === "inline"
-          ? "h-full @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3"
-          : "min-h-20 sm:flex-row sm:items-center sm:justify-start sm:gap-4",
+          ? "h-full @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3"
+          : "min-h-20 sm:flex-row sm:items-center sm:justify-between sm:gap-4",
       )}
       role="status"
     >
-      <div className="flex min-w-0 max-w-full items-start gap-2.5">
-        <div
-          className={cn(
-            "flex shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground",
-            variant === "inline" ? "h-8 w-8" : "h-9 w-9",
-          )}
-        >
+      <div className="flex min-w-0 max-w-full items-start gap-2.5 @[520px]:flex-1">
+        <span className="mt-1 shrink-0 text-brand-text [&>svg]:size-4">
           {icon}
-        </div>
+        </span>
         <div className="min-w-0 max-w-sm">
           <div
             className={cn(
@@ -124,8 +119,8 @@ function ActionState({
           className={cn(
             "shrink-0 self-start",
             variant === "inline"
-              ? "pl-[42px] @[520px]:self-auto @[520px]:pl-0"
-              : "pl-12 sm:self-auto sm:pl-0",
+              ? "pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0"
+              : "pl-[26px] sm:ml-auto sm:self-auto sm:pl-0",
           )}
         >
           {action}
@@ -356,17 +351,10 @@ function PendingFormHeader({
     <div
       className={cn(
         "flex min-w-0 max-w-full items-center",
-        compact ? "gap-2.5" : "gap-3",
+        compact ? "gap-2.5 @[520px]:flex-1" : "gap-3",
       )}
     >
-      <div
-        className={cn(
-          "flex shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground",
-          compact ? "h-8 w-8" : "h-9 w-9",
-        )}
-      >
-        <Globe size={20} />
-      </div>
+      <Globe size={16} className="mt-1 shrink-0 self-start text-brand-text" />
       <div className="min-w-0 max-w-sm">
         {showTitle && (
           <h2 className="text-[0.9375rem] font-medium text-foreground">
@@ -669,9 +657,9 @@ function PendingInlineAction({
   const beginEntry = useSet(signals.beginEntry$);
   const endEntry = useSet(signals.endEntry$);
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
-      <div className="shrink-0 self-start pl-[42px] @[520px]:self-auto @[520px]:pl-0">
+      <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
         <ChatCardDetails
           title={t(($) => {
             return $.chat.browserInput.title;
@@ -961,11 +949,12 @@ function PendingInlineDirectInteraction({
   const { t } = useTranslation();
   const openBrowserSidebar = useSet(openThreadBrowserSession$);
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-1 @[380px]:gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3">
-      <div className="flex min-w-0 max-w-full items-center gap-2.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
-          <MousePointerClick size={20} />
-        </div>
+    <div className="flex h-full w-full flex-col justify-center gap-1 @[380px]:gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
+      <div className="flex min-w-0 max-w-full items-center gap-2.5 @[520px]:flex-1">
+        <MousePointerClick
+          size={16}
+          className="mt-1 shrink-0 self-start text-brand-text"
+        />
         <div className="min-w-0 max-w-sm">
           <div className="text-[0.9375rem] font-medium text-foreground">
             {t(($) => {
@@ -980,7 +969,7 @@ function PendingInlineDirectInteraction({
           </p>
         </div>
       </div>
-      <div className="flex w-full flex-wrap items-center gap-1 self-start pl-[42px] @[380px]:gap-2 @[520px]:w-auto @[520px]:self-auto @[520px]:pl-0">
+      <div className="flex w-full flex-wrap items-center gap-1 self-start pl-[26px] @[380px]:gap-2 @[520px]:ml-auto @[520px]:w-auto @[520px]:self-auto @[520px]:pl-0">
         <Button
           type="button"
           size="sm"
