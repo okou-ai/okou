@@ -440,6 +440,53 @@ async fn missing_decoded_files_do_not_mark_same_key_artifact_ineligible() {
 }
 
 #[tokio::test]
+async fn archive_required_group_warms_decoded_files_for_later_eligible_targets() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    write_cached_archive(&home, NAME, VERSION, &tarball_bytes());
+    write_storage_lock(&home, NAME, VERSION);
+    let archive = home.storage_cache_dir(NAME, VERSION).join("archive.tar.gz");
+    let url = "https://storage.example/unused";
+    let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
+    instruction.instructions_target_filename = Some("AGENTS.md".into());
+    let mut plan = plan_from_entries(
+        vec![
+            instruction,
+            storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
+        ],
+        vec![artifact_entry(
+            "/mnt/artifact".into(),
+            url.into(),
+            NAME,
+            VERSION,
+        )],
+        None,
+    );
+
+    let deferred = populate_cache_with_fresh_delivery(
+        &mut plan,
+        &MockSandbox::new("mixed-key-warm"),
+        &home,
+        &mut new_telemetry(),
+        None,
+        Some(&cache),
+    )
+    .await
+    .unwrap()
+    .expect("archive hit should schedule decoded warming for eligible targets");
+    assert!(plan.take_decoded().is_empty());
+    deferred.run().await;
+
+    assert!(cache.get_ready(NAME, VERSION).await.unwrap().is_some());
+    assert!(
+        archive.exists(),
+        "instruction consumers still need the archive"
+    );
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn mixed_key_does_not_hide_corrupt_decoded_files_from_eligible_targets() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

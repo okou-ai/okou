@@ -1372,7 +1372,8 @@ positive entries retain the existing background checks.
 When one name/version group also contains an instruction or another archive-required
 target, eligible storage and fresh artifact mounts may still use decoded files.
 The archive continues through its normal delivery path for the other target and
-is not retired while that target requires it.
+is not retired while that target requires it. A missing decoded entry can still
+be warmed from an archive hit or fill for a later plan.
 
 Artifact decoded selection has the same fail-closed boundary as storage:
 missing, busy, rejected, conflicting or capacity-ineligible optional cache work

@@ -2374,14 +2374,6 @@ fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
         .map(|target| (target.name.clone(), target.version.clone()))
 }
 
-fn is_decoded_download_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
-    !group.targets.is_empty()
-        && group
-            .targets
-            .iter()
-            .all(|target| plan.is_decoded_download(target.handle))
-}
-
 fn has_decoded_download_target(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
     group
         .targets
@@ -2409,7 +2401,7 @@ fn defer_background_fill_groups(
         .filter_map(|(group, outcome)| {
             let decoded = decoded
                 .as_ref()
-                .filter(|_| is_decoded_download_group(group, plan));
+                .filter(|_| has_decoded_download_target(group, plan));
             let action = if matches!(outcome, TargetOutcome::Decoded) {
                 if !group
                     .targets
