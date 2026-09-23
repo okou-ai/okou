@@ -7,6 +7,17 @@ interface ComposerEditorHandlers {
   readonly paste: (event: ClipboardEvent) => boolean;
 }
 
+function needsNativeEnterEvent(): boolean {
+  const { userAgent, vendor, maxTouchPoints } = navigator;
+  // Match ProseMirror 1.42.3's Android Chrome and iOS/iPadOS input paths.
+  // https://github.com/ProseMirror/prosemirror-view/blob/1.42.3/src/browser.ts
+  return (
+    (/Android \d/.test(userAgent) && /Chrome\/\d/.test(userAgent)) ||
+    (/Apple Computer/.test(vendor) &&
+      (/Mobile\/\w+/.test(userAgent) || maxTouchPoints > 2))
+  );
+}
+
 /** Bind committed React callbacks without changing the editor's mount lifetime. */
 export function createComposerEditorEvents(editor: Editor) {
   const handlers$ = state<ComposerEditorHandlers | null>(null);
@@ -25,13 +36,14 @@ export function createComposerEditorEvents(editor: Editor) {
         handleDOMEvents: {
           ...handleDOMEvents,
           keydown: (currentView, event) => {
-            // ProseMirror skips handleKeyDown for every Chrome Android Enter
-            // (including hardware send shortcuts). Its native DOM hook runs
-            // after NodeView stopEvent and requires explicit cancellation.
+            // ProseMirror skips Android Enter and replays iOS Enter without
+            // modifiers. Handle the original event so Shift-Enter splits once
+            // and hardware Enter keeps the send preference. Unhandled mobile
+            // newlines still reach ProseMirror. This hook runs after NodeView
+            // stopEvent and requires explicit cancellation when handled.
             if (
-              /Android \d/.test(navigator.userAgent) &&
-              /Chrome\/\d/.test(navigator.userAgent) &&
               event.key === "Enter" &&
+              needsNativeEnterEvent() &&
               !currentView.composing &&
               handlers.keyDown(event)
             ) {
