@@ -7162,7 +7162,7 @@
     "saving": "सेव हो रहा है…",
     "security": {
       "appleDh": "Mac Screen Sharing (Apple DH)",
-      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session.",
+      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
       "caBundle": "CA प्रमाणपत्र (PEM)",
       "caHelp": "अधिकतम 8 CA प्रमाणपत्र, कुल 64 KiB। निजी कुंजी या सर्वर प्रमाणपत्र न चिपकाएँ।",
       "caHint": "सर्वर प्रमाणपत्र जारी करने वाले सार्वजनिक CA प्रमाणपत्र चिपकाएँ",

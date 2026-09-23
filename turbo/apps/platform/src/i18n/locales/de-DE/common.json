@@ -7162,7 +7162,7 @@
     "saving": "Wird gespeichert…",
     "security": {
       "appleDh": "Mac Screen Sharing (Apple DH)",
-      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session.",
+      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
       "caBundle": "CA-Zertifikate (PEM)",
       "caHelp": "Bis zu 8 CA-Zertifikate, insgesamt 64 KiB. Füge keinen privaten Schlüssel und kein Serverzertifikat ein.",
       "caHint": "Füge die öffentlichen CA-Zertifikate ein, die das Serverzertifikat ausgestellt haben",

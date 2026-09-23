@@ -596,8 +596,39 @@ describe("private Runner VNC authority", () => {
     expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
       outcome: "valid",
     });
-    await api.grantSsh(f, false);
+    const rotated = await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: apple.body.credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "apple_dh_username_password",
+            username: "operator",
+            password: "new-secret",
+          },
+        },
+      }),
+      [200],
+    );
+    expect(rotated.body).toMatchObject({
+      authMethod: "apple_dh_username_password",
+      username: "operator",
+      revision: 2,
+    });
+    expect(JSON.stringify(rotated.body)).not.toContain("new-secret");
     expect((await check(target, 1, { expectedTransport })).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    await expect(
+      api.resolve(target, { supportedProfiles: profile }),
+    ).resolves.toMatchObject({
+      outcome: "resolved_apple_dh",
+      generation: 2,
+      authentication: { password: "new-secret" },
+    });
+    await api.grantSsh(f, false);
+    expect((await check(target, 2, { expectedTransport })).body).toStrictEqual({
       outcome: "unavailable",
     });
   });

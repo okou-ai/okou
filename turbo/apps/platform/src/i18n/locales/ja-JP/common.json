@@ -7143,7 +7143,7 @@
     "saving": "保存中…",
     "security": {
       "appleDh": "Mac Screen Sharing (Apple DH)",
-      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session.",
+      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
       "caBundle": "CA 証明書（PEM）",
       "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",

@@ -7143,7 +7143,7 @@
     "saving": "正在保存…",
     "security": {
       "appleDh": "Mac 屏幕共享 (Apple DH)",
-      "appleDhHelp": "需要通过已保存的 SSH 连接访问 macOS 屏幕共享。RFB 目标必须是该 Mac 上的 127.0.0.1 或 ::1；SSH 保护整个 VNC 会话。",
+      "appleDhHelp": "需要通过已保存的 SSH 连接访问 macOS 屏幕共享。RFB 目标必须是该 Mac 上的 127.0.0.1 或 ::1；SSH 保护整个 VNC 会话。 请使用你控制的 Mac SSH 主机；其主机密钥无法排除后续代理转发。",
       "caBundle": "CA证书（PEM）",
       "caHelp": "最多8个CA证书，总大小64 KiB。请勿粘贴私钥或服务器证书。",
       "caHint": "粘贴签发该服务器证书的公开CA证书",

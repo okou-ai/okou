@@ -53,6 +53,20 @@ function hasTransportAuthority(
   return transport.type === "direct" || row.sshGrantAgentId !== null;
 }
 
+function hasValidAppleDhRoute(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+) {
+  return (
+    row.securityType !== "apple_dh" ||
+    (row.trustMode === "none" &&
+      row.caBundle === null &&
+      row.x509ServerName === null &&
+      transport.type === "ssh" &&
+      (row.host === "127.0.0.1" || row.host === "::1"))
+  );
+}
+
 function sameTransport(left: TransportSnapshot, right: TransportSnapshot) {
   return (
     left.type === right.type &&
@@ -143,14 +157,7 @@ export async function checkRunnerVnc(
   if (!hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
   }
-  if (
-    row.securityType === "apple_dh" &&
-    (transport.type !== "ssh" ||
-      (row.host !== "127.0.0.1" && row.host !== "::1") ||
-      row.trustMode !== "none" ||
-      row.caBundle !== null ||
-      row.x509ServerName !== null)
-  ) {
+  if (!hasValidAppleDhRoute(row, transport)) {
     return { outcome: "unavailable" };
   }
   return {
@@ -188,12 +195,7 @@ export async function resolveRunnerVnc(
     return { outcome: "unavailable" };
   }
   if (
-    (row.securityType === "apple_dh" &&
-      (row.trustMode !== "none" ||
-        row.caBundle !== null ||
-        row.x509ServerName !== null ||
-        transport.type !== "ssh" ||
-        (row.host !== "127.0.0.1" && row.host !== "::1"))) ||
+    !hasValidAppleDhRoute(row, transport) ||
     (row.securityType !== "apple_dh" &&
       ((row.trustMode === "system" && row.caBundle !== null) ||
         (row.trustMode === "custom_ca" && row.caBundle === null) ||
