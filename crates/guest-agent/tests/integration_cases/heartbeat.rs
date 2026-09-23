@@ -80,6 +80,49 @@ async fn heartbeat_first_success() {
     assert!(result.is_ok());
 }
 
+#[tokio::test]
+async fn agentphone_typing_refresh_repeats_without_making_failures_fatal() {
+    let api = SharedApiMock::new().await;
+    let server = api.server();
+    let observer = MockCallObserver::default();
+    let observer_for_mock = observer.clone();
+
+    let mock = server.mock(|when, then| {
+        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        then.respond_with(move |_req| match observer_for_mock.record() {
+            1 => json_http_response(200, json!({"ok": true, "typingRefreshIntervalSeconds": 3})),
+            _ => json_http_response(401, json!({"error": {"message": "temporary"}})),
+        });
+    });
+
+    let shutdown = CancellationToken::new();
+    let shutdown_clone = shutdown.clone();
+    let handle = tokio::spawn(async move {
+        guest_agent::heartbeat::heartbeat_loop_for_run(
+            TEST_RUN_ID.to_string(),
+            http_client!(),
+            shutdown_clone,
+        )
+        .await
+    });
+
+    observer
+        .wait_for(2, Duration::from_secs(10), "typing refresh")
+        .await;
+    shutdown.cancel();
+    let result = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("typing refresh should stop promptly")
+        .expect("heartbeat task should not panic");
+    mock.delete_async().await;
+
+    assert!(
+        result.is_ok(),
+        "typing refresh failure must not stop the run"
+    );
+    assert_eq!(observer.calls(), 2);
+}
+
 #[tokio::test(start_paused = true)]
 async fn heartbeat_does_not_replay_overdue_ticks_after_slow_request() {
     const INTERVAL: Duration = Duration::from_millis(20);

@@ -186,9 +186,7 @@ function targetIsAuthorized(
 ): boolean {
   return target.kind === "builtin"
     ? authorization.enabledConnectorSlugs.includes(target.connectorSlug)
-    : authorization.customConnectorGrants.some((grant) => {
-        return grant.customConnectorId === target.customConnectorId;
-      });
+    : authorization.customConnectorIds.includes(target.customConnectorId);
 }
 
 function createConnectorAccountActionSignals(

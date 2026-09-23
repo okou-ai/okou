@@ -34,6 +34,7 @@ import {
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
+import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
 import { settle } from "../utils";
 import {
   getSandboxAuthForRun,
@@ -361,18 +362,31 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
         inArray(agentRuns.status, ["pending", "running"]),
       ),
     )
-    .returning({ id: agentRuns.id });
+    .returning({
+      id: agentRuns.id,
+      triggerSource: agentRuns.triggerSource,
+    });
   signal.throwIfAborted();
 
   if (result.length === 0) {
     return notFound("Agent run not found");
   }
 
+  const typingTarget =
+    result[0]?.triggerSource === "agentphone"
+      ? await settle(set(hasAgentPhoneTypingTargetForRun$, body.runId, signal))
+      : null;
+  const refreshTyping = typingTarget?.ok && typingTarget.value;
+  signal.throwIfAborted();
+
   waitUntil(set(dispatchProgressCallbacks$, body.runId, signal));
 
   return {
     status: 200 as const,
-    body: { ok: true },
+    body: {
+      ok: true,
+      ...(refreshTyping ? { typingRefreshIntervalSeconds: 4 } : {}),
+    },
   };
 });
 

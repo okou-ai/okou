@@ -23,20 +23,20 @@ import type {
   CustomConnectorResponse,
   CustomConnectorPermissionBundleResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { PlatformConnectorPermissionMetadata } from "../../../../signals/connector-domain.ts";
+import type {
+  PlatformConnectorPermissionMetadata,
+  PlatformUserPermissionGrant,
+} from "../../../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { applyUserPermissionGrants$ } from "../../../../signals/permission-allow/permission-allow-signals.ts";
 import { activeUserPermissionGrantSnapshot } from "../../../../signals/user-permission-grants.ts";
 import {
-  managedConnectorAgentAccessRows$,
-  managedConnectorFirewallPermissionMetadata$,
-  connectorAccessManagementPermissionAgentId$,
+  managedConnectorAccessSignals$,
   connectorAccessManagementSearch$,
-  setConnectorAgentAuthorization$,
-  setConnectorAccessManagementPermissionAgentId$,
   setConnectorAccessManagementSearch$,
   type ConnectorAgentAccessRow,
+  type ManagedConnectorAccessSignals,
 } from "../../../../signals/okou-page/settings/connector-access-management.ts";
 import {
   customConnectorAgentAuthorizations$,
@@ -240,12 +240,12 @@ type AccessRowProps = Omit<
 >;
 
 function BuiltInAgentAccessRow({
-  connectorSlug,
+  signals,
   ...props
-}: AccessRowProps & { readonly connectorSlug: ConnectorSlug }) {
+}: AccessRowProps & { readonly signals: ManagedConnectorAccessSignals }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const [result, authorize] = useLoadableSet(setConnectorAgentAuthorization$);
+  const [result, authorize] = useLoadableSet(signals.setAuthorization$);
   const saving = result.state === "loading";
   return (
     <AgentAccessRow
@@ -257,10 +257,7 @@ function BuiltInAgentAccessRow({
         }
         detach(
           (async () => {
-            await authorize(
-              { agentId: row.agent.agentId, connectorSlug, authorized },
-              signal,
-            );
+            await authorize({ agentId: row.agent.agentId, authorized }, signal);
             toast.success(
               t(
                 ($) => {
@@ -463,14 +460,18 @@ function ConnectorAccessDialog({
 
 function AgentPermissionDialog({
   row,
+  grants,
   metadata,
+  metadata$,
   connectorSlug,
   connectorLabel,
   applyGrantPolicies,
   onClose,
 }: {
   readonly row: ConnectorAgentAccessRow | undefined;
+  readonly grants: readonly PlatformUserPermissionGrant[] | null;
   readonly metadata: PlatformConnectorPermissionMetadata | null;
+  readonly metadata$: ManagedConnectorAccessSignals["metadata$"];
   readonly connectorSlug: ConnectorSlug;
   readonly connectorLabel: string;
   readonly applyGrantPolicies: ApplyUserPermissionGrants;
@@ -478,8 +479,7 @@ function AgentPermissionDialog({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const grants = row?.grants ?? [];
-  if (!row || !metadata) {
+  if (!row || !metadata || !grants) {
     return null;
   }
   const activeSnapshot = activeUserPermissionGrantSnapshot(grants);
@@ -490,7 +490,7 @@ function AgentPermissionDialog({
       agentId={row.agent.agentId}
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}
-      metadata$={managedConnectorFirewallPermissionMetadata$}
+      metadata$={metadata$}
       displayName={agentName(row.agent)}
       initialPolicies={initialPolicies}
       initialGrants={activeSnapshot.grants}
@@ -525,16 +525,16 @@ export function ConnectorAccessManagementDialog({
   allowAccessIncrease,
   onClose,
 }: ConnectorAccessManagementDialogProps) {
-  const rowsLoadable = useLastLoadable(managedConnectorAgentAccessRows$);
-  const metadataLoadable = useLastLoadable(
-    managedConnectorFirewallPermissionMetadata$,
-  );
-  const search = useGet(connectorAccessManagementSearch$);
-  const permissionAgentId = useGet(connectorAccessManagementPermissionAgentId$);
-  const setSearch = useSet(setConnectorAccessManagementSearch$);
-  const setPermissionAgentId = useSet(
-    setConnectorAccessManagementPermissionAgentId$,
-  );
+  const signals = useGet(
+    managedConnectorAccessSignals$,
+  ) as ManagedConnectorAccessSignals;
+  const rowsLoadable = useLastLoadable(signals.rows$);
+  const grantsLoadable = useLoadable(signals.permissionGrants$);
+  const metadataLoadable = useLastLoadable(signals.metadata$);
+  const search = useGet(signals.search$);
+  const permissionAgentId = useGet(signals.permissionAgentId$);
+  const setSearch = useSet(signals.setSearch$);
+  const setPermissionAgentId = useSet(signals.setPermissionAgentId$);
   const [, applyGrantPolicies] = useLoadableSet(applyUserPermissionGrants$);
   const rows = rowsLoadable.state === "hasData" ? rowsLoadable.data : [];
   const metadata =
@@ -560,7 +560,7 @@ export function ConnectorAccessManagementDialog({
             <BuiltInAgentAccessRow
               key={row.agent.agentId}
               row={row}
-              connectorSlug={connectorSlug}
+              signals={signals}
               connectorLabel={connectorLabel}
               hasPermissions={(metadata?.permissionCount ?? 0) > 0}
               allowAccessIncrease={allowAccessIncrease}
@@ -578,7 +578,9 @@ export function ConnectorAccessManagementDialog({
       />
       <AgentPermissionDialog
         row={selectedPermissionRow}
+        grants={grantsLoadable.state === "hasData" ? grantsLoadable.data : null}
         metadata={metadata}
+        metadata$={signals.metadata$}
         connectorSlug={connectorSlug}
         connectorLabel={connectorLabel}
         applyGrantPolicies={applyGrantPolicies}
@@ -600,7 +602,6 @@ function customConnectorAccessRows(
       authorized: access.grants.some((grant) => {
         return grant.customConnectorId === connectorId;
       }),
-      grants: [],
     };
   });
 }

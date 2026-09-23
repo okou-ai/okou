@@ -24,7 +24,8 @@ The code that owns the DOM also owns its control styling and states.
 | Shared page canvas and brand shell                        | `turbo/apps/platform/src/views/auth/auth-shell.tsx`                    |
 | Clerk layer order and card geometry                       | `turbo/apps/platform/src/views/css/index.css`                          |
 | Exact browser artifact versions                           | `turbo/apps/platform/src/lib/clerk-versions.ts` and its `package.json` |
-| Real hosted UI coverage                                   | `e2e/playwright/tests/auth-v1.spec.ts`                                 |
+| Hosted sign-up and sign-in smoke                          | `e2e/tests/02-browser/brw-t01-platform-e2e.bats`                       |
+| Application auth behavior                                 | `turbo/apps/platform/src/views/auth-v1/__tests__`                      |
 
 The current contract has two appearance levels. Provider appearance maps
 application semantics into Clerk and assigns Clerk's stylesheet to its own
@@ -150,19 +151,16 @@ Platform Vitest replaces `@clerk/react` at the external package boundary. Those
 tests verify application routing, props, loading, redirects, and lifecycle;
 they are not visual evidence for hosted Clerk markup.
 
-`e2e/playwright/tests/auth-v1.spec.ts` loads the real hosted Clerk UI against a
-development instance and refuses production publishable keys. It covers light
-and dark themes, desktop and mobile layouts, sign-in and sign-up, password
-feedback and reveal, consent, OTP errors and retry, help and password recovery,
-optional passkey availability, resource failure recovery, and test user
-cleanup.
+The dedicated Bats browser smoke completes hosted Clerk sign-up and sign-in on
+the deployed app. Platform Vitest covers app-owned auth behavior, including
+routing, theme bindings, resource failures, and redirect handling. The routine
+Playwright gate covers chat send-and-reply rather than auth presentation.
 
 Clerk browser artifacts are exact-version contracts. The package versions and
 the constants in `turbo/apps/platform/src/lib/clerk-versions.ts` must stay
-aligned; runtime loading rejects a mismatched UI version. An upgrade must run
-the existing real-UI E2E and perform a focused visual smoke check on the
-affected themes, viewports, and auth states. Large screenshot snapshot suites
-are not required by default.
+aligned; runtime loading rejects a mismatched UI version. An upgrade must pass
+the hosted Clerk Bats smoke and the Platform auth tests. Visual presentation is
+not an automated Playwright gate.
 
 ## Why internal-DOM adapters are forbidden
 

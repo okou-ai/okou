@@ -55,6 +55,15 @@ export type PersonalSubscriptionProviderType =
   | typeof CODEX_TYPE
   | typeof CLAUDE_CODE_TYPE;
 
+/** Request-local identity selected at capture. Mutable account and credential
+ * state must still come from a fresh locked snapshot before use. */
+export interface CapturedPersonalSubscriptionAccount {
+  readonly id: string;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: PersonalSubscriptionProviderType;
+}
+
 export function isPersonalSubscriptionProviderType(
   type: string,
 ): type is PersonalSubscriptionProviderType {
@@ -1673,6 +1682,7 @@ interface SubscriptionCredentialOwner {
  * inactive writers do not mirror. See the writer audit in the identity guide. */
 async function lockSubscriptionCredentialSnapshot(
   args: SubscriptionCredentialOwner,
+  requiredConnectedSourceId?: string,
 ) {
   const { db } = args;
   await lockModelProviderState(db, args);
@@ -1716,6 +1726,20 @@ async function lockSubscriptionCredentialSnapshot(
   const accounts = inventory.flatMap((row) => {
     return row.account ? [row.account] : [];
   });
+  if (
+    requiredConnectedSourceId &&
+    !accounts.some((account) => {
+      return (
+        account.id === requiredConnectedSourceId &&
+        account.orgId === args.orgId &&
+        account.userId === args.userId &&
+        account.type === args.type &&
+        account.disconnectedAt === null
+      );
+    })
+  ) {
+    return null;
+  }
   const names =
     args.type === CLAUDE_CODE_TYPE
       ? ["CLAUDE_CODE_OAUTH_TOKEN"]
@@ -2274,10 +2298,13 @@ async function coordinateSubscriptionSnapshot(
   signal: AbortSignal = AbortSignal.timeout(10_000),
 ) {
   const observed = await args.db.transaction(async (tx) => {
-    let snapshot = await lockSubscriptionCredentialSnapshot({
-      ...args,
-      db: tx,
-    });
+    let snapshot = await lockSubscriptionCredentialSnapshot(
+      {
+        ...args,
+        db: tx,
+      },
+      readCompletedSnapshot ? args.sourceId : undefined,
+    );
     if (
       !snapshot ||
       (args.initializeProviderId !== undefined &&

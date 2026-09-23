@@ -1,0 +1,61 @@
+[package]
+name = "runner-remote"
+version = "0.1.0"
+edition.workspace = true
+description = "Runner guest RPC, remote usage, SSH, and VNC services"
+
+[dependencies]
+ably-subscriber.workspace = true
+api-contracts.workspace = true
+runner-host.workspace = true
+runner-network.workspace = true
+runner-provider.workspace = true
+runner-rpc-proto.workspace = true
+runner-types.workspace = true
+sandbox.workspace = true
+async-trait.workspace = true
+base64 = { workspace = true, features = ["simd-unsafe", "std"] }
+bytes = { workspace = true, features = ["std"] }
+chrono = { workspace = true, features = ["now", "serde"] }
+futures-util = { workspace = true, features = ["async-await", "async-await-macro", "sink", "std"] }
+hex = { workspace = true, features = ["std"] }
+pkcs5 = { workspace = true, features = ["alloc", "pbes2"] }
+pkcs8 = { workspace = true, features = ["encryption", "std"] }
+reqwest = { workspace = true, features = ["json", "rustls"] }
+rfb-client.workspace = true
+rsa = { workspace = true, features = ["encoding", "std"] }
+russh = { workspace = true, features = ["ring", "rsa"] }
+rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+sha2 = { workspace = true, features = ["alloc", "oid"] }
+thiserror = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
+tokio-tungstenite = { workspace = true, features = ["handshake"] }
+tokio-util = { workspace = true, features = ["io", "io-util", "rt"] }
+tracing = { workspace = true, features = ["attributes", "std"] }
+uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
+webpki-roots.workspace = true
+zeroize = { workspace = true, features = ["alloc"] }
+
+[dev-dependencies]
+guest-control-client.workspace = true
+guest-control-proto.workspace = true
+httpmock = { workspace = true, features = ["cookies"] }
+libc = { workspace = true, features = ["std"] }
+log = { workspace = true }
+nix = { workspace = true, features = ["process", "signal"] }
+png.workspace = true
+rcgen = { workspace = true, features = ["crypto", "ring"] }
+runner-network = { workspace = true, features = ["test-support"] }
+runner-rpc-client.workspace = true
+sandbox-mock.workspace = true
+tempfile = { workspace = true, features = ["getrandom"] }
+tokio = { workspace = true, features = ["process", "test-util"] }
+tracing-log = { workspace = true, features = ["log-tracer", "std"] }
+tracing-subscriber = { workspace = true, features = ["ansi", "fmt", "smallvec", "std", "tracing-log"] }
+tracing-test-support.workspace = true
+
+[lints]
+workspace = true

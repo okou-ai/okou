@@ -3,6 +3,8 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   agentsByIdContract,
@@ -129,10 +131,29 @@ function mockCustomConnectorGrantUpdateResponse(
 }
 
 export const apiAgentsHandlers = [
+  mockApi(connectorOverviewContract.agent, ({ params, respond }) => {
+    return respond(200, {
+      enabledConnectorSlugs:
+        mockEnabledConnectorSlugsByAgent.get(params.id) ?? [],
+      customConnectorIds: (
+        mockCustomConnectorGrantsByAgent.get(params.id) ?? []
+      ).map((grant) => {
+        return grant.customConnectorId;
+      }),
+    });
+  }),
   // GET /api/agents
   mockApi(agentsMainContract.list, ({ respond }) => {
     return respond(200, mockAgents);
   }),
+
+  // Exercise the staggered-deployment fallback in existing test fixtures.
+  // Tests for the new API override this handler with a bulk response.
+  mockApi(connectorAgentAccessContract.get, ({ respond }) =>
+    respond(404, {
+      error: { code: "NOT_FOUND", message: "Not found" },
+    }),
+  ),
 
   // GET /api/agents/:id/user-connectors
   mockApi(userBuiltinConnectorsContract.get, ({ params, respond }) => {

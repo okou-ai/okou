@@ -2,9 +2,9 @@ import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
+import { Toolbar } from "@base-ui/react/toolbar";
 import type {
   FormEvent,
-  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
   UIEvent as ReactUIEvent,
@@ -1080,7 +1080,7 @@ function chatThreadEmojiDisplayName(
 }
 
 function chatThreadEmojiSectionId(key: string): string {
-  return `chat-thread-emoji-section-${key}`;
+  return `chat-thread-emoji-section-${encodeURIComponent(key)}`;
 }
 
 // The category whose title is pinned right now: the last section that has
@@ -1166,58 +1166,30 @@ function ChatThreadEmojiCategoryRail({
   const selectedCategory =
     activeCategory ?? CHAT_THREAD_EMOJI_FREQUENT_CATEGORY;
 
-  // A tablist takes one tab stop, and the arrow keys move between the tabs
-  // inside it.
-  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
-    const step =
-      event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (step === 0) {
-      return;
-    }
-    const tabs = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
-    );
-    const current = tabs.findIndex((tab) => {
-      return tab === document.activeElement;
-    });
-    if (current === -1) {
-      return;
-    }
-    event.preventDefault();
-    const next = (current + step + tabs.length) % tabs.length;
-    tabs[next]?.focus();
-    const nextCategory = categories[next];
-    if (nextCategory) {
-      onSelect(nextCategory.key);
-    }
-  }
-
+  // These buttons scroll one continuous feed. Toolbar owns keyboard focus;
+  // the pinned section owns the current-location indicator independently.
   return (
-    <div
-      role="tablist"
+    <Toolbar.Root
       aria-label={t(($) => {
         return $.chat.thread.emojiCategories;
       })}
       // 7px top and bottom keeps the buttons clear of the popover edge and of
       // the divider; the active bar then sits inside the bottom gap.
       className="flex gap-0.5 border-b border-border px-2 py-[7px]"
-      onKeyDown={handleKeyDown}
     >
       {categories.map((category) => {
         const CategoryIcon = category.icon;
         const selected = category.key === selectedCategory;
         return (
-          <button
+          <Toolbar.Button
             key={category.key}
             type="button"
-            role="tab"
-            aria-selected={selected}
+            aria-current={selected ? "location" : undefined}
             aria-controls={chatThreadEmojiSectionId(category.key)}
             aria-label={category.label}
             title={category.label}
-            tabIndex={selected ? 0 : -1}
             className={cn(
-              "relative flex h-8 flex-1 items-center justify-center rounded-lg transition-colors hover:bg-state-hover hover:text-foreground",
+              "relative flex h-8 flex-1 items-center justify-center rounded-lg transition-colors hover:bg-state-hover hover:text-foreground focus-visible:bg-state-hover focus-visible:text-foreground",
               selected ? "text-foreground" : "text-muted-foreground",
             )}
             onClick={() => {
@@ -1233,10 +1205,10 @@ function ChatThreadEmojiCategoryRail({
                 className="absolute -bottom-2 h-0.5 w-4 rounded-t-sm bg-primary"
               />
             )}
-          </button>
+          </Toolbar.Button>
         );
       })}
-    </div>
+    </Toolbar.Root>
   );
 }
 

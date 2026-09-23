@@ -21,7 +21,6 @@ import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   closeCustomConnectorDialog$,
   connectCustomConnectorAuthorizationWithDialog$,
@@ -46,11 +45,12 @@ import {
 } from "./connector-agent-access-button.tsx";
 import { noConnectorImg } from "../../platform-assets.ts";
 import { customConnectorTarget } from "./custom-connector-display.ts";
-import { connectorAccountSummaryByTarget$ } from "../../../../signals/okou-page/connector-accounts.ts";
+import { connectorOverviewAccountSummaryByTarget$ } from "../../../../signals/okou-page/connector-accounts.ts";
 import { ConnectorAccountManagerDialog } from "./connector-account-manager-dialog.tsx";
 import {
   ConnectorAccountSummaryText,
   connectorAccountSummaryStatus,
+  type ConnectorAccountDisplaySummary,
   type ConnectorAccountSummaryStatus,
 } from "./connector-card.tsx";
 import {
@@ -81,7 +81,7 @@ interface CustomConnectorRowProps {
   readonly onEdit: () => void;
   readonly onManageAccess: () => void;
   readonly onDelete: () => void;
-  readonly accountSummary?: ConnectorAccountSummary;
+  readonly accountSummary?: ConnectorAccountDisplaySummary;
   readonly accountSummaryStatus: ConnectorAccountSummaryStatus;
   readonly onManageAccounts: () => void;
 }
@@ -119,7 +119,7 @@ interface CustomConnectorCardContentProps {
   readonly hasActions: boolean;
   readonly allowAccessIncrease: boolean;
   readonly onManageAccess: () => void;
-  readonly accountSummary?: ConnectorAccountSummary;
+  readonly accountSummary?: ConnectorAccountDisplaySummary;
   readonly accountSummaryStatus: ConnectorAccountSummaryStatus;
 }
 
@@ -388,7 +388,7 @@ function CustomConnectorDialogs({
   const dialog = useGet(customConnectorDialog$);
   const closeDialog = useSet(closeCustomConnectorDialog$);
   const accountSummariesLoadable = useLoadable(
-    connectorAccountSummaryByTarget$,
+    connectorOverviewAccountSummaryByTarget$,
   );
   const accessAccountSummary =
     dialog.kind === "access" && accountSummariesLoadable.state === "hasData"
@@ -465,7 +465,7 @@ export function CustomConnectorGrid({
   readonly className?: string;
 }) {
   const accountSummariesLoadable = useLoadable(
-    connectorAccountSummaryByTarget$,
+    connectorOverviewAccountSummaryByTarget$,
   );
   const accountSummaryStatus = connectorAccountSummaryStatus(
     accountSummariesLoadable.state,

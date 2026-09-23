@@ -11,6 +11,7 @@ import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 
 import type { Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { testOverride } from "../../lib/singleton";
 import {
   loadConnectorRuntimeSnapshot,
@@ -808,6 +809,11 @@ export async function addUserCustomConnector(
     options,
   );
   if (result.status === "updated") {
+    if (!options.deferRuntimeWakeupUntilOuterCommit) {
+      await publishUserSignal([args.userId], "composerAgentConnectorsChanged", {
+        agentId: args.agentId,
+      });
+    }
     return { status: "added" };
   }
   return result;

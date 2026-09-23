@@ -727,7 +727,16 @@ function extractAgentPhoneIsGroup(
   body: Record<string, unknown>,
   data: Record<string, unknown>,
 ): boolean {
+  const group = valueObject(data.group);
+  if (
+    data.group !== null &&
+    typeof data.group === "object" &&
+    !Array.isArray(data.group)
+  ) {
+    return true;
+  }
   const explicit =
+    booleanValue(group, ["isGroup", "is_group"]) ??
     booleanValue(data, ["isGroup", "is_group", "group"]) ??
     booleanValue(body, ["isGroup", "is_group", "group"]);
   if (explicit !== undefined) {
@@ -853,6 +862,10 @@ function extractAgentPhoneEvent(
     stringValue(data, ["conversationId", "conversation_id"]) ??
     stringValue(body, ["conversationId", "conversation_id"]) ??
     null;
+  const groupId =
+    stringValue(valueObject(data.group), ["groupId", "group_id"]) ??
+    stringValue(data, ["groupId", "group_id"]) ??
+    null;
   const isGroup = extractAgentPhoneIsGroup(body, data);
   const mentioned = extractAgentPhoneMentioned(body, data, messageBody);
   const recentHistory = extractAgentPhoneRecentHistory(body, data);
@@ -875,6 +888,7 @@ function extractAgentPhoneEvent(
     channel,
     messageId,
     conversationId,
+    groupId,
     isGroup,
     mentioned,
     agentphoneAgentId,
@@ -937,6 +951,17 @@ function shouldAcceptAgentPhoneEvent(args: {
       webhookId: args.webhookId,
       channel: args.channel,
       fromShape: describeAgentPhoneHandleShape(args.event.fromNumber),
+    });
+    return false;
+  }
+
+  if (
+    args.channel === "imessage" &&
+    args.event.isGroup &&
+    !args.event.groupId
+  ) {
+    log.warn("AgentPhone group webhook is missing a provider group id", {
+      webhookId: args.webhookId,
     });
     return false;
   }

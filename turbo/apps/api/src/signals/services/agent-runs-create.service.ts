@@ -80,6 +80,7 @@ import {
 import {
   captureActivePersonalModelProviderAccount,
   isPersonalSubscriptionProviderType,
+  type CapturedPersonalSubscriptionAccount,
 } from "./model-provider-account.service";
 import { piStableContextVariantDigest } from "./pi-stable-context.service";
 import { buildAgentIdentityPrompt } from "./agent-identity-prompt.service";
@@ -760,6 +761,7 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly command: AnyCreateAgentRunCommandArgs;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
 
 interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
@@ -903,6 +905,7 @@ interface BuildCreateAgentRunArgsInput {
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
 
 function emptyStablePrompt(): PiStableContextPromptProjection {
@@ -1082,6 +1085,12 @@ function buildCreateAgentRunArgs(
     modelProviderId: command.modelProviderId ?? agentModelProviderId,
     modelProviderCredentialScope: command.modelProviderCredentialScope,
     modelProviderType: command.body.modelProvider,
+    ...(args.capturedPersonalSubscriptionAccount
+      ? {
+          capturedPersonalSubscriptionAccount:
+            args.capturedPersonalSubscriptionAccount,
+        }
+      : {}),
     selectedModelOverride: command.selectedModelOverride ?? agentSelectedModel,
     ...(command.builtInModelRuntimeRoute
       ? { builtInModelRuntimeRoute: command.builtInModelRuntimeRoute }
@@ -1198,6 +1207,12 @@ async function captureSubscriptionAccount(
   }
   return {
     ...input,
+    capturedPersonalSubscriptionAccount: {
+      id: account.id,
+      orgId: account.orgId,
+      userId: account.userId,
+      type: pin.modelProvider,
+    },
     command: {
       ...command,
       modelProviderId: account.id,

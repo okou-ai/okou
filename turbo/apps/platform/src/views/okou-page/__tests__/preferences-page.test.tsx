@@ -9,6 +9,7 @@ import {
   type UpdateUserModelPreferenceRequest,
 } from "@okouai/api-contracts/contracts/user-model-preference";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -115,6 +116,15 @@ function mockPreferences(
   const updates: UpdateUserPreferencesRequest[] = [];
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, preferences);
+  });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: [],
+      customConnectors: [],
+      accountSummaries: [],
+      computerUseHosts: [],
+      cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
+    });
   });
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     const update = { ...body };
@@ -340,6 +350,48 @@ test("Navigating away cancels a pending preference save", async () => {
     expectSelected(getFastRole("button", "⌘ Enter", reopened));
     expect(getFastRole("button", "⌘ Enter", reopened)).toBeEnabled();
   });
+});
+
+test("A checkout toast follows saved, selected and system appearance", async () => {
+  mockPreferences({ theme: null });
+  context.mocks.browser.cookie("__Secure-okou-theme=v1.dark");
+  const media = context.mocks.browser.matchMedia(false);
+
+  await setupPage({
+    context,
+    path: "/settings?concurrency=purchased",
+    host: "app.okou.ai",
+  });
+
+  const message = await screen.findByText(
+    "Concurrency added. Your new slots will become available after Stripe confirms the subscription.",
+  );
+  const toaster = message.closest("[data-sonner-toaster]");
+  expect(toaster).toHaveAttribute("data-sonner-theme", "dark");
+
+  click(getFastRole("button", "Light"));
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "light");
+  });
+
+  click(getFastRole("button", "System"));
+  media.setMatches((query) => {
+    return query === "(prefers-color-scheme: dark)";
+  });
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "dark");
+  });
+
+  media.setMatches(false);
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "light");
+  });
+
+  click(getFastRole("button", "Dark"));
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "dark");
+  });
+  expect(message).toBeInTheDocument();
 });
 
 test("Theme preferences initialize from the shared cookie", async () => {

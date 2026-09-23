@@ -189,3 +189,47 @@ in the local issue research directory. Each contains source identifiers,
 numeric observations, all six stage summaries, parameterized statement order
 and reduced plan trees. CPU-profiled and earlier exploratory runs are excluded
 from the reported final tables.
+
+## Request-local captured environment fragment (#36255)
+
+The later request-local change carries the captured account's ID, type, org and
+user into new-run environment resolution. Its matching path removes the exact
+account lookup before the fresh locked coordination snapshot. The benchmark
+adds `environment-captured-fragment` beside the original
+`environment-database-fragment`; each returns the completed coordinated account
+state. The captured stage measures the coordinator, while the original stage
+also measures the scoped account lookup. Pure in-memory identity matching in the
+private resolver is excluded from both fragments.
+
+Four sequential local runs used old-first/captured-first/captured-first/old-first
+stage order on PostgreSQL 18.6, Node v24.21.0, one connected account, and pool
+maximum two. Each stage had 50 warm-ups and 100 measured operations per run and
+provider. The table pools the 400 raw wall-clock observations per cell and uses
+nearest-rank percentiles; it does not subtract separately aggregated stage
+percentiles to estimate complete run latency.
+
+| Provider | Fragment                                   | SQL statements |    p50 / p90 / p95 / p99 (ms) |
+| -------- | ------------------------------------------ | -------------: | ----------------------------: |
+| Claude   | Original exact lookup + fresh coordination |              5 | 4.875 / 5.652 / 5.988 / 7.761 |
+| Claude   | Captured identity + fresh coordination     |              4 | 4.061 / 4.721 / 5.066 / 7.240 |
+| Codex    | Original exact lookup + fresh coordination |              5 | 5.085 / 5.985 / 6.574 / 8.607 |
+| Codex    | Captured identity + fresh coordination     |              4 | 4.129 / 5.557 / 6.020 / 7.935 |
+
+All four runs showed lower p50 and p90 for the captured fragment for both
+providers. This establishes a small local database-fragment improvement and one
+fewer statement on the coherent path. The experiment does not measure the HTTP
+critical path, thread overlap, queue/Runner, production database network,
+failures, KMS rotation or resource pressure. Exact deployed API/Runner follow-up
+remains required before attributing an `api_to_spawn` change.
+
+The four JSONL receipts are under the local issue research directory as
+`bench-commit-{a1,b1,b2,a2}.jsonl`. All used baseline HEAD
+`7a9f87e4905e2127969b8822c93e043be7fc2389` with a dirty candidate service,
+account-service SHA-256
+`35eb8001441880f4dff752b6535dcc35fbad96dee395bacb3a33ab03080375cd`,
+resolver SHA-256
+`e00f69477b1f1823d8a86fe408c4eb332078bf0a006aecb76562583b3c0bba04`,
+identical harness SHA-256
+`6806f12b567d5c42a47e12621a44bb8e3f182799233c800d27c1bd5f84af7323`,
+and lockfile SHA-256
+`ef136d5bfa86806f3be6baadcfb483388788957bc52e612f0e4f41d178d01891`.

@@ -19,7 +19,10 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
-import { publishHomeTaskRecommendationsChangedSafely } from "../external/realtime";
+import {
+  publishHomeTaskRecommendationsChangedSafely,
+  publishUserSignal,
+} from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
@@ -814,6 +817,11 @@ const updateAgentCustomConnectorsInner$ = command(
       return validationError(updated.message);
     }
 
+    await publishUserSignal([auth.userId], "composerAgentConnectorsChanged", {
+      agentId: params.id,
+    });
+    signal.throwIfAborted();
+
     return {
       status: 200 as const,
       body: {
@@ -893,6 +901,10 @@ const updateAgentUserConnectorsInner$ = command(
     }
 
     const enabledConnectorSlugs = [...updated.enabledConnectorSlugs];
+    await publishUserSignal([auth.userId], "composerAgentConnectorsChanged", {
+      agentId: params.id,
+    });
+    signal.throwIfAborted();
     await publishHomeTaskRecommendationsChangedSafely(
       { userId: auth.userId, orgId: auth.orgId },
       { agentId: params.id },

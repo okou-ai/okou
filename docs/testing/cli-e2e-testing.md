@@ -128,7 +128,8 @@ to preserve their existing billing and provider test prerequisites.
 Runner preparation completes onboarding through
 the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.
-Only the dedicated paid-onboarding spec exercises the video onboarding UI.
+Platform Vitest covers the video onboarding UI and checkout return flow.
+The deployed Playwright suite covers one chat send-and-reply happy path.
 
 Runner account preparation reads Clerk's Backend API
 `GET /v1/instance/organization_settings` once before creating its five identities.
@@ -198,9 +199,9 @@ then explicitly adjust capacity or design resumable discovery. Repeated passes
 do not guarantee progress past that capacity limit. Do not delete skipped
 organizations or introduce blind retries to work around it.
 
-Playwright's setup project owns the feature account; unrelated lanes create no
-unused global account. Failed checkouts report HTTP status, request ID, and
-Retry-After, and product Playwright lanes retain traces on the first failure.
+The single Playwright chat smoke owns its account; no unused global account is
+created. Failed checkouts report HTTP status, request ID, and Retry-After for
+runner account preparation, and the chat smoke retains a trace on failure.
 
 Runner credential sign-in failures upload `runner-e2e-sign-in-diagnostics` for
 one day, separately from payment diagnostics and credentials. This upload is
