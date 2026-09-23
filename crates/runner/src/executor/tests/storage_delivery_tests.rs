@@ -731,9 +731,26 @@ async fn oversized_ordinary_manifest_keeps_file_transport_before_decoded_batches
         vas_storage_name: None,
         vas_version_id: None,
     });
-    apply_with_telemetry(&fixture, &sandbox, manifest, &files)
+    let context = minimal_context();
+    let mut telemetry = test_telemetry(&fixture.config, &context);
+    download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
         .await
         .unwrap();
+    let observations = telemetry.pending_ops_with_outcome_snapshot();
+    assert!(observations.iter().any(|(action, success, outcome, _)| {
+        action == "runner_storage_manifest_batch_count"
+            && *success
+            && outcome.as_deref() == Some("two")
+    }));
+    let batches = observations
+        .iter()
+        .filter(|(action, _, _, _)| action == "runner_storage_manifest_batch_apply")
+        .collect::<Vec<_>>();
+    assert_eq!(batches.len(), 2);
+    assert_eq!(batches[0].2.as_deref(), Some("fallback_first"));
+    assert_eq!(batches[0].3.as_deref(), Some("over_64_kib"));
+    assert_eq!(batches[1].2.as_deref(), Some("dedicated_last"));
+    assert_eq!(batches[1].3.as_deref(), Some("at_most_4_kib"));
     let writes = sandbox.write_file_calls();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].path, STORAGE_MANIFEST_PATH);
