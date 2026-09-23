@@ -169,31 +169,10 @@ export async function checkRunnerVnc(
   };
 }
 
-export async function resolveRunnerVnc(
-  db: Db,
-  clerk: ClerkClient,
-  input: RunnerVncResolveRequest & { readonly runId: string },
-  signal: AbortSignal,
-): Promise<RunnerVncResolveResponse> {
-  const row = await currentRunnerVncAuthority(db, input, signal);
-  if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
-    return { outcome: "unavailable" };
-  }
-  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
-    throw new Error("VNC connection has an invalid stored profile");
-  }
-  const transport = storedTransportSnapshot(row);
-  const capability = selectedCapability(
-    row,
-    transport,
-    input.supportedProfiles,
-  );
-  if (!capability) {
-    return { outcome: "unsupported_profile" };
-  }
-  if (!hasTransportAuthority(row, transport)) {
-    return { outcome: "unavailable" };
-  }
+function storedRunnerSecurity(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+) {
   if (
     !hasValidAppleDhRoute(row, transport) ||
     (row.securityType !== "apple_dh" &&
@@ -217,6 +196,13 @@ export async function resolveRunnerVnc(
   if (!security.success) {
     throw new Error("VNC connection has an invalid stored security profile");
   }
+  return security.data;
+}
+
+async function decryptRunnerAuthentication(
+  row: CurrentVncAuthority,
+  signal: AbortSignal,
+) {
   // No database transaction or row lock spans KMS. Never log this value or its validation issues.
   const decrypted = await settle(
     decryptStoredSecretValue(row.encryptedPassword),
@@ -243,6 +229,36 @@ export async function resolveRunnerVnc(
       "VNC credential has an invalid stored authentication shape",
     );
   }
+  return authentication.data;
+}
+
+export async function resolveRunnerVnc(
+  db: Db,
+  clerk: ClerkClient,
+  input: RunnerVncResolveRequest & { readonly runId: string },
+  signal: AbortSignal,
+): Promise<RunnerVncResolveResponse> {
+  const row = await currentRunnerVncAuthority(db, input, signal);
+  if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
+    return { outcome: "unavailable" };
+  }
+  if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
+    throw new Error("VNC connection has an invalid stored profile");
+  }
+  const transport = storedTransportSnapshot(row);
+  const capability = selectedCapability(
+    row,
+    transport,
+    input.supportedProfiles,
+  );
+  if (!capability) {
+    return { outcome: "unsupported_profile" };
+  }
+  if (!hasTransportAuthority(row, transport)) {
+    return { outcome: "unavailable" };
+  }
+  const security = storedRunnerSecurity(row, transport);
+  const authentication = await decryptRunnerAuthentication(row, signal);
   const current = await currentRunnerVncAuthority(db, input, signal);
   if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
     return { outcome: "unavailable" };
@@ -251,22 +267,22 @@ export async function resolveRunnerVnc(
     host: row.host,
     port: row.port,
     generation: row.generation,
-    security: security.data,
-    authentication: authentication.data,
+    security,
+    authentication,
   };
   if (row.securityType === "apple_dh") {
     if (
       transport.type !== "ssh" ||
-      security.data.type !== "apple_dh" ||
-      authentication.data.method !== "apple_dh_username_password"
+      security.type !== "apple_dh" ||
+      authentication.method !== "apple_dh_username_password"
     ) {
       throw new Error("VNC Apple DH handoff has an invalid stored profile");
     }
     return {
       outcome: "resolved_apple_dh",
       ...resolved,
-      security: security.data,
-      authentication: authentication.data,
+      security,
+      authentication,
       transport,
     };
   }
