@@ -516,14 +516,13 @@ export function AgentChatPage() {
           {/* Above the generic starting points and below the composer: these
               cards describe the member's own unfinished work, so they are only
               worth the position when there are any, and the section renders
-              nothing when there are not. */}
-          {/* `order-1` keeps the mobile column greeting, recommendations,
-              starting points, composer: the composer's own `order-3` is what
-              holds it at the bottom within thumb reach, so this section takes
-              the step above the chips rather than sharing theirs. */}
-          <div className="order-1 sm:order-none">
-            <HomeTaskRecommendations agentId={currentChatAgentId} />
-          </div>
+              nothing when there are not. It is mounted bare rather than in a
+              wrapper: a wrapper would stay a flex item after the section
+              returned null, and the column's own `gap` would then be charged
+              twice — the 80px the composer sat above the chips was two 40px
+              steps with an empty box between them, not one deliberate step.
+              The ordering the wrapper carried moved onto the section itself. */}
+          <HomeTaskRecommendations agentId={currentChatAgentId} />
 
           <div className="order-2 sm:order-none">
             {taskChipsEnabled ? (
