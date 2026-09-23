@@ -15,6 +15,7 @@ set -euo pipefail
 case "$*" in
   *"/jobs?per_page=100"*)
     [[ "$*" == *"--paginate"* ]] || exit 90
+    [[ "$MOCK_CASE" != jobs_api_error ]] || exit 97
     [[ "$*" =~ /runs/([0-9]+)/jobs ]] || exit 96
     run_id="${BASH_REMATCH[1]}"
     case "$MOCK_CASE" in
@@ -64,6 +65,9 @@ MOCK_GH
 
 cat > "$test_root/bin/curl" <<'MOCK_CURL'
 #!/usr/bin/env bash
+if [[ -n "${MOCK_CURL_LOG:-}" ]]; then
+  printf '%s\n' "$*" >> "$MOCK_CURL_LOG"
+fi
 exit 22
 MOCK_CURL
 
@@ -117,17 +121,22 @@ assert_status success pending
 export GITHUB_EVENT_NAME=pull_request
 export EXPECTED_JOB=deploy-cli
 export EXPECTED_WORKFLOW=turbo.yml
-download_output=$(MOCK_CASE=skipped OUTPUT_DIR="$test_root/output" \
+download_output=$(MOCK_CASE=skipped MOCK_CURL_LOG="$test_root/curl.log" \
+  OUTPUT_DIR="$test_root/output" \
   ARTIFACT_REQUIRED=false CHECK_PUBLISHER_STATUS=true WAIT_SECONDS=600 \
   bash "$SCRIPT_DIR/download-okou-cli-artifact.sh")
 grep -qx 'found=false' <<< "$download_output" || {
   echo "FAIL: terminal publisher did not allow a CLI-less image" >&2
   exit 1
 }
+[[ "$(wc -l < "$test_root/curl.log")" -eq 2 ]] || {
+  echo "FAIL: terminal publisher must recheck ready.json before fallback" >&2
+  exit 1
+}
 
 # An active producer or API error must preserve the existing wait. The sleep
 # mock stops the loop immediately, so this test never actually waits.
-for mock_case in none queued api_error; do
+for mock_case in none queued api_error jobs_api_error; do
   if MOCK_CASE="$mock_case" OUTPUT_DIR="$test_root/output" \
     ARTIFACT_REQUIRED=false CHECK_PUBLISHER_STATUS=true WAIT_SECONDS=600 \
     bash "$SCRIPT_DIR/download-okou-cli-artifact.sh" > "$test_root/download.log" 2>&1; then
