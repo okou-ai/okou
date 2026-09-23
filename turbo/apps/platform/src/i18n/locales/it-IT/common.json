@@ -2018,9 +2018,13 @@
       "title": "Inoltra a"
     },
     "homeTasks": {
+      "empty": "Nessuna attività suggerita",
       "existingThread": "Continua la chat",
+      "exploreWorkflow": "Esplora un workflow",
       "heading": "Ripreso dal tuo lavoro recente",
-      "newThread": "Nuova chat"
+      "newTasksAvailable": "Nuove attività disponibili",
+      "newThread": "Nuova chat",
+      "reload": "Ricarica attività"
     },
     "mail": {
       "bcc": "bcc",

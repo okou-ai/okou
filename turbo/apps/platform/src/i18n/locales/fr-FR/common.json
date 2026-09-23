@@ -2018,9 +2018,13 @@
       "title": "Transférer vers"
     },
     "homeTasks": {
+      "empty": "Aucune tâche suggérée pour le moment",
       "existingThread": "Continuer le chat",
+      "exploreWorkflow": "Explorer un workflow",
       "heading": "Repris de votre travail récent",
-      "newThread": "Nouveau chat"
+      "newTasksAvailable": "De nouvelles tâches sont disponibles",
+      "newThread": "Nouveau chat",
+      "reload": "Recharger les tâches"
     },
     "mail": {
       "bcc": "bcc",

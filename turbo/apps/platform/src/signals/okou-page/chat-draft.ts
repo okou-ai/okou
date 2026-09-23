@@ -7,7 +7,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { resetSignal, settle, tapError } from "../utils.ts";
+import { onRejection, resetSignal, settle, tapError } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -24,7 +24,11 @@ import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import type { EditorDocumentSnapshot } from "./user-message-document-codec.ts";
+import {
+  messageDocumentToPrompt,
+  type EditorDocumentSnapshot,
+  type RestoredDraftState,
+} from "./user-message-document-codec.ts";
 import { i18n } from "../../i18n/index.ts";
 import { flattenAnnotatedImage } from "./flatten-annotated-image.ts";
 import { logger } from "../log.ts";
@@ -537,6 +541,14 @@ export interface DraftSignals {
   readInput$: Command<string, []>;
   setInput$: Command<void, [string]>;
   appendInput$: Command<void, [string]>;
+  prependRecommendation$: Command<void, [string]>;
+  recommendationHandoff$: Computed<{
+    readonly needsRemoteMerge: boolean;
+  } | null>;
+  finishRecommendationHandoff$: Command<
+    Promise<boolean>,
+    [RestoredDraftState | null, AbortSignal]
+  >;
   setInputSyncTarget$: Command<void, [DraftInputSyncTarget | null]>;
   takeRestoredUserMessage$: Command<UserMessageDocument | null, []>;
   readEditorDocument$: Command<EditorDocumentSnapshot | null, []>;
@@ -580,6 +592,7 @@ interface DraftSeed {
 export interface DraftInputSyncTarget {
   syncInput(value: string): void;
   syncUserMessage(value: UserMessageDocument | null): void;
+  prependInput(value: string): void;
 }
 
 /**
@@ -716,6 +729,9 @@ function createDraftInputSignals() {
     return get(internalInput$) !== undefined;
   });
   const internalInputSyncTarget$ = state<DraftInputSyncTarget | null>(null);
+  const hasMountedSyncTarget$ = computed((get) => {
+    return get(internalInputSyncTarget$) !== null;
+  });
   const input$ = computed((get) => {
     return get(internalInput$) ?? "";
   });
@@ -756,6 +772,15 @@ function createDraftInputSignals() {
     const separator = base.length > 0 && !base.endsWith(" ") ? " " : "";
     set(setInput$, `${base}${separator}${text}`);
   });
+  const prependInput$ = command(({ get, set }, value: string) => {
+    const text = value.trim();
+    if (!text) {
+      return;
+    }
+    const base = get(internalInput$) ?? "";
+    get(internalInputSyncTarget$)?.prependInput(text);
+    set(internalInput$, base.trim().length > 0 ? `${text}\n\n${base}` : text);
+  });
   return {
     hasLocalInput$,
     input$,
@@ -763,7 +788,9 @@ function createDraftInputSignals() {
     readInput$,
     setInput$,
     appendInput$,
+    prependInput$,
     setInputSyncTarget$,
+    hasMountedSyncTarget$,
     syncUserMessage$,
   };
 }
@@ -781,6 +808,9 @@ function createDraftDocumentSignals() {
     restoredUserMessage = null;
     return value;
   });
+  const peekRestoredUserMessage$ = command(() => {
+    return restoredUserMessage;
+  });
   const readEditorDocument$ = command(() => {
     return editorDocument;
   });
@@ -792,6 +822,7 @@ function createDraftDocumentSignals() {
   return {
     setRestoredUserMessage$,
     takeRestoredUserMessage$,
+    peekRestoredUserMessage$,
     readEditorDocument$,
     setEditorDocument$,
   };
@@ -1029,8 +1060,123 @@ export function createDraftSignals(): DraftSignals {
     reconcileRestoredAttachments$,
   });
 
+  const recommendationHandoffState$ = state<{
+    readonly needsRemoteMerge: boolean;
+  } | null>(null);
+  const recommendationHandoff$ = computed((get) => {
+    return get(recommendationHandoffState$);
+  });
+  const clearWithRecommendationHandoff$ = command(({ set }) => {
+    set(clear$);
+    set(recommendationHandoffState$, null);
+  });
+  const prependRecommendation$ = command(({ get, set }, value: string) => {
+    const text = value.trim();
+    if (!text) {
+      return;
+    }
+    const hadLocalDraft =
+      get(draftInput.hasLocalInput$) ||
+      get(internalGenerationTemplate$) !== undefined ||
+      get(internalAttachments$).length > 0;
+    const currentDocument =
+      set(draftDocument.readEditorDocument$)?.toMessageDocument() ??
+      set(draftDocument.peekRestoredUserMessage$);
+    if (currentDocument && !get(draftInput.hasMountedSyncTarget$)) {
+      // An unmounted editor can still hold a structured draft. Keep its
+      // mentions and template parts when the recommendation is prefixed.
+      set(draftDocument.setRestoredUserMessage$, {
+        version: 1,
+        parts: [
+          { type: "text", text: `${text}\n\n` },
+          ...currentDocument.parts,
+        ],
+      });
+    }
+    set(draftInput.prependInput$, text);
+    const prior = get(recommendationHandoffState$);
+    set(recommendationHandoffState$, {
+      needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
+    });
+  });
+  const finishRecommendationHandoff$ = command(
+    async (
+      { get, set },
+      restored: RestoredDraftState | null,
+      signal: AbortSignal,
+    ): Promise<boolean> => {
+      const handoff = get(recommendationHandoffState$);
+      if (!handoff) {
+        return false;
+      }
+      // Claim before awaiting attachment reconciliation so concurrent page
+      // setup and click handlers cannot merge the same remote draft twice.
+      set(recommendationHandoffState$, null);
+      return await onRejection(
+        async () => {
+          if (handoff.needsRemoteMerge && restored) {
+            const localInput = get(draftInput.input$);
+            const localDocument = set(draftDocument.peekRestoredUserMessage$) ??
+              set(draftDocument.readEditorDocument$)?.toMessageDocument() ?? {
+                version: 1 as const,
+                parts: [{ type: "text" as const, text: localInput }],
+              };
+            const remoteDocument: UserMessageDocument | null =
+              restored.userMessage ??
+              (restored.content.length > 0
+                ? {
+                    version: 1,
+                    parts: [{ type: "text", text: restored.content }],
+                  }
+                : null);
+            const mergedDocument: UserMessageDocument | null = remoteDocument
+              ? {
+                  version: 1,
+                  parts: [
+                    ...localDocument.parts,
+                    { type: "text", text: "\n\n" },
+                    ...remoteDocument.parts,
+                  ],
+                }
+              : restored.attachments.length > 0
+                ? localDocument
+                : null;
+            const mergedContent = mergedDocument
+              ? messageDocumentToPrompt(mergedDocument)
+              : null;
+            if (mergedDocument && mergedContent !== null) {
+              await set(
+                seed$,
+                {
+                  content: mergedContent,
+                  userMessage: mergedDocument,
+                  generationTemplate: get(internalGenerationTemplate$),
+                  attachments: [
+                    ...get(internalAttachments$),
+                    ...restored.attachments.map(createRestoredAttachment),
+                  ],
+                },
+                signal,
+              );
+            }
+          }
+          signal.throwIfAborted();
+          return true;
+        },
+        () => {
+          if (get(recommendationHandoffState$) === null) {
+            set(recommendationHandoffState$, handoff);
+          }
+        },
+      );
+    },
+  );
+
   return {
     ...draftInput,
+    prependRecommendation$,
+    recommendationHandoff$,
+    finishRecommendationHandoff$,
     takeRestoredUserMessage$: draftDocument.takeRestoredUserMessage$,
     readEditorDocument$: draftDocument.readEditorDocument$,
     setEditorDocument$: draftDocument.setEditorDocument$,
@@ -1043,7 +1189,7 @@ export function createDraftSignals(): DraftSignals {
     removeAttachment$,
     dragOver$,
     setDragOver$,
-    clear$,
+    clear$: clearWithRecommendationHandoff$,
     seed$,
   };
 }

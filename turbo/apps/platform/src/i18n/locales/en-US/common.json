@@ -1981,9 +1981,13 @@
       "title": "Forward to"
     },
     "homeTasks": {
+      "empty": "No suggestions yet",
       "existingThread": "Continue chat",
+      "exploreWorkflow": "Explore workflow",
       "heading": "Picked up from your recent work",
-      "newThread": "New chat"
+      "newTasksAvailable": "New tasks available",
+      "newThread": "New chat",
+      "reload": "Reload tasks"
     },
     "mail": {
       "bcc": "bcc",

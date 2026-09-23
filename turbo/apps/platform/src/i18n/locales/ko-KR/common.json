@@ -1974,9 +1974,13 @@
       "title": "전달 대상"
     },
     "homeTasks": {
+      "empty": "아직 추천 작업이 없습니다",
       "existingThread": "채팅 계속하기",
+      "exploreWorkflow": "워크플로 살펴보기",
       "heading": "최근 작업에서 이어갈 일",
-      "newThread": "새 채팅"
+      "newTasksAvailable": "새 작업이 있습니다",
+      "newThread": "새 채팅",
+      "reload": "작업 새로고침"
     },
     "mail": {
       "bcc": "숨은 참조",

@@ -1,19 +1,24 @@
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   MessageSquarePlus,
   MessageSquareText,
+  RefreshCw,
   Sparkles,
+  Workflow,
 } from "lucide-react";
 import type { HomeTaskRecommendation } from "@okouai/api-contracts/contracts/home-task-recommendations";
-import { surfaceVariants } from "@okouai/ui";
+import { Button, Skeleton, surfaceVariants } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import {
   homeTaskRecommendations$,
   homeTaskRecommendationsEnabled$,
+  homeTaskRecommendationsPendingRevision$,
+  homeTaskRecommendationsRemovedAgentId$,
   homeTaskRecommendationsRevision$,
+  reloadHomeTaskRecommendations$,
   startHomeTaskRecommendation$,
 } from "../../signals/okou-page/home-task-recommendations.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -51,10 +56,22 @@ function RecommendationConnectors({
 
 function RecommendationTarget({
   target,
+  purpose,
 }: {
   readonly target: HomeTaskRecommendation["target"];
+  readonly purpose: HomeTaskRecommendation["purpose"];
 }) {
   const { t } = useTranslation();
+  if (purpose === "workflow") {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+        <Workflow className="size-3" aria-hidden />
+        {t(($) => {
+          return $.chat.homeTasks.exploreWorkflow;
+        })}
+      </span>
+    );
+  }
   const existing = target.kind === "existing-thread";
   const Icon = existing ? MessageSquareText : MessageSquarePlus;
   return (
@@ -98,7 +115,10 @@ function RecommendationCard({
       </span>
       <span className="mt-auto flex items-center justify-between gap-2 pt-2">
         <span className="flex min-w-0 items-center gap-2">
-          <RecommendationTarget target={recommendation.target} />
+          <RecommendationTarget
+            target={recommendation.target}
+            purpose={recommendation.purpose}
+          />
           <RecommendationConnectors slugs={recommendation.connectors} />
         </span>
         <ArrowRight
@@ -110,12 +130,25 @@ function RecommendationCard({
   );
 }
 
+function RecommendationCardSkeleton() {
+  return (
+    <div
+      data-slot="home-task-recommendation-skeleton"
+      className={cn(surfaceVariants(), "flex min-h-28 flex-col gap-2 p-3")}
+    >
+      <Skeleton className="h-4 w-3/4" />
+      <Skeleton className="h-3 w-full" />
+      <Skeleton className="h-3 w-2/3" />
+      <Skeleton className="mt-auto h-3 w-1/3" />
+    </div>
+  );
+}
+
 /**
  * The personalized task row on the agent home page.
  *
- * It renders nothing at all when there is nothing to recommend. A heading over
- * an empty row would promise the member a suggestion the evidence did not
- * support, and the page already has its own starting points below.
+ * Cards remain fixed during a visit. Entry and explicit reload read one
+ * completed server snapshot; an Ably push only offers a reload affordance.
  */
 export function HomeTaskRecommendations({
   agentId,
@@ -126,22 +159,30 @@ export function HomeTaskRecommendations({
   const pageSignal = useGet(pageSignal$);
   const enabled = useGet(homeTaskRecommendationsEnabled$);
   const revision = useGet(homeTaskRecommendationsRevision$);
+  const pendingRevision = useGet(homeTaskRecommendationsPendingRevision$);
+  const removedAgentId = useGet(homeTaskRecommendationsRemovedAgentId$);
   const start = useSet(startHomeTaskRecommendation$);
+  const reload = useSet(reloadHomeTaskRecommendations$);
+  const loadable = useLoadable(homeTaskRecommendations$);
   const set = useLastResolved(homeTaskRecommendations$);
 
-  if (
-    !enabled ||
-    !set ||
-    set.revision !== revision ||
-    set.recommendations.length === 0 ||
-    !agentId ||
-    set.agentId !== agentId
-  ) {
+  if (!enabled || !agentId || removedAgentId === agentId) {
     return null;
   }
 
+  const visibleSet =
+    set?.revision === revision && set.agentId === agentId ? set : null;
+  const loading = loadable.state === "loading" && visibleSet === null;
+  const hasNewTasks =
+    pendingRevision?.agentId === agentId &&
+    (pendingRevision.revision === undefined ||
+      pendingRevision.revision !== visibleSet?.contentRevision);
+
   const handleStart = (recommendation: HomeTaskRecommendation) => {
     detach(start({ agentId, recommendation }, pageSignal), Reason.DomCallback);
+  };
+  const handleReload = () => {
+    detach(reload(pageSignal), Reason.DomCallback);
   };
 
   return (
@@ -155,23 +196,60 @@ export function HomeTaskRecommendations({
       // behind for the column's `gap` to charge for.
       className="order-1 flex w-full flex-col gap-2 sm:order-none"
     >
-      <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Sparkles className="size-3.5" aria-hidden />
-        {t(($) => {
-          return $.chat.homeTasks.heading;
-        })}
-      </h3>
-      <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {set.recommendations.map((recommendation) => {
-          return (
-            <RecommendationCard
-              key={recommendation.id}
-              recommendation={recommendation}
-              onStart={handleStart}
-            />
-          );
-        })}
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Sparkles className="size-3.5" aria-hidden />
+          {t(($) => {
+            return $.chat.homeTasks.heading;
+          })}
+        </h3>
+        <div className="flex items-center gap-1">
+          {hasNewTasks ? (
+            <span className="text-[11px] text-muted-foreground">
+              {t(($) => {
+                return $.chat.homeTasks.newTasksAvailable;
+              })}
+            </span>
+          ) : null}
+          <Button
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            disabled={loading}
+            aria-label={t(($) => {
+              return $.chat.homeTasks.reload;
+            })}
+            title={t(($) => {
+              return $.chat.homeTasks.reload;
+            })}
+            onClick={handleReload}
+          >
+            <RefreshCw aria-hidden />
+          </Button>
+        </div>
       </div>
+      <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {loading
+          ? [0, 1, 2].map((index) => {
+              return <RecommendationCardSkeleton key={index} />;
+            })
+          : visibleSet?.recommendations.map((recommendation) => {
+              return (
+                <RecommendationCard
+                  key={recommendation.id}
+                  recommendation={recommendation}
+                  onStart={handleStart}
+                />
+              );
+            })}
+      </div>
+      {!loading && visibleSet?.recommendations.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {t(($) => {
+            return $.chat.homeTasks.empty;
+          })}
+        </p>
+      ) : null}
     </section>
   );
 }

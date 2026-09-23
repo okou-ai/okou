@@ -2125,6 +2125,32 @@ function createMountedDraftInputSyncTarget({
     setEditorDocument(createEditorDocumentSnapshot(editor.state.doc));
   };
   return {
+    prependInput(value) {
+      const prefix = editor.schema.nodeFromJSON(
+        valueToWorkflowComposerDoc(value),
+      );
+      const firstBlock = editor.state.doc.firstChild;
+      const hasDraft =
+        editor.state.doc.childCount > 1 ||
+        (firstBlock !== null &&
+          (firstBlock.type.name !== "paragraph" ||
+            firstBlock.content.size > 0));
+      const content = hasDraft
+        ? [
+            ...prefix.content.content,
+            editor.schema.node("paragraph"),
+            ...editor.state.doc.content.content,
+          ]
+        : [...prefix.content.content];
+      const changed = setWorkflowComposerDocument(
+        editor,
+        editor.schema.node("doc", undefined, content),
+      );
+      if (changed) {
+        runtime.replaceFeedbackItems(feedbackItemsFromWorkflowComposer(editor));
+        syncEditorDocument();
+      }
+    },
     syncInput(value) {
       if (workflowComposerDocToString(editor) === value) {
         return;

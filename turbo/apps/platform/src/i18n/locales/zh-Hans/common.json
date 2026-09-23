@@ -1974,9 +1974,13 @@
       "title": "转发到"
     },
     "homeTasks": {
+      "empty": "暂时没有推荐任务",
       "existingThread": "继续聊天",
+      "exploreWorkflow": "探索工作流",
       "heading": "从近期工作中提取",
-      "newThread": "新建聊天"
+      "newTasksAvailable": "有新任务可查看",
+      "newThread": "新建聊天",
+      "reload": "重新加载任务"
     },
     "mail": {
       "bcc": "密送",
