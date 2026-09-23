@@ -958,6 +958,25 @@ export const currentAgentSshAccess$ = computed(async (get) => {
     ? { identity, agentId: agent.agentId, ...result.body }
     : null;
 });
+
+export function sshAccessForAgent(agentId: string) {
+  return computed(async (get) => {
+    const [identity, summary] = await Promise.all([
+      get(sshIdentity$),
+      get(sshSummary$),
+    ]);
+    if (!identity || !summary || summary.configuredCount === 0) {
+      return null;
+    }
+    const result = await accept(
+      (await get(sshClients$)).access.get({ params: { agentId } }),
+      [200, 404],
+      undefined,
+      { showErrorToast: false },
+    );
+    return result.status === 200 ? { identity, agentId, ...result.body } : null;
+  });
+}
 export const updateAgentSshAccess$ = command(
   async (
     { get, set },
@@ -1027,15 +1046,6 @@ export const sshAgentAccessRows$ = computed(async (get) => {
   return rows.filter((row) => {
     return row !== null;
   });
-});
-
-// Keep the owner attached when views retain this read during a background refresh.
-export const sshAgentAccessSnapshot$ = computed(async (get) => {
-  const [identity, rows] = await Promise.all([
-    get(sshIdentity$),
-    get(sshAgentAccessRows$),
-  ]);
-  return { identity, rows };
 });
 
 const accessManagementIdentity$ = state<string | null>(null);

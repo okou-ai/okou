@@ -24,6 +24,7 @@ import {
   getConnectorAction,
   listAgent,
   mcpCustomConnector,
+  mockConnectorOverviewAccountSummaries,
   mockConnectors,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
@@ -559,6 +560,18 @@ test.each([
           : [],
       });
     });
+    mockConnectorOverviewAccountSummaries(context, () => {
+      return authorized
+        ? [
+            {
+              target: account.target,
+              accountCount: 1,
+              attentionCount: 0,
+              defaultConnection: account,
+            },
+          ]
+        : [];
+    });
     context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
       return respond(200, { grants: [] });
     });
@@ -687,6 +700,18 @@ test("Cancelled custom OAuth cannot cover or replace a new connector draft", asy
           ]
         : [],
     });
+  });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return authorized
+      ? [
+          {
+            target: account.target,
+            accountCount: 1,
+            attentionCount: 0,
+            defaultConnection: account,
+          },
+        ]
+      : [];
   });
   context.mocks.api(connectorAccountsContract.connection, ({ respond }) => {
     return authorized

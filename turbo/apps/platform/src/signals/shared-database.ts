@@ -12,7 +12,6 @@ import type {
   ComputedKey,
   IndexedDbDiagnostics,
   IndexedDbSnapshotMeasurement,
-  ListedComputerUseHost,
 } from "../shared-database/computed-key.ts";
 import type { ConnectionDiagnostics } from "./connection-diagnostics.ts";
 import {
@@ -20,14 +19,6 @@ import {
   reloadChatIndicatorsLocally$,
 } from "./chat-thread-list-reload.ts";
 import { installedSharedDatabaseBridge$ } from "./shared-database-bridge-state.ts";
-
-const internalReloadComputerUseHostsFromWorker$ = state(0);
-
-const reloadComputerUseHostsFromWorker$ = command(({ set }): void => {
-  set(internalReloadComputerUseHostsFromWorker$, (value) => {
-    return value + 1;
-  });
-});
 
 const internalReloadQueueDataFromWorker$ = state(0);
 
@@ -73,7 +64,7 @@ export const reloadComputedFromWorker$ = command(
         return;
       }
       case "computer-use-hosts": {
-        set(reloadComputerUseHostsFromWorker$);
+        // The composer reads its host briefs from the user overview.
         return;
       }
       case "connection-diagnostics": {
@@ -101,15 +92,6 @@ export const chatThreadIndicatorsFromWorker$ = computed(
     get(reloadChatIndicatorsCounter$);
     return await get(installedSharedDatabaseBridge$).getComputed(
       "chat-thread-indicators",
-    );
-  },
-);
-
-export const computerUseHostsFromWorker$ = computed(
-  async (get): Promise<ListedComputerUseHost[]> => {
-    get(internalReloadComputerUseHostsFromWorker$);
-    return await get(installedSharedDatabaseBridge$).getComputed(
-      "computer-use-hosts",
     );
   },
 );

@@ -70,6 +70,7 @@ import { webhooksStripeAutomationEventsRoutes } from "./routes/webhooks-stripe-a
 import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
+import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
@@ -95,6 +96,7 @@ import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorizat
 import { computerUseRoutes } from "./routes/computer-use";
 import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
+import { connectorOverviewRoutes } from "./routes/connector-overview";
 import { connectorCheckRoutes } from "./routes/connector-check";
 import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-external-code";
 import { builtinConnectorsOauthDeviceAuthRoutes } from "./routes/connectors-oauth-device-auth";
@@ -302,6 +304,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentDraftRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
+  ...connectorAgentAccessRoutes,
   ...artifactCatalogRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
@@ -327,6 +330,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...computerUseRoutes,
   ...codexDeviceAuthRoutes,
   ...connectorCatalogRoutes,
+  ...connectorOverviewRoutes,
   ...connectorCheckRoutes,
   ...builtinConnectorsExternalCodeRoutes,
   ...builtinConnectorsOauthDeviceAuthRoutes,
