@@ -94,6 +94,140 @@ async fn repeated_mount_conflicts_stage_archives_without_optional_warming() {
 }
 
 #[tokio::test]
+async fn same_key_conflict_keeps_safe_targets_on_decoded_delivery() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    warm_positive(&home, &cache).await;
+
+    for use_fresh_delivery in [false, true] {
+        let url = "https://storage.example/unused";
+        let mut plan = plan_from_entries(
+            vec![
+                storage_entry("/mnt/parent".into(), url.into(), NAME, VERSION),
+                storage_entry("/mnt/parent/child".into(), url.into(), NAME, VERSION),
+                storage_entry("/mnt/safe".into(), url.into(), NAME, VERSION),
+            ],
+            vec![artifact_entry(
+                "/mnt/artifact".into(),
+                url.into(),
+                NAME,
+                VERSION,
+            )],
+            None,
+        );
+        let mut telemetry = new_telemetry();
+        let mut fresh = if use_fresh_delivery {
+            Some(
+                prepare_fresh_archive_delivery(
+                    &mut plan,
+                    &home,
+                    &FreshArchiveDeliveryAdmission::new(),
+                    &CancellationToken::new(),
+                    &mut telemetry,
+                    Some(&cache),
+                )
+                .await
+                .unwrap(),
+            )
+        } else {
+            None
+        };
+        let deferred = populate_cache_with_fresh_delivery(
+            &mut plan,
+            &MockSandbox::new("safe-targets"),
+            &home,
+            &mut telemetry,
+            fresh.as_mut(),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+
+        assert!(deferred.is_none());
+        let files = plan.take_decoded();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "/mnt/safe");
+        assert_eq!(files[1].0, "/mnt/artifact");
+        let manifest = plan.into_guest_manifest();
+        for index in 0..2 {
+            assert!(
+                manifest.storages[index]
+                    .archive_url
+                    .as_deref()
+                    .unwrap()
+                    .starts_with("file://")
+            );
+        }
+        assert_eq!(manifest.storages[2].archive_url.as_deref(), Some(url));
+        assert_eq!(manifest.artifacts[0].archive_url.as_deref(), Some(url));
+        guest_contracts::storage_files::validate_bindings(
+            &manifest,
+            files.iter().map(|(mount, _)| mount.as_str()),
+        )
+        .unwrap();
+    }
+    cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn same_key_payload_limit_keeps_a_bounded_decoded_prefix() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let mut seed = 0x1234_5678_9abc_def0u64;
+    let content = (0..guest_contracts::storage_files::MAX_FILE_BYTES)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed as u8
+        })
+        .collect::<Vec<_>>();
+    write_cached_archive(&home, NAME, VERSION, &tarball_with_contents(&content));
+    write_storage_lock(&home, NAME, VERSION);
+    cache.warm_from_archive(NAME, VERSION).await.unwrap();
+
+    let url = "https://storage.example/unused";
+    let count = 61;
+    let mut plan = plan_from_entries(
+        (0..count)
+            .map(|index| storage_entry(format!("/mnt/target-{index}"), url.into(), NAME, VERSION))
+            .collect(),
+        Vec::new(),
+        None,
+    );
+    let deferred = populate_cache_with_fresh_delivery(
+        &mut plan,
+        &MockSandbox::new("bounded-prefix"),
+        &home,
+        &mut new_telemetry(),
+        None,
+        Some(&cache),
+    )
+    .await
+    .unwrap();
+
+    assert!(deferred.is_none());
+    let files = plan.take_decoded();
+    assert_eq!(files.len(), 59);
+    let manifest = plan.into_guest_manifest();
+    assert!(
+        manifest.storages[files.len()]
+            .archive_url
+            .as_deref()
+            .unwrap()
+            .starts_with("file://")
+    );
+    guest_contracts::storage_files::validate_bindings(
+        &manifest,
+        files.iter().map(|(mount, _)| mount.as_str()),
+    )
+    .unwrap();
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn positive_observation_does_not_suppress_an_archive_evicted_after_preparation() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

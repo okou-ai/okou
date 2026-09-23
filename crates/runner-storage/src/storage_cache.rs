@@ -1711,12 +1711,11 @@ async fn prepare_decoded_storage(
         })?;
         for (group, files) in batch.iter_mut().zip(ready) {
             group.decoded_ready_observed = files.is_some();
-            let decoded_reused = reuse_decoded(plan, group, files)?;
+            reuse_decoded(plan, group, files)?;
             if group.targets.iter().any(|target| {
                 target.handle.is_artifact()
                     && !plan.has_decoded(target.handle)
-                    && (!plan.is_decoded_download(target.handle)
-                        || (group.decoded_ready_observed && !decoded_reused))
+                    && (!plan.is_decoded_download(target.handle) || group.decoded_ready_observed)
             }) {
                 telemetry.record(
                     STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE,
@@ -1735,54 +1734,42 @@ fn reuse_decoded(
     plan: &mut StoragePlan,
     group: &CacheTargetGroup,
     files: Option<Arc<decoded::CachedFiles>>,
-) -> RunnerResult<bool> {
+) -> RunnerResult<()> {
     let Some(files) = files else {
-        return Ok(false);
+        return Ok(());
     };
-    // An archive may still be required by another target sharing this key,
-    // such as an instruction storage. Admit its ordinary targets without
-    // changing archive delivery for that other consumer.
-    let eligible = group
-        .targets
+    // Targets sharing a cache key may differ in mount safety or request size.
+    // Keep archive delivery for rejected targets and admit each safe mount.
+    let file_bytes = files
+        .files
         .iter()
-        .filter(|target| plan.is_decoded_download(target.handle))
-        .collect::<Vec<_>>();
-    if eligible.is_empty() {
-        return Ok(false);
-    }
-    // Check mounts only on a ready hit. Misses keep ordinary delivery.
-    let Some(mounts) = eligible
-        .iter()
-        .map(|target| plan.decoded_mount(target.handle).map(str::to_owned))
-        .collect::<Option<Vec<_>>>()
-    else {
-        return Ok(false);
-    };
-    for target in &eligible {
-        if !plan.decoded_entry_fits(target.handle)? {
-            return Ok(false);
-        }
-    }
-    let added = mounts
-        .iter()
-        .map(|mount| {
-            8 + mount.len()
-                + files
-                    .files
-                    .iter()
-                    .map(|file| 20 + file.path.len() + file.content.len())
-                    .sum::<usize>()
-        })
+        .map(|file| 20 + file.path.len() + file.content.len())
         .sum::<usize>();
-    if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
-        || plan.decoded_mount_count() + mounts.len() > guest_contracts::storage_files::MAX_MOUNTS
-    {
-        return Ok(false);
-    }
-    for mount in mounts {
+    let mut payload_bytes = plan.decoded_bytes() + 4;
+    let mut mount_count = plan.decoded_mount_count();
+    for target in &group.targets {
+        if !plan.is_decoded_download(target.handle) {
+            continue;
+        }
+        // Check mounts only on a ready hit. Misses keep ordinary delivery.
+        let Some(mount) = plan.decoded_mount(target.handle) else {
+            continue;
+        };
+        let mount = mount.to_owned();
+        if !plan.decoded_entry_fits(target.handle)? {
+            continue;
+        }
+        let added = 8 + mount.len() + file_bytes;
+        if payload_bytes + added > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
+            || mount_count >= guest_contracts::storage_files::MAX_MOUNTS
+        {
+            continue;
+        }
+        payload_bytes += added;
+        mount_count += 1;
         plan.add_decoded(mount, Arc::clone(&files));
     }
-    Ok(true)
+    Ok(())
 }
 
 type ProcessedGroupTaskResult = ProcessedGroupTask;
@@ -4830,12 +4817,20 @@ mod tests {
         write_storage_lock(&home, "artifact", "v1");
         cache.warm_from_archive("artifact", "v1").await.unwrap();
         let mut plan = plan_from_entries(
-            vec![storage_entry(
-                "/mnt/artifact-artifact/child".into(),
-                "https://storage.example/other.tar.gz".into(),
-                "other",
-                "v1",
-            )],
+            vec![
+                storage_entry(
+                    "/mnt/artifact-artifact/child".into(),
+                    "https://storage.example/other.tar.gz".into(),
+                    "other",
+                    "v1",
+                ),
+                storage_entry(
+                    "/mnt/safe".into(),
+                    "https://storage.example/artifact.tar.gz".into(),
+                    "artifact",
+                    "v1",
+                ),
+            ],
             vec![artifact_entry(
                 "/mnt/artifact-artifact".into(),
                 "https://storage.example/artifact.tar.gz".into(),
@@ -4851,7 +4846,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(plan.take_decoded().is_empty());
+        let files = plan.take_decoded();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].0, "/mnt/safe");
         assert_op(
             &telemetry.pending_ops_snapshot(),
             STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE,
