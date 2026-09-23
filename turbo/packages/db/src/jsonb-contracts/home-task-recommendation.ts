@@ -12,6 +12,8 @@ export interface HomeTaskRecommendationEntry {
   readonly rationale: string;
   /** Jev's normalized 0-100 judgement of how ready this task is to start. */
   readonly actionability: number;
+  /** Absent only on cards cached before workflow suggestions were introduced. */
+  readonly purpose?: "task" | "workflow";
   readonly target:
     | { readonly kind: "new-thread" }
     | { readonly kind: "existing-thread"; readonly threadId: string };

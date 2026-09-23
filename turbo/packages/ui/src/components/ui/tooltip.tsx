@@ -66,7 +66,6 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
       positionMethod = "fixed",
       side = "top",
       sideOffset = 4,
-      style,
       ...props
     },
     ref,
@@ -88,24 +87,9 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
             data-slot="tooltip-content"
             className={cn(
               anchoredPopupTransitionClassName,
-              "max-w-xs overflow-hidden rounded-md px-2 py-1 text-xs data-instant:transition-none",
+              "max-w-xs overflow-hidden rounded-md bg-[var(--tooltip-bg,#1a1a1a)] px-2 py-1 text-xs text-[hsl(var(--on-filled))] data-instant:transition-none",
               className,
             )}
-            style={
-              typeof style === "function"
-                ? (state) => {
-                    return {
-                      backgroundColor: "var(--tooltip-bg, #1a1a1a)",
-                      color: "hsl(var(--on-filled))",
-                      ...style(state),
-                    };
-                  }
-                : {
-                    backgroundColor: "var(--tooltip-bg, #1a1a1a)",
-                    color: "hsl(var(--on-filled))",
-                    ...style,
-                  }
-            }
             {...props}
           >
             {children}

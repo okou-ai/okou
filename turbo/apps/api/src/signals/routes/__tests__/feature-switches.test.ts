@@ -17,6 +17,35 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
+  it("enables Pi loop for ordinary members unless they opt out", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const orgId = `org_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    clerk.session(userId, orgId, "org:member");
+
+    const initial = await accept(client().get({ headers }), [200]);
+    expect(initial.body.switches[FeatureSwitchKey.PiLoop]).toBeUndefined();
+    expect(
+      initial.body.effectiveSwitches[FeatureSwitchKey.PiLoop],
+    ).toBeTruthy();
+
+    const optedOut = await accept(
+      client().update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.PiLoop]: false } },
+      }),
+      [200],
+    );
+    expect(
+      optedOut.body.effectiveSwitches[FeatureSwitchKey.PiLoop],
+    ).toBeFalsy();
+
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+    const peer = await accept(client().get({ headers }), [200]);
+    expect(peer.body.effectiveSwitches[FeatureSwitchKey.PiLoop]).toBeTruthy();
+  });
+
   it("keeps the Okou Add Model switch personal within one organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };

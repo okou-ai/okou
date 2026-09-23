@@ -6,6 +6,7 @@ import {
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { NATIVE_GPT_6_LUNA_HEADER } from "@okouai/api-contracts/contracts/runners";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   TestTelegramStateActionBody,
   TestTelegramStateActionResponse,
@@ -38,6 +39,7 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
@@ -268,7 +270,7 @@ async function seedTelegramPostFixture(
   if (!fixture) {
     throw new Error("seedTelegramPostFixture: response missing fixture");
   }
-  return {
+  const seeded = {
     orgId: String(fixture.org_id),
     userId: String(fixture.user_id),
     composeId: String(fixture.compose_id),
@@ -280,6 +282,12 @@ async function seedTelegramPostFixture(
         ? fixture.telegram_user_id
         : undefined,
   };
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: seeded.userId, orgId: seeded.orgId, orgRole: "org:admin" },
+    { [FeatureSwitchKey.PiLoop]: false },
+  );
+  return seeded;
 }
 
 async function deleteTelegramPostFixture(
@@ -2037,7 +2045,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
   });
 
-  it("preserves group reply chains, forum delivery, fresh mentions, and callback idempotency", async () => {
+  async function runCanonicalTelegramForumScenario(
+    phase: "callback" | "reply-chain" | "fresh-chain",
+  ) {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
@@ -2162,6 +2172,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
     await flushWaitUntilForTest();
     expect(telegramMocks.sentMessages).toHaveLength(1);
+    if (phase === "callback") {
+      return;
+    }
 
     const followUpPrompt = "continue canonical chain";
     const followUpPayload = {
@@ -2280,6 +2293,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         chatThreadId: firstState.agentRun?.chatThreadId,
       }),
     ]);
+    if (phase === "reply-chain") {
+      return;
+    }
 
     const freshPrompt = `@${botUsername} start another chain`;
     expect(
@@ -2315,6 +2331,21 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(
       stateRecords((await readTelegramState(fixture.telegramBotId)).routes),
     ).toHaveLength(1);
+  }
+
+  it("preserves Telegram forum delivery and ignores duplicate completion callbacks", async () => {
+    expect.hasAssertions();
+    await runCanonicalTelegramForumScenario("callback");
+  });
+
+  it("preserves Telegram group reply chains and duplicate updates", async () => {
+    expect.hasAssertions();
+    await runCanonicalTelegramForumScenario("reply-chain");
+  });
+
+  it("starts a fresh Telegram group chain after a completed reply", async () => {
+    expect.hasAssertions();
+    await runCanonicalTelegramForumScenario("fresh-chain");
   });
 
   it("keeps Telegram callbacks typed when OKOU_API_BACKEND_URL is set", async () => {

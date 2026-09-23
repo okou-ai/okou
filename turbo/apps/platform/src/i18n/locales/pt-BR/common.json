@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Sequência de {{amount}} dias",
-        "title": "Primeiros passos",
+        "title": "Obtenha mais créditos",
         "toGo": "Faltam {{amount}}",
         "workflow": {
           "action": "Criar",
@@ -2018,9 +2018,13 @@
       "title": "Encaminhar para"
     },
     "homeTasks": {
+      "empty": "Ainda não há tarefas sugeridas",
       "existingThread": "Continuar chat",
+      "exploreWorkflow": "Explorar fluxo de trabalho",
       "heading": "Retomado do seu trabalho recente",
-      "newThread": "Novo chat"
+      "newTasksAvailable": "Novas tarefas disponíveis",
+      "newThread": "Novo chat",
+      "reload": "Recarregar tarefas"
     },
     "mail": {
       "bcc": "cco",
@@ -3252,12 +3256,19 @@
       "noConnectorsAlt": "Nenhum conector",
       "otherCategory": "Outros",
       "remoteAccess": "Acesso remoto",
+      "remoteControl": {
+        "connections": "Conexões",
+        "credentials": "Credenciais",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Escopo dos conectores",
         "attention": "Requer atenção",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descobrir",
+        "privateNetwork": "Rede privada",
+        "remoteControl": "Controle remoto",
         "searchConnected": "Buscar conectores conectados",
         "searchCustom": "Buscar conectores personalizados"
       },
@@ -6082,6 +6093,7 @@
         "personal": "Pessoal",
         "workspace": "Espaço de trabalho"
       },
+      "sectionNavigation": "Seção de configurações",
       "sections": {
         "billing": {
           "description": "Gerencie seu plano e sua forma de pagamento.",
@@ -7816,6 +7828,7 @@
       },
       "notFound": "Fluxo de trabalho não encontrado.",
       "refineWith": "Refinar com {{agent}}",
+      "sectionNavigation": "Seção de detalhes do fluxo de trabalho",
       "shadow": {
         "end": "para você. Este fluxo de trabalho está oculto pela regra de prioridade de slug idêntico.",
         "resolvesTo": "atualmente resolve para"

@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import PerfReporter from "./vitest-perf-reporter.ts";
+import PerfReporter, { DurationGuardReporter } from "./vitest-perf-reporter.ts";
 
 export default defineConfig({
   test: {
@@ -27,7 +27,7 @@ export default defineConfig({
     },
 
     reporters: process.env.CI
-      ? ["default", "github-actions", "junit"]
+      ? ["default", "github-actions", "junit", new DurationGuardReporter()]
       : process.env.VITEST_PERF
         ? ["default", new PerfReporter()]
         : ["default"],

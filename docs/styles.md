@@ -170,6 +170,14 @@ focus owns the ring. A ring on an element that has no selected state is not a
 selection ring and is unaffected — the account avatar's halo stays, because
 nothing about it changes when the user picks something.
 
+Template gallery artwork keeps its existing hairline and clipping box. A
+borderless frame carries an absolute, pointer-transparent pseudo-element with
+the constant emphasis border width: transparent at rest, `border-primary` when
+selected. The selected border covers the hairline without shrinking the image
+or changing the caption or grid metrics. Preview buttons draw their focus ring
+outside this frame; secondary Use buttons retain their own focus ring. Text-only
+workflow cards recolour their existing hairline instead.
+
 `border-0` stays available, and so does a literal `border-2` for geometry that is
 not a boundary at all — a dashed drop target, a spinner's ring, the inset that
 shapes a switch track. Those express a different decision rather than a competing
@@ -338,6 +346,15 @@ and preserves full-width tile layout. Visible labels and essential explanations
 remain available without hovering.
 
 ## Component contracts
+
+`PopoverContent` and `SelectContent` express their two-part shadow as an exact
+arbitrary utility. It is not Tailwind's `shadow-lg`: the second shadow uses 5%
+black. Callers can replace it through `className` (`shadow-none` for a bare
+positioning box), and focus rings compose with the default shadow. Popup
+`style` objects and Base UI state callbacks pass through unchanged and retain
+their inline precedence. `TooltipContent` likewise keeps the `--tooltip-bg`
+fallback and `--on-filled` foreground in overridable utilities. The switch
+thumb uses literal white, because the shared `white` token changes with theme.
 
 A component owns its own utilities. Reach for the component rather than
 restating its treatment. Call sites own layout and container-query context;
@@ -1395,6 +1412,12 @@ else. The `.wmde-markdown p` selector is a `third-party-dom-adapter` entry, one
 of the seven `.wmde-markdown` rules that declare a margin.
 
 ### Toast styling under an unlayered stylesheet
+
+The default warning SVG owns its literal amber utility. Toast font uses
+`font-family-sans` on the toast itself: Sonner declares its font on the parent
+toaster, so this direct declaration wins over inheritance without `!important`.
+Per-toast inline font overrides still win. Do not move that utility onto the
+toaster, where Sonner's unlayered declaration would override it.
 
 Sonner 2.0.7 injects its stylesheet into `document.head` at module load,
 unlayered. Normal utilities cannot override its surface, description or button

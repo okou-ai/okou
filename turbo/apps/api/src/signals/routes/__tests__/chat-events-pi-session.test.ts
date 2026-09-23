@@ -60,11 +60,12 @@ const {
   publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
   queueCapabilityProvenPiRun,
+  completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first provider policies", () => {
   it("preserves one Pi session while selecting Terra, Sol, Luna, and Terra again", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     for (const model of GPT_PI_BDD_MODELS) {
       await seedBuiltInModelKey(model);
     }
@@ -85,7 +86,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
+    const checkpointObjects = mockPiCheckpointObjectStore();
     const requests: unknown[] = [];
     server.use(
       http.post("https://api.openai.com/v1/responses", async ({ request }) => {
@@ -97,37 +98,51 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     let threadId: string | undefined;
     let sessionId: string | null | undefined;
-    for (const model of [...GPT_PI_BDD_MODELS, "gpt-5.6-terra"] as const) {
+    const models = [...GPT_PI_BDD_MODELS, "gpt-5.6-terra"] as const;
+    for (const [index, model] of models.entries()) {
       const run = await sendChatRun(
         actor,
         { agentId, threadId, model, prompt: `continue with ${model}` },
         usagePricingResolution,
       );
       threadId = run.threadId;
-      await waitForRunStatus(actor, run.runId, "completed");
-      await flushWaitUntilForTest();
+      if (index === 0) {
+        await waitForRunStatus(actor, run.runId, "completed");
+        await flushWaitUntilForTest();
+        expect(requests[0]).toMatchObject({
+          model,
+          reasoning: { effort: "max" },
+        });
+        expect(requests[0]).not.toHaveProperty("service_tier");
+        await expectPiApiUsage(run.runId, model, "", {
+          input: 5,
+          output: 3,
+          cacheRead: 0,
+          cacheCreation: 0,
+        });
+      } else {
+        await flushWaitUntilForTest();
+        const claim = await claimChatRun(runnerGroup, run.runId);
+        expect(claim.claim.piModelConfig).toMatchObject({ model });
+        await completeSandboxFirstPiRun({
+          actor,
+          run,
+          claim,
+          checkpointObjects,
+          prompt: `continue with ${model}`,
+          answer: `answer ${index + 1}`,
+          responsesModel: { provider: "openai", model },
+          usagePricingResolution,
+        });
+      }
       const session = await readThreadSessionConversation(context, threadId);
       if (sessionId === undefined) {
         sessionId = session.agent_session_id;
         expect(sessionId).toStrictEqual(expect.any(String));
       }
       expect(session.agent_session_id).toBe(sessionId);
-      expect(requests.at(-1)).toMatchObject({
-        model,
-        reasoning: { effort: "max" },
-      });
-      expect(requests.at(-1)).not.toHaveProperty("service_tier");
-      await expectPiApiUsage(run.runId, model, "", {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheCreation: 0,
-      });
     }
-    expect(requests).toHaveLength(4);
-    for (const answer of ["answer 1", "answer 2", "answer 3"]) {
-      expect(occurrences(JSON.stringify(requests.at(-1)), answer)).toBe(1);
-    }
+    expect(requests).toHaveLength(1);
   }, 90_000);
 
   it("preserves generations across Terra Pi and fast Astra Codex boundaries", async () => {
@@ -166,33 +181,17 @@ describe("CHAT-02: model-first provider policies", () => {
     const checkpointObjects = mockPiCheckpointObjectStore();
     const firstPiAnswer = "first Pi generation answer";
     const returnedPiAnswer = "returned Pi generation answer";
-    const interruptedPiAnswer = "Pi follow-up before Sandbox handoff";
     const repeatedPiAnswer = "repeated Pi generation answer";
     const modelRequests: unknown[] = [];
     server.use(
       http.post("https://api.openai.com/v1/responses", async ({ request }) => {
         const requestIndex = modelRequests.length;
         modelRequests.push(await request.json());
-        const body =
-          requestIndex === 2
-            ? piResponsesContentSse({
-                blocks: [
-                  { type: "text", text: interruptedPiAnswer },
-                  {
-                    type: "toolCall",
-                    callId: "call_generation_boundary",
-                    name: "read",
-                    arguments: { path: "/home/user/workspace/AGENTS.md" },
-                  },
-                ],
-                sequence: requestIndex,
-              })
-            : piResponsesTextSse(
-                [firstPiAnswer, returnedPiAnswer, undefined, repeatedPiAnswer][
-                  requestIndex
-                ] ?? "unexpected duplicate Pi model request",
-                requestIndex,
-              );
+        const body = piResponsesTextSse(
+          [firstPiAnswer, returnedPiAnswer, repeatedPiAnswer][requestIndex] ??
+            "unexpected duplicate Pi model request",
+          requestIndex,
+        );
         return new HttpResponse(body, {
           headers: { "content-type": "text/event-stream" },
         });
@@ -322,18 +321,12 @@ describe("CHAT-02: model-first provider policies", () => {
         return checkpointObjects.has(piFollowUpManifestKey);
       })
       .toBe(true);
-    expect(modelRequests).toHaveLength(3);
+    expect(modelRequests).toHaveLength(2);
     const piFollowUpRun = await api.readRun(actor, piFollowUp.runId);
     const piFollowUpAppend = piFollowUpRun.appendSystemPrompt ?? "";
     expect(piFollowUpAppend).not.toContain("# Web Chat Run Context");
     expect(piFollowUpAppend).not.toContain(firstPiPrompt);
     expect(piFollowUpAppend).not.toContain(firstCodexPrompt);
-    const piFollowUpInput = JSON.stringify(modelRequests[2]);
-    expect(occurrences(piFollowUpInput, returnedPiPrompt)).toBe(1);
-    expect(occurrences(piFollowUpInput, returnedPiAnswer)).toBe(1);
-    expect(occurrences(piFollowUpInput, piFollowUpPrompt)).toBe(1);
-    expect(piFollowUpInput).not.toContain(firstPiPrompt);
-    expect(piFollowUpInput).not.toContain(firstCodexPrompt);
     const piFollowUpBinding = await readThreadSessionBinding(
       context,
       firstPi.threadId,
@@ -362,17 +355,19 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       },
     });
-    const piFollowUpManifest = JSON.parse(
-      checkpointObjects.get(piFollowUpManifestKey)?.toString("utf8") ?? "{}",
-    ) as {
-      readonly baseSession?: {
-        readonly sessionId?: unknown;
-        readonly sha256?: unknown;
-      };
-    };
-    expect(piFollowUpManifest.baseSession).toStrictEqual({
-      sessionId: firstPi.threadId,
-      sha256: resumedPiSession.historyRef.hash,
+    const piFollowUpManifest = piApiFirstTurnManifestSchema.parse(
+      JSON.parse(
+        checkpointObjects.get(piFollowUpManifestKey)?.toString("utf8") ?? "{}",
+      ),
+    );
+    expect(piFollowUpManifest).toMatchObject({
+      schemaVersion: 4,
+      mode: "sandbox-first",
+      baseSession: {
+        sessionId: firstPi.threadId,
+        sha256: resumedPiSession.historyRef.hash,
+      },
+      session: { sha256: resumedPiSession.historyRef.hash },
     });
     await cancelChatRun(
       actor,
@@ -412,9 +407,6 @@ describe("CHAT-02: model-first provider policies", () => {
     const repeatedCodexRun = await api.readRun(actor, repeatedCodex.runId);
     expect(repeatedCodexRun.appendSystemPrompt).toContain(piFollowUpPrompt);
     expect(repeatedCodexRun.appendSystemPrompt).toContain("Run cancelled");
-    expect(repeatedCodexRun.appendSystemPrompt).not.toContain(
-      interruptedPiAnswer,
-    );
     chatCallbacks.mockChatOutputEvents([
       assistantEvent(0, repeatedCodexAnswer),
     ]);
@@ -437,7 +429,7 @@ describe("CHAT-02: model-first provider policies", () => {
     });
     await waitForRunStatus(actor, repeatedPi.runId, "completed", 10_000);
     await flushWaitUntilForTest();
-    expect(modelRequests).toHaveLength(4);
+    expect(modelRequests).toHaveLength(3);
     const repeatedPiBinding = await readThreadSessionBinding(
       context,
       firstPi.threadId,
@@ -465,8 +457,7 @@ describe("CHAT-02: model-first provider policies", () => {
     ]) {
       expect(occurrences(repeatedPiAppend, prior)).toBe(1);
     }
-    expect(repeatedPiAppend).not.toContain(interruptedPiAnswer);
-    const repeatedPiInput = JSON.stringify(modelRequests[3]);
+    const repeatedPiInput = JSON.stringify(modelRequests[2]);
     for (const turn of [
       firstPiPrompt,
       firstPiAnswer,
@@ -482,7 +473,6 @@ describe("CHAT-02: model-first provider policies", () => {
     ]) {
       expect(occurrences(repeatedPiInput, turn)).toBe(1);
     }
-    expect(repeatedPiInput).not.toContain(interruptedPiAnswer);
     await expect(
       readThreadSessionConversation(context, firstPi.threadId),
     ).resolves.toMatchObject({
@@ -505,7 +495,6 @@ describe("CHAT-02: model-first provider policies", () => {
       {
         runId: piFollowUp.runId,
         prompt: piFollowUpPrompt,
-        answer: interruptedPiAnswer,
       },
       {
         runId: repeatedCodex.runId,
@@ -558,11 +547,15 @@ describe("CHAT-02: model-first provider policies", () => {
             eventType: "input.prompt",
             content: turn.prompt,
           },
-          {
-            runId: turn.runId,
-            eventType: "output.message",
-            content: turn.answer,
-          },
+          ...(turn.answer === undefined
+            ? []
+            : [
+                {
+                  runId: turn.runId,
+                  eventType: "output.message",
+                  content: turn.answer,
+                },
+              ]),
         ];
       }),
     );

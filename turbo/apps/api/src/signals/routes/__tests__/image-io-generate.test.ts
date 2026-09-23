@@ -608,7 +608,7 @@ async function seedAdmittedImageRun(): Promise<AdmittedImageFixture> {
   runs.configureRunnerGroup();
   const completed = await bdd.completeOnboarding(actor);
   expect(completed.status).toBe(200);
-  await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 1 });
+  await seedOrgMetadata({ orgId: actor.orgId, tier: "free", credits: 1 });
   const agent = await bdd.createAgent(actor, {
     displayName: "Admitted image agent",
     visibility: "private",
@@ -1493,7 +1493,7 @@ describe("POST /api/image-io/generate", () => {
     const pricingFixture = await createScopedImagePricing({
       configured: GPT_IMAGE_1_PRICING,
     });
-    await seedOrgMetadata({ orgId: fixture.orgId, tier: "pro", credits: 0 });
+    await seedOrgMetadata({ orgId: fixture.orgId, tier: "free", credits: 0 });
     let observedRequestUrl: string | null = null;
     server.use(
       http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {

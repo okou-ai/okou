@@ -72,6 +72,8 @@ export const newChatThreadDisabled$ = computed(() => {
 interface SendNewThreadMessageRequest {
   agentId: string;
   draft?: DraftSignals;
+  /** Send from an isolated draft without clearing the Agent's saved composer. */
+  preserveAgentDraft?: boolean;
   prompt: string;
   generationTemplate: GenerationTemplateRequest | undefined;
   generationTemplateTitleSnapshot?: string;
@@ -581,9 +583,10 @@ const sendNewThreadMessage$ = command(
     }
     request.onOptimisticSend?.();
     set(draft.clear$);
-    const clearDraftResult = request.forward
-      ? Promise.resolve()
-      : set(clearAgentDraftById$, agentId, signal);
+    const clearDraftResult =
+      request.forward || request.preserveAgentDraft
+        ? Promise.resolve()
+        : set(clearAgentDraftById$, agentId, signal);
     const createClient = get(apiClient$);
     L.debug("sendNewThreadMessage$ POST chat-threads start", { threadId });
     const createResult = createNewThreadRecord(

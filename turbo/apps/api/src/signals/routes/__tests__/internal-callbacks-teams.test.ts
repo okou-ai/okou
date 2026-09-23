@@ -1241,6 +1241,15 @@ describe("Teams chat callbacks", () => {
         orgId: secondFixture.orgId,
         orgRole: "org:admin",
       });
+      await updateFeatureSwitchesForUser(
+        context,
+        {
+          userId: secondFixture.userId,
+          orgId: secondFixture.orgId,
+          orgRole: "org:admin",
+        },
+        { [FeatureSwitchKey.PiLoop]: false },
+      );
       const tokenRequestCountBeforeConnect = teamsApi.tokenRequests.length;
       const postedActivityCountBeforeConnect = teamsApi.postedActivities.length;
       const secondPrincipalName = secondFixture.teamsUserPrincipalName;

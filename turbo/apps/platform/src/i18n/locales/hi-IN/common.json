@@ -1515,7 +1515,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} दिन लगातार",
-        "title": "शुरू करें",
+        "title": "और क्रेडिट पाएँ",
         "toGo": "{{amount}} बाकी",
         "workflow": {
           "action": "बनाएँ",
@@ -1981,9 +1981,13 @@
       "title": "फ़ॉरवर्ड करें"
     },
     "homeTasks": {
+      "empty": "अभी कोई सुझाया गया कार्य नहीं",
       "existingThread": "चैट जारी रखें",
+      "exploreWorkflow": "वर्कफ़्लो देखें",
       "heading": "आपके हाल के काम से लिया गया",
-      "newThread": "नई चैट"
+      "newTasksAvailable": "नए कार्य उपलब्ध हैं",
+      "newThread": "नई चैट",
+      "reload": "कार्य फिर से लोड करें"
     },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
@@ -3200,12 +3204,19 @@
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
+      "remoteControl": {
+        "connections": "कनेक्शन",
+        "credentials": "क्रेडेंशियल",
+        "type": "प्रकार"
+      },
       "scope": {
         "aria": "कनेक्टर दायरा",
         "attention": "ध्यान देने की आवश्यकता",
         "connected": "जुड़े हुए",
         "custom": "कस्टम",
         "discover": "खोजें",
+        "privateNetwork": "निजी नेटवर्क",
+        "remoteControl": "रिमोट कंट्रोल",
         "searchConnected": "कनेक्टेड कनेक्टर खोजें",
         "searchCustom": "कस्टम कनेक्टर खोजें"
       },
@@ -6022,6 +6033,7 @@
         "personal": "निजी",
         "workspace": "वर्कस्पेस"
       },
+      "sectionNavigation": "सेटिंग्स अनुभाग",
       "sections": {
         "billing": {
           "description": "अपनी योजना और भुगतान विधि प्रबंधित करें।",
@@ -7740,6 +7752,7 @@
       },
       "notFound": "वर्कफ़्लो नहीं मिला.",
       "refineWith": "{{agent}} के साथ परिष्कृत करें",
+      "sectionNavigation": "वर्कफ़्लो विवरण अनुभाग",
       "shadow": {
         "end": "आपके लिए। यह वर्कफ़्लो समान-स्लग प्राथमिकता नियम द्वारा छायांकित है।",
         "resolvesTo": "वर्तमान में संकल्प करता है"

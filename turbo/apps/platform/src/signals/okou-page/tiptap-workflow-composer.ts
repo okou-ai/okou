@@ -671,9 +671,6 @@ function buildFeedbackItemChrome(
   });
   removeButton.setAttribute("aria-label", removeLabel);
   removeButton.title = removeLabel;
-  removeButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-  });
   removeButton.addEventListener("click", onRemove);
   return quoteDom;
 }
@@ -1028,14 +1025,8 @@ function createTemplateAttachmentNodeView(
       iconContainer.append(icon);
     }
   }
-  openButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-  });
   openButton.addEventListener("click", () => {
     openTemplate(templateAttachmentNodeAttributes(currentNode).category);
-  });
-  removeButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
   });
   removeButton.addEventListener("click", removeTemplate);
   localizedUi.add(localize);
@@ -1143,9 +1134,6 @@ function createInlineTemplateNodeView(
   function localize(): void {
     render(currentNode);
   }
-  openButton.addEventListener("mousedown", (event) => {
-    event.preventDefault();
-  });
   openButton.addEventListener("click", () => {
     actions.openTemplate(
       templateAttachmentNodeAttributes(currentNode).category,
@@ -2125,6 +2113,32 @@ function createMountedDraftInputSyncTarget({
     setEditorDocument(createEditorDocumentSnapshot(editor.state.doc));
   };
   return {
+    prependInput(value) {
+      const prefix = editor.schema.nodeFromJSON(
+        valueToWorkflowComposerDoc(value),
+      );
+      const firstBlock = editor.state.doc.firstChild;
+      const hasDraft =
+        editor.state.doc.childCount > 1 ||
+        (firstBlock !== null &&
+          (firstBlock.type.name !== "paragraph" ||
+            firstBlock.content.size > 0));
+      const content = hasDraft
+        ? [
+            ...prefix.content.content,
+            editor.schema.node("paragraph"),
+            ...editor.state.doc.content.content,
+          ]
+        : [...prefix.content.content];
+      const changed = setWorkflowComposerDocument(
+        editor,
+        editor.schema.node("doc", undefined, content),
+      );
+      if (changed) {
+        runtime.replaceFeedbackItems(feedbackItemsFromWorkflowComposer(editor));
+        syncEditorDocument();
+      }
+    },
     syncInput(value) {
       if (workflowComposerDocToString(editor) === value) {
         return;
@@ -2215,12 +2229,19 @@ function createMountEditorCommand({
       };
       runtime.removeFeedback = (id) => {
         set(feedback.signals.remove$, id);
+        // The native button held focus and was removed with the quote.
+        editor.view.focus();
       };
       runtime.openTemplate = (intent) => {
         set(openTemplatePicker$, intent);
+        // A chip button lives inside the editing host, so the caret owns the
+        // picker's focus return. Space and Enter activate a native button, and
+        // a chip that kept focus would reopen the picker instead of editing.
+        editor.view.focus();
       };
       runtime.removeTemplate = () => {
         set(legacyTemplateAttachment.remove$);
+        editor.view.focus();
       };
       configureMountedWorkflowEditor(editor);
       setWorkflowComposerDocument(

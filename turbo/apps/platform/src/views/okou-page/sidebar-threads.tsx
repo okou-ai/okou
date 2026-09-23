@@ -21,7 +21,10 @@ import {
   Archive,
   ArchiveRestore,
 } from "lucide-react";
-import { useChatThreadsTitleLabels } from "./sidebar-shared.tsx";
+import {
+  ChatThreadStateText,
+  useChatThreadsTitleLabels,
+} from "./sidebar-shared.tsx";
 import {
   Tooltip,
   TooltipContent,
@@ -142,7 +145,6 @@ function SessionStateIndicator({
 }: {
   signals: SidebarChatThreadItemSignals;
 }) {
-  const { t } = useTranslation();
   const state = useLastResolved(signals.indicatorState$) ?? null;
   if (state === null) {
     return null;
@@ -151,24 +153,10 @@ function SessionStateIndicator({
     return <RunningIndicator />;
   }
   if (state === "unread") {
-    return (
-      <span
-        role="img"
-        aria-label={t(($) => {
-          return $.chat.sidebar.unread;
-        })}
-        className="h-2 w-2 rounded-full bg-sky-600"
-      />
-    );
+    return <span className="h-2 w-2 rounded-full bg-sky-600" />;
   }
   return (
-    <span
-      role="img"
-      aria-label={t(($) => {
-        return $.chat.sidebar.draft;
-      })}
-      className="flex items-center justify-center text-sidebar-foreground"
-    >
+    <span className="flex items-center justify-center text-sidebar-foreground">
       <Pencil className="opacity-35" size={16} />
     </span>
   );
@@ -352,7 +340,7 @@ function ChatThreadMenu({
               className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
                 hasRestingIndicator
                   ? ""
-                  : "md:invisible md:group-hover:visible md:data-popup-open:visible"
+                  : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
               } ${CHAT_THREAD_ROW_ICON_CLASS}`}
               aria-label={t(($) => {
                 return $.chat.sidebar.openChatMenu;
@@ -366,13 +354,6 @@ function ChatThreadMenu({
             <TooltipTrigger
               render={
                 <span
-                  aria-label={
-                    showPinIndicator
-                      ? t(($) => {
-                          return $.chat.sidebar.pinned;
-                        })
-                      : undefined
-                  }
                   data-testid={
                     showPinIndicator
                       ? "chat-thread-pinned-indicator"
@@ -382,7 +363,11 @@ function ChatThreadMenu({
                 >
                   {hasRestingIndicator ? (
                     <>
-                      <span className="flex items-center justify-center md:group-hover:hidden md:group-data-[popup-open]/thread-menu:hidden">
+                      <span
+                        aria-hidden="true"
+                        data-testid="chat-thread-state-indicator"
+                        className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
+                      >
                         {showStateIndicator ? (
                           <SessionStateIndicator signals={signals} />
                         ) : (
@@ -391,7 +376,7 @@ function ChatThreadMenu({
                       </span>
                       <Ellipsis
                         size={17}
-                        className="hidden opacity-70 md:group-hover:block md:group-data-[popup-open]/thread-menu:block"
+                        className="hidden opacity-70 md:group-hover:block group-focus-visible/thread-menu:block md:group-data-[popup-open]/thread-menu:block"
                       />
                     </>
                   ) : (
@@ -508,6 +493,8 @@ function ChatThreadItemLink({
   const isCurrentPage = useGet(signals.currentPage$);
   const isHighlighted = useGet(signals.highlighted$);
   const isUnread = useLastResolved(signals.unread$) ?? false;
+  const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
+  const isPinned = useGet(signals.pinned$);
   const select = useSet(signals.select$);
   const openRename = useSet(signals.openRename$);
   const pageSignal = useGet(pageSignal$);
@@ -547,6 +534,9 @@ function ChatThreadItemLink({
               return $.chat.newChat;
             })
           }
+        />
+        <ChatThreadStateText
+          state={indicatorState ?? (isPinned ? "pinned" : null)}
         />
       </span>
       <span className="flex items-center pr-2 empty:hidden">

@@ -16,6 +16,7 @@ import { loadCurrentMembershipId } from "../services/morning-brief-membership.se
 import {
   homeTaskRecommendationsUnavailable,
   readHomeTaskRecommendations,
+  touchHomeTaskRecommendations,
 } from "../services/home-task-recommendations.service";
 
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -76,6 +77,51 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body };
 });
 
+const touch$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const { agentId } = get(queryOf(homeTaskRecommendationsContract.touch));
+  set(setResHeader$, "Cache-Control", "no-store");
+  const overrides = await get(
+    userFeatureSwitchOverrides(auth.orgId, auth.userId),
+  );
+  signal.throwIfAborted();
+  if (
+    !isFeatureEnabled(FeatureSwitchKey.HomeTaskRecommendations, {
+      userId: auth.userId,
+      orgId: auth.orgId,
+      overrides,
+    })
+  ) {
+    return { status: 204 as const, body: undefined };
+  }
+  const membershipId = await loadCurrentMembershipId(
+    get(clerk$),
+    { orgId: auth.orgId, userId: auth.userId },
+    signal,
+  );
+  if (membershipId === null) {
+    return { status: 204 as const, body: undefined };
+  }
+  if (
+    !(await get(
+      agentExists({
+        orgId: auth.orgId,
+        userId: auth.userId,
+        agentId,
+      }),
+    ))
+  ) {
+    return { status: 204 as const, body: undefined };
+  }
+  signal.throwIfAborted();
+  await touchHomeTaskRecommendations(
+    set(writeDb$),
+    { userId: auth.userId, orgId: auth.orgId, agentId },
+    signal,
+  );
+  return { status: 204 as const, body: undefined };
+});
+
 export const homeTaskRecommendationRoutes: readonly RouteEntry[] = [
   {
     route: homeTaskRecommendationsContract.list,
@@ -86,6 +132,17 @@ export const homeTaskRecommendationRoutes: readonly RouteEntry[] = [
         requiredCapability: "chat-event:read",
       },
       list$,
+    ),
+  },
+  {
+    route: homeTaskRecommendationsContract.touch,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      touch$,
     ),
   },
 ];

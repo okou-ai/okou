@@ -212,6 +212,65 @@ fn direct_and_http_mounts_coexist() {
 }
 
 #[test]
+fn same_key_instruction_archive_and_decoded_mounts_both_materialize() {
+    let root = tempfile::tempdir().unwrap();
+    let instruction_home = root.path().join("instructions");
+    let instruction_stage = root.path().join("instruction-stage");
+    let storage_mount = root.path().join("storage");
+    let artifact_mount = root.path().join("artifact");
+    let archive_path = root.path().join("instructions.tar.gz");
+    fs::write(
+        &archive_path,
+        super::support::create_tar_gz(&[("AGENTS.md", b"same-archive-content")]).unwrap(),
+    )
+    .unwrap();
+    let manifest = serde_json::to_vec(&json!({"storageMounts": [
+        {
+            "mountPath": instruction_home,
+            "extractPath": instruction_stage,
+            "instructionsTargetFilename": "AGENTS.md",
+            "archiveUrl": format!("file://{}", archive_path.display()),
+            "name": "shared", "versionId": "v1"
+        },
+        {
+            "mountPath": storage_mount,
+            "archiveUrl": "file:///decoded-storage-must-not-open.tar.gz",
+            "name": "shared", "versionId": "v1"
+        },
+        {
+            "mountPath": artifact_mount,
+            "archiveUrl": "file:///decoded-artifact-must-not-open.tar.gz",
+            "name": "shared", "storageId": "artifact-id", "versionId": "v1",
+            "writeback": true
+        }
+    ]}))
+    .unwrap();
+    let decoded = vec![StorageFile {
+        path: "AGENTS.md".into(),
+        mode: 0o644,
+        mtime: 1234,
+        content: b"same-archive-content".to_vec(),
+    }];
+    let data = storage_files::encode_input(
+        &manifest,
+        &[
+            (storage_mount.to_str().unwrap(), &decoded),
+            (artifact_mount.to_str().unwrap(), &decoded),
+        ],
+    )
+    .unwrap();
+
+    assert!(guest_storage_apply::run_storage_files_bytes(&data));
+    for mount in [&instruction_home, &storage_mount, &artifact_mount] {
+        assert_eq!(
+            fs::read(mount.join("AGENTS.md")).unwrap(),
+            b"same-archive-content"
+        );
+    }
+    assert!(!instruction_stage.exists());
+}
+
+#[test]
 fn overlapping_mount_is_rejected_before_stale_cleanup() {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("mount");

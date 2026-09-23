@@ -82,8 +82,8 @@ Turning the switch off stops new US selection but does not rewrite captured
 work or stored metadata. Retain supporting readers for those contexts; an older
 API/Runner rollback can reject them even after switch-off. Prefer reverting the
 writer policy while keeping the readers that understand captured US contexts.
-PiLoop remains non-GA, with a
-staff-default rollout, and no additional compatibility path is introduced.
+PiLoop is enabled by default for all users, while `OpenRouterUsRouting` retains
+its staff-default rollout. No additional compatibility path is introduced.
 Follow [deployment compatibility](deployment-compatibility.md) when planning
 rollout or rollback. Changing the registry default does not itself deploy this
 revision.

@@ -40,6 +40,33 @@ export function useChatThreadsTitleLabels() {
   };
 }
 
+export function ChatThreadStateText({
+  state,
+}: {
+  readonly state: "running" | "unread" | "draft" | "pinned" | null;
+}) {
+  const { t } = useTranslation();
+  if (state === null) {
+    return null;
+  }
+  const labels = {
+    running: t(($) => {
+      return $.activity.statuses.running;
+    }),
+    unread: t(($) => {
+      return $.chat.sidebar.unread;
+    }),
+    draft: t(($) => {
+      return $.chat.sidebar.draft;
+    }),
+    pinned: t(($) => {
+      return $.chat.sidebar.pinned;
+    }),
+  };
+
+  return <span className="sr-only"> {labels[state]}</span>;
+}
+
 interface AgentAvatarState {
   /** Resolved image URL, or null when SVG/loading. */
   src: string | null;

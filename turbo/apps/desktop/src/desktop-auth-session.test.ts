@@ -806,26 +806,22 @@ describe("App quit", () => {
     expect(session.getCachedToken()).toBe("interactive");
   });
 
-  it("starts the validation budget when validation starts", async () => {
+  it("arms the validation budget only after the sign-in window completes", async () => {
     identityHandlers();
-    const { session, replies } = createSession();
-    // Node drives `AbortSignal.timeout` from an internal timer that no timer
-    // control can advance, so the budget is scaled instead: a 400ms validation
-    // clock that the window phase then spends 600ms outlasting. A clock armed
-    // when the window opened is spent by then; only one that starts after the
-    // window closes still has its full allowance.
-    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const { session, replies, windows } = createSession();
     const deadlines: number[] = [];
     const timeout = vi.spyOn(AbortSignal, "timeout");
     timeout.mockImplementation((milliseconds) => {
       deadlines.push(milliseconds);
-      return realTimeout(milliseconds === 30_000 ? 400 : milliseconds);
+      return new AbortController().signal;
     });
     const window = deferred<string | null>();
     replies.push(window.promise);
 
     const pending = session.consumeCode("code");
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    await vi.waitFor(() => {
+      expect(windows).toHaveLength(1);
+    });
     const armedDuringWindow = [...deadlines];
     window.resolve("interactive");
     await pending;

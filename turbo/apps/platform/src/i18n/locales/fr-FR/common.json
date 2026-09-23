@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} jours d’affilée",
-        "title": "Démarrer",
+        "title": "Obtenir plus de crédits",
         "toGo": "Encore {{amount}}",
         "workflow": {
           "action": "Créer",
@@ -2018,9 +2018,13 @@
       "title": "Transférer vers"
     },
     "homeTasks": {
+      "empty": "Aucune tâche suggérée pour le moment",
       "existingThread": "Continuer le chat",
+      "exploreWorkflow": "Explorer un workflow",
       "heading": "Repris de votre travail récent",
-      "newThread": "Nouveau chat"
+      "newTasksAvailable": "De nouvelles tâches sont disponibles",
+      "newThread": "Nouveau chat",
+      "reload": "Recharger les tâches"
     },
     "mail": {
       "bcc": "bcc",
@@ -3252,12 +3256,19 @@
       "noConnectorsAlt": "Aucun connecteur",
       "otherCategory": "Autre",
       "remoteAccess": "Accès à distance",
+      "remoteControl": {
+        "connections": "Connexions",
+        "credentials": "Identifiants",
+        "type": "Type"
+      },
       "scope": {
         "aria": "Portée des connecteurs",
         "attention": "Nécessite votre attention",
         "connected": "Connecté",
         "custom": "Personnalisés",
         "discover": "Découvrir",
+        "privateNetwork": "Réseau privé",
+        "remoteControl": "Contrôle à distance",
         "searchConnected": "Trouver les connecteurs connectés",
         "searchCustom": "Trouver les connecteurs personnalisés"
       },
@@ -6082,6 +6093,7 @@
         "personal": "Personnel",
         "workspace": "Espace de travail"
       },
+      "sectionNavigation": "Rubrique des paramètres",
       "sections": {
         "billing": {
           "description": "Gérez votre abonnement et votre mode de paiement.",
@@ -7816,6 +7828,7 @@
       },
       "notFound": "Workflow introuvable.",
       "refineWith": "Affiner avec {{agent}}",
+      "sectionNavigation": "Rubrique des détails du workflow",
       "shadow": {
         "end": "pour vous. Ce workflow est masqué par la règle de priorité du même slug.",
         "resolvesTo": "résout actuellement à"

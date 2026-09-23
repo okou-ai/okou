@@ -14,6 +14,7 @@ import {
   type BrowserUserActionPayload,
 } from "@okouai/db/jsonb-contracts/browser-user-action";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import {
   browserSessionInstances,
   browserSessions,
@@ -908,14 +909,39 @@ export const readBrowserUserAction$ = command(
         },
       },
       async (tx) => {
-        return await loadExactRequest(tx as Db, readRow);
+        const current = await loadExactRequest(tx as Db, readRow);
+        if (!current) {
+          return null;
+        }
+        const payload = decodePayload(current);
+        const callbackId =
+          current.status === "succeeded"
+            ? payload?.callbackIds.success.clientEventId
+            : current.status === "cancelled"
+              ? payload?.callbackIds.cancellation.clientEventId
+              : undefined;
+        if (!callbackId) {
+          return { row: current, callbackDelivered: false };
+        }
+        const [callbackEvent] = await tx
+          .select({ id: chatEvents.id })
+          .from(chatEvents)
+          .where(
+            and(
+              eq(chatEvents.id, callbackId),
+              eq(chatEvents.chatThreadId, current.chatThreadId),
+              eq(chatEvents.eventType, "input.prompt"),
+            ),
+          )
+          .limit(1);
+        return { row: current, callbackDelivered: callbackEvent !== undefined };
       },
       signal,
     );
     if (admitted.outcome !== "written" || !admitted.value) {
       return notFound();
     }
-    row = admitted.value;
+    row = admitted.value.row;
     if (
       (row.status === "pending" || row.status === "applying") &&
       !(await requestHasLiveBrowser(db, row))
@@ -925,7 +951,13 @@ export const readBrowserUserAction$ = command(
     signal.throwIfAborted();
     const payload = decodePayload(row);
     return payload
-      ? { kind: "ok", value: publicRequest(row, args.requestToken, payload) }
+      ? {
+          kind: "ok",
+          value: {
+            ...publicRequest(row, args.requestToken, payload),
+            callbackDelivered: admitted.value.callbackDelivered,
+          },
+        }
       : conflict(
           "Browser user-action request payload is unavailable",
           "BROWSER_USER_ACTION_UNAVAILABLE",

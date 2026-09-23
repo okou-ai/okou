@@ -7,11 +7,13 @@ import {
 
 import type { HomeTaskEvidence } from "./home-task-recommendation-evidence.service";
 
-/** Untrusted candidate extraction after every evidence reference is resolved. */
+/** A bounded, evidence-anchored unit for Jev to judge before any text model. */
 export interface HomeTaskCandidateDraft {
   readonly id: string;
   readonly intent: string;
   readonly reason: string;
+  readonly purpose: HomeTaskRecommendation["purpose"];
+  readonly examples: readonly string[];
   readonly sourceRefs: readonly string[];
   /** Opaque evidence ref for Jev's destination check; never persisted. */
   readonly threadRef: string | null;
@@ -40,94 +42,141 @@ function boundedText(value: unknown, cap: number): string | null {
   return text.length <= cap ? text : text.slice(0, cap);
 }
 
-function candidateSourceRefs(
-  value: unknown,
-  validRefs: ReadonlySet<string>,
-): string[] | null {
-  if (!Array.isArray(value) || value.length === 0) {
-    return null;
-  }
-  const refs: string[] = [];
-  for (const item of value) {
-    const ref = boundedText(item, 16);
-    if (ref === null || !validRefs.has(ref)) {
-      return null;
-    }
-    if (!refs.includes(ref)) {
-      refs.push(ref);
-    }
-    if (refs.length >= 4) {
-      break;
+function patternTokens(value: string): ReadonlySet<string> {
+  const tokens = new Set<string>();
+  for (const match of value
+    .toLowerCase()
+    .matchAll(/[\p{Script=Han}]+|[\p{L}\p{N}]+/gu)) {
+    const word = match[0];
+    if (/^[\p{Script=Han}]+$/u.test(word)) {
+      for (let index = 0; index < word.length - 1; index += 1) {
+        tokens.add(word.slice(index, index + 2));
+      }
+    } else if (
+      !/^(?:a|an|and|for|in|my|of|on|please|the|to|with|you)$/u.test(word) &&
+      !/^\d+$/u.test(word)
+    ) {
+      tokens.add(word);
     }
   }
-  return refs.length === 0 ? null : refs;
+  return tokens;
 }
 
-/**
- * Candidate extraction is allowed to name only evidence refs it received.
- * Existing-thread destinations are resolved locally, so no model ever emits a
- * thread id and no invented destination can survive normalization.
- */
-export function normalizeHomeTaskCandidateDrafts(
-  value: unknown,
+function similarRequests(
+  left: ReadonlySet<string>,
+  right: ReadonlySet<string>,
+): boolean {
+  const shared = [...left].filter((token) => {
+    return right.has(token);
+  }).length;
+  const union = left.size + right.size - shared;
+  return shared >= 3 && union > 0 && shared / union >= 0.55;
+}
+
+function workflowCandidates(evidence: HomeTaskEvidence) {
+  const groups: {
+    readonly tokens: ReadonlySet<string>;
+    readonly requests: { readonly threadRef: string; readonly text: string }[];
+  }[] = [];
+  for (const request of evidence.completedRequests) {
+    const tokens = patternTokens(request.text);
+    if (tokens.size < 3) {
+      continue;
+    }
+    const group = groups.find((item) => {
+      return similarRequests(item.tokens, tokens);
+    });
+    if (group) {
+      group.requests.push(request);
+    } else {
+      groups.push({ tokens, requests: [request] });
+    }
+  }
+  return groups
+    .filter((group) => {
+      return group.requests.length >= 3;
+    })
+    .sort((left, right) => {
+      return right.requests.length - left.requests.length;
+    })
+    .slice(0, 2)
+    .map((group) => {
+      return {
+        intent:
+          "Ask this Agent to assess whether the repeated completed work should become a reusable Workflow.",
+        reason: `This Agent completed ${group.requests.length.toString()} similar requests.`,
+        purpose: "workflow" as const,
+        examples: group.requests.slice(0, 3).map((request) => {
+          return request.text;
+        }),
+        sourceRefs: [
+          ...new Set(
+            group.requests.map((request) => {
+              return request.threadRef;
+            }),
+          ),
+        ].slice(0, 4),
+        threadRef: null,
+        target: { kind: "new-thread" } as const,
+        connectors: [],
+      };
+    });
+}
+
+/** Form source units deterministically; Jev decides which are real tasks. */
+export function buildHomeTaskCandidates(
   evidence: HomeTaskEvidence,
   limit: number,
 ): HomeTaskCandidateDraft[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const validRefs = new Set([
-    ...evidence.threads.map((thread) => {
-      return thread.ref;
-    }),
-    ...evidence.gmail.map((message) => {
-      return message.ref;
-    }),
-  ]);
-  const candidates: HomeTaskCandidateDraft[] = [];
-  for (const item of value) {
-    if (!isRecord(item)) {
-      continue;
-    }
-    const intent = boundedText(item.intent, 300);
-    const sourceRefs = candidateSourceRefs(item.sourceRefs, validRefs);
-    if (intent === null || sourceRefs === null) {
-      continue;
-    }
-    const threadRef =
-      item.threadRef === null ? null : boundedText(item.threadRef, 16);
-    if (
-      item.threadRef !== null &&
-      (threadRef === null || !sourceRefs.includes(threadRef))
-    ) {
-      continue;
-    }
-    const threadId =
-      threadRef === null ? undefined : evidence.threadIdByRef.get(threadRef);
-    if (threadRef !== null && threadId === undefined) {
-      continue;
-    }
-    candidates.push({
-      id: `c${(candidates.length + 1).toString()}`,
-      intent,
-      reason: boundedText(item.reason, 200) ?? "",
-      sourceRefs,
-      threadRef,
-      target:
-        threadId === undefined
-          ? { kind: "new-thread" }
-          : { kind: "existing-thread", threadId },
-      connectors: sourceRefs.some((ref) => {
-        return ref.startsWith("g");
-      })
-        ? ["gmail"]
-        : [],
-    });
-    if (candidates.length >= limit) {
-      break;
-    }
-  }
-  return candidates;
+  const recurring = workflowCandidates(evidence);
+  const threads = evidence.threads
+    .flatMap((thread) => {
+      const latestRequest = thread.messages.find((message) => {
+        return message.role === "user";
+      });
+      const threadId = evidence.threadIdByRef.get(thread.ref);
+      if (!latestRequest || !threadId) {
+        return [];
+      }
+      const latestAnswer = thread.messages.find((message) => {
+        return message.role === "assistant";
+      });
+      return [
+        {
+          intent: `Consider the next useful step for this user request: ${latestRequest.text}`,
+          reason: latestAnswer?.text ?? thread.title ?? "Recent conversation",
+          purpose: "task" as const,
+          examples: [],
+          sourceRefs: [thread.ref],
+          threadRef: thread.ref,
+          target: { kind: "existing-thread" as const, threadId },
+          connectors: [],
+          activityAt: thread.lastActivityAt,
+        },
+      ];
+    })
+    .slice(0, 5);
+  const gmail = evidence.gmail.slice(0, 3).map((message) => {
+    return {
+      intent: `Consider the next useful step for this email from ${message.from}: ${message.subject}. ${message.snippet}`,
+      reason: message.unread ? "Unread inbox message" : "Recent inbox message",
+      purpose: "task" as const,
+      examples: [],
+      sourceRefs: [message.ref],
+      threadRef: null,
+      target: { kind: "new-thread" } as const,
+      connectors: ["gmail"],
+      activityAt: message.receivedAt ?? "",
+    };
+  });
+  const tasks = [...threads, ...gmail]
+    .sort((left, right) => {
+      return right.activityAt.localeCompare(left.activityAt);
+    })
+    .slice(0, Math.max(0, limit - recurring.length));
+  return [...tasks, ...recurring].slice(0, limit).map((candidate, index) => {
+    return { ...candidate, id: `c${(index + 1).toString()}` };
+  });
 }
 
 /**
@@ -171,12 +220,26 @@ export function normalizeHomeTaskRecommendations(
     if (item === undefined) {
       continue;
     }
+    const writerPrompt = boundedText(
+      item.prompt,
+      candidate.purpose === "workflow" ? 600 : 1000,
+    );
+    const prompt =
+      candidate.purpose === "workflow" && writerPrompt !== null
+        ? `${writerPrompt}\n\n${candidate.examples
+            .slice(0, 3)
+            .map((example, index) => {
+              return `${(index + 1).toString()}. ${example.slice(0, 120)}`;
+            })
+            .join("\n")}`
+        : writerPrompt;
     const parsed = homeTaskRecommendationSchema.safeParse({
       id: `r${(recommendations.length + 1).toString()}`,
       title: boundedText(item.title, 120),
-      prompt: boundedText(item.prompt, 1000),
+      prompt,
       rationale: boundedText(item.rationale, 200) ?? "",
       actionability: candidate.actionability,
+      purpose: candidate.purpose,
       target: candidate.target,
       connectors: [...candidate.connectors],
     });

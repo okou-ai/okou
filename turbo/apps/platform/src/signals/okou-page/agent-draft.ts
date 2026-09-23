@@ -195,7 +195,14 @@ function createAgentDraftLoad(
         get(draft.attachments$).length > 0
       );
     };
-    if (hasLocalDraft()) {
+    const handoff = get(draft.recommendationHandoff$);
+    if (hasLocalDraft() && !handoff) {
+      return;
+    }
+    if (handoff && !handoff.needsRemoteMerge) {
+      if (await set(draft.finishRecommendationHandoff$, null, signal)) {
+        await set(queueDraftSync$, signal);
+      }
       return;
     }
 
@@ -210,6 +217,15 @@ function createAgentDraftLoad(
     );
     const restoredDraft = await get(serverDraft$);
     signal.throwIfAborted();
+
+    if (get(draft.recommendationHandoff$)) {
+      if (
+        await set(draft.finishRecommendationHandoff$, restoredDraft, signal)
+      ) {
+        await set(queueDraftSync$, signal);
+      }
+      return;
+    }
 
     // The composer is interactive while the remote draft loads. Preserve any
     // input the user added after the request started instead of replacing it

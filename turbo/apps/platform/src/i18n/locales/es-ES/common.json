@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Racha de {{amount}} días",
-        "title": "Primeros pasos",
+        "title": "Consigue más créditos",
         "toGo": "Faltan {{amount}}",
         "workflow": {
           "action": "Crear",
@@ -2018,9 +2018,13 @@
       "title": "Reenviar a"
     },
     "homeTasks": {
+      "empty": "Aún no hay tareas sugeridas",
       "existingThread": "Continuar chat",
+      "exploreWorkflow": "Explorar flujo de trabajo",
       "heading": "Retomado de tu trabajo reciente",
-      "newThread": "Chat nuevo"
+      "newTasksAvailable": "Hay nuevas tareas",
+      "newThread": "Chat nuevo",
+      "reload": "Recargar tareas"
     },
     "mail": {
       "bcc": "BCC",
@@ -3252,12 +3256,19 @@
       "noConnectorsAlt": "Sin conectores",
       "otherCategory": "Otro",
       "remoteAccess": "Acceso remoto",
+      "remoteControl": {
+        "connections": "Conexiones",
+        "credentials": "Credenciales",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Ámbito de conectores",
         "attention": "Requiere atención",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descubrir",
+        "privateNetwork": "Red privada",
+        "remoteControl": "Control remoto",
         "searchConnected": "Buscar conectores conectados",
         "searchCustom": "Buscar conectores personalizados"
       },
@@ -6082,6 +6093,7 @@
         "personal": "Personal",
         "workspace": "Espacio de trabajo"
       },
+      "sectionNavigation": "Sección de configuración",
       "sections": {
         "billing": {
           "description": "Gestiona tu plan y método de pago.",
@@ -7816,6 +7828,7 @@
       },
       "notFound": "Flujo de trabajo no encontrado.",
       "refineWith": "Refinar con {{agent}}",
+      "sectionNavigation": "Sección de detalles del flujo de trabajo",
       "shadow": {
         "end": "Este flujo de trabajo queda reemplazado por la regla de prioridad de otro con el mismo slug.",
         "resolvesTo": "actualmente se resuelve como"

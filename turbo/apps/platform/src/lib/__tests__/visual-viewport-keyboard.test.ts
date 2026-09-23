@@ -8,10 +8,14 @@ const context = testContext();
 
 class ControlledViewportClock {
   private readonly animationFrames = new Map<number, FrameRequestCallback>();
+  private readonly pendingSettles = new Set<{
+    signal: AbortSignal;
+    resolve: () => void;
+    onAbort: () => void;
+  }>();
   private nextFrameId = 1;
 
-  constructor(signal: AbortSignal) {
-    vi.useFakeTimers();
+  constructor() {
     vi.stubGlobal("cancelAnimationFrame", (frameId: number): void => {
       this.animationFrames.delete(frameId);
     });
@@ -24,18 +28,37 @@ class ControlledViewportClock {
         return frameId;
       },
     );
-    signal.addEventListener(
-      "abort",
-      () => {
-        vi.useRealTimers();
-      },
-      { once: true },
-    );
   }
+
+  waitForSettle = (signal: AbortSignal): Promise<void> => {
+    const deferred = context.mocks.deferred<void>();
+    if (signal.aborted) {
+      deferred.reject(signal.reason);
+      return deferred.promise;
+    }
+    const pending = {
+      signal,
+      resolve: () => {
+        deferred.resolve();
+      },
+      onAbort: () => {
+        this.pendingSettles.delete(pending);
+        deferred.reject(signal.reason);
+      },
+    };
+    this.pendingSettles.add(pending);
+    signal.addEventListener("abort", pending.onAbort, { once: true });
+    return deferred.promise;
+  };
 
   async flushUpdate(): Promise<void> {
     this.flushAnimationFrames();
-    await vi.runOnlyPendingTimersAsync();
+    for (const pending of this.pendingSettles) {
+      this.pendingSettles.delete(pending);
+      pending.signal.removeEventListener("abort", pending.onAbort);
+      pending.resolve();
+    }
+    await Promise.resolve();
     this.flushAnimationFrames();
   }
 
@@ -146,10 +169,14 @@ async function resizeAndSettle(
 function startViewportKeyboardState(): ControlledViewportClock {
   const resetSettled$ = resetSignal();
   const { store, signal } = context;
-  const clock = new ControlledViewportClock(signal);
-  setupVisualViewportKeyboardState(signal, () => {
-    return store.set(resetSettled$, signal);
-  });
+  const clock = new ControlledViewportClock();
+  setupVisualViewportKeyboardState(
+    signal,
+    () => {
+      return store.set(resetSettled$, signal);
+    },
+    clock.waitForSettle,
+  );
   return clock;
 }
 

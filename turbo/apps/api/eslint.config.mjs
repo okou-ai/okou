@@ -292,6 +292,25 @@ export default [
     },
   },
   {
+    files: [
+      "src/signals/services/model-provider-subscription-usage.service.ts",
+    ],
+    rules: {
+      // A 503 from the ChatGPT usage endpoint is a bounded, already recovered
+      // outcome — the list response still carries the stored provider row — so
+      // `warn` put every occurrence into the production error review. A
+      // sustained rate is still the real signal and the record carries the
+      // `status` and provider identity a genuine ChatGPT outage needs, so it
+      // has to survive Axiom's info default; debug would drop it entirely.
+      // Every other refresh failure, including authentication rejections,
+      // stays on the shared warn path.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["codex usage unavailable upstream"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/onboarding.service.ts"],
     rules: {
       "api/no-logger-info": [
@@ -576,6 +595,28 @@ export default [
     ignores: ["src/__tests__/env-stub.ts", "src/__tests__/mocks.ts"],
     rules: {
       "api/no-test-vi-mocks": "error",
+    },
+  },
+  {
+    files: [
+      "src/**/__tests__/**/*.ts",
+      "src/**/*.test.ts",
+      "src/test-fixtures/**/*.ts",
+    ],
+    rules: {
+      "ccstate/no-test-delay": [
+        "error",
+        {
+          allowed: [
+            {
+              file: "src/signals/routes/__tests__/morning-brief-composition.test.ts",
+              kinds: ["delay"],
+              reason:
+                "Issue #35737 verifies successful provider reads before a real source deadline; #35594 tracks replacing the pacing with a controlled deadline signal.",
+            },
+          ],
+        },
+      ],
     },
   },
   {

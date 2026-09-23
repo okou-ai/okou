@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "连续 {{amount}} 天",
-        "title": "快速上手",
+        "title": "获得更多积分",
         "toGo": "还差 {{amount}}",
         "workflow": {
           "action": "搭建",
@@ -1974,9 +1974,13 @@
       "title": "转发到"
     },
     "homeTasks": {
+      "empty": "暂时没有推荐任务",
       "existingThread": "继续聊天",
+      "exploreWorkflow": "探索工作流",
       "heading": "从近期工作中提取",
-      "newThread": "新建聊天"
+      "newTasksAvailable": "有新任务可查看",
+      "newThread": "新建聊天",
+      "reload": "重新加载任务"
     },
     "mail": {
       "bcc": "密送",
@@ -3186,12 +3190,19 @@
       "noConnectorsAlt": "暂无连接器",
       "otherCategory": "其他",
       "remoteAccess": "远程访问",
+      "remoteControl": {
+        "connections": "连接",
+        "credentials": "凭据",
+        "type": "类型"
+      },
       "scope": {
         "aria": "连接器范围",
         "attention": "需要处理",
         "connected": "已连接",
         "custom": "自定义",
         "discover": "发现",
+        "privateNetwork": "私有网络",
+        "remoteControl": "远程控制",
         "searchConnected": "查找已连接的连接器",
         "searchCustom": "查找自定义连接器"
       },
@@ -6008,6 +6019,7 @@
         "personal": "个人",
         "workspace": "工作区"
       },
+      "sectionNavigation": "设置栏目",
       "sections": {
         "billing": {
           "description": "管理你的套餐和支付方式。",
@@ -7721,6 +7733,7 @@
       },
       "notFound": "未找到该工作流。",
       "refineWith": "用{{agent}}优化",
+      "sectionNavigation": "工作流详情栏目",
       "shadow": {
         "end": "（对你生效）。这个工作流因标识符相同的优先级规则被屏蔽。",
         "resolvesTo": "当前指向"

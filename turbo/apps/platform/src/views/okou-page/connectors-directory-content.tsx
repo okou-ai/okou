@@ -20,7 +20,6 @@ import {
   retryCustomConnectors$,
 } from "../../signals/okou-page/settings/custom-connectors.ts";
 import { filteredDirectoryCustomConnectors$ } from "../../signals/okou-page/settings/connector-directory-custom.ts";
-import { REMOTE_ACCESS_CATEGORY } from "../../signals/okou-page/settings/ssh-connector.ts";
 import {
   CustomConnectorDirectoryDialogs,
   CustomConnectorGrid,
@@ -185,16 +184,10 @@ export function ConnectorsDirectoryContent({
   builtin,
   builtinState,
   builtinCount,
-  remote,
-  remoteState,
-  remoteCount,
 }: {
   readonly builtin: ReactNode;
   readonly builtinState: SourceState;
   readonly builtinCount: number;
-  readonly remote: ReactNode;
-  readonly remoteState: SourceState;
-  readonly remoteCount: number;
 }) {
   const { t } = useTranslation();
   const search = useGet(connectorsSearch$).trim().toLowerCase();
@@ -209,13 +202,10 @@ export function ConnectorsDirectoryContent({
   // trailing block. Browsing is scoped; searching is not, so a keyword still
   // reaches across and reports its custom matches in their own section.
   const showCustom = customOnly || (Boolean(search) && category === null);
-  const showBuiltin = !customOnly && category !== REMOTE_ACCESS_CATEGORY;
-  const showRemote =
-    !customOnly && (category === null || category === REMOTE_ACCESS_CATEGORY);
+  const showBuiltin = !customOnly;
   const sources = [
     { visible: showCustom, state: custom.state, count: connectors.length },
     { visible: showBuiltin, state: builtinState, count: builtinCount },
-    { visible: showRemote, state: remoteState, count: remoteCount },
   ];
   const empty = sources.every((source) => {
     return (
@@ -249,7 +239,6 @@ export function ConnectorsDirectoryContent({
         ) : (
           builtin
         ))}
-      {showRemote && remote}
       {showCustom && (
         <DirectoryCustomSection
           connectors={connectors}

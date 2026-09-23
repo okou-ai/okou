@@ -369,6 +369,7 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 async function deregisterOrgTelegramWebhooks(
   db: Db,
   orgId: string,
+  required: boolean,
 ): Promise<void> {
   const installations = await db
     .select({
@@ -380,24 +381,22 @@ async function deregisterOrgTelegramWebhooks(
     .where(eq(telegramInstallations.orgId, orgId));
 
   for (const installation of installations) {
-    await tapError(
-      deleteWebhook(
-        await decryptPersistentSecretValue(
-          installation.encryptedBotToken,
-          await loadUserFeatureSwitchContext(
-            db,
-            orgId,
-            installation.ownerUserId,
-          ),
-        ),
+    const removal = deleteWebhook(
+      await decryptPersistentSecretValue(
+        installation.encryptedBotToken,
+        await loadUserFeatureSwitchContext(db, orgId, installation.ownerUserId),
       ),
-      (error) => {
+    );
+    if (required) {
+      await removal;
+    } else {
+      await tapError(removal, (error) => {
         L.warn("failed to deregister telegram webhook", {
           telegramBotId: installation.telegramBotId,
           error,
         });
-      },
-    );
+      });
+    }
   }
 }
 
@@ -407,7 +406,6 @@ async function deregisterOwnedTelegramWebhooks(
 ): Promise<void> {
   const installations = await db
     .select({
-      telegramBotId: telegramInstallations.telegramBotId,
       encryptedBotToken: telegramInstallations.encryptedBotToken,
       orgId: telegramInstallations.orgId,
     })
@@ -415,19 +413,11 @@ async function deregisterOwnedTelegramWebhooks(
     .where(eq(telegramInstallations.ownerUserId, userId));
 
   for (const installation of installations) {
-    await tapError(
-      deleteWebhook(
-        await decryptPersistentSecretValue(
-          installation.encryptedBotToken,
-          await loadUserFeatureSwitchContext(db, installation.orgId, userId),
-        ),
+    await deleteWebhook(
+      await decryptPersistentSecretValue(
+        installation.encryptedBotToken,
+        await loadUserFeatureSwitchContext(db, installation.orgId, userId),
       ),
-      (error) => {
-        L.warn("failed to deregister telegram webhook", {
-          telegramBotId: installation.telegramBotId,
-          error,
-        });
-      },
     );
   }
 }
@@ -515,6 +505,7 @@ const cleanupOrgExternalServices$ = command(
     { set },
     db: Db,
     orgId: string,
+    required: boolean,
     signal: AbortSignal,
   ): Promise<void> => {
     const steps: readonly {
@@ -524,7 +515,7 @@ const cleanupOrgExternalServices$ = command(
       {
         name: "telegram webhooks",
         run: () => {
-          return deregisterOrgTelegramWebhooks(db, orgId);
+          return deregisterOrgTelegramWebhooks(db, orgId, required);
         },
       },
       {
@@ -536,9 +527,13 @@ const cleanupOrgExternalServices$ = command(
     ];
 
     for (const step of steps) {
-      await tapError(step.run(), (error) => {
-        L.warn(`failed to cleanup ${step.name}`, { orgId, error });
-      });
+      if (required) {
+        await step.run();
+      } else {
+        await tapError(step.run(), (error) => {
+          L.warn(`failed to cleanup ${step.name}`, { orgId, error });
+        });
+      }
       signal.throwIfAborted();
     }
   },
@@ -551,30 +546,10 @@ const cleanupUserExternalServices$ = command(
     userId: string,
     signal: AbortSignal,
   ): Promise<void> => {
-    const steps: readonly {
-      readonly name: string;
-      readonly run: () => Promise<void>;
-    }[] = [
-      {
-        name: "connector tokens",
-        run: () => {
-          return set(revokeUserConnectorTokens$, db, userId, signal);
-        },
-      },
-      {
-        name: "telegram owned bots",
-        run: () => {
-          return deregisterOwnedTelegramWebhooks(db, userId);
-        },
-      },
-    ];
-
-    for (const step of steps) {
-      await tapError(step.run(), (error) => {
-        L.warn(`failed to cleanup ${step.name}`, { userId, error });
-      });
-      signal.throwIfAborted();
-    }
+    await set(revokeUserConnectorTokens$, db, userId, signal);
+    signal.throwIfAborted();
+    await deregisterOwnedTelegramWebhooks(db, userId);
+    signal.throwIfAborted();
   },
 );
 
@@ -648,12 +623,7 @@ async function isClerkOrgEmptyAfterDeletingUser(
       if (isClerkNotFound(memberships.error)) {
         return true;
       }
-      L.warn("failed to query Clerk organization memberships for deletion", {
-        orgId,
-        userId,
-        error: memberships.error,
-      });
-      return false;
+      throw memberships.error;
     }
 
     for (const membership of memberships.value.data) {
@@ -691,45 +661,24 @@ function deleteObjectsForPrefixes(
   });
 }
 
-function deleteUserObjectsForPrefixesBestEffort(
+function deleteUserObjectsForPrefixes(
   bucket: string,
   prefixes: readonly string[],
-  userId: string,
 ): Computed<Promise<void>> {
   return computed(async (get): Promise<void> => {
     for (const prefix of prefixes) {
-      const objects = await tapError(
-        get(listS3ObjectsUnderPrefix(bucket, prefix)),
-        (error) => {
-          L.warn("failed to list user storage objects", {
-            userId,
-            prefix,
-            error,
-          });
-        },
-      );
-      if (!objects) {
-        continue;
-      }
-
+      const objects = await get(listS3ObjectsUnderPrefix(bucket, prefix));
       if (objects.length === 0) {
         continue;
       }
-
-      const keys = objects.map((object) => {
-        return object.key;
-      });
-      await tapError(get(deleteS3Objects(bucket, keys)), (error) => {
-        // The storage rows (and with them the version keys) are deleted
-        // right after this best-effort pass, so log the full key list to
-        // keep manual re-deletion possible.
-        L.warn("failed to delete user storage objects", {
-          userId,
-          prefix,
-          keys,
-          error,
-        });
-      });
+      await get(
+        deleteS3Objects(
+          bucket,
+          objects.map((object) => {
+            return object.key;
+          }),
+        ),
+      );
     }
   });
 }
@@ -808,7 +757,7 @@ function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
         }),
       ),
     ];
-    await get(deleteUserObjectsForPrefixesBestEffort(bucket, prefixes, userId));
+    await get(deleteUserObjectsForPrefixes(bucket, prefixes));
 
     const exportRows = await db
       .select({ s3Key: exportJobs.s3Key })
@@ -817,13 +766,7 @@ function deleteUserS3Data(db: Db, userId: string): Computed<Promise<void>> {
     const exportKeys = exportRows.flatMap((row) => {
       return row.s3Key ? [row.s3Key] : [];
     });
-    await tapError(get(deleteS3Objects(bucket, exportKeys)), (error) => {
-      L.warn("failed to delete user export objects", {
-        userId,
-        count: exportKeys.length,
-        error,
-      });
-    });
+    await get(deleteS3Objects(bucket, exportKeys));
   });
 }
 
@@ -1017,7 +960,7 @@ export const cleanupClerkDeletedOrg$ = command(
       { kind: "organization", orgId },
       signal,
     );
-    await set(cleanupOrgExternalServices$, db, orgId, signal);
+    await set(cleanupOrgExternalServices$, db, orgId, false, signal);
     signal.throwIfAborted();
     await get(deleteOrgS3Data(db, orgId));
     signal.throwIfAborted();
@@ -1034,7 +977,19 @@ export const cleanupClerkDeletedOrgBilling$ = command(
 );
 
 export const cleanupClerkDeletedUser$ = command(
-  async ({ get, set }, userId: string, signal: AbortSignal): Promise<void> => {
+  async (
+    { get, set },
+    args: {
+      readonly userId: string;
+      readonly emptyOrgIds?: readonly string[];
+      readonly checkpointEmptyOrgIds: (
+        orgIds: readonly string[],
+        signal: AbortSignal,
+      ) => Promise<void>;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const { userId } = args;
     const db = set(writeDb$);
     await eraseVncOwnerData(db, { kind: "user", userId });
     signal.throwIfAborted();
@@ -1046,13 +1001,14 @@ export const cleanupClerkDeletedUser$ = command(
     await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
     signal.throwIfAborted();
     await set(cleanupSharedThreadArtifacts$, { kind: "user", userId }, signal);
-    const emptyOrgIds = await emptyOrgIdsAfterDeletingUser(
-      db,
-      get(clerk$),
-      userId,
-      signal,
-    );
+    const emptyOrgIds =
+      args.emptyOrgIds ??
+      (await emptyOrgIdsAfterDeletingUser(db, get(clerk$), userId, signal));
     signal.throwIfAborted();
+    if (args.emptyOrgIds === undefined) {
+      await args.checkpointEmptyOrgIds(emptyOrgIds, signal);
+      signal.throwIfAborted();
+    }
 
     await set(cleanupUserExternalServices$, db, userId, signal);
     signal.throwIfAborted();
@@ -1074,14 +1030,9 @@ export const cleanupClerkDeletedUser$ = command(
         { kind: "organization", orgId },
         signal,
       );
-      await tapError(
-        cancelStripeSubscriptionsForDeletedOrg(db, orgId),
-        (error) => {
-          L.warn("failed to cleanup stripe subscriptions", { orgId, error });
-        },
-      );
+      await cancelStripeSubscriptionsForDeletedOrg(db, orgId);
       signal.throwIfAborted();
-      await set(cleanupOrgExternalServices$, db, orgId, signal);
+      await set(cleanupOrgExternalServices$, db, orgId, true, signal);
       signal.throwIfAborted();
     }
 

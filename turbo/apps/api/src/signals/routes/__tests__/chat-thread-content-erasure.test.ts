@@ -12,6 +12,7 @@ import {
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   holdChatThreadEventIdFixture,
+  readStoredChatThreadDraftRowFixture,
   readStoredChatThreadMetadataFixture,
   setChatThreadAgentFixture,
   withChatThreadContentBarrierFixture,
@@ -155,6 +156,35 @@ describe("account erasure fences direct chat-thread content writes", () => {
       [404],
     );
     await expect(readDraftText(fixture)).resolves.toBe("kept draft");
+  });
+
+  it("leaves the stored draft row untouched for a closed thread user", async () => {
+    const fixture = await createContentFixture();
+    await chat.patchThread(
+      fixture.actor,
+      fixture.threadId,
+      draftBody("kept draft"),
+    );
+    // The draft now also lives in `chat_thread_drafts`, which is a descendant
+    // of the fenced thread and holds the same account content, so the closure
+    // has to stop that write too rather than only the legacy columns.
+    const before = await readStoredChatThreadDraftRowFixture(fixture.threadId);
+    expect(before).not.toBeNull();
+
+    await closeSubject({
+      subjectKind: "user",
+      subjectId: fixture.actor.userId,
+    });
+    await chat.requestPatchThread(
+      fixture.actor,
+      fixture.threadId,
+      draftBody("erased draft"),
+      [404],
+    );
+
+    await expect(
+      readStoredChatThreadDraftRowFixture(fixture.threadId),
+    ).resolves.toStrictEqual(before);
   });
 
   it("denies a draft write for a closed distinct Agent owner and for a closed organization", async () => {

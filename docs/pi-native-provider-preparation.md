@@ -59,7 +59,7 @@ records compatible serving API, CLI and Runner releases and retained rollback
 code. That receipt releases the implementation dependency. It is not a native
 route live pass or permission for this child to publish.
 
-Canonical owned-thread admission remains behind the existing `PiLoop` cohort.
+Canonical owned-thread admission remains gated by `PiLoop` and the route policy.
 The same policy selection and launch writer serve direct chat, connector
 callbacks, delegated inputs and Automation turns. Threadless/private maintenance,
 test/replay and retired Goal admission remain outside foreground activation.
