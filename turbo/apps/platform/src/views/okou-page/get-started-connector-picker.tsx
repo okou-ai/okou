@@ -304,10 +304,10 @@ export function QuestConnectorPicker({
             />
           </ScrollArea.Content>
         </ScrollArea.Viewport>
-        {/* Into the card's own right margin, clear of the tiles: the list now
-            owns the full width, so a bar standing on its content would cover
-            the affordance at the end of every row it crosses. */}
-        <ScrollBar data-testid="quest-connector-scrollbar" className="mr-2" />
+        {/* The track lands where the root's own edge is, which is now the
+            card's, so the dialog's `p-6` is what keeps it off the tiles: no
+            offset of its own, the same as the transcript's and the sidebar's. */}
+        <ScrollBar data-testid="quest-connector-scrollbar" />
       </ScrollArea.Root>
     </div>
   );

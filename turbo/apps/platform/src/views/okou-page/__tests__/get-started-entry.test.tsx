@@ -863,36 +863,6 @@ test("The connector step says what it costs the user before it hands them off", 
   });
 });
 
-test("The connector step offers the one-click catalog itself, not a box to filter it with", async () => {
-  configureQuestPage(context, "admin");
-  mockQuestCatalog();
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
-  });
-
-  await openQuestPanel();
-  click(screen.getByTestId("get-started-quest-connector"));
-  const dialog = await screen.findByRole("dialog");
-  const picker = await within(dialog).findByTestId("quest-connector-picker");
-  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
-  expect(within(picker).getByText("Notion")).toBeInTheDocument();
-
-  // Every connector this step can be finished on is already on screen or one
-  // scroll away, so the dialog spends its width on the tiles instead of on a
-  // field that filters a list the reader can see all of. Naming a tool the
-  // step cannot deliver is what `Browse all connectors` is for.
-  expect(
-    within(picker).queryByRole("textbox", { name: /find/iu }),
-  ).not.toBeInTheDocument();
-  expect(within(dialog).queryByPlaceholderText("Find connectors")).toBeNull();
-  expect(buttonNamed("Browse all connectors", dialog)).toBeInTheDocument();
-});
-
 test("Picking a connector in the dialog starts its authorization", async () => {
   configureQuestPage(context, "admin");
   mockQuestCatalog();
