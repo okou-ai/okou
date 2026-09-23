@@ -1667,7 +1667,6 @@ async function codexSource(
     {
       [FeatureSwitchKey.PiMemory]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
     },
   );
   const token = makeCodexJwt({
@@ -1722,7 +1721,6 @@ async function activateAnotherCodexAccount(
     {
       [FeatureSwitchKey.PiMemory]: true,
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
     },
   );
   const auth = createAuthDeviceApiActions(context);
@@ -2338,7 +2336,6 @@ describe("Stage 1 credential lifecycle fences", () => {
         {
           [FeatureSwitchKey.PiMemory]: true,
           [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-          [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         },
       );
       if (mode === "disconnected") {
@@ -2391,7 +2388,6 @@ describe("Stage 1 credential lifecycle fences", () => {
         {
           [FeatureSwitchKey.PiMemory]: true,
           [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-          [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         },
       );
       const controller = new AbortController();
@@ -2754,7 +2750,6 @@ describe("Stage 1 background credential availability", () => {
         [FeatureSwitchKey.PiLoop]: false,
         [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       },
     );
     await runs.updateOrgModelPolicies(actor, [
@@ -2843,7 +2838,6 @@ describe("Stage 1 background credential availability", () => {
       {
         [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       },
     );
     const provider = installSourceProvider();
