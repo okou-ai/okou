@@ -700,6 +700,24 @@ export const compactChatThreadSnapshots$ = command(
     scope: SnapshotCompactionScope,
     signal: AbortSignal,
   ): Promise<SnapshotCompactionStats> => {
+    // The API deploys before the App. Keep production compaction paused until
+    // the deployed App and the API rollback target can read R2 snapshots.
+    if (scope.kind === "global") {
+      const enabled = optionalEnv("CHAT_THREAD_SNAPSHOT_R2_WRITES_ENABLED");
+      if (enabled !== "true") {
+        if (enabled !== undefined && enabled !== "false") {
+          throw new Error(
+            "CHAT_THREAD_SNAPSHOT_R2_WRITES_ENABLED must be true or false",
+          );
+        }
+        return {
+          scopes: 0,
+          eventsApplied: 0,
+          removedDeletedAgentThreads: 0,
+          eventsPruned: 0,
+        };
+      }
+    }
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
     return await compactChatThreadSnapshotsForScope(
       set(writeDb$),

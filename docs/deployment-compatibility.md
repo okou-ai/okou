@@ -1,25 +1,24 @@
 # Deployment Compatibility
 
-## Chat thread snapshot R2 handoff, reader phase (2026-09-23)
+## Chat thread snapshot R2 handoff (2026-09-23)
 
 Migration `1202_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
-`chat_thread_snapshots`. This phase changes no compaction writer: existing rows
-continue to carry the legacy `chat_threads` JSONB and the API returns the same
-inline snapshot to old Apps and CLIs. The new API can return a short-lived,
+`chat_thread_snapshots`. Existing rows continue to carry the legacy
+`chat_threads` JSONB and the API returns the same inline snapshot for them.
+The new API can return a short-lived,
 scope-checked download URL for a row with an object key; the new App and CLI
 materialize that object before caching or replaying its paired event cursor.
 
-Deploy this reader phase and verify the App and CLI versions that understand
-the URL before any compactor stops writing JSONB. Production promotes the API
-before the App, and a previously loaded App can remain open after promotion.
-The writer cutover needs a separately verified App compatibility floor and a
-rollback target that understands R2 pointers. No production writer activation
-or App version floor change is part of this phase.
+The global compaction cron is paused by default: set
+`CHAT_THREAD_SNAPSHOT_R2_WRITES_ENABLED=true` only after the new App is live,
+the App compatibility floor excludes bundles that cannot download snapshot
+URLs, and the API rollback target understands R2 pointers. Production promotes
+the API before the App, and a previously loaded App can remain open after
+promotion. While the switch is off, the cron leaves snapshots and events
+unchanged; existing JSONB rows continue to serve clients. The test fixture
+compactor exercises the R2 writer regardless of the production switch.
 
-## Chat thread snapshot R2 handoff, writer phase (2026-09-23)
-
-After the reader phase is deployed and the App compatibility floor and API
-rollback target are verified, the compaction job writes a compressed,
+Once enabled, the compaction job writes a compressed,
 content-addressed JSON snapshot to R2 and publishes its object key together
 with the event cursor. It stores an empty JSONB array instead of the retired
 projection. Rows without an object key remain readable through the legacy
@@ -29,7 +28,7 @@ conditional database update leaves the prior snapshot and cursor intact.
 The hourly job also removes unreferenced snapshot objects older than seven
 days in bounded hash partitions. It retains objects referenced by a current
 snapshot or a user export. Rolling back to an API or App that only understands
-inline JSONB after this phase would leave R2-backed snapshots unreadable.
+inline JSONB after enabling the switch would leave R2-backed snapshots unreadable.
 
 ## Artifact catalog API handoff (2026-09-23)
 
