@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { userPreferenceChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 
 import { accept } from "../../lib/accept.ts";
@@ -7,13 +7,13 @@ import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$, setAblyPayloadLoop$ } from "../realtime.ts";
 
 const reloadVersion$ = state(0);
-export const invalidateComposerConnectorOverview$ = command(({ set }) => {
+export const invalidateConnectorOverview$ = command(({ set }) => {
   set(reloadVersion$, (version) => {
     return version + 1;
   });
 });
 const reloadFromRealtime$ = command(({ set }): boolean => {
-  set(invalidateComposerConnectorOverview$);
+  set(invalidateConnectorOverview$);
   return false;
 });
 const reloadAfterPreferenceChange$ = command(
@@ -23,22 +23,22 @@ const reloadAfterPreferenceChange$ = command(
       parsed.success &&
       parsed.data.kinds.includes("cloudBrowserEnabledByDefault")
     ) {
-      set(invalidateComposerConnectorOverview$);
+      set(invalidateConnectorOverview$);
     }
     return false;
   },
 );
 
-export const composerConnectorOverview$ = computed(async (get) => {
+export const connectorOverview$ = computed(async (get) => {
   get(reloadVersion$);
   const result = await accept(
-    get(apiClient$)(composerConnectorsContract).overview(),
+    get(apiClient$)(connectorOverviewContract).overview(),
     [200],
   );
   return result.body;
 });
 
-export const subscribeComposerConnectorOverview$ = command(
+export const subscribeConnectorOverview$ = command(
   ({ set }, signal: AbortSignal) => {
     for (const topic of [
       "connector:changed",

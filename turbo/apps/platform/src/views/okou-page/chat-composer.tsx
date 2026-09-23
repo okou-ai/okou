@@ -253,10 +253,10 @@ import type {
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type {
-  ComposerBuiltinConnector,
-  ComposerCustomConnector,
-  ComposerDefaultAccount,
-} from "@okouai/api-contracts/contracts/composer-connectors";
+  BuiltinConnectorBrief,
+  CustomConnectorBrief,
+  ConnectorDefaultAccountBrief,
+} from "@okouai/api-contracts/contracts/connector-overview";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
@@ -331,10 +331,10 @@ import {
   desktopDownloadSupportStatus$,
 } from "../../signals/okou-page/computer-use-hosts.ts";
 import {
-  composerConnectorOverview$,
-  invalidateComposerConnectorOverview$,
-} from "../../signals/okou-page/composer-connector-overview.ts";
-import { invalidateComposerAgentConnectors$ } from "../../signals/okou-page/composer-agent-connectors.ts";
+  connectorOverview$,
+  invalidateConnectorOverview$,
+} from "../../signals/okou-page/connector-overview.ts";
+import { invalidateAgentConnectorAccess$ } from "../../signals/okou-page/composer-agent-connectors.ts";
 import { computerUseProductName$ } from "../../signals/branding.ts";
 import {
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
@@ -482,11 +482,11 @@ type TemplatePreviewImageSize = Parameters<typeof r2ImageTransformUrl>[1];
 // Helpers
 // ---------------------------------------------------------------------------
 
-type ComposerConnectorItem = ComposerBuiltinConnector & {
+type ComposerConnectorItem = BuiltinConnectorBrief & {
   readonly authorized: boolean;
 };
 
-type ComposerCustomConnectorItem = ComposerCustomConnector & {
+type ComposerCustomConnectorItem = CustomConnectorBrief & {
   readonly authorized: boolean;
 };
 
@@ -7078,7 +7078,7 @@ function ComposerConnectorAccountMenu({
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
   readonly selectedConnection: ConnectorAccountConnection | undefined;
-  readonly defaultConnection: ComposerDefaultAccount | null;
+  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
   readonly explicit: boolean;
 }) {
   const { t } = useTranslation();
@@ -7180,7 +7180,7 @@ function ComposerConnectorAccountChoices({
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
   readonly selection: ConnectorAccountSelection | undefined;
-  readonly defaultConnection: ComposerDefaultAccount | null;
+  readonly defaultConnection: ConnectorDefaultAccountBrief | null;
   readonly saving: boolean;
   readonly loading: boolean;
   readonly unavailable: boolean;
@@ -9935,8 +9935,8 @@ function resolveComposerConnectorCollections({
   customConnectorIds,
   selectedCustomConnectorId,
 }: {
-  connectedBuiltins: readonly ComposerBuiltinConnector[];
-  connectedCustom: readonly ComposerCustomConnector[];
+  connectedBuiltins: readonly BuiltinConnectorBrief[];
+  connectedCustom: readonly CustomConnectorBrief[];
   addDialogCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
   addDialogCustomConnectors: readonly CustomConnectorResponse[];
   authorizedConnectorSlugs: readonly ConnectorSlug[] | null;
@@ -10108,9 +10108,9 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   const setCloudBrowserEnabled = useSet(
     signals.computer.setCloudBrowserEnabled$,
   );
-  const computerUseHostsState = useLastLoadable(composerConnectorOverview$);
+  const computerUseHostsState = useLastLoadable(connectorOverview$);
   const lastComputerUseHosts =
-    useLastResolved(composerConnectorOverview$)?.computerUseHosts ?? [];
+    useLastResolved(connectorOverview$)?.computerUseHosts ?? [];
   const computerUseHosts =
     computerUseHostsState.state === "hasData"
       ? computerUseHostsState.data.computerUseHosts
@@ -10189,10 +10189,8 @@ function ComposerConnectorsSlot({
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
   );
-  const invalidateConnectorOverview = useSet(
-    invalidateComposerConnectorOverview$,
-  );
-  const invalidateAgentConnectors = useSet(invalidateComposerAgentConnectors$);
+  const invalidateConnectorOverview = useSet(invalidateConnectorOverview$);
+  const invalidateAgentConnectors = useSet(invalidateAgentConnectorAccess$);
 
   const pageSignal = useGet(pageSignal$);
   const selectedConnectorSlug = connectorUi.selectedConnectorSlug;

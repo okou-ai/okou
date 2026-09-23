@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { ChevronRight, CircleCheck, Loader2, Plus } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ComposerAccountSummary } from "@okouai/api-contracts/contracts/composer-connectors";
+import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/connector-domain.ts";
 import { Button, surfaceVariants, cn } from "@okouai/ui";
@@ -34,7 +34,7 @@ type CatalogConnectorCardProps = {
 export type ConnectorAccountSummaryStatus = "loading" | "unavailable" | "ready";
 export type ConnectorAccountDisplaySummary =
   | ConnectorAccountSummary
-  | ComposerAccountSummary;
+  | ConnectorAccountBriefSummary;
 
 export function connectorAccountSummaryStatus(
   state: LoadableState,

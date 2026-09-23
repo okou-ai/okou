@@ -12,9 +12,9 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
 import { onRejection } from "../utils.ts";
 import {
-  composerConnectorOverview$,
-  invalidateComposerConnectorOverview$,
-} from "./composer-connector-overview.ts";
+  connectorOverview$,
+  invalidateConnectorOverview$,
+} from "./connector-overview.ts";
 
 const CONNECTOR_ACCOUNT_PAGE_SIZE = 50;
 /** Keep account search responsive while coalescing normal typing bursts. */
@@ -50,7 +50,7 @@ export const connectorAccountSummaryByTarget$ = computed(
 /** Shared brief summaries for surfaces that only display connected accounts. */
 export const connectorOverviewAccountSummaryByTarget$ = computed(
   async (get) => {
-    const { accountSummaries } = await get(composerConnectorOverview$);
+    const { accountSummaries } = await get(connectorOverview$);
     return new Map(
       accountSummaries.map((summary) => {
         return [connectorAccountTargetKey(summary.target), summary];
@@ -70,9 +70,7 @@ export const connectedConnectorsBadge$ = computed(
   async (
     get,
   ): Promise<{ readonly count: number; readonly needsAttention: boolean }> => {
-    const { accountSummaries: summaries } = await get(
-      composerConnectorOverview$,
-    );
+    const { accountSummaries: summaries } = await get(connectorOverview$);
     // Every kind counts, because the scope this number stands for holds every
     // kind: a custom connector with an account is connected like any other.
     const connected = summaries.filter((summary) => {
@@ -91,7 +89,7 @@ export const reloadConnectorAccountSummaries$ = command(({ set }) => {
   set(internalSummariesReload$, (version) => {
     return version + 1;
   });
-  set(invalidateComposerConnectorOverview$);
+  set(invalidateConnectorOverview$);
 });
 
 interface ConnectorAccountPage {

@@ -1,5 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { composerAgentConnectorsChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 
 import { accept } from "../../lib/accept.ts";
@@ -8,7 +8,7 @@ import { setAblyPayloadLoop$ } from "../realtime.ts";
 
 const revisions$ = state<ReadonlyMap<string, number>>(new Map());
 
-export const invalidateComposerAgentConnectors$ = command(
+export const invalidateAgentConnectorAccess$ = command(
   ({ set }, agentId: string) => {
     set(revisions$, (current) => {
       const next = new Map(current);
@@ -22,7 +22,7 @@ export function composerAgentConnectors(agentId: string) {
   return computed(async (get) => {
     get(revisions$).get(agentId);
     const result = await accept(
-      get(apiClient$)(composerConnectorsContract).agent({
+      get(apiClient$)(connectorOverviewContract).agent({
         params: { id: agentId },
       }),
       [200],
@@ -34,12 +34,12 @@ export function composerAgentConnectors(agentId: string) {
 const reloadFromRealtime$ = command(({ set }, payload: unknown): boolean => {
   const parsed = composerAgentConnectorsChangedPayloadSchema.safeParse(payload);
   if (parsed.success) {
-    set(invalidateComposerAgentConnectors$, parsed.data.agentId);
+    set(invalidateAgentConnectorAccess$, parsed.data.agentId);
   }
   return false;
 });
 
-export const subscribeComposerAgentConnectors$ = command(
+export const subscribeAgentConnectorAccess$ = command(
   ({ set }, signal: AbortSignal) => {
     set(
       setAblyPayloadLoop$,

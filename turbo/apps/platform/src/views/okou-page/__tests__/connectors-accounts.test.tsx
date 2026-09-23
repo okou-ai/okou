@@ -3,7 +3,7 @@ import {
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
@@ -280,7 +280,7 @@ test("Distinguish unavailable account information from no accounts", async () =>
       });
     },
   );
-  context.mocks.api(composerConnectorsContract.overview, async ({ respond }) => {
+  context.mocks.api(connectorOverviewContract.overview, async ({ respond }) => {
     await summariesReady.promise;
     return respond(503, {
       error: { message: "Connector overview unavailable", code: "UNAVAILABLE" },

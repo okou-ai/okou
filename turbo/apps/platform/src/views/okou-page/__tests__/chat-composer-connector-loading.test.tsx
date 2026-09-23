@@ -1,5 +1,5 @@
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -196,7 +196,7 @@ test("Allow authorization retry after a rejected save", async () => {
   context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [] });
   });
-  context.mocks.api(composerConnectorsContract.agent, ({ respond }) => {
+  context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [], customConnectorIds: [] });
   });
   click(screen.getByLabelText("Remove GitHub"));

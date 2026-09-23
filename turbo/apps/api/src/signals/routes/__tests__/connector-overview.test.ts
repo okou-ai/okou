@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
-import { composerConnectorsRoutes } from "../composer-connectors";
+import { connectorOverviewRoutes } from "../connector-overview";
 
 const context = testContext({ connectorCatalog: true });
 
@@ -27,8 +27,8 @@ test("composer overview and Agent grants stay scoped to the signed-in user", asy
     }),
     [201],
   );
-  const client = setupApp({ context, routes: composerConnectorsRoutes })(
-    composerConnectorsContract,
+  const client = setupApp({ context, routes: connectorOverviewRoutes })(
+    connectorOverviewContract,
   );
   const overview = await accept(client.overview({ headers }), [200]);
   expect(overview.body.builtinConnectors).toStrictEqual([]);

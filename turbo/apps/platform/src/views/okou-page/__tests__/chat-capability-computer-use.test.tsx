@@ -2,7 +2,7 @@ import {
   computerUseHostsContract,
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -74,7 +74,7 @@ function installComputerHosts(
     }
     return respond(200, { hosts: [...hosts] });
   });
-  context.mocks.api(composerConnectorsContract.overview, ({ respond }) => {
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
     const hosts = readHosts();
     if (hosts === null) {
       return respond(403, {

@@ -4,7 +4,7 @@ import {
   type ConnectorAccountSummary,
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import {
   type PublicConnectorCatalogCategoryMetadata,
   type PublicConnectorCatalogStatusItem,
@@ -169,7 +169,7 @@ export function mockConnectorOverviewAccountSummaries(
     | readonly ConnectorAccountSummary[]
     | Promise<readonly ConnectorAccountSummary[]>,
 ): void {
-  context.mocks.api(composerConnectorsContract.overview, async ({ respond }) => {
+  context.mocks.api(connectorOverviewContract.overview, async ({ respond }) => {
     const accountSummaries = await summaries();
     return respond(200, {
       builtinConnectors: [],

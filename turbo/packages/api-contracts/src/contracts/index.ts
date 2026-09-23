@@ -1065,18 +1065,18 @@ export {
   type UserBuiltinConnectorsContract,
 } from "./user-connectors";
 export {
-  composerConnectorsContract,
-  composerConnectorOverviewSchema,
-  composerAgentConnectorsSchema,
-  composerAccountSummarySchema,
-  composerDefaultAccountSchema,
-  type ComposerConnectorOverview,
-  type ComposerBuiltinConnector,
-  type ComposerCustomConnector,
-  type ComposerAgentConnectors,
-  type ComposerAccountSummary,
-  type ComposerDefaultAccount,
-} from "./composer-connectors";
+  connectorOverviewContract,
+  connectorOverviewSchema,
+  agentConnectorAccessSchema,
+  connectorAccountBriefSummarySchema,
+  connectorDefaultAccountBriefSchema,
+  type ConnectorOverview,
+  type BuiltinConnectorBrief,
+  type CustomConnectorBrief,
+  type AgentConnectorAccess,
+  type ConnectorAccountBriefSummary,
+  type ConnectorDefaultAccountBrief,
+} from "./connector-overview";
 export {
   userPermissionGrantsContract,
   userPermissionGrantScopeSchema,

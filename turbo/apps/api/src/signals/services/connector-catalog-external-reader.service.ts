@@ -17,7 +17,7 @@ import type {
   PublicConnectorCatalogStatusItem,
   PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ComposerBuiltinConnector } from "@okouai/api-contracts/contracts/composer-connectors";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import {
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
@@ -1288,7 +1288,7 @@ export async function listExternalConnectedConnectorBriefs(
   args: ExternalCatalogReadArgs & {
     readonly connectorSlugs: readonly string[];
   },
-): Promise<readonly ComposerBuiltinConnector[]> {
+): Promise<readonly BuiltinConnectorBrief[]> {
   const connectedSlugs = new Set(args.connectorSlugs);
   if (connectedSlugs.size === 0) {
     return [];

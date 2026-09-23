@@ -12,14 +12,14 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const composerBuiltinConnectorSchema = z.object({
+export const builtinConnectorBriefSchema = z.object({
   slug: connectorSlugSchema,
   label: z.string(),
   icon: publicConnectorCatalogIconSchema,
   hasPermissions: z.boolean(),
 });
 
-export const composerCustomConnectorSchema = z.object({
+export const customConnectorBriefSchema = z.object({
   id: z.uuid(),
   slug: z.string(),
   displayName: z.string(),
@@ -27,7 +27,7 @@ export const composerCustomConnectorSchema = z.object({
   integrationManaged: z.boolean(),
 });
 
-export const composerComputerUseHostSchema = computerUseHostSchema
+export const computerUseHostBriefSchema = computerUseHostSchema
   .pick({
     id: true,
     hostName: true,
@@ -37,7 +37,7 @@ export const composerComputerUseHostSchema = computerUseHostSchema
   })
   .extend({ hostName: z.string() });
 
-export const composerDefaultAccountSchema =
+export const connectorDefaultAccountBriefSchema =
   connectorAccountConnectionSchema.pick({
     id: true,
     authMethod: true,
@@ -48,51 +48,43 @@ export const composerDefaultAccountSchema =
     connectionStatus: true,
   });
 
-export const composerAccountSummarySchema = connectorAccountSummarySchema
+export const connectorAccountBriefSummarySchema = connectorAccountSummarySchema
   .omit({ defaultConnection: true })
-  .extend({ defaultConnection: composerDefaultAccountSchema.nullable() });
+  .extend({ defaultConnection: connectorDefaultAccountBriefSchema.nullable() });
 
-export type ComposerDefaultAccount = z.infer<
-  typeof composerDefaultAccountSchema
+export type ConnectorDefaultAccountBrief = z.infer<
+  typeof connectorDefaultAccountBriefSchema
 >;
-export type ComposerAccountSummary = z.infer<
-  typeof composerAccountSummarySchema
+export type ConnectorAccountBriefSummary = z.infer<
+  typeof connectorAccountBriefSummarySchema
 >;
 
-export const composerConnectorOverviewSchema = z.object({
-  builtinConnectors: z.array(composerBuiltinConnectorSchema),
-  customConnectors: z.array(composerCustomConnectorSchema),
-  accountSummaries: z.array(composerAccountSummarySchema),
-  computerUseHosts: z.array(composerComputerUseHostSchema),
+export const connectorOverviewSchema = z.object({
+  builtinConnectors: z.array(builtinConnectorBriefSchema),
+  customConnectors: z.array(customConnectorBriefSchema),
+  accountSummaries: z.array(connectorAccountBriefSummarySchema),
+  computerUseHosts: z.array(computerUseHostBriefSchema),
   cloudBrowserEnabledByDefault: z.boolean(),
 });
 
-export type ComposerConnectorOverview = z.infer<
-  typeof composerConnectorOverviewSchema
->;
-export type ComposerBuiltinConnector = z.infer<
-  typeof composerBuiltinConnectorSchema
->;
-export type ComposerCustomConnector = z.infer<
-  typeof composerCustomConnectorSchema
->;
+export type ConnectorOverview = z.infer<typeof connectorOverviewSchema>;
+export type BuiltinConnectorBrief = z.infer<typeof builtinConnectorBriefSchema>;
+export type CustomConnectorBrief = z.infer<typeof customConnectorBriefSchema>;
 
-export const composerAgentConnectorsSchema = z.object({
+export const agentConnectorAccessSchema = z.object({
   enabledConnectorSlugs: z.array(connectorSlugSchema),
   customConnectorIds: z.array(z.uuid()),
 });
 
-export type ComposerAgentConnectors = z.infer<
-  typeof composerAgentConnectorsSchema
->;
+export type AgentConnectorAccess = z.infer<typeof agentConnectorAccessSchema>;
 
-export const composerConnectorsContract = c.router({
+export const connectorOverviewContract = c.router({
   overview: {
     method: "GET",
     path: "/api/connectors/overview",
     headers: authHeadersSchema,
     responses: {
-      200: composerConnectorOverviewSchema,
+      200: connectorOverviewSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       503: apiErrorSchema,
@@ -105,7 +97,7 @@ export const composerConnectorsContract = c.router({
     headers: authHeadersSchema,
     pathParams: z.object({ id: z.uuid() }),
     responses: {
-      200: composerAgentConnectorsSchema,
+      200: agentConnectorAccessSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,

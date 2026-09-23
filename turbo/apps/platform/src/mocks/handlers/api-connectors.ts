@@ -31,7 +31,7 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -415,7 +415,7 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
 }
 
 export const apiConnectorsHandlers = [
-  mockApi(composerConnectorsContract.overview, ({ respond }) => {
+  mockApi(connectorOverviewContract.overview, ({ respond }) => {
     const connected = mockConnectorCatalogStatus().filter((connector) => {
       return connector.connected;
     });

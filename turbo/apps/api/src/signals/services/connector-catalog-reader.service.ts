@@ -1,5 +1,5 @@
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
-import type { ComposerBuiltinConnector } from "@okouai/api-contracts/contracts/composer-connectors";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import type {
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
@@ -67,7 +67,7 @@ export async function listConnectedConnectorBriefs(
   args: ConnectorCatalogReadArgs & {
     readonly connectorSlugs: readonly string[];
   },
-): Promise<readonly ComposerBuiltinConnector[]> {
+): Promise<readonly BuiltinConnectorBrief[]> {
   return await listExternalConnectedConnectorBriefs(args);
 }
 

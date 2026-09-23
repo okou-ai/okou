@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 
 import { cloudBrowserEnabledByDefault$ } from "../../cloud-browser-preference.ts";
-import { invalidateComposerConnectorOverview$ } from "../composer-connector-overview.ts";
+import { invalidateConnectorOverview$ } from "../connector-overview.ts";
 import { updateUserPreference$ } from "./user-preferences.ts";
 
 export const updateCloudBrowserEnabledByDefault$ = command(
@@ -17,7 +17,7 @@ export const updateCloudBrowserEnabledByDefault$ = command(
       signal,
     );
     signal.throwIfAborted();
-    set(invalidateComposerConnectorOverview$);
+    set(invalidateConnectorOverview$);
     await get(cloudBrowserEnabledByDefault$);
     signal.throwIfAborted();
   },

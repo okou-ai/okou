@@ -18,7 +18,7 @@ import {
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -382,7 +382,7 @@ export function installComposerConnectorFixture(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: customConnectors });
   });
-  context.mocks.api(composerConnectorsContract.overview, ({ respond }) => {
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
     return respond(200, {
       builtinConnectors: catalog
         .filter((connector) => {
@@ -433,7 +433,7 @@ export function installComposerConnectorFixture(
     });
   });
   context.mocks.api(
-    composerConnectorsContract.agent,
+    connectorOverviewContract.agent,
     async ({ params, respond }) => {
       await options.authorizationGates?.[params.id];
       return respond(200, {

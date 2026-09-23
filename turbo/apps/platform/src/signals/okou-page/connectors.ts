@@ -2,7 +2,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ComposerConnectorOverview } from "@okouai/api-contracts/contracts/composer-connectors";
+import type { ConnectorOverview } from "@okouai/api-contracts/contracts/connector-overview";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { accept } from "../../lib/accept.ts";
@@ -13,9 +13,9 @@ import { withCleanup } from "../utils.ts";
 import { reloadAgentConnectorAuthorizations$ } from "./agent-connector-authorizations.ts";
 import {
   composerAgentConnectors,
-  invalidateComposerAgentConnectors$,
+  invalidateAgentConnectorAccess$,
 } from "./composer-agent-connectors.ts";
-import { composerConnectorOverview$ } from "./composer-connector-overview.ts";
+import { connectorOverview$ } from "./connector-overview.ts";
 import { reloadOnboardingStatus$ } from "./onboarding.ts";
 import type {
   PlatformConnectorCatalogStatusItem,
@@ -76,7 +76,7 @@ export interface ComposerConnectorUiState {
 export type ConnectorDirectoryTab = "discover" | "custom";
 
 interface ComposerConnectorData {
-  readonly overview: ComposerConnectorOverview;
+  readonly overview: ConnectorOverview;
   readonly authorization: ComposerConnectorAuthorizationState;
 }
 
@@ -188,7 +188,7 @@ function createBuiltinConnectorAuthorizationCommand(
         ),
         () => {
           set(reloadAgentConnectorAuthorizations$);
-          set(invalidateComposerAgentConnectors$, agentId);
+          set(invalidateAgentConnectorAccess$, agentId);
         },
       );
       signal.throwIfAborted();
@@ -229,7 +229,7 @@ function createCustomConnectorAuthorizationCommand(
         ),
         () => {
           set(reloadCustomConnectorAuthorizedAgents$);
-          set(invalidateComposerAgentConnectors$, agentId);
+          set(invalidateAgentConnectorAccess$, agentId);
         },
       );
     },
@@ -330,7 +330,7 @@ export function createComposerConnectorSignals(
   const authorization$ = createConnectorAuthorizationSignal(agentId);
   const data$ = computed(async (get): Promise<ComposerConnectorData> => {
     const [overview, authorization] = await Promise.all([
-      get(composerConnectorOverview$),
+      get(connectorOverview$),
       get(authorization$),
     ]);
     return { overview, authorization };

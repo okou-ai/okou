@@ -1,7 +1,7 @@
 import { command, computed } from "ccstate";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { isIntegrationManagedCustomConnector } from "@okouai/api-contracts/contracts/custom-connectors";
-import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 
 import {
   resourceUnavailable,
@@ -135,7 +135,7 @@ const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const agent$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const { id: agentId } = get(pathParamsOf(composerConnectorsContract.agent));
+  const { id: agentId } = get(pathParamsOf(connectorOverviewContract.agent));
   const owner = { orgId: auth.orgId, userId: auth.userId, agentId };
   if (!(await get(agentExists(owner)))) {
     return notFound(`Agent not found: ${agentId}`);
@@ -174,13 +174,13 @@ const readAuth = {
   accept: ["session"],
 } as const;
 
-export const composerConnectorsRoutes: readonly RouteEntry[] = [
+export const connectorOverviewRoutes: readonly RouteEntry[] = [
   {
-    route: composerConnectorsContract.overview,
+    route: connectorOverviewContract.overview,
     handler: authRoute(readAuth, overview$),
   },
   {
-    route: composerConnectorsContract.agent,
+    route: connectorOverviewContract.agent,
     handler: authRoute(readAuth, agent$),
   },
 ];

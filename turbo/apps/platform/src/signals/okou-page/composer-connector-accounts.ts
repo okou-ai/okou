@@ -11,7 +11,7 @@ import type {
   ConnectorAccountSelection,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { ComposerAccountSummary } from "@okouai/api-contracts/contracts/composer-connectors";
+import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { accept } from "../../lib/accept.ts";
@@ -21,7 +21,7 @@ import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
 } from "./connector-accounts.ts";
-import { composerConnectorOverview$ } from "./composer-connector-overview.ts";
+import { connectorOverview$ } from "./connector-overview.ts";
 
 export interface ComposerConnectorAccountPreferenceState {
   readonly selections: readonly ConnectorAccountSelection[];
@@ -33,7 +33,7 @@ export interface ComposerConnectorAccountSignals {
     Promise<ComposerConnectorAccountPreferenceState>
   >;
   readonly summaryByTarget$: Computed<
-    Promise<ReadonlyMap<string, ComposerAccountSummary>>
+    Promise<ReadonlyMap<string, ConnectorAccountBriefSummary>>
   >;
   readonly menuTarget$: Computed<ConnectorAccountTarget | null>;
   readonly menuOpen$: Computed<boolean>;
@@ -69,9 +69,9 @@ function selectionForConnection(
   return { connectionId: connection.id, target: connection.target };
 }
 
-function createComposerAccountSummaryByTargetSignal() {
+function createConnectorAccountBriefSummaryByTargetSignal() {
   return computed(async (get) => {
-    const overview = await get(composerConnectorOverview$);
+    const overview = await get(connectorOverview$);
     return new Map(
       overview.accountSummaries.map((summary) => {
         return [connectorAccountTargetKey(summary.target), summary];
@@ -174,7 +174,7 @@ export function createComposerConnectorAccountSignals(
   threadId?: string,
 ): ComposerConnectorAccountSignals {
   const list = createConnectorAccountListSignals();
-  const summaryByTarget$ = createComposerAccountSummaryByTargetSignal();
+  const summaryByTarget$ = createConnectorAccountBriefSummaryByTargetSignal();
   const menuTarget$ = state<ConnectorAccountTarget | null>(null);
   const menuOpen$ = state(false);
   const activeSave$ = state<Promise<void> | null>(null);

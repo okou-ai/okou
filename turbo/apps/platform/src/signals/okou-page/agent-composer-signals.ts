@@ -22,7 +22,7 @@ import {
 } from "./agent-draft.ts";
 import { selectedComputerUseHostId } from "./computer-use-hosts.ts";
 import type { DraftSignals } from "./chat-draft.ts";
-import { composerConnectorOverview$ } from "./composer-connector-overview.ts";
+import { connectorOverview$ } from "./connector-overview.ts";
 import {
   createComposerSignals,
   type ComposerSubmission,
@@ -222,7 +222,7 @@ function createAgentSubmitMessage(
       signal.throwIfAborted();
       const [overview, imageModelPin, videoModelPin, connectorPreference] =
         await Promise.all([
-          get(composerConnectorOverview$),
+          get(connectorOverview$),
           get(chatPageImageModelPin$),
           get(chatPageVideoModelPin$),
           get(connector.accounts.preferenceState$),
