@@ -27,10 +27,44 @@ const INTERACTIVE_WINDOW_TIMEOUT_MS = 10 * 60_000;
  * so it owns a network-shaped budget instead of whatever the window left over.
  */
 const IDENTITY_VALIDATION_TIMEOUT_MS = 30_000;
+// Renew before expiry when a session-authenticated request arrives; a slower
+// window or validation must still withdraw authority when the old token expires.
+const TOKEN_REFRESH_MARGIN_SECONDS = 15;
+
+function tokenExpiresAt(token: string): number | null {
+  try {
+    // The unverified claim is only a refresh deadline. API validation remains
+    // the authority for the session, user and workspace; 401 is the fallback.
+    const payload: unknown = JSON.parse(
+      Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+    );
+    if (typeof payload !== "object" || payload === null || !("exp" in payload))
+      return null;
+    return typeof payload.exp === "number" && Number.isSafeInteger(payload.exp)
+      ? payload.exp * 1_000
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function tokenExpiresSoon(token: string): boolean {
+  const expiresAt = tokenExpiresAt(token);
+  return (
+    expiresAt !== null &&
+    Date.now() + TOKEN_REFRESH_MARGIN_SECONDS * 1_000 >= expiresAt
+  );
+}
 
 type RunAuthWindow = (
   request: DesktopAuthWindowRequest,
 ) => Promise<string | null>;
+
+interface VerifiedAppIdentity {
+  readonly state: DesktopAuthState;
+  /** Server-verified Clerk session, never inferred from unverified JWT claims. */
+  readonly sessionId: string | null;
+}
 
 /**
  * `signed_out` is the server's authoritative answer: the session is gone and
@@ -128,9 +162,15 @@ export class DesktopAuthSession {
   ) => void;
 
   private token: string | null = null;
+  private sessionId: string | null = null;
   private lifetime = new AbortController();
   private appState: DesktopAuthState = signedOutDesktopAuthState();
+  // Retain the initiating identity for requests that join an in-flight refresh.
+  private refreshingFrom: DesktopAuthState | null = null;
+  private refreshingFromSessionId: string | null = null;
   private readonly tokenRefresh = singleFlight(() => this.refreshToken());
+  private seamlessRefresh: AbortController | null = null;
+  private hardRefreshRequested = false;
   private pendingCallback: DesktopAuthCallback | null = null;
   private signingIn = false;
   private restoreEnabled = true;
@@ -187,10 +227,20 @@ export class DesktopAuthSession {
     readonly forceRefresh?: boolean;
   }): Promise<string | null> {
     if (this.signingIn) return null;
-    if (!options?.forceRefresh && this.token) {
+    if (options?.forceRefresh) {
+      if (this.seamlessRefresh) {
+        const pending = this.seamlessRefresh;
+        this.seamlessRefresh = null;
+        pending.abort();
+        this.tokenRefresh.clear();
+      }
+      if (!this.tokenRefresh.inFlight) this.hardRefreshRequested = true;
+    }
+    if (!options?.forceRefresh && this.token && !tokenExpiresSoon(this.token)) {
       return this.token;
     }
     if (!this.restoreEnabled || this.restorePaused) {
+      this.hardRefreshRequested = false;
       return null;
     }
     return await this.refresh();
@@ -246,7 +296,11 @@ export class DesktopAuthSession {
     this.lifetime.abort();
     this.authority = null;
     this.token = null;
+    this.sessionId = null;
     this.appState = signedOutDesktopAuthState();
+    this.refreshingFrom = null;
+    this.refreshingFromSessionId = null;
+    this.hardRefreshRequested = false;
     this.tokenRefresh.clear();
     this.pendingCallback = null;
     this.signingIn = false;
@@ -305,6 +359,19 @@ export class DesktopAuthSession {
 
   private async refreshToken(): Promise<string | null> {
     try {
+      const hardRefresh = this.hardRefreshRequested;
+      this.hardRefreshRequested = false;
+      const expiresAt = this.token ? tokenExpiresAt(this.token) : null;
+      if (
+        !hardRefresh &&
+        expiresAt !== null &&
+        expiresAt > Date.now() &&
+        this.appState.status === "signed_in" &&
+        this.appState.organization &&
+        this.authority &&
+        this.sessionId
+      )
+        return await this.renewVerifiedIdentity(expiresAt);
       return await this.authenticate(this.tokenUrl, false, false);
     } catch {
       // A failed App restoration requires explicit sign-in, never another
@@ -313,12 +380,117 @@ export class DesktopAuthSession {
     }
   }
 
+  /** Keep a still-valid authority only if the server verifies the renewal as the same identity. */
+  private async renewVerifiedIdentity(
+    expiresAt: number,
+  ): Promise<string | null> {
+    const lifetime = this.lifetime;
+    const oldToken = this.token;
+    const oldState = this.appState;
+    const oldSessionId = this.sessionId;
+    if (!oldToken || !oldSessionId || oldState.status !== "signed_in")
+      return null;
+    const renewal = new AbortController();
+    this.seamlessRefresh = renewal;
+    const deadline = AbortSignal.timeout(Math.max(0, expiresAt - Date.now()));
+    const signal = AbortSignal.any([lifetime.signal, renewal.signal, deadline]);
+    const expire = () => {
+      if (this.lifetime !== lifetime || lifetime.signal.aborted) return;
+      lifetime.abort();
+      this.authority = null;
+      this.token = null;
+      this.sessionId = null;
+      this.appState = signedOutDesktopAuthState();
+      this.onChange();
+    };
+    deadline.addEventListener("abort", expire, { once: true });
+    try {
+      const token = await this.runAuthWindow({
+        url: this.tokenUrl,
+        visible: false,
+        allowInteractiveFallbacks: false,
+        signal,
+      });
+      signal.throwIfAborted();
+      if (token) {
+        const { state, sessionId } = await this.validateAppIdentity(
+          token,
+          signal,
+        );
+        signal.throwIfAborted();
+        const renewedExpiry = tokenExpiresAt(token);
+        if (state.status === "signed_in") {
+          if (
+            state.user.userId === oldState.user.userId &&
+            state.organization?.id === oldState.organization?.id &&
+            sessionId === oldSessionId &&
+            renewedExpiry !== null &&
+            renewedExpiry > expiresAt
+          ) {
+            this.token = token;
+            this.sessionId = sessionId;
+            this.appState = state;
+            this.onChange();
+            return token;
+          }
+          if (
+            state.user.userId !== oldState.user.userId ||
+            state.organization?.id !== oldState.organization?.id ||
+            sessionId !== oldSessionId
+          ) {
+            // Revoke before publishing a changed Clerk session, user or org so
+            // the old host cannot inherit a new execution authority.
+            lifetime.abort();
+            this.authority = null;
+            this.token = null;
+            this.sessionId = null;
+            this.appState = signedOutDesktopAuthState();
+            this.onChange();
+            const nextLifetime = new AbortController();
+            this.lifetime = nextLifetime;
+            this.onBackgroundRefresh({
+              phase: "started",
+              signal: nextLifetime.signal,
+            });
+            this.token = token;
+            this.sessionId = sessionId;
+            this.appState = state;
+            this.rememberAuthority(state, nextLifetime);
+            this.onBackgroundRefresh({
+              phase: "completed",
+              signal: nextLifetime.signal,
+              identity: "changed",
+            });
+            this.onChange();
+            return token;
+          }
+          // A non-extending bearer must take the fail-closed path below.
+        }
+      }
+    } catch {
+      // Re-enter the fail-closed path for a rejected or unavailable renewal.
+    } finally {
+      deadline.removeEventListener("abort", expire);
+      if (this.seamlessRefresh === renewal) this.seamlessRefresh = null;
+    }
+    if (
+      renewal.signal.aborted ||
+      (lifetime.signal.aborted && !deadline.aborted)
+    )
+      return null;
+    return await this.authenticate(this.tokenUrl, false, false);
+  }
+
   private async authenticate(
     url: string,
     interactive: boolean,
     visible: boolean,
   ): Promise<string | null> {
     const previousState = this.appState;
+    this.refreshingFrom =
+      previousState.status === "signed_in" ? previousState : null;
+    const previousSessionId = this.sessionId;
+    this.refreshingFromSessionId = previousSessionId;
     let deniedBySession = false;
     let failureCause: unknown = null;
     this.lifetime.abort();
@@ -328,6 +500,7 @@ export class DesktopAuthSession {
     this.restoreEnabled = true;
     this.restorePaused = false;
     this.token = null;
+    this.sessionId = null;
     this.appState = signedOutDesktopAuthState();
     if (!interactive)
       this.onBackgroundRefresh({ phase: "started", signal: lifetime.signal });
@@ -358,13 +531,17 @@ export class DesktopAuthSession {
         deniedBySession = true;
         return null;
       }
-      const state = await this.validateAppIdentity(token, lifetime.signal);
+      const { state, sessionId } = await this.validateAppIdentity(
+        token,
+        lifetime.signal,
+      );
       if (state.status !== "signed_in") {
         deniedBySession = true;
         return null;
       }
       this.appState = state;
       this.token = token;
+      this.sessionId = sessionId;
       this.rememberAuthority(state, lifetime);
       if (!interactive) {
         this.onBackgroundRefresh({
@@ -374,7 +551,9 @@ export class DesktopAuthSession {
             previousState.status !== "signed_in" || !previousState.organization
               ? "initial"
               : previousState.user.userId === state.user.userId &&
-                  previousState.organization.id === state.organization?.id
+                  previousState.organization.id === state.organization?.id &&
+                  previousSessionId !== null &&
+                  previousSessionId === sessionId
                 ? "same"
                 : "changed",
         });
@@ -391,6 +570,7 @@ export class DesktopAuthSession {
       failureCause = error;
       if (this.lifetime === lifetime) {
         this.token = null;
+        this.sessionId = null;
         this.appState = signedOutDesktopAuthState();
         this.authority = null;
       }
@@ -398,6 +578,8 @@ export class DesktopAuthSession {
       throw error;
     } finally {
       if (this.lifetime === lifetime) {
+        this.refreshingFrom = null;
+        this.refreshingFromSessionId = null;
         if (!this.token) {
           // Notify renderer/tray subscribers, and keep their reads from
           // reopening a failed hidden restore. An authoritative denial waits
@@ -458,13 +640,13 @@ export class DesktopAuthSession {
   private async validateAppIdentity(
     token: string,
     lifetime: AbortSignal,
-  ): Promise<DesktopAuthState> {
+  ): Promise<VerifiedAppIdentity> {
     const deadline = AbortSignal.timeout(IDENTITY_VALIDATION_TIMEOUT_MS);
     const signal = AbortSignal.any([lifetime, deadline]);
     try {
-      const state = await this.readAppIdentity(token, signal);
+      const identity = await this.readAppIdentity(token, signal);
       signal.throwIfAborted();
-      return state;
+      return identity;
     } catch (error) {
       if (!lifetime.aborted && deadline.aborted)
         throw new Error("Desktop auth identity validation timed out");
@@ -475,25 +657,30 @@ export class DesktopAuthSession {
   private async readAppIdentity(
     token: string,
     signal: AbortSignal,
-  ): Promise<DesktopAuthState> {
+  ): Promise<VerifiedAppIdentity> {
     const me = await this.appRequest(
       new URL(AUTH_ME_PATH, this.apiBaseUrl),
       token,
       signal,
     );
-    if (me.status === 401) return signedOutDesktopAuthState();
+    if (me.status === 401)
+      return { state: signedOutDesktopAuthState(), sessionId: null };
     if (!me.ok) throw new Error(`Desktop auth status failed: ${me.status}`);
     const user = authContract.me.responses[200].parse(await me.json());
     signal.throwIfAborted();
-    if (!user.userId) return signedOutDesktopAuthState();
+    if (!user.userId)
+      return { state: signedOutDesktopAuthState(), sessionId: null };
     // Signed in without an active workspace is a state the user resolves by
     // selecting one. Reporting it as signed out would demand a pointless
     // sign-in and discard a valid session.
     if (!user.orgId)
       return {
-        status: "signed_in",
-        user: { userId: user.userId, email: user.email },
-        organization: null,
+        state: {
+          status: "signed_in",
+          user: { userId: user.userId, email: user.email },
+          organization: null,
+        },
+        sessionId: user.sessionId ?? null,
       };
     // Both reads use the identical server-verified bearer; never refresh only
     // the second half of the user/workspace pair.
@@ -503,7 +690,7 @@ export class DesktopAuthSession {
       signal,
     );
     if (org.status === 401 || org.status === 404)
-      return signedOutDesktopAuthState();
+      return { state: signedOutDesktopAuthState(), sessionId: null };
     if (!org.ok)
       throw new Error(`Desktop organization status failed: ${org.status}`);
     const organization: unknown = await org.json();
@@ -521,23 +708,30 @@ export class DesktopAuthSession {
       throw new Error("Desktop organization payload is unusable");
     }
     return {
-      status: "signed_in",
-      user: { userId: user.userId, email: user.email },
-      organization: { id: user.orgId, name: organization.name },
+      state: {
+        status: "signed_in",
+        user: { userId: user.userId, email: user.email },
+        organization: { id: user.orgId, name: organization.name },
+      },
+      sessionId: user.sessionId ?? null,
     };
   }
 
   private async getAppAuthState(): Promise<DesktopAuthState> {
-    if (!this.token) {
+    if (!this.token || tokenExpiresSoon(this.token)) {
       await this.getToken();
       return this.appState;
     }
     const lifetime = this.lifetime;
     try {
-      const state = await this.readAppIdentity(this.token, lifetime.signal);
+      const { state, sessionId } = await this.readAppIdentity(
+        this.token,
+        lifetime.signal,
+      );
       lifetime.signal.throwIfAborted();
-      if (state.status === "signed_in") {
+      if (state.status === "signed_in" && this.sessionId === sessionId) {
         this.appState = state;
+        this.sessionId = sessionId;
         if (this.rememberAuthority(state, lifetime)) this.onChange();
         return state;
       }
@@ -556,11 +750,24 @@ export class DesktopAuthSession {
     init?: RequestInit,
     options?: DesktopAuthRequestOptions,
   ): Promise<Response> {
+    const previousState = this.refreshingFrom ?? this.appState;
+    const previousSessionId =
+      this.refreshingFrom?.status === "signed_in"
+        ? this.refreshingFromSessionId
+        : this.sessionId;
     const token = await this.getToken();
-    if (!token || token !== this.token)
+    if (
+      !token ||
+      token !== this.token ||
+      (previousState.status === "signed_in" &&
+        (this.appState.status !== "signed_in" ||
+          previousState.user.userId !== this.appState.user.userId ||
+          previousState.organization?.id !== this.appState.organization?.id ||
+          !previousSessionId ||
+          previousSessionId !== this.sessionId))
+    )
       return new Response(null, { status: 401 });
     const lifetime = this.lifetime;
-    const previousState = this.appState;
     const response = await this.appRequest(
       requestUrl,
       token,
@@ -583,7 +790,9 @@ export class DesktopAuthSession {
       !previousState.organization ||
       this.appState.status !== "signed_in" ||
       previousState.user.userId !== this.appState.user.userId ||
-      previousState.organization.id !== this.appState.organization?.id
+      previousState.organization.id !== this.appState.organization?.id ||
+      !previousSessionId ||
+      previousSessionId !== this.sessionId
     )
       return response;
     const retried = await this.appRequest(
@@ -595,6 +804,7 @@ export class DesktopAuthSession {
     if (retried.status === 401) {
       this.restoreEnabled = false;
       this.token = null;
+      this.sessionId = null;
       this.appState = signedOutDesktopAuthState();
       this.authority = null;
       this.onChange();
