@@ -1629,6 +1629,10 @@ function createLatestEventSignals(
 
 function createArtifacts(threadId: string) {
   const internalArtifactsReload$ = state(0);
+  const internalPreviewRefreshRevision$ = state(0);
+  const previewRefreshRevision$ = computed((get) => {
+    return get(internalPreviewRefreshRevision$);
+  });
   const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
     get(internalArtifactsReload$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
@@ -1641,8 +1645,19 @@ function createArtifacts(threadId: string) {
       return version + 1;
     });
   });
+  const invalidateArtifacts$ = command(({ set }) => {
+    set(reloadArtifacts$);
+    set(internalPreviewRefreshRevision$, (revision) => {
+      return revision + 1;
+    });
+  });
 
-  return { artifacts$, reloadArtifacts$ };
+  return {
+    artifacts$,
+    reloadArtifacts$,
+    invalidateArtifacts$,
+    previewRefreshRevision$,
+  };
 }
 
 function createArtifactPreviewImageUrls(
@@ -1759,6 +1774,7 @@ function createCardRefRegistrar({
               browserUserActionCardSignals.register$,
               descriptor.descriptor,
             ),
+            browserSessionSignals,
           };
         }
         case "unavailable-action": {
@@ -2128,6 +2144,8 @@ function createPagedEventResources({
   chatActionContext,
   chatEvents$,
   previewImageUrlsByUrl$,
+  previewRefreshRevision$,
+  previewCatalogReady$,
   browserLifecycleOptimisticEvents,
   connector,
 }: {
@@ -2136,6 +2154,8 @@ function createPagedEventResources({
   readonly previewImageUrlsByUrl$: Computed<
     Promise<ReadonlyMap<string, string>>
   >;
+  readonly previewRefreshRevision$: Computed<number>;
+  readonly previewCatalogReady$: Computed<boolean>;
   readonly browserLifecycleOptimisticEvents: BrowserLifecycleOptimisticEvents;
   readonly connector: ComposerConnectorSignals;
 }) {
@@ -2147,6 +2167,8 @@ function createPagedEventResources({
   );
   const artifactCardSignals = createArtifactCardSignalsRegistry(
     previewImageUrlsByUrl$,
+    previewRefreshRevision$,
+    previewCatalogReady$,
   );
   const agentReferenceSignals = createAgentReferenceSignalsRegistry();
   const runDetailSignals = createRunDetailSignalsRegistry();
@@ -2569,6 +2591,8 @@ interface ChatThreadMessagePipelineOptions {
   chatActionContext: ChatActionContext;
   chatEvents: ChatEventSignals;
   previewImageUrlsByUrl$: Computed<Promise<ReadonlyMap<string, string>>>;
+  previewRefreshRevision$: Computed<number>;
+  previewCatalogReady$: Computed<boolean>;
   connector: ComposerConnectorSignals;
 }
 
@@ -2576,6 +2600,8 @@ function createChatThreadMessagePipeline({
   chatActionContext,
   chatEvents,
   previewImageUrlsByUrl$,
+  previewRefreshRevision$,
+  previewCatalogReady$,
   connector,
 }: ChatThreadMessagePipelineOptions) {
   const { threadId } = chatActionContext;
@@ -2587,6 +2613,8 @@ function createChatThreadMessagePipeline({
     chatActionContext,
     chatEvents$: chatEvents.chatEvents$,
     previewImageUrlsByUrl$,
+    previewRefreshRevision$,
+    previewCatalogReady$,
     browserLifecycleOptimisticEvents,
     connector,
   });
@@ -2733,6 +2761,7 @@ interface RunTrackingDeps {
   setupChatEvents$: Command<Promise<void>, [AbortSignal]>;
   catchUpChatEvents$: Command<Promise<void>, [AbortSignal]>;
   reloadArtifacts$: Command<void, []>;
+  invalidateArtifacts$: Command<void, []>;
   subscribeBrowserSessions$: Command<void, [AbortSignal]>;
   subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
@@ -3133,6 +3162,7 @@ function createRunTracking({
   setupChatEvents$,
   catchUpChatEvents$,
   reloadArtifacts$,
+  invalidateArtifacts$,
   subscribeBrowserSessions$,
   subscribeSessionOutput$,
   subscribeThinkingSummaries$,
@@ -3170,7 +3200,7 @@ function createRunTracking({
             automations: [
               automationSignals.headerAutomations.reloadAutomations$,
             ],
-            artifacts: [reloadArtifacts$],
+            artifacts: [invalidateArtifacts$],
           },
           handlers: {
             onWorkflowsChanged$,
@@ -4054,6 +4084,11 @@ export function createChatPanelSignals(
   const artifact = createArtifacts(threadId);
   const threadDraft$ = createRemoteChatThreadDraft(threadId);
   const threadMeta$ = createThreadMeta(threadId);
+  const optimisticCreateUnsettled$ =
+    optimisticChatThreadCreateUnsettled(threadId);
+  const previewCatalogReady$ = computed((get) => {
+    return !get(optimisticCreateUnsettled$);
+  });
   const threadTitle = createThreadTitleParts(threadMeta$);
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
@@ -4082,6 +4117,8 @@ export function createChatPanelSignals(
     chatActionContext: { threadId, agentId },
     chatEvents,
     previewImageUrlsByUrl$: createArtifactPreviewImageUrls(artifact.artifacts$),
+    previewRefreshRevision$: artifact.previewRefreshRevision$,
+    previewCatalogReady$,
     connector: composer.connector,
   });
   const messages: MessageListSignals = {
@@ -4109,6 +4146,7 @@ export function createChatPanelSignals(
     setupChatEvents$: messages.setup$,
     catchUpChatEvents$: messages.catchUp$,
     reloadArtifacts$: messages.reloadArtifacts$,
+    invalidateArtifacts$: artifact.invalidateArtifacts$,
     subscribeBrowserSessions$: messages.subscribeBrowserSessions$,
     subscribeThinkingSummaries$: activity.subscribe$,
     subscribeSessionOutput$: sessionOutput.subscribe$,
@@ -4123,6 +4161,7 @@ export function createChatPanelSignals(
     agentId,
     threadDraft$,
     threadMeta$,
+    optimisticCreateUnsettled$,
     ...threadTitle,
     scrollContainerOnRef$: messages.scroll.scrollContainerOnRef$,
     scrollContentOnRef$: messages.scroll.scrollContentOnRef$,

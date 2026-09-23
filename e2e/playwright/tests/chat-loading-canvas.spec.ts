@@ -158,7 +158,7 @@ test("the workspace canvas stays continuous while chat history loads", async ({
           headers: authHeadersForToken(token),
           data: {
             agentId,
-            model: "gpt-5.6-luna",
+            model: "gpt-6-luna",
             title: `${palette} ${theme} canvas`,
           },
         },

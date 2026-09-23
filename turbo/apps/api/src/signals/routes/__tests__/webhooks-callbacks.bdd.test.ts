@@ -761,7 +761,7 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       limitedFreeProviders.find((provider) => {
         return provider.type === "built-in";
       })?.selectedModel,
-    ).toBe("gpt-5.6-luna");
+    ).toBe("gpt-6-luna");
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.created",

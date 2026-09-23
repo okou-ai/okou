@@ -5,6 +5,7 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
   fireEvent,
@@ -32,7 +33,7 @@ function threadId(index: number): string {
   return `b3200000-0000-4000-a000-${String(index).padStart(12, "0")}`;
 }
 
-function mockThreads(count: number): void {
+function mockThreads(count: number, archived = false): void {
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -50,7 +51,7 @@ function mockThreads(count: number): void {
         return {
           id: threadId(index),
           agentId: AGENT_ID,
-          title: `History ${index + 1}`,
+          title: `${archived ? "✅ " : ""}History ${index + 1}`,
           sortAt: new Date(
             Date.parse("2026-03-10T00:00:00Z") + (count - index) * 1000,
           ).toISOString(),
@@ -114,7 +115,7 @@ function resizeWindow(): void {
 
 function selectChatListFilter(
   sidebar: HTMLElement,
-  filter: "All chats" | "Unread",
+  filter: "All chats" | "Unread" | "Archived",
 ): void {
   click(within(sidebar).getByLabelText("Open chat list menu"));
   const item = queryAllByRoleFast("menuitem").find((candidate) => {
@@ -290,7 +291,51 @@ test("Use the fallback window before sidebar geometry is available", async () =>
   expect(within(sidebar).queryByText("History 101")).not.toBeInTheDocument();
 });
 
-test("Show every unread conversation beyond the current history window", async () => {
+test("Include Show all chats in the archived virtual list", async () => {
+  const threadCount = 120;
+  const rowCount = threadCount + 1;
+  mockThreads(threadCount, true);
+  mockViewportHeight(() => {
+    return 5 * ROW_HEIGHT;
+  }, rowCount);
+  await setupPage({
+    context,
+    path: `/chats/${threadId(0)}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+
+  const sidebar = screen.getByTestId("chat-list-column");
+  await within(sidebar).findByText("All caught up");
+  selectChatListFilter(sidebar, "Archived");
+  await within(sidebar).findByText("✅ History 1");
+  const virtualList = within(sidebar).getByTestId(
+    "sidebar-chat-threads-virtual-list",
+  );
+  expect(virtualList).toHaveStyle({ height: `${rowCount * ROW_HEIGHT}px` });
+  expect(within(sidebar).queryByText("Show all chats")).not.toBeInTheDocument();
+
+  const viewport = within(sidebar).getByTestId("sidebar-scroll-area");
+  viewport.scrollTop = (rowCount - 5) * ROW_HEIGHT;
+  fireEvent.scroll(viewport);
+
+  const showAll = await within(sidebar).findByText("Show all chats");
+  const showAllVirtualRow = showAll.closest(
+    '[data-testid="sidebar-chat-show-all-virtual-row"]',
+  );
+  if (!(showAllVirtualRow instanceof HTMLElement)) {
+    throw new Error("Virtual Show all chats row not found");
+  }
+  expect(showAllVirtualRow).toHaveAttribute("data-index", String(threadCount));
+  expect(within(sidebar).getByText("✅ History 120")).toBeInTheDocument();
+
+  click(showAll);
+  await expect(
+    within(sidebar).findByText("All caught up"),
+  ).resolves.toBeInTheDocument();
+  expect(within(sidebar).queryByText("Show all chats")).not.toBeInTheDocument();
+});
+
+async function setupUnreadHistoryBeyondCurrentWindow() {
   mockThreads(120);
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
@@ -314,7 +359,6 @@ test("Show every unread conversation beyond the current history window", async (
     });
   });
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
-
   const sidebar = screen.getByTestId("chat-list-column");
   await within(sidebar).findByText("History 1");
   expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();
@@ -324,9 +368,14 @@ test("Show every unread conversation beyond the current history window", async (
   expect(
     within(sidebar).queryByText("No unread chats"),
   ).not.toBeInTheDocument();
-
   indicators.resolve();
   await within(sidebar).findByText("History 70");
+  return { sidebar, unreadIndexes };
+}
+
+test("Show every unread conversation beyond the current history window", async () => {
+  const { sidebar, unreadIndexes } =
+    await setupUnreadHistoryBeyondCurrentWindow();
   for (const index of unreadIndexes) {
     expect(
       within(sidebar).getByText(`History ${index + 1}`),
@@ -334,7 +383,10 @@ test("Show every unread conversation beyond the current history window", async (
   }
   expect(within(sidebar).queryByText("History 1")).not.toBeInTheDocument();
   expect(within(sidebar).queryByText("History 101")).not.toBeInTheDocument();
+});
 
+test("Navigate unread history after switching chat-list filters", async () => {
+  const { sidebar } = await setupUnreadHistoryBeyondCurrentWindow();
   selectChatListFilter(sidebar, "All chats");
   await within(sidebar).findByText("History 1");
   expect(within(sidebar).queryByText("History 41")).not.toBeInTheDocument();

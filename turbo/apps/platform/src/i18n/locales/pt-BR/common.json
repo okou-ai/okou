@@ -1583,7 +1583,6 @@
         "enteredChat": "{{userName}} entrou na conversa.",
         "goodToSeeYou": "Que bom ver você, {{userName}}.",
         "knewYouWouldCome": "Sabia que você voltaria, {{userName}}.",
-        "letsRoll": "{{agentName}} está pronto, {{userName}}. Vamos nessa.",
         "makeTodayCount": "Vamos fazer o dia valer, {{userName}}.",
         "newIdeas": "Novas ideias hoje, {{userName}}?",
         "readyToBuild": "Pronto para criar, {{userName}}?",
@@ -1765,6 +1764,11 @@
       "upgradeToRun": "Faça upgrade para o Pro para executar o {{assistantName}}",
       "upgradeWorkspace": "Faça upgrade do seu workspace"
     },
+    "browserAction": {
+      "documentTitle": "Ação do navegador",
+      "loading": "Carregando solicitação do navegador",
+      "unavailableDescription": "Esta solicitação do navegador é inválida ou não está mais disponível."
+    },
     "browserInput": {
       "applyFailed": "Não foi possível adicionar as informações. Seus dados continuam aqui. Tente novamente.",
       "applying": "Adicionando informações",
@@ -1782,12 +1786,10 @@
       "delivered": "Agente notificado",
       "deliveredDescription": "O agente já pode continuar.",
       "description": "Digite as informações solicitadas para este site.",
-      "documentTitle": "Entrada do navegador",
       "expired": "Solicitação expirada",
       "expiredDescription": "O navegador foi fechado ou esta solicitação não está mais ativa.",
       "loadFailed": "Não foi possível carregar esta solicitação",
       "loadFailedDescription": "Tente novamente em instantes.",
-      "loading": "Carregando entrada do navegador",
       "loadingDescription": "Verificando esta solicitação…",
       "open": "Inserir informações",
       "optional": "(Opcional)",
@@ -1800,9 +1802,33 @@
       "submitting": "Adicionando…",
       "title": "Inserir informações no navegador",
       "unavailable": "Solicitação indisponível",
-      "unavailableDescription": "Esta solicitação de entrada do navegador é inválida ou não está mais disponível.",
       "uncertain": "Verifique o navegador",
       "uncertainDescription": "O navegador pode ter recebido as informações. Peça ao agente para verificar antes de tentar novamente."
+    },
+    "browserInteraction": {
+      "applying": "Concluindo a interação no navegador",
+      "applyingDescription": "O navegador está concluindo esta solicitação.",
+      "callbackFailed": "O agente não foi notificado. Tente Continuar novamente.",
+      "cancel": "Cancelar",
+      "cancelFailed": "Não foi possível cancelar esta solicitação. Tente novamente.",
+      "cancelled": "Solicitação cancelada",
+      "cancelledDescription": "A transferência para o navegador foi cancelada. Continue para notificar o agente.",
+      "cancelling": "Cancelando…",
+      "completed": "Interação no navegador concluída",
+      "completedDescription": "Sua interação no navegador foi registrada. Continue para notificar o agente.",
+      "completeFailed": "Não foi possível concluir esta solicitação. Tente novamente.",
+      "completing": "Concluindo…",
+      "continue": "Continuar",
+      "continuing": "Continuando…",
+      "delivered": "Agente notificado",
+      "deliveredDescription": "O agente pode continuar agora.",
+      "description": "Abra o navegador, conclua esta etapa e selecione Concluído.",
+      "done": "Concluído",
+      "stale": "O navegador não está mais disponível",
+      "staleDescription": "Peça ao agente para criar uma nova solicitação.",
+      "title": "Assumir o controle do navegador",
+      "uncertain": "Verifique o navegador",
+      "uncertainDescription": "A interação pode ter sido concluída. Peça ao agente para verificar antes de tentar novamente."
     },
     "cards": {
       "viewDetails": "Ver detalhes"
@@ -2003,6 +2029,11 @@
       "sent": "Encaminhado com sucesso",
       "threads": "Conversas",
       "title": "Encaminhar para"
+    },
+    "homeTasks": {
+      "existingThread": "Continuar chat",
+      "heading": "Retomado do seu trabalho recente",
+      "newThread": "Novo chat"
     },
     "mail": {
       "bcc": "cco",
@@ -2960,6 +2991,52 @@
       "named": "Fluxo de trabalho {{title}}",
       "open": "Abrir fluxo de trabalho {{title}}"
     }
+  },
+  "cloudflareAccess": {
+    "add": "Adicionar Cloudflare Access",
+    "cancel": "Cancelar",
+    "changed": "Este Cloudflare Access mudou durante a edição. Revise as configurações mais recentes antes de salvar.",
+    "clientId": "ID do cliente do Service Token",
+    "clientIdPlaceholder": "Cole o Client ID do Service Token",
+    "clientSecret": "Segredo do cliente do Service Token",
+    "clientSecretPlaceholder": "Cole o Client Secret do Service Token",
+    "configuration": "Cloudflare Access",
+    "createNew": "Criar novo Cloudflare Access",
+    "delete": "Excluir Cloudflare Access",
+    "deleteHelp": "Excluir este Cloudflare Access não utilizado? O Service Token salvo não poderá ser recuperado.",
+    "description": "Acesse aplicativos protegidos com tokens de serviço do Cloudflare Access.",
+    "edit": "Editar Cloudflare Access",
+    "empty": "Nenhum Cloudflare Access ainda. Adicione um token de serviço para acessar aplicativos protegidos.",
+    "failed": "Não foi possível salvar a alteração do Cloudflare Access. Tente novamente.",
+    "inUse": "Um host usa este Cloudflare Access. Revise os hosts afetados e altere a configuração deles ou exclua-os primeiro.",
+    "inUseHelp": "Selecione outro Cloudflare Access para esses hosts, mude-os explicitamente para Direta ou exclua-os antes de excluir este.",
+    "invalidInput": "Algumas configurações do Cloudflare Access são inválidas. Verifique os campos e tente novamente.",
+    "keepChanges": "Aplicar minhas alterações a esta versão",
+    "latest": "Últimas configurações salvas",
+    "loadFailed": "Não foi possível carregar Cloudflare Access. Tente novamente.",
+    "loading": "Carregando Cloudflare Access…",
+    "manage": "Gerenciar Cloudflare Access",
+    "missing": "Este Cloudflare Access não está mais disponível. Selecione outro ou crie um.",
+    "name": "Nome",
+    "namePlaceholder": "ex.: Acesso à produção",
+    "replace": "Substituir Service Token",
+    "resourceIdConflict": "Este ID de recurso não pode ser usado. Feche e reabra o formulário para tentar novamente.",
+    "retry": "Tentar novamente",
+    "reviewHelp": "Seu rascunho foi preservado. Confirme as últimas configurações salvas antes de aplicar suas alterações.",
+    "revisionExhausted": "Esta configuração não pode mais ser atualizada. Crie uma nova.",
+    "save": "Salvar",
+    "saveUncertain": "Não foi possível confirmar se as alterações foram salvas. Tente salvar o mesmo conteúdo novamente ou feche e confira a lista antes de adicioná-las de novo.",
+    "select": "Selecione Cloudflare Access",
+    "summary_one": "{{count}} Cloudflare Access configurado",
+    "summary_many": "{{count}} Cloudflare Access configurados",
+    "summary_other": "{{count}} Cloudflare Access configurados",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Acesse aplicativos protegidos com tokens de serviço do Cloudflare Access.",
+    "unavailable": "Cloudflare Access não está disponível para esta conta.",
+    "unused": "Nenhum host utiliza esta credencial",
+    "usedBy_one": "Usada por {{count}} host:",
+    "usedBy_many": "Usada por {{count}} hosts:",
+    "usedBy_other": "Usada por {{count}} hosts:"
   },
   "connectors": {
     "access": {
@@ -4292,7 +4369,7 @@
       },
       "skills": {
         "copied": "Copiado",
-        "copy": "Cole este prompt na sua própria sessão do Codex ou do Claude Code e ele traz para o Okou as skills da sua máquina.",
+        "copy": "Cole este prompt na sua própria sessão do {{provider}} e ele traz para o Okou as skills da sua máquina.",
         "copyError": "Não foi possível copiar o prompt.",
         "copyPrompt": "Copiar prompt",
         "importedCopy": "Importado como workflow do Okou.",
@@ -4301,7 +4378,7 @@
         "preparing": "Abrindo sua sessão de importação…",
         "promptCopy": "Ele lê as skills da sua máquina e as grava no Okou.",
         "promptLabel": "Prompt de importação de skills",
-        "promptTitle": "Rode isto no Codex ou no Claude Code",
+        "promptTitle": "Rode isto no {{provider}}",
         "startError": "Não foi possível abrir a sessão de importação.",
         "title": "Traga as skills que você já escreveu.",
         "tryAgain": "Tentar novamente",
@@ -4349,11 +4426,6 @@
       "sources": {
         "copy": "Ele trabalha na nuvem, a partir das ferramentas que seu time já usa. 10x mais entrega, menos atrito operacional, custo menor. Conecte uma fonte para começar.",
         "note": "Você escolhe quais contas conectar.",
-        "searchAction": "Encontre uma fonte para o seu trabalho",
-        "searchCopy": "Busque no catálogo completo por tarefa ou nome do app.",
-        "searchEmpty": "Nenhuma fonte correspondente",
-        "searchPlaceholder": "Busque por tarefa ou nome do app",
-        "searchTitle": "Encontre uma fonte para o seu trabalho",
         "title": "O Okou é seu, e é compartilhado com todo o time."
       },
       "startingPrompt": {
@@ -6052,6 +6124,9 @@
           "description": "Personalize a aparência e o comportamento do app.",
           "title": "Preferência"
         },
+        "tools": {
+          "title": "Ferramentas"
+        },
         "usage": {
           "balanceDescription": "O que resta para a sua equipe gastar.",
           "balanceTitle": "Saldo de créditos",
@@ -6212,6 +6287,8 @@
       },
       "personal": {
         "accountFallback": "Conta {{number}}",
+        "accountsDescription": "Escolha a conta que cada provedor usa para novas execuções.",
+        "accountsSectionTitle": "Contas pessoais",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Ativa",
         "addAccount": "Adicionar conta",
@@ -6330,7 +6407,7 @@
         "workspaceDescription": "Disponível para todos neste espaço de trabalho."
       },
       "reset": {
-        "confirmDescription": "Use uma redefinição do Codex para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
+        "confirmDescription": "Use uma redefinição do {{provider}} para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
         "progress": "Redefinindo...",
         "remaining_one": "{{value}} redefinição restante",
         "remaining_many": "{{value}} redefinições restantes",
@@ -6340,7 +6417,7 @@
         "remainingWithExpiry_one": "{{value}} redefinição restante · expira {{expiry}}",
         "remainingWithExpiry_many": "{{value}} redefinições restantes · expiram {{expiry}}",
         "remainingWithExpiry_other": "{{value}} redefinições restantes · expiram {{expiry}}",
-        "title": "Redefinir o uso do Codex?"
+        "title": "Redefinir o uso do {{provider}}?"
       },
       "stale": {
         "claudeExpired": "Sua sessão do Claude Code expirou. Reconecte para continuar.",
@@ -6357,9 +6434,9 @@
         "accountSwitched": "Conta ativa alterada",
         "disconnected": "{{provider}} desconectado",
         "policiesUpdated": "Configurações dos provedores de modelo atualizadas",
-        "reset": "Uso do Codex redefinido",
-        "resetUnavailable": "Nenhuma redefinição de uso do Codex disponível",
-        "resetUnneeded": "O uso do Codex não precisa ser redefinido agora"
+        "reset": "Uso do {{provider}} redefinido",
+        "resetUnavailable": "Nenhuma redefinição de uso do {{provider}} disponível",
+        "resetUnneeded": "O uso do {{provider}} não precisa ser redefinido agora"
       },
       "usage": {
         "inDays": "em {{days}}d",
@@ -6847,40 +6924,15 @@
     "chooseFile": "Escolher arquivo",
     "choosePrivateKeyFile": "Escolher arquivo de chave privada",
     "cloudflare": {
-      "add": "Adicionar Cloudflare Access",
-      "changed": "Este Cloudflare Access mudou durante a edição. Revise as configurações mais recentes antes de salvar.",
-      "clientId": "ID do cliente do Service Token",
-      "clientSecret": "Segredo do cliente do Service Token",
-      "configuration": "Cloudflare Access",
-      "createNew": "Criar novo Cloudflare Access",
-      "delete": "Excluir Cloudflare Access",
-      "deleteHelp": "Excluir este Cloudflare Access não utilizado? O Service Token salvo não poderá ser recuperado.",
       "direct": "Direta",
-      "edit": "Editar Cloudflare Access",
-      "empty": "Nenhum Cloudflare Access ainda. Adicione um Service Token para conectar hosts SSH protegidos.",
-      "inUse": "Um host usa este Cloudflare Access. Revise os hosts afetados e altere a configuração deles ou exclua-os primeiro.",
-      "inUseHelp": "Selecione outro Cloudflare Access para esses hosts, mude-os explicitamente para Direta ou exclua-os antes de excluir este.",
       "keepChanges": "Aplicar minhas alterações a esta versão",
       "latest": "Últimas configurações salvas",
-      "loadFailed": "Não foi possível carregar Cloudflare Access. Tente novamente.",
-      "loading": "Carregando Cloudflare Access…",
-      "missing": "Este Cloudflare Access não está mais disponível. Selecione outro ou crie um.",
       "mode": "Conexão",
-      "name": "Nome",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nome de host publicado",
-      "replace": "Substituir Service Token",
       "reviewHelp": "Seu rascunho foi preservado. Confirme as últimas configurações salvas antes de aplicar suas alterações.",
-      "select": "Selecione Cloudflare Access",
-      "summary_one": "{{count}} Cloudflare Access configurado",
-      "summary_many": "{{count}} Cloudflare Access configurados",
-      "summary_other": "{{count}} Cloudflare Access configurados",
       "title": "Cloudflare Access",
-      "tokenHelp": "Use um Service Token permitido pela política Service Auth do aplicativo SSH. Ele é separado das suas credenciais SSH.",
-      "unavailable": "Cloudflare Access não está disponível para esta conta.",
-      "usedBy_one": "Usada por {{count}} host:",
-      "usedBy_many": "Usada por {{count}} hosts:",
-      "usedBy_other": "Usada por {{count}} hosts:"
+      "unavailable": "Cloudflare Access não está disponível para esta conta."
     },
     "connectionStatus": {
       "accessProtocolFailure": "O Cloudflare Access não estabeleceu um túnel SSH. Verifique o nome do host publicado e o roteamento do Tunnel.",
@@ -6941,6 +6993,7 @@
       "credentialInUse": "Esta credencial está em uso. Selecione outra para os hosts ou exclua esses hosts primeiro.",
       "credentialUnavailable": "Esta credencial SSH não está mais disponível. Selecione outra ou crie uma nova.",
       "failed": "Não foi possível salvar a alteração SSH. Tente novamente.",
+      "hostInUse": "Este host SSH é usado por uma rota VNC. Selecione outro host SSH para essas rotas VNC, altere-as explicitamente para Direta ou exclua-as antes de excluir este host.",
       "hostUnavailable": "Este host SSH não está mais disponível. Volte à lista e escolha um host existente.",
       "invalidHost": "Insira um nome de host ou endereço IP sem esquema de URL, caminho ou espaços.",
       "invalidInput": "Algumas configurações SSH são inválidas. Verifique os campos e tente novamente.",
@@ -6961,9 +7014,6 @@
     "notLearned": "Chave de host ainda não armazenada",
     "passphrase": "Frase secreta (opcional)",
     "placeholders": {
-      "accessName": "ex.: Acesso à produção",
-      "clientId": "Cole o Client ID do Service Token",
-      "clientSecret": "Cole o Client Secret do Service Token",
       "credentialName": "ex.: Login de implantação",
       "displayName": "ex.: Servidor de produção",
       "host": "ex.: ssh.example.com",
@@ -7164,6 +7214,9 @@
       "caHint": "Cole os certificados públicos da CA que emitiu o certificado do servidor",
       "custom": "Autoridades certificadoras personalizadas",
       "profileLabel": "Perfil de segurança",
+      "serverName": "Identidade do certificado TLS",
+      "serverNameHelp": "Opcional. Deixe em branco para verificar o certificado com o host de destino RFB. Defina somente se o certificado usar outro nome DNS.",
+      "serverNameHint": "ex.: desktop.internal.example.com",
       "system": "Autoridades certificadoras do sistema",
       "title": "Confiança no certificado do servidor",
       "x509Plain": "Nome de usuário e senha criptografados (X509Plain)",
@@ -7175,6 +7228,22 @@
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
     "title": "Acesso remoto VNC",
+    "transport": {
+      "destination": "Destino RFB",
+      "destinationHelp": "Em rotas SSH, este host e esta porta são acessados a partir do servidor SSH selecionado, não diretamente do Runner.",
+      "direct": "Direta do Runner",
+      "empty": "Nenhum host SSH salvo está disponível. Adicione um nas configurações de SSH antes de usar esta rota.",
+      "loadFailed": "Não foi possível carregar os hosts SSH salvos.",
+      "loading": "Carregando hosts SSH salvos…",
+      "select": "Selecionar um host SSH salvo",
+      "selectionUnavailable": "O host SSH selecionado não está mais disponível. Selecione outro ou altere explicitamente para Direta.",
+      "ssh": "Por um host SSH salvo",
+      "sshConnection": "Host SSH",
+      "sshHelp": "O SSH protege o trecho do Runner até o servidor SSH. Esse servidor deve conseguir acessar o destino RFB. O Agent precisa de acesso VNC e SSH.",
+      "title": "Rota de conexão",
+      "unavailable": "As configurações de SSH não estão disponíveis para esta conta.",
+      "via": "Host SSH:"
+    },
     "unavailable": "VNC não está disponível neste espaço de trabalho."
   },
   "workflows": {

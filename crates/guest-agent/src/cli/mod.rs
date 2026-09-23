@@ -567,7 +567,7 @@ fn build_pi_command_for_runtime(
     );
     log_info!(
         LOG_TAG,
-        "Pi CLI launch: source={} reason={} required_runtime={} installed_runtime={} installed_cli={}",
+        "Pi CLI launch: source={} reason={} required_runtime={} installed_runtime={} installed_cli={} required_session_construction={} installed_session_construction={}",
         decision.source.as_str(),
         decision.reason,
         requirement
@@ -578,6 +578,13 @@ fn build_pi_command_for_runtime(
             .unwrap_or("<none>"),
         installed_okou_cli
             .map(|installed| installed.versions.cli.as_str())
+            .unwrap_or("<none>"),
+        requirement
+            .required_pi_session_construction_digest
+            .unwrap_or("<none>"),
+        installed_okou_cli
+            .and_then(|installed| installed.session_construction.as_ref())
+            .map(|session_construction| session_construction.digest.as_str())
             .unwrap_or("<none>"),
     );
     if decision.source == okou_cli_launch::PiCliLaunchSource::Installed {
@@ -2612,6 +2619,7 @@ mod tests {
                 size: 1,
             },
             entrypoint: InstalledOkouCli::entrypoint_for(cli),
+            session_construction: None,
         }
     }
 

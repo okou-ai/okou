@@ -1558,7 +1558,6 @@
         "enteredChat": "{{userName}} 上线了。",
         "goodToSeeYou": "见到你真好，{{userName}}。",
         "knewYouWouldCome": "就知道你会回来，{{userName}}。",
-        "letsRoll": "{{agentName}} 准备好了，{{userName}}，开工吧。",
         "makeTodayCount": "让今天过得有价值，{{userName}}。",
         "newIdeas": "今天有什么新想法，{{userName}}？",
         "readyToBuild": "准备开工了吗，{{userName}}？",
@@ -1733,6 +1732,11 @@
       "upgradeToRun": "升级到 Pro 才能运行 {{assistantName}}",
       "upgradeWorkspace": "升级你的工作区"
     },
+    "browserAction": {
+      "documentTitle": "浏览器操作",
+      "loading": "正在加载浏览器请求",
+      "unavailableDescription": "此浏览器请求无效或已不可用。"
+    },
     "browserInput": {
       "applyFailed": "无法添加信息。你填写的内容仍然保留，请重试。",
       "applying": "正在添加信息",
@@ -1750,12 +1754,10 @@
       "delivered": "已通知 Agent",
       "deliveredDescription": "Agent 现在可以继续了。",
       "description": "请输入这个网站所需的信息。",
-      "documentTitle": "浏览器信息输入",
       "expired": "请求已过期",
       "expiredDescription": "浏览器已关闭，或这个请求已不再有效。",
       "loadFailed": "无法加载这个请求",
       "loadFailedDescription": "请稍后重试。",
-      "loading": "正在加载浏览器输入",
       "loadingDescription": "正在检查这个请求…",
       "open": "输入信息",
       "optional": "（选填）",
@@ -1768,9 +1770,33 @@
       "submitting": "正在添加…",
       "title": "在浏览器中输入信息",
       "unavailable": "请求不可用",
-      "unavailableDescription": "这个浏览器信息输入请求无效或已不可用。",
       "uncertain": "请检查浏览器",
       "uncertainDescription": "浏览器可能已收到这些信息。重试前，请先让 Agent 检查。"
+    },
+    "browserInteraction": {
+      "applying": "正在完成浏览器交互",
+      "applyingDescription": "浏览器正在完成此请求。",
+      "callbackFailed": "未能通知 Agent。请再次点击继续。",
+      "cancel": "取消",
+      "cancelFailed": "无法取消此请求。请重试。",
+      "cancelled": "请求已取消",
+      "cancelledDescription": "浏览器接管已取消。点击继续以通知 Agent。",
+      "cancelling": "正在取消…",
+      "completed": "浏览器交互已完成",
+      "completedDescription": "浏览器交互已记录。点击继续以通知 Agent。",
+      "completeFailed": "无法完成此请求。请重试。",
+      "completing": "正在完成…",
+      "continue": "继续",
+      "continuing": "正在继续…",
+      "delivered": "已通知 Agent",
+      "deliveredDescription": "Agent 现在可以继续。",
+      "description": "打开浏览器并完成此步骤，然后点击完成。",
+      "done": "完成",
+      "stale": "浏览器已不可用",
+      "staleDescription": "请让 Agent 创建新请求。",
+      "title": "接管浏览器",
+      "uncertain": "请检查浏览器",
+      "uncertainDescription": "交互可能已完成。重试前，请先让 Agent 检查。"
     },
     "cards": {
       "viewDetails": "查看详情"
@@ -1959,6 +1985,11 @@
       "sent": "转发成功",
       "threads": "聊天",
       "title": "转发到"
+    },
+    "homeTasks": {
+      "existingThread": "继续聊天",
+      "heading": "从近期工作中提取",
+      "newThread": "新建聊天"
     },
     "mail": {
       "bcc": "密送",
@@ -2906,6 +2937,48 @@
       "named": "工作流 {{title}}",
       "open": "打开工作流 {{title}}"
     }
+  },
+  "cloudflareAccess": {
+    "add": "添加Cloudflare Access",
+    "cancel": "取消",
+    "changed": "该Cloudflare Access在你编辑期间发生了变化。请先查看最新设置，再保存你的更改。",
+    "clientId": "Service Token Client ID",
+    "clientIdPlaceholder": "粘贴Service Token Client ID",
+    "clientSecret": "Service Token Client Secret",
+    "clientSecretPlaceholder": "粘贴Service Token Client Secret",
+    "configuration": "Cloudflare Access",
+    "createNew": "新建Cloudflare Access",
+    "delete": "删除Cloudflare Access",
+    "deleteHelp": "确定删除这个未被使用的Cloudflare Access？其中保存的Service Token无法恢复。",
+    "description": "使用 Cloudflare Access 服务令牌访问受保护的应用。",
+    "edit": "编辑Cloudflare Access",
+    "empty": "还没有 Cloudflare Access。添加服务令牌即可访问受保护的应用。",
+    "failed": "无法保存 Cloudflare Access 更改，请重试。",
+    "inUse": "该Cloudflare Access正在被主机使用。请先查看受影响的主机，为它们重新绑定或删除它们。",
+    "inUseHelp": "删除之前，请为这些主机选择其他Cloudflare Access、明确改为直连，或删除这些主机。",
+    "invalidInput": "部分 Cloudflare Access 设置无效，请检查各字段后重试。",
+    "keepChanges": "在该版本上保留我的更改",
+    "latest": "最新保存的设置",
+    "loadFailed": "无法加载Cloudflare Access，请重试。",
+    "loading": "正在加载Cloudflare Access…",
+    "manage": "管理 Cloudflare Access",
+    "missing": "该Cloudflare Access已不可用。请选择其他项或新建一个。",
+    "name": "名称",
+    "namePlaceholder": "例如：生产环境访问",
+    "replace": "替换Service Token",
+    "resourceIdConflict": "该资源 ID 无法使用。请关闭表单并重新打开后再试。",
+    "retry": "重试",
+    "reviewHelp": "你的草稿已保留。请先确认最新保存的设置，再应用你的更改。",
+    "revisionExhausted": "该配置已无法继续更新，请新建一个。",
+    "save": "保存",
+    "saveUncertain": "我们无法确认你的更改是否已保存。请重试这次保存，或关闭后先查看列表，再决定是否重新添加。",
+    "select": "选择Cloudflare Access",
+    "summary_other": "已配置{{count}}个Cloudflare Access",
+    "title": "Cloudflare Access",
+    "tokenHelp": "使用 Cloudflare Access 服务令牌访问受保护的应用。",
+    "unavailable": "该账号无法使用Cloudflare Access。",
+    "unused": "未被任何主机使用",
+    "usedBy_other": "正在被{{count}}台主机使用："
   },
   "connectors": {
     "access": {
@@ -4226,7 +4299,7 @@
       },
       "skills": {
         "copied": "已复制",
-        "copy": "导入一个SKILL.md，它就会变成Okou里的工作流，输入/即可运行。",
+        "copy": "将此提示词粘贴到你的{{provider}}会话中，它会把你本机的技能导入Okou。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
         "importedCopy": "已导入为Okou工作流。",
@@ -4235,7 +4308,7 @@
         "preparing": "正在打开导入会话…",
         "promptCopy": "它会读取你本机上的技能，并写入Okou。",
         "promptLabel": "技能导入提示词",
-        "promptTitle": "在Codex或Claude Code中运行",
+        "promptTitle": "在{{provider}}中运行",
         "startError": "无法打开导入会话。",
         "title": "把你已经写好的技能带过来。",
         "tryAgain": "重试",
@@ -4283,11 +4356,6 @@
       "sources": {
         "copy": "它在云端运行，直接用你团队已有的工具。产出提升10倍，协作更顺，成本更低。先连接一个数据源开始。",
         "note": "连接哪些账号，由你决定。",
-        "searchAction": "找到适合你工作的数据源",
-        "searchCopy": "按任务或应用名称搜索完整目录。",
-        "searchEmpty": "没有匹配的数据源",
-        "searchPlaceholder": "按任务或应用名称搜索",
-        "searchTitle": "找到适合你工作的数据源",
         "title": "Okou为你所用，也服务你的整个团队。"
       },
       "startingPrompt": {
@@ -5982,6 +6050,9 @@
           "description": "个性化应用的外观和使用方式。",
           "title": "偏好设置"
         },
+        "tools": {
+          "title": "工具"
+        },
         "usage": {
           "balanceDescription": "团队还剩多少可用额度。",
           "balanceTitle": "积分余额",
@@ -6142,6 +6213,8 @@
       },
       "personal": {
         "accountFallback": "账号{{number}}",
+        "accountsDescription": "选择每个提供商在新任务中使用的账号。",
+        "accountsSectionTitle": "个人账号",
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "添加账号",
@@ -6260,14 +6333,14 @@
         "workspaceDescription": "这个工作区的所有人都可以使用。"
       },
       "reset": {
-        "confirmDescription": "消耗一次Codex重置额度，重置当前的用量周期。你还有{{remaining}}。",
+        "confirmDescription": "消耗一次{{provider}}重置额度，重置当前的用量周期。你还有{{remaining}}。",
         "progress": "正在重置…",
         "remaining_one": "还剩{{value}}次重置",
         "remaining_other": "还剩{{value}}次重置",
         "remainingUnavailable": "剩余重置次数不可用",
         "remainingUnknown": "重置 —",
         "remainingWithExpiry_other": "还剩{{value}}次重置 · {{expiry}}过期",
-        "title": "重置Codex用量？"
+        "title": "重置{{provider}}用量？"
       },
       "stale": {
         "claudeExpired": "你的Claude Code会话已过期。请重新连接以继续。",
@@ -6284,9 +6357,9 @@
         "accountSwitched": "已切换当前账号",
         "disconnected": "{{provider}}已断开连接",
         "policiesUpdated": "模型服务商设置已更新",
-        "reset": "Codex用量已重置",
-        "resetUnavailable": "没有可用的Codex用量重置次数",
-        "resetUnneeded": "Codex用量当前不需要重置"
+        "reset": "{{provider}}用量已重置",
+        "resetUnavailable": "没有可用的{{provider}}用量重置次数",
+        "resetUnneeded": "{{provider}}用量当前不需要重置"
       },
       "usage": {
         "inDays": "{{days}}天后",
@@ -6773,36 +6846,15 @@
     "chooseFile": "选择文件",
     "choosePrivateKeyFile": "选择私钥文件",
     "cloudflare": {
-      "add": "添加Cloudflare Access",
-      "changed": "该Cloudflare Access在你编辑期间发生了变化。请先查看最新设置，再保存你的更改。",
-      "clientId": "Service Token Client ID",
-      "clientSecret": "Service Token Client Secret",
-      "configuration": "Cloudflare Access",
-      "createNew": "新建Cloudflare Access",
-      "delete": "删除Cloudflare Access",
-      "deleteHelp": "确定删除这个未被使用的Cloudflare Access？其中保存的Service Token无法恢复。",
       "direct": "直连",
-      "edit": "编辑Cloudflare Access",
-      "empty": "还没有Cloudflare Access。添加Service Token即可连接受保护的SSH主机。",
-      "inUse": "该Cloudflare Access正在被主机使用。请先查看受影响的主机，为它们重新绑定或删除它们。",
-      "inUseHelp": "删除之前，请为这些主机选择其他Cloudflare Access、明确改为直连，或删除这些主机。",
       "keepChanges": "在该版本上保留我的更改",
       "latest": "最新保存的设置",
-      "loadFailed": "无法加载Cloudflare Access，请重试。",
-      "loading": "正在加载Cloudflare Access…",
-      "missing": "该Cloudflare Access已不可用。请选择其他项或新建一个。",
       "mode": "连接方式",
-      "name": "名称",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "对外发布的主机名",
-      "replace": "替换Service Token",
       "reviewHelp": "你的草稿已保留。请先确认最新保存的设置，再应用你的更改。",
-      "select": "选择Cloudflare Access",
-      "summary_other": "已配置{{count}}个Cloudflare Access",
       "title": "Cloudflare Access",
-      "tokenHelp": "请使用SSH应用的Service Auth策略允许的Service Token。它与你的SSH登录信息相互独立。",
-      "unavailable": "该账号无法使用Cloudflare Access。",
-      "usedBy_other": "正在被{{count}}台主机使用："
+      "unavailable": "该账号无法使用Cloudflare Access。"
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access未能建立SSH隧道。请检查对外发布的主机名和Tunnel路由。",
@@ -6857,6 +6909,7 @@
       "credentialInUse": "该凭据正在被主机使用。请为这些主机选择其他凭据，或先删除这些主机。",
       "credentialUnavailable": "该SSH凭据已不可用。请选择已有凭据或新建一个。",
       "failed": "无法保存SSH更改，请重试。",
+      "hostInUse": "此SSH主机正被VNC路由使用。删除该主机前，请为这些VNC路由选择其他SSH主机、明确切换为直连，或先删除这些路由。",
       "hostUnavailable": "该SSH主机已不可用。请返回主机列表，选择已有的主机。",
       "invalidHost": "请输入主机名或IP地址，不要包含URL协议头、路径或空格。",
       "invalidInput": "部分SSH设置无效，请检查各字段后重试。",
@@ -6877,9 +6930,6 @@
     "notLearned": "尚未记录主机密钥",
     "passphrase": "密钥口令（可选）",
     "placeholders": {
-      "accessName": "例如：生产环境访问",
-      "clientId": "粘贴Service Token Client ID",
-      "clientSecret": "粘贴Service Token Client Secret",
       "credentialName": "例如：部署账号",
       "displayName": "例如：生产服务器",
       "host": "例如：ssh.example.com",
@@ -7074,6 +7124,9 @@
       "caHint": "粘贴签发该服务器证书的公开CA证书",
       "custom": "自定义证书颁发机构",
       "profileLabel": "安全方案",
+      "serverName": "TLS证书身份",
+      "serverNameHelp": "可选。留空时将根据RFB目标主机验证证书。仅当证书使用其他DNS名称时才填写。",
+      "serverNameHint": "例如 desktop.internal.example.com",
       "system": "系统证书颁发机构",
       "title": "服务器证书信任",
       "x509Plain": "加密的用户名和密码（X509Plain）",
@@ -7084,6 +7137,22 @@
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
     "title": "VNC远程访问",
+    "transport": {
+      "destination": "RFB目标",
+      "destinationHelp": "使用SSH路由时，将从所选SSH服务器访问此主机和端口，而不是由Runner直接访问。",
+      "direct": "Runner直连",
+      "empty": "没有可用的已保存SSH主机。使用此路由前，请先在SSH设置中添加主机。",
+      "loadFailed": "无法加载已保存的SSH主机。",
+      "loading": "正在加载已保存的SSH主机…",
+      "select": "选择已保存的SSH主机",
+      "selectionUnavailable": "所选SSH主机已不可用。请选择其他主机，或明确切换为直连。",
+      "ssh": "通过已保存的SSH主机",
+      "sshConnection": "SSH主机",
+      "sshHelp": "SSH仅保护Runner到SSH服务器这一跳。该服务器必须能够访问RFB目标。Agent必须同时获得VNC和SSH访问权限。",
+      "title": "连接路由",
+      "unavailable": "此账户无法使用SSH设置。",
+      "via": "SSH主机："
+    },
     "unavailable": "当前工作区不支持VNC。"
   },
   "workflows": {

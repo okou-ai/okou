@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Loader2, Plus } from "lucide-react";
-import { cn, Skeleton } from "@okouai/ui";
+import { cn, Button } from "@okouai/ui";
 import {
   connectorSlugSchema,
   type ConnectorSlug,
@@ -10,14 +10,20 @@ import {
 import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
+  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   builtinConnectFlowSlug$,
   justConnectedBuiltinSlugs$,
   builtinPollingOAuthAuthCodeSlug$,
   builtinPollingOAuthDeviceAuthSlug$,
+  getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
+  runBuiltinConnectorConnectSuccess$,
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import {
+  connectorCatalogStatus$,
+  reloadBuiltinConnectors$,
+} from "../../signals/external/connectors.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "../okou-page/components/settings/add-connection-dialog.tsx";
@@ -28,6 +34,7 @@ import {
 } from "../okou-page/components/settings/connector-entry-card.tsx";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 
 type ConnectorSetupVariant = "workflow" | "prompt" | "sources";
 
@@ -64,16 +71,12 @@ function SourceConnectorCard({
   onActivate,
 }: {
   readonly connectorSlug: ConnectorSlug;
-  readonly connector: PlatformConnectorCatalogStatusItem | undefined;
+  readonly connector: PlatformConnectorCatalogStatusItem;
   readonly connected: boolean;
   readonly busy: boolean;
   readonly onActivate: () => void;
 }) {
   const { t } = useTranslation();
-
-  if (!connector) {
-    return <Skeleton className="h-[104px] rounded-surface" />;
-  }
 
   return (
     <ConnectorEntryCard
@@ -146,18 +149,67 @@ export function OnboardingConnectorSetup(props: ConnectorSetupProps) {
   return <ListConnectorSetup {...props} />;
 }
 
+function useSourceConnectorActivate(
+  onConnectStart: ConnectorSetupProps["onConnectStart"],
+  onConnected: ConnectorSetupProps["onConnected"],
+) {
+  const pageSignal = useGet(pageSignal$);
+  const selectConnector = useSet(setSelectedBuiltinConnectorSlug$);
+  const directConnect = useSet(connectBuiltinConnectorOAuthAuthCodeAndSettle$);
+  const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
+
+  return (item: PlatformConnectorCatalogStatusItem, connected: boolean) => {
+    onConnectStart?.(item.slug);
+    const authMethod =
+      getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item);
+    const accountOptions = defaultBuiltinConnectorAccountOptions(item);
+    if (!connected && authMethod && accountOptions) {
+      detach(
+        directConnect(
+          {
+            connectorSlug: item.slug,
+            method: authMethod,
+            options: {
+              connectorLabel: item.label,
+              connectorIcon: item.icon,
+              authorizeVisibleAgents: true,
+              ...accountOptions,
+            },
+            onSuccess: (connectionId, signal) => {
+              return runConnectSuccess(
+                item.slug,
+                () => {
+                  onConnected?.(item.slug);
+                },
+                connectionId,
+                signal,
+              );
+            },
+          },
+          pageSignal,
+        ),
+        Reason.DomCallback,
+      );
+      return;
+    }
+    selectConnector(item.slug);
+  };
+}
+
 /** The source step's grid, on the connector directory's own entry card. */
 function SourcesConnectorGrid({
   connectorSlugs,
   onConnectStart,
   onConnected,
-  children,
 }: ConnectorSetupProps) {
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const connectorCatalogItemsLoadable = useLastLoadable(
     connectorCatalogStatus$,
   );
+  const retryCatalog = useSet(reloadBuiltinConnectors$);
+  const { t } = useTranslation();
   const setSelectedConnectorSlug = useSet(setSelectedBuiltinConnectorSlug$);
+  const activate = useSourceConnectorActivate(onConnectStart, onConnected);
   const selectedConnectorSlug = useGet(selectedBuiltinConnectorSlug$);
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
@@ -175,6 +227,41 @@ function SourcesConnectorGrid({
   const selectedAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
 
+  if (connectorCatalogItemsLoadable.state === "hasError") {
+    return (
+      <div
+        role="alert"
+        className="flex items-center justify-between gap-3 text-sm text-muted-foreground"
+      >
+        <p>
+          {t(($) => {
+            return $.connectors.catalog.directory.builtinLoadFailed;
+          })}
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={retryCatalog}
+        >
+          {t(($) => {
+            return $.connectors.catalog.directory.retry;
+          })}
+        </Button>
+      </div>
+    );
+  }
+
+  if (connectorCatalogItemsLoadable.state === "loading") {
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.connectors.catalog.directory.loading;
+        })}
+      </p>
+    );
+  }
+
   return (
     <>
       {/* Two columns whatever the card's width: three leaves each source too
@@ -184,36 +271,34 @@ function SourcesConnectorGrid({
           const item = connectorCatalogItems.find((candidate) => {
             return candidate.slug === connectorSlug;
           });
+          if (!item) {
+            return null;
+          }
+          const connected =
+            item.connected || justConnectedSlugs.has(connectorSlug);
           return (
             <SourceConnectorCard
               key={connectorSlug}
               connectorSlug={connectorSlug}
               connector={item}
-              connected={
-                item?.connected === true ||
-                justConnectedSlugs.has(connectorSlug)
-              }
+              connected={connected}
               busy={
                 connectFlowSlug === connectorSlug ||
                 pollingAuthCodeSlug === connectorSlug ||
                 pollingDeviceAuthSlug === connectorSlug
               }
               onActivate={() => {
-                onConnectStart?.(connectorSlug);
-                setSelectedConnectorSlug(connectorSlug);
+                activate(item, connected);
               }}
             />
           );
         })}
-        {children}
       </section>
       {selectedConnector && selectedAccountOptions ? (
         <ConnectModal
           item={selectedConnector}
           accountOptions={selectedAccountOptions}
           authorizeVisibleAgentsOnConnect
-          // The modal serves the grid and the catalog search alike, so a
-          // source connected either way reports through the same success.
           onSuccess={() => {
             onConnected?.(selectedConnector.slug);
           }}

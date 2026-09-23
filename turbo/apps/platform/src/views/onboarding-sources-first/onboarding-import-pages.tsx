@@ -230,7 +230,13 @@ function ImportedSkillList({
   );
 }
 
-function SkillImportPanel({ state }: { readonly state: SkillImportState }) {
+function SkillImportPanel({
+  state,
+  providerName,
+}: {
+  readonly state: SkillImportState;
+  readonly providerName: string;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -238,9 +244,12 @@ function SkillImportPanel({ state }: { readonly state: SkillImportState }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground">
-            {t(($) => {
-              return $.onboarding.sourcesFirst.skills.promptTitle;
-            })}
+            {t(
+              ($) => {
+                return $.onboarding.sourcesFirst.skills.promptTitle;
+              },
+              { provider: providerName },
+            )}
           </p>
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
             {t(($) => {
@@ -269,6 +278,21 @@ export function OnboardingSkillsPage() {
   const { t } = useTranslation();
   const flow = useSourcesFirstFlow("skills");
   const skillImport = useGet(sourcesFirstSkillImport$);
+  const provider = flow.draft.provider;
+  const providerName =
+    provider === "codex"
+      ? t(($) => {
+          return $.onboarding.sourcesFirst.subscription.codex;
+        })
+      : provider === "claudeCode"
+        ? t(($) => {
+            return $.onboarding.sourcesFirst.subscription.claudeCode;
+          })
+        : null;
+
+  if (providerName === null) {
+    return null;
+  }
 
   return (
     <OnboardingStepLayout
@@ -283,9 +307,12 @@ export function OnboardingSkillsPage() {
               return $.onboarding.sourcesFirst.skills.title;
             })
       }
-      description={t(($) => {
-        return $.onboarding.sourcesFirst.skills.copy;
-      })}
+      description={t(
+        ($) => {
+          return $.onboarding.sourcesFirst.skills.copy;
+        },
+        { provider: providerName },
+      )}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -299,7 +326,7 @@ export function OnboardingSkillsPage() {
       onBack={flow.goBack}
     >
       <div className="mx-auto flex w-full max-w-[600px] flex-col gap-6">
-        <SkillImportPanel state={skillImport} />
+        <SkillImportPanel state={skillImport} providerName={providerName} />
         <ImportedSkillList skills={skillImport.imported} />
       </div>
     </OnboardingStepLayout>

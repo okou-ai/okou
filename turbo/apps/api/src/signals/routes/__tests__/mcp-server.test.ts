@@ -1203,10 +1203,10 @@ describe("MCP chat discovery and creation", () => {
       ).list({ headers: { authorization: "Bearer clerk-session" } }),
       [200],
     );
-    expect(settings.body.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    expect(settings.body.workspaceDefaultModel).toBe("gpt-6-luna");
     const models = await listModels(token);
     expect(models.defaultModel).toStrictEqual({
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       source: "org_default",
     });
   });

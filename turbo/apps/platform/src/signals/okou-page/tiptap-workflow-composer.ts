@@ -1583,6 +1583,7 @@ interface WorkflowComposerRuntime {
   update(editor: Editor): void;
   selectionUpdate(editor: Editor): void;
   focus(editor: Editor): void;
+  pointerUp(editor: Editor): void;
   blur(event: FocusEvent): void;
   openTemplate(intent: OpenComposerTemplatePickerIntent): void;
   removeTemplate(): void;
@@ -1746,7 +1747,7 @@ function createWorkflowEditor(
   runtime: WorkflowComposerRuntime,
   agentMentionAvatarRuntime: AgentMentionAvatarRuntime,
 ): Editor {
-  return new Editor({
+  const editor = new Editor({
     element: null,
     extensions: [
       ...createWorkflowComposerBaseExtensions(),
@@ -1770,6 +1771,20 @@ function createWorkflowEditor(
         tabindex: "0",
         class: EDITOR_CONTENT_CLASS,
       },
+      handleDOMEvents: {
+        pointerup: (_view, event) => {
+          if (
+            event.target instanceof globalThis.Element &&
+            event.target.closest('[contenteditable="false"]') !== null
+          ) {
+            return false;
+          }
+          if (editor.isFocused) {
+            runtime.pointerUp(editor);
+          }
+          return false;
+        },
+      },
     },
     onUpdate: ({ editor }) => {
       runtime.update(editor);
@@ -1784,6 +1799,7 @@ function createWorkflowEditor(
       runtime.blur(event);
     },
   });
+  return editor;
 }
 
 function setWorkflowComposerDocument(
@@ -1852,6 +1868,7 @@ function workflowComposerDocumentForDraft(
 function configureMountedWorkflowEditor(editor: Editor): void {
   editor.setOptions({
     editorProps: {
+      ...editor.options.editorProps,
       clipboardTextSerializer: workflowComposerClipboardText,
       attributes: {
         "aria-label": i18n.t(($) => {
@@ -1899,6 +1916,7 @@ function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
   runtime.update = () => {};
   runtime.selectionUpdate = () => {};
   runtime.focus = () => {};
+  runtime.pointerUp = () => {};
   runtime.blur = () => {};
   runtime.openTemplate = () => {};
   runtime.removeTemplate = () => {};
@@ -2184,6 +2202,7 @@ function createMountEditorCommand({
         set(editorInteractionActiveState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);
       };
+      runtime.pointerUp = runtime.focus;
       runtime.blur = (event) => {
         if (suggestionMenu.ownsBlur(event.relatedTarget)) {
           return;
@@ -2769,6 +2788,7 @@ function createWorkflowComposerRuntime(
     update(_editor: Editor): void {},
     selectionUpdate(_editor: Editor): void {},
     focus(_editor: Editor): void {},
+    pointerUp(_editor: Editor): void {},
     blur(_event: FocusEvent): void {},
     openTemplate(_intent: OpenComposerTemplatePickerIntent): void {},
     removeTemplate(): void {},

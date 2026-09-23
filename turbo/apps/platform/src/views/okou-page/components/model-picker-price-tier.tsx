@@ -14,7 +14,7 @@ export function PriceTierBadge({
   description: string;
 }) {
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={

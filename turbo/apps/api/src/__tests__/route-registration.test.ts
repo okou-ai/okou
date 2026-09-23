@@ -7,10 +7,14 @@ import { morningBriefGenerationPreviewContract } from "@okouai/api-contracts/con
 import { morningBriefGithubCollectionContract } from "@okouai/api-contracts/contracts/morning-brief-github-collection";
 import { morningBriefGmailCollectionPreviewContract } from "@okouai/api-contracts/contracts/morning-brief-gmail-collection-preview";
 
-import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  cronExecuteMorningBriefsContract,
+  cronRefreshHomeTaskRecommendationsContract,
+} from "@okouai/api-contracts/contracts/cron";
 
 import { ROUTES } from "../signals/route";
 import { cronExecuteMorningBriefsRoutes } from "../signals/routes/cron-execute-morning-briefs";
+import { cronRefreshHomeTaskRecommendationsRoutes } from "../signals/routes/cron-refresh-home-task-recommendations";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { morningBriefCalendarCollectionPreviewRoutes } from "../signals/routes/morning-brief-calendar-collection-preview";
 import { morningBriefChatCollectionPreviewRoutes } from "../signals/routes/morning-brief-chat-collection-preview";
@@ -179,5 +183,14 @@ describe("API route registrations", () => {
         );
       }),
     ).toStrictEqual([entry]);
+  });
+
+  it("registers the home-task refresh cron", () => {
+    const [entry, ...extra] = cronRefreshHomeTaskRecommendationsRoutes;
+    expect(extra).toHaveLength(0);
+    expect(entry?.route).toBe(
+      cronRefreshHomeTaskRecommendationsContract.refresh,
+    );
+    expect(ROUTES).toContain(entry);
   });
 });

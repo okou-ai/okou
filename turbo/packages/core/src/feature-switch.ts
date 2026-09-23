@@ -53,7 +53,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   },
   [FeatureSwitchKey.PaidToolControls]: {
     maintainer: "liangyou@okou.ai",
-    description: "Show personal paid-tool controls in Settings",
+    description: "Enable personal paid-tool controls",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.SettingsToolsTab]: {
+    maintainer: "ethan@okou.ai",
+    description: "Show the Tools tab in Settings",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -62,13 +68,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Show video models, avatar/video templates and start cards, and video onboarding for new accounts",
     enabled: false,
-  },
-  [FeatureSwitchKey.RunUsage]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Query observed provider-token usage for the current assigned Run. Enabled for the staff organization.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.WelcomeThread]: {
     maintainer: "lancy@okou.ai",
@@ -81,6 +80,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Generate short public activity summaries for active thread subscriptions.",
     enabled: true,
+  },
+  [FeatureSwitchKey.HomeTaskRecommendations]: {
+    maintainer: "yuma@okou.ai",
+    description:
+      "Recommend personalized tasks from Agent-visible threads and authorized Gmail evidence.",
+    enabled: false,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
@@ -446,6 +451,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ClaudeCodeUsageReset]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Offer manual usage-window resets for personal Claude Code subscriptions, matching the Codex reset action.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -494,11 +506,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Treat the check-mark chat icon as archived and hide archived chats from the sidebar unless they are unread or explicitly shown.",
     enabled: false,
-  },
-  [FeatureSwitchKey.ChatUnreadOnlyShortcut]: {
-    maintainer: "ethan@okou.ai",
-    description: "Toggle the chat list's unread-only filter with Mod+Shift+U.",
-    enabled: true,
   },
   [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
     maintainer: "tongx@okou.ai",
@@ -557,12 +564,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Replace the make-something onboarding with the source-first flow: connect a work source, choose an industry, invite, AI experience, Slack, and a tailored starting prompt.",
     enabled: false,
-  },
-  [FeatureSwitchKey.OptimisticMessageSpinner]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show a spinner beside a user message the server has not confirmed yet",
-    enabled: true,
   },
 };
 

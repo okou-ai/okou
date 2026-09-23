@@ -76,6 +76,10 @@ async fn mock_build_lock_recovers_after_holder_exit() -> Result<(), Box<dyn std:
     let mut first = HolderProcess::spawn(&lock, &first_started, &first_ready)?;
     common::wait_for_path(&first_ready, PROCESS_TIMEOUT).await?;
     assert!(
+        !shared_lock_is_available(&lock)?,
+        "first holder should exclude shared contenders"
+    );
+    assert!(
         !lock_is_available(&lock)?,
         "first holder should exclude the parent process"
     );
@@ -89,6 +93,10 @@ async fn mock_build_lock_recovers_after_holder_exit() -> Result<(), Box<dyn std:
 
     first.crash().await?;
     common::wait_for_path(&successor_ready, PROCESS_TIMEOUT).await?;
+    assert!(
+        !shared_lock_is_available(&lock)?,
+        "successor should exclude shared contenders"
+    );
     assert!(
         !lock_is_available(&lock)?,
         "successor should exclude the parent process"
@@ -114,6 +122,20 @@ fn run_holder(lock: &Path) -> io::Result<()> {
     let mut input = Vec::new();
     io::stdin().read_to_end(&mut input)?;
     Ok(())
+}
+
+fn shared_lock_is_available(lock: &Path) -> io::Result<bool> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(lock)?;
+    match file.try_lock_shared() {
+        Ok(()) => Ok(true),
+        Err(TryLockError::WouldBlock) => Ok(false),
+        Err(TryLockError::Error(error)) => Err(error),
+    }
 }
 
 fn lock_is_available(lock: &Path) -> io::Result<bool> {

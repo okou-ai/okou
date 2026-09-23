@@ -100,29 +100,53 @@ pub fn validate_bindings<'a>(
     let mut selected = HashSet::new();
     for mount in mounts {
         if !selected.insert(mount) {
-            return Err(io::Error::other("duplicate decoded storage mount"));
+            return Err(io::Error::other("duplicate decoded mount"));
         }
-        let (index, entry) = manifest
+        let storage = manifest
             .storages
             .iter()
             .enumerate()
-            .find(|(_, entry)| entry.mount_path == mount)
-            .ok_or_else(|| io::Error::other("decoded storage mount absent"))?;
-        if entry.cached
-            || entry.extract_path.is_some()
-            || entry.instructions_target_filename.is_some()
-            || entry
-                .archive_url
-                .as_deref()
-                .is_none_or(|url| url.is_empty() || url == "null")
-        {
-            return Err(io::Error::other(
-                "decoded storage source is not an ordinary download",
-            ));
-        }
+            .find(|(_, entry)| entry.mount_path == mount);
+        let artifact = manifest
+            .artifacts
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.mount_path == mount);
+        let binding = match (storage, artifact) {
+            (Some((index, entry)), None) => {
+                if entry.cached
+                    || entry.extract_path.is_some()
+                    || entry.instructions_target_filename.is_some()
+                    || !valid_archive_url(entry.archive_url.as_deref())
+                {
+                    return Err(io::Error::other(
+                        "decoded storage source is not an ordinary download",
+                    ));
+                }
+                DecodedBinding::Storage(index)
+            }
+            (None, Some((index, entry))) => {
+                if entry.empty
+                    || entry.cached
+                    || !valid_archive_url(entry.archive_url.as_deref())
+                    || !present_identity(&entry.vas_storage_name)
+                    || !present_identity(&entry.vas_storage_id)
+                    || !present_identity(&entry.vas_version_id)
+                {
+                    return Err(io::Error::other(
+                        "decoded artifact source is not a fresh complete download",
+                    ));
+                }
+                DecodedBinding::Artifact(index)
+            }
+            (None, None) => return Err(io::Error::other("decoded mount absent")),
+            (Some(_), Some(_)) => {
+                return Err(io::Error::other("duplicate storage manifest mount"));
+            }
+        };
         let target = Path::new(mount);
         for (other_index, other) in manifest.storages.iter().enumerate() {
-            if other_index == index {
+            if matches!(binding, DecodedBinding::Storage(index) if index == other_index) {
                 continue;
             }
             if decoded_mount_conflicts(
@@ -135,16 +159,33 @@ pub fn validate_bindings<'a>(
                     .as_deref()
                     .is_some_and(|url| url != "null"),
             ) {
-                return Err(io::Error::other("decoded storage overlaps another mount"));
+                return Err(io::Error::other("decoded mount overlaps another mount"));
             }
         }
-        for other in &manifest.artifacts {
+        for (other_index, other) in manifest.artifacts.iter().enumerate() {
+            if matches!(binding, DecodedBinding::Artifact(index) if index == other_index) {
+                continue;
+            }
             if decoded_mount_conflicts(target, Path::new(&other.mount_path), None, None, true) {
-                return Err(io::Error::other("decoded storage overlaps another mount"));
+                return Err(io::Error::other("decoded mount overlaps another mount"));
             }
         }
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum DecodedBinding {
+    Storage(usize),
+    Artifact(usize),
+}
+
+fn valid_archive_url(url: Option<&str>) -> bool {
+    url.is_some_and(|url| !url.is_empty() && url != "null")
+}
+
+fn present_identity(value: &Option<String>) -> bool {
+    value.as_deref().is_some_and(|value| !value.is_empty())
 }
 
 fn absolute_mount(path: &Path) -> bool {
@@ -358,6 +399,41 @@ pub fn decode(mut input: &[u8]) -> io::Result<Vec<StorageFiles>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage_manifest::{ArtifactEntry, Manifest, StorageEntry};
+
+    fn storage_entry(mount_path: &str) -> StorageEntry {
+        StorageEntry {
+            mount_path: mount_path.into(),
+            extract_path: None,
+            archive_url: Some("file:///storage.tar.gz".into()),
+            instructions_target_filename: None,
+            cached: false,
+            vas_storage_name: Some("storage".into()),
+            vas_version_id: Some("v1".into()),
+        }
+    }
+
+    fn artifact_entry(mount_path: &str) -> ArtifactEntry {
+        ArtifactEntry {
+            mount_path: mount_path.into(),
+            archive_url: Some("file:///artifact.tar.gz".into()),
+            empty: false,
+            cached: false,
+            vas_storage_name: Some("artifact".into()),
+            vas_storage_id: Some("artifact-id".into()),
+            vas_version_id: Some("v1".into()),
+            missing_root_policy: Some("preserveParentVersion".into()),
+        }
+    }
+
+    fn manifest(storages: Vec<StorageEntry>, artifacts: Vec<ArtifactEntry>) -> Manifest {
+        Manifest {
+            storages,
+            artifacts,
+            cleanup_paths: Vec::new(),
+            instruction_cleanups: Vec::new(),
+        }
+    }
 
     #[test]
     fn validates_sizes_before_encoding_and_rejects_truncated_and_extra_input() {
@@ -438,5 +514,46 @@ mod tests {
             .collect();
         assert!(encode(&groups[..14]).is_ok());
         assert!(encode(&groups).is_err());
+    }
+
+    #[test]
+    fn bindings_accept_complete_fresh_artifacts_and_reject_other_artifact_states() {
+        let valid = manifest(Vec::new(), vec![artifact_entry("/artifact")]);
+        validate_bindings(&valid, ["/artifact"]).unwrap();
+
+        for invalid in ["empty", "cached", "source", "name", "storage-id", "version"] {
+            let mut entry = artifact_entry("/artifact");
+            if invalid == "empty" {
+                entry.empty = true;
+            } else if invalid == "cached" {
+                entry.cached = true;
+            } else if invalid == "source" {
+                entry.archive_url = None;
+            } else if invalid == "name" {
+                entry.vas_storage_name = None;
+            } else if invalid == "storage-id" {
+                entry.vas_storage_id = Some(String::new());
+            } else {
+                entry.vas_version_id = None;
+            }
+            assert!(
+                validate_bindings(&manifest(Vec::new(), vec![entry]), ["/artifact"]).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn bindings_reject_artifact_overlap_before_transport_splitting() {
+        for other in ["/artifact", "/artifact/child", "/"] {
+            let source = manifest(
+                vec![storage_entry(other)],
+                vec![artifact_entry("/artifact")],
+            );
+            assert!(
+                validate_bindings(&source, ["/artifact"]).is_err(),
+                "{other}"
+            );
+        }
     }
 }

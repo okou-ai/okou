@@ -262,7 +262,7 @@ async fn malformed_positive_metadata_still_fails_preparation() {
 }
 
 #[tokio::test]
-async fn same_key_artifact_consumer_keeps_required_archive_fill() {
+async fn same_key_storage_and_artifact_share_decoded_files_without_archive_fill() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
     let cache = decoded::DecodedCache::new(home.clone());
@@ -311,12 +311,14 @@ async fn same_key_artifact_consumer_keeps_required_archive_fill() {
         Some(&cache),
     )
     .await
-    .unwrap()
-    .expect("mixed archive demand still fills");
-    assert!(plan.take_decoded().is_empty());
-    deferred.run().await;
-    assert_eq!(std::fs::read(archive).unwrap(), body);
-    probe.assert_calls_async(1).await;
-    get.assert_calls_async(1).await;
+    .unwrap();
+    assert!(deferred.is_none());
+    let files = plan.take_decoded();
+    assert_eq!(files.len(), 2);
+    assert_eq!(files[0].1.files[0].content, b"storage cache test file\n");
+    assert!(std::sync::Arc::ptr_eq(&files[0].1, &files[1].1));
+    assert!(!archive.exists());
+    probe.assert_calls_async(0).await;
+    get.assert_calls_async(0).await;
     cache.shutdown().await;
 }

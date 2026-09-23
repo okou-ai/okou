@@ -33,6 +33,31 @@ pub struct OkouCliVersions {
     pub pi_sdk: String,
 }
 
+/// Identity of the code-determined session construction bundled into one CLI.
+///
+/// `@okouai/pi-agent-runtime` computes the digest at build time over the
+/// system prompt template and ordered tool schemas for fixed inputs, and the
+/// CLI artifact manifest records it as `sessionConstruction.digest`. It is
+/// the parity key for API-first handoffs: the guest execs the installed CLI
+/// only when the launch config names exactly this digest. Unlike the runtime
+/// version it does not move on dependency-only release bumps.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OkouCliSessionConstruction {
+    /// Lowercase hex SHA-256.
+    pub digest: String,
+}
+
+impl OkouCliSessionConstruction {
+    /// Whether `value` is a well-formed digest (64 lowercase hex digits).
+    pub fn is_valid_digest(value: &str) -> bool {
+        value.len() == 64
+            && value
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    }
+}
+
 /// Identity of the installed package tarball.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +80,11 @@ pub struct InstalledOkouCli {
     pub package: OkouCliInstalledPackage,
     /// Absolute path of the bundle entrypoint inside the rootfs.
     pub entrypoint: String,
+    /// Session construction bundled into the installed CLI, when the artifact
+    /// manifest recorded one. Absent for bundles built before the digest
+    /// existed; those installs are compared by runtime version only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_construction: Option<OkouCliSessionConstruction>,
 }
 
 /// Failure to accept an installed manifest.

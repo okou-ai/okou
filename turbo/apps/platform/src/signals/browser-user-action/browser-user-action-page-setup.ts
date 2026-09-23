@@ -21,7 +21,7 @@ export const setupBrowserUserActionPage$ = command(
     set(
       updateDocumentTitle$,
       i18n.t(($) => {
-        return $.chat.browserInput.documentTitle;
+        return $.chat.browserAction.documentTitle;
       }),
     );
     await set(hideAppSkeleton$, signal);

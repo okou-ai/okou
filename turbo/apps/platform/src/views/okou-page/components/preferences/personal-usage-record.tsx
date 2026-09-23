@@ -396,7 +396,7 @@ function UsageRecordList({ data }: { data: UsageRecordResponse }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <TooltipProvider delayDuration={100}>
+      <TooltipProvider delay={100}>
         <div
           className="overflow-hidden rounded-xl bg-card"
           style={{ border: CARD_BORDER }}

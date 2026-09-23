@@ -4,7 +4,7 @@ Paid-tool controls are personal preferences within one workspace. They do not
 change connector authorization, organization permissions, or billing policy.
 The `paidToolControls` feature switch remains globally disabled and is enabled
 for staff organizations. The settings and creation-guidance UI require both
-`chatPreference` and `paidToolControls` to be enabled. Saved preferences and
+`settingsToolsTab` and `paidToolControls` to be enabled. Saved preferences and
 enforcement are independent of those switches.
 
 ## Storage and API
@@ -24,9 +24,9 @@ The shared catalog includes `web-search`, `people-search`, `scrape`, `finance`,
 
 ## Settings and run semantics
 
-Settings → Personal → Chat includes a Paid tools section that shows the
+Settings → Personal → Tools includes a Paid tools section that shows the
 current workspace and saves each switch immediately when both UI switches are
-enabled. `?settings=chat` opens the same page on desktop and mobile. A failed
+enabled. `?settings=tools` opens the same page on desktop and mobile. A failed
 load shows a retry state rather than implying every tool is enabled; a failed
 write retains the last confirmed value.
 
@@ -46,7 +46,7 @@ platform environment. Social capabilities, status, download listing, and
 work. Collection `social resume` can fetch additional paid pages and is blocked.
 
 Prompt injection is unchanged. A disabled paid invocation exits with status 1
-and identifies the disabled tool, links to Settings → Personal → Chat,
+and identifies the disabled tool, links to Settings → Personal → Tools,
 and explains that re-enabling applies to later runs.
 
 ### BYOK web-search fallback

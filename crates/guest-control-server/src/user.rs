@@ -313,7 +313,7 @@ fn parse_required_u32(value: Option<&str>, field: &str) -> io::Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{PermissionsExt, symlink};
     use std::path::Path;
 
     fn write_executable(path: &Path, output: &str) {
@@ -346,11 +346,17 @@ mod tests {
     fn sandbox_user_path_preserves_command_precedence() {
         let home = tempfile::tempdir().unwrap();
         let path = sandbox_user_path(home.path());
-        let user_dirs = ["go/bin", ".cargo/bin", ".local/bin", "bin"];
-        for relative_dir in user_dirs {
+        let user_commands: [(&str, &str, bool, &[u8]); 4] = [
+            ("go/bin", "/bin/true", true, b""),
+            (".cargo/bin", "/bin/false", false, b""),
+            (".local/bin", "/bin/echo", true, b"marker\n"),
+            ("bin", "/usr/bin/printf", true, b"marker"),
+        ];
+        for &(relative_dir, command_target, _, _) in &user_commands {
             let dir = home.path().join(relative_dir);
-            write_executable(&dir.join("okou-user-path-test"), relative_dir);
-            write_executable(&dir.join("cat"), "shadowed system command");
+            std::fs::create_dir_all(&dir).unwrap();
+            symlink(command_target, dir.join("okou-user-path-test")).unwrap();
+            symlink("/bin/false", dir.join("cat")).unwrap();
         }
 
         let input = home.path().join("input");
@@ -364,14 +370,15 @@ mod tests {
         assert!(output.status.success());
         assert_eq!(output.stdout, b"system command found");
 
-        for relative_dir in user_dirs {
+        for (relative_dir, _, expected_success, expected_stdout) in user_commands {
             let output = Command::new("okou-user-path-test")
+                .arg("marker")
                 .env_clear()
                 .env("PATH", &path)
                 .output()
                 .unwrap();
-            assert!(output.status.success());
-            assert_eq!(output.stdout, relative_dir.as_bytes());
+            assert_eq!(output.status.success(), expected_success);
+            assert_eq!(output.stdout, expected_stdout);
             std::fs::remove_file(home.path().join(relative_dir).join("okou-user-path-test"))
                 .unwrap();
         }

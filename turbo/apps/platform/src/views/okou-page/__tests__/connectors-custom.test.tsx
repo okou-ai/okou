@@ -22,6 +22,7 @@ import {
   customConnectorsContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -972,6 +973,7 @@ test("Manage a custom HTTP connector through rename and deletion", async () => {
 });
 
 test("Manage custom HTTP OAuth through creation", async () => {
+  const user = userEvent.setup();
   const completedAttempts = mockOAuthCompletions(context);
   const oauthAttemptId = crypto.randomUUID();
   let connector: CustomConnectorHttpResponse | null = null;
@@ -1088,7 +1090,11 @@ test("Manage custom HTTP OAuth through creation", async () => {
     within(create).getByLabelText(/Scopes/u),
     "search.read\nsearch.write",
   );
+  expect(
+    within(create).getByLabelText("Token endpoint authentication"),
+  ).toHaveTextContent("Client secret in request body");
   click(within(create).getByText("Advanced settings"));
+  expect(within(create).getByLabelText("PKCE")).toHaveTextContent("None");
   click(within(create).getByLabelText("PKCE"));
   click(await screen.findByRole("option", { name: "S256" }));
   await fill(
@@ -1104,7 +1110,7 @@ test("Manage custom HTTP OAuth through creation", async () => {
   expect(redirect).toHaveValue(
     `${window.location.origin}/connectors/custom/callback`,
   );
-  click(getConnectorAction("button", "Copy Redirect URL", create));
+  await user.click(getConnectorAction("button", "Copy Redirect URL", create));
   await waitFor(() => {
     return expect(clipboard.writes).toStrictEqual([
       redirect.getAttribute("value") ?? "",

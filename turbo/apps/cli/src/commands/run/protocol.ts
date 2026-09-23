@@ -344,7 +344,7 @@ export const runUsageResultSchema =
 
 export const runUsageErrorKindSchema = z.enum([
   "unsupported-runner",
-  "feature-unavailable",
+  "assignment-unavailable",
   "busy",
   "timed-out",
   "cancelled",

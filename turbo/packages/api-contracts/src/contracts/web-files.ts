@@ -37,6 +37,8 @@ export const webFilesContract = c.router({
          * handed to someone else. Null for private artifacts.
          */
         publicUrl: z.string().nullable(),
+        /** Static poster when one has been materialized for this file. */
+        previewImageUrl: z.string().nullable().optional(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,

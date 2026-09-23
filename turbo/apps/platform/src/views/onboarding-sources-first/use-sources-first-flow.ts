@@ -53,8 +53,8 @@ export function useSourcesFirstFlow(
   const searchParams = useGet(searchParams$);
   const captureBack = useSet(captureSourceOnboardingBack$);
   const captureSkipped = useSet(captureSourceOnboardingSkipped$);
-  const previous = previousSourcesFirstStep(step, flow, draft.experienced);
-  const progress = sourcesFirstProgress(step, flow, draft.experienced);
+  const previous = previousSourcesFirstStep(step, flow, draft.provider);
+  const progress = sourcesFirstProgress(step, flow, draft.provider);
 
   const goTo = (target: SourcesFirstStep): void => {
     // Every step keeps the query it arrived with, so the Marketing `prompt`
@@ -66,7 +66,7 @@ export function useSourcesFirstFlow(
   };
 
   const goNext = (): void => {
-    const next = nextSourcesFirstStep(step, flow, draft.experienced);
+    const next = nextSourcesFirstStep(step, flow, draft.provider);
     if (next) {
       goTo(next);
     }

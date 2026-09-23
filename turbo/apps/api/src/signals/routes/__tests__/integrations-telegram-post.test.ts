@@ -5,6 +5,7 @@ import {
   OFFICIAL_TELEGRAM_BOT_ID,
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { NATIVE_GPT_6_LUNA_HEADER } from "@okouai/api-contracts/contracts/runners";
 import type {
   TestTelegramStateActionBody,
   TestTelegramStateActionResponse,
@@ -1466,6 +1467,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         supportedProfiles: ["vm0/default"],
       },
       [200],
+      { [NATIVE_GPT_6_LUNA_HEADER]: "1" },
     );
     if (poll.status !== 200) {
       throw new Error("Expected the same-thread reuse poll to succeed");
