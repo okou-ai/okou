@@ -60,6 +60,7 @@ import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/u
 import {
   customTemplateCatalog$,
   resetCustomTemplatePicker$,
+  resetCustomTemplatePickerView$,
 } from "../../signals/okou-page/custom-template-library.ts";
 import {
   importPresentationTemplateDeck$,
@@ -3629,13 +3630,13 @@ function TemplatePickerCategoryNav({
   customTemplatesEnabled,
   videoPickersVisible,
   onChange,
-  onResetCustom,
+  onReopenCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
   videoPickersVisible: boolean;
   onChange: (value: string) => void;
-  onResetCustom: () => void;
+  onReopenCustom: () => void;
 }) {
   const { t } = useTranslation();
   // Custom leads the list and is separated by a rule, because it answers who
@@ -3786,10 +3787,10 @@ function TemplatePickerCategoryNav({
                 <TabsTrigger
                   key={value}
                   value={value}
-                  // Reopening the active Custom category resets its filters.
-                  // Category selection and keyboard focus stay with Tabs.
+                  // Reactivating Custom clears its view without reloading the
+                  // catalog after native focus activation changed the category.
                   onClick={
-                    value === "custom" && selected ? onResetCustom : undefined
+                    selected && value === "custom" ? onReopenCustom : undefined
                   }
                   className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:text-foreground data-active:shadow-none focus-visible:ring-inset"
                 >
@@ -5477,6 +5478,7 @@ function TemplatePickerDialog({
     signals.template.resetImportedPresentationTemplatePicker$,
   );
   const resetCustomTemplatePicker = useSet(resetCustomTemplatePicker$);
+  const resetCustomTemplatePickerView = useSet(resetCustomTemplatePickerView$);
   const restorePresentationGridScroll = useSet(
     signals.template.restoreTemplatePickerPresentationScrollRef$,
   );
@@ -5752,7 +5754,7 @@ function TemplatePickerDialog({
                 customTemplatesEnabled={customTemplatesEnabled}
                 videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
-                onResetCustom={resetCustomTemplatePicker}
+                onReopenCustom={resetCustomTemplatePickerView}
               />
               {/* Keep the existing single active content tree and its category
                   unmounting policy; signals retain search and scroll state. */}
