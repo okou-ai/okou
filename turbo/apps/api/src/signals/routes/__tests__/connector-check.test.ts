@@ -449,6 +449,20 @@ describe("POST /api/connectors/diagnostics/check", () => {
         ],
       },
     });
+
+    const wrongEnvironment = await checkWithSession(actor, {
+      mode: "url",
+      method: "POST",
+      url,
+      connectorSlug: "aws",
+      environmentName: "AWS_SESSION_TOKEN",
+      aws: { sigv4Service: "sts", action: "GetSessionToken" },
+    });
+    expect(wrongEnvironment.body).toMatchObject({
+      outcome: "environment-not-used",
+      connector: { connectorSlug: "aws" },
+      environmentNames: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+    });
   });
 
   it("ignores stale stored connectors that are absent from the catalog", async () => {
