@@ -369,6 +369,8 @@ def create_response_parser(
     if _HTTP_STATUS_OK_MIN <= status_code < _HTTP_STATUS_REDIRECT_MIN:
         # Use the dispatcher-required original URL so parser registration and
         # final request metadata cannot diverge.
+        # Pinned Python 3.14 urlparse uses uncached _urlsplit, avoiding urlsplit's LRU.
+        # Keep its final-segment semicolon handling for exact path classification.
         stream_path = urllib.parse.urlparse(original_url).path
         if is_stream_path(stream_path):
             extractor = _NdjsonExtractor(on_row)

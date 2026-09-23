@@ -201,6 +201,8 @@ def _parse_request_metadata(original_url: str) -> dict:
     Parses the dispatcher-required original URL rather than ``pretty_url`` to
     stay consistent with the rest of the addon.
     """
+    # Pinned Python 3.14 urlparse uses uncached _urlsplit, avoiding urlsplit's LRU.
+    # Keep its final-segment semicolon handling for exact path classification.
     return {"is_count_endpoint": _is_count_path(urllib.parse.urlparse(original_url).path)}
 
 
@@ -293,6 +295,8 @@ def _parse_request_query_fallback_hints(original_url: str) -> dict:
 
     Returns ``request_ids_count`` and ``max_results``.
     """
+    # Pinned Python 3.14 urlparse uses uncached _urlsplit, avoiding urlsplit's LRU.
+    # Keep its final-segment semicolon handling for endpoint policy matching.
     policy = _request_fallback_hint_policy_for_path(urllib.parse.urlparse(original_url).path)
     if policy is None:
         return _empty_request_query_fallback_hints()
@@ -628,6 +632,8 @@ def create_response_parser(
     flow: http.HTTPFlow, original_url: str
 ) -> ConnectorResponseParser | None:
     """Compose validated stream observations with the existing X billing policy."""
+    # Pinned Python 3.14 urlparse uses uncached _urlsplit, avoiding urlsplit's LRU.
+    # Keep its final-segment semicolon handling for exact stream classification.
     if is_stream_path(urllib.parse.urlparse(original_url).path):
         flow.metadata[metadata_keys.X_RESOURCE_STREAM_REPORTED] = True
 
@@ -830,6 +836,8 @@ def _report_usage(
             "quantity": qty,
         }
         if method == "GET" and category in {"posts.read", "user.read"}:
+            # Pinned Python 3.14 urlparse uses uncached _urlsplit, avoiding urlsplit's LRU.
+            # Keep its final-segment semicolon handling for resource path attribution.
             event = resource_event(
                 event,
                 resp_meta,

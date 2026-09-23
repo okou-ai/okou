@@ -785,6 +785,7 @@ def aws_sigv4_request_requires_body_for_signing(flow: http.HTTPFlow) -> bool:
 def _request_path_query(flow: http.HTTPFlow) -> str:
     if has_unsafe_runtime_url_syntax(flow.request.path, allow_backslash=True):
         raise ValueError("unsafe request target")
+    # Pinned Python 3.14 urlparse uses uncached _urlsplit, avoiding urlsplit's LRU.
     return urllib.parse.urlparse(flow.request.path).query
 
 

@@ -34,6 +34,7 @@ def fallback_host_port(flow: http.HTTPFlow, original_url: str) -> tuple[str, int
     ``ValueError``, fall back to the request's pretty host and port together.
     """
     try:
+        # Pinned Python 3.14 urlparse uses uncached _urlsplit, avoiding urlsplit's LRU.
         parsed_url = urllib.parse.urlparse(original_url)
         host = parsed_url.hostname or flow.request.pretty_host
         parsed_port = parsed_url.port
