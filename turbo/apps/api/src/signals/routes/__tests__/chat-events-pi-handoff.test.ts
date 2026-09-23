@@ -9,7 +9,10 @@ import {
   piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { PI_AGENT_RUNTIME_VERSION } from "@okouai/pi-agent-runtime";
+import {
+  PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
+} from "@okouai/pi-agent-runtime";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -516,6 +519,8 @@ describe("CHAT-02: model-first provider policies", () => {
               sandboxEventSequenceStart: 1,
               requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
               minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+              requiredPiSessionConstructionDigest:
+                PI_SESSION_CONSTRUCTION_DIGEST,
             },
           },
         });

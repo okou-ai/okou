@@ -673,6 +673,10 @@ export default [
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
       "src/signals/services/__tests__/pi-resource-snapshot.service.test.ts",
+      // The API-owned first-turn projection has no endpoint that returns its
+      // private execution context. Route tests cover the queued launch config;
+      // this focused check preserves the digest across the projection itself.
+      "src/signals/services/__tests__/pi-api-first-turn-config.test.ts",
       // Stable-context projection bytes are shared with persisted artifacts,
       // while PostgreSQL generation/CAS and lease races have no production
       // endpoint that can construct or observe their exact transition matrix.
