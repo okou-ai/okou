@@ -5,6 +5,7 @@ import type {
   TestTeamsStatePostResponse,
   TestTeamsStateResponse,
 } from "@okouai/api-contracts/contracts/test-teams-state";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -16,6 +17,7 @@ import { testTeamsDispatchProbeRoutes } from "../test-teams-dispatch-probe";
 import { testTeamsStateRoutes } from "../test-teams-state";
 import { createFixtureTracker } from "./helpers/route-test";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const TEAMS_STATE_ROUTE = "/api/test/teams-state";
@@ -127,6 +129,13 @@ async function seedTeamsFixture(
     defaultAgentId: body.default_agent_id,
   };
   await trackTeamsFixture(Promise.resolve(fixture));
+  // Teams dispatch diagnostics assert the queued Runner path. The default
+  // model now has a Pi route, so keep this fixture on its intended path.
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: fixture.userId, orgId: fixture.orgId, orgRole: "org:admin" },
+    { [FeatureSwitchKey.PiLoop]: false },
+  );
   return fixture;
 }
 

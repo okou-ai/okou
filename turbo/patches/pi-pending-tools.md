@@ -1,11 +1,29 @@
-# Pi 0.86.1 pending-tool integration
+# Pi 0.87.1 pending-tool integration
 
 `AgentSession.continuePendingTools()` is a local additive API, paired with
 `Agent.continuePendingTools()` and their declarations. Upstream `continue()`
 and both low-level continuation APIs reject a trailing assistant; consuming
 queued input is not an equivalent handoff. Keep the version pinned at exactly
-0.86.1; the three patches are based on the official npm distribution for that
-version, not a replacement copy of the 0.85.1 loop.
+0.87.1; the three patches are based on the official npm distribution for that
+version.
+
+## 0.87.1 rebase and model admission
+
+Pi 0.87.1 adds native catalog entries for Claude Opus 5.5, GPT 6 Sol and GPT 6
+Luna. The core patch retains unresolved-tool continuation while preserving
+0.87's `prepareRequest` and `finishTurn` boundaries. A resumed assistant skips
+both request preparation and streaming, then runs the pending tools through the
+ordinary turn-finish decision. The coding-agent patch retains its queued
+follow-up notification; the upstream queue gained `peek()` but still needs the
+local `remove()` used by the patched Agent settlement path. The pi-ai patch
+applies unchanged in behavior to the 0.87.1 package.
+
+The 0.87 release also introduced `context_edit` session entries and made the
+SessionManager's projected context authoritative. An older reader can parse
+these JSONL records but does not apply their context edits, so a rollback may
+restore abandoned model attempts to provider context. Release and rollback
+must follow [deployment compatibility](../../docs/deployment-compatibility.md);
+the tests below do not prove a production rollback is safe.
 
 The entrypoint validates the current assistant and its unresolved calls, then
 claims native Agent ownership before session startup acknowledgement or any
