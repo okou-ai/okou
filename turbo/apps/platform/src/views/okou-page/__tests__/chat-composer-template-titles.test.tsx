@@ -48,7 +48,7 @@ async function expectTitleHint(title: string): Promise<void> {
   });
 }
 
-test("A built-in title hint follows caption hover without opening a preview", async () => {
+test("A built-in title hint follows caption hover", async () => {
   mockTemplateChat();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   if (!template) {
@@ -81,7 +81,7 @@ test("A built-in title hint follows caption hover without opening a preview", as
   });
 });
 
-test("Built-in title hints follow keyboard navigation between preview controls", async () => {
+test("Built-in title hints follow keyboard navigation", async () => {
   mockTemplateChat();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   const nextTemplate = PRESENTATION_TEMPLATE_PICKER_ITEMS[1];
@@ -103,6 +103,7 @@ test("Built-in title hints follow keyboard navigation between preview controls",
     `Select template ${template.title}`,
   );
 
+  await user.click(tabByText("Presentation"));
   await tabTo(user, preview);
   await expectTitleHint(template.title);
   expect(preview).toHaveAccessibleName(previewLabel);

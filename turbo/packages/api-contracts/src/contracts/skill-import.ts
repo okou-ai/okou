@@ -23,7 +23,7 @@ const c = initContract();
  */
 
 /** Session token lifetime, mirrored in the session response's `expiresAt`. */
-export const SKILL_IMPORT_SESSION_TTL_SECONDS = 60 * 60;
+export const SKILL_IMPORT_SESSION_TTL_SECONDS = 24 * 60 * 60;
 
 /**
  * Upload limits for one session. They are returned with the session so the
