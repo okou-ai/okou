@@ -514,4 +514,22 @@ test("deduplicated lookup routes by both raw and unique request counts", async (
   if (await prefetchFixture(versionedFixture)) {
     throw new Error("Expected fallback for 52 versions of one object key");
   }
+  const [wrongScope, expired, missing] = fixture.rows;
+  if (!wrongScope || !expired || !missing) {
+    throw new Error("Incomplete duplicate cache fixture");
+  }
+  const db = store.set(writeDb$);
+  const expiredAt = new Date(nowDate().getTime() - 60_000);
+  await db
+    .update(systemStoragePresignedUrlCache)
+    .set({ scope: "readonly_storage" })
+    .where(eq(systemStoragePresignedUrlCache.cacheKey, wrongScope.cacheKey));
+  await db
+    .update(systemStoragePresignedUrlCache)
+    .set({ expiresAt: expiredAt, refreshAfter: expiredAt })
+    .where(eq(systemStoragePresignedUrlCache.cacheKey, expired.cacheKey));
+  await db
+    .delete(systemStoragePresignedUrlCache)
+    .where(eq(systemStoragePresignedUrlCache.cacheKey, missing.cacheKey));
+  await resolveFixture(repeatedFixture(fixture, 96), true, 3);
 });

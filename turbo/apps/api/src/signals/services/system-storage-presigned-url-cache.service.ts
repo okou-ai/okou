@@ -793,6 +793,7 @@ function recordStorageManifestPrefetchDecision(args: {
 
 function storageManifestPresignedUrlCacheLookupPairs(
   input: StorageManifestPresignedUrlCachePrefetchInput,
+  memoizeByValue: boolean,
 ): {
   readonly pairs: readonly StorageManifestPresignedUrlCacheLookupPair[];
   readonly cacheKeysByRequest: StorageManifestPresignedUrlCacheSnapshot["cacheKeysByRequest"];
@@ -803,6 +804,33 @@ function storageManifestPresignedUrlCacheLookupPairs(
   >();
   const cacheKeysByRequest: StorageManifestPresignedUrlCacheSnapshot["cacheKeysByRequest"] =
     new WeakMap();
+  const cacheKeysByValue = memoizeByValue
+    ? new Map<string, string>()
+    : undefined;
+  const lookupCacheKey = <TRequest extends SystemStoragePresignedUrlRequest>(
+    scope: StorageManifestPresignedUrlCacheScope,
+    request: TRequest,
+    calculate: (value: TRequest) => string,
+  ): string => {
+    if (!cacheKeysByValue) {
+      return calculate(request);
+    }
+    const signature = JSON.stringify([
+      scope,
+      request.bucket,
+      request.objectKey,
+      request.storageVersionId,
+      "resolvedOrgId" in request ? request.resolvedOrgId : null,
+      request.publicEndpoint,
+    ]);
+    const cached = cacheKeysByValue.get(signature);
+    if (cached) {
+      return cached;
+    }
+    const cacheKey = calculate(request);
+    cacheKeysByValue.set(signature, cacheKey);
+    return cacheKey;
+  };
   const add = (
     scope: StorageManifestPresignedUrlCacheScope,
     request: object,
@@ -814,20 +842,36 @@ function storageManifestPresignedUrlCacheLookupPairs(
     cacheKeysByRequest.set(request, { scope, cacheKey });
   };
   for (const request of input.systemRequests) {
-    add("system_storage", request, systemStoragePresignedUrlCacheKey(request));
+    add(
+      "system_storage",
+      request,
+      lookupCacheKey(
+        "system_storage",
+        request,
+        systemStoragePresignedUrlCacheKey,
+      ),
+    );
   }
   for (const request of input.workflowSkillRequests) {
     add(
       "workflow_skill_storage",
       request,
-      workflowSkillStoragePresignedUrlCacheKey(request),
+      lookupCacheKey(
+        "workflow_skill_storage",
+        request,
+        workflowSkillStoragePresignedUrlCacheKey,
+      ),
     );
   }
   for (const request of input.readOnlyRequests) {
     add(
       "readonly_storage",
       request,
-      readOnlyStoragePresignedUrlCacheKey(request),
+      lookupCacheKey(
+        "readonly_storage",
+        request,
+        readOnlyStoragePresignedUrlCacheKey,
+      ),
     );
   }
   const pairs = [...cacheKeysByScope]
@@ -911,7 +955,10 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       return undefined;
     }
     const { pairs, cacheKeysByRequest } =
-      storageManifestPresignedUrlCacheLookupPairs(args.input);
+      storageManifestPresignedUrlCacheLookupPairs(
+        args.input,
+        requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS,
+      );
     if (pairs.length === 0) {
       recordStorageManifestPrefetchDecision({
         observation: args.observation,
