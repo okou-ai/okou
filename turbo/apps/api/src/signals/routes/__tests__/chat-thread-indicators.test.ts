@@ -133,24 +133,20 @@ function client() {
   return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
 }
 
-describe("GET /api/chat-thread-unreads", () => {
-  it("lists canonical unread rows for an Okou token without changing read state", async () => {
+describe("GET /api/indicators", () => {
+  it("reports unread timestamps for an Okou token without changing read state", async () => {
     prepareChatRuntime();
     const actor = bdd.user();
-    const agentId = await createEntitledAgent(actor, "Unread route agent");
-    const emptyAgent = await bdd.createAgent(actor, {
-      displayName: "Empty unread route agent",
-      visibility: "private",
-    });
+    const agentId = await createEntitledAgent(actor, "Unread indicator agent");
     const unread = await createCancelledThread({
       actor,
       agentId,
-      prompt: "Unread route thread",
+      prompt: "Unread indicator thread",
     });
     const read = await createCancelledThread({
       actor,
       agentId,
-      prompt: "Read route thread",
+      prompt: "Read indicator thread",
     });
     await chat.markThreadRead(actor, read.threadId);
     await seedMembership(actor);
@@ -166,32 +162,11 @@ describe("GET /api/chat-thread-unreads", () => {
     };
 
     const indicators = await accept(client().indicators({ headers }), [200]);
-    expect(indicators.body.threads[unread.threadId]).toBe("unread");
-    expect(indicators.body.unreadAt).toStrictEqual({
-      [unread.threadId]: unread.unreadAt,
+    expect(indicators.body).toStrictEqual({
+      agents: { [agentId]: "unread" },
+      threads: { [unread.threadId]: "unread" },
+      unreadAt: { [unread.threadId]: unread.unreadAt },
     });
-
-    await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
-      [unread],
-    );
-    const first = await accept(
-      client().unreads({ headers, query: { agentId } }),
-      [200],
-    );
-    expect(first.body.unreads).toStrictEqual([unread]);
-    const repeated = await accept(
-      client().unreads({ headers, query: { agentId } }),
-      [200],
-    );
-    expect(repeated.body).toStrictEqual(first.body);
-    const empty = await accept(
-      client().unreads({
-        headers,
-        query: { agentId: emptyAgent.agentId },
-      }),
-      [200],
-    );
-    expect(empty.body.unreads).toStrictEqual([]);
     await expect(
       chat.readThread(actor, unread.threadId),
     ).resolves.toMatchObject({ lastReadAt: before.unread });
@@ -200,13 +175,8 @@ describe("GET /api/chat-thread-unreads", () => {
     });
   });
 
-  it("returns the standard capability error for an Okou token without chat-thread:read", async () => {
+  it("requires chat-thread:read for Okou tokens", async () => {
     const actor = bdd.user();
-    bdd.acceptAgentStorageWrites();
-    const agent = await bdd.createAgent(actor, {
-      displayName: "Unread capability agent",
-      visibility: "private",
-    });
     await seedMembership(actor);
     const token = okouToken({ actor, capabilities: ["chat-event:read"] });
 
@@ -222,32 +192,21 @@ describe("GET /api/chat-thread-unreads", () => {
         code: "FORBIDDEN",
       },
     });
-
-    const response = await accept(
-      client().unreads({
-        headers: { authorization: `Bearer ${token}` },
-        query: { agentId: agent.agentId },
-      }),
-      [403],
-    );
-    expect(response.body).toStrictEqual({
-      error: {
-        message: "Missing required capability: chat-thread:read",
-        code: "FORBIDDEN",
-      },
-    });
   });
 
-  it("scopes caller-supplied Agent IDs to the token user and organization", async () => {
+  it("scopes unread indicators to the token user and organization", async () => {
     prepareChatRuntime();
     const owner = bdd.user();
     const peer = bdd.user({ orgId: orgIdOf(owner) });
     const otherOrg = bdd.user({ userId: owner.userId });
-    const ownerAgentId = await createEntitledAgent(owner, "Unread owner agent");
-    const peerAgentId = await createEntitledAgent(peer, "Unread peer agent");
+    const ownerAgentId = await createEntitledAgent(
+      owner,
+      "Owner indicator agent",
+    );
+    const peerAgentId = await createEntitledAgent(peer, "Peer indicator agent");
     const otherOrgAgentId = await createEntitledAgent(
       otherOrg,
-      "Unread other organization agent",
+      "Other organization indicator agent",
     );
     const ownerUnread = await createCancelledThread({
       actor: owner,
@@ -274,17 +233,11 @@ describe("GET /api/chat-thread-unreads", () => {
       })}`,
     };
 
-    const own = await accept(
-      client().unreads({ headers, query: { agentId: ownerAgentId } }),
-      [200],
-    );
-    expect(own.body.unreads).toStrictEqual([ownerUnread]);
-    for (const agentId of [peerAgentId, otherOrgAgentId, randomUUID()]) {
-      const isolated = await accept(
-        client().unreads({ headers, query: { agentId } }),
-        [200],
-      );
-      expect(isolated.body.unreads).toStrictEqual([]);
-    }
+    const indicators = await accept(client().indicators({ headers }), [200]);
+    expect(indicators.body).toStrictEqual({
+      agents: { [ownerAgentId]: "unread" },
+      threads: { [ownerUnread.threadId]: "unread" },
+      unreadAt: { [ownerUnread.threadId]: ownerUnread.unreadAt },
+    });
   });
 });

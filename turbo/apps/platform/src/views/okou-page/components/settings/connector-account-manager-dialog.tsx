@@ -364,10 +364,7 @@ function AccountsCard({
     <RadioGroup
       value={defaultConnection?.id ?? null}
       // The row radios post their own change; RadioGroup only owns grouping.
-      className="overflow-hidden rounded-xl bg-card"
-      style={{
-        border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-      }}
+      className="overflow-hidden rounded-xl bg-card border border-surface-border"
     >
       {rows.map((account, index) => {
         return (

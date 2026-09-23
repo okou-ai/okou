@@ -506,6 +506,28 @@ impl JobTelemetry {
         self.push_operation(op);
     }
 
+    /// Record a storage-apply call using only fixed transport/position and
+    /// serialized-manifest-size labels. The manifest and its identifiers never
+    /// enter this operation.
+    pub(crate) fn record_storage_apply_batch(
+        &mut self,
+        duration: Duration,
+        success: bool,
+        transport_position: &'static str,
+        manifest_size_bucket: &'static str,
+    ) {
+        let mut op = sandbox_op(
+            "runner_storage_manifest_batch_apply",
+            duration,
+            success,
+            (!success).then_some("storage_batch_apply_failed"),
+            Some(transport_position),
+            None,
+        );
+        op.reason = Some(manifest_size_bucket.to_string());
+        self.push_operation(op);
+    }
+
     /// Record a timed operation with low-cardinality session-history transport
     /// dimensions derived from the hash-backed resume history ref.
     pub fn record_with_session_history_metadata(

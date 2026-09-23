@@ -243,12 +243,16 @@ second transaction compares the complete
 provider, active selection, account identities, secret IDs and ciphertext
 bundle; a winning write, activation or deletion discards the delayed result.
 Exact environment preparation reuses the existing coordinator's completed
-account, selected model and encrypted account-secret rows. It retains the initial
-scoped account lookup and filters the completed inventory by the fixed
-ID/org/user/type and connected state, including connected inactive accounts.
-The coherent fragment uses five SQL statements instead of the original nine,
-excluding transaction control. Metadata-only Codex reconciliation supplies its updated
-account through `UPDATE RETURNING`. After a legacy import, this data reader
+account, selected model and encrypted account-secret rows. A new run with a
+request-local captured ID/type/org/user enters the fresh locked coordinator
+without another scoped account lookup. The coordinator rejects a missing or
+disconnected fixed source before reading secrets or reconciling, then filters the completed
+inventory by the same ID/org/user/type and connected state, including connected
+inactive accounts. Other callers and retained runs retain their initial exact
+account lookup. The coherent captured fragment uses four SQL statements; the
+uncaptured fragment uses five, excluding transaction control. Metadata-only
+Codex reconciliation supplies its updated account through `UPDATE RETURNING`.
+After a legacy import, this data reader
 refreshes the inventory inside the same transaction; it never returns the
 pre-import account or secrets. Compared with the account-only post-import read,
 that exceptional refresh adds three statements while replacing the three later
@@ -356,10 +360,12 @@ admission proof retain their independent validation boundaries.
 
 The #35234 batching reduces each initialized snapshot from five statements to
 four. Across concrete capture, exact environment preparation, fresh admission
-snapshot and final validation, the measured fragments therefore use 18 instead
-of 22 statements (19 instead of 23 for explicit logical-provider capture).
-These totals exclude transaction control and unrelated request work; none of
-the four consistency boundaries is removed. See the
+snapshot and final validation, its uncaptured fragments use 18 instead of 22
+statements (19 instead of 23 for explicit logical-provider capture). Passing the
+new request-local captured identity skips one more exact account lookup, giving
+17 normal statements (18 for explicit logical-provider capture). These totals
+exclude transaction control and unrelated request work; none of the four
+consistency boundaries is removed. See the
 [finite coordination experiment](subscription-coordination-experiment.md) for
 matched stage measurements, generated-query evidence and interpretation limits.
 

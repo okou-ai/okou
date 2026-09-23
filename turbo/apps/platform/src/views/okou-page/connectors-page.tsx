@@ -896,9 +896,8 @@ function ConnectorsDirectoryToolbar({
     // top padding and column gap so nothing moves until the page is scrolled,
     // and the strip under the controls dissolves what passes beneath them
     // rather than clipping it on a line.
-    // z-30 clears the cards: their access buttons carry `relative z-20` in the
-    // same stacking context, and on a tie the later element in the document
-    // wins, so a z-20 bar would have the card's button painted over it.
+    // z-30 keeps the toolbar above complete card stacking contexts at the page
+    // level. Each card owns the ordering of its actions within its isolate host.
     // The padding the strip carries is the clearance the segment gets once the
     // strip is latched, so it is the page's 24px rather than the 12px the
     // controls keep between themselves -- a gap equal to the one inside the
