@@ -517,16 +517,24 @@ function clerkCoreScript(html) {
   return script;
 }
 
-function assertBootstrapAvatar(html) {
-  assert.doesNotMatch(html, /app-bootstrap-skeleton__avatar-placeholder/u);
-  const avatar =
-    /<svg\b[^>]*class="app-bootstrap-skeleton__avatar-layers"[^>]*>[\s\S]*?<\/svg>/iu.exec(
-      html,
-    )?.[0];
-  assert.ok(avatar, "bootstrap avatar must remain inline");
-  assert.equal(parseAttributes(avatar).get("viewBox"), "0 0 518 512");
-  assert.equal([...avatar.matchAll(/<path\b/giu)].length, 20);
-  assert.doesNotMatch(html, /data-app-bootstrap-avatar-layer/u);
+function assertBootstrapWordmark(html) {
+  assert.match(
+    html,
+    /--app-skeleton-wordmark:\s*url\("\.\/scripts\/app-skeleton-assets\/wordmark-sprite\.webp\?inline"\)/u,
+  );
+  assert.match(
+    html,
+    /<div\b[^>]*class="app-bootstrap-skeleton__wordmark"[^>]*aria-hidden="true"[^>]*>/iu,
+  );
+  assert.equal(
+    [...html.matchAll(/class="app-bootstrap-skeleton__letter"/gu)].length,
+    4,
+  );
+  assert.equal(
+    [...html.matchAll(/class="app-bootstrap-skeleton__glyph"/gu)].length,
+    4,
+  );
+  assert.doesNotMatch(html, /app-bootstrap-skeleton__avatar/u);
   assert.doesNotMatch(html, /assets\/avatar-svg\//u);
 }
 
@@ -654,7 +662,7 @@ assert.equal(
   ),
   false,
 );
-assertBootstrapAvatar(okouPage.html);
+assertBootstrapWordmark(okouPage.html);
 assert.equal(clerkCoreScript(okouPage.html), expectedClerkCoreScript);
 assert.equal(clerkBootstrap(okouPage.html), expectedClerkBootstrap);
 
