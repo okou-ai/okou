@@ -21,10 +21,10 @@ index e2616c0..3a4896c 100644
  //# sourceMappingURL=agent-loop.d.ts.map
 \ No newline at end of file
 diff --git a/dist/agent-loop.js b/dist/agent-loop.js
-index 9da1651..745e6fd 100644
+index 4bbd0ce..20da356 100644
 --- a/dist/agent-loop.js
 +++ b/dist/agent-loop.js
-@@ -70,26 +70,52 @@ export async function runAgentLoopContinue(context, config, emit, signal, stream
+@@ -70,27 +70,53 @@ export async function runAgentLoopContinue(context, config, emit, signal, stream
      await runLoop(currentContext, newMessages, config, signal, emit, streamFn ?? getDefaultStreamFn());
      return newMessages;
  }
@@ -63,6 +63,7 @@ index 9da1651..745e6fd 100644
      let currentContext = initialContext;
      let config = initialConfig;
      let lastCompletedTurn;
+     let explicitContinuation = false;
      // Check for steering messages at start (user may have typed while waiting)
 -    let pendingMessages = (await config.getSteeringMessages?.()) || [];
 +    let pendingMessages = pendingTools ? [] : (await config.getSteeringMessages?.()) || [];
@@ -79,20 +80,19 @@ index 9da1651..745e6fd 100644
                  if (nextTurnSnapshot) {
                      currentContext = nextTurnSnapshot.context ?? currentContext;
                      preparedMessages = nextTurnSnapshot.messages ?? [];
-@@ -111,24 +137,31 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+@@ -112,34 +138,41 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
                  }
                  await emit({ type: "turn_start" });
              }
-+            // A handoff already persisted its assistant; only new messages emit/persist.
-+            const pending = pendingTools;
-+            pendingTools = undefined;
-             // Process prepared and queued messages before the next assistant response.
+-            // Process prepared and queued messages before the next assistant response.
 -            for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
 -                await emit({ type: "message_start", message });
 -                await emit({ type: "message_end", message });
 -                currentContext.messages.push(message);
 -                newMessages.push(message);
-+            // A resumed assistant issues no request, so it declares no tool changes.
++            // A handoff already persisted its assistant; only newly executed tools emit.
++            const pending = pendingTools;
++            pendingTools = undefined;
 +            if (!pending) {
 +                for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
 +                    await emit({ type: "message_start", message });
@@ -102,15 +102,52 @@ index 9da1651..745e6fd 100644
 +                }
              }
              pendingMessages = [];
+-            const requestUpdate = await config.prepareRequest?.({
+-                context: currentContext,
+-                model: config.model,
+-                thinkingLevel: config.reasoning ?? "off",
+-            }, signal);
+-            if (requestUpdate) {
+-                currentContext = requestUpdate.context ?? currentContext;
+-                config = {
+-                    ...config,
+-                    model: requestUpdate.model ?? config.model,
+-                    reasoning: requestUpdate.thinkingLevel === undefined
+-                        ? config.reasoning
+-                        : requestUpdate.thinkingLevel === "off"
+-                            ? undefined
+-                            : requestUpdate.thinkingLevel,
+-                };
 +            signal?.throwIfAborted();
-             // Stream assistant response
++            if (!pending) {
++                const requestUpdate = await config.prepareRequest?.({
++                    context: currentContext,
++                    model: config.model,
++                    thinkingLevel: config.reasoning ?? "off",
++                }, signal);
++                signal?.throwIfAborted();
++                if (requestUpdate) {
++                    currentContext = requestUpdate.context ?? currentContext;
++                    config = {
++                        ...config,
++                        model: requestUpdate.model ?? config.model,
++                        reasoning: requestUpdate.thinkingLevel === undefined
++                            ? config.reasoning
++                            : requestUpdate.thinkingLevel === "off"
++                                ? undefined
++                                : requestUpdate.thinkingLevel,
++                    };
++                }
+             }
+-            // Stream assistant response
 -            const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
 -            newMessages.push(message);
 +            const message = pending?.assistant ?? await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
 +            if (!pending) newMessages.push(message);
              if (message.stopReason === "error" || message.stopReason === "aborted") {
-                 await emit({ type: "turn_end", message, toolResults: [] });
-                 await emit({ type: "agent_end", messages: newMessages });
+                 lastCompletedTurn = {
+                     message,
+@@ -153,7 +186,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
                  return;
              }
              // Check for tool calls
@@ -119,7 +156,7 @@ index 9da1651..745e6fd 100644
              const toolResults = [];
              hasMoreToolCalls = false;
              if (toolCalls.length > 0) {
-@@ -137,7 +170,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+@@ -162,7 +195,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
                  // them all instead of executing potentially borked calls.
                  const executedToolBatch = message.stopReason === "length"
                      ? await failToolCallsFromTruncatedMessage(toolCalls, emit)
@@ -128,26 +165,28 @@ index 9da1651..745e6fd 100644
                  toolResults.push(...executedToolBatch.messages);
                  hasMoreToolCalls = !executedToolBatch.terminate;
                  for (const result of toolResults) {
-@@ -146,6 +179,7 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
-                 }
-             }
-             await emit({ type: "turn_end", message, toolResults });
+@@ -177,17 +210,20 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+                 newMessages,
+             };
+             const decision = await config.finishTurn?.(lastCompletedTurn, signal);
 +            signal?.throwIfAborted();
-             lastCompletedTurn = {
-                 message,
-                 toolResults,
-@@ -156,8 +190,10 @@ async function runLoop(initialContext, newMessages, initialConfig, signal, emit,
+             await emit({ type: "turn_end", message, toolResults });
+             if (decision?.action === "end") {
                  await emit({ type: "agent_end", messages: newMessages });
                  return;
              }
+             explicitContinuation = decision?.action === "continue";
 +            signal?.throwIfAborted();
              pendingMessages = (await config.getSteeringMessages?.()) || [];
+             if (hasMoreToolCalls || pendingMessages.length > 0) {
+                 explicitContinuation = false;
+             }
          }
 +        signal?.throwIfAborted();
          // Agent would stop here. Check for follow-up messages.
          const followUpMessages = (await config.getFollowUpMessages?.()) || [];
          if (followUpMessages.length > 0) {
-@@ -222,16 +258,20 @@ function withToolChanges(message, { toolsAdded, toolsRemoved }) {
+@@ -258,16 +294,20 @@ function withToolChanges(message, { toolsAdded, toolsRemoved }) {
   * This is where AgentMessage[] gets transformed to Message[] for the LLM.
   */
  async function streamAssistantResponse(context, config, signal, emit, streamFunction) {
@@ -168,7 +207,7 @@ index 9da1651..745e6fd 100644
      const response = await streamFunction(config.model, llmContext, {
          ...config,
          apiKey: resolvedApiKey,
-@@ -325,8 +365,7 @@ async function failToolCallsFromTruncatedMessage(toolCalls, emit) {
+@@ -361,8 +401,7 @@ async function failToolCallsFromTruncatedMessage(toolCalls, emit) {
  /**
   * Execute tool calls from an assistant message.
   */
@@ -178,7 +217,7 @@ index 9da1651..745e6fd 100644
      const hasSequentialToolCall = toolCalls.some((tc) => currentContext.tools?.find((t) => t.name === tc.name)?.executionMode === "sequential");
      if (config.toolExecution === "sequential" || hasSequentialToolCall) {
          return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
-@@ -412,7 +451,7 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
+@@ -448,7 +487,7 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
              break;
          }
      }
@@ -187,7 +226,7 @@ index 9da1651..745e6fd 100644
      const messages = [];
      for (const finalized of orderedFinalizedCalls) {
          const toolResultMessage = createToolResultMessage(finalized);
-@@ -424,6 +463,14 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
+@@ -460,6 +499,14 @@ async function executeToolCallsParallel(currentContext, assistantMessage, toolCa
          terminate: shouldTerminateToolBatch(orderedFinalizedCalls),
      };
  }
@@ -202,7 +241,7 @@ index 9da1651..745e6fd 100644
  function shouldTerminateToolBatch(finalizedCalls) {
      return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
  }
-@@ -450,6 +497,7 @@ async function prepareToolCall(currentContext, assistantMessage, toolCall, confi
+@@ -486,6 +533,7 @@ async function prepareToolCall(currentContext, assistantMessage, toolCall, confi
          };
      }
      try {
@@ -210,7 +249,7 @@ index 9da1651..745e6fd 100644
          const preparedToolCall = prepareToolCallArguments(tool, toolCall);
          const validatedArgs = validateToolArguments(tool, preparedToolCall);
          if (config.beforeToolCall) {
-@@ -504,6 +552,7 @@ async function executePreparedToolCall(prepared, signal, emit) {
+@@ -540,6 +588,7 @@ async function executePreparedToolCall(prepared, signal, emit) {
      const updateEvents = [];
      let acceptingUpdates = true;
      try {
@@ -218,7 +257,7 @@ index 9da1651..745e6fd 100644
          const result = await prepared.tool.execute(prepared.toolCall.id, prepared.args, signal, (partialResult) => {
              if (!acceptingUpdates)
                  return;
-@@ -516,12 +565,12 @@ async function executePreparedToolCall(prepared, signal, emit) {
+@@ -552,12 +601,12 @@ async function executePreparedToolCall(prepared, signal, emit) {
              })));
          });
          acceptingUpdates = false;
@@ -234,10 +273,10 @@ index 9da1651..745e6fd 100644
              result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
              isError: true,
 diff --git a/dist/agent.d.ts b/dist/agent.d.ts
-index d5f93a8..1d2ea36 100644
+index 59ec7e8..90ae67c 100644
 --- a/dist/agent.d.ts
 +++ b/dist/agent.d.ts
-@@ -86,6 +86,7 @@ export declare class Agent {
+@@ -88,6 +88,7 @@ export declare class Agent {
      steer(message: AgentMessage): void;
      /** Queue a message to run only after the agent would otherwise stop. */
      followUp(message: AgentMessage): void;
@@ -245,7 +284,7 @@ index d5f93a8..1d2ea36 100644
      /** Remove all queued steering messages. */
      clearSteeringQueue(): void;
      /** Remove all queued follow-up messages. */
-@@ -111,6 +112,16 @@ export declare class Agent {
+@@ -115,6 +116,16 @@ export declare class Agent {
      prompt(input: string, images?: ImageContent[]): Promise<void>;
      /** Continue from the current transcript. The last message must be a user or tool-result message. */
      continue(): Promise<void>;
@@ -263,7 +302,7 @@ index d5f93a8..1d2ea36 100644
      private runPromptMessages;
      private runContinuation;
 diff --git a/dist/agent.js b/dist/agent.js
-index 209c9d3..61bfa6b 100644
+index a2f462f..c724850 100644
 --- a/dist/agent.js
 +++ b/dist/agent.js
 @@ -1,5 +1,5 @@
@@ -273,20 +312,17 @@ index 209c9d3..61bfa6b 100644
  import { getDefaultStreamFn } from "./stream-fn.js";
  function defaultConvertToLlm(messages) {
      return messages.filter((message) => message.role === "system" ||
-@@ -69,6 +69,12 @@ class PendingMessageQueue {
-     hasItems() {
-         return this.messages.length > 0;
+@@ -75,6 +75,9 @@ class PendingMessageQueue {
+         const first = this.messages[0];
+         return first ? [first] : [];
      }
-+    peek() {
-+        return this.mode === "all" ? this.messages.slice() : this.messages.slice(0, 1);
-+    }
 +    remove(message) {
 +        this.messages = this.messages.filter((queued) => queued !== message);
 +    }
      drain() {
-         if (this.mode === "all") {
-             const drained = this.messages.slice();
-@@ -180,12 +186,19 @@ export class Agent {
+         const drained = this.peek();
+         this.messages = this.messages.slice(drained.length);
+@@ -180,12 +183,19 @@ export class Agent {
      }
      /** Queue a message to be injected after the current assistant turn finishes. */
      steer(message) {
@@ -306,7 +342,7 @@ index 209c9d3..61bfa6b 100644
      /** Remove all queued steering messages. */
      clearSteeringQueue() {
          this.steeringQueue.clear();
-@@ -209,7 +222,7 @@ export class Agent {
+@@ -214,7 +224,7 @@ export class Agent {
      }
      /** Abort the current run, if one is active. */
      abort() {
@@ -315,7 +351,7 @@ index 209c9d3..61bfa6b 100644
      }
      /**
       * Resolve when the current run and all awaited event listeners have finished.
-@@ -264,6 +277,53 @@ export class Agent {
+@@ -269,6 +279,53 @@ export class Agent {
          }
          await this.runContinuation();
      }
@@ -369,7 +405,7 @@ index 209c9d3..61bfa6b 100644
      normalizePromptInput(input, images) {
          if (Array.isArray(input)) {
              return input;
-@@ -327,12 +387,14 @@ export class Agent {
+@@ -330,12 +387,14 @@ export class Agent {
                      skipInitialSteeringPoll = false;
                      return [];
                  }
@@ -387,7 +423,7 @@ index 209c9d3..61bfa6b 100644
          if (this.activeRun) {
              throw new Error("Agent is already processing.");
          }
-@@ -341,7 +403,7 @@ export class Agent {
+@@ -344,7 +403,7 @@ export class Agent {
          const promise = new Promise((resolve) => {
              resolvePromise = resolve;
          });
@@ -396,7 +432,7 @@ index 209c9d3..61bfa6b 100644
          this._state.isStreaming = true;
          this._state.streamingMessage = undefined;
          this._state.errorMessage = undefined;
-@@ -352,7 +414,38 @@ export class Agent {
+@@ -355,7 +414,38 @@ export class Agent {
              await this.handleRunFailure(error, abortController.signal.aborted);
          }
          finally {
@@ -436,7 +472,7 @@ index 209c9d3..61bfa6b 100644
          }
      }
      async handleRunFailure(error, aborted) {
-@@ -397,6 +490,8 @@ export class Agent {
+@@ -400,6 +490,8 @@ export class Agent {
              case "message_end":
                  this._state.streamingMessage = undefined;
                  this._state.messages.push(event.message);

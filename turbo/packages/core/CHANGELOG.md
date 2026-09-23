@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.703.1](https://github.com/okou-ai/okou/compare/core-v8.703.0...core-v8.703.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* prefer installed okou cli in agent instructions ([#36298](https://github.com/okou-ai/okou/issues/36298)) ([39f8244](https://github.com/okou-ai/okou/commit/39f8244b068c71322bf4803b3af23e50012ba348))
+
+
+### Performance Improvements
+
+* **api:** attribute admission lock time by attempt ([#36280](https://github.com/okou-ai/okou/issues/36280)) ([2d2846b](https://github.com/okou-ai/okou/commit/2d2846bfcc33afaf5e6a66117d561906dec9a470))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.1
+
 ## [8.703.0](https://github.com/okou-ai/okou/compare/core-v8.702.1...core-v8.703.0) (2026-09-23)
 
 

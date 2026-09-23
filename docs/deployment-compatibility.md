@@ -67,6 +67,24 @@ processing due work. Qualification checks the Clerk membership and rollout
 boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
 recreated. No schema migration is needed.
 
+## Pi 0.87.1 model admission (2026-09-23)
+
+The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
+`claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
+route those models through Pi when their existing product policy and PiLoop
+switch allow it. This change does not make a model newly addable to an
+organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
+because neither is in the US endpoint allowlist.
+
+New Pi starts require the matching commit-addressed CLI artifact. Older CLI
+artifacts pinned to Pi 0.86.1 cannot resolve these three catalog models. Queued
+and active runs keep their captured CLI URL and model configuration; do not
+rewrite those contexts during rollout. The 0.87.1 SDK also adds
+`context_edit` session entries. Older readers can parse their JSONL but do not
+apply those edits when reconstructing context, so a rollback to a 0.86.1 CLI
+must wait until affected sessions have drained or use a forward fix with an
+explicit reader compatibility check.
+
 ## Chat unread endpoint retirement (2026-09-23)
 
 API 1.662.0, App 0.948.0, and CLI 9.356.0 added unread timestamps to the

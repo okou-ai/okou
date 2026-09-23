@@ -183,6 +183,45 @@ describe("social collection checkpoints through the CLI", () => {
     },
   );
 
+  it("retains Instagram provider outcome through checkpoint resume", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests += 1;
+        const page = response(["one", "two"], "next");
+        const providerOutcome = {
+          collectionStatus: "partial",
+          stopReason: "requested_limit",
+        };
+        return HttpResponse.json({
+          ...page,
+          collection: { ...page.collection, providerOutcome },
+          result: { ...page.result, ...providerOutcome },
+        });
+      }),
+    );
+
+    const first = await start("1");
+    expect(first.code, first.errors).toBe(0);
+    expect(first.result).toHaveProperty(
+      "collection.providerOutcome.stopReason",
+      "requested_limit",
+    );
+    const resumed = await invoke([
+      "resume",
+      checkpoint,
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    expect(resumed.code, resumed.errors).toBe(0);
+    expect(resumed.result).toHaveProperty(
+      "collection.providerOutcome.stopReason",
+      "requested_limit",
+    );
+    expect(requests).toBe(1);
+  });
+
   it("exports one partial receipt and resumes the failed page", async () => {
     let requests = 0;
     server.use(

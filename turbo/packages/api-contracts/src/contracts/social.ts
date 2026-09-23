@@ -5,6 +5,7 @@ import {
   findManagedSocialKitTool,
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   MANAGED_SOCIALKIT_TOOLS,
+  socialKitInstagramCommentsOutcomeSchema,
   socialKitTranscriptErrorReasonSchema,
   socialKitCollectionSourceLimitSchema,
   type ManagedSocialKitTool,
@@ -24,6 +25,7 @@ export {
   MANAGED_SOCIALKIT_BILLING_CATEGORY,
   MANAGED_SOCIAL_UNSUPPORTED_CAPABILITIES,
   MANAGED_SOCIALKIT_TOOLS,
+  socialKitInstagramCommentsOutcomeSchema,
   SOCIALKIT_MAX_INPUT_VALUE_CHARS,
   SOCIALKIT_TRANSCRIPT_ERROR_CODES,
   socialKitTranscriptErrorReasonSchema,
@@ -47,6 +49,7 @@ export {
   type ManagedSocialUnsupportedCapability,
   type SocialKitTranscriptErrorCode,
   type SocialKitTranscriptErrorReason,
+  type SocialKitInstagramCommentsOutcome,
   type SocialKitRequest,
   type SocialKitCollectionSourceLimit,
 } from "./social-tools";
@@ -309,6 +312,8 @@ export const socialKitCollectionProviderLimitedReasonSchema = z.enum([
   "reported_total_exceeds_page",
   "provider_ceiling",
   "no_pagination",
+  "provider_partial",
+  "provider_outcome_unknown",
 ]);
 
 export type SocialKitCollectionProviderLimitedReason = z.infer<
@@ -335,6 +340,7 @@ const socialKitCollectionSchema = z
       state: z.literal("more"),
       itemsReturned: z.number().int().nonnegative(),
       reportedTotal: reportedTotalSchema.optional(),
+      providerOutcome: socialKitInstagramCommentsOutcomeSchema.optional(),
       nextInput: z.union([
         z.object({ cursor: z.string().min(1) }).strict(),
         z.object({ page: z.number().int().positive() }).strict(),
@@ -344,6 +350,7 @@ const socialKitCollectionSchema = z
       state: z.literal("complete"),
       itemsReturned: z.number().int().nonnegative(),
       reportedTotal: reportedTotalSchema.optional(),
+      providerOutcome: socialKitInstagramCommentsOutcomeSchema.optional(),
     }),
     z.object({
       state: z.literal("provider_limited"),
@@ -352,6 +359,7 @@ const socialKitCollectionSchema = z
       uncertainty: socialKitCollectionUncertaintySchema.optional(),
       sourceLimit: socialKitCollectionSourceLimitSchema.optional(),
       reportedTotal: reportedTotalSchema.optional(),
+      providerOutcome: socialKitInstagramCommentsOutcomeSchema.optional(),
     }),
   ])
   .nullable();

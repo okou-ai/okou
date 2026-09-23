@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.213.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.2...runner-rs-v0.213.3) (2026-09-23)
+
+
+### Bug Fixes
+
+* **model-provider:** authenticate codex workspace discovery ([#36335](https://github.com/okou-ai/okou/issues/36335)) ([0ce8d6b](https://github.com/okou-ai/okou/commit/0ce8d6b881ccbb57476eabe29fe013702ea1aa90))
+
+
+### Refactoring
+
+* **runner:** extract runner-remote domain crate ([#36288](https://github.com/okou-ai/okou/issues/36288)) ([595eed0](https://github.com/okou-ai/okou/commit/595eed02a81829a89d997b6a27a1d8e0db2ab3ab))
+
 ## [0.213.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.213.1...runner-rs-v0.213.2) (2026-09-23)
 
 

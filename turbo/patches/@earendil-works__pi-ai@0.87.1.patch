@@ -109,7 +109,7 @@ index dfdb6ec..afdb30f 100644
              const grammarToolInputProperties = createGrammarToolInputProperties(getDeclaredTools(normalizedContext.messages), model.compat?.supportsOpenAIGrammarTools ?? false);
              const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
              const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
-diff --git a/dist/utils/provider-queue-timeout.d.ts b/dist/utils/provider-queue-timeout.d.ts
+diff --git a/patched/package/dist/utils/provider-queue-timeout.d.ts b/dist/utils/provider-queue-timeout.d.ts
 new file mode 100644
 index 0000000..af6bdff
 --- /dev/null
@@ -117,7 +117,7 @@ index 0000000..af6bdff
 @@ -0,0 +1,2 @@
 +/** Only call for a failed provider request or assistant result. */
 +export declare function isProviderQueueTimeout(error: unknown): boolean;
-diff --git a/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
+diff --git a/patched/package/dist/utils/provider-queue-timeout.js b/dist/utils/provider-queue-timeout.js
 new file mode 100644
 index 0000000..d4b554b
 --- /dev/null
