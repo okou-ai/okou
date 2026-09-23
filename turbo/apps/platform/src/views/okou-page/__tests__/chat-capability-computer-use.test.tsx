@@ -3,7 +3,6 @@ import {
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -271,23 +270,18 @@ test("Choose and clear a computer through its row and switch", async () => {
 });
 
 test("Ignore the Cloud browser row while its saved default is loading", async () => {
-  const preferences = context.mocks.deferred<void>();
+  const overview = context.mocks.deferred<void>();
   installNewComputerChat([], []);
   context.mocks.api(
-    userPreferencesContract.get,
+    connectorOverviewContract.overview,
     async ({ respond, withSignal }) => {
-      await withSignal(preferences.promise);
+      await withSignal(overview.promise);
       return respond(200, {
-        timezone: "UTC",
-        locale: "en-US",
-        supportedLocales: ["en-US"],
-        pinnedAgentIds: [],
-        sendMode: "enter",
+        builtinConnectors: [],
+        customConnectors: [],
+        accountSummaries: [],
+        computerUseHosts: [],
         cloudBrowserEnabledByDefault: true,
-        theme: "system",
-        colorTheme: null,
-        captureNetworkBodiesRemaining: 0,
-        voiceInputModel: null,
       });
     },
   );
@@ -305,7 +299,7 @@ test("Ignore the Cloud browser row while its saved default is loading", async ()
   expect(cloudBrowser).toHaveAttribute("aria-disabled", "true");
 
   click(screen.getByText("Cloud browser"));
-  preferences.resolve();
+  overview.resolve();
   await page.ready;
   await waitFor(() => {
     expect(cloudBrowser).not.toHaveAttribute("aria-disabled", "true");
