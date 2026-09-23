@@ -24,9 +24,19 @@ export async function countUserSshAccessResourcesFixture(userId: string) {
       .from(sshCredentials)
       .where(eq(sshCredentials.userId, userId)),
   ]);
+  const configCount = configs[0]?.count;
+  const hostCount = hosts[0]?.count;
+  const credentialCount = credentials[0]?.count;
+  if (
+    configCount === undefined ||
+    hostCount === undefined ||
+    credentialCount === undefined
+  ) {
+    throw new Error("SSH/Access lifecycle count query returned no row");
+  }
   return {
-    configs: configs[0]?.count ?? 0,
-    hosts: hosts[0]?.count ?? 0,
-    credentials: credentials[0]?.count ?? 0,
+    configs: configCount,
+    hosts: hostCount,
+    credentials: credentialCount,
   };
 }
