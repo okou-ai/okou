@@ -29,7 +29,10 @@ import {
   decryptErasureSelector,
   encryptErasureSelector,
 } from "./account-erasure-selector";
-import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
+import {
+  publicArtifactKeyFromUrl,
+  resolveOwnedPublicArtifactKey$,
+} from "./artifact-storage.service";
 
 type Db = NodePgDatabase<Record<string, never>>;
 type FileRow = Pick<
@@ -44,7 +47,7 @@ interface ObjectLocator {
 const PAGE_SIZE = 20;
 const NAMESPACE = "e413c361-9811-490e-a21d-f48689204f0c";
 export const ARTIFACT_FILE_ERASURE_COLLECTOR_VERSION =
-  "54760e3e-f4e7-4315-a4dc-dcf004f4201f";
+  "0c3937b8-5b28-496b-927a-9bfa47158d9a";
 
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), NAMESPACE);
@@ -118,6 +121,34 @@ function firstPartyPublicUrl(value: string): boolean {
   ].includes(url.origin);
 }
 
+async function publicUrlLocator(
+  value: string | null,
+  userId: string,
+  bucket: string,
+  signal: AbortSignal,
+): Promise<ObjectLocator | ErasureUnresolved | undefined> {
+  if (!value || !firstPartyPublicUrl(value)) {
+    return undefined;
+  }
+  const candidate = publicArtifactKeyFromUrl(value);
+  if (!candidate) {
+    return unresolved("ownership_unknown");
+  }
+  const store = createStore();
+  const owned = await store.set(
+    resolveOwnedPublicArtifactKey$,
+    { userId, url: value },
+    signal,
+  );
+  if (
+    owned !== candidate &&
+    (await store.get(s3ObjectExists(bucket, candidate)))
+  ) {
+    return unresolved("ownership_unknown");
+  }
+  return { bucket, key: candidate };
+}
+
 /** A row may precede canonical storage_key. Resolve old public URLs using the
  * same ownership check as provider input: legacy paths carry the user id;
  * compact v2 keys require the object's owner metadata. External URLs own no
@@ -173,23 +204,26 @@ async function rowLocators(
   }
 
   for (const value of [row.url, row.previewImageUrl]) {
-    if (!value || !firstPartyPublicUrl(value)) {
-      continue;
-    }
-    const key = await store.set(
-      resolveOwnedPublicArtifactKey$,
-      { userId: row.userId, url: value },
+    const location = await publicUrlLocator(
+      value,
+      row.userId,
+      publicBucket,
       signal,
     );
-    if (!key) {
-      return unresolved("ownership_unknown");
+    if (!location) {
+      continue;
+    }
+    if ("outcome" in location) {
+      return location;
     }
     if (
-      !locations.some((location) => {
-        return location.bucket === publicBucket && location.key === key;
+      !locations.some((existing) => {
+        return (
+          existing.bucket === location.bucket && existing.key === location.key
+        );
       })
     ) {
-      locations.push({ bucket: publicBucket, key });
+      locations.push(location);
     }
   }
   return locations;

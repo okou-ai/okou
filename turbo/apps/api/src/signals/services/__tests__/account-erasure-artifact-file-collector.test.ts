@@ -256,6 +256,24 @@ describe("dormant artifact-file byte erasure", () => {
     expect(bucket.deletions).toStrictEqual([[key]]);
   });
 
+  it("proves absence for a legacy URL whose object was already gone", async () => {
+    const userId = "user_artifact_" + randomUUID().replaceAll("-", "");
+    const key =
+      "artifacts/" +
+      encodeURIComponent(userId) +
+      "/" +
+      randomUUID() +
+      "/lost.txt";
+    await fileFor(userId, null, buildFileUrlFromKey(key, "vm0"));
+    const bucket = bucketWithObjects([]);
+    const captured = await capture(userId);
+    await verify(captured.job.id, captured.handler);
+    expect(bucket.deletions).toStrictEqual([]);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).resolves.toMatchObject({ state: "verified_no_applicable_data" });
+  });
+
   it("deletes a private artifact from its own catalog locator", async () => {
     const userId = "user_artifact_" + randomUUID().replaceAll("-", "");
     const id = randomUUID();
