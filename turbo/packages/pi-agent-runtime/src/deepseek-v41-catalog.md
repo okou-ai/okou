@@ -51,7 +51,7 @@ upstream `compat` block is deliberately not reproduced because nothing reads it.
 V4 and V4.1 are different models at different prices (0.14/0.28 versus
 0.3/1.2). `deepseek-v4-flash` must never be remapped onto `deepseek-flash`;
 retiring the model is a separate product decision. The OpenRouter identity
-`deepseek/deepseek-v4-flash` is unaffected and still resolves from the 0.86.1
+`deepseek/deepseek-v4-flash` is unaffected and still resolves from the 0.87.1
 catalog. `deepseek-v4-flash-vision-exp` has no reference in this repository and
 was not pinned. Remove this pin only when the product retires the model or a
 pinned SDK restores an equivalent entry.

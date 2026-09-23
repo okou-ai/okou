@@ -103,8 +103,8 @@ test("Lab groups every feature by rollout stage with a switch", async () => {
   expect(buttonNamed("Reset all")).toBeEnabled();
 });
 
-test("A user can filter Lab features by maintainer", async () => {
-  const user = userEvent.setup();
+test("Maintainer filters keep one selection and leave reset outside keyboard navigation", async () => {
+  const user = userEvent.setup({ delay: null });
 
   await setupPage({
     context,
@@ -113,16 +113,58 @@ test("A user can filter Lab features by maintainer", async () => {
   });
   await screen.findByRole("heading", { name: "Lab" });
 
-  await user.click(buttonNamed("bingjie"));
+  const all = buttonNamed("All");
+  const bingjie = buttonNamed("bingjie");
+  const totalCount = screen.getAllByRole("switch").length;
+  expect(within(all).getByText(String(totalCount))).toBeInTheDocument();
 
-  expect(screen.getByText(FeatureSwitchKey.ComposerTaskChips)).toBeVisible();
+  await user.click(bingjie);
+
+  expect(
+    screen.getByText(FeatureSwitchKey.ComposerTaskChips),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(FeatureSwitchKey.AhrefsConnector),
+  ).not.toBeInTheDocument();
+  const maintainerCount = screen.getAllByRole("switch").length;
+  expect(maintainerCount).toBeLessThan(totalCount);
+  expect(
+    within(bingjie).getByText(String(maintainerCount)),
+  ).toBeInTheDocument();
+  expect(within(all).getByText(String(totalCount))).toBeInTheDocument();
+
+  await user.keyboard("{Enter}");
+
+  expect(bingjie).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getAllByRole("switch")).toHaveLength(maintainerCount);
   expect(
     screen.queryByText(FeatureSwitchKey.AhrefsConnector),
   ).not.toBeInTheDocument();
 
-  await user.click(buttonNamed("All"));
+  await user.keyboard("{Home}");
 
-  expect(screen.getByText(FeatureSwitchKey.AhrefsConnector)).toBeVisible();
+  expect(all).toHaveFocus();
+  expect(screen.getAllByRole("switch")).toHaveLength(maintainerCount);
+
+  await user.keyboard(" ");
+
+  expect(
+    screen.getByText(FeatureSwitchKey.AhrefsConnector),
+  ).toBeInTheDocument();
+  expect(screen.getAllByRole("switch")).toHaveLength(totalCount);
+
+  await user.click(all);
+
+  expect(all).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getAllByRole("switch")).toHaveLength(totalCount);
+
+  await user.keyboard("{Tab}");
+
+  expect(buttonNamed("Reset all")).toHaveFocus();
+
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+
+  expect(all).toHaveFocus();
 });
 
 test("A user can toggle a Lab feature and reset all overrides", async () => {

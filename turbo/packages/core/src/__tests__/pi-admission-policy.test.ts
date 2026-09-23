@@ -31,15 +31,33 @@ import { PI_RUNTIME_RESOLVABLE_MODELS } from "../pi-runtime-capability";
  * currently records for that enumeration, not a frozen copy of an earlier
  * branch. It started as what main @ 3938412 produced and was moved once, by
  * #35905, which returned the Fable frontier line to the Claude Code vendor
- * harness and removed its 18 routes; every other model's decision is still the
- * one 3938412 produced. Editing this list is how an admission change is
- * recorded, so a diff here must come with the decision that moved it — an
+ * harness and removed its 18 routes. Pi 0.87.1 admits Opus 5.5 and GPT 6 Sol
+ * and Luna through their catalog-resolved routes. Editing this list is how an
+ * admission change is recorded, so a diff here must come with the decision — an
  * unexplained diff is a regression.
  */
 const EXPECTED_ADMITTED_ROUTES = [
   "okou-1.0-max | built-in | openrouter-codex | standard",
   "okou-1.0-pro | built-in | openrouter-codex | standard",
   "okou-1.0 | built-in | openrouter-codex | standard",
+  "claude-opus-5-5 | built-in | built-in | standard",
+  "claude-opus-5-5 | built-in | built-in | fast",
+  "claude-opus-5-5 | built-in | anthropic-api-key | standard",
+  "claude-opus-5-5 | built-in | anthropic-api-key | fast",
+  "claude-opus-5-5 | built-in | openrouter-api-key | standard",
+  "claude-opus-5-5 | built-in | openrouter-api-key | fast",
+  "claude-opus-5-5 | anthropic-api-key | anthropic-api-key | standard",
+  "claude-opus-5-5 | anthropic-api-key | anthropic-api-key | fast",
+  "claude-opus-5-5 | openrouter-api-key | openrouter-api-key | standard",
+  "claude-opus-5-5 | openrouter-api-key | openrouter-api-key | fast",
+  "claude-opus-5-5 | vercel-ai-gateway | vercel-ai-gateway | standard",
+  "claude-opus-5-5 | vercel-ai-gateway | vercel-ai-gateway | fast",
+  "claude-opus-5-5 | azure-foundry | azure-foundry | standard",
+  "claude-opus-5-5 | azure-foundry | azure-foundry | fast",
+  "claude-opus-5-5 | aws-bedrock | aws-bedrock | standard",
+  "claude-opus-5-5 | aws-bedrock | aws-bedrock | fast",
+  "claude-opus-5-5 | custom-anthropic-messages | custom-anthropic-messages | standard",
+  "claude-opus-5-5 | custom-anthropic-messages | custom-anthropic-messages | fast",
   "claude-opus-5 | built-in | built-in | standard",
   "claude-opus-5 | built-in | built-in | fast",
   "claude-opus-5 | built-in | anthropic-api-key | standard",
@@ -112,6 +130,32 @@ const EXPECTED_ADMITTED_ROUTES = [
   "claude-sonnet-4-6 | aws-bedrock | aws-bedrock | fast",
   "claude-sonnet-4-6 | custom-anthropic-messages | custom-anthropic-messages | standard",
   "claude-sonnet-4-6 | custom-anthropic-messages | custom-anthropic-messages | fast",
+  "gpt-6-sol | built-in | built-in | standard",
+  "gpt-6-sol | built-in | openai-api-key | standard",
+  "gpt-6-sol | built-in | openai-api-key | fast",
+  "gpt-6-sol | built-in | openrouter-codex | standard",
+  "gpt-6-sol | built-in | openrouter-codex | fast",
+  "gpt-6-sol | openai-api-key | openai-api-key | standard",
+  "gpt-6-sol | openai-api-key | openai-api-key | fast",
+  "gpt-6-sol | codex-oauth-token | codex-oauth-token | standard",
+  "gpt-6-sol | codex-oauth-token | codex-oauth-token | fast",
+  "gpt-6-sol | openrouter-codex | openrouter-codex | standard",
+  "gpt-6-sol | openrouter-codex | openrouter-codex | fast",
+  "gpt-6-sol | custom-openai-responses | custom-openai-responses | standard",
+  "gpt-6-sol | custom-openai-responses | custom-openai-responses | fast",
+  "gpt-6-luna | built-in | built-in | standard",
+  "gpt-6-luna | built-in | openai-api-key | standard",
+  "gpt-6-luna | built-in | openai-api-key | fast",
+  "gpt-6-luna | built-in | openrouter-codex | standard",
+  "gpt-6-luna | built-in | openrouter-codex | fast",
+  "gpt-6-luna | openai-api-key | openai-api-key | standard",
+  "gpt-6-luna | openai-api-key | openai-api-key | fast",
+  "gpt-6-luna | codex-oauth-token | codex-oauth-token | standard",
+  "gpt-6-luna | codex-oauth-token | codex-oauth-token | fast",
+  "gpt-6-luna | openrouter-codex | openrouter-codex | standard",
+  "gpt-6-luna | openrouter-codex | openrouter-codex | fast",
+  "gpt-6-luna | custom-openai-responses | custom-openai-responses | standard",
+  "gpt-6-luna | custom-openai-responses | custom-openai-responses | fast",
   "gpt-5.6-sol | built-in | built-in | standard",
   "gpt-5.6-sol | built-in | openai-api-key | standard",
   "gpt-5.6-sol | built-in | openai-api-key | fast",
@@ -264,13 +308,7 @@ describe("Pi admission policy table", () => {
       excluded.map(([model]) => {
         return model;
       }),
-    ).toStrictEqual([
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "gpt-6-astra",
-      "gpt-6-sol",
-      "gpt-6-luna",
-    ]);
+    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra"]);
     for (const [model, policy] of excluded) {
       expect(policy.pi, model).toBe(false);
       if (!policy.pi) {
@@ -286,6 +324,7 @@ describe("Pi admission policy table", () => {
     // entries for the GPT family. Editing a `route` in the table moves those
     // decisions, so the sets are pinned here and not only through admission.
     expect(ACTIVE_RUN_MODELS.filter(isPiNativeModel)).toStrictEqual([
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
@@ -295,6 +334,8 @@ describe("Pi admission policy table", () => {
       "okou-1.0-max",
       "okou-1.0-pro",
       "okou-1.0",
+      "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -395,25 +436,18 @@ describe("Pi admission decisions", () => {
   it.each([
     ["claude-opus-5-5", "anthropic-api-key"],
     ["gpt-6-sol", "openai-api-key"],
+    ["gpt-6-luna", "openai-api-key"],
   ] as const)(
-    "keeps %s out of the loop while the pinned runtime cannot resolve it",
+    "admits %s when its Pi 0.87.1 catalog route is available",
     (selectedModel, providerType) => {
-      expect(
-        isPiRouteRuntimeCapable({
-          selectedModel,
-          modelProviderType: providerType,
-          runtimeProviderType: providerType,
-        }),
-      ).toBe(false);
-      expect(
-        isPiExecutionRoute({
-          selectedModel,
-          modelProviderType: providerType,
-          runtimeProviderType: providerType,
-          codexServiceTier: undefined,
-          piEnabled: true,
-        }),
-      ).toBe(false);
+      const route = {
+        selectedModel,
+        modelProviderType: providerType,
+        runtimeProviderType: providerType,
+        codexServiceTier: undefined,
+      };
+      expect(isPiRouteRuntimeCapable(route)).toBe(true);
+      expect(isPiExecutionRoute({ ...route, piEnabled: true })).toBe(true);
     },
   );
 });

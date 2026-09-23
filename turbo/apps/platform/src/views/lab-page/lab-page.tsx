@@ -6,7 +6,13 @@ import {
   type FeatureSwitchRolloutStage,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { surfaceVariants, Button, Switch, cn } from "@okouai/ui";
+import {
+  Toggle,
+  ToggleGroup,
+  surfaceVariants,
+  Button,
+  Switch,
+} from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
   featureSwitch$,
@@ -187,32 +193,24 @@ function MaintainerFilterPills(props: {
   ];
 
   return (
-    <>
+    <ToggleGroup
+      className="min-w-0 flex-wrap"
+      value={[props.value]}
+      onValueChange={(value) => {
+        props.onChange(value[0] ?? props.value);
+      }}
+    >
       {options.map((option) => {
-        const active = option.value === props.value;
         return (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={active}
-            onClick={() => {
-              props.onChange(option.value);
-            }}
-            className={cn(
-              "inline-flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
-              active
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-            )}
-          >
+          <Toggle key={option.value} value={option.value} variant="filter">
             <span>{option.label}</span>
             <span className="text-xs text-muted-foreground">
               {option.count}
             </span>
-          </button>
+          </Toggle>
         );
       })}
-    </>
+    </ToggleGroup>
   );
 }
 
