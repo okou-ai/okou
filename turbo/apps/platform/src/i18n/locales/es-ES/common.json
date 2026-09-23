@@ -6082,6 +6082,7 @@
         "personal": "Personal",
         "workspace": "Espacio de trabajo"
       },
+      "sectionNavigation": "Sección de configuración",
       "sections": {
         "billing": {
           "description": "Gestiona tu plan y método de pago.",
@@ -7816,6 +7817,7 @@
       },
       "notFound": "Flujo de trabajo no encontrado.",
       "refineWith": "Refinar con {{agent}}",
+      "sectionNavigation": "Sección de detalles del flujo de trabajo",
       "shadow": {
         "end": "Este flujo de trabajo queda reemplazado por la regla de prioridad de otro con el mismo slug.",
         "resolvesTo": "actualmente se resuelve como"

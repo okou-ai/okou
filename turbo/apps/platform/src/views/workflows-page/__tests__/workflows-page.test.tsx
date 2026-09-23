@@ -3286,6 +3286,65 @@ test("Navigate between workflow detail tabs", async () => {
   expect(search()).toBe("");
 });
 
+test("Navigate workflow details with the named section select", async () => {
+  const user = userEvent.setup({ delay: null });
+  context.mocks.data.userPreferences({ timezone: "UTC" });
+  mockWorkflowApis([salesResearch()]);
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await screen.findByText("Every weekday at 9:00 AM");
+  const section = screen.getByRole("combobox", {
+    name: "Workflow details section",
+  });
+  expect(section).toHaveTextContent("Automations");
+
+  section.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Automations", selected: true });
+  await user.keyboard("{End}{Enter}");
+
+  await expect(
+    screen.findByRole("form", { name: "Workflow metadata" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Visibility").length).toBeGreaterThan(0);
+  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/info`);
+  expect(search()).toBe("");
+  const settingsSection = screen.getByRole("combobox", {
+    name: "Workflow details section",
+  });
+  expect(settingsSection).toHaveTextContent("Settings");
+  await waitFor(() => {
+    expect(settingsSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Settings", selected: true });
+  await user.keyboard("{Home}{ArrowDown}{Enter}");
+
+  await expect(
+    screen.findByText("Gather CRM context before outreach."),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/instructions`);
+  expect(search()).toBe("");
+  const instructionsSection = screen.getByRole("combobox", {
+    name: "Workflow details section",
+  });
+  expect(instructionsSection).toHaveTextContent("Instructions");
+  await waitFor(() => {
+    expect(instructionsSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Instructions", selected: true });
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(instructionsSection).toHaveFocus();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/instructions`);
+  expect(search()).toBe("");
+});
+
 test("Summarize Gmail automation match conditions", async () => {
   const workflow = {
     ...salesResearch(),

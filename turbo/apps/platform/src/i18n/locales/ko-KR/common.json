@@ -6008,6 +6008,7 @@
         "personal": "개인",
         "workspace": "워크스페이스"
       },
+      "sectionNavigation": "설정 섹션",
       "sections": {
         "billing": {
           "description": "플랜과 결제 수단을 관리하세요.",
@@ -7721,6 +7722,7 @@
       },
       "notFound": "워크플로를 찾을 수 없습니다.",
       "refineWith": "{{agent}}와 함께 다듬기",
+      "sectionNavigation": "워크플로 상세 섹션",
       "shadow": {
         "end": "사용자용입니다. 이 워크플로는 동일 슬러그 우선순위 규칙에 의해 그림자 처리됩니다.",
         "resolvesTo": "현재 다음으로 해결됩니다"

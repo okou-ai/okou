@@ -342,7 +342,12 @@ function AgentTabNav({
             }
           }}
         >
-          <SelectTrigger className="h-9 w-full">
+          <SelectTrigger
+            className="h-9 w-full"
+            aria-label={t(($) => {
+              return $.detail.sectionNavigation;
+            })}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

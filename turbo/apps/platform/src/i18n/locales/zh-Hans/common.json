@@ -6008,6 +6008,7 @@
         "personal": "个人",
         "workspace": "工作区"
       },
+      "sectionNavigation": "设置栏目",
       "sections": {
         "billing": {
           "description": "管理你的套餐和支付方式。",
@@ -7721,6 +7722,7 @@
       },
       "notFound": "未找到该工作流。",
       "refineWith": "用{{agent}}优化",
+      "sectionNavigation": "工作流详情栏目",
       "shadow": {
         "end": "（对你生效）。这个工作流因标识符相同的优先级规则被屏蔽。",
         "resolvesTo": "当前指向"
