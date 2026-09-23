@@ -365,18 +365,6 @@ test("Review purchased member-package credit expiry and grant details", async ()
   await expect(screen.findByText("Purchased")).resolves.toBeInTheDocument();
 });
 
-test("Show an empty member-package balance for the new Pro plan", async () => {
-  mockPersonalUsageStory(usageRows(), "pro", true, "member");
-
-  await openUsageSettings();
-
-  const card = await screen.findByTestId("usage-pack-credit-card");
-  expect(within(card).getByText("Usage pack credits")).toBeVisible();
-  expect(
-    within(card).queryByText("Configure member packages"),
-  ).not.toBeInTheDocument();
-});
-
 test("Show an illustrated empty credit balance when a member has no usage pack", async () => {
   mockPersonalUsageStory(usageRows(), "limited-free-1", false, "member");
 

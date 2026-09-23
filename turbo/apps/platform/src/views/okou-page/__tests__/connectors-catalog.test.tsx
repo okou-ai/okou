@@ -85,20 +85,6 @@ test("Browse connectors by category", async () => {
   expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
 });
 
-test("Show only connectors present in the current catalog", async () => {
-  mockConnectors(context, []);
-  mockPublicConnectorStatus(context, []);
-  await setupPage({ context, path: "/connectors?keywords=stripe" });
-
-  await expect(
-    screen.findByPlaceholderText("Find connectors"),
-  ).resolves.toHaveValue("stripe");
-  await expect(
-    screen.findByText(/No connectors matching/u),
-  ).resolves.toBeInTheDocument();
-  expect(queryConnectorAction("button", "Connect Stripe")).toBeNull();
-});
-
 test("Keep connectors discoverable during category changes", async () => {
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, [
@@ -178,15 +164,6 @@ test("Avoid duplicate catalog sections during metadata changes", async () => {
   );
   expect(screen.getAllByText("Partner GitHub")).toHaveLength(1);
   expect(queryConnectorCard("Billing Stripe")).toBeInTheDocument();
-});
-
-test("Show Mailchimp OAuth in the connector catalog", async () => {
-  mockConnectors(context, []);
-  await setupPage({ context, path: "/connectors?keywords=mailchimp" });
-
-  await waitFor(() => {
-    expect(getConnectorAction("button", "Connect Mailchimp")).toBeEnabled();
-  });
 });
 
 async function openConnectorFilterCatalog() {

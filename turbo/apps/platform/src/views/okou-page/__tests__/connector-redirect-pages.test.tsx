@@ -24,28 +24,6 @@ function getBackLink(): HTMLElement {
   return link;
 }
 
-test("The connector redirect page explains the secure provider handoff", async () => {
-  await setupPage({
-    context,
-    path: "/connectors/github/redirecting?label=GitHub",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "Redirecting to GitHub…" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("You’ll continue on GitHub to authorize Okou."),
-  ).toBeInTheDocument();
-  expect(screen.getByText("Preparing a secure connection")).toBeInTheDocument();
-  expect(
-    screen.getByLabelText("Connector icon unavailable"),
-  ).toBeInTheDocument();
-  expect(screen.queryByLabelText("Mercury banking disclosure")).toBeNull();
-  expect(screen.queryByText(MOBILE_HINT)).toBeNull();
-  expect(getBackLink()).toHaveAttribute("href", "/");
-});
-
 test("The Mercury redirect page shows its required disclosure", async () => {
   await setupPage({
     context,

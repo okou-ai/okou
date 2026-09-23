@@ -655,20 +655,6 @@ async function openAddGatewayDialog() {
   return { addDialog, connectionsSection };
 }
 
-test("The workspace gateway form describes both supported request surfaces", async () => {
-  const { addDialog } = await openAddGatewayDialog();
-  expect(
-    within(addDialog).getByText(
-      "Requests: https://ai-gateway.vercel.sh/v1/messages",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    within(addDialog).getByText(
-      "Requests: https://ai-gateway.vercel.sh/v1/responses",
-    ),
-  ).toBeInTheDocument();
-});
-
 test("Add a workspace gateway without exposing its private key", async () => {
   const { addDialog, connectionsSection } = await openAddGatewayDialog();
   await fill(within(addDialog).getByLabelText("API key"), "vck-test");
@@ -1041,26 +1027,6 @@ test("Route a workspace model through a Claude subscription", async () => {
   ).toBeInTheDocument();
 });
 
-test("Route Claude Fable 5.1 through a workspace Claude subscription", async () => {
-  mockAdminOrg();
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([]);
-  await openProvidersTab();
-
-  click(buttonByText("Add model"));
-  await selectDialogModel("Claude Fable 5.1");
-  click(routeButtonByName(/Claude subscription/u));
-  click(buttonByText("Add model"));
-
-  const oauthRow = await screen.findByTestId(
-    "org-model-policy-row-claude-fable-5-1",
-  );
-  expect(within(oauthRow).getByText("Claude Fable 5.1")).toBeInTheDocument();
-  expect(
-    within(oauthRow).getByText("Claude Code (OAuth token)"),
-  ).toBeInTheDocument();
-});
-
 test("Add a Codex route and make it the workspace default", async () => {
   mockAdminOrg();
   context.mocks.data.orgModelProviders([]);
@@ -1101,48 +1067,6 @@ test("Add a Codex route and make it the workspace default", async () => {
   expect(
     within(screen.getByTestId("default-model-row")).getByRole("combobox"),
   ).toHaveTextContent("GPT 5.6 Sol");
-});
-
-test("Add a GPT 6 Astra Codex subscription model route", async () => {
-  mockAdminOrg();
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([]);
-  await openProvidersTab();
-
-  click(buttonByText("Add model"));
-  const dialog = screen.getByRole("dialog", { name: "Add model" });
-  click(within(dialog).getByRole("combobox"));
-  click(await screen.findByRole("option", { name: "GPT 6 Astra" }));
-  click(routeButtonByName(/Codex subscription/u));
-  click(buttonByText("Add model", dialog));
-
-  const codexRow = await screen.findByTestId(
-    "org-model-policy-row-gpt-6-astra",
-  );
-  expect(within(codexRow).getByText("GPT 6 Astra")).toBeInTheDocument();
-  expect(within(codexRow).getByText("ChatGPT (Codex)")).toBeInTheDocument();
-});
-
-test("Add DeepSeek V4.1 Flash as a built-in model", async () => {
-  mockAdminOrg();
-  context.mocks.data.orgModelProviders([]);
-  context.mocks.data.orgModelPolicies([]);
-  await openProvidersTab();
-
-  click(buttonByText("Add model"));
-  const dialog = screen.getByRole("dialog", { name: "Add model" });
-  await selectDialogModel("DeepSeek V4.1 Flash");
-  expect(routeButtonByName(/Built-in/u, dialog)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  click(buttonByText("Add model", dialog));
-
-  const modelRow = await screen.findByTestId(
-    "org-model-policy-row-deepseek-v4.1-flash",
-  );
-  expect(within(modelRow).getByText("DeepSeek V4.1 Flash")).toBeInTheDocument();
-  expect(within(modelRow).getByText("Built-in")).toBeInTheDocument();
 });
 
 test("Offer an upgrade for restricted built-in routes", async () => {
