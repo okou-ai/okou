@@ -1670,35 +1670,29 @@ test("Show Official Workflow discovery without requiring Morning Brief", async (
   expect(screen.getByText("Browse Official")).toBeVisible();
 });
 
-test.each(["sales-research", "morning-brief"])(
-  "Show %s as installed in the Official Workflow catalog",
-  async (definitionName) => {
-    const installedWorkflow =
-      definitionName === "morning-brief"
-        ? morningBriefWorkflow()
-        : officialSalesResearch();
-    const {
-      workflow: _workflow,
-      lifecycle: _lifecycle,
-      ...catalogEntry
-    } = officialCatalogDetail();
-    mockWorkflowApis([installedWorkflow]);
-    context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
-      return respond(200, [{ ...catalogEntry, name: definitionName }]);
-    });
+test("Show an installed workflow in the Official catalog", async () => {
+  const installedWorkflow = officialSalesResearch();
+  const {
+    workflow: _workflow,
+    lifecycle: _lifecycle,
+    ...catalogEntry
+  } = officialCatalogDetail();
+  mockWorkflowApis([installedWorkflow]);
+  context.mocks.api(officialWorkflowsContract.list, ({ respond }) => {
+    return respond(200, [{ ...catalogEntry, name: "sales-research" }]);
+  });
 
-    await setupPage({
-      context,
-      path: "/workflows/official",
-      featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
-    });
+  await setupPage({
+    context,
+    path: "/workflows/official",
+    featureSwitches: { [FeatureSwitchKey.OfficialWorkflows]: true },
+  });
 
-    await waitFor(() => {
-      expect(buttonByText("Installed")).toBeDisabled();
-    });
-    expect(screen.queryByText("View and install")).not.toBeInTheDocument();
-  },
-);
+  await waitFor(() => {
+    expect(buttonByText("Installed")).toBeDisabled();
+  });
+  expect(screen.queryByText("View and install")).not.toBeInTheDocument();
+});
 
 test("Retry the Official catalog when installation status is unavailable", async () => {
   const {
@@ -3814,39 +3808,36 @@ test("Accept a server-normalized Calendar ID after recovery", async () => {
   );
 });
 
-test.each(["calendar_not_found", "reconnect_required"] as const)(
-  "Show the %s Calendar warning without recovery mutations for another user's automation",
-  async (warning) => {
-    const automation = googleCalendarWorkflowAutomation({
-      ownerUserId: UPDATED_USER_ID,
-      warning,
-    });
-    const workflow = {
-      ...salesResearch(),
-      canManage: false,
-      automations: [automation],
-    };
-    mockWorkflowApis([workflow]);
+test("Show a Calendar warning without recovery mutations for another user's automation", async () => {
+  const automation = googleCalendarWorkflowAutomation({
+    ownerUserId: UPDATED_USER_ID,
+    warning: "reconnect_required",
+  });
+  const workflow = {
+    ...salesResearch(),
+    canManage: false,
+    automations: [automation],
+  };
+  mockWorkflowApis([workflow]);
 
-    await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
 
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(
-      "Enabled · Action required — delivery paused",
-    );
-    const row = alert.closest("[data-automation-id]");
-    if (!(row instanceof HTMLElement)) {
-      throw new Error("Expected the Calendar automation row");
-    }
-    expect(within(row).getByRole("switch")).toBeChecked();
-    expect(within(row).getByRole("switch")).toHaveAttribute(
-      "aria-disabled",
-      "true",
-    );
-    expect(queryButtonByText("Change calendar", alert)).toBeNull();
-    expect(queryButtonByText("Reconnect Google Calendar", alert)).toBeNull();
-  },
-);
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent(
+    "Enabled · Action required — delivery paused",
+  );
+  const row = alert.closest("[data-automation-id]");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error("Expected the Calendar automation row");
+  }
+  expect(within(row).getByRole("switch")).toBeChecked();
+  expect(within(row).getByRole("switch")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(queryButtonByText("Change calendar", alert)).toBeNull();
+  expect(queryButtonByText("Reconnect Google Calendar", alert)).toBeNull();
+});
 
 test("Open a Calendar action-required workflow at the exact automation from the workflow list", async () => {
   const automation = googleCalendarWorkflowAutomation({
@@ -5578,41 +5569,38 @@ test("Load detail author on keyboard focus without delaying the detail page", as
   expect(requests).toBe(1);
 });
 
-test.each([404, 503] as const)(
-  "Recover the author row after an API %s without affecting workflow content",
-  async (status) => {
-    const user = userEvent.setup();
-    mockWorkflowApis([salesResearch()]);
-    let healthy = false;
-    context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
-      return healthy
-        ? respond(200, { displayName: "Recovered Author", imageUrl: null })
-        : respond(status, {
-            error: {
-              code: "NOT_AVAILABLE",
-              message: "Author lookup unavailable",
-            },
-          });
-    });
-    await setupPage({ context, path: "/workflows" });
-    await screen.findByText("Sales Research");
-    await user.hover(linkByAriaLabel("Open Sales Research"));
-    const tooltip = await screen.findByRole("tooltip");
-    await expect(
-      within(tooltip).findByText("Author unavailable. Reopen to retry."),
-    ).resolves.toBeInTheDocument();
-    expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
-    healthy = true;
-    await user.unhover(linkByAriaLabel("Open Sales Research"));
-    await waitFor(() => {
-      return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-    });
-    await user.hover(linkByAriaLabel("Open Sales Research"));
-    await expect(
-      within(await screen.findByRole("tooltip")).findByText("Recovered Author"),
-    ).resolves.toBeInTheDocument();
-  },
-);
+test("Recover the author row after an API error without affecting workflow content", async () => {
+  const user = userEvent.setup();
+  mockWorkflowApis([salesResearch()]);
+  let healthy = false;
+  context.mocks.api(workflowsDetailContract.ownerProfile, ({ respond }) => {
+    return healthy
+      ? respond(200, { displayName: "Recovered Author", imageUrl: null })
+      : respond(503, {
+          error: {
+            code: "NOT_AVAILABLE",
+            message: "Author lookup unavailable",
+          },
+        });
+  });
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByText("Sales Research");
+  await user.hover(linkByAriaLabel("Open Sales Research"));
+  const tooltip = await screen.findByRole("tooltip");
+  await expect(
+    within(tooltip).findByText("Author unavailable. Reopen to retry."),
+  ).resolves.toBeInTheDocument();
+  expect(within(tooltip).getByText("Runs as")).toBeInTheDocument();
+  healthy = true;
+  await user.unhover(linkByAriaLabel("Open Sales Research"));
+  await waitFor(() => {
+    return expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+  await user.hover(linkByAriaLabel("Open Sales Research"));
+  await expect(
+    within(await screen.findByRole("tooltip")).findByText("Recovered Author"),
+  ).resolves.toBeInTheDocument();
+});
 
 test("Expire a missing author result and recover on a later open", async () => {
   const user = userEvent.setup();

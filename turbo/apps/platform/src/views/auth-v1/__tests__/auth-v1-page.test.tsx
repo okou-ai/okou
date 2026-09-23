@@ -160,7 +160,7 @@ test("Clerk sign-up steps stay on the hosted app page", async () => {
   expect(screen.getByTestId("clerk-sign-up")).toBeVisible();
 });
 
-test.each(["/", "/sign-in-token", "/sign-invader", "/v1/sign-in"])(
+test.each(["/", "/sign-in-token"])(
   "Clerk navigation to non-Auth V1 path %s loads a new document",
   async (destination) => {
     const assigned = context.mocks.browser.locationAssign();

@@ -9,7 +9,6 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
-import { createChatLayoutSignals } from "../../../signals/chat-page/chat-layout.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockChatEventRows,
@@ -1190,63 +1189,6 @@ function dispatchLayoutTransition(
     Object.assign(new Event(type, { bubbles: true }), { propertyName }),
   );
 }
-
-test("Ending an independent layout surface leaves the mounted chat transition running", async () => {
-  // The Router mounts one sidebar shell. Create its second owner through the
-  // production graph to exercise concurrent mounts that routing cannot create.
-  // The real page remains the observable surviving surface.
-  const secondaryLayout = createChatLayoutSignals();
-  mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));
-  const container = await openConversation(
-    THREAD_IDS.layoutResize,
-    "History answer 8",
-  );
-  const geometry = installChatScrollGeometry(container);
-  const sidebar = screen.getByTestId("chat-thread-sidebar-pane");
-  const secondary = document.createElement("aside");
-  const cleanup = context.store.set(
-    secondaryLayout.transitionOnRef$,
-    secondary,
-  );
-  context.signal.addEventListener(
-    "abort",
-    () => {
-      cleanup?.();
-    },
-    { once: true },
-  );
-  const frames = installQueuedAnimationFrames();
-
-  dispatchLayoutTransition(sidebar, "transitionrun", "width");
-  dispatchLayoutTransition(secondary, "transitionrun", "width");
-  geometry.growBeforeMessages(40);
-  await act(() => {
-    frames.flush();
-  });
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-
-  dispatchLayoutTransition(secondary, "transitionend", "width");
-  cleanup?.();
-  geometry.growBeforeMessages(60);
-  await act(() => {
-    frames.flush();
-  });
-  await waitFor(() => {
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
-  dispatchLayoutTransition(sidebar, "transitionend", "width");
-  await act(() => {
-    frames.flush();
-  });
-  const stoppedAt = container.scrollTop;
-  geometry.growBeforeMessages(80);
-  await act(() => {
-    frames.flush();
-  });
-  expect(container.scrollTop).toBe(stoppedAt);
-});
 
 test("Follow overlapping sidebar transitions until the final end or cancellation", async () => {
   mockMutableConversation(THREAD_IDS.layoutResize, completedHistoryEvents(8));

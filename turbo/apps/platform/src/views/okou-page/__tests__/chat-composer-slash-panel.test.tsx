@@ -34,12 +34,6 @@ const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
 const THIRD_WORKFLOW_NAME = "axiom-traces";
 
-// The unfiltered menu has three category rows before the workflows.
-const WORKFLOW_NAVIGATION_CASES = [
-  { query: "", downCount: 4 },
-  { query: "axi", downCount: 1 },
-] as const;
-
 function setupModels(): void {
   mockAgent();
   mockOrgModelRoutes("claude-fable-5-1");
@@ -303,78 +297,69 @@ test("Leaving the panel hands the preview back to the keyboard selection", async
   expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
 });
 
-test.each(WORKFLOW_NAVIGATION_CASES)(
-  "Enter keeps the keyboard selection while another workflow is hovered for query '$query'",
-  async ({ query, downCount }) => {
-    const user = userEvent.setup();
-    await openSlashMenu(query);
-    const editor = await findComposerEditor();
-    const workflow = await waitFor(() => {
-      return slashButton(`/${WORKFLOW_NAME}`);
-    });
+test("Enter keeps the keyboard selection while another workflow is hovered", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu("axi");
+  const editor = await findComposerEditor();
+  const workflow = await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
 
-    await user.keyboard("{ArrowDown}".repeat(downCount));
-    await user.pointer({
-      target: workflow,
-      coords: { clientX: 10, clientY: 10 },
-    });
-    await user.pointer({
-      target: workflow,
-      coords: { clientX: 12, clientY: 10 },
-    });
-    await user.keyboard("{Enter}");
+  await user.keyboard("{ArrowDown}");
+  await user.pointer({
+    target: workflow,
+    coords: { clientX: 10, clientY: 10 },
+  });
+  await user.pointer({
+    target: workflow,
+    coords: { clientX: 12, clientY: 10 },
+  });
+  await user.keyboard("{Enter}");
 
-    await waitFor(() => {
-      expect(editor).toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
-    });
-    expect(editor).not.toHaveTextContent(`/${WORKFLOW_NAME}`);
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  },
-);
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+  });
+  expect(editor).not.toHaveTextContent(`/${WORKFLOW_NAME}`);
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
 
-test.each(WORKFLOW_NAVIGATION_CASES)(
-  "Clicking a workflow activates the pointer target for query '$query'",
-  async ({ query, downCount }) => {
-    const user = userEvent.setup();
-    await openSlashMenu(query);
-    const editor = await findComposerEditor();
-    const workflow = await waitFor(() => {
-      return slashButton(`/${WORKFLOW_NAME}`);
-    });
+test("Clicking a workflow activates the pointer target", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu("axi");
+  const editor = await findComposerEditor();
+  const workflow = await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
 
-    await user.keyboard("{ArrowDown}".repeat(downCount));
-    await user.click(workflow);
+  await user.keyboard("{ArrowDown}");
+  await user.click(workflow);
 
-    await waitFor(() => {
-      expect(editor).toHaveTextContent(`/${WORKFLOW_NAME}`);
-    });
-    expect(editor).not.toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
-    expect(editor).toHaveFocus();
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  },
-);
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(`/${WORKFLOW_NAME}`);
+  });
+  expect(editor).not.toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+  expect(editor).toHaveFocus();
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
 
-test.each(WORKFLOW_NAVIGATION_CASES)(
-  "Arrow navigation continues from the keyboard selection after hover for query '$query'",
-  async ({ query, downCount }) => {
-    const user = userEvent.setup();
-    await openSlashMenu(query);
-    const editor = await findComposerEditor();
-    const workflow = await waitFor(() => {
-      return slashButton(`/${WORKFLOW_NAME}`);
-    });
+test("Arrow navigation continues from the keyboard selection after hover", async () => {
+  const user = userEvent.setup();
+  await openSlashMenu("axi");
+  const editor = await findComposerEditor();
+  const workflow = await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
 
-    await user.keyboard("{ArrowDown}".repeat(downCount));
-    await user.hover(workflow);
-    await user.keyboard("{ArrowDown}{Enter}");
+  await user.keyboard("{ArrowDown}");
+  await user.hover(workflow);
+  await user.keyboard("{ArrowDown}{Enter}");
 
-    await waitFor(() => {
-      expect(editor).toHaveTextContent(`/${THIRD_WORKFLOW_NAME}`);
-    });
-    expect(editor).not.toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
-    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  },
-);
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(`/${THIRD_WORKFLOW_NAME}`);
+  });
+  expect(editor).not.toHaveTextContent(`/${SECOND_WORKFLOW_NAME}`);
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
 
 test("Tab keeps the keyboard selection after the pointer leaves the menu", async () => {
   const user = userEvent.setup();

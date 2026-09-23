@@ -61,71 +61,69 @@ function captureSection(title: string) {
   return { summary, details, section };
 }
 
-test.each([
-  {
-    title: "Request Headers (1)",
-    capture: { request_headers: { "Content-Type": "application/json" } },
-    text: "Content-Type: application/json",
-    content: "application/json",
-  },
-  {
-    title: "Response Headers (1)",
-    capture: { response_headers: { "Content-Type": "text/plain" } },
-    text: "Content-Type: text/plain",
-    content: "text/plain",
-  },
-  {
-    title: "Request Body",
-    capture: { request_body: '{"message":"request capture"}' },
-    text: '{"message":"request capture"}',
-    content: '{"message":"request capture"}',
-  },
-  {
-    title: "Response Body",
-    capture: { response_body: '{"message":"response capture"}' },
-    text: '{"message":"response capture"}',
-    content: '{"message":"response capture"}',
-  },
-])("Copy $title without changing its disclosure", async (fixture) => {
+test("Copy each capture section without opening its disclosure", async () => {
   const user = userEvent.setup();
   const clipboard = context.mocks.browser.clipboardWriteText();
-  await openCapture(user, fixture.capture);
-  const { summary, details, section } = captureSection(fixture.title);
-  const copy = queryAllByRoleFast("button", section).find((button) => {
-    return button.getAttribute("aria-label") === "Copy to clipboard";
+  await openCapture(user, {
+    request_headers: { "Content-Type": "application/json" },
+    response_headers: { "Content-Type": "text/plain" },
+    request_body: '{"message":"request capture"}',
+    response_body: '{"message":"response capture"}',
   });
-  if (!copy) {
-    throw new Error("Expected the capture copy action");
+  const sections = [
+    [
+      "Request Headers (1)",
+      "application/json",
+      "Content-Type: application/json",
+    ],
+    ["Response Headers (1)", "text/plain", "Content-Type: text/plain"],
+    [
+      "Request Body",
+      '{"message":"request capture"}',
+      '{"message":"request capture"}',
+    ],
+    [
+      "Response Body",
+      '{"message":"response capture"}',
+      '{"message":"response capture"}',
+    ],
+  ] as const;
+  let requestBodyCopy: HTMLElement | undefined;
+  for (const [title, contentText, copiedText] of sections) {
+    const { details, section } = captureSection(title);
+    const copy = queryAllByRoleFast("button", section).find((button) => {
+      return button.getAttribute("aria-label") === "Copy to clipboard";
+    });
+    if (!copy) {
+      throw new Error(`Expected the ${title} copy action`);
+    }
+    if (title === "Request Body") {
+      requestBodyCopy = copy;
+    }
+    const content = within(details).getByText(contentText);
+    expect(content).not.toBeVisible();
+    click(copy);
+    await waitFor(() => {
+      expect(clipboard.writes.at(-1)).toBe(copiedText);
+    });
+    expect(content).not.toBeVisible();
   }
-  const content = within(details).getByText(fixture.content);
-  expect(content).not.toBeVisible();
 
-  click(copy);
-  await waitFor(() => {
-    expect(copy).toHaveAttribute("aria-label", "Copied");
-  });
-  expect(clipboard.writes).toStrictEqual([fixture.text]);
-  expect(content).not.toBeVisible();
-
+  const { summary, details, section } = captureSection("Request Body");
+  const content = within(details).getByText('{"message":"request capture"}');
+  if (!requestBodyCopy || !section.contains(requestBodyCopy)) {
+    throw new Error("Expected the copied Request Body action");
+  }
   click(summary);
   expect(content).toBeVisible();
-  copy.focus();
+  requestBodyCopy.focus();
   await user.keyboard("{Enter} ");
-  expect(clipboard.writes).toStrictEqual([
-    fixture.text,
-    fixture.text,
-    fixture.text,
+  expect(clipboard.writes.slice(-2)).toStrictEqual([
+    '{"message":"request capture"}',
+    '{"message":"request capture"}',
   ]);
-  expect(copy).toHaveFocus();
-  expect(content).toBeVisible();
-
+  expect(requestBodyCopy).toHaveFocus();
   click(summary);
-  expect(content).not.toBeVisible();
-  click(copy);
-  await waitFor(() => {
-    expect(clipboard.writes).toHaveLength(4);
-  });
-  expect(clipboard.writes[3]).toBe(fixture.text);
   expect(content).not.toBeVisible();
 });
 

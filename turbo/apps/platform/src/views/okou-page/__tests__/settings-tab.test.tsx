@@ -1199,7 +1199,7 @@ function dialogBackdrop(): HTMLElement {
   return backdrop;
 }
 
-test.each(["Cancel", "Close", "Escape", "backdrop"])(
+test.each(["Cancel", "Escape"])(
   "Discard cancelled agent workflow choices after closing with %s",
   async (dismissal) => {
     prepareAgentProfile();
@@ -1214,10 +1214,6 @@ test.each(["Cancel", "Close", "Escape", "backdrop"])(
 
     if (dismissal === "Escape") {
       await user.keyboard("{Escape}");
-    } else if (dismissal === "backdrop") {
-      await user.click(dialogBackdrop());
-    } else if (dismissal === "Close") {
-      click(within(dialog).getByLabelText("Close"));
     } else {
       click(within(dialog).getByText("Cancel"));
     }

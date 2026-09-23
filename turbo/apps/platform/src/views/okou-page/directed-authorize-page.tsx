@@ -158,6 +158,7 @@ function useDirectedAuthorizePermissionState(
   const enabledConnectorSlugs =
     enabledData === null ? [] : enabledData.enabledConnectorSlugs;
   return {
+    agentMissing: enabledData?.agentMissing ?? false,
     isAuthorized:
       connectorSlug !== null &&
       agentId !== null &&
@@ -402,7 +403,7 @@ function DirectedAuthorizeCard() {
   const agentName = useDirectedAuthorizeAgentName(params?.agentId ?? null);
   const { item, isConnected, catalogLoading, unavailable } =
     useDirectedAuthorizeCatalogState(connectorSlugForState);
-  const { isAuthorized, permissionLoading } =
+  const { agentMissing, isAuthorized, permissionLoading } =
     useDirectedAuthorizePermissionState(
       connectorSlugForState,
       params?.agentId ?? null,
@@ -424,7 +425,8 @@ function DirectedAuthorizeCard() {
     connectFlowConnectorSlug === connectorSlug;
 
   const isLoading = catalogLoading || permissionLoading;
-  const canAuthorize = canAuthorizeConnector(item, isConnected);
+  const canAuthorize =
+    !agentMissing && canAuthorizeConnector(item, isConnected);
   const selectedAuthMethod = item
     ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item)
     : null;
@@ -463,31 +465,37 @@ function DirectedAuthorizeCard() {
       <DirectedCardShell
         icon={<ConnectorIcon icon={item?.icon} size={20} />}
         title={
-          isAuthorized
-            ? t(
-                ($) => {
-                  return $.connectors.directed.authorized;
-                },
-                { connector: connectorLabel },
-              )
-            : t(
-                ($) => {
-                  return $.connectors.directed.needsConnector;
-                },
-                { agent: agentName, connector: connectorLabel },
-              )
+          agentMissing
+            ? t(($) => {
+                return $.authorization.permission.errors.agentNotFound;
+              })
+            : isAuthorized
+              ? t(
+                  ($) => {
+                    return $.connectors.directed.authorized;
+                  },
+                  { connector: connectorLabel },
+                )
+              : t(
+                  ($) => {
+                    return $.connectors.directed.needsConnector;
+                  },
+                  { agent: agentName, connector: connectorLabel },
+                )
         }
         description={connectorDescription}
         isLoading={isLoading}
       >
         <div className="flex items-center justify-center">
-          <AuthorizeAction
-            isAuthorized={isAuthorized}
-            isConnecting={isConnecting}
-            disabled={!canAuthorize}
-            agentName={agentName}
-            onAuthorize={handleAuthorize}
-          />
+          {!agentMissing && (
+            <AuthorizeAction
+              isAuthorized={isAuthorized}
+              isConnecting={isConnecting}
+              disabled={!canAuthorize}
+              agentName={agentName}
+              onAuthorize={handleAuthorize}
+            />
+          )}
         </div>
       </DirectedCardShell>
       <DirectedAuthorizeConnectModal

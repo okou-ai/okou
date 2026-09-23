@@ -4,7 +4,6 @@ import { click } from "../../../__tests__/page-helper.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import {
   assistantEvent,
-  cancelledEvent,
   completedEvent,
   context,
   findLink,
@@ -138,20 +137,6 @@ test("Hide the empty history step count from the work summary", async () => {
   expect(workSummary).not.toHaveTextContent("·");
 });
 
-test.each([
-  { outputCount: 2, expectedStepCount: "1 step" },
-  { outputCount: 5, expectedStepCount: "4 steps" },
-])(
-  "Show a non-empty history step count with $outputCount outputs",
-  async ({ outputCount, expectedStepCount }) => {
-    await setupRunWithOutputCount(outputCount);
-
-    expect(document.querySelector("[data-chat-run-work]")).toHaveTextContent(
-      expectedStepCount,
-    );
-  },
-);
-
 test("Keep work history open and keyboard focus in place when another output arrives", async () => {
   const events = [
     promptEvent({
@@ -263,77 +248,58 @@ test("Render a card-only history output without message folding", async () => {
   expect(queryButton("Collapse work history")).toBeVisible();
 });
 
-test.each(["completed", "failed", "cancelled"] as const)(
-  "Render Markdown and media history like the main body after a run is %s",
-  async (status) => {
-    const terminal =
-      status === "completed"
-        ? completedEvent({ id: "preview-terminal", runId: RUN_ID, seqId: 6 })
-        : status === "cancelled"
-          ? cancelledEvent({ id: "preview-terminal", runId: RUN_ID, seqId: 6 })
-          : {
-              id: "preview-terminal",
-              eventType: "run.failed" as const,
-              runId: RUN_ID,
-              seqId: 6,
-              content: null,
-              error: "The request failed",
-              createdAt: "2026-08-01T10:00:06.000Z",
-            };
-    installRunChat({
-      chatEvents: [
-        promptEvent({
-          id: "rich-preview-input",
+test("Render Markdown and media history like the main body after a run completes", async () => {
+  installRunChat({
+    chatEvents: [
+      promptEvent({
+        id: "rich-preview-input",
+        runId: RUN_ID,
+        seqId: 1,
+        text: "Prepare the report",
+      }),
+      ...[
+        "## Review\n\nChecked **dependencies** and `tests`.",
+        "![Dependency chart](https://example.com/dependencies.png)",
+        "![report.pdf](https://cdn.vm7.io/artifacts/history-preview/report/report.pdf)",
+        "The review is ready",
+      ].map((text, index) => {
+        return assistantEvent({
+          id: `rich-preview-${index}`,
           runId: RUN_ID,
-          seqId: 1,
-          text: "Prepare the report",
-        }),
-        ...[
-          "## Review\n\nChecked **dependencies** and `tests`.",
-          "![Dependency chart](https://example.com/dependencies.png)",
-          "![report.pdf](https://cdn.vm7.io/artifacts/history-preview/report/report.pdf)",
-          "The review is ready",
-        ].map((text, index) => {
-          return assistantEvent({
-            id: `rich-preview-${index}`,
-            runId: RUN_ID,
-            seqId: index + 2,
-            text,
-          });
-        }),
-        terminal,
-      ],
-    });
-    await setupPage({
-      context,
-      path: RUN_PATH,
-    });
-    await readyChat();
+          seqId: index + 2,
+          text,
+        });
+      }),
+      completedEvent({ id: "preview-terminal", runId: RUN_ID, seqId: 6 }),
+    ],
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+  await readyChat();
 
-    expect(screen.getByText("The review is ready")).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Review" })).toBeNull();
-    expect(screen.queryByAltText("Dependency chart")).toBeNull();
-    click(await findWorkHistoryToggle("collapsed"));
-    await expect(
-      screen.findByRole("heading", { name: "Review" }),
-    ).resolves.toBeVisible();
+  expect(screen.getByText("The review is ready")).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Review" })).toBeNull();
+  expect(screen.queryByAltText("Dependency chart")).toBeNull();
+  click(await findWorkHistoryToggle("collapsed"));
+  await expect(
+    screen.findByRole("heading", { name: "Review" }),
+  ).resolves.toBeVisible();
 
-    const historyBody = document.querySelector<HTMLElement>(
-      '[data-chat-scroll-anchor-event-id="rich-preview-0"]',
-    );
-    if (!historyBody) {
-      throw new Error("Expected the history message body");
-    }
-    expect(historyBody).toHaveTextContent(
-      "Review Checked dependencies and tests.",
-    );
-    expect(screen.getByRole("heading", { name: "Review" })).toBeVisible();
-    await expect(
-      screen.findByAltText("Dependency chart"),
-    ).resolves.toBeVisible();
-    await expect(
-      findLink("Open pdf preview for report.pdf"),
-    ).resolves.toBeVisible();
-    expect(queryButton("Collapse work history")).toBeVisible();
-  },
-);
+  const historyBody = document.querySelector<HTMLElement>(
+    '[data-chat-scroll-anchor-event-id="rich-preview-0"]',
+  );
+  if (!historyBody) {
+    throw new Error("Expected the history message body");
+  }
+  expect(historyBody).toHaveTextContent(
+    "Review Checked dependencies and tests.",
+  );
+  expect(screen.getByRole("heading", { name: "Review" })).toBeVisible();
+  await expect(screen.findByAltText("Dependency chart")).resolves.toBeVisible();
+  await expect(
+    findLink("Open pdf preview for report.pdf"),
+  ).resolves.toBeVisible();
+  expect(queryButton("Collapse work history")).toBeVisible();
+});

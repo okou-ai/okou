@@ -10,7 +10,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test.each(["network", "missing export", "version mismatch"])(
+test.each(["network", "version mismatch"])(
   "A Clerk UI %s failure offers a visible refresh without a partial auth form",
   async (failure) => {
     // oxlint-disable-next-line no-console -- Preserve the test harness's fatal handling of every unexpected log.

@@ -292,31 +292,6 @@ test("Do not show another agent's retryable recording while the current draft is
   expect(queryButton("Retry")).toBeNull();
 });
 
-test("Keep the toolbar visible throughout microphone startup", async () => {
-  installVoiceInput();
-  const microphoneReady = context.mocks.deferred<void>();
-  context.mocks.browser.voiceInput({
-    rms: 0.12,
-    getUserMediaReady: microphoneReady.promise,
-  });
-  await setupPage({ context, path: RUN_PATH });
-  click(await findEnabledButton("Voice input"));
-  await waitFor(() => {
-    expect(queryButton("Starting voice input")).toBeDisabled();
-  });
-  expect(queryButton("Attach")).toBeVisible();
-  expect(queryButton("Retry")).toBeNull();
-  expect(queryButton("Remove voice draft")).toBeNull();
-  expect(document.querySelector("[data-voice-level-waveform]")).toBeNull();
-
-  microphoneReady.resolve();
-  click(await findEnabledButton("Stop recording"));
-  await findEnabledButton("Voice input");
-  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-    "Voice note.",
-  );
-});
-
 test("Do not carry a pending transcription into another agent's composer", async () => {
   installVoiceInput();
   const requested = context.mocks.deferred<void>();

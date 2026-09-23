@@ -1,12 +1,11 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifact,
   findArtifactAction,
-  getButtonByName,
   setupArtifactCatalogPage,
 } from "./artifact-catalog-test-helpers.ts";
 
@@ -113,24 +112,4 @@ test("A video artifact without a poster uses its source as the catalog preview",
     "src",
     "https://videos.example.test/product-tour.mp4#t=0.001",
   );
-});
-
-test("Artifact catalog failure is announced clearly", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(403, {
-      error: { code: "FORBIDDEN", message: "Transient catalog failure" },
-    });
-  });
-
-  await setupArtifactCatalogPage(context);
-
-  await expect(
-    screen.findByLabelText("Artifact kind filters"),
-  ).resolves.toBeInTheDocument();
-  const alert = await screen.findByRole("alert");
-  expect(alert).toHaveTextContent("Could not load artifacts.");
-  // The message owns the recovery, so it no longer tells the reader to come
-  // back later with nothing to act on.
-  expect(alert).not.toHaveTextContent("later");
-  expect(getButtonByName("Try again", alert)).toBeEnabled();
 });

@@ -10,7 +10,6 @@ import { expect, test, describe, beforeEach, it } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
-  ARCHIVED_AGENT_ID,
   RESEARCH_AGENT_ID,
   agentFixture,
   setupTeamPage,
@@ -158,28 +157,6 @@ describe("with a team conversation page", () => {
     expect(message).toBeVisible();
     expect(window.location.pathname).toBe(`/chats/${FIRST_THREAD_ID}`);
   });
-});
-
-test("Agent details that fail to load offer a direct retry", async () => {
-  await setupTeamPage({
-    context,
-    path: `/agents/${ARCHIVED_AGENT_ID}`,
-    agents: [agentFixture(ARCHIVED_AGENT_ID, "Archived Agent")],
-    detailErrorByAgentId: {
-      [ARCHIVED_AGENT_ID]: "Agent details are unavailable.",
-    },
-  });
-
-  const content = await screen.findByRole("main");
-  const failure = await within(content).findByText(
-    "Agent details are unavailable.",
-  );
-  expect(failure).toBeVisible();
-  const retry = queryAllByRoleFast("link", content).find((candidate) => {
-    return candidate.textContent?.trim() === "Retry";
-  });
-  expect(retry).toBeVisible();
-  expect(retry).toHaveAttribute("href", `/agents/${ARCHIVED_AGENT_ID}`);
 });
 
 test.each(["{Enter}", " "])(

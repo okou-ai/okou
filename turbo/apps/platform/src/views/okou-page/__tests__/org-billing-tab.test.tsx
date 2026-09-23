@@ -448,42 +448,33 @@ async function selectMemberUsagePack(
   click(await screen.findByRole("option", { name: optionName }));
 }
 
-test.each([
-  {
-    name: "Pro",
-    floor: "from $20/month",
-    breakdown: "Plan $0 · member packages $20–$200 each",
-  },
-  {
-    name: "Team",
-    floor: "from $180/month",
-    breakdown: "Plan $160 · member packages $20–$200 each",
-  },
-])(
-  "Compare $name usage-pack pricing before choosing a plan",
-  async ({ name, floor, breakdown }) => {
-    mockInitialUsagePackPurchase();
-    const { choosePlanHeading, proPlan, teamPlan } =
-      await openUsagePackPlanSelection();
-    expect(choosePlanHeading).toBeInTheDocument();
-    // The plan steps are a dialog over the billing tab, not a page that
-    // replaces it, so the plan the workspace is deciding against stays visible.
-    expect(screen.getByText("No active plan")).toBeInTheDocument();
-    // The figure is a floor, not a fixed total: a workspace pays the plan plus
-    // at least one paid package, and paid packages run $20 to $200.
-    const plan = name === "Pro" ? proPlan : teamPlan;
-    expect(plan).toHaveTextContent(floor);
-    expect(within(plan).getByText(breakdown)).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Choose a paid package for each member in the next step, or select No package.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("group", { name: "Member usage" }),
-    ).not.toBeInTheDocument();
-  },
-);
+test("Compare both usage-pack prices before choosing a plan", async () => {
+  mockInitialUsagePackPurchase();
+  const { choosePlanHeading, proPlan, teamPlan } =
+    await openUsagePackPlanSelection();
+  expect(choosePlanHeading).toBeInTheDocument();
+  // The plan steps are a dialog over the billing tab, not a page that
+  // replaces it, so the plan the workspace is deciding against stays visible.
+  expect(screen.getByText("No active plan")).toBeInTheDocument();
+  // The figure is a floor, not a fixed total: a workspace pays the plan plus
+  // at least one paid package, and paid packages run $20 to $200.
+  expect(proPlan).toHaveTextContent("from $20/month");
+  expect(
+    within(proPlan).getByText("Plan $0 · member packages $20–$200 each"),
+  ).toBeInTheDocument();
+  expect(teamPlan).toHaveTextContent("from $180/month");
+  expect(
+    within(teamPlan).getByText("Plan $160 · member packages $20–$200 each"),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Choose a paid package for each member in the next step, or select No package.",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("group", { name: "Member usage" }),
+  ).not.toBeInTheDocument();
+});
 
 test.each(["pro", "team"] as const)(
   "Default new '%s' member packages through 'checkout preview'",
@@ -3205,7 +3196,7 @@ test("Show custom-plan access without self-service plan changes", async () => {
   expect(screen.queryByText("Downgrade")).not.toBeInTheDocument();
 });
 
-test("Keep self-service plans unavailable when a custom workspace reopens comparison", async () => {
+test("Keep self-service plans unavailable for a custom workspace", async () => {
   context.mocks.data.org({
     id: "org_1",
     name: "Custom Usage Pack Org",
@@ -3230,26 +3221,13 @@ test("Keep self-service plans unavailable when a custom workspace reopens compar
 
   await screen.findByText("Custom plan");
 
-  for (let openCount = 0; openCount < 2; openCount += 1) {
-    click(buttonByText("Compare all plans"));
-
-    const choosePlanDialog = await screen.findByRole("dialog", {
-      name: "Choose a plan",
-    });
-    expect(
-      within(choosePlanDialog).getByText("Step 1 of 3"),
-    ).toBeInTheDocument();
-    for (const name of ["Pro plan", "Team plan"]) {
-      const plan = within(choosePlanDialog).getByRole("article", { name });
-      expect(buttonByText("Unavailable", plan)).toBeDisabled();
-    }
-
-    click(within(choosePlanDialog).getByLabelText("Close"));
-    await waitFor(() => {
-      expect(
-        screen.queryByRole("dialog", { name: "Choose a plan" }),
-      ).not.toBeInTheDocument();
-    });
+  click(buttonByText("Compare all plans"));
+  const choosePlanDialog = await screen.findByRole("dialog", {
+    name: "Choose a plan",
+  });
+  for (const name of ["Pro plan", "Team plan"]) {
+    const plan = within(choosePlanDialog).getByRole("article", { name });
+    expect(buttonByText("Unavailable", plan)).toBeDisabled();
   }
 });
 

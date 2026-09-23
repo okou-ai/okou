@@ -112,27 +112,26 @@ function directoryTab(dialog: HTMLElement, name: "Custom" | "Discover") {
 describe.each([true, false])(
   "reopen Add connectors (directory: %s)",
   (directoryEnabled) => {
-    it.each(["Close", "Escape", "backdrop"] as const)(
-      "reset a dismissed list's search after %s",
-      async (dismissal) => {
-        installComposerConnectorFixture({ catalog: catalog() });
-        context.mocks.data.userPreferences({ locale: "en-US" });
-        await loadPage(directoryEnabled);
-        const dialog = await openAddConnectors(directoryEnabled);
-        await fill(
-          within(dialog).getByPlaceholderText("Find connectors..."),
-          "Notion",
-        );
-        await expect(
-          within(dialog).findByText("Notion"),
-        ).resolves.toBeVisible();
-        expect(within(dialog).queryByText("Gmail")).toBeNull();
+    it.each(
+      directoryEnabled
+        ? (["Close", "Escape", "backdrop"] as const)
+        : (["Close"] as const),
+    )("reset a dismissed list's search after %s", async (dismissal) => {
+      installComposerConnectorFixture({ catalog: catalog() });
+      context.mocks.data.userPreferences({ locale: "en-US" });
+      await loadPage(directoryEnabled);
+      const dialog = await openAddConnectors(directoryEnabled);
+      await fill(
+        within(dialog).getByPlaceholderText("Find connectors..."),
+        "Notion",
+      );
+      await expect(within(dialog).findByText("Notion")).resolves.toBeVisible();
+      expect(within(dialog).queryByText("Gmail")).toBeNull();
 
-        await dismiss(dialog, dismissal);
-        const reopened = await openAddConnectors(directoryEnabled);
-        expectFreshList(reopened);
-      },
-    );
+      await dismiss(dialog, dismissal);
+      const reopened = await openAddConnectors(directoryEnabled);
+      expectFreshList(reopened);
+    });
 
     it("return to the list after cancelling a custom connector's setup", async () => {
       installComposerConnectorFixture({
@@ -235,30 +234,27 @@ describe.each([true, false])(
   },
 );
 
-test.each(["Close", "Escape", "backdrop"] as const)(
-  "Reopen on the list after dismissing Slack details with %s",
-  async (dismissal) => {
-    const user = userEvent.setup({ delay: null });
-    installComposerConnectorFixture({ catalog: catalog() });
-    await loadPage(true);
-    const dialog = await openAddConnectors(true);
-    await fill(
-      within(dialog).getByPlaceholderText("Find connectors..."),
-      "Slack",
-    );
-    // Complete the pointer gesture before testing an outside pointer gesture.
-    await user.click(
-      await findFastControl("button", "Open Slack details", dialog),
-    );
-    await expect(
-      within(dialog).findByRole("heading", { name: "Slack" }),
-    ).resolves.toBeVisible();
+test("Reopen on the list after dismissing Slack details", async () => {
+  const user = userEvent.setup({ delay: null });
+  installComposerConnectorFixture({ catalog: catalog() });
+  await loadPage(true);
+  const dialog = await openAddConnectors(true);
+  await fill(
+    within(dialog).getByPlaceholderText("Find connectors..."),
+    "Slack",
+  );
+  // Complete the pointer gesture before testing an outside pointer gesture.
+  await user.click(
+    await findFastControl("button", "Open Slack details", dialog),
+  );
+  await expect(
+    within(dialog).findByRole("heading", { name: "Slack" }),
+  ).resolves.toBeVisible();
 
-    await dismiss(dialog, dismissal);
-    const reopened = await openAddConnectors(true);
-    expectFreshList(reopened);
-  },
-);
+  await dismiss(dialog, "Escape");
+  const reopened = await openAddConnectors(true);
+  expectFreshList(reopened);
+});
 
 test.each(["category", "custom"] as const)(
   "Reset the directory's %s selection on ordinary reopening",

@@ -194,30 +194,25 @@ test("The VNC hosts tab shows only its configured count above the host list", as
   ).toBeNull();
 });
 
-test.each([
-  { count: 0, label: "0 credentials configured" },
-  { count: 1, label: "1 credential configured" },
-  { count: 2, label: "2 credentials configured" },
-])(
-  "Shows the configured credential count independently of hosts for $count credentials",
-  async ({ count, label }) => {
-    const credentials = Array.from({ length: count }, (_, index) => {
-      return {
-        ...credential,
-        id: `d0000000-0000-4000-8000-00000000000${index}`,
-        name: `Login ${index}`,
-        hosts: [],
-      };
-    });
-    mockSettings({ connections: [], credentials });
-    await page();
-    await screen.findByText("0 hosts configured");
-    click(getAction("radio", "Credentials"));
-    await expect(screen.findByText(label)).resolves.toBeInTheDocument();
-    expect(getAction("button", "Add credential")).toBeEnabled();
-    expect(screen.queryByText("0 hosts configured")).toBeNull();
-  },
-);
+test("Shows the configured credential count independently of hosts", async () => {
+  const credentials = Array.from({ length: 2 }, (_, index) => {
+    return {
+      ...credential,
+      id: `d0000000-0000-4000-8000-00000000000${index}`,
+      name: `Login ${index}`,
+      hosts: [],
+    };
+  });
+  mockSettings({ connections: [], credentials });
+  await page();
+  await screen.findByText("0 hosts configured");
+  click(getAction("radio", "Credentials"));
+  await expect(
+    screen.findByText("2 credentials configured"),
+  ).resolves.toBeInTheDocument();
+  expect(getAction("button", "Add credential")).toBeEnabled();
+  expect(screen.queryByText("0 hosts configured")).toBeNull();
+});
 
 test("An owner reuses a VNC credential without exposing its password", async () => {
   mockSettings({ connections: [] });

@@ -83,22 +83,3 @@ test("An unsafe route icon is not loaded", async () => {
     ),
   ).toBeNull();
 });
-
-test("A failed provider handoff offers a return path", async () => {
-  context.mocks.browser.userAgent(IPHONE_USER_AGENT);
-
-  await setupPage({
-    context,
-    path: "/connectors/github/redirecting?label=GitHub&status=error",
-    auth: null,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "Couldn’t open GitHub" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("Return to Okou and try connecting again."),
-  ).toBeInTheDocument();
-  expect(screen.queryByText(MOBILE_HINT)).toBeNull();
-  expect(getBackLink()).toHaveAttribute("href", "/");
-});

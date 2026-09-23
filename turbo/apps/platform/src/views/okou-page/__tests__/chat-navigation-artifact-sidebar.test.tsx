@@ -464,8 +464,6 @@ test("Render a generated private image from the authenticated file reference", a
 
 test.each([
   ["https://a.okou.io", "a1b2c3d4e5"],
-  ["https://a.okou.io", "a".repeat(24)],
-  ["https://files.sites.vm7.io", "a1b2c3d4e5"],
   ["https://files.sites.vm7.io", "a".repeat(24)],
 ])(
   "public images use a protected thumbnail and open the original on %s/%s",

@@ -90,7 +90,7 @@ test("Keep connector icons across chats with the same agent", async () => {
   ).toBeInTheDocument();
 });
 
-test("Keep connector icons until the next agent resolves", async () => {
+test("Do not show another agent's connector icons while authorization loads", async () => {
   const otherAuthorization = context.mocks.deferred<void>();
   installComposerConnectorFixture({
     catalog: [
@@ -116,7 +116,8 @@ test("Keep connector icons until the next agent resolves", async () => {
     expect(window.location.pathname).toBe(`/agents/${OTHER_AGENT_ID}/chat`);
   });
   const otherTrigger = await findFastControl("button", "Connectors");
-  expect(connectorIcon(otherTrigger, GITHUB_SLUG)).toBeInTheDocument();
+  expect(connectorIcon(otherTrigger, GITHUB_SLUG)).toBeNull();
+  expect(connectorIcon(otherTrigger, SLACK_SLUG)).toBeNull();
   otherAuthorization.resolve(undefined);
   await waitFor(() => {
     expect(connectorIcon(otherTrigger, SLACK_SLUG)).toBeInTheDocument();

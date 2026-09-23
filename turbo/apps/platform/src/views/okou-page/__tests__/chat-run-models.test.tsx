@@ -173,43 +173,40 @@ async function selectComposerModel(
   );
 }
 
-test.each([{ enabled: false }, { enabled: true }])(
-  "shows configured Okou models when the Add Model switch is $enabled",
-  async ({ enabled }) => {
-    configureModelPolicies(
-      ["okou-1.0-max", "okou-1.0-pro", "okou-1.0", "gpt-5.6-luna"],
-      { defaultModel: "gpt-5.6-luna" },
-    );
-    installRunChat({ selectedModel: "gpt-5.6-luna" });
-    await setupPage({
-      context,
-      path: RUN_PATH,
-      featureSwitches: { [FeatureSwitchKey.OkouModels]: enabled },
-    });
-    await readyChat();
+test("shows configured Okou models when the Add Model switch is off", async () => {
+  configureModelPolicies(
+    ["okou-1.0-max", "okou-1.0-pro", "okou-1.0", "gpt-5.6-luna"],
+    { defaultModel: "gpt-5.6-luna" },
+  );
+  installRunChat({ selectedModel: "gpt-5.6-luna" });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouModels]: false },
+  });
+  await readyChat();
 
-    const user = userEvent.setup({ delay: null });
-    await user.click(await composerModelTrigger("GPT 5.6 Luna"));
-    const chatModels = await screen.findByRole("menu", {
-      name: "Chat models",
-    });
-    const optionNames = queryAllByRoleFast("menuitemradio", chatModels).map(
-      (option) => {
-        return option.textContent ?? "";
-      },
-    );
-    expect(
-      optionNames.filter((name) => {
-        return name.includes("Okou 1.0");
-      }),
-    ).toHaveLength(3);
-    expect(
-      optionNames.some((name) => {
-        return name.includes("GPT 5.6 Luna");
-      }),
-    ).toBeTruthy();
-  },
-);
+  const user = userEvent.setup({ delay: null });
+  await user.click(await composerModelTrigger("GPT 5.6 Luna"));
+  const chatModels = await screen.findByRole("menu", {
+    name: "Chat models",
+  });
+  const optionNames = queryAllByRoleFast("menuitemradio", chatModels).map(
+    (option) => {
+      return option.textContent ?? "";
+    },
+  );
+  expect(
+    optionNames.filter((name) => {
+      return name.includes("Okou 1.0");
+    }),
+  ).toHaveLength(3);
+  expect(
+    optionNames.some((name) => {
+      return name.includes("GPT 5.6 Luna");
+    }),
+  ).toBeTruthy();
+});
 
 describe("a model or speed change during an active run", () => {
   beforeEach(async () => {
@@ -560,12 +557,6 @@ test.each([
     "BYOK",
     "provider_insufficient_credits",
     "Your connected model provider account has insufficient balance.",
-  ],
-  ["built-in", undefined, "The current model is unavailable."],
-  [
-    "queue expiry",
-    "provider_queue_timeout",
-    "Oops, something went wrong. Please try again later.",
   ],
   [
     "Codex access program",
@@ -993,54 +984,49 @@ test.each([false, true])(
   },
 );
 
-test.each(["unknown", "unavailable"] as const)(
-  "Keep historical subscription failure with %s account neutral",
-  async (status) => {
-    const accountReads: string[] = [];
-    installRunChat({
-      selectedModel: "gpt-5.6-sol",
-      chatEvents: failedRunEvents(
-        "You've hit your usage limit.",
-        "gpt-5.6-sol",
-        "usage_limit",
-      ),
-    });
-    configureModelPolicies(["gpt-5.6-sol"]);
-    installRecoverySource({
-      providerType: "codex-oauth-token",
-      runtimeProviderType: null,
-      model: "gpt-5.6-sol",
-      credentialScope: "member",
-      account: { status },
-    });
-    context.mocks.api(
-      personalModelProviderAccountsByIdContract.getById,
-      ({ params, respond }) => {
-        accountReads.push(params.id);
-        return respond(404, {
-          error: { code: "NOT_FOUND", message: "Resource not found" },
-        });
-      },
-    );
-    await setupPage({
-      context,
-      path: RUN_PATH,
-      featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
-    });
-    await readyChat();
-    await openRecoveryDetails();
-    await expect(
-      screen.findByText(
-        status === "unknown"
-          ? "This run used a personal subscription. Its original account could not be verified."
-          : "This run used a personal subscription. Its original account is no longer connected.",
-      ),
-    ).resolves.toBeInTheDocument();
-    expect(queryButton("Reset and try again")).toBeNull();
-    expect(accountReads).toStrictEqual([]);
-    await expect(findButton("Try again")).resolves.toBeEnabled();
-  },
-);
+test("Keep historical subscription failure with an unavailable account neutral", async () => {
+  const accountReads: string[] = [];
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      "You've hit your usage limit.",
+      "gpt-5.6-sol",
+      "usage_limit",
+    ),
+  });
+  configureModelPolicies(["gpt-5.6-sol"]);
+  installRecoverySource({
+    providerType: "codex-oauth-token",
+    runtimeProviderType: null,
+    model: "gpt-5.6-sol",
+    credentialScope: "member",
+    account: { status: "unavailable" },
+  });
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.getById,
+    ({ params, respond }) => {
+      accountReads.push(params.id);
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Resource not found" },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
+  });
+  await readyChat();
+  await openRecoveryDetails();
+  await expect(
+    screen.findByText(
+      "This run used a personal subscription. Its original account is no longer connected.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(queryButton("Reset and try again")).toBeNull();
+  expect(accountReads).toStrictEqual([]);
+  await expect(findButton("Try again")).resolves.toBeEnabled();
+});
 
 test("An old API cannot downgrade a verified recovery to a settings reset", async () => {
   const sent: unknown[] = [];

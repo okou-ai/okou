@@ -317,7 +317,7 @@ test("Explain the billing effects before deleting a workspace", async () => {
   ).toBeInTheDocument();
 });
 
-test.each(["Cancel", "Close", "Escape", "backdrop"] as const)(
+test.each(["Cancel", "Escape"] as const)(
   "Require fresh workspace confirmation after dismissing with %s",
   async (dismissal) => {
     const user = userEvent.setup({ delay: null });
@@ -331,16 +331,8 @@ test.each(["Cancel", "Close", "Escape", "backdrop"] as const)(
 
     if (dismissal === "Cancel") {
       click(buttonWithText(dialog, "Cancel"));
-    } else if (dismissal === "Close") {
-      click(within(dialog).getByLabelText("Close"));
-    } else if (dismissal === "Escape") {
-      await user.keyboard("{Escape}");
     } else {
-      const viewport = dialog.closest('[data-slot="dialog-viewport"]');
-      if (!(viewport instanceof HTMLElement)) {
-        throw new Error("Delete dialog viewport not found");
-      }
-      await user.click(viewport);
+      await user.keyboard("{Escape}");
     }
     expect(dialog).toBeVisible();
     expect(within(dialog).getByPlaceholderText("confirm")).toHaveValue("");

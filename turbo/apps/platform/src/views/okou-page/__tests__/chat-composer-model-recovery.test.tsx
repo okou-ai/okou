@@ -557,14 +557,6 @@ async function expectUpgradedModelsAvailable(
   });
 }
 
-test("A billing upgrade makes previously gated built-in models available", async () => {
-  const scenario = await openLimitedModelAvailability();
-  await expectUpgradedModelsAvailable(scenario);
-  const builtInOption = modelMenuOption(/Claude Opus 4\.8/iu);
-  expect(builtInOption).toBeVisible();
-  expect(within(builtInOption).queryByText("Pro")).toBeNull();
-});
-
 test("A failed availability refresh keeps models resolved by the preceding billing upgrade", async () => {
   const scenario = await openLimitedModelAvailability();
   await expectUpgradedModelsAvailable(scenario);

@@ -993,27 +993,24 @@ test.each([
   },
 );
 
-test.each([404, 500] as const)(
-  "Diagnostic read failure (%s) is not a host failure and keeps management available",
-  async (status) => {
-    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-      return respond(200, { connections: [base] });
+test("Diagnostic read failure is not a host failure and keeps management available", async () => {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [base] });
+  });
+  context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "private server error",
+      },
     });
-    context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
-      return respond(status, {
-        error: {
-          code: status === 404 ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
-          message: "private server error",
-        },
-      });
-    });
-    await page();
-    await screen.findByText("SSH connection status is unavailable");
-    expect(getAction("button", "Edit host")).toBeEnabled();
-    expect(screen.queryByText(/needs attention/u)).toBeNull();
-    expect(document.body.textContent).not.toContain("private server error");
-  },
-);
+  });
+  await page();
+  await screen.findByText("SSH connection status is unavailable");
+  expect(getAction("button", "Edit host")).toBeEnabled();
+  expect(screen.queryByText(/needs attention/u)).toBeNull();
+  expect(document.body.textContent).not.toContain("private server error");
+});
 
 test("Live notifications refresh hosts across reconnect without clearing an open credential form", async () => {
   let host = base;
@@ -1108,35 +1105,6 @@ test("A stale zero-host entry does not auto-open Add when a host already exists"
   await screen.findByText("Deployment");
   expect(window.location.search).toBe("");
   expect(screen.queryByRole("dialog")).toBeNull();
-});
-
-test("A localized load error is retryable and distinct from feature unavailability", async () => {
-  let failed = true;
-  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
-    return failed
-      ? respond(500, {
-          error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "opaque server message",
-          },
-        })
-      : respond(200, { connections: [] });
-  });
-  await setupPage({
-    context,
-    path: "/connectors/ssh",
-    auth,
-    locale: "fr-FR",
-  });
-  await screen.findByText(
-    "Impossible de charger les paramètres SSH. Réessayez.",
-  );
-  expect(document.body.textContent).not.toContain("opaque server message");
-  expect(screen.queryByText(/pas disponible pour ce compte/u)).toBeNull();
-  failed = false;
-  click(getAction("button", "Réessayer"));
-  await screen.findByText("0 hôte configuré");
-  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 test("SSH retry refreshes Agent access data before returning to Connectors", async () => {

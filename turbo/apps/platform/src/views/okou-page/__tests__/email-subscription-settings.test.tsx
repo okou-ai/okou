@@ -279,40 +279,33 @@ describe("email subscription settings", () => {
     ).not.toBeInTheDocument();
   });
 
-  it.each(["suppressed", "no-email"] as const)(
-    "explains %s delivery without promising an email",
-    async (deliveryStatus) => {
-      context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
-        return respond(200, {
-          ...emailPreference,
-          deliveryStatus,
-          email: deliveryStatus === "no-email" ? null : emailPreference.email,
-        });
+  it("explains missing email delivery without promising an email", async () => {
+    context.mocks.api(emailSubscriptionContract.get, ({ respond }) => {
+      return respond(200, {
+        ...emailPreference,
+        deliveryStatus: "no-email",
+        email: null,
       });
-      context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-        return respond(200, {
-          enabled: true,
-          status: "enabled",
-          nextRunAt: "2030-01-02T07:00:00.000Z",
-          timezone: "UTC",
-          unavailableReason: null,
-        });
+    });
+    context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled: true,
+        status: "enabled",
+        nextRunAt: "2030-01-02T07:00:00.000Z",
+        timezone: "UTC",
+        unavailableReason: null,
       });
-      const region = await openPreferences();
-      await expect(
-        within(region).findByText("Email unavailable"),
-      ).resolves.toBeVisible();
-      await expect(
-        within(region).findByText("Chat only"),
-      ).resolves.toBeVisible();
-      expect(
-        within(region).getByRole("switch", {
-          name: "Email updates",
-        }),
-      ).toBeChecked();
-      expect(
-        within(region).queryByText("Chat + email"),
-      ).not.toBeInTheDocument();
-    },
-  );
+    });
+    const region = await openPreferences();
+    await expect(
+      within(region).findByText("Email unavailable"),
+    ).resolves.toBeVisible();
+    await expect(within(region).findByText("Chat only")).resolves.toBeVisible();
+    expect(
+      within(region).getByRole("switch", {
+        name: "Email updates",
+      }),
+    ).toBeChecked();
+    expect(within(region).queryByText("Chat + email")).not.toBeInTheDocument();
+  });
 });

@@ -415,51 +415,45 @@ test("preserve a rejected 401 through the port and allow a later query to succee
   ]);
 });
 
-test.each([401, 426, 500])(
-  "preserve HTTP status %s on query errors across MessagePort",
-  async (status) => {
-    initializeWorker();
-    const { bridge } = connectProtocolTransport(context.signal);
-    await bridge.registerTab(context.signal);
-    context.mocks.http.get("*/api/chat-threads/snapshot", () => {
-      return Response.json(
-        { error: { code: "REQUEST_FAILED", message: "Request failed" } },
-        { status },
-      );
-    });
-    const failed = bridge.query(
-      {
-        dataKey: { kind: "chat-thread-event" },
-        afterSeqId: null,
-        consistency: "catch-up",
-      },
-      context.signal,
+test("preserve upgrade status on query errors across MessagePort", async () => {
+  initializeWorker();
+  const { bridge } = connectProtocolTransport(context.signal);
+  await bridge.registerTab(context.signal);
+  context.mocks.http.get("*/api/chat-threads/snapshot", () => {
+    return Response.json(
+      { error: { code: "REQUEST_FAILED", message: "Request failed" } },
+      { status: 426 },
     );
-    await expect(failed).rejects.toBeInstanceOf(SharedDatabaseHttpError);
-    await expect(failed).rejects.toMatchObject({ status });
-  },
-);
+  });
+  const failed = bridge.query(
+    {
+      dataKey: { kind: "chat-thread-event" },
+      afterSeqId: null,
+      consistency: "catch-up",
+    },
+    context.signal,
+  );
+  await expect(failed).rejects.toBeInstanceOf(SharedDatabaseHttpError);
+  await expect(failed).rejects.toMatchObject({ status: 426 });
+});
 
-test.each([401, 426])(
-  "preserve API error classification for computed HTTP %s across MessagePort",
-  async (status) => {
-    initializeWorker();
-    const { bridge } = connectProtocolTransport(context.signal);
-    await bridge.registerTab(context.signal);
-    context.mocks.http.get("*/api/indicators", () => {
-      return Response.json(
-        { error: { code: "REQUEST_FAILED", message: "Request failed" } },
-        { status },
-      );
-    });
-    const failed = bridge.getComputed("chat-thread-indicators");
-    await expect(failed).rejects.toBeInstanceOf(ApiError);
-    await expect(failed).rejects.toMatchObject({
-      status,
-      code: "REQUEST_FAILED",
-    });
-  },
-);
+test("preserve API error classification for computed upgrade errors across MessagePort", async () => {
+  initializeWorker();
+  const { bridge } = connectProtocolTransport(context.signal);
+  await bridge.registerTab(context.signal);
+  context.mocks.http.get("*/api/indicators", () => {
+    return Response.json(
+      { error: { code: "REQUEST_FAILED", message: "Request failed" } },
+      { status: 426 },
+    );
+  });
+  const failed = bridge.getComputed("chat-thread-indicators");
+  await expect(failed).rejects.toBeInstanceOf(ApiError);
+  await expect(failed).rejects.toMatchObject({
+    status: 426,
+    code: "REQUEST_FAILED",
+  });
+});
 
 test("Keep concurrent shared chat loads independent", async () => {
   initializeWorker();

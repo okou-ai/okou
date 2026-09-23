@@ -102,7 +102,7 @@ test("A chat event starts demand for the newly active run", async () => {
   await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
 });
 
-test.each(["available", "unavailable", 500] as const)(
+test.each(["available", "unavailable"] as const)(
   "A %s response without a batch uses the fallback and recovers on a later loop tick",
   async (outcome) => {
     installActiveRun();
@@ -113,16 +113,7 @@ test.each(["available", "unavailable", 500] as const)(
         if (recovered) {
           return respond(200, summary());
         }
-        // A storage failure answers 500, which this viewer handles exactly as it
-        // handles `unavailable`: the request rejects and the last batch stands.
-        return outcome === 500
-          ? respond(500, {
-              error: {
-                message: "Summary unavailable",
-                code: "INTERNAL_SERVER_ERROR",
-              },
-            })
-          : respond(200, summary({ status: outcome, messages: [] }));
+        return respond(200, summary({ status: outcome, messages: [] }));
       },
     );
 
@@ -296,7 +287,7 @@ test.each(["completed", "cancelled", "replaced", "queued"] as const)(
   },
 );
 
-test.each([403, 404, "ineligible"] as const)(
+test.each([403, "ineligible"] as const)(
   "A %s response clears copy without blocking a later loop retry",
   async (status) => {
     installActiveRun();

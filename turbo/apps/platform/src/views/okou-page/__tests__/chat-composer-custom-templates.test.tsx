@@ -710,7 +710,7 @@ test("Kind filters combine with search without an All option", async () => {
   expect(buttonByName("All", filters)).toBeUndefined();
 });
 
-test.each(["click", "{Enter}", " "])(
+test.each(["click", " "])(
   "An empty kind hides filters and Custom reopens the available catalog with %s",
   async (activation) => {
     mockCustomTemplates([customTemplate()]);

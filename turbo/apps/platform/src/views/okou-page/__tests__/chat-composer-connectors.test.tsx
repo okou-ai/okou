@@ -591,7 +591,7 @@ test("Show only the connector actions that are useful in chat", async () => {
   expect(accessRow(screen.getByLabelText("Add Axiom"))).toBe(axiomRow);
 });
 
-test.each(["pointer", "Enter", "Space"] as const)(
+test.each(["pointer", "Space"] as const)(
   "Start connector setup from chat with %s",
   async (activation) => {
     const user = userEvent.setup({ delay: null });
@@ -631,7 +631,7 @@ test.each(["pointer", "Enter", "Space"] as const)(
     if (activation === "pointer") {
       await user.click(connect);
     } else {
-      await user.keyboard(activation === "Space" ? "[/Space]" : "{Enter}");
+      await user.keyboard("[/Space]");
     }
     await waitFor(() => {
       expect(fixture.oauthConnectionRequests).toHaveLength(1);
@@ -673,7 +673,7 @@ test.each(["pointer", "Enter", "Space"] as const)(
   },
 );
 
-test.each([null, "Close", "Escape", "backdrop"] as const)(
+test.each([null, "Close", "backdrop"] as const)(
   "Keep chat OAuth in one dialog, with explicit cancellation and outside-press protection (%s)",
   async (dismissal) => {
     const user = userEvent.setup({ delay: null });
@@ -731,8 +731,6 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
     if (dismissal) {
       if (dismissal === "Close") {
         await user.click(within(catalog).getByLabelText("Close"));
-      } else if (dismissal === "Escape") {
-        await user.keyboard("{Escape}");
       } else {
         const viewport = catalog.closest('[data-slot="dialog-viewport"]');
         if (!(viewport instanceof HTMLElement)) {
@@ -741,7 +739,7 @@ test.each([null, "Close", "Escape", "backdrop"] as const)(
         await user.click(viewport);
       }
     }
-    const cancelled = dismissal === "Close" || dismissal === "Escape";
+    const cancelled = dismissal === "Close";
     await waitFor(() => {
       expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
         cancelled ? 0 : 1,

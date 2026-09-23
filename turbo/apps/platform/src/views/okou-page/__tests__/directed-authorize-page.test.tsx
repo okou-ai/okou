@@ -268,7 +268,7 @@ test("Wait for refreshed authorization state instead of updating optimistically"
   });
 });
 
-test("Recover from an agent authorization lookup failure", async () => {
+test("Show an unavailable state for a deleted agent", async () => {
   mockConnectedConnector("gmail");
   context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(404, {
@@ -282,9 +282,11 @@ test("Recover from an agent authorization lookup failure", async () => {
   });
 
   await waitFor(() => {
-    expect(screen.getByText("Okou needs Gmail to proceed")).toBeInTheDocument();
-    expect(screen.getByText("Authorize Okou")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Agent not found" }),
+    ).toBeVisible();
   });
+  expect(screen.queryByRole("button", { name: "Authorize Okou" })).toBeNull();
 });
 
 test("Connect a manual-token connector while authorizing an agent", async () => {

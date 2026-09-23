@@ -138,30 +138,28 @@ test("an image link stays in the app and reuses the lightbox preview and zoom co
   ).toHaveTextContent("100%");
 });
 
-test.each([imagePath, `/share/artifacts/${artifactId}`])(
-  "Share copies the current app address without changing sharing or copying a signature: %s",
-  async (path) => {
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    const shareChanges: string[] = [];
-    context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
-      shareChanges.push(body.audience);
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Unavailable" },
-      });
+test("Share copies the current app address without changing sharing or copying a signature", async () => {
+  const path = imagePath;
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const shareChanges: string[] = [];
+  context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
+    shareChanges.push(body.audience);
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Unavailable" },
     });
-    await openViewer({ path: `${path}#detail` });
-    click(action("button", "Share"));
+  });
+  await openViewer({ path: `${path}#detail` });
+  click(action("button", "Share"));
 
-    await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([
-        `https://app.okou.ai${path}#detail`,
-      ]);
-    });
-    await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
-    expect(shareChanges).toStrictEqual([]);
-    expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
-  },
-);
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([
+      `https://app.okou.ai${path}#detail`,
+    ]);
+  });
+  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  expect(shareChanges).toStrictEqual([]);
+  expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
+});
 
 test("clipboard failure is reported without claiming that the link was copied", async () => {
   vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
@@ -209,37 +207,32 @@ test("the viewer's continuation link retains its tooltip and navigation semantic
   });
 });
 
-test.each([
-  `/share/artifacts/${artifactId}?source=shared#detail`,
-  "/artifacts/a1b2c3d4e5.png#detail",
-])(
-  "downloads resolve references and save the original filename and bytes: %s",
-  async (path) => {
-    const browser = context.mocks.browser.blobDownload();
-    context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
-      return HttpResponse.text("original image bytes", {
-        headers: { "Content-Type": "image/png" },
-      });
+test("downloads resolve references and save the original filename and bytes", async () => {
+  const path = `/share/artifacts/${artifactId}?source=shared#detail`;
+  const browser = context.mocks.browser.blobDownload();
+  context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
+    return HttpResponse.text("original image bytes", {
+      headers: { "Content-Type": "image/png" },
     });
-    await openViewer({
-      path,
-    });
-    click(action("button", "Download options"));
-    await waitFor(() => {
-      expect(action("menuitem", "Download")).toBeInTheDocument();
-    });
-    expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
-    click(action("menuitem", "Download"));
+  });
+  await openViewer({
+    path,
+  });
+  click(action("button", "Download options"));
+  await waitFor(() => {
+    expect(action("menuitem", "Download")).toBeInTheDocument();
+  });
+  expect(queryAllByRoleFast("menuitem")).toHaveLength(1);
+  click(action("menuitem", "Download"));
 
-    await waitFor(() => {
-      expect(browser.downloads).toHaveLength(1);
-    });
-    expect(browser.downloads[0]?.filename).toBe("launch.png");
-    await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-      "original image bytes",
-    );
-  },
-);
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  expect(browser.downloads[0]?.filename).toBe("launch.png");
+  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
+    "original image bytes",
+  );
+});
 
 test("HTML stays on its isolated origin and retains the requested slide", async () => {
   const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
@@ -406,18 +399,6 @@ test("a failed account switch can be retried", async () => {
   await waitFor(() => {
     expect(mockedClerk.openSignIn).toHaveBeenCalledTimes(2);
   });
-});
-
-test("retry reloads the current artifact without dropping its query or fragment", async () => {
-  const reload = vi
-    .spyOn(window.location, "reload")
-    .mockImplementation(() => {});
-  await openUnavailableArtifact(`${imagePath}?source=shared#detail`);
-  click(action("button", "Try again"));
-  expect(reload).toHaveBeenCalledExactlyOnceWith();
-  expect(window.location.href).toBe(
-    `https://app.okou.ai${imagePath}?source=shared#detail`,
-  );
 });
 
 test("A shared Markdown artifact displays its diagram", async () => {

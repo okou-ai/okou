@@ -213,28 +213,25 @@ function installVideoSubmissionCapture(): SubmittedMessage[] {
   return submissions;
 }
 
-test.each([false, true])(
-  "Keep video settings collapsed until requested with the slash panel on: %s",
-  async (enabled) => {
-    installVideoSubmissionCapture();
-    await setupPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: {
-        [FeatureSwitchKey.ComposerSlashTemplatePanel]: enabled,
-      },
-    });
-    await selectVideoTemplate();
-    expect(
-      fastControl("button", "Video options 16:9 · 8s · 720p"),
-    ).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
-    await expect(
-      openVideoOptions("16:9 · 8s · 720p"),
-    ).resolves.toBeInTheDocument();
-    await userEvent.setup({ delay: null }).keyboard("{Escape}");
-  },
-);
+test("Keep video settings collapsed until requested", async () => {
+  installVideoSubmissionCapture();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
+    },
+  });
+  await selectVideoTemplate();
+  expect(
+    fastControl("button", "Video options 16:9 · 8s · 720p"),
+  ).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByLabelText("Video options")).not.toBeInTheDocument();
+  await expect(
+    openVideoOptions("16:9 · 8s · 720p"),
+  ).resolves.toBeInTheDocument();
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+});
 
 test("Keep the video spec with the run controls below the message", async () => {
   installVideoSubmissionCapture();

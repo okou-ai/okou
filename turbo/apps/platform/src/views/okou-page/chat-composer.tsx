@@ -7078,8 +7078,9 @@ function ComposerConnectorAccountMenu({
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const open = Boolean(
     menuOpen &&
-    menuTarget &&
-    connectorAccountTargetKey(menuTarget) === connectorAccountTargetKey(target),
+      menuTarget &&
+      connectorAccountTargetKey(menuTarget) ===
+        connectorAccountTargetKey(target),
   );
   const effectiveConnection = explicit ? selectedConnection : defaultConnection;
   const resolveAccountLabel = useConnectorAccountLabel();
@@ -9178,9 +9179,8 @@ interface ComposerMediaModelPickerState<Model extends string> {
   readonly onChange: (next: Model | null) => void;
 }
 
-interface ComposerResolvedMediaModelPickerState<
-  Model extends string,
-> extends ComposerMediaModelPickerState<Model> {
+interface ComposerResolvedMediaModelPickerState<Model extends string>
+  extends ComposerMediaModelPickerState<Model> {
   readonly selectedModel: Model;
 }
 
@@ -10110,7 +10110,11 @@ function ComposerConnectorsSlot({
   const { t } = useTranslation();
   const connectorDirectoryEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
-  const connectorData = useLastResolved(signals.connector.data$);
+  const lastConnectorData = useLastResolved(signals.connector.data$);
+  const connectorData =
+    lastConnectorData?.authorization.agentId === signals.agentId
+      ? lastConnectorData
+      : undefined;
   const addDialogCatalogItems =
     useLastResolved(signals.connector.addDialogCatalogItems$) ?? [];
   const agents = useLastResolved(agents$) ?? [];
