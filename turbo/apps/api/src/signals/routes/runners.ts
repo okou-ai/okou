@@ -1,5 +1,6 @@
 import {
   NATIVE_GPT_6_SOL_HEADER,
+  NATIVE_GPT_6_LUNA_HEADER,
   claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
@@ -850,6 +851,16 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       AND ${inArray(
         sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
         ["gpt-6-sol", "openai/gpt-6-sol"],
+      )}
+    ) IS NOT TRUE`);
+  }
+  if (get(request$).header(NATIVE_GPT_6_LUNA_HEADER) !== "1") {
+    // Filter before the bounded lookup, including during Runner rollback.
+    whereConditions.push(sql`(
+      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "codex")}
+      AND ${inArray(
+        sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
+        ["gpt-6-luna", "openai/gpt-6-luna"],
       )}
     ) IS NOT TRUE`);
   }
@@ -2708,6 +2719,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
     readonly supportsNativeGpt6Sol: boolean;
+    readonly supportsNativeGpt6Luna: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2745,6 +2757,17 @@ async function resolveStoredExecutionContextForClaim(
   ) {
     // Old Runner artifacts bundle a Guest that rejects Sol's native effort.
     // Keep the job queued for a capable claimant, including during rollback.
+    return {
+      compatible: false as const,
+      response: notFound("Job not found in queue"),
+    };
+  }
+  if (
+    !args.supportsNativeGpt6Luna &&
+    storedContext.cliAgentType === "codex" &&
+    (nativeModel === "gpt-6-luna" || nativeModel === "openai/gpt-6-luna")
+  ) {
+    // Older Runner artifacts bundle a Guest without Luna native support.
     return {
       compatible: false as const,
       response: notFound("Job not found in queue"),
@@ -2792,6 +2815,7 @@ const claimAuthorizedJob$ = command(
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
       readonly supportsNativeGpt6Sol: boolean;
+      readonly supportsNativeGpt6Luna: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2811,6 +2835,7 @@ const claimAuthorizedJob$ = command(
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
         supportsNativeGpt6Sol: args.supportsNativeGpt6Sol,
+        supportsNativeGpt6Luna: args.supportsNativeGpt6Luna,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs);
@@ -2975,6 +3000,8 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       capabilities: body.data.capabilities,
       supportsNativeGpt6Sol:
         get(request$).header(NATIVE_GPT_6_SOL_HEADER) === "1",
+      supportsNativeGpt6Luna:
+        get(request$).header(NATIVE_GPT_6_LUNA_HEADER) === "1",
       jobWithRun,
       telemetry: body.data.telemetry,
       claimRequestStartedAtMs,

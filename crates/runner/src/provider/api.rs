@@ -1465,7 +1465,7 @@ impl ApiClient {
         let resp = send_api(
             self.http
                 .request_route(routes::runners::poll::POLL, &self.token)
-                .native_gpt_6_sol_reader()
+                .native_gpt_6_reader()
                 .json(&body),
             "poll",
         )
@@ -1521,7 +1521,7 @@ impl ApiClient {
             ),
             &self.token,
         );
-        let request = request.native_gpt_6_sol_reader().json(&body);
+        let request = request.native_gpt_6_reader().json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let resp = send_api(request, "claim").await?;
         let request_to_response_headers_elapsed = request_to_response_headers_started_at.elapsed();

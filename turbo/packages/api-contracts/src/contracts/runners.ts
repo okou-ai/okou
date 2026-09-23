@@ -196,6 +196,7 @@ export const runnerInstalledVersionsSchema = z
 
 /** Native model support is advertised in a header ignored by previous APIs. */
 export const NATIVE_GPT_6_SOL_HEADER = "X-Native-Gpt-6-Sol";
+export const NATIVE_GPT_6_LUNA_HEADER = "X-Native-Gpt-6-Luna";
 
 export const builtInModelProviderConnectionSourceSchema = z.enum([
   "provider_response",

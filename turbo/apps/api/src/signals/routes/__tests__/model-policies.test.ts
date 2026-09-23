@@ -282,6 +282,7 @@ describe("GET/PUT /api/model-policies", () => {
 
     expect(initial.body.modelsAvailableToAdd).toContain("gpt-5.6-sol");
     expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
+    expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-luna");
     expect(initial.body.modelsAvailableToAdd).not.toContain(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
@@ -297,6 +298,21 @@ describe("GET/PUT /api/model-policies", () => {
     );
     expect(rejected.body.error.message).toBe(
       'Model "gpt-6-sol" is not available to add',
+    );
+    const lunaRejected = await accept(
+      client.update({
+        headers: authHeaders(),
+        body: {
+          policies: [
+            ...toUpdate(initial.body),
+            makeBuiltInPolicy("gpt-6-luna"),
+          ],
+        },
+      }),
+      [400],
+    );
+    expect(lunaRejected.body.error.message).toBe(
+      'Model "gpt-6-luna" is not available to add',
     );
 
     const unchanged = await accept(
