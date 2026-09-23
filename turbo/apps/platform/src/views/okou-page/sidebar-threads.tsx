@@ -1366,12 +1366,13 @@ function ExpandedChatThreadsContent({
   return (
     <OverlayScrollArea
       scrollSignals={scrollSignals}
-      className={cn(
-        "mt-1 min-h-0 flex-1",
+      className="mt-1 min-h-0 flex-1"
+      // Keep the viewport's previous shadow precedence when it receives focus.
+      viewportClassName={
         isScrolled
-          ? "shadow-[0_-1px_0_0_hsl(var(--border)/0.4)]"
-          : "shadow-none",
-      )}
+          ? "[box-shadow:0_-1px_0_0_hsl(var(--border)/0.4)]!"
+          : "[box-shadow:none]!"
+      }
       contentClassName={contentClassName}
       aria-label={t(($) => {
         return $.chat.sidebar.chatThreads;
