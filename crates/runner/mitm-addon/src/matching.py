@@ -177,12 +177,6 @@ _AWS_IGNORED_QUERY_KEYS = frozenset(
 # 7. ``segment_count`` (``segmentCount``): total number of path segments.
 _PathSpecificity = tuple[int, int, int, int, int, int, int]
 _AwsPathSegmentIdentity = tuple[str, ...]
-_AwsRuleIdentity = tuple[
-    str,
-    tuple[_AwsPathSegmentIdentity, ...],
-    tuple[tuple[str, str | None], ...],
-    tuple[tuple[str, str], ...],
-]
 
 
 class _AwsFormActionResult(NamedTuple):
@@ -1928,18 +1922,6 @@ def _aws_predicates_match(
     )
 
 
-def _aws_rule_identity(rule: _CompiledRule) -> _AwsRuleIdentity | None:
-    predicates = rule.aws_predicates
-    if predicates is None:
-        return None
-    return (
-        rule.method,
-        tuple(_aws_path_segment_identity(segment) for segment in rule.path.segments),
-        tuple(sorted(rule.query_requirements, key=lambda item: item[0])),
-        tuple(sorted(predicates.items())),
-    )
-
-
 def _rule_request_params(
     rule: _CompiledRule,
     *,
@@ -2185,15 +2167,6 @@ def _evaluate_selected_rule_entries(
             continue
         matched_aws_entries[entry.order] = params
 
-    blocked_aws_permissions: dict[_AwsRuleIdentity, list[str]] = {}
-    if policy is not None:
-        for entry in rule_entries:
-            if entry.order not in matched_aws_entries:
-                continue
-            identity = _aws_rule_identity(entry.rule)
-            if identity is not None and entry.permission in policy.blocked_permissions:
-                blocked_aws_permissions.setdefault(identity, []).append(entry.permission)
-
     for entry in rule_entries:
         rule = entry.rule
         if rule.method not in ("ANY", upper_method):
@@ -2214,14 +2187,6 @@ def _evaluate_selected_rule_entries(
         else:
             params = matched_aws_entries.get(entry.order)
             if params is None:
-                continue
-            identity = _aws_rule_identity(rule)
-            blocked_aliases = (
-                blocked_aws_permissions.get(identity) if identity is not None else None
-            )
-            if blocked_aliases is not None:
-                for permission in blocked_aliases:
-                    decision.record_denied_rule(api_match.block_match, permission)
                 continue
             if permission_blocked:
                 decision.record_denied_rule(api_match.block_match, entry.permission)
