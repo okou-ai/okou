@@ -1873,6 +1873,51 @@ async fn execute_cli_inner(
                         }
                     }
                     Err(error) => {
+                        // An over-limit record whose type the framework's
+                        // projector ignores cannot lose public output, so it is
+                        // discarded instead of ending the run. The reader
+                        // reports `TooLong` without consuming the record, so
+                        // the remainder must be drained before reading again.
+                        if matches!(error, line_reader::BoundedLineError::TooLong)
+                            && matches!(runtime.framework, env::Framework::Pi)
+                        {
+                            let labels = record_labels::prefix_labels(&stdout_partial_line);
+                            if pi_rpc::oversized_record_is_discardable(labels.event_type) {
+                                log_warn!(
+                                    LOG_TAG,
+                                    "Discarded oversized ignorable CLI stdout record: event_type={} item_type={} size_bucket={} limit_bytes={}",
+                                    labels.event_type,
+                                    labels.item_type,
+                                    record_labels::size_bucket(stdout_partial_line.len()),
+                                    ORDINARY_CLI_STDOUT_MAX_LINE_BYTES,
+                                );
+                                stdout_partial_line.clear();
+                                match line_reader::skip_to_line_end(&mut reader).await {
+                                    // The record was unterminated, so the next
+                                    // read observes EOF and closes stdout
+                                    // through the ordinary path.
+                                    Ok(_) => continue,
+                                    Err(error) => {
+                                        stdout_closed = true;
+                                        active_input_controller.close_terminal();
+                                        let error = AgentError::Io(error);
+                                        if cli_status.is_some() {
+                                            break Err(error);
+                                        }
+                                        let error_log = error.to_string();
+                                        termination_runtime.begin_control_failure(
+                                            TerminationReason::StdoutIngestion,
+                                            error,
+                                            ControlTerminationLog::StdoutIngestionFailed {
+                                                error: error_log,
+                                            },
+                                            termination_deadline.as_mut(),
+                                        );
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                         stdout_closed = true;
                         active_input_controller.close_terminal();
                         let error = match error {

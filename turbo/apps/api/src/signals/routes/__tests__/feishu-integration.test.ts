@@ -723,6 +723,7 @@ async function enableFeishuIntegration(
     { userId: actor.userId, orgId: actor.orgId },
     {
       [FEISHU_PLATFORMS[platform].featureSwitch]: true,
+      [FeatureSwitchKey.PiLoop]: false,
       ...extraSwitches,
     },
   );

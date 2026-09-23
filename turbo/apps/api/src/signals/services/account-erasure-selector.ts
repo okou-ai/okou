@@ -22,6 +22,18 @@ const selectorSchema = z.discriminatedUnion("kind", [
     key: z.string().min(1).max(2048),
     versionId: z.string().min(1).max(256).optional(),
   }),
+  // A resource whose bytes are owned by a key prefix rather than by a listed
+  // set of keys. A hosted deployment is the case: its manifest names the files
+  // it uploaded, but the prefix owns everything under it, so capturing the
+  // prefix reaches an object the manifest never listed. Capturing the prefix
+  // is also what survives the catalog row, which is the point — the row that
+  // holds `r2_prefix` is deleted by the relational sweep.
+  z.strictObject({
+    version: z.literal(1),
+    kind: z.literal("object_prefix"),
+    storageRef: z.uuid(),
+    prefix: z.string().min(1).max(2048),
+  }),
   z.strictObject({
     version: z.literal(1),
     kind: z.literal("provider"),

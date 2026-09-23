@@ -745,10 +745,15 @@ function scheduledSubscriptionRecurringPreviewParams(
 function subscriptionChangeRecurringPreviewParams(args: {
   readonly prepared: PreparedSubscriptionChange;
   readonly finalItems: readonly StripeSubscriptionUpdateItemParam[];
+  readonly immediatePackageQuantities: ReadonlyMap<string, number>;
   readonly finalPackageQuantities: ReadonlyMap<string, number>;
 }): StripeInvoiceCreatePreviewParams {
   const attachedSchedule = args.prepared.attachedSchedule;
-  if (attachedSchedule && args.prepared.hasScheduledChanges) {
+  if (
+    attachedSchedule &&
+    (args.prepared.hasScheduledChanges ||
+      (args.prepared.existingScheduleId && args.prepared.hasImmediateChanges))
+  ) {
     return {
       schedule: attachedSchedule.id,
       preview_mode: "next",
@@ -756,6 +761,13 @@ function subscriptionChangeRecurringPreviewParams(args: {
         subscription: args.prepared.subscription,
         schedule: attachedSchedule,
         effectiveAt: args.prepared.period.end,
+        currentPlanPriceId:
+          args.prepared.context.subscription.tier === "pro" &&
+          args.prepared.targetPlanPriceId !==
+            args.prepared.context.subscription.stripePlanPriceId
+            ? args.prepared.targetPlanPriceId
+            : args.prepared.context.subscription.stripePlanPriceId,
+        currentQuantities: args.immediatePackageQuantities,
         targetPlanPriceId: args.prepared.targetPlanPriceId,
         quantities: args.finalPackageQuantities,
       }),
@@ -808,8 +820,22 @@ function restorableScheduleId(
     : null;
 }
 
+async function scheduledAllocationChanges(
+  db: Pick<Db, "select">,
+  subscriptionId: string,
+): Promise<readonly UsagePackAllocationChangeRow[]> {
+  return await db
+    .select()
+    .from(usagePackAllocationChanges)
+    .where(
+      and(
+        eq(usagePackAllocationChanges.usagePackSubscriptionId, subscriptionId),
+        eq(usagePackAllocationChanges.status, "scheduled"),
+      ),
+    );
+}
+
 function replacementScheduleId(
-  root: UsagePackSubscriptionChangeRow,
   changes: readonly UsagePackAllocationChangeRow[],
 ): string | null {
   const scheduleId = changes[0]?.stripeScheduleId;
@@ -825,18 +851,9 @@ function replacementScheduleId(
     }
     return null;
   }
-  const replacesPlanDowngrade = planIsDowngrade(
-    root.sourceTier,
-    root.targetTier,
-  );
   if (
     !changes.every((change) => {
-      return (
-        change.stripeScheduleId === scheduleId &&
-        (replacesPlanDowngrade ||
-          change.kind === "downgrade" ||
-          (change.kind === "removal" && change.subscriptionChangeId !== null))
-      );
+      return change.stripeScheduleId === scheduleId;
     })
   ) {
     throw new Error("Usage pack replacement has inconsistent Stripe schedules");
@@ -888,8 +905,6 @@ type SubscriptionChangePreparation =
     };
 
 function prepareExistingSchedule(args: {
-  readonly allocationChanges: readonly PreparedAllocationChange[];
-  readonly hasImmediateChanges: boolean;
   readonly openAllocationChanges: readonly UsagePackAllocationChangeRow[];
   readonly ownedPlanScheduleId: string | null;
   readonly sameConfiguration: boolean;
@@ -914,18 +929,7 @@ function prepareExistingSchedule(args: {
   if (!scheduleId) {
     return { status: "conflict" };
   }
-  if (args.sameConfiguration) {
-    return { status: "ready", scheduleId };
-  }
-  const replacesScheduledDowngrade =
-    !args.hasImmediateChanges &&
-    args.allocationChanges.length > 0 &&
-    args.allocationChanges.every((change) => {
-      return change.kind === "downgrade" || change.kind === "removal";
-    });
-  return replacesScheduledDowngrade
-    ? { status: "ready", scheduleId }
-    : { status: "conflict" };
+  return { status: "ready", scheduleId };
 }
 
 async function resumeOpenSubscriptionChange(
@@ -1051,8 +1055,6 @@ async function prepareSubscriptionChange(
       ? context.pendingPlanScheduleId
       : null;
   const existingSchedule = prepareExistingSchedule({
-    allocationChanges,
-    hasImmediateChanges,
     openAllocationChanges: context.openAllocationChanges,
     ownedPlanScheduleId,
     sameConfiguration,
@@ -1494,6 +1496,7 @@ async function previewSubscriptionChangeInvoices(
     readonly prepared: PreparedSubscriptionChange;
     readonly immediateItems: readonly StripeSubscriptionUpdateItemParam[];
     readonly finalItems: readonly StripeSubscriptionUpdateItemParam[];
+    readonly immediatePackageQuantities: ReadonlyMap<string, number>;
     readonly finalPackageQuantities: ReadonlyMap<string, number>;
   },
   signal: AbortSignal,
@@ -1511,6 +1514,7 @@ async function previewSubscriptionChangeInvoices(
           subscriptionChangeRecurringPreviewParams({
             prepared,
             finalItems: args.finalItems,
+            immediatePackageQuantities: args.immediatePackageQuantities,
             finalPackageQuantities: args.finalPackageQuantities,
           }),
         ),
@@ -1587,7 +1591,13 @@ export async function previewUsagePackSubscriptionChange(
   );
   const [invoicePreviews, immediateCreditGrant] = await Promise.all([
     previewSubscriptionChangeInvoices(
-      { prepared, immediateItems, finalItems, finalPackageQuantities },
+      {
+        prepared,
+        immediateItems,
+        finalItems,
+        immediatePackageQuantities,
+        finalPackageQuantities,
+      },
       signal,
     ),
     immediateUsagePackUpgradeCreditGrant(prepared),
@@ -1901,9 +1911,13 @@ async function persistDeferredSubscriptionChangeSchedule(
 ): Promise<void> {
   const updatedAt = nowDate();
   const allocationReplacementScheduleId = replacementScheduleId(
-    stored.root,
     stored.allocationChanges,
   );
+  const hasDeferredChanges =
+    planIsDowngrade(stored.root.sourceTier, stored.root.targetTier) ||
+    stored.allocationChanges.some((change) => {
+      return change.kind === "downgrade" || change.kind === "removal";
+    });
   await db.transaction(async (tx) => {
     await lockUsagePackBillingOrg(tx, stored.root.orgId);
     const [root] = await tx
@@ -1921,6 +1935,12 @@ async function persistDeferredSubscriptionChangeSchedule(
       tx,
       stored.root,
     );
+    const unrecordedReplacementScheduleId =
+      stored.allocationChanges.length === 0
+        ? restorableScheduleId(
+            await scheduledAllocationChanges(tx, stored.subscription.id),
+          )
+        : null;
     if (
       allocationReplacementScheduleId &&
       planReplacementScheduleId &&
@@ -1931,9 +1951,11 @@ async function persistDeferredSubscriptionChangeSchedule(
       );
     }
     const supersededScheduleId =
-      allocationReplacementScheduleId ?? planReplacementScheduleId;
+      allocationReplacementScheduleId ??
+      planReplacementScheduleId ??
+      unrecordedReplacementScheduleId;
     if (supersededScheduleId) {
-      const superseded = await tx
+      await tx
         .update(usagePackAllocationChanges)
         .set({
           status: "failed",
@@ -1953,14 +1975,7 @@ async function persistDeferredSubscriptionChangeSchedule(
               supersededScheduleId,
             ),
           ),
-        )
-        .returning({ id: usagePackAllocationChanges.id });
-      if (
-        superseded.length === 0 &&
-        planReplacementScheduleId !== supersededScheduleId
-      ) {
-        throw new Error("Scheduled usage pack replacement lost its source");
-      }
+        );
     }
     await tx
       .update(usagePackAllocationChanges)
@@ -1984,7 +1999,7 @@ async function persistDeferredSubscriptionChangeSchedule(
       .update(usagePackSubscriptionChanges)
       .set({
         status: "completed",
-        effectiveAt,
+        effectiveAt: hasDeferredChanges ? effectiveAt : root.effectiveAt,
         completedAt: updatedAt,
         updatedAt,
       })
@@ -2069,7 +2084,10 @@ async function completeDeferredScheduleRequest(
   return effectiveAt;
 }
 
-function deferredSubscriptionChangeTarget(stored: StoredSubscriptionChange): {
+function deferredSubscriptionChangeTarget(
+  stored: StoredSubscriptionChange,
+  periodEnd: number,
+): {
   readonly targetPlanPriceId: string;
   readonly quantities: ReadonlyMap<string, number>;
   readonly effectiveAt: number;
@@ -2096,8 +2114,12 @@ function deferredSubscriptionChangeTarget(stored: StoredSubscriptionChange): {
     return change.kind === "downgrade" || change.kind === "removal";
   });
   const effectiveAt = Math.floor(
-    (deferredAllocation?.effectiveAt ?? stored.root.effectiveAt).getTime() /
-      1000,
+    (
+      deferredAllocation?.effectiveAt ??
+      (planIsDowngrade(stored.root.sourceTier, stored.root.targetTier)
+        ? stored.root.effectiveAt
+        : new Date(periodEnd * 1000))
+    ).getTime() / 1000,
   );
   return { targetPlanPriceId, quantities, effectiveAt };
 }
@@ -2138,7 +2160,7 @@ async function scheduleDeferredSubscriptionChange(
     );
   }
   const { targetPlanPriceId, quantities, effectiveAt } =
-    deferredSubscriptionChangeTarget(stored);
+    deferredSubscriptionChangeTarget(stored, period.end);
   if (
     !existingSchedule &&
     effectiveAt <= Math.floor(nowDate().getTime() / 1000)
@@ -2163,6 +2185,8 @@ async function scheduleDeferredSubscriptionChange(
         subscription,
         schedule: existingSchedule,
         effectiveAt,
+        currentPlanPriceId: subscriptionPlanItem(subscription).price.id,
+        currentQuantities: packageQuantitiesFromSubscription(subscription),
         targetPlanPriceId,
         quantities,
       })
@@ -2808,10 +2832,29 @@ function usagePackScheduleItems(
   ];
 }
 
+function currentUsagePackScheduleItems(
+  phase: StripeSchedulePhase,
+  planPriceId: string,
+  quantities: ReadonlyMap<string, number>,
+): readonly StripeSchedulePhaseItemParam[] {
+  const actual = schedulePhaseUsagePackQuantityEntries(phase);
+  const expected = usagePackQuantityEntries([
+    { priceId: planPriceId, quantity: 1 },
+    ...[...quantities].map(([priceId, quantity]) => {
+      return { priceId, quantity };
+    }),
+  ]);
+  return actual && expected && usagePackQuantityEntriesMatch(actual, expected)
+    ? copiedSchedulePhaseItems(phase)
+    : usagePackScheduleItems(phase, planPriceId, quantities);
+}
+
 function deferredUsagePackChangeScheduleParams(args: {
   readonly subscription: StripeSubscription;
   readonly schedule: StripeSubscriptionSchedule;
   readonly effectiveAt: number;
+  readonly currentPlanPriceId: string;
+  readonly currentQuantities: ReadonlyMap<string, number>;
   readonly targetPlanPriceId: string;
   readonly quantities: ReadonlyMap<string, number>;
 }): NonNullable<StripeInvoiceCreatePreviewParams["schedule_details"]> {
@@ -2828,7 +2871,14 @@ function deferredUsagePackChangeScheduleParams(args: {
     args.subscription,
   );
   const updatedPhases = phases.flatMap((phase) => {
-    const currentItems = copiedSchedulePhaseItems(phase);
+    // Stripe may keep the old phase items after a direct subscription update.
+    // Rebuild every pre-boundary phase from the paid current configuration so
+    // updating the schedule cannot undo an immediate upgrade.
+    const currentItems = currentUsagePackScheduleItems(
+      phase,
+      args.currentPlanPriceId,
+      args.currentQuantities,
+    );
     if (phase.end_date <= args.effectiveAt) {
       return [
         schedulePhaseParamWithItems(phase, {
@@ -2871,7 +2921,11 @@ function deferredUsagePackChangeScheduleParams(args: {
       schedulePhaseParamWithItems(finalPhase, {
         startDate: finalPhase.end_date,
         endDate: args.effectiveAt,
-        items: copiedSchedulePhaseItems(finalPhase),
+        items: currentUsagePackScheduleItems(
+          finalPhase,
+          args.currentPlanPriceId,
+          args.currentQuantities,
+        ),
         metadataOverlay,
       }),
     );
@@ -3004,18 +3058,10 @@ async function restoreScheduledSubscriptionChange(
   subscription: StripeSubscription,
   signal: AbortSignal,
 ): Promise<UsagePackSubscriptionChangeConfirmResult> {
-  const scheduledChanges = await db
-    .select()
-    .from(usagePackAllocationChanges)
-    .where(
-      and(
-        eq(
-          usagePackAllocationChanges.usagePackSubscriptionId,
-          stored.subscription.id,
-        ),
-        eq(usagePackAllocationChanges.status, "scheduled"),
-      ),
-    );
+  const scheduledChanges = await scheduledAllocationChanges(
+    db,
+    stored.subscription.id,
+  );
   signal.throwIfAborted();
   const scheduleId = restorableScheduleId(scheduledChanges);
   const stripeScheduleId = stripeObjectId(subscription.schedule);
@@ -3136,10 +3182,7 @@ async function resolveReplacementSchedule(
   subscription: StripeSubscription,
   signal: AbortSignal,
 ): Promise<ReplacementScheduleResolution> {
-  const allocationScheduleId = replacementScheduleId(
-    stored.root,
-    stored.allocationChanges,
-  );
+  const allocationScheduleId = replacementScheduleId(stored.allocationChanges);
   const planScheduleId = await pendingPlanReplacementScheduleId(
     db,
     stored.root,
@@ -3157,10 +3200,6 @@ async function resolveReplacementSchedule(
     );
     return { status: "conflict" };
   }
-  const scheduleId = allocationScheduleId ?? planScheduleId;
-  if (!scheduleId) {
-    return { status: "ready", scheduleId: null };
-  }
   const scheduledChanges = await db
     .select()
     .from(usagePackAllocationChanges)
@@ -3174,9 +3213,17 @@ async function resolveReplacementSchedule(
       ),
     );
   signal.throwIfAborted();
+  const scheduledPackageScheduleId = restorableScheduleId(scheduledChanges);
+  // A plan-only upgrade has no allocation-change row to carry the schedule ID.
+  const scheduleId =
+    allocationScheduleId ??
+    planScheduleId ??
+    (stored.allocationChanges.length === 0 ? scheduledPackageScheduleId : null);
+  if (!scheduleId) {
+    return { status: "ready", scheduleId: null };
+  }
   const ownsPlanSchedule = planScheduleId === scheduleId;
-  const ownsPackageSchedule =
-    restorableScheduleId(scheduledChanges) === scheduleId;
+  const ownsPackageSchedule = scheduledPackageScheduleId === scheduleId;
   if (
     stripeObjectId(subscription.schedule) !== scheduleId ||
     (!ownsPlanSchedule && !ownsPackageSchedule)
@@ -3385,6 +3432,23 @@ async function findSubscriptionChangeForInvoice(
   return candidate ?? null;
 }
 
+async function replacesScheduledPackageChange(
+  db: Pick<Db, "select">,
+  stored: StoredSubscriptionChange,
+): Promise<boolean> {
+  if (
+    stored.allocationChanges.some((change) => {
+      return change.stripeScheduleId !== null;
+    })
+  ) {
+    return true;
+  }
+  return (
+    stored.allocationChanges.length === 0 &&
+    (await scheduledAllocationChanges(db, stored.subscription.id)).length > 0
+  );
+}
+
 export async function handleUsagePackSubscriptionChangeInvoicePaid(
   db: Db,
   invoice: UsagePackSubscriptionChangeInvoiceInput,
@@ -3473,7 +3537,10 @@ export async function handleUsagePackSubscriptionChangeInvoicePaid(
     refreshed.allocationChanges.some((change) => {
       return change.kind === "downgrade" || change.kind === "removal";
     });
-  if (hasDeferredChanges) {
+  if (
+    hasDeferredChanges ||
+    (await replacesScheduledPackageChange(db, refreshed))
+  ) {
     await scheduleDeferredSubscriptionChange(
       db,
       refreshed,

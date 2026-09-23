@@ -47,11 +47,31 @@ export function createThreadDraftLoad(
     );
   });
   const load$ = command(async ({ get, set }, signal: AbortSignal) => {
-    if (get(hasLocalDraft$)) {
+    const handoff = get(draft.recommendationHandoff$);
+    if (get(hasLocalDraft$) && !handoff) {
+      return;
+    }
+    if (handoff && !handoff.needsRemoteMerge) {
+      if (await set(draft.finishRecommendationHandoff$, null, signal)) {
+        await set(save$, signal);
+      }
       return;
     }
     const threadDraft = await get(threadDraft$);
     signal.throwIfAborted();
+
+    if (get(draft.recommendationHandoff$)) {
+      if (
+        await set(
+          draft.finishRecommendationHandoff$,
+          threadDraft ? userMessageDraftState(threadDraft) : null,
+          signal,
+        )
+      ) {
+        await set(save$, signal);
+      }
+      return;
+    }
 
     if (!threadDraft || get(hasLocalDraft$)) {
       return;

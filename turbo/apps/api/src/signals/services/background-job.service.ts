@@ -265,7 +265,11 @@ export async function retryBackgroundJob(
 /** Call inside the result-publication transaction when completion has effects. */
 export async function completeBackgroundJob(
   db: JobDatabase,
-  args: { readonly job: ClaimedBackgroundJob },
+  args: {
+    readonly job: ClaimedBackgroundJob;
+    /** Optional terminal result committed atomically with completion. */
+    readonly checkpoint?: BackgroundJobData;
+  },
   signal: AbortSignal,
 ): Promise<boolean> {
   return await updateLeasedJob(
@@ -274,6 +278,9 @@ export async function completeBackgroundJob(
       job: args.job,
       values: {
         status: "completed",
+        ...(args.checkpoint === undefined
+          ? {}
+          : { checkpoint: args.checkpoint }),
         leaseId: null,
         leaseExpiresAt: null,
         lastError: null,

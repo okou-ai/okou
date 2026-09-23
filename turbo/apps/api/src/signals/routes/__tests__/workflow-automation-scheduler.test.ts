@@ -626,7 +626,6 @@ describe("okou workflow automation scheduler", () => {
       const support = createAuthDeviceSupportApi(context);
       const misc = createMiscRoutesApi(context);
       await support.updateFeatureSwitches(scenario.actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
         [FeatureSwitchKey.PiLoop]: false,
       });

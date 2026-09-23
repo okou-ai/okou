@@ -6,8 +6,12 @@ import { z } from "zod";
 
 import { joinAll, safeSync } from "../utils";
 import { executeRawRows } from "../../lib/db-raw-rows";
+import { env } from "../../lib/env";
 import type { Db } from "../external/db";
-import { generatePresignedGetUrl } from "../external/s3";
+import {
+  generateArtifactPreviewUrl,
+  generatePresignedGetUrl,
+} from "../external/s3";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
@@ -21,11 +25,12 @@ type StoragePresignedUrlCacheScope =
   | "system_storage"
   | "workflow_skill_storage"
   | "readonly_storage"
-  | "presentation_template_preview";
+  | "presentation_template_preview"
+  | "private_artifact_preview";
 
 export type StorageManifestPresignedUrlCacheScope = Exclude<
   StoragePresignedUrlCacheScope,
-  "presentation_template_preview"
+  "presentation_template_preview" | "private_artifact_preview"
 >;
 
 export type StorageManifestCacheBranch =
@@ -65,6 +70,11 @@ export const READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 256;
 const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
   "presentation-template-preview-url-v1";
 export const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
+const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
+  "private-artifact-preview-url-v1";
+export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
+// Leave time for clients and asynchronous providers to fetch a returned URL.
+const PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS = 60 * 60 * 1000;
 const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
 const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
 
@@ -108,6 +118,12 @@ export interface PresentationTemplatePreviewPresignedUrlRequest {
   readonly publicEndpoint: boolean;
 }
 
+export interface PrivateArtifactPreviewPresignedUrlRequest {
+  readonly bucket: string;
+  readonly objectKey: string;
+  readonly filename?: string;
+}
+
 interface StoragePresignedUrlRequest {
   readonly scope: StoragePresignedUrlCacheScope;
   readonly bucket: string;
@@ -115,6 +131,7 @@ interface StoragePresignedUrlRequest {
   readonly storageVersionId: string;
   readonly resolvedOrgId: string | null;
   readonly publicEndpoint: boolean;
+  readonly filename?: string;
 }
 
 export interface StoragePresignedUrlResult {
@@ -147,6 +164,26 @@ type StorageManifestCacheCountBucket =
   | "5_8"
   | "9_16"
   | "17_plus";
+
+type StorageManifestPrefetchCountBucket =
+  | "0"
+  | "1"
+  | "2_4"
+  | "5_8"
+  | "9_16"
+  | "17_32"
+  | "33_51"
+  | "52_64"
+  | "65_96"
+  | "97_128"
+  | "129_plus";
+
+type StorageManifestPrefetchDecision =
+  | "insufficient_groups"
+  | "over_request_limit"
+  | "no_pairs"
+  | "over_unique_pair_limit"
+  | "mixed_lookup_selected";
 
 interface StorageManifestCacheObservationStats {
   readonly requestedCount: number;
@@ -194,6 +231,43 @@ function storageManifestCacheCountBucket(
   return "17_plus";
 }
 
+function storageManifestPrefetchCountBucket(
+  count: number,
+): StorageManifestPrefetchCountBucket {
+  if (count <= 0) {
+    return "0";
+  }
+  if (count === 1) {
+    return "1";
+  }
+  if (count <= 4) {
+    return "2_4";
+  }
+  if (count <= 8) {
+    return "5_8";
+  }
+  if (count <= 16) {
+    return "9_16";
+  }
+  if (count <= 32) {
+    return "17_32";
+  }
+  // Telemetry bucket ranges stay stable if the lookup limit changes.
+  if (count <= 51) {
+    return "33_51";
+  }
+  if (count <= 64) {
+    return "52_64";
+  }
+  if (count <= 96) {
+    return "65_96";
+  }
+  if (count <= 128) {
+    return "97_128";
+  }
+  return "129_plus";
+}
+
 class StorageManifestCacheTiming {
   private readonly windows = new Map<
     StorageManifestCacheActionType,
@@ -202,10 +276,7 @@ class StorageManifestCacheTiming {
 
   constructor(
     private readonly context: StorageManifestCacheObservationContext,
-    private readonly scope: Exclude<
-      StoragePresignedUrlCacheScope,
-      "presentation_template_preview"
-    >,
+    private readonly scope: StorageManifestPresignedUrlCacheScope,
     private readonly stats: StorageManifestCacheObservationStats,
   ) {}
 
@@ -350,6 +421,28 @@ export function presentationTemplatePreviewPresignedUrlCacheKey(
     .digest("hex");
 }
 
+export function privateArtifactPreviewPresignedUrlCacheKey(
+  request: PrivateArtifactPreviewPresignedUrlRequest,
+): string {
+  // Credential values are hashed into the key so rotation invalidates old URLs.
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY,
+        request.bucket,
+        request.objectKey,
+        request.filename ?? null,
+        env("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID"),
+        env("R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY"),
+        env("S3_PUBLIC_ENDPOINT") ?? env("S3_ENDPOINT") ?? env("R2_ACCOUNT_ID"),
+        env("S3_REGION"),
+        env("S3_FORCE_PATH_STYLE"),
+        PRESIGNED_URL_TTL_SECONDS,
+      ]),
+    )
+    .digest("hex");
+}
+
 function systemStorageRequest(
   request: SystemStoragePresignedUrlRequest,
 ): StoragePresignedUrlRequest {
@@ -402,6 +495,23 @@ function presentationTemplatePreviewRequest(
   };
 }
 
+function privateArtifactPreviewRequest(
+  request: PrivateArtifactPreviewPresignedUrlRequest,
+): StoragePresignedUrlRequest {
+  return {
+    scope: "private_artifact_preview",
+    bucket: request.bucket,
+    objectKey: request.objectKey,
+    // The private object key is unique to its allocation or share snapshot.
+    storageVersionId: createHash("sha256")
+      .update(request.objectKey)
+      .digest("hex"),
+    resolvedOrgId: null,
+    publicEndpoint: true,
+    ...(request.filename !== undefined ? { filename: request.filename } : {}),
+  };
+}
+
 function expirationFromIssuedAt(issuedAt: Date, ttlSeconds: number): Date {
   return new Date(issuedAt.getTime() + ttlSeconds * 1000);
 }
@@ -430,15 +540,35 @@ function signCacheValue(args: {
   readonly lastRequestedAt: Date;
 }): Computed<Promise<CacheRowValue>> {
   return computed(async (get) => {
-    const presignedUrl = await get(
-      generatePresignedGetUrl(
-        args.request.bucket,
-        args.request.objectKey,
-        undefined,
-        args.request.publicEndpoint,
-      ),
-    );
-    const expiresAt = expirationFromIssuedAt(args.issuedAt, args.ttlSeconds);
+    const signed =
+      args.request.scope === "private_artifact_preview"
+        ? await get(
+            generateArtifactPreviewUrl(
+              args.request.bucket,
+              args.request.objectKey,
+              {
+                signingDate: args.issuedAt,
+                ...(args.request.filename !== undefined
+                  ? { filename: args.request.filename }
+                  : {}),
+              },
+            ),
+          )
+        : {
+            url: await get(
+              generatePresignedGetUrl(
+                args.request.bucket,
+                args.request.objectKey,
+                undefined,
+                args.request.publicEndpoint,
+              ),
+            ),
+            expiresAt: expirationFromIssuedAt(
+              args.issuedAt,
+              args.ttlSeconds,
+            ).toISOString(),
+          };
+    const expiresAt = new Date(signed.expiresAt);
     return {
       cacheKey: args.cacheKey,
       scope: args.request.scope,
@@ -448,7 +578,7 @@ function signCacheValue(args: {
       resolvedOrgId: args.request.resolvedOrgId,
       publicEndpoint: args.request.publicEndpoint,
       ttlSeconds: args.ttlSeconds,
-      presignedUrl,
+      presignedUrl: signed.url,
       expiresAt,
       // Retain the required legacy column while older API deployments coexist.
       refreshAfter: expiresAt,
@@ -613,6 +743,40 @@ interface StorageManifestPresignedUrlCacheLookupPair {
   readonly cacheKey: string;
 }
 
+function recordStorageManifestPrefetchDecision(args: {
+  readonly observation:
+    | StorageManifestCacheMixedLookupObservationContext
+    | undefined;
+  readonly decision: StorageManifestPrefetchDecision;
+  readonly requestedCount: number;
+  readonly logicalLookupCount: number;
+  readonly uniquePairCount?: number;
+}): void {
+  if (!args.observation) {
+    return;
+  }
+  args.observation.timing.recordDuration(
+    "api_dispatch_prepare_storage_manifest_cache_prefetch_decision",
+    "nested",
+    0,
+    now(),
+    {
+      storage_manifest_branch: args.observation.branch,
+      storage_manifest_cache_prefetch_decision: args.decision,
+      storage_manifest_cache_prefetch_requested_count_bucket:
+        storageManifestPrefetchCountBucket(args.requestedCount),
+      storage_manifest_cache_logical_lookup_count_bucket:
+        storageManifestCacheCountBucket(args.logicalLookupCount),
+      ...(args.uniquePairCount === undefined
+        ? {}
+        : {
+            storage_manifest_cache_prefetch_unique_pair_count_bucket:
+              storageManifestPrefetchCountBucket(args.uniquePairCount),
+          }),
+    },
+  );
+}
+
 function storageManifestPresignedUrlCacheLookupPairs(
   input: StorageManifestPresignedUrlCachePrefetchInput,
 ): readonly StorageManifestPresignedUrlCacheLookupPair[] {
@@ -660,25 +824,59 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
   readonly observation?: StorageManifestCacheMixedLookupObservationContext;
 }): Computed<Promise<StorageManifestPresignedUrlCacheSnapshot | undefined>> {
   return computed(async () => {
-    if (args.input.logicalLookupCount < 2) {
-      return undefined;
-    }
     const requestedCount =
       args.input.systemRequests.length +
       args.input.workflowSkillRequests.length +
       args.input.readOnlyRequests.length;
+    if (args.input.logicalLookupCount < 2) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "insufficient_groups",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+      });
+      return undefined;
+    }
     if (
       requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
     ) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "over_request_limit",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+      });
       return undefined;
     }
     const pairs = storageManifestPresignedUrlCacheLookupPairs(args.input);
-    if (
-      pairs.length === 0 ||
-      pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
-    ) {
+    if (pairs.length === 0) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "no_pairs",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+        uniquePairCount: pairs.length,
+      });
       return undefined;
     }
+    if (pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS) {
+      recordStorageManifestPrefetchDecision({
+        observation: args.observation,
+        decision: "over_unique_pair_limit",
+        requestedCount,
+        logicalLookupCount: args.input.logicalLookupCount,
+        uniquePairCount: pairs.length,
+      });
+      return undefined;
+    }
+
+    recordStorageManifestPrefetchDecision({
+      observation: args.observation,
+      decision: "mixed_lookup_selected",
+      requestedCount,
+      logicalLookupCount: args.input.logicalLookupCount,
+      uniquePairCount: pairs.length,
+    });
 
     const scopes = pairs.map((pair) => {
       return pair.scope;
@@ -800,6 +998,7 @@ function classifyStoragePresignedUrlCacheRows(args: {
   readonly requestsByCacheKey: ReadonlyMap<string, StoragePresignedUrlRequest>;
   readonly rows: readonly SelectedStoragePresignedUrlCacheRow[];
   readonly issuedAt: Date;
+  readonly minimumRemainingMs: number;
   readonly results: Map<string, StoragePresignedUrlResult>;
   readonly needsFresh: StoragePresignedUrlFreshRequest[];
   readonly stats: StorageManifestCacheObservationStats;
@@ -811,7 +1010,11 @@ function classifyStoragePresignedUrlCacheRows(args: {
   );
   for (const [cacheKey, request] of args.requestsByCacheKey) {
     const row = rowByCacheKey.get(cacheKey);
-    if (row && row.expiresAt > args.issuedAt) {
+    if (
+      row &&
+      row.expiresAt.getTime() - args.issuedAt.getTime() >
+        args.minimumRemainingMs
+    ) {
       args.stats.hitCount += 1;
       args.results.set(cacheKey, {
         cacheKey,
@@ -859,6 +1062,8 @@ function resolveStoragePresignedUrls<TRequest>(args: {
   readonly ttlSeconds: number;
   readonly cacheKey: (request: TRequest) => string;
   readonly normalize: (request: TRequest) => StoragePresignedUrlRequest;
+  readonly issuedAt?: Date;
+  readonly minimumRemainingMs?: number;
   readonly observation?: StorageManifestCacheObservationContext;
   readonly prefetchedRows?: StorageManifestPresignedUrlCacheSnapshot;
 }): Computed<Promise<ReadonlyMap<string, StoragePresignedUrlResult>>> {
@@ -876,7 +1081,9 @@ function resolveStoragePresignedUrls<TRequest>(args: {
       freshCount: 0,
     };
     const timing =
-      args.observation && args.scope !== "presentation_template_preview"
+      args.observation &&
+      args.scope !== "presentation_template_preview" &&
+      args.scope !== "private_artifact_preview"
         ? new StorageManifestCacheTiming(args.observation, args.scope, stats)
         : undefined;
 
@@ -905,7 +1112,7 @@ function resolveStoragePresignedUrls<TRequest>(args: {
         prefetchedRows: args.prefetchedRows,
       });
 
-      const issuedAt = nowDate();
+      const issuedAt = args.issuedAt ?? nowDate();
       const results = new Map<string, StoragePresignedUrlResult>();
       const needsFresh: StoragePresignedUrlFreshRequest[] = [];
       const classify = () => {
@@ -913,6 +1120,7 @@ function resolveStoragePresignedUrls<TRequest>(args: {
           requestsByCacheKey,
           rows,
           issuedAt,
+          minimumRemainingMs: args.minimumRemainingMs ?? 0,
           results,
           needsFresh,
           stats,
@@ -1031,6 +1239,21 @@ export function resolvePresentationTemplatePreviewPresignedUrls(args: {
     ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
     cacheKey: presentationTemplatePreviewPresignedUrlCacheKey,
     normalize: presentationTemplatePreviewRequest,
+  });
+}
+
+export function resolvePrivateArtifactPreviewPresignedUrls(args: {
+  readonly db: Db;
+  readonly requests: readonly PrivateArtifactPreviewPresignedUrlRequest[];
+  readonly issuedAt?: Date;
+}): Computed<Promise<ReadonlyMap<string, StoragePresignedUrlResult>>> {
+  return resolveStoragePresignedUrls({
+    ...args,
+    scope: "private_artifact_preview",
+    ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
+    cacheKey: privateArtifactPreviewPresignedUrlCacheKey,
+    normalize: privateArtifactPreviewRequest,
+    minimumRemainingMs: PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS,
   });
 }
 

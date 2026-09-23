@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} giorni di fila",
-        "title": "Inizia",
+        "title": "Ottieni più crediti",
         "toGo": "Mancano {{amount}}",
         "workflow": {
           "action": "Crea",
@@ -2018,9 +2018,13 @@
       "title": "Inoltra a"
     },
     "homeTasks": {
+      "empty": "Nessuna attività suggerita",
       "existingThread": "Continua la chat",
+      "exploreWorkflow": "Esplora un workflow",
       "heading": "Ripreso dal tuo lavoro recente",
-      "newThread": "Nuova chat"
+      "newTasksAvailable": "Nuove attività disponibili",
+      "newThread": "Nuova chat",
+      "reload": "Ricarica attività"
     },
     "mail": {
       "bcc": "bcc",
@@ -3252,12 +3256,19 @@
       "noConnectorsAlt": "Nessun connettore",
       "otherCategory": "Altro",
       "remoteAccess": "Accesso remoto",
+      "remoteControl": {
+        "connections": "Connessioni",
+        "credentials": "Credenziali",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Ambito dei connettori",
         "attention": "Richiede attenzione",
         "connected": "Connesso",
         "custom": "Personalizzati",
         "discover": "Esplora",
+        "privateNetwork": "Rete privata",
+        "remoteControl": "Controllo remoto",
         "searchConnected": "Trova i connettori collegati",
         "searchCustom": "Trova i connettori personalizzati"
       },
@@ -6082,6 +6093,7 @@
         "personal": "Personale",
         "workspace": "Area di lavoro"
       },
+      "sectionNavigation": "Sezione delle impostazioni",
       "sections": {
         "billing": {
           "description": "Gestisci il tuo piano e il metodo di pagamento.",
@@ -7816,6 +7828,7 @@
       },
       "notFound": "Flusso di lavoro non trovato.",
       "refineWith": "Perfeziona con {{agent}}",
+      "sectionNavigation": "Sezione dei dettagli del flusso di lavoro",
       "shadow": {
         "end": "per te. Questo flusso di lavoro è oscurato dalla regola di priorità dello stesso slug.",
         "resolvesTo": "attualmente risolve a"

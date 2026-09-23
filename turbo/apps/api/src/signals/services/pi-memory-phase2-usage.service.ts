@@ -15,17 +15,15 @@ export const PI_MEMORY_PHASE2_BYOK_MODEL = "gpt-5.6-terra";
 /**
  * Every model a private maintenance run may legitimately carry.
  *
- * Both entries are permanent, not a migration window: consolidation pins to the
- * source run's own binding, so BYOK bindings keep dispatching the GPT model for
- * as long as they exist. Narrowing any lookup back to a single value would make
- * the other binding class unreconcilable and would leak its threadless runs.
+ * Consolidation chooses a current owner route for each whole selection. Both
+ * models are permanent so cleanup can reconcile either dispatched run type.
  */
 export const PI_MEMORY_PHASE2_MODELS = [
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   PI_MEMORY_PHASE2_BYOK_MODEL,
 ] as const;
 
-/** The binding chooses the model; there is no fallback between them. */
+/** The selected current route chooses the model; attempts never fall back. */
 export function piMemoryPhase2Model(
   modelProvider: string,
 ): (typeof PI_MEMORY_PHASE2_MODELS)[number] {

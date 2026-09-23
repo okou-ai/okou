@@ -170,6 +170,14 @@ focus owns the ring. A ring on an element that has no selected state is not a
 selection ring and is unaffected — the account avatar's halo stays, because
 nothing about it changes when the user picks something.
 
+Template gallery artwork keeps its existing hairline and clipping box. A
+borderless frame carries an absolute, pointer-transparent pseudo-element with
+the constant emphasis border width: transparent at rest, `border-primary` when
+selected. The selected border covers the hairline without shrinking the image
+or changing the caption or grid metrics. Preview buttons draw their focus ring
+outside this frame; secondary Use buttons retain their own focus ring. Text-only
+workflow cards recolour their existing hairline instead.
+
 `border-0` stays available, and so does a literal `border-2` for geometry that is
 not a boundary at all — a dashed drop target, a spinner's ring, the inset that
 shapes a switch track. Those express a different decision rather than a competing

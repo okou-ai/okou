@@ -292,6 +292,25 @@ export default [
     },
   },
   {
+    files: [
+      "src/signals/services/model-provider-subscription-usage.service.ts",
+    ],
+    rules: {
+      // A 503 from the ChatGPT usage endpoint is a bounded, already recovered
+      // outcome — the list response still carries the stored provider row — so
+      // `warn` put every occurrence into the production error review. A
+      // sustained rate is still the real signal and the record carries the
+      // `status` and provider identity a genuine ChatGPT outage needs, so it
+      // has to survive Axiom's info default; debug would drop it entirely.
+      // Every other refresh failure, including authentication rejections,
+      // stays on the shared warn path.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["codex usage unavailable upstream"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/services/onboarding.service.ts"],
     rules: {
       "api/no-logger-info": [
@@ -583,6 +602,28 @@ export default [
       "src/**/__tests__/**/*.ts",
       "src/**/*.test.ts",
       "src/test-fixtures/**/*.ts",
+    ],
+    rules: {
+      "ccstate/no-test-delay": [
+        "error",
+        {
+          allowed: [
+            {
+              file: "src/signals/routes/__tests__/morning-brief-composition.test.ts",
+              kinds: ["delay"],
+              reason:
+                "Issue #35737 verifies successful provider reads before a real source deadline; #35594 tracks replacing the pacing with a controlled deadline signal.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "src/**/__tests__/**/*.ts",
+      "src/**/*.test.ts",
+      "src/test-fixtures/**/*.ts",
       "src/signals/routes/test-*.ts",
     ],
     rules: {
@@ -658,6 +699,12 @@ export default [
       // a schema fixture would defeat the point of a layer that exists because
       // TypeScript exports are not the database.
       "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
+      // The hosted-site object sink proves bytes do not outlive the catalog row
+      // that named them, so its central case deletes the deployment row before
+      // any object is touched. No endpoint can construct a captured locator
+      // whose row is already gone, and object absence is read back from the
+      // provider rather than from a response this API serves.
+      "src/signals/services/__tests__/account-erasure-hosted-site-collector.test.ts",
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
@@ -673,6 +720,10 @@ export default [
       // with the sandbox runtime; route output cannot expose its full virtual
       // filesystem, ignore-rule, and precedence matrix.
       "src/signals/services/__tests__/pi-resource-snapshot.service.test.ts",
+      // The API-owned first-turn projection has no endpoint that returns its
+      // private execution context. Route tests cover the queued launch config;
+      // this focused check preserves the digest across the projection itself.
+      "src/signals/services/__tests__/pi-api-first-turn-config.test.ts",
       // Stable-context projection bytes are shared with persisted artifacts,
       // while PostgreSQL generation/CAS and lease races have no production
       // endpoint that can construct or observe their exact transition matrix.

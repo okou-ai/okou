@@ -3,7 +3,6 @@ import { decryptStoredSecretValue } from "./crypto.utils";
 import { isModelSupportedByProvider } from "@okouai/api-contracts/contracts/model-providers";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
@@ -15,7 +14,7 @@ import {
 } from "@okouai/db/schema/model-provider-gateway";
 import { secrets } from "@okouai/db/schema/secret";
 import { storages } from "@okouai/db/schema/storage";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
@@ -36,11 +35,6 @@ type ReadDb = Pick<Db, "select">;
 
 type CredentialFailure =
   | "source_credentials_missing"
-  | "mixed_source_credentials"
-  | "source_missing"
-  | "source_owner_mismatch"
-  | "source_binding_invalid"
-  | "source_scope_mismatch"
   | "credential_unavailable"
   | "provider_model_unsupported"
   | "model_route_unavailable"
@@ -49,7 +43,7 @@ type CredentialFailure =
 
 export class PiMemoryPhase2CredentialError extends Error {
   constructor(readonly errorClass: CredentialFailure) {
-    super("Pi memory Phase 2 source credential admission failed");
+    super("Pi memory Phase 2 credential admission failed");
     this.name = "PiMemoryPhase2CredentialError";
   }
 }
@@ -58,63 +52,143 @@ function reject(reason: CredentialFailure): never {
   throw new PiMemoryPhase2CredentialError(reason);
 }
 
-function readSources(db: ReadDb, ids: readonly string[]) {
-  return db
-    .select({
-      runId: agentRuns.id,
-      orgId: agentRuns.orgId,
-      userId: agentRuns.userId,
-      type: agentRuns.modelProvider,
-      id: agentRuns.modelProviderId,
-      scope: agentRuns.modelProviderCredentialScope,
-    })
-    .from(agentRuns)
-    .where(inArray(agentRuns.id, [...ids]))
-    .orderBy(asc(agentRuns.id))
-    .for("share");
+interface CurrentCredential {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly type: string;
+  readonly id: string | null;
+  readonly scope: "org" | "member";
 }
 
-type Source = Awaited<ReturnType<typeof readSources>>[number];
-
-function sourcePin(source: Source, claim: ClaimedPiMemoryPhase2Job) {
-  if (source.orgId !== claim.orgId || source.userId !== claim.userId) {
-    reject("source_owner_mismatch");
-  }
-  if (!source.type) {
-    reject("source_binding_invalid");
-  }
-  if (source.type === "built-in") {
-    if (
-      source.id !== null ||
-      (source.scope !== null && source.scope !== "org")
-    ) {
-      reject("source_binding_invalid");
-    }
-  } else {
-    if (!source.id) {
-      reject("source_binding_invalid");
-    }
-    if (source.scope !== "org" && source.scope !== "member") {
-      reject("source_scope_mismatch");
-    }
-    if (
-      (source.type === "codex-oauth-token" && source.scope !== "member") ||
-      (source.type === "custom-openai-responses" && source.scope !== "org")
-    ) {
-      reject("source_scope_mismatch");
-    }
-  }
+function credentialPin(source: CurrentCredential) {
   return {
     modelProvider: source.type,
     modelProviderId: source.id,
-    modelProviderCredentialScope: source.scope ?? "org",
+    modelProviderCredentialScope: source.scope,
     selectedModel: piMemoryPhase2Model(source.type),
   } satisfies AgentRunModelPin;
 }
 
+/** Historical run credentials are provenance only. Choose one current route
+ * for the owner of the whole, already locked candidate selection. */
+async function selectCurrentCredential(
+  db: ReadDb,
+  claim: ClaimedPiMemoryPhase2Job,
+): Promise<CurrentCredential> {
+  // Honor the current default first; use a stable type/ID order for other
+  // compatible BYOK routes. No historical source decides this ranking.
+  const providers = await db
+    .select({
+      id: modelProviders.id,
+      type: modelProviders.type,
+      userId: modelProviders.userId,
+      isDefault: modelProviders.isDefault,
+      secretId: modelProviders.secretId,
+      needsReconnect: modelProviders.needsReconnect,
+    })
+    .from(modelProviders)
+    .where(
+      and(
+        eq(modelProviders.orgId, claim.orgId),
+        inArray(modelProviders.userId, [claim.userId, "__org__"]),
+      ),
+    )
+    .orderBy(
+      desc(modelProviders.isDefault),
+      asc(modelProviders.type),
+      asc(modelProviders.id),
+    );
+  for (const provider of providers) {
+    if (provider.type === "codex-oauth-token") {
+      if (provider.userId !== claim.userId || provider.needsReconnect) {
+        continue;
+      }
+      const [account] = await db
+        .select({ id: modelProviderAccounts.id })
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.modelProviderId, provider.id),
+            eq(modelProviderAccounts.orgId, claim.orgId),
+            eq(modelProviderAccounts.userId, claim.userId),
+            eq(modelProviderAccounts.type, provider.type),
+            eq(modelProviderAccounts.isActive, true),
+            eq(modelProviderAccounts.needsReconnect, false),
+            isNotNull(modelProviderAccounts.externalAccountId),
+            isNull(modelProviderAccounts.disconnectedAt),
+          ),
+        )
+        .limit(1);
+      if (account) {
+        return {
+          orgId: claim.orgId,
+          userId: claim.userId,
+          type: provider.type,
+          id: account.id,
+          scope: "member",
+        };
+      }
+      continue;
+    }
+    const route = gptApiKeyPiRoute(provider.type);
+    if (
+      !provider.secretId ||
+      !route?.endpoint ||
+      !isModelSupportedByProvider(
+        PI_MEMORY_PHASE2_BYOK_MODEL,
+        route.productProviderType,
+      )
+    ) {
+      continue;
+    }
+    return {
+      orgId: claim.orgId,
+      userId: claim.userId,
+      type: provider.type,
+      id: provider.id,
+      scope: provider.userId === "__org__" ? "org" : "member",
+    };
+  }
+  const surfaces = await db
+    .select({
+      id: modelProviderSurfaces.id,
+      protocol: modelProviderSurfaces.protocol,
+      mappings: modelProviderSurfaces.modelMappings,
+    })
+    .from(modelProviderSurfaces)
+    .innerJoin(
+      modelProviderConnections,
+      eq(modelProviderConnections.id, modelProviderSurfaces.connectionId),
+    )
+    .where(eq(modelProviderConnections.orgId, claim.orgId))
+    .orderBy(asc(modelProviderSurfaces.id));
+  const surface = surfaces.find((item) => {
+    return (
+      item.protocol === "openai-responses" &&
+      item.mappings[PI_MEMORY_PHASE2_BYOK_MODEL]?.trim()
+    );
+  });
+  if (surface) {
+    return {
+      orgId: claim.orgId,
+      userId: claim.userId,
+      type: "custom-openai-responses",
+      id: surface.id,
+      scope: "org",
+    };
+  }
+  return {
+    orgId: claim.orgId,
+    userId: claim.userId,
+    type: "built-in",
+    id: null,
+    scope: "org",
+  };
+}
+
 async function customCredentialSnapshot(
   db: ReadDb,
-  source: Source & { readonly id: string },
+  source: CurrentCredential & { readonly id: string },
 ) {
   // Settings mutate connection -> secret -> surface. Resolve the reference
   // without a lock first, then lock and verify every edge in that same order.
@@ -188,15 +262,12 @@ async function customCredentialSnapshot(
 
 /** Capture ownership and route references only. Canonical launch preparation
  * owns decryption, firewall credentials and atomic subscription refresh. */
-async function credentialSnapshot(db: ReadDb, source: Source) {
-  if (!source.type) {
-    reject("source_binding_invalid");
-  }
+async function credentialSnapshot(db: ReadDb, source: CurrentCredential) {
   if (source.type === "built-in") {
     return "built-in";
   }
   if (!source.id) {
-    reject("source_binding_invalid");
+    reject("credential_unavailable");
   }
   if (source.type === "codex-oauth-token") {
     const [account] = await db
@@ -213,6 +284,7 @@ async function credentialSnapshot(db: ReadDb, source: Source) {
           eq(modelProviderAccounts.orgId, source.orgId),
           eq(modelProviderAccounts.userId, source.userId),
           eq(modelProviderAccounts.type, source.type),
+          eq(modelProviderAccounts.isActive, true),
           eq(modelProviderAccounts.needsReconnect, false),
           isNull(modelProviderAccounts.disconnectedAt),
         ),
@@ -290,12 +362,12 @@ async function readQuotaPairSnapshot(db: ReadDb, sourceId: string) {
 
 async function prepareSubscription(
   db: Db,
-  source: Source,
+  source: CurrentCredential,
   externalAccountId: string,
   signal: AbortSignal,
 ) {
   if (!source.id) {
-    reject("source_binding_invalid");
+    reject("credential_unavailable");
   }
   const sourceId = source.id;
   const featureSwitchContext = await loadUserFeatureSwitchContext(
@@ -377,8 +449,8 @@ async function prepareSubscription(
   };
 }
 
-/** Whole selections rebuild one evidence subtree: splitting or filtering them
- * would delete other contributors. Empty/mixed selections must not dispatch. */
+/** Whole selections rebuild one evidence subtree. Historical source run IDs
+ * stay in the digest/evidence, but never choose the current payer or route. */
 export async function resolvePiMemoryPhase2Credential(
   db: Db,
   claim: ClaimedPiMemoryPhase2Job,
@@ -387,33 +459,19 @@ export async function resolvePiMemoryPhase2Credential(
   if (claim.selected.length === 0) {
     reject("source_credentials_missing");
   }
-  const ids = [
-    ...new Set(
-      claim.selected.map((entry) => {
-        return entry.sourceRunId;
-      }),
-    ),
-  ];
-  const sources = await readSources(db, ids);
+  const selected = await selectCurrentCredential(db, claim);
   signal.throwIfAborted();
-  if (sources.length !== ids.length) {
-    reject("source_missing");
-  }
-  const first = sources[0];
-  if (!first) {
-    reject("source_credentials_missing");
-  }
-  const pin = sourcePin(first, claim);
-  for (const source of sources) {
-    if (JSON.stringify(sourcePin(source, claim)) !== JSON.stringify(pin)) {
-      reject("mixed_source_credentials");
-    }
-  }
-  const captured = await credentialSnapshot(db, first);
+  const pin = credentialPin(selected);
+  const captured = await credentialSnapshot(db, selected);
   signal.throwIfAborted();
   const subscription =
     typeof captured === "object" && "externalAccountId" in captured
-      ? await prepareSubscription(db, first, captured.externalAccountId, signal)
+      ? await prepareSubscription(
+          db,
+          selected,
+          captured.externalAccountId,
+          signal,
+        )
       : undefined;
   const quota: PiMemoryQuotaSource = subscription?.quota ?? {
     providerClass: pin.modelProvider === "built-in" ? "builtin" : "api_key",
@@ -444,12 +502,8 @@ export async function resolvePiMemoryPhase2Credential(
     quota,
     validate: async (tx: Tx) => {
       signal.throwIfAborted();
-      // Match terminal lifecycle order: source runs -> Storage -> provider
-      // state -> credentials. New maintenance never borrows source retention.
-      const current = await readSources(tx, ids);
-      if (JSON.stringify(current) !== JSON.stringify(sources)) {
-        reject("source_binding_invalid");
-      }
+      // Candidate ownership and the entire selection are locked by the claim;
+      // old source runs may have expired before this maintenance attempt.
       const [storage] = await tx
         .select({ id: storages.id })
         .from(storages)
@@ -465,15 +519,15 @@ export async function resolvePiMemoryPhase2Credential(
       if (!storage) {
         reject("storage_binding_changed");
       }
-      if (first.type === "codex-oauth-token") {
+      if (selected.type === "codex-oauth-token") {
         await lockModelProviderState(tx, {
-          orgId: first.orgId,
-          userId: first.userId,
-          type: first.type,
+          orgId: selected.orgId,
+          userId: selected.userId,
+          type: selected.type,
         });
       }
       if (
-        JSON.stringify(await credentialSnapshot(tx, first)) !==
+        JSON.stringify(await credentialSnapshot(tx, selected)) !==
         JSON.stringify(captured)
       ) {
         reject("credential_unavailable");

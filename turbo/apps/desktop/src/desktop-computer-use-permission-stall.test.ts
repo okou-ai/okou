@@ -31,6 +31,9 @@ it("recovers a ready helper's buffered reply after an isolated parent stall", as
       starts: number;
       errors: unknown[];
     };
+    // This isolated process must prove the helper wrote before the real native
+    // request deadline while the parent remained blocked past that deadline.
+    // See the real-deadline exception in docs/testing/desktop-testing.md.
     expect(result.writtenAfterMs).toBeLessThan(400);
     expect(result.elapsedMs).toBeGreaterThanOrEqual(850);
     expect(result.outcome.ok).toBe(true);

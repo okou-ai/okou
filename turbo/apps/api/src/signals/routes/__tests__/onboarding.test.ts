@@ -269,10 +269,15 @@ describe("POST /api/onboarding/complete", () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);
     const policies = modelPoliciesClient();
+    const before = await accept(
+      policies.list({ headers: authHeaders() }),
+      [200],
+    );
     const oldSeed = await accept(
       policies.update({
         headers: authHeaders(),
         body: {
+          revision: before.body.revision,
           policies: [
             {
               model: "claude-fable-5-1",

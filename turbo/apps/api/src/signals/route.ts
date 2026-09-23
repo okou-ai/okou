@@ -6,6 +6,7 @@ import type { RouteEntry } from "./route-entry";
 import { builtinConnectorsSlugCallbackRoutes } from "./routes/connectors-slug-callback";
 import { builtinConnectorsAutomaticRoutes } from "./routes/connectors-automatic";
 import { cronCompactChatThreadSnapshotsRoutes } from "./routes/cron-compact-chat-thread-snapshots";
+import { cronReconcileArtifactCatalogRoutes } from "./routes/cron-reconcile-artifact-catalog";
 import { cronProjectChatEventSearchRoutes } from "./routes/cron-project-chat-event-search";
 import { cronSnapshotChatEventsRoutes } from "./routes/cron-snapshot-chat-events";
 import { cronRetainChatEventsRoutes } from "./routes/cron-retain-chat-events";
@@ -122,6 +123,7 @@ import { modelPoliciesRoutes } from "./routes/model-policies";
 import { modelProviderGatewayRoutes } from "./routes/model-provider-gateways";
 import { modelProvidersRoutes } from "./routes/model-providers";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
+import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgDeleteRoutes } from "./routes/org-delete";
@@ -264,6 +266,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...builtinConnectorsAutomaticRoutes,
   ...builtinConnectorsSlugCallbackRoutes,
   ...cronCompactChatThreadSnapshotsRoutes,
+  ...cronReconcileArtifactCatalogRoutes,
   ...cronProjectChatEventSearchRoutes,
   ...cronSnapshotChatEventsRoutes,
   ...cronRetainChatEventsRoutes,
@@ -389,6 +392,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runsRoutes,
   ...runsCancelRoutes,
   ...onboardingCompleteRoutes,
+  ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,

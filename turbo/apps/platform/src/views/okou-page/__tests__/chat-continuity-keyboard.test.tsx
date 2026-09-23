@@ -50,12 +50,14 @@ function composerIn(threadId: string): HTMLElement {
   return composer;
 }
 
-function pinnedIndicator(threadId: string): HTMLElement | null {
-  const row = continuitySidebarLink(threadId).parentElement;
-  if (!row) {
-    throw new Error(`Expected sidebar row for ${threadId}`);
-  }
-  return within(row).queryByLabelText("Pinned");
+function expectPinned(threadId: string, title: string): void {
+  expect(continuitySidebarLink(threadId)).toHaveAccessibleName(
+    `${title} Pinned`,
+  );
+}
+
+function expectNotPinned(threadId: string, title: string): void {
+  expect(continuitySidebarLink(threadId)).toHaveAccessibleName(title);
 }
 
 function openThreadMenu(threadId: string): void {
@@ -404,8 +406,10 @@ test.each([
   "Pin and unpin the focused chat optimistically on $platform",
   async ({ userAgent, modifier }) => {
     context.mocks.browser.userAgent(userAgent);
-    const main = continuityThread(70, 1, "Main pin shortcut chat");
-    const side = continuityThread(70, 2, "Side pin shortcut chat");
+    const mainTitle = "Main pin shortcut chat";
+    const sideTitle = "Side pin shortcut chat";
+    const main = continuityThread(70, 1, mainTitle);
+    const side = continuityThread(70, 2, sideTitle);
     const workspace = installContinuityWorkspace(context, {
       caseId: 70,
       threads: [main, side],
@@ -442,9 +446,9 @@ test.each([
     expect(event.defaultPrevented).toBeTruthy();
     await pinRequested.promise;
     await waitFor(() => {
-      expect(pinnedIndicator(side.id)).toBeVisible();
+      expectPinned(side.id, sideTitle);
     });
-    expect(pinnedIndicator(main.id)).toBeNull();
+    expectNotPinned(main.id, mainTitle);
     expect(sideComposer).toHaveFocus();
     expect(sideComposer).toHaveTextContent("Keep this draft");
     pinResponse.resolve();
@@ -452,22 +456,24 @@ test.each([
     await userEvent.keyboard(`{${modifier}>}{Shift>}D{/Shift}{/${modifier}}`);
     await unpinRequested.promise;
     await waitFor(() => {
-      expect(pinnedIndicator(side.id)).toBeNull();
+      expectNotPinned(side.id, sideTitle);
     });
     expect(sideComposer).toHaveTextContent("Keep this draft");
 
     threadContainer(main.id).focus();
     await userEvent.keyboard(`{${modifier}>}{Shift>}D{/Shift}{/${modifier}}`);
     await waitFor(() => {
-      expect(pinnedIndicator(main.id)).toBeVisible();
+      expectPinned(main.id, mainTitle);
     });
-    expect(pinnedIndicator(side.id)).toBeNull();
+    expectNotPinned(side.id, sideTitle);
   },
 );
 
 test("Pin the main chat when neither pane owns keyboard focus", async () => {
-  const main = continuityThread(71, 1, "Default pin shortcut chat");
-  const side = continuityThread(71, 2, "Other pin shortcut chat");
+  const mainTitle = "Default pin shortcut chat";
+  const sideTitle = "Other pin shortcut chat";
+  const main = continuityThread(71, 1, mainTitle);
+  const side = continuityThread(71, 2, sideTitle);
   const workspace = installContinuityWorkspace(context, {
     caseId: 71,
     threads: [main, side],
@@ -491,14 +497,16 @@ test("Pin the main chat when neither pane owns keyboard focus", async () => {
   const event = dispatchPinShortcut(document.body);
   expect(event.defaultPrevented).toBeTruthy();
   await waitFor(() => {
-    expect(pinnedIndicator(main.id)).toBeVisible();
+    expectPinned(main.id, mainTitle);
   });
-  expect(pinnedIndicator(side.id)).toBeNull();
+  expectNotPinned(side.id, sideTitle);
 });
 
 test("Apply displayed shortcuts to the chat whose menu is open", async () => {
-  const main = continuityThread(72, 1, "Focused shortcut chat");
-  const menuTarget = continuityThread(72, 2, "Menu shortcut chat");
+  const mainTitle = "Focused shortcut chat";
+  const menuTargetTitle = "Menu shortcut chat";
+  const main = continuityThread(72, 1, mainTitle);
+  const menuTarget = continuityThread(72, 2, menuTargetTitle);
   const workspace = installContinuityWorkspace(context, {
     caseId: 72,
     threads: [main, menuTarget],
@@ -526,9 +534,9 @@ test("Apply displayed shortcuts to the chat whose menu is open", async () => {
   await userEvent.keyboard("{Control>}{Shift>}D{/Shift}{/Control}");
 
   await waitFor(() => {
-    expect(pinnedIndicator(menuTarget.id)).toBeVisible();
+    expectPinned(menuTarget.id, menuTargetTitle);
   });
-  expect(pinnedIndicator(main.id)).toBeNull();
+  expectNotPinned(main.id, mainTitle);
 
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
@@ -549,7 +557,8 @@ test("Apply displayed shortcuts to the chat whose menu is open", async () => {
 });
 
 test("Respect composition, held keys, dialogs, and navigation for pin shortcuts", async () => {
-  const thread = continuityThread(73, 1, "Scoped pin shortcut chat");
+  const threadTitle = "Scoped pin shortcut chat";
+  const thread = continuityThread(73, 1, threadTitle);
   const workspace = installContinuityWorkspace(context, {
     caseId: 73,
     threads: [thread],
@@ -574,12 +583,12 @@ test("Respect composition, held keys, dialogs, and navigation for pin shortcuts"
 
   await userEvent.keyboard("{Control>}{Shift>}D{/Shift}{/Control}");
   await waitFor(() => {
-    expect(pinnedIndicator(thread.id)).toBeVisible();
+    expectPinned(thread.id, threadTitle);
   });
   expect(
     dispatchPinShortcut(composer, { repeat: true }).defaultPrevented,
   ).toBeTruthy();
-  expect(pinnedIndicator(thread.id)).toBeVisible();
+  expectPinned(thread.id, threadTitle);
 
   threadContainer(thread.id).focus();
   await userEvent.keyboard("{Shift>}?{/Shift}");
@@ -590,7 +599,7 @@ test("Respect composition, held keys, dialogs, and navigation for pin shortcuts"
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
   });
-  expect(pinnedIndicator(thread.id)).toBeVisible();
+  expectPinned(thread.id, threadTitle);
 
   const agentsLink = queryAllByRoleFast("link").find((link) => {
     return link.textContent?.trim() === "Agents";

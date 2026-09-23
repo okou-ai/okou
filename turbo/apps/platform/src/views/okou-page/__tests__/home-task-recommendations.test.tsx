@@ -1,11 +1,17 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { homeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/home-task-recommendations";
-import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatEventsContract,
+  chatThreadDraftContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import {
@@ -22,6 +28,8 @@ function mockRecommendations(
   target:
     | { readonly kind: "new-thread" }
     | { readonly kind: "existing-thread"; readonly threadId: string },
+  purpose: "task" | "workflow" = "task",
+  connectors: string[] = [],
 ) {
   const requestedAgentIds: string[] = [];
   let nextRequestGate: DeferredPromise<void> | undefined;
@@ -36,15 +44,17 @@ function mockRecommendations(
         status: "available",
         generatedAt: "2026-09-21T10:00:00.000Z",
         refreshAfterMs: 900_000,
+        revision: "a".repeat(64),
         recommendations: [
           {
             id: "r1",
+            purpose,
             title: "Prepare the launch follow-up",
             prompt: "Draft the launch follow-up for my review.",
             rationale: "A decision still needs a response",
             actionability: 83,
             target,
-            connectors: [],
+            connectors,
           },
         ],
       });
@@ -86,7 +96,7 @@ test("A new-chat recommendation prefills without sending", async () => {
       createdAt: "2026-09-21T10:00:00.000Z",
     });
   });
-  const { pauseNextRequest, requestedAgentIds } = mockRecommendations({
+  const { requestedAgentIds } = mockRecommendations({
     kind: "new-thread",
   });
   await setupPage({
@@ -104,36 +114,35 @@ test("A new-chat recommendation prefills without sending", async () => {
   const requestsBeforePush = requestedAgentIds.length;
   context.mocks.ably.trigger("homeTaskRecommendationsChanged", {
     agentId: AGENT_ID,
+    revision: "b".repeat(64),
   });
+  await screen.findByText("New tasks available");
+  expect(requestedAgentIds).toHaveLength(requestsBeforePush);
+  const reloadButton = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label") === "Reload tasks";
+  });
+  if (!reloadButton) {
+    throw new Error("Expected task reload button");
+  }
+  await user.click(reloadButton);
   await waitFor(() => {
     expect(requestedAgentIds.length).toBeGreaterThan(requestsBeforePush);
   });
   await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("connectorPermissionUpdated"),
-    ).toBeTruthy();
+    expect(screen.queryByText("New tasks available")).not.toBeInTheDocument();
   });
-  const requestsBeforePermissionPush = requestedAgentIds.length;
-  const releasePermissionReload = pauseNextRequest();
-  context.mocks.ably.trigger("connectorPermissionUpdated");
-  await waitFor(() => {
-    expect(requestedAgentIds.length).toBeGreaterThan(
-      requestsBeforePermissionPush,
-    );
-  });
-  // Permission invalidation is a display fence, not just a background refetch:
-  // potentially Gmail-derived stale copy disappears while the server rechecks.
-  expect(
-    screen.queryByText("Prepare the launch follow-up"),
-  ).not.toBeInTheDocument();
-  releasePermissionReload();
-  await screen.findByText("Prepare the launch follow-up");
-
+  await user.click(composer());
+  await user.type(composer(), "My saved draft");
   await user.click(screen.getByText("Prepare the launch follow-up"));
 
   await waitFor(() => {
     expect(composer()).toHaveTextContent(
       "Draft the launch follow-up for my review.",
+    );
+    expect(composer()).toHaveTextContent("My saved draft");
+    const text = composer().textContent ?? "";
+    expect(text.indexOf("Draft the launch follow-up")).toBeLessThan(
+      text.indexOf("My saved draft"),
     );
   });
   expect(screen.getByText("New chat")).toBeInTheDocument();
@@ -141,6 +150,56 @@ test("A new-chat recommendation prefills without sending", async () => {
   expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
   expect(search()).toBe("");
   expect(sends).toStrictEqual([]);
+});
+
+test("A permission notice hides Gmail cards without reloading the home snapshot", async () => {
+  const user = userEvent.setup();
+  const { requestedAgentIds, pauseNextRequest } = mockRecommendations(
+    { kind: "new-thread" },
+    "task",
+    ["gmail"],
+  );
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.HomeTaskRecommendations]: true },
+  });
+
+  await screen.findByText("Prepare the launch follow-up");
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("connectorPermissionUpdated"),
+    ).toBeTruthy();
+  });
+  const requestsBeforeNotice = requestedAgentIds.length;
+  context.mocks.ably.trigger("connectorPermissionUpdated");
+  await screen.findByText("New tasks available");
+  expect(requestedAgentIds).toHaveLength(requestsBeforeNotice);
+  expect(
+    screen.queryByText("Prepare the launch follow-up"),
+  ).not.toBeInTheDocument();
+
+  const releaseReload = pauseNextRequest();
+  const reloadButton = queryAllByRoleFast("button").find((button) => {
+    return button.getAttribute("aria-label") === "Reload tasks";
+  });
+  if (!reloadButton) {
+    throw new Error("Expected task reload button");
+  }
+  await user.click(reloadButton);
+  await waitFor(() => {
+    expect(requestedAgentIds.length).toBeGreaterThan(requestsBeforeNotice);
+  });
+  expect(
+    document.querySelectorAll(
+      '[data-slot="home-task-recommendation-skeleton"]',
+    ),
+  ).toHaveLength(3);
+  releaseReload();
+  await screen.findByText("Prepare the launch follow-up");
+  await waitFor(() => {
+    expect(screen.queryByText("New tasks available")).not.toBeInTheDocument();
+  });
 });
 
 test("An existing-thread recommendation navigates and prefills without sending", async () => {
@@ -152,7 +211,19 @@ test("An existing-thread recommendation navigates and prefills without sending",
       sends.push(prompt);
     },
   });
-  mockRecommendations({ kind: "existing-thread", threadId: THREAD_ID });
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text", text: "My existing thread draft" }],
+      },
+      draftAttachments: null,
+    });
+  });
+  const { requestedAgentIds } = mockRecommendations({
+    kind: "existing-thread",
+    threadId: THREAD_ID,
+  });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
@@ -167,7 +238,51 @@ test("An existing-thread recommendation navigates and prefills without sending",
     expect(composer()).toHaveTextContent(
       "Draft the launch follow-up for my review.",
     );
+    expect(composer()).toHaveTextContent("My existing thread draft");
+    const text = composer().textContent ?? "";
+    expect(text.indexOf("Draft the launch follow-up")).toBeLessThan(
+      text.indexOf("My existing thread draft"),
+    );
   });
   expect(search()).toBe("");
   expect(sends).toStrictEqual([]);
+
+  const requestsBeforeReturn = requestedAgentIds.length;
+  window.history.back();
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(requestedAgentIds.length).toBeGreaterThan(requestsBeforeReturn);
+  });
+  await screen.findByText("Prepare the launch follow-up");
+});
+
+test("A workflow suggestion sends its task to the Agent without sending the saved composer draft", async () => {
+  const user = userEvent.setup();
+  const sends: string[] = [];
+  mockChatLifecycle(context, {
+    onSendRequest: ({ prompt }) => {
+      sends.push(prompt);
+    },
+  });
+  mockRecommendations({ kind: "new-thread" }, "workflow");
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.HomeTaskRecommendations]: true },
+  });
+
+  await screen.findByText("Prepare the launch follow-up");
+  await user.click(composer());
+  await user.type(composer(), "Keep this unsent");
+  await user.click(screen.getByText("Prepare the launch follow-up"));
+
+  await waitFor(() => {
+    expect(pathname()).toMatch(/^\/chats\//);
+  });
+  await waitFor(() => {
+    expect(sends).toStrictEqual(["Draft the launch follow-up for my review."]);
+  });
+  expect(sends[0]).not.toContain("Keep this unsent");
+  expect(pathname()).toMatch(/^\/chats\//);
 });

@@ -32,9 +32,9 @@ import {
   copyArtifactShareObject,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
-  generateArtifactPreviewUrl,
   putHostedSitesS3Object,
 } from "../external/s3";
+import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import {
   privateArtifactRecord,
   privateArtifactUrl,
@@ -648,11 +648,15 @@ export const resolveArtifactShare$ = command(
     ) {
       return null;
     }
-    const preview = await get(
-      generateArtifactPreviewUrl(file.bucket, policy.target.key, {
+    const preview = await set(
+      resolveArtifactPreviewUrl$,
+      {
+        bucket: file.bucket,
+        key: policy.target.key,
         signingDate: nowDate(),
         filename: file.filename,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     return {
@@ -737,11 +741,15 @@ export const resolveArtifactShareDownload$ = command(
       if (!file) {
         return null;
       }
-      const preview = await get(
-        generateArtifactPreviewUrl(file.bucket, policy.target.key, {
+      const preview = await set(
+        resolveArtifactPreviewUrl$,
+        {
+          bucket: file.bucket,
+          key: policy.target.key,
           signingDate: nowDate(),
           filename: policy.target.filename,
-        }),
+        },
+        signal,
       );
       signal.throwIfAborted();
       return {

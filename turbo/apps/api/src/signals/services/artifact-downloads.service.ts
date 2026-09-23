@@ -4,10 +4,10 @@ import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact
 import { nowDate } from "../../lib/time";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import {
-  generateArtifactPreviewUrl,
   generateHostedSitesPresignedGetUrl,
   s3ObjectHead,
 } from "../external/s3";
+import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import {
   artifactReferenceRecord,
   type SharedThreadArtifactReference,
@@ -165,10 +165,10 @@ export const resolveArtifactDownload$ = command(
         if (object.kind === "missing") {
           return null;
         }
-        const preview = await get(
-          generateArtifactPreviewUrl(file.bucket, file.key, {
-            signingDate: nowDate(),
-          }),
+        const preview = await set(
+          resolveArtifactPreviewUrl$,
+          { bucket: file.bucket, key: file.key, signingDate: nowDate() },
+          signal,
         );
         signal.throwIfAborted();
         return {

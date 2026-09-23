@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -12,6 +13,7 @@ import { holdRunConversationDeletionForTest } from "../../../test-fixtures/usage
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
@@ -35,6 +37,11 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
     // The deleted user invokes another owner's Agent. Clerk retains that
     // Agent and its Sessions, isolating the direct Run/ledger lock order.
     const actor = fixture.bdd.user({ orgId });
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.PiLoop]: false },
+    );
     const deletedAgent = await fixture.bdd.createAgent(actor, {
       displayName: "Account cleanup commit evidence",
       visibility: "private",

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 
 import { chatEventCompatibilityRole } from "@okouai/api-contracts/contracts/chat-events";
+import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, notExists } from "drizzle-orm";
 
 import { stripMarkdown } from "../../lib/strip-markdown";
 import type { Db } from "../external/db";
@@ -13,6 +14,7 @@ import {
 } from "./canonical-chat-event-read.service";
 import { visibleChatEventCondition } from "./chat-event-shared.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
+import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
 import {
   projectUserMessage,
@@ -49,10 +51,19 @@ export interface HomeTaskEvidenceThread {
 export interface HomeTaskEvidence {
   readonly threads: readonly HomeTaskEvidenceThread[];
   readonly gmail: readonly HomeTaskGmailEvidence[];
+  /** Only visible user requests attached to runs that actually completed. */
+  readonly completedRequests: readonly {
+    readonly threadRef: string;
+    readonly text: string;
+  }[];
   /** Local-only resolution for an accepted `threadRef`. Never sent upstream. */
   readonly threadIdByRef: ReadonlyMap<string, string>;
   /** Digest of provider-visible evidence plus its local destination identity. */
   readonly digest: string;
+}
+
+interface RecentMessage extends HomeTaskEvidenceMessage {
+  readonly runId: string | null;
 }
 
 export interface HomeTaskEvidenceScope {
@@ -82,6 +93,28 @@ async function recentThreads(
         eq(chatThreads.userId, args.userId),
         eq(chatThreads.agentId, args.agentId),
         chatThreadOrganizationCondition(db, args.orgId),
+        notExists(
+          db
+            .select({ id: agentRuns.id })
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.chatThreadId, chatThreads.id),
+                inArray(agentRuns.status, ["queued", "pending", "running"]),
+              ),
+            ),
+        ),
+        notExists(
+          db
+            .select({ id: chatEvents.id })
+            .from(chatEvents)
+            .where(
+              and(
+                eq(chatEvents.chatThreadId, chatThreads.id),
+                pendingChatQueueEventCondition(db),
+              ),
+            ),
+        ),
       ),
     )
     .orderBy(desc(chatThreads.lastMessageAt), desc(chatThreads.id))
@@ -95,10 +128,11 @@ async function recentThreads(
 async function recentMessages(
   db: Pick<Db, "select">,
   threadIds: readonly string[],
-): Promise<Map<string, HomeTaskEvidenceMessage[]>> {
+): Promise<Map<string, RecentMessage[]>> {
   const rows = await db
     .select({
       chatThreadId: chatEvents.chatThreadId,
+      runId: chatEvents.runId,
       eventType: chatEvents.eventType,
       content: canonicalChatEventVisibleContent(),
       userMessage: canonicalChatEventUserMessage(),
@@ -117,7 +151,7 @@ async function recentMessages(
     .orderBy(desc(chatEvents.createdAt), desc(chatEvents.id))
     .limit(MESSAGE_LIMIT);
 
-  const byThread = new Map<string, HomeTaskEvidenceMessage[]>();
+  const byThread = new Map<string, RecentMessage[]>();
   for (const row of rows) {
     const existing = byThread.get(row.chatThreadId) ?? [];
     if (existing.length >= MESSAGE_PER_THREAD_LIMIT) {
@@ -134,6 +168,7 @@ async function recentMessages(
       continue;
     }
     existing.push({
+      runId: row.runId,
       role: chatEventCompatibilityRole(row.eventType),
       text: excerpt(raw, MESSAGE_EXCERPT_CHARS),
     });
@@ -154,7 +189,7 @@ export async function collectHomeTaskEvidence(
   signal.throwIfAborted();
   const messages =
     threadRows.length === 0
-      ? new Map<string, HomeTaskEvidenceMessage[]>()
+      ? new Map<string, RecentMessage[]>()
       : await recentMessages(
           db,
           threadRows.map((row) => {
@@ -163,19 +198,65 @@ export async function collectHomeTaskEvidence(
         );
   signal.throwIfAborted();
 
+  const runIds = [
+    ...new Set(
+      [...messages.values()].flatMap((items) => {
+        return items.flatMap((item) => {
+          return item.runId === null ? [] : [item.runId];
+        });
+      }),
+    ),
+  ];
+  const completedRuns =
+    runIds.length === 0
+      ? []
+      : await db
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(
+            and(
+              inArray(agentRuns.id, runIds),
+              eq(agentRuns.userId, args.userId),
+              eq(agentRuns.orgId, args.orgId),
+              eq(agentRuns.status, "completed"),
+            ),
+          );
+  signal.throwIfAborted();
+  const completedRunIds = new Set(
+    completedRuns.map((run) => {
+      return run.id;
+    }),
+  );
+  const seenCompletedRunIds = new Set<string>();
+  const completedRequests: { threadRef: string; text: string }[] = [];
+
   const threadIdByRef = new Map<string, string>();
   const threads = threadRows.map((row, index): HomeTaskEvidenceThread => {
     const ref = `t${(index + 1).toString()}`;
     threadIdByRef.set(ref, row.id);
+    const recent = messages.get(row.id) ?? [];
+    for (const message of recent) {
+      if (
+        message.role === "user" &&
+        message.runId !== null &&
+        completedRunIds.has(message.runId) &&
+        !seenCompletedRunIds.has(message.runId)
+      ) {
+        seenCompletedRunIds.add(message.runId);
+        completedRequests.push({ threadRef: ref, text: message.text });
+      }
+    }
     return {
       ref,
       title:
         row.title === null ? null : excerpt(row.title, TITLE_EXCERPT_CHARS),
       lastActivityAt: row.lastMessageAt.toISOString(),
-      messages: messages.get(row.id) ?? [],
+      messages: recent.map(({ role, text }) => {
+        return { role, text };
+      }),
     };
   });
-  const providerEvidence = { threads, gmail };
+  const providerEvidence = { threads, gmail, completedRequests };
   const destinationIdentity = threads.map((thread) => {
     return { ref: thread.ref, threadId: threadIdByRef.get(thread.ref) };
   });

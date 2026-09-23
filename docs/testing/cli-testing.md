@@ -128,6 +128,17 @@ command's user-visible error and exit code. Missing-token tests should verify
 the `OKOU_TOKEN` setup guidance; present-but-rejected token tests should verify
 the invalid-or-expired guidance.
 
+## SSH Deadline Exception
+
+The hung-helper cases in `src/commands/ssh/__tests__/index.test.ts` and
+`src/commands/ssh/__tests__/files.test.ts` are a narrow exception to the
+fake-timer ban. They exercise the command's 65-second and 15-minute process
+deadlines through the CLI entry point. These tests fake only `setTimeout` and
+`clearTimeout`, leave other timers real, and assert the observable failure
+result after the deadline. Keep the exception limited to those two cases;
+ordinary asynchronous CLI tests should synchronize on a request, process, or
+file outcome instead of advancing a clock.
+
 ## What belongs elsewhere
 
 - API route behavior belongs in API integration tests.

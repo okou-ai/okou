@@ -1515,7 +1515,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} Tage in Folge",
-        "title": "Einstieg",
+        "title": "Mehr Guthaben erhalten",
         "toGo": "Noch {{amount}}",
         "workflow": {
           "action": "Bauen",
@@ -1981,9 +1981,13 @@
       "title": "Weiterleiten an"
     },
     "homeTasks": {
+      "empty": "Noch keine Aufgabenvorschläge",
       "existingThread": "Chat fortsetzen",
+      "exploreWorkflow": "Workflow prüfen",
       "heading": "Aus Ihrer letzten Arbeit aufgegriffen",
-      "newThread": "Neuer Chat"
+      "newTasksAvailable": "Neue Aufgaben verfügbar",
+      "newThread": "Neuer Chat",
+      "reload": "Aufgaben neu laden"
     },
     "mail": {
       "bcc": "BCC",
@@ -3200,12 +3204,19 @@
       "noConnectorsAlt": "Keine Integrationen",
       "otherCategory": "Andere",
       "remoteAccess": "Fernzugriff",
+      "remoteControl": {
+        "connections": "Verbindungen",
+        "credentials": "Zugangsdaten",
+        "type": "Typ"
+      },
       "scope": {
         "aria": "Connector-Bereich",
         "attention": "Benötigt Aufmerksamkeit",
         "connected": "Verbunden",
         "custom": "Eigene",
         "discover": "Entdecken",
+        "privateNetwork": "Privates Netzwerk",
+        "remoteControl": "Fernsteuerung",
         "searchConnected": "Verbundene Integrationen finden",
         "searchCustom": "Eigene Integrationen finden"
       },
@@ -6022,6 +6033,7 @@
         "personal": "Persönlich",
         "workspace": "Arbeitsbereich"
       },
+      "sectionNavigation": "Einstellungsbereich",
       "sections": {
         "billing": {
           "description": "Verwalten Sie Ihren Plan und Ihre Zahlungsmethode.",
@@ -7740,6 +7752,7 @@
       },
       "notFound": "Workflow nicht gefunden.",
       "refineWith": "Verfeinern mit {{agent}}",
+      "sectionNavigation": "Bereich der Workflow-Details",
       "shadow": {
         "end": "für Sie. Dieser Workflow wird durch die Prioritätsregel für identische Slugs überschattet.",
         "resolvesTo": "beschließt derzeit,"

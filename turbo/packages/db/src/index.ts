@@ -97,6 +97,7 @@ import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as skillSchema from "./schema/skill";
 import * as usagePricingSchema from "./schema/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
+import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
 import * as userPermissionGrantSchema from "./schema/user-permission-grant";
 import * as storageVersionLineageSchema from "./schema/storage-version-lineage";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
@@ -258,6 +259,7 @@ export const schema = {
   ...skillSchema,
   ...usagePricingSchema,
   ...agentDraftSchema,
+  ...chatThreadDraftSchema,
   ...userPermissionGrantSchema,
   ...storageVersionLineageSchema,
   ...runUploadedFileSchema,

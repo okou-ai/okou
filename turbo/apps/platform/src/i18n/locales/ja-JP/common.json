@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}}日連続",
-        "title": "はじめる",
+        "title": "クレジットをもっと獲得",
         "toGo": "残り {{amount}}",
         "workflow": {
           "action": "作成",
@@ -1974,9 +1974,13 @@
       "title": "転送先"
     },
     "homeTasks": {
+      "empty": "おすすめのタスクはまだありません",
       "existingThread": "チャットを続ける",
+      "exploreWorkflow": "ワークフローを検討",
       "heading": "最近の作業から選んだタスク",
-      "newThread": "新しいチャット"
+      "newTasksAvailable": "新しいタスクがあります",
+      "newThread": "新しいチャット",
+      "reload": "タスクを再読み込み"
     },
     "mail": {
       "bcc": "BCC",
@@ -3186,12 +3190,19 @@
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",
+      "remoteControl": {
+        "connections": "接続",
+        "credentials": "認証情報",
+        "type": "種類"
+      },
       "scope": {
         "aria": "コネクタの表示範囲",
         "attention": "対応が必要",
         "connected": "接続済み",
         "custom": "カスタム",
         "discover": "探す",
+        "privateNetwork": "プライベートネットワーク",
+        "remoteControl": "リモート操作",
         "searchConnected": "接続済みのコネクタを検索",
         "searchCustom": "カスタムコネクタを検索"
       },
@@ -6008,6 +6019,7 @@
         "personal": "個人的な",
         "workspace": "ワークスペース"
       },
+      "sectionNavigation": "設定セクション",
       "sections": {
         "billing": {
           "description": "プランと支払い方法を管理します。",
@@ -7721,6 +7733,7 @@
       },
       "notFound": "ワークフローが見つかりません。",
       "refineWith": "{{agent}} で絞り込む",
+      "sectionNavigation": "ワークフロー詳細セクション",
       "shadow": {
         "end": "あなたのために。このワークフローは、同じスラッグの優先順位ルールによってシャドウされます。",
         "resolvesTo": "現在は次のように解決されます"

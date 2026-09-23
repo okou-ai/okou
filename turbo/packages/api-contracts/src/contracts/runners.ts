@@ -181,8 +181,8 @@ export const runnerClaimCapabilitiesSchema = z
  * Versions of the Okou CLI bundle installed into a runner's rootfs at build
  * time. Advertised on claim so the API can observe (and, once the npx launch
  * path is retired, gate) API-first handoff parity. `piSdk` is informational.
- * `piSessionConstructionDigest` is the parity key the guest compares; runners
- * advertise it only once every serving API accepts it, so it stays optional.
+ * `piSessionConstructionDigest` is the parity key the guest compares. It stays
+ * optional for runners with an older installed CLI artifact.
  */
 export const runnerInstalledVersionsSchema = z
   .object({
@@ -1074,7 +1074,7 @@ export const piApiFirstTurnConfigSchema = z
      * the guest execs the rootfs-installed CLI, and the CLI continues a
      * pending-tool handoff, only when the digest bundled into that CLI is
      * identical, so dependency-only runtime version bumps no longer force the
-     * `npx` launch. Absent until the API writer is enabled.
+     * `npx` launch. Absent from launch configs captured before the writer.
      */
     requiredPiSessionConstructionDigest:
       piSessionConstructionDigestSchema.optional(),

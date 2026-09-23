@@ -81,6 +81,7 @@
       "description": "L'agent « {{agentId}} » n'existe pas ou vous n'y avez pas accès.",
       "title": "Agent introuvable"
     },
+    "sectionNavigation": "Rubrique des détails de l'agent",
     "tabs": {
       "authorization": "Autorisation",
       "instructions": "Instructions",

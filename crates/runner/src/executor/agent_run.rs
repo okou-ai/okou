@@ -2053,6 +2053,7 @@ async fn prepare_guest_storage(
                     context,
                     guest_manifest,
                     &files,
+                    telemetry,
                 )
                 .await;
                 telemetry.record(
@@ -2097,6 +2098,7 @@ async fn prepare_guest_storage(
                     context,
                     guest_manifest,
                     &files,
+                    telemetry,
                 )
                 .await;
                 telemetry.record(

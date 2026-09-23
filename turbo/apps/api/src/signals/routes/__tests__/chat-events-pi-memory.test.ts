@@ -82,6 +82,7 @@ const {
   cancelChatRun,
   requestSendEventWithBearer,
   mockPiCheckpointObjectStore,
+  completeSandboxFirstPiRun,
   publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
@@ -311,14 +312,7 @@ describe("CHAT-02: model-first provider policies", () => {
         modelCalls += 1;
         modelRequestBodies.push(await request.text());
         return new HttpResponse(
-          modelCalls === 1
-            ? piResponsesTextSse("API-first memory checkpoint", modelCalls)
-            : piResponsesToolSse({
-                callId: "call_pi_memory_handoff",
-                name: "read",
-                arguments: { path: "/home/user/workspace/AGENTS.md" },
-                sequence: modelCalls,
-              }),
+          piResponsesTextSse("API-first memory checkpoint", modelCalls),
           { headers: { "content-type": "text/event-stream" } },
         );
       }),
@@ -381,13 +375,7 @@ describe("CHAT-02: model-first provider policies", () => {
         return checkpointObjects.has(manifestKey);
       })
       .toBe(true);
-    expect(modelCalls).toBe(2);
-    expect(
-      occurrences(
-        piResponsesDeveloperPrompt(modelRequestBodies[1]),
-        frozenSummary,
-      ),
-    ).toBe(1);
+    expect(modelCalls).toBe(1);
     const manifestBytes = checkpointObjects.get(manifestKey);
     if (!manifestBytes) {
       throw new Error("Expected the Pi memory ownership-transfer manifest");
@@ -397,8 +385,9 @@ describe("CHAT-02: model-first provider policies", () => {
         JSON.parse(manifestBytes.toString("utf8")),
       ),
     ).toMatchObject({
+      schemaVersion: 4,
       outcome: "ownership-transfer",
-      mode: "pending-tool-continuation",
+      mode: "sandbox-first",
     });
     const claimed = await claimChatRun(runnerGroup, second.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
@@ -1752,7 +1741,7 @@ describe("CHAT-02: model-first provider policies", () => {
   });
 
   it("keeps Pi checkpoints intact and fences canonical writes", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
 
@@ -1766,7 +1755,7 @@ describe("CHAT-02: model-first provider policies", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
+    const checkpointObjects = mockPiCheckpointObjectStore();
     const answers = [
       "first memory admission answer",
       "replacement memory admission answer",
@@ -1915,8 +1904,20 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       usagePricingResolution,
     );
+    await flushWaitUntilForTest();
+    const secondClaim = await claimChatRun(runnerGroup, second.runId);
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: answers[1],
+      checkpointObjects,
+      claim: secondClaim,
+      prompt: "replace the leased candidate with a newer exact history",
+      run: second,
+      usagePricingResolution,
+    });
     await waitForRunStatus(actor, second.runId, "completed", 10_000);
     await flushWaitUntilForTest();
+    expect(modelCalls).toBe(1);
 
     await expect(
       readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
@@ -2044,8 +2045,20 @@ describe("CHAT-02: model-first provider policies", () => {
       },
       usagePricingResolution,
     );
+    await flushWaitUntilForTest();
+    const thirdClaim = await claimChatRun(runnerGroup, third.runId);
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: answers[2],
+      checkpointObjects,
+      claim: thirdClaim,
+      prompt: "replace the synthetic Phase 2 selection watermark",
+      run: third,
+      usagePricingResolution,
+    });
     await waitForRunStatus(actor, third.runId, "completed", 10_000);
     await flushWaitUntilForTest();
+    expect(modelCalls).toBe(1);
 
     await expect(
       readPiMemoryStage1CandidateFixture({ orgId, userId: actor.userId }),
