@@ -2326,14 +2326,17 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   }
 
   it("preserves Telegram forum delivery and ignores duplicate completion callbacks", async () => {
+    expect.hasAssertions();
     await runCanonicalTelegramForumScenario("callback");
   });
 
   it("preserves Telegram group reply chains and duplicate updates", async () => {
+    expect.hasAssertions();
     await runCanonicalTelegramForumScenario("reply-chain");
   });
 
   it("starts a fresh Telegram group chain after a completed reply", async () => {
+    expect.hasAssertions();
     await runCanonicalTelegramForumScenario("fresh-chain");
   });
 
