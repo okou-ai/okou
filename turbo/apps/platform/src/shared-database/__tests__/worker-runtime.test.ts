@@ -407,6 +407,44 @@ test("Load complete chat history across a snapshot boundary", async () => {
   expect(requestedSeqIds).toHaveLength(requestCount);
 });
 
+test("Load a chat thread snapshot from its presigned object URL", async () => {
+  const { runtime } = startRuntime();
+  const expected = {
+    chatThreads: [snapshotThread("Stored in R2")],
+    latestEventId: null,
+    latestSeqId: null,
+  };
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      url: SNAPSHOT_URL,
+      expiresInSeconds: 900,
+      latestEventId: null,
+      latestSeqId: null,
+    });
+  });
+  context.mocks.http.get(SNAPSHOT_URL, () => {
+    return new Response(JSON.stringify({ chatThreads: expected.chatThreads }));
+  });
+  context.mocks.api(chatThreadsContract.events, ({ respond }) => {
+    return respond(200, { events: [], hasMore: false });
+  });
+
+  await expect(
+    queryRuntime(runtime, {
+      dataKey: chatThreadEventKey(),
+      afterSeqId: null,
+      consistency: "catch-up",
+    }),
+  ).resolves.toStrictEqual({ snapshot: expected, events: [] });
+  await expect(
+    queryRuntime(runtime, {
+      dataKey: chatThreadEventKey(),
+      afterSeqId: null,
+      consistency: "cache-only",
+    }),
+  ).resolves.toStrictEqual({ snapshot: expected, events: [] });
+});
+
 test("Preserve a future run failure reason from snapshot storage", async () => {
   const { runtime } = startRuntime();
   const dataKey = chatEventKey(crypto.randomUUID());

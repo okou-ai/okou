@@ -1,5 +1,38 @@
 # Deployment Compatibility
 
+## Chat thread snapshot R2 handoff (2026-09-23)
+
+Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
+`chat_thread_snapshots`. Existing rows continue to carry the legacy
+`chat_threads` JSONB and the API returns the same inline snapshot for them.
+The new API can return a short-lived,
+scope-checked download URL for a row with an object key; the new App and CLI
+materialize that object before caching or replaying its paired event cursor.
+
+The global compaction cron writes R2 snapshots as soon as this API deploys.
+Production promotes the API before the App, and previously loaded App bundles
+can remain open. The API therefore reads the R2 archive and serves the legacy
+inline response to clients that do not send `X-Chat-Thread-Snapshot-R2: 1`.
+The new App and CLI send that capability header and receive the short-lived R2
+URL. Package versions alone cannot identify the capability because older
+deployments use the same versions. This compatibility read does not access the
+retired JSONB payload.
+
+The compaction job writes a compressed,
+content-addressed JSON snapshot to R2 and publishes its object key together
+with the event cursor. It stores an empty JSONB array instead of the retired
+projection. Rows without an object key remain readable through the legacy
+JSONB response until the job backfills them. A failed upload or a losing
+conditional database update leaves the prior snapshot and cursor intact.
+
+The hourly job also removes unreferenced snapshot objects older than seven
+days in bounded hash partitions. It retains objects referenced by a current
+snapshot or a user export. Rolling back to an API that only understands inline
+JSONB after the first R2 write would leave R2-backed snapshots unreadable;
+the production rollback resolver enforces the canonical main commit that first
+introduced `chat-thread-snapshot-object.ts` as the API reader floor. Recovery
+must stay at or above that floor or roll forward.
+
 ## Artifact catalog API handoff (2026-09-23)
 
 The API now enqueues file catalog work in the same transaction as its ordinary
