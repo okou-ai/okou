@@ -67,6 +67,8 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { Link } from "../router/link.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
 import { localizedSshError } from "../../lib/ssh-error.ts";
@@ -878,7 +880,7 @@ function SshHostForm({ dialog, isSaving, save }: SshFormProps) {
   );
 }
 
-function SshDialog() {
+export function SshDialog() {
   const data = useLoadable(sshDialog$);
   const close = useSet(closeSshDialog$);
   const [saving, save] = useLoadableSet(saveSsh$);
@@ -1021,7 +1023,7 @@ function HostCard({
   );
 }
 
-function SshHosts() {
+export function SshHosts() {
   const { t } = useTranslation();
   const hosts = useLoadable(sshConnections$);
   const open = useSet(openSshDialog$);
@@ -1086,7 +1088,7 @@ function SshHosts() {
   );
 }
 
-function Credentials() {
+export function SshCredentials() {
   const { t } = useTranslation();
   const credentials = useLoadable(sshCredentials$);
   const open = useSet(openSshCredentialDialog$);
@@ -1207,6 +1209,8 @@ function Credentials() {
 
 export function SshConnectorPage() {
   const { t } = useTranslation();
+  const directoryEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const view = useGet(sshView$);
   const changeView = useSet(changeSshView$);
   return (
@@ -1214,6 +1218,15 @@ export function SshConnectorPage() {
       <DetailPageBreadcrumbBar>
         <Link
           pathname={ROUTES.connectors}
+          options={
+            directoryEnabled
+              ? {
+                  searchParams: new URLSearchParams({
+                    scope: "remote-control",
+                  }),
+                }
+              : undefined
+          }
           className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-inherit no-underline transition-colors hover:bg-state-hover hover:text-foreground"
         >
           <Plug size={14} className="shrink-0" aria-hidden="true" />
@@ -1271,7 +1284,7 @@ export function SshConnectorPage() {
             </SegmentControlItem>
           </SegmentControl>
         </div>
-        {view === "hosts" ? <SshHosts /> : <Credentials />}
+        {view === "hosts" ? <SshHosts /> : <SshCredentials />}
         <SshDialog />
       </DetailPageMain>
     </DetailPageShell>

@@ -1,7 +1,10 @@
+import { useGet } from "ccstate-react";
 import { Plug } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { ROUTES } from "../../signals/route-paths.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { Link } from "../router/link.tsx";
 import { CloudflareAccessIcon } from "./components/cloudflare-access-icon.tsx";
 import {
@@ -17,11 +20,22 @@ import {
 
 export function CloudflareAccessConnectorPage() {
   const { t } = useTranslation();
+  const directoryEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   return (
     <DetailPageShell>
       <DetailPageBreadcrumbBar>
         <Link
           pathname={ROUTES.connectors}
+          options={
+            directoryEnabled
+              ? {
+                  searchParams: new URLSearchParams({
+                    scope: "private-network",
+                  }),
+                }
+              : undefined
+          }
           className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-inherit no-underline transition-colors hover:bg-state-hover hover:text-foreground"
         >
           <Plug size={14} className="shrink-0" aria-hidden="true" />

@@ -327,7 +327,7 @@ test("Wait for pending Custom results before declaring search empty", async () =
   expect(locationSearch()).toBe(beforeCancel);
 });
 
-test("Keep SSH and Custom in separate sections and scope Remote access", async () => {
+test("Keep Remote control and Custom in separate scopes", async () => {
   installCustomDirectory();
   context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
     return respond(200, { configuredCount: 0 });
@@ -339,15 +339,16 @@ test("Keep SSH and Custom in separate sections and scope Remote access", async (
       [FeatureSwitchKey.ConnectorDirectory]: true,
     },
   });
-  const remote = await screen.findByTestId("connector-category-remote-access");
-  expect(within(remote).queryByText("Acme Reports")).toBeNull();
+  await screen.findByTestId("connectors-scope-remote-control");
+  expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
   expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Remote access"));
+  click(screen.getByTestId("connectors-scope-remote-control"));
   await waitFor(() => {
-    expect(locationSearch()).toContain("category=remote-access");
+    expect(locationSearch()).toContain("scope=remote-control");
   });
-  expect(screen.getByTestId("connector-category-remote-access")).toBeVisible();
+  await waitFor(() => {
+    return getConnectorAction("button", "Add host");
+  });
   expect(screen.queryByRole("region", { name: "Custom" })).toBeNull();
   expect(queryConnectorAction("button", "New custom connector")).toBeNull();
 });

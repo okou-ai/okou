@@ -3190,12 +3190,19 @@
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",
+      "remoteControl": {
+        "connections": "接続",
+        "credentials": "認証情報",
+        "type": "種類"
+      },
       "scope": {
         "aria": "コネクタの表示範囲",
         "attention": "対応が必要",
         "connected": "接続済み",
         "custom": "カスタム",
         "discover": "探す",
+        "privateNetwork": "プライベートネットワーク",
+        "remoteControl": "リモート操作",
         "searchConnected": "接続済みのコネクタを検索",
         "searchCustom": "カスタムコネクタを検索"
       },
