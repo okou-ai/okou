@@ -33,14 +33,17 @@ const hosts = () => {
   );
 };
 
-async function owner(orgId = `org_shared_access_${randomUUID()}`) {
+async function owner(
+  orgId = `org_shared_access_${randomUUID()}`,
+  role: "admin" | "member" = "admin",
+) {
   const value = {
     orgId,
     userId: `user_shared_access_${randomUUID()}`,
     membershipId: `orgmem_${randomUUID()}`,
   };
-  await store.set(seedOrgMembership$, value, context.signal);
-  mocks.clerk.session(value.userId, value.orgId, "org:admin");
+  await store.set(seedOrgMembership$, { ...value, role }, context.signal);
+  mocks.clerk.session(value.userId, value.orgId, `org:${role}`);
   mocks.s3.listObjects([]);
   return value;
 }
@@ -113,8 +116,7 @@ test("creator erasure preserves shared Access and another member's SSH host", as
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();
-  const member = await owner(creator.orgId);
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  const member = await owner(creator.orgId, "member");
   const host = await createHost(shared.id);
 
   await webhook("user.deleted", creator.userId);
@@ -132,8 +134,7 @@ test("organization erasure removes shared Access after its member SSH references
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();
-  const member = await owner(creator.orgId);
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  const member = await owner(creator.orgId, "member");
   await createHost(shared.id);
 
   await webhook("organization.deleted", creator.orgId);

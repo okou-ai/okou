@@ -330,10 +330,15 @@ async function lockAccessBeforeHostUpdate(
 async function lockOwnerHostForUpdate(
   tx: Transaction,
   args: UpdateSshConnectionArgs,
-  preflight: SshConnectionRow,
 ): Promise<SshConnectionResult<SshConnectionRow>> {
   await lockSshOwner(tx, args);
-  if (!(await lockAccessBeforeHostUpdate(tx, args, preflight))) {
+  // A previous request may have changed the binding after the optimistic
+  // preflight. The owner lock makes this fresh read stable against host writes.
+  const currentBinding = await findOwnerConnection(tx, args);
+  if (!currentBinding) {
+    return failure("notFound");
+  }
+  if (!(await lockAccessBeforeHostUpdate(tx, args, currentBinding))) {
     return cloudflareAccessFailure("notFound");
   }
   const [current] = await tx
@@ -590,7 +595,7 @@ export async function updateSshConnection(
   const result = await args.db.transaction<
     SshConnectionMutationResult<SshConnectionResponse>
   >(async (tx) => {
-    const locked = await lockOwnerHostForUpdate(tx, args, preflight);
+    const locked = await lockOwnerHostForUpdate(tx, args);
     if (!locked.ok) {
       return locked;
     }
