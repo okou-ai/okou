@@ -463,7 +463,7 @@ async function resolveBillableFirewallCacheExpiry(params: {
   if (availability.status !== "active") {
     return insufficientCredits();
   }
-  if (runHasActiveCreditAdmission(params.run, availability.planKey)) {
+  if (runHasActiveCreditAdmission(params.run)) {
     return {
       expiresAt:
         Math.floor(nowDate().getTime() / 1000) +

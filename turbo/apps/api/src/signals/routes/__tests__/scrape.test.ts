@@ -122,7 +122,7 @@ async function bootstrapOnboarding(actor: ApiTestUser): Promise<void> {
 async function setActorCredits(
   actor: ApiTestUser,
   credits: number,
-  tier: "free" | "limited-free-1" | "pro" = "pro",
+  tier: "free" | "pro" = "pro",
 ): Promise<void> {
   if (!actor.orgId) {
     throw new Error("Scrape test actor must belong to an organization");
@@ -135,17 +135,14 @@ async function fundActor(actor: ApiTestUser): Promise<void> {
   await setActorCredits(actor, 1000);
 }
 
-async function createAdmittedScrapeRun(
-  actor: ApiTestUser,
-  tier: "free" | "limited-free-1" | "pro" = "free",
-): Promise<string> {
+async function createAdmittedScrapeRun(actor: ApiTestUser): Promise<string> {
   await seedBuiltInDefaultModelKey(context);
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
   bdd.acceptAgentStorageWrites();
   runs.configureRunnerGroup();
   await bootstrapOnboarding(actor);
-  await setActorCredits(actor, 1, tier);
+  await setActorCredits(actor, 1, "free");
   const agent = await bdd.createAgent(actor, {
     displayName: "Admitted scrape agent",
     visibility: "private",
@@ -640,90 +637,48 @@ describe("okou scrape route", () => {
     expect(firecrawlRequests).toBe(0);
   });
 
-  it.each(["free", "limited-free-1"] as const)(
-    "continues an admitted %s run after credits are exhausted",
-    async (tier) => {
-      const actor = createBddApi(context).user();
-      allowExampleDotCom();
-      configureProvider();
-      const pricing = await createScrapePricingFixture();
-      const runId = await createAdmittedScrapeRun(actor, tier);
-      await setActorCredits(actor, 0, tier);
-      server.use(
-        http.post(FIRECRAWL_SCRAPE_URL, () => {
-          return HttpResponse.json({
-            success: true,
-            data: {
-              markdown: "# Admitted run",
-              metadata: { sourceURL: "https://example.com/page" },
-            },
-          });
-        }),
-      );
-      const token = createRunsApi(context).okouTokenForRunWithCapabilities(
-        actor,
-        runId,
-        ["scrape:read"],
-      );
-
-      const response = await accept(
-        client(pricing.resolution)(scrapeContract).scrape({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            url: "https://example.com/page",
-            format: "markdown",
-            mode: "standard",
+  it("continues an admitted run after credits are exhausted", async () => {
+    const actor = createBddApi(context).user();
+    allowExampleDotCom();
+    configureProvider();
+    const pricing = await createScrapePricingFixture();
+    const runId = await createAdmittedScrapeRun(actor);
+    await setActorCredits(actor, 0, "free");
+    server.use(
+      http.post(FIRECRAWL_SCRAPE_URL, () => {
+        return HttpResponse.json({
+          success: true,
+          data: {
+            markdown: "# Admitted run",
+            metadata: { sourceURL: "https://example.com/page" },
           },
-        }),
-        [200],
-      );
+        });
+      }),
+    );
+    const token = createRunsApi(context).okouTokenForRunWithCapabilities(
+      actor,
+      runId,
+      ["scrape:read"],
+    );
 
-      expect(response.body).toMatchObject({
-        creditsCharged: 4,
-        result: { markdown: "# Admitted run" },
-      });
-      await expect(credits(actor)).resolves.toBe(-4);
-    },
-  );
+    const response = await accept(
+      client(pricing.resolution)(scrapeContract).scrape({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          url: "https://example.com/page",
+          format: "markdown",
+          mode: "standard",
+        },
+      }),
+      [200],
+    );
 
-  it.each(["free", "pro"] as const)(
-    "rejects an admitted run on a paid plan after exhaustion (started %s)",
-    async (startingTier) => {
-      const actor = createBddApi(context).user();
-      allowExampleDotCom();
-      configureProvider();
-      const pricing = await createScrapePricingFixture();
-      const runId = await createAdmittedScrapeRun(actor, startingTier);
-      await setActorCredits(actor, 0);
-      let firecrawlRequests = 0;
-      server.use(
-        http.post(FIRECRAWL_SCRAPE_URL, () => {
-          firecrawlRequests += 1;
-          return HttpResponse.json({ success: true, data: {} });
-        }),
-      );
-      const token = createRunsApi(context).okouTokenForRunWithCapabilities(
-        actor,
-        runId,
-        ["scrape:read"],
-      );
-
-      const response = await accept(
-        client(pricing.resolution)(scrapeContract).scrape({
-          headers: { authorization: `Bearer ${token}` },
-          body: {
-            url: "https://example.com/page",
-            format: "markdown",
-            mode: "standard",
-          },
-        }),
-        [402],
-      );
-      expectApiError(response.body);
-      expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
-      expect(firecrawlRequests).toBe(0);
-    },
-  );
+    expect(response.body).toMatchObject({
+      creditsCharged: 4,
+      result: { markdown: "# Admitted run" },
+    });
+    await expect(credits(actor)).resolves.toBe(-4);
+  });
 
   it("does not let admitted runs bypass plan suspension", async () => {
     const actor = createBddApi(context).user();
