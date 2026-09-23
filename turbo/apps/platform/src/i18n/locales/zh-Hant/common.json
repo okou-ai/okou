@@ -6050,6 +6050,9 @@
           "description": "個性化應用的外觀和使用方式。",
           "title": "偏好設定"
         },
+        "tools": {
+          "title": "工具"
+        },
         "usage": {
           "balanceDescription": "團隊還剩多少可用額度。",
           "balanceTitle": "積分餘額",

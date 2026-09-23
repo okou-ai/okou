@@ -6064,6 +6064,9 @@
           "description": "Personalisieren Sie das Aussehen und Verhalten der App.",
           "title": "Einstellungen"
         },
+        "tools": {
+          "title": "Tools"
+        },
         "usage": {
           "balanceDescription": "Was deinem Team noch zum Ausgeben bleibt.",
           "balanceTitle": "Credit-Guthaben",
