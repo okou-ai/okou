@@ -460,13 +460,9 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("should keep the simple Morning Brief implementation switch off for everyone", () => {
+  it("should select simple Morning Brief for staff while preserving preferences and overrides", () => {
     expect(FeatureSwitchKey.SimpleMorningBrief).toBe("simpleMorningBrief");
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
         isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, context),
       ).toBe(false);
@@ -476,6 +472,17 @@ describe("isFeatureEnabled", () => {
         true,
       );
     }
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, staff)).toBe(
+      true,
+    );
+    expect(isFeatureEnabled(FeatureSwitchKey.MorningBrief, staff)).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
+        ...staff,
+        overrides: { [FeatureSwitchKey.SimpleMorningBrief]: false },
+      }),
+    ).toBe(false);
     expect(
       isFeatureEnabled(FeatureSwitchKey.SimpleMorningBrief, {
         orgId: "org_nonexistent",
@@ -485,7 +492,7 @@ describe("isFeatureEnabled", () => {
     expect(
       getFeatureSwitchMetadata()[FeatureSwitchKey.SimpleMorningBrief]
         ?.rolloutStage,
-    ).toBe("alpha");
+    ).toBe("beta");
   });
 
   it("should return true when orgId matches even if userId does not", () => {

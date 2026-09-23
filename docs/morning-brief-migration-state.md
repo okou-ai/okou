@@ -118,7 +118,10 @@ mutation, exactly as the preference surface does today.
   must resolve the same account and must not silently fall back to another one
   when an explicit account is missing or revoked.
 - `FeatureSwitchKey.SimpleMorningBrief` (`simpleMorningBrief`) selects the
-  implementation and is registered fully off, with no staff allowlist. It is
+  implementation. It is registered off by default and enabled for the staff org
+  allowlist only, under S8
+  ([#36203](https://github.com/okou-ai/okou/issues/36203)); a per-user override
+  still takes precedence over that allowlist in either direction. It is
   independent of `MorningBrief`, which remains the user-facing availability
   switch: turning the implementation switch on must never change whether a user
   has Morning Brief, and turning it off must not discard choices the user made
@@ -135,7 +138,8 @@ execution record, or a cache that makes anything faster. The legacy installation
 and its automation still decide everything; the legacy queries all still run.
 
 `FeatureSwitchKey.SimpleMorningBrief` gates both directions and is off by
-default, so the production path is unchanged until it is turned on.
+default, so the production path is unchanged for every organization outside the
+staff org allowlist it is currently enabled for.
 
 ### What is copied, and when it may be used
 
@@ -289,8 +293,8 @@ instant.
 Only the installation this document's canonical selection reports as a member's
 installed Morning Brief is journaled. Additional installations, manual runs and
 every other automation kind keep their existing untracked behavior, and the
-journal activates no native work: the `simpleMorningBrief` switch stays off and
-is not consulted here. The table is additive and unconditional — it has no
+journal activates no native work: the `simpleMorningBrief` switch is not
+consulted here at all. The table is additive and unconditional — it has no
 feature-gated creation, and it is written only on the legacy path.
 
 ### What the claim sequence does and does not prove
