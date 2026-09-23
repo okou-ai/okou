@@ -98,6 +98,17 @@ function compareAppVersions(left: string, right: string): number | null {
   return 0;
 }
 
+export function isClientVersionAtLeast(
+  version: string | undefined,
+  minimum: string,
+): boolean {
+  if (!version) {
+    return false;
+  }
+  const comparison = compareAppVersions(version, minimum);
+  return comparison !== null && comparison >= 0;
+}
+
 export function isSupportedWebClientVersion(version: string): boolean {
   const comparison = compareAppVersions(version, minimumSupportedVersion);
   return comparison === null || comparison >= 0;

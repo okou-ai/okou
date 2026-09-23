@@ -9,16 +9,15 @@ The new API can return a short-lived,
 scope-checked download URL for a row with an object key; the new App and CLI
 materialize that object before caching or replaying its paired event cursor.
 
-The global compaction cron is paused by default: set
-`CHAT_THREAD_SNAPSHOT_R2_WRITES_ENABLED=true` only after the new App is live,
-the App compatibility floor excludes bundles that cannot download snapshot
-URLs, and the API rollback target understands R2 pointers. Production promotes
-the API before the App, and a previously loaded App can remain open after
-promotion. While the switch is off, the cron leaves snapshots and events
-unchanged; existing JSONB rows continue to serve clients. The test fixture
-compactor exercises the R2 writer regardless of the production switch.
+The global compaction cron writes R2 snapshots as soon as this API deploys.
+Production promotes the API before the App, and previously loaded App bundles
+can remain open. The API therefore reads the R2 archive and serves the legacy
+inline response to App versions before 0.949.0, CLI versions before 9.356.1,
+and callers without a recognized capable client version. The new App and CLI
+receive the short-lived R2 URL. This compatibility read does not access the
+retired JSONB payload.
 
-Once enabled, the compaction job writes a compressed,
+The compaction job writes a compressed,
 content-addressed JSON snapshot to R2 and publishes its object key together
 with the event cursor. It stores an empty JSONB array instead of the retired
 projection. Rows without an object key remain readable through the legacy
@@ -27,8 +26,9 @@ conditional database update leaves the prior snapshot and cursor intact.
 
 The hourly job also removes unreferenced snapshot objects older than seven
 days in bounded hash partitions. It retains objects referenced by a current
-snapshot or a user export. Rolling back to an API or App that only understands
-inline JSONB after enabling the switch would leave R2-backed snapshots unreadable.
+snapshot or a user export. Rolling back to an API that only understands inline
+JSONB after the first R2 write would leave R2-backed snapshots unreadable;
+recovery must roll forward or restore this reader before serving snapshots.
 
 ## Artifact catalog API handoff (2026-09-23)
 

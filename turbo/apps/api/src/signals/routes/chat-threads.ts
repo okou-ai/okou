@@ -1,8 +1,17 @@
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
 import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import {
+  CLIENT_TYPE_APP,
+  CLIENT_TYPE_CLI,
+  CLIENT_TYPE_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { command, computed } from "ccstate";
+import { promisify } from "node:util";
+import { gunzip } from "node:zlib";
 import {
   chatSearchContract,
+  chatThreadSnapshotArchiveSchema,
   chatThreadByIdContract,
   chatThreadArtifactsContract,
   chatThreadEventsContract,
@@ -15,9 +24,10 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { request$, setResHeader$ } from "../context/hono";
 import { db$ } from "../external/db";
-import { generatePresignedGetUrl } from "../external/s3";
+import { downloadS3Buffer, generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
 import { env } from "../../lib/env";
+import { isClientVersionAtLeast } from "../../lib/web-client-compatibility";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
   applyGoogleDriveArtifactSyncStatuses,
@@ -62,6 +72,7 @@ import { chatThreadRenameRoutes } from "./chat-threads-rename";
 import { chatThreadUnpinRoutes } from "./chat-threads-unpin";
 
 const chatThreadIdSchema = z.string().uuid();
+const gunzipAsync = promisify(gunzip);
 const catchUpChatEventsBody$ = bodyResultOf(chatThreadEventsContract.catchUp);
 
 function chatThreadNotFound() {
@@ -108,6 +119,34 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
       )
     ) {
       throw new Error("Invalid chat thread snapshot object key");
+    }
+    const clientType = get(request$).header(CLIENT_TYPE_HEADER);
+    const clientVersion = get(request$).header(CLIENT_VERSION_HEADER);
+    const supportsR2Url =
+      (clientType === CLIENT_TYPE_APP &&
+        isClientVersionAtLeast(clientVersion, "0.949.0")) ||
+      (clientType === CLIENT_TYPE_CLI &&
+        isClientVersionAtLeast(clientVersion, "9.356.1"));
+    if (!supportsR2Url) {
+      // Older loaded App bundles and CLI releases still require the inline
+      // response. Read it from R2 without detoasting the retired JSONB column.
+      const body = await get(
+        downloadS3Buffer(
+          env("R2_USER_STORAGES_BUCKET_NAME"),
+          snapshot.objectKey,
+        ),
+      );
+      const archive = chatThreadSnapshotArchiveSchema.parse(
+        JSON.parse((await gunzipAsync(body)).toString("utf8")) as unknown,
+      );
+      return {
+        status: 200 as const,
+        body: {
+          chatThreads: archive.chatThreads,
+          latestEventId: snapshot.latestEventId,
+          latestSeqId: snapshot.latestSeqId,
+        },
+      };
     }
     const url = await get(
       generatePresignedGetUrl(

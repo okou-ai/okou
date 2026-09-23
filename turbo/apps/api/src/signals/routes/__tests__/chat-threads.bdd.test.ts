@@ -4,6 +4,11 @@ import {
 } from "../../../test-fixtures/goal-queue";
 
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import {
+  CLIENT_TYPE_APP,
+  CLIENT_TYPE_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import AdmZip from "adm-zip";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
@@ -933,6 +938,25 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       chatThreads: [],
     });
     const materialized = await chat.getThreadSnapshot(actor);
+    const client = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadsContract,
+    );
+    const oldAppHeaders = {
+      ...okouCapabilityHeaders(
+        actor,
+        randomUUID(),
+        CHAT_THREAD_READ_CAPABILITIES,
+      ),
+      [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+      [CLIENT_VERSION_HEADER]: "0.948.0",
+    };
+    const oldAppResponse = await accept(
+      client.snapshot({
+        headers: oldAppHeaders,
+      }),
+      [200],
+    );
+    expect(oldAppResponse.body).toStrictEqual(materialized);
     await setChatThreadSnapshotObjectKeyFixture({
       userId: actor.userId,
       orgId: actor.orgId,
@@ -940,16 +964,18 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       body: Buffer.from("{}"),
     });
 
-    const client = setupApp({ context, routes: chatThreadRoutes })(
-      chatThreadsContract,
-    );
+    const newAppHeaders = {
+      ...okouCapabilityHeaders(
+        actor,
+        randomUUID(),
+        CHAT_THREAD_READ_CAPABILITIES,
+      ),
+      [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+      [CLIENT_VERSION_HEADER]: "0.949.0",
+    };
     const response = await accept(
       client.snapshot({
-        headers: okouCapabilityHeaders(
-          actor,
-          randomUUID(),
-          CHAT_THREAD_READ_CAPABILITIES,
-        ),
+        headers: newAppHeaders,
       }),
       [200],
     );
