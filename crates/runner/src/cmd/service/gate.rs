@@ -495,7 +495,7 @@ exit 2
     #[tokio::test]
     async fn read_runner_status_full_runner_payload() {
         // Guard against schema drift: status.json written by StatusTracker
-        // (crates/runner/src/status.rs) contains more fields than the ones
+        // (crates/runner-lifecycle/src/status.rs) contains more fields than the ones
         // we care about. The decoder must tolerate the full payload.
         let dir = tempfile::tempdir().unwrap();
         let s = r#"{

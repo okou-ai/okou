@@ -79,6 +79,17 @@ impl From<runner_storage::StorageError> for RunnerError {
     }
 }
 
+impl From<runner_lifecycle::LifecycleError> for RunnerError {
+    fn from(error: runner_lifecycle::LifecycleError) -> Self {
+        match error {
+            runner_lifecycle::LifecycleError::Sandbox(error) => Self::Sandbox(error),
+            runner_lifecycle::LifecycleError::Config(message) => Self::Config(message),
+            runner_lifecycle::LifecycleError::Internal(message) => Self::Internal(message),
+            runner_lifecycle::LifecycleError::Io(error) => Self::Io(error),
+        }
+    }
+}
+
 impl From<runner_network::NetworkError> for RunnerError {
     fn from(error: runner_network::NetworkError) -> Self {
         match error {
