@@ -11,7 +11,6 @@ import { executeRawRows } from "../../../lib/db-raw-rows";
 import { nowDate } from "../../../lib/time";
 import { writeDb$ } from "../../external/db";
 import {
-  buildKeyedStorageManifestPresignedUrlCacheQuery,
   prefetchStorageManifestPresignedUrlCacheRows,
   readOnlyStoragePresignedUrlCacheKey,
   resolveReadOnlyStoragePresignedUrls,
@@ -242,42 +241,6 @@ async function logQueryPlan(
   );
 }
 
-async function logKeyedQueryPlan(
-  fixture: BenchFixture,
-  pairCount: number,
-): Promise<void> {
-  const db = store.set(writeDb$);
-  const query = buildKeyedStorageManifestPresignedUrlCacheQuery(
-    db,
-    fixture.pairs.slice(0, pairCount),
-  );
-  const plan = await executeRawRows(
-    db,
-    sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${query}`,
-    queryPlanRowSchema,
-  );
-  if (
-    plan.some((row) => {
-      return row["QUERY PLAN"].includes(
-        "Seq Scan on system_storage_presigned_url_cache",
-      );
-    })
-  ) {
-    throw new Error(
-      `Keyed cache lookup scanned the cache table at ${String(pairCount)} pairs`,
-    );
-  }
-  process.stdout.write(
-    `\n[bench-explain] storage cache keyed lookup, ${String(
-      pairCount,
-    )} exact pairs\n${plan
-      .map((row) => {
-        return row["QUERY PLAN"];
-      })
-      .join("\n")}\n\n`,
-  );
-}
-
 function logicalLookupCount(fixture: BenchFixture): number {
   return [
     fixture.systemRequests,
@@ -288,6 +251,52 @@ function logicalLookupCount(fixture: BenchFixture): number {
   }).length;
 }
 
+function repeatRequests<TRequest>(
+  requests: readonly TRequest[],
+  count: number,
+): readonly TRequest[] {
+  return Array.from({ length: count }, (_, index) => {
+    const request = requests[index % requests.length];
+    if (!request) {
+      throw new Error("Cannot repeat an empty storage cache request group");
+    }
+    return request;
+  });
+}
+
+function repeatedFixture(
+  fixture: BenchFixture,
+  requestCount: number,
+): BenchFixture {
+  const systemCount = Math.ceil(requestCount / 3);
+  const workflowSkillCount = Math.ceil((requestCount - systemCount) / 2);
+  const readOnlyCount = requestCount - systemCount - workflowSkillCount;
+  return {
+    ...fixture,
+    systemRequests: repeatRequests(fixture.systemRequests, systemCount),
+    workflowSkillRequests: repeatRequests(
+      fixture.workflowSkillRequests,
+      workflowSkillCount,
+    ),
+    readOnlyRequests: repeatRequests(fixture.readOnlyRequests, readOnlyCount),
+  };
+}
+
+async function prefetchFixture(fixture: BenchFixture) {
+  const db = store.set(writeDb$);
+  return await store.get(
+    prefetchStorageManifestPresignedUrlCacheRows({
+      db,
+      input: {
+        systemRequests: fixture.systemRequests,
+        workflowSkillRequests: fixture.workflowSkillRequests,
+        readOnlyRequests: fixture.readOnlyRequests,
+        logicalLookupCount: logicalLookupCount(fixture),
+      },
+    }),
+  );
+}
+
 async function resolveFixture(
   fixture: BenchFixture,
   useMixedLookup: boolean,
@@ -296,17 +305,7 @@ async function resolveFixture(
 ): Promise<void> {
   const db = store.set(writeDb$);
   const prefetchedRows = useMixedLookup
-    ? await store.get(
-        prefetchStorageManifestPresignedUrlCacheRows({
-          db,
-          input: {
-            systemRequests: fixture.systemRequests,
-            workflowSkillRequests: fixture.workflowSkillRequests,
-            readOnlyRequests: fixture.readOnlyRequests,
-            logicalLookupCount: logicalLookupCount(fixture),
-          },
-        }),
-      )
+    ? await prefetchFixture(fixture)
     : undefined;
   const results = await Promise.all([
     store.get(
@@ -362,12 +361,11 @@ async function resolveFixture(
 async function resolveFixtureWithExpiredRows(
   fixture: BenchFixture,
   useMixedLookup: boolean,
-  expiredEvery = 10,
 ): Promise<void> {
   const db = store.set(writeDb$);
   const expiredCacheKeys = fixture.pairs
     .filter((_, index) => {
-      return index % expiredEvery === 0;
+      return index % 10 === 0;
     })
     .map((pair) => {
       return pair.cacheKey;
@@ -411,15 +409,6 @@ const ensureSeeded: () => Promise<ReadonlyMap<number, BenchFixture>> = (() => {
         }
         await logQueryPlan(planFixture, pairCount);
       }
-      for (const pairCount of [52, 64, 96, 128] as const) {
-        const planFixture = fixtures.get(pairCount);
-        if (!planFixture) {
-          throw new Error(
-            `Missing ${String(pairCount)}-pair storage cache benchmark fixture`,
-          );
-        }
-        await logKeyedQueryPlan(planFixture, pairCount);
-      }
       return fixtures;
     })();
     return cached;
@@ -447,39 +436,25 @@ test(
       await bench(`current per-scope lookup ${String(size)}`, async () => {
         await resolveFixture(fixture, false);
       }).run(benchOptions);
-      await bench(`adaptive cache lookup ${String(size)}`, async () => {
+      await bench(`bounded mixed lookup ${String(size)}`, async () => {
         await resolveFixture(fixture, true);
       }).run(benchOptions);
     }
 
     const concurrentFixture = fixtureAt(fixtures, 17);
+    const repeated96Fixture = repeatedFixture(concurrentFixture, 96);
+    await bench("current per-scope lookup 96 raw / 17 unique", async () => {
+      await resolveFixture(repeated96Fixture, false);
+    }).run(benchOptions);
+    await bench("bounded mixed lookup 96 raw / 17 unique", async () => {
+      await resolveFixture(repeated96Fixture, true);
+    }).run(benchOptions);
+
     await bench("current per-scope lookup 17 with expired rows", async () => {
       await resolveFixtureWithExpiredRows(concurrentFixture, false);
     }).run(benchOptions);
     await bench("bounded mixed lookup 17 with expired rows", async () => {
       await resolveFixtureWithExpiredRows(concurrentFixture, true);
-    }).run(benchOptions);
-
-    const mediumFixture = fixtureAt(fixtures, 96);
-    await bench("current per-scope lookup 96 with half expired", async () => {
-      await resolveFixtureWithExpiredRows(mediumFixture, false, 2);
-    }).run(benchOptions);
-    await bench("adaptive cache lookup 96 with half expired", async () => {
-      await resolveFixtureWithExpiredRows(mediumFixture, true, 2);
-    }).run(benchOptions);
-    await bench("current per-scope lookup 96 x32", async () => {
-      await Promise.all(
-        Array.from({ length: 32 }, async () => {
-          await resolveFixture(mediumFixture, false);
-        }),
-      );
-    }).run(benchOptions);
-    await bench("adaptive cache lookup 96 x32", async () => {
-      await Promise.all(
-        Array.from({ length: 32 }, async () => {
-          await resolveFixture(mediumFixture, true);
-        }),
-      );
     }).run(benchOptions);
 
     await bench("current per-scope lookup 17 x32", async () => {
@@ -499,38 +474,26 @@ test(
   },
 );
 
-test("keyed lookup returns exact scoped URLs", async () => {
-  const fixture = benchFixture(96, `storage-cache-urls-${randomUUID()}`);
+test("deduplicated lookup routes by both raw and unique request counts", async () => {
+  const fixture = benchFixture(17, `storage-cache-duplicates-${randomUUID()}`);
   await insertChunks(fixture.rows);
-  await resolveFixture(fixture, true, 0, true);
-});
-
-test("keyed lookup preserves scope and hard-expiry classification", async () => {
-  const fixture = benchFixture(52, `storage-cache-scope-${randomUUID()}`);
-  const wrongScope = fixture.rows[0];
-  const expired = fixture.rows[1];
-  if (!wrongScope || !expired) {
-    throw new Error("Incomplete storage cache scope fixture");
+  for (const requestCount of [52, 96, 128]) {
+    const repeated = repeatedFixture(fixture, requestCount);
+    if (!(await prefetchFixture(repeated))) {
+      throw new Error(
+        `Expected prefetch at ${String(requestCount)} raw requests`,
+      );
+    }
+    await resolveFixture(repeated, true, 0, true);
   }
-  const expiredAt = new Date(nowDate().getTime() - 60_000);
-  await insertChunks(
-    fixture.rows
-      .filter((_, index) => {
-        return index !== 2;
-      })
-      .map((row, index) => {
-        if (index === 0) {
-          return { ...row, scope: "readonly_storage" as const };
-        }
-        if (index === 1) {
-          return {
-            ...row,
-            expiresAt: expiredAt,
-            refreshAfter: expiredAt,
-          };
-        }
-        return row;
-      }),
-  );
-  await resolveFixture(fixture, true, 3);
+  if (await prefetchFixture(repeatedFixture(fixture, 129))) {
+    throw new Error("Expected fallback above 128 raw requests");
+  }
+  if (
+    await prefetchFixture(
+      benchFixture(52, `storage-cache-unique-${randomUUID()}`),
+    )
+  ) {
+    throw new Error("Expected fallback above 51 unique cache pairs");
+  }
 });
