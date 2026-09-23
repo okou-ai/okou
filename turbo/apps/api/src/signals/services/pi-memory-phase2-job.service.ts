@@ -449,6 +449,16 @@ async function lockPhase2CandidateSet(
     .for("update", { of: piMemoryStage1Candidates });
 }
 
+function claimRetryCount(job: LockedClaimableJob): number {
+  if (job.status === "terminal_failure") {
+    return 0;
+  }
+  if (job.status !== "leased") {
+    return job.retryCount;
+  }
+  return job.claimedRevision === job.inputRevision ? job.retryCount + 1 : 0;
+}
+
 export async function claimPiMemoryPhase2Job(
   db: ApiDb,
   args: ClaimPiMemoryPhase2JobArgs,
@@ -492,12 +502,7 @@ export async function claimPiMemoryPhase2Job(
       return null;
     }
 
-    const retryCount =
-      job.status === "leased"
-        ? job.claimedRevision === job.inputRevision
-          ? job.retryCount + 1
-          : 0
-        : job.retryCount;
+    const retryCount = claimRetryCount(job);
     if (retryCount >= PI_MEMORY_PHASE2_MAX_ATTEMPTS) {
       await tx
         .update(piMemoryPhase2Jobs)
@@ -618,6 +623,12 @@ function claimableJobCondition(args: ClaimPiMemoryPhase2JobArgs) {
         eq(piMemoryPhase2Jobs.status, "leased"),
         lte(piMemoryPhase2Jobs.leaseExpiresAt, args.currentTime),
         isNull(piMemoryPhase2Jobs.maintenanceRunId),
+      ),
+      // Reopen only terminal jobs blocked by the retired mixed-source policy.
+      // Leasing clears lastErrorClass, so a later terminal failure stays closed.
+      and(
+        eq(piMemoryPhase2Jobs.status, "terminal_failure"),
+        eq(piMemoryPhase2Jobs.lastErrorClass, "mixed_source_credentials"),
       ),
     ),
     or(
