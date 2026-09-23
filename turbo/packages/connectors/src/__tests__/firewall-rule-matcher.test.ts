@@ -2060,6 +2060,22 @@ describe("findMatchingPermissions", () => {
         options,
       ),
     ).toMatchObject({ kind: "allow", permission: "allowed" });
+    expect(
+      matchFirewallRequestDecision(
+        firewalls,
+        "GET",
+        "https://s3.example.com/bucket/key",
+        {
+          aws: {
+            allow: ["blocked-distinct"],
+            deny: ["allowed", "blocked-alias"],
+            unknownPolicy: "ask",
+          },
+        },
+        { status: "absent" },
+        options,
+      ),
+    ).toMatchObject({ kind: "allow", permission: "blocked-distinct" });
   });
 
   it("does not let non-AWS or separate API aliases override an AWS allow", () => {
