@@ -1,13 +1,9 @@
-import { Loader2, Plus, Search } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
-import { cn, Input, ScrollBar, surfaceVariants } from "@okouai/ui";
-import {
-  questConnectorSearch$,
-  setQuestConnectorSearch$,
-} from "../../signals/okou-page/get-started.ts";
+import { cn, ScrollBar, surfaceVariants } from "@okouai/ui";
 import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
@@ -21,7 +17,7 @@ import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/s
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import { SCROLL_FADE_Y_END_WHEN_OVERFLOWING } from "./scroll-fade.ts";
+import { SCROLL_FADE_Y_START_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 
 /**
  * The connectors the Get started quest can actually deliver on.
@@ -53,21 +49,6 @@ function oneClickConnectors(
 }
 
 /**
- * Label match only.
- *
- * The catalog carries a `description` per entry, but matching it here would
- * return tools whose name shares nothing with what was typed, which reads as
- * the list ignoring the query. Someone opening this dialog is looking for a
- * tool they can already name.
- */
-function matchesSearch(
-  connector: PlatformConnectorCatalogStatusItem,
-  search: string,
-): boolean {
-  return connector.label.toLowerCase().includes(search);
-}
-
-/**
  * How tall the list is allowed to be, in whole rows.
  *
  * A tile is `h-11` and the grid gap is `gap-2`, so rows repeat every 52px and
@@ -75,8 +56,12 @@ function matchesSearch(
  * `max-h-[288px]` was picked as a round number, which left the sixth row cut
  * through its middle with only a 20px fade over it -- a 44px row half shown
  * under a 20px gradient reads as a rendering fault rather than as more list.
- * Ending on a boundary means the fade only ever covers whitespace or a row
- * that starts exactly at the edge.
+ * Ending on a boundary means the resting edge only ever falls in whitespace or
+ * on a row that starts exactly at it.
+ *
+ * The viewport's own `pb-2` is added on top, so the bottom of the window is one
+ * grid gap below the last row it can show: the rule under the list is a
+ * boundary the rows stop short of rather than a line drawn against them.
  */
 const TILE_H = 44;
 const GRID_GAP = 8;
@@ -84,7 +69,10 @@ const VISIBLE_ROWS = 5;
 /** `text-xs` line box plus the heading's own `mb-2`. */
 const GROUP_HEADING_H = 16 + 8;
 const LIST_MAX_H =
-  GROUP_HEADING_H + VISIBLE_ROWS * TILE_H + (VISIBLE_ROWS - 1) * GRID_GAP;
+  GROUP_HEADING_H +
+  VISIBLE_ROWS * TILE_H +
+  (VISIBLE_ROWS - 1) * GRID_GAP +
+  GRID_GAP;
 
 function ConnectorTile({
   connector,
@@ -179,45 +167,6 @@ function ConnectorGroup({
 }
 
 /**
- * The catalog's own search field.
- *
- * Deliberately the same control the connectors page draws -- same icon, same
- * inset, same placeholder key -- because this is the same catalog seen through
- * a smaller window, and a reader who has met one of them should not have to
- * learn the other.
- */
-function ConnectorSearchField({
-  value,
-  onChange,
-}: {
-  readonly value: string;
-  readonly onChange: (next: string) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="relative">
-      <Search
-        size={15}
-        className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
-        aria-hidden="true"
-      />
-      <Input
-        type="text"
-        data-testid="quest-connector-search"
-        placeholder={t(($) => {
-          return $.connectors.catalog.search;
-        })}
-        value={value}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        className="pl-9 pr-3"
-      />
-    </div>
-  );
-}
-
-/**
  * Every one-click connector, inside the dialog that explains why to connect
  * one.
  *
@@ -245,19 +194,10 @@ export function QuestConnectorPicker({
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);
   const pollingAuthCodeSlug = useGet(builtinPollingOAuthAuthCodeSlug$);
   const pollingDeviceAuthSlug = useGet(builtinPollingOAuthDeviceAuthSlug$);
-  const search = useGet(questConnectorSearch$);
-  const setSearch = useSet(setQuestConnectorSearch$);
-  const catalog =
+  const connectors =
     catalogLoadable.state === "hasData"
       ? oneClickConnectors(catalogLoadable.data.connectors)
       : [];
-  const query = search.trim().toLowerCase();
-  const connectors =
-    query === ""
-      ? catalog
-      : catalog.filter((connector) => {
-          return matchesSearch(connector, query);
-        });
 
   const isBusy = (connector: PlatformConnectorCatalogStatusItem) => {
     return (
@@ -292,9 +232,9 @@ export function QuestConnectorPicker({
     );
   };
 
-  // The catalog itself is missing, so there is nothing to search: the box
-  // would only offer to filter a list that is not there.
-  if (catalog.length === 0) {
+  // Nothing to pick from yet, so the dialog says why instead of drawing an
+  // empty window with a rule under it.
+  if (connectors.length === 0) {
     return (
       <p className="rounded-xl bg-state-hover px-4 py-6 text-center text-[13px] text-muted-foreground">
         {catalogLoadable.state === "hasError"
@@ -309,64 +249,68 @@ export function QuestConnectorPicker({
   }
 
   return (
-    <div className="flex flex-col gap-3" data-testid="quest-connector-picker">
-      <ConnectorSearchField value={search} onChange={setSearch} />
-      {connectors.length === 0 ? (
-        <p
-          data-testid="quest-connector-empty"
-          className="rounded-xl bg-state-hover px-4 py-6 text-center text-[13px] text-muted-foreground"
-        >
-          {t(
-            ($) => {
-              return $.connectors.catalog.empty.search;
-            },
-            { search: search.trim() },
+    /*
+     * The list is a window cut through the dialog, not a block sitting inside
+     * its padding: it bleeds to both card edges, and its own `px-6` puts the
+     * tiles back on the column every other line in this dialog uses. Reserving
+     * the scrollbar's width inside the body instead -- a `pr-3` gutter -- is
+     * what left the tiles ending 12px short of the title above them and the
+     * buttons below them, with the bar itself standing in the column.
+     *
+     * The rule is the bottom edge of that window. It replaces a fade there
+     * because the fade had to state two things at once: a cut row, and where
+     * the list stops. A line states the second on its own, at the weight
+     * `--default-border-width` gives every boundary in the product, and it
+     * stays put instead of appearing and vanishing with the scroll position.
+     */
+    <div
+      className="-mx-6 border-b border-border"
+      data-testid="quest-connector-picker"
+    >
+      <ScrollArea.Root
+        // `group` so the viewport's fade can read the root's own
+        // `data-overflow-y-start`.
+        className="group relative"
+        data-testid="quest-connector-list"
+      >
+        <ScrollArea.Viewport
+          data-slot="scroll-area-viewport"
+          // Every one-click connector is here, so the list scrolls rather
+          // than growing the dialog past the window.
+          className={cn(
+            "px-6 pb-2 focus:outline-none",
+            SCROLL_FADE_Y_START_WHEN_OVERFLOWING,
           )}
-        </p>
-      ) : (
-        <ScrollArea.Root
-          // `group` so the viewport's fade can read the root's own
-          // `data-overflow-y-end`.
-          className="group relative"
-          data-testid="quest-connector-list"
+          style={{ maxHeight: LIST_MAX_H }}
         >
-          <ScrollArea.Viewport
-            data-slot="scroll-area-viewport"
-            // Every one-click connector is here, so the list scrolls rather
-            // than growing the dialog past the window.
-            className={cn(
-              "pr-3 focus:outline-none",
-              SCROLL_FADE_Y_END_WHEN_OVERFLOWING,
-            )}
-            style={{ maxHeight: LIST_MAX_H }}
-          >
-            <ScrollArea.Content className="flex flex-col gap-3.5">
-              <ConnectorGroup
-                heading={t(($) => {
-                  return $.chat.agentPage.getStarted.intro.connector
-                    .notConnected;
-                })}
-                connectors={connectors.filter((connector) => {
-                  return !connector.connected;
-                })}
-                isBusy={isBusy}
-                onSelect={select}
-              />
-              <ConnectorGroup
-                heading={t(($) => {
-                  return $.chat.agentPage.getStarted.intro.connector.connected;
-                })}
-                connectors={connectors.filter((connector) => {
-                  return connector.connected;
-                })}
-                isBusy={isBusy}
-                onSelect={select}
-              />
-            </ScrollArea.Content>
-          </ScrollArea.Viewport>
-          <ScrollBar data-testid="quest-connector-scrollbar" />
-        </ScrollArea.Root>
-      )}
+          <ScrollArea.Content className="flex flex-col gap-3.5">
+            <ConnectorGroup
+              heading={t(($) => {
+                return $.chat.agentPage.getStarted.intro.connector.notConnected;
+              })}
+              connectors={connectors.filter((connector) => {
+                return !connector.connected;
+              })}
+              isBusy={isBusy}
+              onSelect={select}
+            />
+            <ConnectorGroup
+              heading={t(($) => {
+                return $.chat.agentPage.getStarted.intro.connector.connected;
+              })}
+              connectors={connectors.filter((connector) => {
+                return connector.connected;
+              })}
+              isBusy={isBusy}
+              onSelect={select}
+            />
+          </ScrollArea.Content>
+        </ScrollArea.Viewport>
+        {/* Into the card's own right margin, clear of the tiles: the list now
+            owns the full width, so a bar standing on its content would cover
+            the affordance at the end of every row it crosses. */}
+        <ScrollBar data-testid="quest-connector-scrollbar" className="mr-2" />
+      </ScrollArea.Root>
     </div>
   );
 }

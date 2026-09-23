@@ -61,6 +61,27 @@ export const SCROLL_FADE_Y_END_WHEN_OVERFLOWING = [
   "group-data-[overflow-y-end]:[mask-image:linear-gradient(to_bottom,#000_calc(100%_-_20px),transparent_100%)]",
 ].join(" ");
 
+/**
+ * The same fade at the *top* edge, for a scroller whose first row can be cut in
+ * half once it has been scrolled.
+ *
+ * The bottom edge of a list has a second way to say "there is more": whatever
+ * the list sits above -- a rule, a footer -- already draws the boundary, so the
+ * mask there is a choice. The top edge has none: a row sliced flat against
+ * nothing is the rendering fault `SCROLL_FADE_X` describes, and it is the only
+ * thing between the list and the words that introduce it.
+ *
+ * Conditional on `data-overflow-y-start` for the reason the end fade is
+ * conditional on its own attribute: at rest the first row starts exactly at the
+ * edge, and fading it there would state a hidden row that does not exist. The
+ * 20px matches the end fade, and is spelled literally because Tailwind scans
+ * for class names rather than resolving constants.
+ */
+export const SCROLL_FADE_Y_START_WHEN_OVERFLOWING = [
+  "group-data-[overflow-y-start]:[-webkit-mask-image:linear-gradient(to_bottom,transparent_0,#000_20px)]",
+  "group-data-[overflow-y-start]:[mask-image:linear-gradient(to_bottom,transparent_0,#000_20px)]",
+].join(" ");
+
 /** Hides the native scrollbar; the fade is what states there is more to see. */
 export const SCROLLBAR_HIDDEN =
   "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
