@@ -46,7 +46,7 @@ const STORAGE_OBJECT_NAMESPACE = "0c9ba03d-923d-4607-8fd0-3487b7a34321";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const STORAGE_OBJECT_ERASURE_COLLECTOR_VERSION =
-  "d9d9bcb5-2bc7-4f7a-a52f-498c754d65e6";
+  "f94f0338-9fb3-4e9e-81a1-f66d297f2c67";
 
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), STORAGE_OBJECT_NAMESPACE);
@@ -69,14 +69,12 @@ function storageBucket(): string | undefined {
   return env("R2_USER_STORAGES_BUCKET_NAME");
 }
 
-/** One durable name for the user storages bucket.
- *
- * The selector vocabulary keys a storage by uuid rather than by bucket name so
- * a captured locator does not carry bucket configuration, and so renaming
- * a bucket does not silently repoint a captured selector at a different one.
+/** Bind the captured selector to the configured bucket without exposing its
+ * name in the selector. A later bucket switch fails closed: it cannot turn an
+ * empty listing in a different bucket into proof that old bytes disappeared.
  */
-function storageReference(): string {
-  return reference(["user-storages-bucket", 1]);
+function storageReference(bucket: string): string {
+  return reference(["user-storages-bucket", 2, bucket]);
 }
 
 const cursorSchema = z
@@ -113,7 +111,10 @@ async function leaseSubject(
 }
 
 /** The prefix an erase item names, or nothing when the item is not one. */
-async function leasePrefix(lease: ErasureLease): Promise<string | undefined> {
+async function leasePrefix(
+  lease: ErasureLease,
+  bucket: string,
+): Promise<string | undefined> {
   if (!lease.item.selectorCiphertext || !lease.item.selectorDigest) {
     return undefined;
   }
@@ -122,7 +123,7 @@ async function leasePrefix(lease: ErasureLease): Promise<string | undefined> {
     digest: lease.item.selectorDigest,
   });
   return selector.kind === "object_prefix" &&
-    selector.storageRef === storageReference()
+    selector.storageRef === storageReference(bucket)
     ? selector.prefix
     : undefined;
 }
@@ -222,7 +223,8 @@ async function inventoryPage(
   if (!subject || subject.subjectKind !== "user") {
     return unresolved("selector_missing");
   }
-  if (storageBucket() === undefined) {
+  const bucket = storageBucket();
+  if (bucket === undefined) {
     return unresolved("permission_missing");
   }
   let resume: { readonly ordinal: number; readonly id: string } | undefined;
@@ -290,7 +292,7 @@ async function inventoryPage(
     }
   }
   const last = rows[rows.length - 1];
-  const storageRef = storageReference();
+  const storageRef = storageReference(bucket);
   const items = await Promise.all(
     rows.map(async (row) => {
       return {
@@ -345,13 +347,13 @@ async function erasePrefix(
   lease: ErasureLease,
   signal: AbortSignal,
 ): Promise<{ readonly requestRef: string } | ErasureUnresolved> {
-  const prefix = await leasePrefix(lease);
-  if (prefix === undefined) {
-    return unresolved("selector_missing");
-  }
   const bucket = storageBucket();
   if (bucket === undefined) {
     return unresolved("permission_missing");
+  }
+  const prefix = await leasePrefix(lease, bucket);
+  if (prefix === undefined) {
+    return unresolved("selector_missing");
   }
   const store = createStore();
   const objects = await store.get(listS3ObjectsUnderPrefix(bucket, prefix));
@@ -393,11 +395,11 @@ async function verifyPrefixAbsent(
   lease: ErasureLease,
   producerBoundary: string,
 ): Promise<ErasureProof | ErasureUnresolved> {
-  const prefix = await leasePrefix(lease);
   const bucket = storageBucket();
   if (bucket === undefined) {
     return unresolved("permission_missing");
   }
+  const prefix = await leasePrefix(lease, bucket);
   if (prefix === undefined) {
     // The collector's own item. Its selector must still be this sink's
     // subject, or the lease does not belong here.
@@ -433,7 +435,7 @@ async function verifyPrefixAbsent(
     authenticatedReaderRef: reference([
       "storage-object-reader",
       STORAGE_OBJECT_ERASURE_COLLECTOR_VERSION,
-      storageReference(),
+      storageReference(bucket),
     ]),
     enumerationRef: reference([
       "storage-object-item-enumeration",

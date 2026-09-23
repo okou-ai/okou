@@ -15,7 +15,7 @@ import {
 } from "@okouai/db/operations/account-erasure";
 
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import {
   STORAGE_OBJECT_ERASURE_COLLECTOR_VERSION,
@@ -259,6 +259,25 @@ describe("dormant storage-object erasure", () => {
     bucketWithObjects([key], key);
     const captured = await capture(subject);
     await runVerification(captured.job.id, captured.handler);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).rejects.toThrow("account_erasure:work_unresolved");
+  });
+
+  it("refuses to verify a captured prefix against a different bucket", async () => {
+    const subject = owner("bucket-drift");
+    const prefix = `storages/${randomUUID()}`;
+    await createStorage(subject, prefix);
+    const key = `${prefix}/archive.tar.gz`;
+    const bucket = bucketWithObjects([key]);
+    const captured = await capture(subject);
+    const originalBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", `${originalBucket}-new`);
+    onTestFinished(() => {
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", originalBucket);
+    });
+    await runVerification(captured.job.id, captured.handler);
+    expect(bucket.live.has(key)).toBeTruthy();
     await expect(
       finalizeErasureJob(db, captured.job.id, captured.sealed),
     ).rejects.toThrow("account_erasure:work_unresolved");

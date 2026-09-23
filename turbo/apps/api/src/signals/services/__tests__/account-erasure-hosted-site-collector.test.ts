@@ -14,7 +14,7 @@ import { Pool } from "pg";
 import { afterAll, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { env } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import {
   HOSTED_SITE_ERASURE_COLLECTOR_VERSION,
@@ -297,6 +297,39 @@ describe("dormant hosted-site object erasure", () => {
       captured.sealed,
     );
     expect(finished.state).toBe("verified_erased");
+  });
+
+  it("refuses to verify a captured prefix against a different bucket", async () => {
+    const userId = account("bucket-drift");
+    const orgId = `org_hosted_${randomUUID().replaceAll("-", "")}`;
+    const prefix = `sites/${randomUUID()}`;
+    const siteId = await createSite(userId, orgId);
+    onTestFinished(async () => {
+      await db.execute(sql`DELETE FROM hosted_sites WHERE id = ${siteId}`);
+    });
+    await createDeployment({
+      userId,
+      orgId,
+      siteId,
+      prefix,
+      private: false,
+    });
+    const key = `${prefix}/index.html`;
+    const bucket = bucketWithObjects([key]);
+    const captured = await capture(userId);
+    const originalBucket = env("R2_HOSTED_SITES_BUCKET_NAME");
+    if (!originalBucket) {
+      throw new Error("Hosted sites bucket required by fixture");
+    }
+    mockEnv("R2_HOSTED_SITES_BUCKET_NAME", `${originalBucket}-new`);
+    onTestFinished(() => {
+      mockEnv("R2_HOSTED_SITES_BUCKET_NAME", originalBucket);
+    });
+    await runVerification(captured.job.id, captured.handler);
+    expect(bucket.live.has(key)).toBeTruthy();
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).rejects.toThrow("account_erasure:work_unresolved");
   });
 
   it("splits a deployment larger than one delete request into bounded batches", async () => {

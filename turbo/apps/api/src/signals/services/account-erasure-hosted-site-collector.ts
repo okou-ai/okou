@@ -63,7 +63,7 @@ const HOSTED_SITE_NAMESPACE = "9a1c7f36-58d2-4ee0-9b47-0f6a2d5c8e14";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const HOSTED_SITE_ERASURE_COLLECTOR_VERSION =
-  "5c2e84b1-70df-4a93-8c16-3b9d0e57af22";
+  "52a99c91-bc07-484b-a948-7361cca9eeaa";
 
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), HOSTED_SITE_NAMESPACE);
@@ -86,14 +86,12 @@ function hostedSitesBucket(): string | undefined {
   return env("R2_HOSTED_SITES_BUCKET_NAME");
 }
 
-/** One durable name for the hosted-sites bucket.
- *
- * The selector vocabulary keys a storage by uuid rather than by bucket name so
- * a captured locator does not carry deployment configuration, and so renaming
- * a bucket does not silently repoint a captured selector at a different one.
+/** Bind the captured selector to the configured bucket without exposing its
+ * name in the selector. A later bucket switch fails closed: it cannot turn an
+ * empty listing in a different bucket into proof that old bytes disappeared.
  */
-function storageReference(): string {
-  return reference(["hosted-sites-storage", 1]);
+function storageReference(bucket: string): string {
+  return reference(["hosted-sites-storage", 2, bucket]);
 }
 
 const cursorSchema = z
@@ -130,7 +128,10 @@ async function leaseSubject(
 }
 
 /** The prefix an erase item names, or nothing when the item is not one. */
-async function leasePrefix(lease: ErasureLease): Promise<string | undefined> {
+async function leasePrefix(
+  lease: ErasureLease,
+  bucket: string,
+): Promise<string | undefined> {
   if (!lease.item.selectorCiphertext || !lease.item.selectorDigest) {
     return undefined;
   }
@@ -139,7 +140,7 @@ async function leasePrefix(lease: ErasureLease): Promise<string | undefined> {
     digest: lease.item.selectorDigest,
   });
   return selector.kind === "object_prefix" &&
-    selector.storageRef === storageReference()
+    selector.storageRef === storageReference(bucket)
     ? selector.prefix
     : undefined;
 }
@@ -246,7 +247,8 @@ async function inventoryPage(
   if (!subject) {
     return unresolved("selector_missing");
   }
-  if (hostedSitesBucket() === undefined) {
+  const bucket = hostedSitesBucket();
+  if (bucket === undefined) {
     return unresolved("permission_missing");
   }
   let resume: { readonly ordinal: number; readonly id: string } | undefined;
@@ -261,7 +263,7 @@ async function inventoryPage(
   }
   const rows = await readDeploymentPage(db, subject.subjectId, resume);
   const last = rows[rows.length - 1];
-  const storageRef = storageReference();
+  const storageRef = storageReference(bucket);
   const items = await Promise.all(
     rows.map(async (row) => {
       return {
@@ -315,13 +317,13 @@ async function erasePrefix(
   lease: ErasureLease,
   signal: AbortSignal,
 ): Promise<{ readonly requestRef: string } | ErasureUnresolved> {
-  const prefix = await leasePrefix(lease);
-  if (prefix === undefined) {
-    return unresolved("selector_missing");
-  }
   const bucket = hostedSitesBucket();
   if (bucket === undefined) {
     return unresolved("permission_missing");
+  }
+  const prefix = await leasePrefix(lease, bucket);
+  if (prefix === undefined) {
+    return unresolved("selector_missing");
   }
   const store = createStore();
   const objects = await store.get(
@@ -368,11 +370,11 @@ async function verifyPrefixAbsent(
   lease: ErasureLease,
   producerBoundary: string,
 ): Promise<ErasureProof | ErasureUnresolved> {
-  const prefix = await leasePrefix(lease);
   const bucket = hostedSitesBucket();
   if (bucket === undefined) {
     return unresolved("permission_missing");
   }
+  const prefix = await leasePrefix(lease, bucket);
   if (prefix === undefined) {
     // The collector's own item. Its selector must still be this sink's
     // subject, or the lease does not belong here.
@@ -408,7 +410,7 @@ async function verifyPrefixAbsent(
     authenticatedReaderRef: reference([
       "hosted-site-reader",
       HOSTED_SITE_ERASURE_COLLECTOR_VERSION,
-      storageReference(),
+      storageReference(bucket),
     ]),
     enumerationRef: reference([
       "hosted-site-item-enumeration",
