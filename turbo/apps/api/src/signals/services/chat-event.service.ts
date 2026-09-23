@@ -172,6 +172,7 @@ type ChatEventDisplayContext =
         readonly messageId: string;
         readonly rootMessageId: string;
         readonly conversationId: string | null;
+        readonly groupId: string | null;
         readonly channel: "imessage" | "sms" | "mms";
         readonly isGroup: boolean;
         readonly phoneHandle: string;
@@ -514,6 +515,7 @@ type NewDisplayContext =
       readonly messageId: string;
       readonly rootMessageId: string;
       readonly conversationId: string | null;
+      readonly groupId: string | null;
       readonly channel: "imessage" | "sms" | "mms";
       readonly isGroup: boolean;
       readonly phoneHandle: string;
@@ -725,6 +727,7 @@ async function insertAgentphoneDisplayContext(
     messageId: context.messageId,
     rootMessageId: context.rootMessageId,
     conversationId: context.conversationId,
+    groupId: context.groupId,
     channel: context.channel,
     isGroup: context.isGroup,
     phoneHandle: context.phoneHandle,

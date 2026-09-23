@@ -48,7 +48,7 @@ async function expectTitleHint(title: string): Promise<void> {
   });
 }
 
-test("Built-in title hints follow caption hover", async () => {
+test("A built-in title hint follows caption hover", async () => {
   mockTemplateChat();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   if (!template) {
