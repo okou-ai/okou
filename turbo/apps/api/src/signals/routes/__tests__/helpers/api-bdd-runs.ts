@@ -1364,10 +1364,12 @@ export function createRunsApi(
       validAuth: boolean,
       body: RunnerPollBody,
       statuses: readonly (200 | 400 | 401 | 500)[],
+      extraHeaders?: Readonly<Record<string, string>>,
     ) {
       return await accept(
         runApp(context)(runnersPollContract).poll({
           headers: runnerHeaders(validAuth),
+          ...(extraHeaders ? { extraHeaders } : {}),
           body,
         }),
         statuses,

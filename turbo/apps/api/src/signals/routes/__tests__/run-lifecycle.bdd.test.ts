@@ -6054,7 +6054,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: selectedModel });
     expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
 
     expect(
