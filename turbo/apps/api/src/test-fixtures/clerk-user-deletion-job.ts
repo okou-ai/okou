@@ -6,7 +6,7 @@ import { db } from "../lib/db";
 const kind = "clerk-user-deletion";
 
 export async function clerkUserDeletionJobFixture(userId: string) {
-  const [job] = await db()
+  const jobs = await db()
     .select({
       id: backgroundJobs.id,
       status: backgroundJobs.status,
@@ -17,7 +17,10 @@ export async function clerkUserDeletionJobFixture(userId: string) {
     .where(
       and(eq(backgroundJobs.kind, kind), eq(backgroundJobs.userId, userId)),
     );
-  return job;
+  if (jobs.length > 1) {
+    throw new Error("Expected at most one Clerk user deletion job");
+  }
+  return jobs[0];
 }
 
 /** Advance only this test's failed job past its retry delay. */
