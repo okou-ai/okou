@@ -252,6 +252,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
+const INDICATOR_AGENT_LIMIT = 128;
 const INDICATOR_ACTIVE_LIMIT = 50;
 const INDICATOR_UNREAD_LIMIT = 50;
 const INDICATOR_UNREAD_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -390,9 +391,30 @@ type UnreadIndicatorRow = IndicatorThreadRow & {
   readonly unreadAt: Date | null;
 };
 
+async function loadIndicatorAgentIds(
+  db: ReadonlyDb,
+  args: IndicatorOwner,
+): Promise<readonly string[]> {
+  const rows = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.orgId, args.orgId),
+        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
+      ),
+    )
+    .orderBy(desc(agents.updatedAt), desc(agents.id))
+    .limit(INDICATOR_AGENT_LIMIT);
+  return rows.map((row) => {
+    return row.id;
+  });
+}
+
 async function loadActiveIndicatorRows(
   db: ReadonlyDb,
   args: IndicatorOwner,
+  agentIds: readonly string[],
 ): Promise<readonly IndicatorThreadRow[]> {
   const activeRunRows = await db
     .select({ threadId: agentRuns.chatThreadId })
@@ -422,7 +444,7 @@ async function loadActiveIndicatorRows(
       and(
         eq(chatThreads.userId, args.userId),
         inArray(chatThreads.id, activeIds),
-        chatThreadOrganizationCondition(db, args.orgId),
+        inArray(chatThreads.agentId, agentIds),
       ),
     )
     .limit(INDICATOR_ACTIVE_LIMIT);
@@ -431,11 +453,12 @@ async function loadActiveIndicatorRows(
 async function loadUnreadIndicatorRows(
   db: ReadonlyDb,
   args: IndicatorOwner,
+  agentIds: readonly string[],
   unreadCutoff: Date,
 ): Promise<readonly UnreadIndicatorRow[]> {
   const commonConditions = and(
     eq(chatThreads.userId, args.userId),
-    chatThreadOrganizationCondition(db, args.orgId),
+    inArray(chatThreads.agentId, agentIds),
     gte(chatThreads.lastMessageAt, unreadCutoff),
     or(
       isNull(chatThreads.lastReadAt),
@@ -513,13 +536,13 @@ async function loadUnreadIndicatorRows(
 }
 
 /**
- * Active and unread indicators for the user's agents and threads in the
- * current organization. A fixed number of small, indexed reads replaces the
- * unbounded active CTE and the joined unread watermark query. Each source
- * returns at most 50 rows, regardless of the user's thread count. Run terminal
- * markers and native Morning Brief deliveries are merged by their actual
- * timestamp, then capped at the newest 50 unread threads. Unread agent state
- * takes precedence over active state.
+ * Active and unread indicators for up to 128 visible agents in the current
+ * organization. Agent IDs are loaded first and passed to the bounded thread
+ * reads, so those reads do not join against or correlate to the agents table.
+ * Each indicator source returns at most 50 rows. Run terminal markers and
+ * native Morning Brief deliveries are merged by their actual timestamp, then
+ * capped at the newest 50 unread threads. Unread agent state takes precedence
+ * over active state.
  */
 export function chatIndicators(args: {
   readonly userId: string;
@@ -527,10 +550,14 @@ export function chatIndicators(args: {
 }): Computed<Promise<Indicators>> {
   return computed(async (get): Promise<Indicators> => {
     const db = get(db$);
+    const agentIds = await loadIndicatorAgentIds(db, args);
+    if (agentIds.length === 0) {
+      return { agents: {}, threads: {}, unreadAt: {} };
+    }
     const unreadCutoff = new Date(now() - INDICATOR_UNREAD_LOOKBACK_MS);
     const [activeRows, unreadRows] = await Promise.all([
-      loadActiveIndicatorRows(db, args),
-      loadUnreadIndicatorRows(db, args, unreadCutoff),
+      loadActiveIndicatorRows(db, args, agentIds),
+      loadUnreadIndicatorRows(db, args, agentIds, unreadCutoff),
     ]);
 
     const agentIndicators: Record<string, Indicator> = {};
