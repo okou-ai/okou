@@ -196,6 +196,41 @@ test("The standalone route reuses the native browser input form", async () => {
   expect(document.title).toContain("Browser action");
 });
 
+test("The standalone form records cancellation before notifying the agent", async () => {
+  const ordering: string[] = [];
+  let state: BrowserUserActionResponse["state"] = "pending";
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action(state));
+  });
+  mockPendingPreflight();
+  context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
+    ordering.push("cancel");
+    state = "cancelled";
+    return respond(200, action(state));
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    ordering.push("callback");
+    expect(body.prompt).toBe("The user cancelled the browser input request.");
+    expect(body.clientEventId).toBe(CANCEL_CLIENT_ID);
+    expect(body.chatThreadSortEventId).toBe(CANCEL_SORT_ID);
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  await screen.findByText("Enter information");
+  click(button("Enter information"));
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  click(button("Cancel"));
+
+  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  expect(ordering).toStrictEqual(["cancel", "callback"]);
+});
+
 test("A fresh standalone action page reads accepted callback delivery", async () => {
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, { ...action("succeeded"), callbackDelivered: true });

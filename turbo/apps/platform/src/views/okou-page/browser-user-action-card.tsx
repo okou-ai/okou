@@ -3,7 +3,7 @@ import {
   type BrowserUserActionResponse,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { cn } from "@okouai/ui";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
 import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -653,34 +653,23 @@ function PendingInlineAction({
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const beginEntry = useSet(signals.beginEntry$);
-  const endEntry = useSet(signals.endEntry$);
   return (
     <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
-        <ChatCardDetails
-          title={t(($) => {
-            return $.chat.browserInput.title;
-          })}
-          triggerLabel={t(($) => {
+        <a
+          href={signals.originalUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "shrink-0",
+          )}
+        >
+          {t(($) => {
             return $.chat.browserInput.open;
           })}
-          onOpenChange={(open) => {
-            if (open) {
-              detach(beginEntry(pageSignal), Reason.DomCallback);
-            } else {
-              endEntry();
-            }
-          }}
-        >
-          <PendingFormGate
-            signals={signals}
-            request={request}
-            showTitle={false}
-          />
-        </ChatCardDetails>
+        </a>
       </div>
     </div>
   );
@@ -1143,10 +1132,11 @@ export function BrowserUserActionCard({
       : undefined;
   const callbackDelivered =
     locallyDelivered || action?.callbackDelivered === true;
-  const needsDeliveryRefresh =
+  const needsReturnRefresh =
     action !== undefined &&
-    (action.state === "succeeded" || action.state === "cancelled") &&
-    !callbackDelivered;
+    ((action.kind === "input" && action.state === "pending") ||
+      ((action.state === "succeeded" || action.state === "cancelled") &&
+        !callbackDelivered));
   const continuing = busy || continueLoadable.state === "loading";
   const onContinue = () => {
     detach(continueAction(pageSignal), Reason.DomCallback);
@@ -1155,7 +1145,7 @@ export function BrowserUserActionCard({
   return (
     <BrowserActionSurface
       variant={variant}
-      resumeRef={needsDeliveryRefresh ? resumeRef : undefined}
+      resumeRef={needsReturnRefresh ? resumeRef : undefined}
     >
       <BrowserUserActionCardContent
         browserSessionSignals={browserSessionSignals}
