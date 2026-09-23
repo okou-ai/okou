@@ -191,6 +191,34 @@ function canAuthorizeConnector(
   return isConnected || (item ? item.authMethods.length > 0 : false);
 }
 
+function directedAuthorizeTitle(
+  t: ReturnType<typeof useTranslation>["t"],
+  agentMissing: boolean,
+  isAuthorized: boolean,
+  connectorLabel: string,
+  agentName: string,
+): string {
+  if (agentMissing) {
+    return t(($) => {
+      return $.authorization.permission.errors.agentNotFound;
+    });
+  }
+  if (isAuthorized) {
+    return t(
+      ($) => {
+        return $.connectors.directed.authorized;
+      },
+      { connector: connectorLabel },
+    );
+  }
+  return t(
+    ($) => {
+      return $.connectors.directed.needsConnector;
+    },
+    { agent: agentName, connector: connectorLabel },
+  );
+}
+
 function useDirectedAuthorizeConnectModalOpen(
   connectorSlug: ConnectorSlug | null,
   agentId: string | null,
@@ -425,8 +453,7 @@ function DirectedAuthorizeCard() {
     connectFlowConnectorSlug === connectorSlug;
 
   const isLoading = catalogLoading || permissionLoading;
-  const canAuthorize =
-    !agentMissing && canAuthorizeConnector(item, isConnected);
+  const canAuthorize = canAuthorizeConnector(item, isConnected);
   const selectedAuthMethod = item
     ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(item)
     : null;
@@ -464,25 +491,13 @@ function DirectedAuthorizeCard() {
     <>
       <DirectedCardShell
         icon={<ConnectorIcon icon={item?.icon} size={20} />}
-        title={
-          agentMissing
-            ? t(($) => {
-                return $.authorization.permission.errors.agentNotFound;
-              })
-            : isAuthorized
-              ? t(
-                  ($) => {
-                    return $.connectors.directed.authorized;
-                  },
-                  { connector: connectorLabel },
-                )
-              : t(
-                  ($) => {
-                    return $.connectors.directed.needsConnector;
-                  },
-                  { agent: agentName, connector: connectorLabel },
-                )
-        }
+        title={directedAuthorizeTitle(
+          t,
+          agentMissing,
+          isAuthorized,
+          connectorLabel,
+          agentName,
+        )}
         description={connectorDescription}
         isLoading={isLoading}
       >
