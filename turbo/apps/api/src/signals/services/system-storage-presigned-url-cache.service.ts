@@ -6,12 +6,8 @@ import { z } from "zod";
 
 import { joinAll, safeSync } from "../utils";
 import { executeRawRows } from "../../lib/db-raw-rows";
-import { env } from "../../lib/env";
 import type { Db } from "../external/db";
-import {
-  generateArtifactPreviewUrl,
-  generatePresignedGetUrl,
-} from "../external/s3";
+import { generatePresignedGetUrl } from "../external/s3";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
@@ -71,11 +67,7 @@ export const READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 256;
 const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
   "presentation-template-preview-url-v1";
 export const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
-const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
-  "private-artifact-preview-url-v1";
 export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
-// Leave time for clients and asynchronous providers to fetch a returned URL.
-const PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS = 60 * 60 * 1000;
 const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
 const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
 
@@ -119,12 +111,6 @@ export interface PresentationTemplatePreviewPresignedUrlRequest {
   readonly publicEndpoint: boolean;
 }
 
-export interface PrivateArtifactPreviewPresignedUrlRequest {
-  readonly bucket: string;
-  readonly objectKey: string;
-  readonly filename?: string;
-}
-
 interface StoragePresignedUrlRequest {
   readonly scope: StoragePresignedUrlCacheScope;
   readonly bucket: string;
@@ -132,7 +118,6 @@ interface StoragePresignedUrlRequest {
   readonly storageVersionId: string;
   readonly resolvedOrgId: string | null;
   readonly publicEndpoint: boolean;
-  readonly filename?: string;
 }
 
 export interface StoragePresignedUrlResult {
@@ -422,28 +407,6 @@ export function presentationTemplatePreviewPresignedUrlCacheKey(
     .digest("hex");
 }
 
-export function privateArtifactPreviewPresignedUrlCacheKey(
-  request: PrivateArtifactPreviewPresignedUrlRequest,
-): string {
-  // Credential values are hashed into the key so rotation invalidates old URLs.
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY,
-        request.bucket,
-        request.objectKey,
-        request.filename ?? null,
-        env("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID"),
-        env("R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY"),
-        env("S3_PUBLIC_ENDPOINT") ?? env("S3_ENDPOINT") ?? env("R2_ACCOUNT_ID"),
-        env("S3_REGION"),
-        env("S3_FORCE_PATH_STYLE"),
-        PRESIGNED_URL_TTL_SECONDS,
-      ]),
-    )
-    .digest("hex");
-}
-
 function systemStorageRequest(
   request: SystemStoragePresignedUrlRequest,
 ): StoragePresignedUrlRequest {
@@ -496,23 +459,6 @@ function presentationTemplatePreviewRequest(
   };
 }
 
-function privateArtifactPreviewRequest(
-  request: PrivateArtifactPreviewPresignedUrlRequest,
-): StoragePresignedUrlRequest {
-  return {
-    scope: "private_artifact_preview",
-    bucket: request.bucket,
-    objectKey: request.objectKey,
-    // The private object key is unique to its allocation or share snapshot.
-    storageVersionId: createHash("sha256")
-      .update(request.objectKey)
-      .digest("hex"),
-    resolvedOrgId: null,
-    publicEndpoint: true,
-    ...(request.filename !== undefined ? { filename: request.filename } : {}),
-  };
-}
-
 function expirationFromIssuedAt(issuedAt: Date, ttlSeconds: number): Date {
   return new Date(issuedAt.getTime() + ttlSeconds * 1000);
 }
@@ -541,34 +487,20 @@ function signCacheValue(args: {
   readonly lastRequestedAt: Date;
 }): Computed<Promise<CacheRowValue>> {
   return computed(async (get) => {
-    const signed =
-      args.request.scope === "private_artifact_preview"
-        ? await get(
-            generateArtifactPreviewUrl(
-              args.request.bucket,
-              args.request.objectKey,
-              {
-                signingDate: args.issuedAt,
-                ...(args.request.filename !== undefined
-                  ? { filename: args.request.filename }
-                  : {}),
-              },
-            ),
-          )
-        : {
-            url: await get(
-              generatePresignedGetUrl(
-                args.request.bucket,
-                args.request.objectKey,
-                undefined,
-                args.request.publicEndpoint,
-              ),
-            ),
-            expiresAt: expirationFromIssuedAt(
-              args.issuedAt,
-              args.ttlSeconds,
-            ).toISOString(),
-          };
+    const signed = {
+      url: await get(
+        generatePresignedGetUrl(
+          args.request.bucket,
+          args.request.objectKey,
+          undefined,
+          args.request.publicEndpoint,
+        ),
+      ),
+      expiresAt: expirationFromIssuedAt(
+        args.issuedAt,
+        args.ttlSeconds,
+      ).toISOString(),
+    };
     const expiresAt = new Date(signed.expiresAt);
     return {
       cacheKey: args.cacheKey,
@@ -1241,21 +1173,6 @@ export function resolvePresentationTemplatePreviewPresignedUrls(args: {
     ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
     cacheKey: presentationTemplatePreviewPresignedUrlCacheKey,
     normalize: presentationTemplatePreviewRequest,
-  });
-}
-
-export function resolvePrivateArtifactPreviewPresignedUrls(args: {
-  readonly db: Db;
-  readonly requests: readonly PrivateArtifactPreviewPresignedUrlRequest[];
-  readonly issuedAt?: Date;
-}): Computed<Promise<ReadonlyMap<string, StoragePresignedUrlResult>>> {
-  return resolveStoragePresignedUrls({
-    ...args,
-    scope: "private_artifact_preview",
-    ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
-    cacheKey: privateArtifactPreviewPresignedUrlCacheKey,
-    normalize: privateArtifactPreviewRequest,
-    minimumRemainingMs: PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS,
   });
 }
 
