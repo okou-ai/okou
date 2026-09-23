@@ -13,6 +13,9 @@
 #                         anything else emits found=false and exits 0, which
 #                         builds an image without an installed CLI (legacy npx
 #                         launch) for commits that publish no CLI artifact.
+#   CHECK_PUBLISHER_STATUS  "true" stops waiting early if the matching Turbo
+#                           or Staging deploy-cli job cannot publish. Requires
+#                           GH_TOKEN, GITHUB_REPOSITORY, GITHUB_EVENT_NAME.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,9 +45,21 @@ fi
 base_url="${CLI_STATIC_BASE_URL:-https://static.okou.io}/okou-cli/${ARTIFACT_SHA}"
 wait_seconds="${WAIT_SECONDS:-900}"
 required="${ARTIFACT_REQUIRED:-true}"
+check_publisher_status="${CHECK_PUBLISHER_STATUS:-false}"
+publisher_check_interval="${PUBLISHER_CHECK_INTERVAL:-30}"
+if [[ "$check_publisher_status" == true ]]; then
+  require_env GH_TOKEN
+  require_env GITHUB_REPOSITORY
+  require_env GITHUB_EVENT_NAME
+  if [[ ! "$publisher_check_interval" =~ ^[1-9][0-9]*$ ]]; then
+    echo "PUBLISHER_CHECK_INTERVAL must be a positive integer" >&2
+    exit 2
+  fi
+fi
 mkdir -p "$OUTPUT_DIR"
 
 deadline=$((SECONDS + wait_seconds))
+next_publisher_check=0
 while ! curl -fsSL "${base_url}/ready.json" --output "${OUTPUT_DIR}/ready.json" 2>/dev/null; do
   if (( SECONDS >= deadline )); then
     if [[ "$required" == "true" ]]; then
@@ -54,6 +69,24 @@ while ! curl -fsSL "${base_url}/ready.json" --output "${OUTPUT_DIR}/ready.json" 
     echo "::warning::CLI artifact not published for ${ARTIFACT_SHA} after ${wait_seconds}s; building the runner image without an installed Okou CLI"
     emit "found" "false"
     exit 0
+  fi
+  if [[ "$check_publisher_status" == true ]] && (( SECONDS >= next_publisher_check )); then
+    next_publisher_check=$((SECONDS + publisher_check_interval))
+    if publisher_status=$(bash "${SCRIPT_DIR}/okou-cli-publisher-status.sh"); then
+      if [[ "$publisher_status" == unavailable ]]; then
+        # The producer may have published ready.json immediately before its
+        # terminal status became visible. Check CDN once more before falling
+        # back to a CLI-less image.
+        if curl -fsSL "${base_url}/ready.json" --output "${OUTPUT_DIR}/ready.json" 2>/dev/null; then
+          break
+        fi
+        echo "::warning::CLI publisher finished without an artifact for ${ARTIFACT_SHA}; building the runner image without an installed Okou CLI"
+        emit "found" "false"
+        exit 0
+      fi
+    else
+      echo "::warning::Unable to inspect CLI publisher status; continuing the artifact wait"
+    fi
   fi
   echo "Waiting for CLI artifact: ${base_url} (${SECONDS}s elapsed)"
   sleep 10
