@@ -7,9 +7,11 @@ import type {
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { db } from "../lib/db";
+import { executeRawRows } from "../lib/db-raw-rows";
 import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 import {
   barrierQueryBinds,
@@ -206,6 +208,37 @@ export async function readStoredChatThreadDraftRowFixture(
     createdAt: draft.createdAt.toISOString(),
     updatedAt: draft.updatedAt.toISOString(),
   };
+}
+
+/** Simulate a pre-bridge API writer, which can leave legacy draft content but
+ * no child row. Only test-owned threads may be passed. */
+export async function setLegacyChatThreadDraftFixture(args: {
+  readonly chatThreadId: string;
+  readonly draftUserMessage: ChatThreadDraftUserMessage | null;
+}): Promise<void> {
+  const updated = await db()
+    .update(chatThreads)
+    .set({ draftUserMessage: args.draftUserMessage, draftAttachments: null })
+    .where(eq(chatThreads.id, args.chatThreadId))
+    .returning({ id: chatThreads.id });
+  if (updated.length !== 1) {
+    throw new Error("Expected one test-owned chat thread to update");
+  }
+}
+
+/** The reserved event sequence is not served by the draft reader. */
+export async function readChatThreadEventSequenceFixture(
+  chatThreadId: string,
+): Promise<number> {
+  const [thread] = await db()
+    .select({ seqId: chatThreads.lastChatEventSeqId })
+    .from(chatThreads)
+    .where(eq(chatThreads.id, chatThreadId))
+    .limit(1);
+  if (!thread) {
+    throw new Error("Expected the chat thread row to exist");
+  }
+  return thread.seqId;
 }
 
 /**
@@ -560,6 +593,141 @@ export async function withChatThreadContentBarrierFixture<T>(
       },
       pauseAfter: pausesAfterStatement(args.stopAt),
       work: args.work,
+    },
+    signal,
+  );
+}
+
+/**
+ * Pauses a real send transaction at its authorized strong entry lock, or after
+ * it has cleared an existing child row. The latter retains both row locks so
+ * an unchanged PATCH can prove which writer wins without a timer or mock.
+ */
+export async function withChatThreadSendClearBarrierFixture<T>(
+  args: {
+    readonly chatThreadId: string;
+    readonly stopAt: "entry" | "child-clear";
+    readonly work: (barrier: TransactionBarrier) => Promise<T>;
+  },
+  signal: AbortSignal,
+): Promise<T> {
+  return await withDatabaseTransactionBarrierFixture(
+    {
+      select: (queryArgs) => {
+        const text = barrierQueryText(queryArgs);
+        return (
+          text.startsWith("select") &&
+          text.includes('from "chat_threads"') &&
+          text.includes('for update of "chat_threads"') &&
+          barrierQueryBinds(queryArgs, args.chatThreadId)
+        );
+      },
+      stopAt: (queryArgs, selectingStatement) => {
+        if (args.stopAt === "entry") {
+          return selectingStatement;
+        }
+        const text = barrierQueryText(queryArgs);
+        return (
+          text.startsWith('update "chat_thread_drafts"') &&
+          barrierQueryBinds(queryArgs, args.chatThreadId)
+        );
+      },
+      pauseAfter: args.stopAt === "child-clear",
+      work: args.work,
+    },
+    signal,
+  );
+}
+
+/**
+ * Holds an existing child row without touching the parent. This makes a send
+ * fail at the child UPDATE after its parent clear, proving transaction rollback
+ * where no API read exposes the child during compatibility.
+ */
+export async function withHeldChatThreadDraftRowFixture<T>(
+  args: {
+    readonly chatThreadId: string;
+    readonly work: (control: {
+      readonly blockedWaiterCount: () => Promise<number>;
+      readonly cancelBlockedQueries: () => Promise<number>;
+    }) => Promise<T>;
+  },
+  signal: AbortSignal,
+): Promise<T> {
+  return await withDatabaseTransactionBarrierFixture(
+    {
+      select: (queryArgs) => {
+        const text = barrierQueryText(queryArgs);
+        return (
+          text.startsWith("select") &&
+          text.includes('from "chat_thread_drafts"') &&
+          text.includes("for update") &&
+          barrierQueryBinds(queryArgs, args.chatThreadId)
+        );
+      },
+      stopAt: (_queryArgs, selectingStatement) => {
+        return selectingStatement;
+      },
+      pauseAfter: true,
+      work: async (barrier) => {
+        const pidReady = createDeferredPromise<number>(signal);
+        const holding = db().transaction(async (tx) => {
+          const pidRows = await executeRawRows(
+            tx,
+            sql`SELECT pg_backend_pid() AS "pid"`,
+            z.object({ pid: z.number() }),
+          );
+          const pid = pidRows[0]?.pid;
+          if (!pid) {
+            throw new Error("Expected the draft row lock holder pid");
+          }
+          pidReady.resolve(pid);
+          const [row] = await tx
+            .select({ chatThreadId: chatThreadDrafts.chatThreadId })
+            .from(chatThreadDrafts)
+            .where(eq(chatThreadDrafts.chatThreadId, args.chatThreadId))
+            .for("update");
+          if (!row) {
+            throw new Error("Expected a child draft row to lock");
+          }
+        });
+        const holdingResult = settleIncludingAbort(holding);
+        const entry = await settleIncludingAbort(barrier.entered);
+        if (!entry.ok) {
+          barrier.release();
+          await holdingResult;
+          throw entry.error;
+        }
+        const holderPid = await pidReady.promise;
+        const result = await settleIncludingAbort(
+          args.work({
+            blockedWaiterCount: barrier.blockedWaiterCount,
+            cancelBlockedQueries: async () => {
+              const rows = await executeRawRows(
+                db(),
+                sql`
+                  SELECT pg_cancel_backend(activity.pid) AS "cancelled"
+                  FROM pg_stat_activity AS activity
+                  WHERE ${holderPid} = ANY(pg_blocking_pids(activity.pid))
+                `,
+                z.object({ cancelled: z.boolean() }),
+              );
+              return rows.filter((row) => {
+                return row.cancelled;
+              }).length;
+            },
+          }),
+        );
+        barrier.release();
+        const held = await holdingResult;
+        if (!result.ok) {
+          throw result.error;
+        }
+        if (!held.ok) {
+          throw held.error;
+        }
+        return result.value;
+      },
     },
     signal,
   );

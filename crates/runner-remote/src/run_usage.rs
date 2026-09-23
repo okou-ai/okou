@@ -9,21 +9,21 @@ use serde_json::Value;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
-use crate::{
-    guest_rpc,
-    proxy::{CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, TokenTotals},
+use crate::guest_rpc;
+use runner_network::proxy::{
+    CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, TokenTotals,
 };
 
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 const TERMINAL_RESERVE: Duration = Duration::from_secs(1);
 
 #[derive(Clone)]
-pub(crate) struct Runtime {
+pub struct Runtime {
     mitm: MitmUsageHandle,
 }
 
 impl Runtime {
-    pub(crate) fn new(mitm: MitmUsageHandle) -> Self {
+    pub fn new(mitm: MitmUsageHandle) -> Self {
         Self { mitm }
     }
 
@@ -456,7 +456,7 @@ fn sandbox_proxy_source(snapshot: io::Result<RunUsageObservation>) -> SandboxPro
 
 #[cfg(test)]
 pub(crate) fn test_run(run_id: RunId) -> Arc<Run> {
-    let (proxy, _crash_rx) = crate::proxy::MitmProxy::noop();
+    let (proxy, _crash_rx) = runner_network::proxy::MitmProxy::noop();
     Arc::new(Run {
         run_id,
         api: ApiFirstTurnSource::NoInference { sampled_at: 0 },

@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-use crate::http::HttpClient;
+use crate::{RemoteApiRequestFactory, RemoteInitError};
 use authority::Authority;
 use network::{Network, PublicNetwork};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
@@ -95,26 +95,25 @@ impl From<crate::ssh::FailureReason> for Failure {
     }
 }
 
-pub(crate) struct VncRuntime {
+pub struct VncRuntime {
     authority: Authority,
     network: Arc<dyn Network>,
     capacity: Arc<Semaphore>,
 }
 
 impl VncRuntime {
-    pub(crate) fn official(
-        http: HttpClient,
+    pub fn official(
+        http: impl RemoteApiRequestFactory + 'static,
         token: &str,
         identity: RunnerProcessIdentity,
-    ) -> Result<Option<Arc<Self>>, crate::error::RunnerError> {
+    ) -> Result<Option<Arc<Self>>, RemoteInitError> {
         use api_contracts::generated::constants::runners::OFFICIAL_RUNNER_TOKEN_PREFIX;
         if !token.starts_with(OFFICIAL_RUNNER_TOKEN_PREFIX) {
             return Ok(None);
         }
         // The prefix chooses transport only; the API authenticates every call.
-        let authority = Authority::new(http, token.to_owned(), identity).map_err(|_| {
-            crate::error::RunnerError::Internal("VNC authority client initialization failed".into())
-        })?;
+        let authority = Authority::new(Arc::new(http), token.to_owned(), identity)
+            .map_err(|_| RemoteInitError::VncAuthority)?;
         Ok(Some(Arc::new(Self {
             authority,
             network: Arc::new(PublicNetwork),

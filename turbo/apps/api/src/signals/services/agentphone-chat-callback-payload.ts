@@ -4,6 +4,8 @@ import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand"
 export const agentphoneDeliveryTargetSchema = z.object({
   messageId: z.string().min(1),
   conversationId: z.string().nullable(),
+  // Direct messages do not have a provider group ID.
+  groupId: z.string().nullable().optional(),
   channel: z.enum(["imessage", "sms", "mms"]),
   isGroup: z.boolean(),
   rootMessageId: z.string().min(1),
