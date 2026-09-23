@@ -933,11 +933,15 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
     <div
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
-      onMouseEnter={(event) => {
-        startVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "touch") {
+          startVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
-      onMouseLeave={(event) => {
-        resetVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "touch") {
+          resetVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
     >
       <video
