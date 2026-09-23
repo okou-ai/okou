@@ -523,6 +523,7 @@ describe("Official Automation result email callbacks", () => {
     const item = source.items[0]!;
     expect(source.claim?.email_outbox_id).toBe(item.id);
     expect(item).toMatchObject({
+      owner_user_id: scenario.actor.userId,
       from_address: "Okou <okou@okou.io>",
       to_addresses: scenario.actor.email,
       public_brand: "okou",

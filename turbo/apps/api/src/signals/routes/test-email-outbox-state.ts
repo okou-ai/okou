@@ -28,6 +28,7 @@ const cleanupBody$ = bodyResultOf(testEmailOutboxStateContract.cleanup);
 function itemStateSelection() {
   return {
     id: emailOutbox.id,
+    owner_user_id: emailOutbox.ownerUserId,
     from_address: emailOutbox.fromAddress,
     to_addresses: emailOutbox.toAddresses,
     subject: emailOutbox.subject,

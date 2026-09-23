@@ -179,6 +179,7 @@ describe("low-credit email delivery", () => {
       subject: "Your credit balance is running low",
     });
     expect(item).toMatchObject({
+      owner_user_id: actor.userId,
       from_address: "Okou Team <support@okou.io>",
       public_brand: "okou",
       headers: {
@@ -270,6 +271,7 @@ describe("POST /api/email/inbound", () => {
 
     const locator = await email.enqueueDataExportEmail(controlActor);
     const item = await email.findEmailOutboxItem(locator);
+    expect(item.owner_user_id).toBe(controlActor.userId);
     const drained = await email.drainEmailOutboxItems([item.id]);
 
     expect(drained).toBe(1);

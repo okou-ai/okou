@@ -43,6 +43,9 @@ export const emailOutbox = pgTable(
   "email_outbox",
   {
     id: uuid("id").defaultRandom().primaryKey(),
+    // Nullable while rows written before account attribution remain in the
+    // queue. Every production writer supplies the recipient's account id.
+    ownerUserId: text("owner_user_id"),
 
     // Email envelope
     fromAddress: text("from_address").notNull(),

@@ -126,6 +126,7 @@ export async function readMorningBriefDeliveries(
 
 interface EmailOutboxRow {
   readonly id: string;
+  readonly ownerUserId: string | null;
   readonly status: string;
   readonly attempts: number;
   readonly lastError: string | null;
@@ -142,6 +143,7 @@ export async function readEmailOutboxRow(
   const [row] = await db()
     .select({
       id: emailOutbox.id,
+      ownerUserId: emailOutbox.ownerUserId,
       status: emailOutbox.status,
       attempts: emailOutbox.attempts,
       lastError: emailOutbox.lastError,

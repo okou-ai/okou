@@ -134,11 +134,17 @@ export type AccountOwnershipEntry =
  * sweep reaches this table through a different parent, so this column is not
  * the key it deletes by.
  *
+ * `staged_attribution` — new rows carry an account id, but historical nulls
+ * still block a complete sweep until they have a proved disposition.
+ *
  * The catalogue cannot tell a Clerk id from a Slack id: both are `text`. So the
  * distinction can only live in this vocabulary, and it has to be a declaration
  * the guard can check rather than a remark in a comment.
  */
-export type NonOwnershipReason = "provider_identity" | "covered_by_parent";
+export type NonOwnershipReason =
+  | "provider_identity"
+  | "covered_by_parent"
+  | "staged_attribution";
 
 /** One join step from the rows selected so far up to `parent`.
  *
@@ -347,9 +353,9 @@ export const UNATTRIBUTABLE_DESCENDANTS: Readonly<
 > = {
   email_outbox: {
     basis:
-      "`source_run_id` and `source_workflow_automation_id` are the only producer references, they are nullable, and the check constraint makes them all-or-nothing. The credit low-balance alert, both user-export writers and the Morning Brief delivery writer set neither, so those rows carry a recipient address and a rendered message body with no reachable owner.",
+      "Current producers write `owner_user_id`, but historical rows and writers during the additive rollout may leave it null. Those rows cannot be assigned to a user from the recipient address or the optional source references.",
     remedy:
-      "An additive account column written by every producer. A join cannot substitute for it: a recipient address is not an account identity.",
+      "Prove or remove the legacy null rows, then promote `owner_user_id` to the sweep key and a required writer field. A recipient address is not an account identity.",
   },
   feishu_chat_ingress: {
     basis:
@@ -367,6 +373,7 @@ export const UNATTRIBUTABLE_DESCENDANTS: Readonly<
 export const NON_OWNERSHIP_COLUMNS: Readonly<
   Record<string, Readonly<Record<string, NonOwnershipReason>>>
 > = {
+  email_outbox: { owner_user_id: "staged_attribution" },
   chat_agentphone_context: { user_link_id: "covered_by_parent" },
   chat_slack_context: { sender_user_id: "provider_identity" },
   chat_teams_context: { sender_user_id: "provider_identity" },

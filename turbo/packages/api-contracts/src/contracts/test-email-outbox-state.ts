@@ -14,6 +14,7 @@ const emailOutboxItemStatusSchema = z.enum([
 
 export const testEmailOutboxStateItemSchema = z.object({
   id: z.string().uuid(),
+  owner_user_id: z.string().nullable(),
   from_address: z.string(),
   to_addresses: z.union([z.string(), z.array(z.string())]),
   subject: z.string(),

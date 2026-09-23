@@ -325,6 +325,10 @@ describe("account erasure ownership coverage guard", () => {
       coverage: "user_descendant",
       parents: ["agent_runs", "workflow_automations"],
     });
+    expect(NON_OWNERSHIP_COLUMNS.email_outbox).toStrictEqual({
+      owner_user_id: "staged_attribution",
+    });
+    expect(UNATTRIBUTABLE_DESCENDANTS.email_outbox).toBeDefined();
   });
 
   it("checks every declared reach against the columns the schema has", () => {

@@ -292,6 +292,7 @@ async function resolveEmailIntent(
   const [row] = await tx
     .insert(emailOutbox)
     .values({
+      ownerUserId: args.userId,
       fromAddress: buildFromAddress(),
       toAddresses: recipient,
       subject: deliverySubject(args.title),

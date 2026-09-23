@@ -531,6 +531,7 @@ describe("Morning Brief native delivery", () => {
     // once through the provider boundary.
     const [queued] = await readOutbox(f);
     expect(queued?.status).toBe("pending");
+    expect(queued?.ownerUserId).toBe(f.userId);
     const template = queued?.template as {
       template: string;
       props: {
