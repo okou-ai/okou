@@ -29,14 +29,13 @@ presentation.
 
 ## Fixed Height and Stable Layout
 
-Every card in the chat transcript must keep one outer height for the lifetime of
-that card occurrence, at a given available width. This includes action, failure
-recovery, billing, unavailable, and resource-preview cards. Different card types
-may use different dimensions, and responsive breakpoints may select a different
-height. Asynchronous data and status changes must not select the card's height,
-except billing helper copy: a longer translated or role-specific message may
-wrap onto another line rather than leaving a blank reserved line in every
-short-copy state.
+Every card in the chat transcript keeps a stable outer height across
+asynchronous updates, at a given available width. This includes action,
+failure recovery, billing, unavailable, and resource-preview cards. Different
+card types may use different dimensions, and responsive breakpoints may select
+a different height. Billing helper copy may wrap onto another line rather than
+leaving a blank reserved line in every short-copy state. A user opening the
+inline Custom credit form may also expand its card.
 
 The height itself may come from the card's own synchronous row structure rather
 than from a hardcoded pixel value. A notice card that renders only a headline is
@@ -53,7 +52,8 @@ empty second row for a hypothetical later model change. Billing states keep
 their action reservation because it can change after role and credit reads;
 their helper copy wraps to its actual height so a short sentence does not leave
 an empty second line. Do not pay for a reservation on rows the asynchronous
-read cannot introduce.
+read cannot introduce. Paid credit options share the action row until a narrow
+viewport wraps them; opening Custom reveals its fields inside the same card.
 
 ### Keep the frame mounted
 
@@ -134,7 +134,7 @@ the artwork or preview area and place changing content inside it. Reading the
 full document or interacting with a page happens in the existing viewer.
 
 `ChatCardDetails` provides the shared dialog for banking account selection and
-confirmation, credit checkout options, and an unknown raw provider diagnostic
+confirmation, and an unknown raw provider diagnostic
 whose multiline or unusually long Markdown body cannot fit a notice row. A
 short plain diagnostic is already readable on the card and does not repeat
 itself behind a details button. A known failure resolves in place: reset, retry,
@@ -144,7 +144,9 @@ edge. Account identity and every exhausted reset window stay in separate
 readable supporting rows. The dialog never owns a recovery action or
 repeats a known failure's visible copy. Banking keeps its connection polling
 owned by the card even when the dialog is closed. Preserve those action and
-lifecycle owners when adding another state.
+lifecycle owners when adding another state. Paid-workspace credit options and
+the Custom amount form live in the recovery card; selecting an amount opens the
+purchase review.
 
 Current frame owners are `AssistantErrorContent` (including billing),
 `ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,

@@ -4785,7 +4785,7 @@ const USAGE_RECOVERY_DESCRIPTION_CLASS = "min-h-20 @[640px]:min-h-10";
  * and the error card's pending state reserves the same box for its own details
  * trigger.
  */
-const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
+const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex min-h-8 shrink-0 items-center";
 
 /**
  * Recovery controls keep a one-row floor while classification loads, then grow
@@ -4880,7 +4880,7 @@ function PaidCreditCheckoutActions({
   };
 
   return (
-    <div className="mt-3 flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {CREDIT_TOP_UP_OPTIONS.map((credits) => {
           return (
@@ -4891,7 +4891,7 @@ function PaidCreditCheckoutActions({
                 handleCreditClick({ credits }, event);
               }}
               disabled={preparing}
-              variant="default"
+              variant="outline"
               size="sm"
               className="disabled:opacity-60"
             >
@@ -5053,18 +5053,10 @@ function InsufficientCreditsCard() {
                 })}
           </Button>
         ) : (
-          <ChatCardDetails
-            title={headline}
-            triggerLabel={t(($) => {
-              return $.runErrors.actions.addCredits;
-            })}
-          >
-            <p>{helper}</p>
-            <PaidCreditCheckoutActions
-              preparing={creditCheckoutPreparing}
-              handleCreditClick={handleCreditClick}
-            />
-          </ChatCardDetails>
+          <PaidCreditCheckoutActions
+            preparing={creditCheckoutPreparing}
+            handleCreditClick={handleCreditClick}
+          />
         )}
       </div>
     </div>
