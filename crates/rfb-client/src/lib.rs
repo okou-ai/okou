@@ -59,7 +59,7 @@ pub enum SharingMode {
 /// whether a server, firewall, proxy, or another network component caused silence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthenticationStage {
-    /// Waiting for or responding to the RFB 3.8 version banner.
+    /// Waiting for or responding to the selected RFB version banner.
     RfbVersion,
     /// Negotiating the exact caller-selected RFB security profile.
     SecurityNegotiation,

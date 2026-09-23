@@ -41,13 +41,13 @@ logs. Run both tests explicitly; they remain ignored in the default suite:
 cargo test --manifest-path crates/Cargo.toml --profile local -p rfb-client \
   --test apple_dh --no-run
 OKOU_MAC_VNC_ENDPOINT=127.0.0.1:15901 \
-OKOU_MAC_VNC_USER=<synthetic-test-user> \
-OKOU_MAC_VNC_PASSWORD=<synthetic-test-password> \
-  <matching-test-binary> pinned_mac_type_30_capture_and_safe_input \
+OKOU_MAC_VNC_USER="$TEST_USER" \
+OKOU_MAC_VNC_PASSWORD="$TEST_PASSWORD" \
+  "$MATCHING_TEST_BINARY" pinned_mac_type_30_capture_and_safe_input \
   --ignored --exact --nocapture
 OKOU_MAC_VNC_ENDPOINT=127.0.0.1:15901 \
-OKOU_MAC_VNC_USER=<synthetic-test-user> \
-  <matching-test-binary> pinned_mac_type_30_rejects_wrong_password \
+OKOU_MAC_VNC_USER="$TEST_USER" \
+  "$MATCHING_TEST_BINARY" pinned_mac_type_30_rejects_wrong_password \
   --ignored --exact --nocapture
 ```
 

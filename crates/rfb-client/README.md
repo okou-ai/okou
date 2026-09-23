@@ -73,7 +73,8 @@ The engine accepts only 2048–4096-bit, 16-byte-aligned declared DH lengths,
 small nontrivial generators, full-width odd moduli and in-range server public
 values. The independently exercised macOS 26.6.2 server used generator 5 and a
 stable 4096-bit modulus; other macOS versions/configurations are not thereby
-established. One absolute 30-second deadline covers the handshake. Failure or
+established. The implementation does not prove modulus primality. One absolute
+deadline, no longer than 30 seconds, covers the handshake. Failure or
 cancellation drops the owned stream and never falls back to another type.
 
 **Type 30 protects the credential exchange only.** It does not authenticate the
