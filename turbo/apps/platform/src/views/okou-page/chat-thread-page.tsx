@@ -1080,7 +1080,7 @@ function chatThreadEmojiDisplayName(
 }
 
 function chatThreadEmojiSectionId(key: string): string {
-  return `chat-thread-emoji-section-${key}`;
+  return `chat-thread-emoji-section-${encodeURIComponent(key)}`;
 }
 
 // The category whose title is pinned right now: the last section that has

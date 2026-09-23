@@ -290,7 +290,12 @@ test("Choosing an emoji category updates the category rail", async () => {
     "location",
   );
   expect(categoryButton("Frequently used")).not.toHaveAttribute("aria-current");
-  expect(screen.getByText("Food & Drink")).toBeInTheDocument();
+  const controlledSectionId =
+    categoryButton("Food & Drink").getAttribute("aria-controls");
+  expect(controlledSectionId).not.toMatch(/\s/);
+  expect(document.getElementById(controlledSectionId ?? "")).toContainElement(
+    screen.getByText("Food & Drink"),
+  );
   expect(feed.scrollTop).toBeGreaterThan(0);
 });
 
