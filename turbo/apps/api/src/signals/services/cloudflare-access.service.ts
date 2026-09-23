@@ -317,20 +317,23 @@ async function publishUpdateInvalidation(
   affectedHosts: readonly { readonly id: string; readonly userId: string }[],
 ) {
   const publishSshInvalidation = async () => {
-    await Promise.all(
-      [...affectedByOwner(affectedHosts).entries()].map(
-        async ([userId, connectionIds]) => {
-          await Promise.all([
-            publishSshClientInvalidation({ orgId: actor.orgId, userId }),
-            publishSshRunnerInvalidation(db, {
-              orgId: actor.orgId,
-              userId,
-              connectionIds,
-            }),
-          ]);
-        },
-      ),
-    );
+    const owners = [...affectedByOwner(affectedHosts).entries()];
+    for (let offset = 0; offset < owners.length; offset += 16) {
+      await Promise.all(
+        owners
+          .slice(offset, offset + 16)
+          .map(async ([userId, connectionIds]) => {
+            await Promise.all([
+              publishSshClientInvalidation({ orgId: actor.orgId, userId }),
+              publishSshRunnerInvalidation(db, {
+                orgId: actor.orgId,
+                userId,
+                connectionIds,
+              }),
+            ]);
+          }),
+      );
+    }
   };
   if (scope === "organization") {
     await Promise.all([
