@@ -21,6 +21,7 @@ import { server } from "../../../mocks/server";
 import {
   holdPiApiFirstTurnLifecycleLockFixture,
   readRunUsageEventsFixture,
+  replacePiSessionHistoryInlineFixture,
   replacePiSessionHistoryJsonlFixture,
 } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -398,14 +399,13 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    ["/skill:handoff-skill first  argument\nsecond line", false],
-    [" \n\t/skill:handoff-skill first  argument\nsecond line", false],
-    ["/unknown-command first  argument\nsecond line", false],
-    ["/home/user/workspace/report.txt first  argument\nsecond line", false],
-    ["/skill:handoff-skill first  argument\nsecond line", true],
+    "/skill:handoff-skill first  argument\nsecond line",
+    " \n\t/skill:handoff-skill first  argument\nsecond line",
+    "/unknown-command first  argument\nsecond line",
+    "/home/user/workspace/report.txt first  argument\nsecond line",
   ] as const)(
-    "hands native input %j to Sandbox with exact fresh and resumed H0 (ordinary resume: %j)",
-    async (prompt, ordinaryResume) => {
+    "hands native input %j to Sandbox with exact fresh and resumed H0",
+    async (prompt) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await publishPendingPiInstructions(actor, agentId);
       const checkpointObjects = mockPiCheckpointObjectStore();
@@ -443,12 +443,7 @@ describe("CHAT-02: model-first provider policies", () => {
       let expectedH0: Buffer | undefined;
       const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
       for (const turn of [1, 2]) {
-        const originalPrompt =
-          turn === 1
-            ? prompt
-            : ordinaryResume
-              ? "continue the existing session without native input"
-              : `${prompt}\nresume once`;
+        const originalPrompt = turn === 1 ? prompt : `${prompt}\nresume once`;
         if (turn === 2) {
           run = await sendChatRun(
             actor,
@@ -465,31 +460,66 @@ describe("CHAT-02: model-first provider policies", () => {
         const manifestKey = `${bucket}/pi-api-first-turn/${run.runId}/manifest.json`;
         const sessionKey = `${bucket}/pi-api-first-turn/${run.runId}/session.jsonl`;
         const manifestBytes = checkpointObjects.get(manifestKey);
-        const h0 = checkpointObjects.get(sessionKey);
-        if (!manifestBytes || !h0) {
-          throw new Error("Expected native-input Sandbox manifest and H0");
+        if (!manifestBytes) {
+          throw new Error("Expected native-input Sandbox manifest");
         }
         const manifest = piApiFirstTurnManifestSchema.parse(
           JSON.parse(manifestBytes.toString("utf8")),
         );
-        expect(manifest).toMatchObject({
-          schemaVersion: 3,
-          outcome: "ownership-transfer",
-          mode: "sandbox-first",
-          baseSession: {
-            sessionId: run.threadId,
-            sha256: expectedH0
-              ? createHash("sha256").update(expectedH0).digest("hex")
-              : null,
-          },
-          session: {
-            sessionId: run.threadId,
-            sha256: createHash("sha256").update(h0).digest("hex"),
-            rawSize: h0.length,
-          },
-          sandboxEventSequenceStart: 1,
-        });
-        if (expectedH0) {
+        let h0: Buffer;
+        if (turn === 1) {
+          const published = checkpointObjects.get(sessionKey);
+          if (!published) {
+            throw new Error("Expected fresh sandbox-first session object");
+          }
+          h0 = published;
+          expect(manifest).toMatchObject({
+            schemaVersion: 3,
+            outcome: "ownership-transfer",
+            mode: "sandbox-first",
+            baseSession: { sessionId: run.threadId, sha256: null },
+            session: {
+              sessionId: run.threadId,
+              sha256: createHash("sha256").update(h0).digest("hex"),
+              rawSize: h0.length,
+            },
+            sandboxEventSequenceStart: 1,
+          });
+        } else {
+          if (!expectedH0) {
+            throw new Error("Expected settled first-turn checkpoint");
+          }
+          const hash = createHash("sha256").update(expectedH0).digest("hex");
+          const blobKey = `${bucket}/blobs/${hash}.blob`;
+          expect(manifest).toMatchObject({
+            schemaVersion: 4,
+            outcome: "ownership-transfer",
+            mode: "sandbox-first",
+            baseSession: { sessionId: run.threadId, sha256: hash },
+            session: {
+              sessionId: run.threadId,
+              sha256: hash,
+              rawSize: expectedH0.length,
+            },
+            history: {
+              encoding: "identity",
+              encodedSize: expectedH0.length,
+              url: expect.any(String),
+            },
+            sandboxEventSequenceStart: 1,
+          });
+          if (manifest.schemaVersion !== 4) {
+            throw new Error("Expected referenced resume history");
+          }
+          expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
+            blobKey,
+          );
+          expect(checkpointObjects.has(sessionKey)).toBeFalsy();
+          const referenced = checkpointObjects.get(blobKey);
+          if (!referenced) {
+            throw new Error("Expected referenced Sandbox checkpoint bytes");
+          }
+          h0 = referenced;
           expect(h0).toStrictEqual(expectedH0);
         }
         const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
@@ -505,7 +535,9 @@ describe("CHAT-02: model-first provider policies", () => {
             ? [key]
             : [];
         });
-        expect(writes).toStrictEqual([sessionKey, manifestKey]);
+        expect(writes).toStrictEqual(
+          turn === 1 ? [sessionKey, manifestKey] : [manifestKey],
+        );
         expect(modelCalls).toBe(0);
         expect(resourceDownloads).toBe(0);
         // Public usage summaries omit pending usage, so inspect this run's
@@ -1041,7 +1073,7 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it("transfers OpenRouter resume history by reference before provider transport", async () => {
+  it("preserves inline OpenRouter resume bytes in a v3 sandbox handoff", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected entitled chat actor to have an org");
@@ -1159,6 +1191,12 @@ describe("CHAT-02: model-first provider policies", () => {
     const [h0ObjectKey, firstSessionBytes] = persistedBlob;
     const h0Hash = h0ObjectKey.slice(blobPrefix.length, -".blob".length);
     const resumedH0 = firstSessionBytes.toString("utf8");
+    // Current checkpoint APIs persist blobs only; this test-owned historical
+    // inline snapshot cannot be constructed through a production endpoint.
+    await replacePiSessionHistoryInlineFixture({
+      runId: first.runId,
+      jsonl: resumedH0,
+    });
 
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const prompt = "preserve this original prompt for official compaction";
@@ -1196,7 +1234,7 @@ describe("CHAT-02: model-first provider policies", () => {
       JSON.parse(manifestBytes.toString("utf8")),
     );
     expect(manifest).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 3,
       outcome: "ownership-transfer",
       mode: "sandbox-first",
       baseSession: { sessionId: first.threadId, sha256: h0Hash },
@@ -1205,24 +1243,13 @@ describe("CHAT-02: model-first provider policies", () => {
         sha256: h0Hash,
         rawSize: Buffer.byteLength(resumedH0),
       },
-      history: {
-        encoding: "identity",
-        encodedSize: Buffer.byteLength(resumedH0),
-        url: expect.any(String),
-      },
       sandboxEventSequenceStart: 1,
     });
-    if (manifest.schemaVersion !== 4) {
-      throw new Error("Expected referenced resume history");
-    }
-    expect(new URL(manifest.history.url).searchParams.get("object")).toBe(
-      h0ObjectKey,
+    const publishedH0 = checkpointObjects.get(
+      `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/session.jsonl`,
     );
-    expect(
-      checkpointObjects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/session.jsonl`,
-      ),
-    ).toBeFalsy();
+    expect(publishedH0).toStrictEqual(firstSessionBytes);
+    expect(manifest.schemaVersion).toBe(3);
     const claim = await api.claimRunnerJob(second.runId, { runnerIdentity });
     const sandboxHeaders = {
       authorization: `Bearer ${claim.sandboxToken}`,

@@ -2160,6 +2160,24 @@ export async function replacePiSessionHistoryJsonlFixture(args: {
   return hash;
 }
 
+/** Restores the historical inline Pi session shape for a single completed run. */
+export async function replacePiSessionHistoryInlineFixture(args: {
+  readonly runId: string;
+  readonly jsonl: string;
+}): Promise<void> {
+  const [updated] = await db()
+    .update(conversations)
+    .set({
+      cliAgentSessionHistory: args.jsonl,
+      cliAgentSessionHistoryHash: null,
+    })
+    .where(eq(conversations.runId, args.runId))
+    .returning({ id: conversations.id });
+  if (!updated) {
+    throw new Error("Expected one Pi session history fixture to be replaced");
+  }
+}
+
 /**
  * Stages a canonical binding clear after the queue-first message row is
  * visible. Starting this transaction earlier would block that row's parent FK
