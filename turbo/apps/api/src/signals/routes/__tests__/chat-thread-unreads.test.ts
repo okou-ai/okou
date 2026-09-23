@@ -210,6 +210,19 @@ describe("GET /api/chat-thread-unreads", () => {
     await seedMembership(actor);
     const token = okouToken({ actor, capabilities: ["chat-event:read"] });
 
+    const indicators = await accept(
+      client().indicators({
+        headers: { authorization: `Bearer ${token}` },
+      }),
+      [403],
+    );
+    expect(indicators.body).toStrictEqual({
+      error: {
+        message: "Missing required capability: chat-thread:read",
+        code: "FORBIDDEN",
+      },
+    });
+
     const response = await accept(
       client().unreads({
         headers: { authorization: `Bearer ${token}` },
