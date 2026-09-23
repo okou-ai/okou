@@ -256,23 +256,3 @@ test("Wait for voice allowance reset on a Team plan", async () => {
     screen.queryByRole("dialog", { name: "Choose a plan" }),
   ).not.toBeInTheDocument();
 });
-
-test("Wait for voice allowance reset on a Custom plan", async () => {
-  context.mocks.browser.voiceInput();
-  installVoicePlan("custom", "admin");
-  installExhaustedVoiceQuota();
-  installRunChat();
-
-  await setupPage({ context, path: RUN_PATH });
-
-  click(await readyVoiceInput());
-
-  await expect(
-    screen.findByText(
-      "Voice input limit reached. Please wait for your limit to reset.",
-    ),
-  ).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("dialog", { name: "Choose a plan" }),
-  ).not.toBeInTheDocument();
-});

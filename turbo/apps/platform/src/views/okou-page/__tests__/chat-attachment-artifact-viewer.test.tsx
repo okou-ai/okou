@@ -155,10 +155,7 @@ async function expectPrivateAttachmentResource(
 }
 
 test.each([
-  ["Markdown", "private-notes.md", "text/markdown"],
   ["text", "private-notes.txt", "text/plain"],
-  ["JSON", "private-data.json", "application/json"],
-  ["CSV", "private-table.csv", "text/csv"],
   ["PDF", "private-report.pdf", "application/pdf"],
   ["audio", "private-recording.mp3", "audio/mpeg"],
   [

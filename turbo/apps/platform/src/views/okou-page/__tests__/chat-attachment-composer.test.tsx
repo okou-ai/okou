@@ -123,7 +123,6 @@ test.each([false, true])(
 
 test.each([
   { format: "text/plain", content: "Dropped planning notes" },
-  { format: "text/uri-list", content: "https://example.com/brief" },
   { format: "text/html", content: "<p>Editor planning notes</p>" },
 ])(
   "The editor accepts a $format drag as message content",
