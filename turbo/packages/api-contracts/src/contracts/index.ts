@@ -1065,6 +1065,11 @@ export {
   type UserBuiltinConnectorsContract,
 } from "./user-connectors";
 export {
+  connectorAgentAccessContract,
+  connectorAgentAccessSchema,
+  type ConnectorAgentAccess,
+} from "./connector-agent-access";
+export {
   userPermissionGrantsContract,
   userPermissionGrantScopeSchema,
   userPermissionGrantActionSchema,

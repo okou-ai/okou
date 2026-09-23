@@ -70,6 +70,7 @@ import { webhooksStripeAutomationEventsRoutes } from "./routes/webhooks-stripe-a
 import { agentDraftRoutes } from "./routes/agent-draft";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentsRoutes } from "./routes/agents";
+import { connectorAgentAccessRoutes } from "./routes/connector-agent-access";
 import { artifactCatalogRoutes } from "./routes/artifact-catalog";
 import { billingAutoRechargeRoutes } from "./routes/billing-auto-recharge";
 import { billingCheckoutRoutes } from "./routes/billing-checkout";
@@ -302,6 +303,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...agentDraftRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
+  ...connectorAgentAccessRoutes,
   ...artifactCatalogRoutes,
   ...billingAutoRechargeRoutes,
   ...billingCheckoutRoutes,
