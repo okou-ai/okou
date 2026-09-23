@@ -510,6 +510,8 @@
       "description": "Beri nama agen Anda dan tentukan siapa yang dapat menggunakannya.",
       "namePlaceholder": "mis. Asisten Riset",
       "newAgentAlt": "Agen baru",
+      "responsibilityLabel": "Apa yang ingin Anda kerjakan dengan bantuan agen ini?",
+      "responsibilityPlaceholder": "mis. setiap Senin, rangkum pipeline minggu lalu dari HubSpot dan tandai deal yang perlu ditindaklanjuti.",
       "success": "{{agentName}} berhasil dibuat",
       "title": "Buat agen baru",
       "visibility": {

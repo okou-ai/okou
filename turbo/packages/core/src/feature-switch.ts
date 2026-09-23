@@ -446,6 +446,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.AgentResponsibilitySetup]: {
+    maintainer: "linghan@okou.ai",
+    description:
+      "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.PersonalModelProviderAccounts]: {
     maintainer: "ethan@okou.ai",
     description:

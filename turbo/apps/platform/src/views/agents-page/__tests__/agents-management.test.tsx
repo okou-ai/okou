@@ -1,10 +1,16 @@
 import {
+  agentSetupPromptsContract,
+  type AgentSetupPromptRequest,
+} from "@okouai/api-contracts/contracts/agent-setup-prompts";
+import {
   agentInstructionsContract,
   agentsByIdContract,
   agentsMainContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { parseAvatarComposerUrl } from "@okouai/core/agent-avatar";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   screen,
   waitFor,
@@ -21,6 +27,8 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { pathname } from "../../../signals/location.ts";
+import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 
 const context = testContext();
 
@@ -28,6 +36,7 @@ const CORE_AGENT_ID = "c0000000-0000-4000-a000-000000000020";
 const RESEARCH_AGENT_ID = "c0000000-0000-4000-a000-000000000021";
 const PRIVATE_AGENT_ID = "c0000000-0000-4000-a000-000000000022";
 const CREATED_AGENT_ID = "c0000000-0000-4000-a000-000000000023";
+const RESPONSIBILITY_LABEL = "What do you want this agent to help you do?";
 
 interface AgentOptions {
   readonly avatarUrl?: string | null;
@@ -77,6 +86,19 @@ function buttonByLabel(
     throw new Error(`${label} button not found`);
   }
   return button;
+}
+
+function pinnedAgentCard(agentId: string): HTMLElement {
+  const card = queryAllByRoleFast(
+    "link",
+    screen.getByTestId("pinned-agents-grid"),
+  ).find((candidate) => {
+    return candidate.getAttribute("href") === `/agents/${agentId}/chat`;
+  });
+  if (!card) {
+    throw new Error(`${agentId} pinned agent card not found`);
+  }
+  return card;
 }
 
 function visibilityTab(name: string): HTMLElement {
@@ -354,6 +376,104 @@ test("Release avatar editing when the parent agent creation finishes", async () 
     name: "Give your agent a face",
   });
   expect(buttonByLabel("Randomize avatar", nextAvatarDialog)).toBeEnabled();
+});
+
+test("Creating an agent with setup requires a multi-line responsibility", async () => {
+  const user = userEvent.setup({ delay: null });
+  configureCatalog([
+    agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
+  ]);
+  await setupPage({
+    context,
+    path: "/agents",
+    featureSwitches: { [FeatureSwitchKey.AgentResponsibilitySetup]: true },
+  });
+  const dialog = await openCreateDialog("Private");
+  const responsibility =
+    await within(dialog).findByLabelText(RESPONSIBILITY_LABEL);
+  expect(responsibility).toBeRequired();
+
+  await fill(within(dialog).getByLabelText("Name"), "Pipeline Analyst");
+
+  expect(buttonByText("Create", dialog)).toBeDisabled();
+
+  await fill(responsibility, "   ");
+
+  expect(buttonByText("Create", dialog)).toBeDisabled();
+
+  await user.type(
+    responsibility,
+    "Summarize the pipeline every Monday.{Enter}Flag stalled deals.",
+  );
+
+  expect(responsibility).toHaveValue(
+    "   Summarize the pipeline every Monday.\nFlag stalled deals.",
+  );
+  expect(buttonByText("Create", dialog)).toBeEnabled();
+  expect(dialog).toBeInTheDocument();
+});
+
+test("Creating an agent with setup pins it and sends its setup prompt in a new thread", async () => {
+  const setupPrompt =
+    "Please adopt this responsibility: every Monday, summarize last week's pipeline and flag stalled deals. Update your description and instructions to match.";
+  const setupRequests: AgentSetupPromptRequest[] = [];
+  const sentPrompts: string[] = [];
+  configureCatalog(
+    [agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" })],
+    { defaultAgentId: CORE_AGENT_ID },
+  );
+  context.mocks.api(agentSetupPromptsContract.create, ({ body, respond }) => {
+    setupRequests.push(body);
+    return respond(200, { prompt: setupPrompt });
+  });
+  mockChatLifecycle(context, {
+    onSendRequest: ({ prompt }) => {
+      sentPrompts.push(prompt);
+    },
+  });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+  await setupPage({
+    context,
+    path: "/agents",
+    featureSwitches: { [FeatureSwitchKey.AgentResponsibilitySetup]: true },
+  });
+  const dialog = await openCreateDialog("Private");
+  await fill(within(dialog).getByLabelText("Name"), "  Pipeline Analyst ");
+  await fill(
+    within(dialog).getByLabelText(RESPONSIBILITY_LABEL),
+    "  Every Monday, summarize last week's pipeline.\nFlag stalled deals.\n",
+  );
+
+  click(buttonByText("Create", dialog));
+
+  await expect(
+    screen.findByText("Pipeline Analyst created successfully"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toMatch(/^\/chats\/[^/]+$/u);
+  expect(sentPrompts).toStrictEqual([setupPrompt]);
+  expect(setupRequests).toStrictEqual([
+    {
+      agentName: "Pipeline Analyst",
+      responsibility:
+        "Every Monday, summarize last week's pipeline.\nFlag stalled deals.",
+    },
+  ]);
+  await waitFor(() => {
+    expect(pinnedAgentCard(CREATED_AGENT_ID)).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+  expect(pinnedAgentCard(CREATED_AGENT_ID)).toHaveTextContent(
+    "Pipeline Analyst",
+  );
 });
 
 test("Open an agent's management page from its card", async () => {

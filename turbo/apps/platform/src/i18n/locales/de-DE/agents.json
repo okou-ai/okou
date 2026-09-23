@@ -510,6 +510,8 @@
       "description": "Benennen Sie Ihren Agenten und legen Sie fest, wer ihn verwenden darf.",
       "namePlaceholder": "z.B. Forschungsassistent",
       "newAgentAlt": "Neuer Agent",
+      "responsibilityLabel": "Wobei soll Ihnen dieser Agent helfen?",
+      "responsibilityPlaceholder": "z. B. jeden Montag die Pipeline der letzten Woche aus HubSpot zusammenfassen und Deals markieren, die Aufmerksamkeit brauchen.",
       "success": "{{agentName}} erfolgreich erstellt",
       "title": "Neuen Agenten erstellen",
       "visibility": {

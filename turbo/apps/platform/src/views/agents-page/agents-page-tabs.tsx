@@ -1,6 +1,8 @@
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { AGENT_SETUP_RESPONSIBILITY_MAX_CHARS } from "@okouai/api-contracts/contracts/agent-setup-prompts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Loader2, Plus, Wand } from "lucide-react";
 import {
@@ -21,12 +23,16 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Textarea,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { createSubagent$ } from "../../signals/okou-page/agents.ts";
+import {
+  createSubagent$,
+  createSubagentWithSetupThread$,
+} from "../../signals/okou-page/agents.ts";
 import {
   defaultAgentId$,
   defaultAgentName$,
@@ -37,6 +43,7 @@ import {
   type OrgMember,
 } from "../../signals/external/org-members.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { onDomEventFn } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
@@ -46,6 +53,8 @@ import {
   setJobsDialogOpen$,
   jobsNewName$,
   setJobsNewName$,
+  jobsResponsibility$,
+  setJobsResponsibility$,
   jobsAvatarUrl$,
   setJobsAvatarUrl$,
   jobsVisibility$,
@@ -68,15 +77,31 @@ export function AgentsPageTabs() {
   const setDialogOpen = useSet(setJobsDialogOpen$);
   const newName = useGet(jobsNewName$);
   const setNewName = useSet(setJobsNewName$);
+  const responsibility = useGet(jobsResponsibility$);
+  const setResponsibility = useSet(setJobsResponsibility$);
   const visibility = useGet(jobsVisibility$);
   const setVisibility = useSet(setJobsVisibility$);
   const activeTab = useGet(jobsActiveTab$);
   const setActiveTab = useSet(setJobsActiveTab$);
   const [createLoadable, createSubagentFn] = useLoadableSet(createSubagent$);
-  const creating = createLoadable.state === "loading";
+  const [setupCreateLoadable, createSubagentWithSetupThreadFn] = useLoadableSet(
+    createSubagentWithSetupThread$,
+  );
+  const creating =
+    createLoadable.state === "loading" ||
+    setupCreateLoadable.state === "loading";
   const resetDialog = useSet(resetJobsDialog$);
   const pageSignal = useGet(pageSignal$);
   const defaultAgentName = useLastResolved(defaultAgentName$);
+  const features = useLastResolved(featureSwitch$);
+  const responsibilitySetupEnabled =
+    features?.[FeatureSwitchKey.AgentResponsibilitySetup] ?? false;
+  const trimmedName = newName.trim();
+  const trimmedResponsibility = responsibility.trim();
+  const canCreate =
+    trimmedName !== "" &&
+    (!responsibilitySetupEnabled || trimmedResponsibility !== "") &&
+    !creating;
 
   const agentsLoadable = useLoadable(sortedAgents$);
   const publicAgentCount =
@@ -94,18 +119,29 @@ export function AgentsPageTabs() {
   };
 
   const handleCreateTeammate = onDomEventFn(async (avatarUrl: string) => {
-    const trimmed = newName.trim();
-    if (!trimmed || creating) {
+    if (!canCreate) {
       return;
     }
-    await createSubagentFn(trimmed, avatarUrl, visibility, pageSignal);
+    if (responsibilitySetupEnabled) {
+      await createSubagentWithSetupThreadFn(
+        {
+          displayName: trimmedName,
+          avatarUrl,
+          visibility,
+          responsibility: trimmedResponsibility,
+        },
+        pageSignal,
+      );
+    } else {
+      await createSubagentFn(trimmedName, avatarUrl, visibility, pageSignal);
+    }
     setDialogOpen(false);
     toast.success(
       t(
         ($) => {
           return $.list.create.success;
         },
-        { agentName: trimmed },
+        { agentName: trimmedName },
       ),
     );
   });
@@ -154,7 +190,10 @@ export function AgentsPageTabs() {
         onOpenChange={setDialogOpen}
         newName={newName}
         onNameChange={setNewName}
+        responsibility={responsibilitySetupEnabled ? responsibility : null}
+        onResponsibilityChange={setResponsibility}
         onConfirm={handleCreateTeammate}
+        canCreate={canCreate}
         creating={creating}
         visibility={visibility}
         onVisibilityChange={setVisibility}
@@ -348,7 +387,10 @@ function CreateTeammateDialog({
   onOpenChange,
   newName,
   onNameChange,
+  responsibility,
+  onResponsibilityChange,
   onConfirm,
+  canCreate,
   creating,
   visibility,
   onVisibilityChange,
@@ -357,7 +399,11 @@ function CreateTeammateDialog({
   onOpenChange: (open: boolean) => void;
   newName: string;
   onNameChange: (name: string) => void;
+  /** `null` hides the responsibility field. */
+  responsibility: string | null;
+  onResponsibilityChange: (responsibility: string) => void;
   onConfirm: (avatarUrl: string) => void;
+  canCreate: boolean;
   creating: boolean;
   visibility: Visibility;
   onVisibilityChange: (visibility: Visibility) => void;
@@ -367,10 +413,13 @@ function CreateTeammateDialog({
       <CreateTeammateDialogContent
         newName={newName}
         onNameChange={onNameChange}
+        responsibility={responsibility}
+        onResponsibilityChange={onResponsibilityChange}
         onConfirm={onConfirm}
         onCancel={() => {
           return onOpenChange(false);
         }}
+        canCreate={canCreate}
         creating={creating}
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
@@ -520,7 +569,10 @@ function AgentVisibilitySelect({
 function CreateAgentFields({
   newName,
   onNameChange,
+  responsibility,
+  onResponsibilityChange,
   onConfirm,
+  canCreate,
   creating,
   visibility,
   onVisibilityChange,
@@ -528,7 +580,10 @@ function CreateAgentFields({
 }: {
   newName: string;
   onNameChange: (name: string) => void;
+  responsibility: string | null;
+  onResponsibilityChange: (responsibility: string) => void;
   onConfirm: (avatarUrl: string) => void;
+  canCreate: boolean;
   creating: boolean;
   visibility: Visibility;
   onVisibilityChange: (visibility: Visibility) => void;
@@ -565,7 +620,7 @@ function CreateAgentFields({
             return onNameChange(e.target.value);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && newName.trim() && !creating) {
+            if (e.key === "Enter" && canCreate) {
               onConfirm(avatarUrl);
             }
           }}
@@ -576,6 +631,33 @@ function CreateAgentFields({
           disabled={creating}
         />
       </div>
+      {responsibility !== null && (
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="new-agent-responsibility"
+            className="text-sm font-medium text-foreground"
+          >
+            {t(($) => {
+              return $.list.create.responsibilityLabel;
+            })}
+          </label>
+          <Textarea
+            id="new-agent-responsibility"
+            value={responsibility}
+            onChange={(e) => {
+              return onResponsibilityChange(e.target.value);
+            }}
+            placeholder={t(($) => {
+              return $.list.create.responsibilityPlaceholder;
+            })}
+            maxLength={AGENT_SETUP_RESPONSIBILITY_MAX_CHARS}
+            rows={4}
+            className="min-h-[96px] resize-y"
+            required
+            disabled={creating}
+          />
+        </div>
+      )}
       <AgentVisibilitySelect
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
@@ -588,16 +670,22 @@ function CreateAgentFields({
 function CreateTeammateDialogContent({
   newName,
   onNameChange,
+  responsibility,
+  onResponsibilityChange,
   onConfirm,
   onCancel,
+  canCreate,
   creating,
   visibility,
   onVisibilityChange,
 }: {
   newName: string;
   onNameChange: (name: string) => void;
+  responsibility: string | null;
+  onResponsibilityChange: (responsibility: string) => void;
   onConfirm: (avatarUrl: string) => void;
   onCancel: () => void;
+  canCreate: boolean;
   creating: boolean;
   visibility: Visibility;
   onVisibilityChange: (visibility: Visibility) => void;
@@ -631,7 +719,10 @@ function CreateTeammateDialogContent({
       <CreateAgentFields
         newName={newName}
         onNameChange={onNameChange}
+        responsibility={responsibility}
+        onResponsibilityChange={onResponsibilityChange}
         onConfirm={onConfirm}
+        canCreate={canCreate}
         creating={creating}
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
@@ -649,7 +740,7 @@ function CreateTeammateDialogContent({
           onClick={() => {
             return onConfirm(avatarUrl);
           }}
-          disabled={!newName.trim() || creating}
+          disabled={!canCreate}
         >
           {creating ? (
             <span className="inline-flex items-center gap-1.5">

@@ -86,4 +86,5 @@ export enum FeatureSwitchKey {
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
   ClaudeCodeUsageReset = "claudeCodeUsageReset",
+  AgentResponsibilitySetup = "agentResponsibilitySetup",
 }

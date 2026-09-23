@@ -510,6 +510,8 @@
       "description": "Ponle nombre a tu agente y decide quién puede usarlo.",
       "namePlaceholder": "por ejemplo, Asistente de Investigación",
       "newAgentAlt": "Nuevo agente",
+      "responsibilityLabel": "¿En qué quieres que te ayude este agente?",
+      "responsibilityPlaceholder": "por ejemplo, cada lunes, resumir el pipeline de la semana pasada en HubSpot y señalar las oportunidades que necesitan atención.",
       "success": "{{agentName}} creado con éxito",
       "title": "Crea un nuevo agente",
       "visibility": {
