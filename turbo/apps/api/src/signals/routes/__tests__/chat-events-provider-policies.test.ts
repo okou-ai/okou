@@ -1856,12 +1856,24 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it.each([
-    ["okou-1.0", "@preset/okou-1-0"],
-    ["okou-1.0-pro", "@preset/okou-1-0-pro"],
-    ["okou-1.0-max", "@preset/okou-1-0-max"],
+    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", "GPT-6 Luna", "max"],
+    [
+      "okou-1.0-pro",
+      "@preset/okou-1-0-pro",
+      "Okou 1.0 Pro",
+      "GPT-6 Sol",
+      "low",
+    ],
+    [
+      "okou-1.0-max",
+      "@preset/okou-1-0-max",
+      "Okou 1.0 Max",
+      "GPT-6 Sol",
+      "high",
+    ],
   ] as const)(
     "routes built-in %s only through its OpenRouter Preset",
-    async (model, preset) => {
+    async (model, preset, displayName, sourceModel, reasoningEffort) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await seedBuiltInModelCandidateKeys(context, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
@@ -1898,7 +1910,19 @@ describe("CHAT-02: model-first provider policies", () => {
         wireApi: "responses",
         supportsWebsockets: false,
       });
-      expect(claim.codexRuntimeConfig?.modelCatalog).toBeUndefined();
+      expect(claim.codexRuntimeConfig?.modelCatalog?.models).toHaveLength(1);
+      expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
+        expect.objectContaining({
+          slug: preset,
+          display_name: displayName,
+          description: expect.stringContaining(sourceModel),
+          default_reasoning_level: reasoningEffort,
+          supported_reasoning_levels: [
+            expect.objectContaining({ effort: reasoningEffort }),
+          ],
+          supports_reasoning_effort_updates: false,
+        }),
+      ]);
       expect(environment.OKOU_REASONING_EFFORT).toBeUndefined();
       expect(environment.OKOU_CODEX_SERVICE_TIER).toBeUndefined();
       await cancelChatRun(actor, run.runId);

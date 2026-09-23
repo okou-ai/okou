@@ -931,6 +931,55 @@ describe("model-first canonical catalog", () => {
     },
   );
 
+  it.each([
+    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", "GPT-6 Luna", "max"],
+    [
+      "okou-1.0-pro",
+      "@preset/okou-1-0-pro",
+      "Okou 1.0 Pro",
+      "GPT-6 Sol",
+      "low",
+    ],
+    [
+      "okou-1.0-max",
+      "@preset/okou-1-0-max",
+      "Okou 1.0 Max",
+      "GPT-6 Sol",
+      "high",
+    ],
+  ] as const)(
+    "projects Codex metadata for Okou %s to its OpenRouter Preset",
+    (model, preset, displayName, sourceModel, reasoningEffort) => {
+      const catalog = getModelProviderCodexCatalogForModel(
+        model,
+        preset,
+        "openrouter-codex",
+      );
+
+      expect(catalog?.models).toHaveLength(1);
+      expect(catalog?.models).toEqual([
+        expect.objectContaining({
+          slug: preset,
+          display_name: displayName,
+          description: expect.stringContaining(sourceModel),
+          default_reasoning_level: reasoningEffort,
+          supported_reasoning_levels: [
+            expect.objectContaining({ effort: reasoningEffort }),
+          ],
+          supports_reasoning_effort_updates: false,
+          context_window: 272_000,
+          max_context_window: 872_000,
+          input_modalities: ["text", "image"],
+          truncation_policy: { mode: "tokens", limit: 10_000 },
+          apply_patch_tool_type: "freeform",
+          web_search_tool_type: "text_and_image",
+          supports_search_tool: true,
+          tool_mode: "code_mode_only",
+        }),
+      ]);
+    },
+  );
+
   it("builds the default org policy seed from the workspace defaults", () => {
     expect(DEFAULT_ORG_MODEL_POLICY_MODELS).toEqual([
       "claude-fable-5-1",

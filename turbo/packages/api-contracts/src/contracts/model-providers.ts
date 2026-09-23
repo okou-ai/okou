@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import DEEPSEEK_V4_FLASH_MODEL_CATALOG from "./deepseek-model-catalog.json" with { type: "json" };
+import OKOU_MODEL_CODEX_CATALOG from "./okou-model-codex-catalog.json" with { type: "json" };
 import {
   MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   SUPPORTED_RUN_MODELS,
@@ -1468,6 +1469,9 @@ const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
   Partial<Record<ActiveRunModel, Record<string, unknown>>>
 > = {
   "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
+  "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
+  "okou-1.0-pro": OKOU_MODEL_CODEX_CATALOG,
+  "okou-1.0-max": OKOU_MODEL_CODEX_CATALOG,
 };
 
 /**
