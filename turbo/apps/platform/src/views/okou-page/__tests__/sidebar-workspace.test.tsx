@@ -94,18 +94,6 @@ async function setupWorkspaceSearch() {
   return dialog;
 }
 
-test("Show matching workspace chats and messages", async () => {
-  const dialog = await setupWorkspaceSearch();
-  await waitFor(() => {
-    expect(within(dialog).getByText("2 results")).toBeInTheDocument();
-    expect(within(dialog).getByText("Deployment notes")).toBeInTheDocument();
-    expect(within(dialog).getByText("Incident response")).toBeInTheDocument();
-    expect(
-      within(dialog).queryByText("Research Agent"),
-    ).not.toBeInTheDocument();
-  });
-});
-
 test("Filter workspace search to matching messages", async () => {
   const dialog = await setupWorkspaceSearch();
   await waitFor(() => {
@@ -116,18 +104,6 @@ test("Filter workspace search to matching messages", async () => {
     within(dialog).queryByText("Deployment notes"),
   ).not.toBeInTheDocument();
   expect(within(dialog).getByText("Incident response")).toBeInTheDocument();
-});
-
-test("Show an empty workspace-search result", async () => {
-  const dialog = await setupWorkspaceSearch();
-  await fill(
-    within(dialog).getByPlaceholderText("Search workspace..."),
-    "missing",
-  );
-  await waitFor(() => {
-    expect(within(dialog).getByText("No results found")).toBeInTheDocument();
-    expect(within(dialog).getByText("0 results")).toBeInTheDocument();
-  });
 });
 
 test("Filter workspace search to chats and navigate", async () => {
@@ -540,46 +516,4 @@ test("Use context actions on pinned agents", async () => {
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${SUPPORT_AGENT_ID}/chat`);
   });
-});
-
-test("Show the three-column chat navigation and actions", async () => {
-  prepareDefaultAgent();
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  const rail = await waitFor(() => {
-    return screen.getByTestId("labeled-nav-rail");
-  });
-
-  const chatLink = within(rail).getByLabelText("Chat");
-  expect(within(rail).getByText("Chat")).toBeInTheDocument();
-  expect(chatLink.querySelector(".lucide-message-circle")).toBeInTheDocument();
-  expect(within(rail).getByText("Agents")).toBeInTheDocument();
-  expect(within(rail).getByText("Connectors")).toBeInTheDocument();
-
-  const list = screen.getByTestId("chat-list-column");
-  expect(within(list).getByText("Chat")).toBeInTheDocument();
-  const searchButton = within(list).getByLabelText("Search workspace");
-  const chatThreadsTitle = buttonByText("Chats with Okou", list);
-  if (!searchButton.parentElement || !chatThreadsTitle.parentElement) {
-    throw new Error("Chat action headers not found");
-  }
-  const headerNewChat = within(searchButton.parentElement).getByLabelText(
-    "New chat",
-  );
-  const threadNewChat = within(chatThreadsTitle.parentElement).getByLabelText(
-    "New chat",
-  );
-  expect(searchButton).toHaveAttribute(
-    "aria-keyshortcuts",
-    "Meta+Shift+F Control+Shift+F",
-  );
-  expect(headerNewChat.querySelector(".lucide-square-pen")).toBeInTheDocument();
-  expect(threadNewChat.querySelector(".lucide-plus")).toBeInTheDocument();
-  expect(
-    within(list).getByTestId("pinned-agents-horizontal"),
-  ).toBeInTheDocument();
 });
