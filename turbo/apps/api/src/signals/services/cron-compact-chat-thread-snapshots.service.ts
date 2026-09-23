@@ -1,6 +1,6 @@
 import { command } from "ccstate";
 import { promisify } from "node:util";
-import { gunzip, gzip } from "node:zlib";
+import { gzip } from "node:zlib";
 import {
   chatThreadSnapshotArchiveSchema,
   chatThreadSnapshotProjectionSchema,
@@ -18,7 +18,6 @@ import {
   isNull,
   lt,
   lte,
-  notExists,
   or,
   sql,
   type SQL,
@@ -36,24 +35,20 @@ import {
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
 import { env, optionalEnv } from "../../lib/env";
+import { mapConcurrent } from "../../lib/map-concurrent";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import {
   deleteS3Objects,
-  downloadS3Buffer,
   listS3ObjectsPage,
   putImmutableS3Object,
   type S3Object,
 } from "../external/s3";
-import {
-  chatThreadSnapshotObjectKey,
-  isOwnedChatThreadSnapshotObjectKey,
-} from "./chat-thread-snapshot-object";
+import { chatThreadSnapshotObjectKey } from "./chat-thread-snapshot-object";
 
 interface SnapshotCompactionStats {
   readonly scopes: number;
   readonly eventsApplied: number;
-  readonly removedDeletedAgentThreads: number;
   readonly eventsPruned: number;
 }
 
@@ -87,7 +82,8 @@ function snapshotScopePredicate(
 
 type SnapshotRootDb = Pick<Db, "execute" | "select" | "selectDistinct">;
 const CHAT_THREAD_EVENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
-const DEFAULT_CHAT_THREAD_SNAPSHOT_BATCH_SIZE = 100;
+const DEFAULT_CHAT_THREAD_SNAPSHOT_BATCH_SIZE = 500;
+const CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY = 10;
 const DEFAULT_CHAT_THREAD_EVENT_PRUNE_BATCH_SIZE = 500;
 const CHAT_THREAD_SNAPSHOT_STALE_MS = 24 * 60 * 60 * 1000;
 const snapshot = alias(chatThreadSnapshots, "snapshot");
@@ -95,7 +91,6 @@ const event = alias(chatThreadEvents, "event");
 const thread = alias(chatThreads, "thread");
 const agent = alias(agents, "agent");
 const gzipAsync = promisify(gzip);
-const gunzipAsync = promisify(gunzip);
 
 function chatThreadSnapshotBatchSize(): number {
   const raw = optionalEnv("CHAT_THREAD_SNAPSHOT_COMPACTION_BATCH_SIZE");
@@ -137,14 +132,12 @@ const snapshotCandidateRowSchema = z.object({
   previousObjectKey: z.string().nullable(),
   previousSeqId: z.coerce.number().int().positive().nullable(),
   eventsApplied: z.int(),
-  legacyRemovedDeletedAgentThreads: z.int(),
 });
 
 const prunedEventsRowSchema = z.object({ count: z.int() });
 const publishedRowSchema = z.object({ published: z.int() });
 
 interface SnapshotStorage {
-  readonly download: (objectKey: string) => Promise<Buffer>;
   readonly upload: (objectKey: string, body: Buffer) => Promise<void>;
   readonly list: (prefix: string) => Promise<{
     readonly objects: readonly S3Object[];
@@ -230,7 +223,7 @@ function candidateScopesCte(
   `;
 }
 
-function rebuiltCte(db: Pick<Db, "select">): SQL {
+function rebuiltCte(): SQL {
   return sql`
     rebuilt AS (
       SELECT
@@ -245,8 +238,7 @@ function rebuiltCte(db: Pick<Db, "select">): SQL {
         snapshot.updated_at AS snapshot_updated_at,
         snapshot.object_key AS snapshot_object_key,
         snapshot.latest_event_seq_id AS snapshot_previous_seq_id,
-        events_after_snapshot.count AS events_applied,
-        deleted_agent_threads.count AS removed_deleted_agent_threads
+        events_after_snapshot.count AS events_applied
       FROM candidate_scopes scope
       LEFT JOIN ${chatThreadSnapshots} ${snapshot}
         ON ${and(
@@ -315,39 +307,19 @@ function rebuiltCte(db: Pick<Db, "select">): SQL {
           ),
         )}
       ) events_after_snapshot ON true
-      LEFT JOIN LATERAL (
-        SELECT ${count()}::int AS count
-        FROM jsonb_array_elements(
-          COALESCE(${snapshot.chatThreads}, '[]'::jsonb)
-        ) AS old_thread(thread)
-        WHERE ${notExists(
-          db
-            .select({ id: agent.id })
-            .from(agent)
-            .where(
-              and(
-                eq(agent.id, sql`(old_thread.thread ->> 'agentId')::uuid`),
-                eq(agent.orgId, sql`scope.org_id`),
-              ),
-            ),
-        )}
-        ) deleted_agent_threads ON true
     )
   `;
 }
 
-function chatThreadSnapshotCandidatesSql(
-  db: Pick<Db, "select">,
-  args: {
-    readonly staleCutoff: Date;
-    readonly batchSize: number;
-    readonly scope: SnapshotCompactionScope;
-  },
-): SQL {
+function chatThreadSnapshotCandidatesSql(args: {
+  readonly staleCutoff: Date;
+  readonly batchSize: number;
+  readonly scope: SnapshotCompactionScope;
+}): SQL {
   return sql`
     WITH ${allScopesCte(args.staleCutoff)},
     ${candidateScopesCte(args.staleCutoff, args.batchSize, args.scope)},
-    ${rebuiltCte(db)}
+    ${rebuiltCte()}
     SELECT
       rebuilt.user_id AS "userId",
       rebuilt.org_id AS "orgId",
@@ -357,75 +329,12 @@ function chatThreadSnapshotCandidatesSql(
       rebuilt.snapshot_updated_at AS "previousUpdatedAt",
       rebuilt.snapshot_object_key AS "previousObjectKey",
       rebuilt.snapshot_previous_seq_id AS "previousSeqId",
-      rebuilt.events_applied AS "eventsApplied",
-      rebuilt.removed_deleted_agent_threads AS "legacyRemovedDeletedAgentThreads"
+      rebuilt.events_applied AS "eventsApplied"
     FROM rebuilt
   `;
 }
 
 type SnapshotCandidate = z.infer<typeof snapshotCandidateRowSchema>;
-
-async function removedDeletedAgentCount(
-  db: SnapshotRootDb,
-  storage: SnapshotStorage,
-  candidate: SnapshotCandidate,
-  currentThreads: readonly { readonly id: string; readonly agentId: string }[],
-): Promise<number> {
-  if (candidate.previousObjectKey === null) {
-    return candidate.legacyRemovedDeletedAgentThreads;
-  }
-  if (
-    !isOwnedChatThreadSnapshotObjectKey(
-      candidate.previousObjectKey,
-      candidate.userId,
-      candidate.orgId,
-      candidate.previousSeqId,
-    )
-  ) {
-    throw new Error("Invalid previous chat thread snapshot object key");
-  }
-  const oldArchive = chatThreadSnapshotArchiveSchema.parse(
-    JSON.parse(
-      (
-        await gunzipAsync(await storage.download(candidate.previousObjectKey))
-      ).toString("utf8"),
-    ) as unknown,
-  );
-  const currentIds = new Set(
-    currentThreads.map((thread) => {
-      return thread.id;
-    }),
-  );
-  const missing = oldArchive.chatThreads.filter((thread) => {
-    return !currentIds.has(thread.id);
-  });
-  if (missing.length === 0) {
-    return 0;
-  }
-  const stillOwnedAgents = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, candidate.orgId),
-        inArray(agents.id, [
-          ...new Set(
-            missing.map((thread) => {
-              return thread.agentId;
-            }),
-          ),
-        ]),
-      ),
-    );
-  const stillOwnedIds = new Set(
-    stillOwnedAgents.map((row) => {
-      return row.id;
-    }),
-  );
-  return missing.filter((thread) => {
-    return !stillOwnedIds.has(thread.agentId);
-  }).length;
-}
 
 async function publishChatThreadSnapshot(
   db: SnapshotRootDb,
@@ -577,53 +486,54 @@ async function compactChatThreadSnapshotBatch(
   );
   const candidates = await executeRawRows(
     db,
-    chatThreadSnapshotCandidatesSql(db, {
+    chatThreadSnapshotCandidatesSql({
       staleCutoff,
       batchSize,
       scope,
     }),
     snapshotCandidateRowSchema,
   );
+  const published = await mapConcurrent(
+    candidates,
+    CHAT_THREAD_SNAPSHOT_PUBLISH_CONCURRENCY,
+    async (candidate) => {
+      signal?.throwIfAborted();
+      const chatThreads = chatThreadSnapshotArchiveSchema.parse({
+        chatThreads: candidate.chatThreads.map((thread) => {
+          return {
+            ...thread,
+            modelSettings: modelSettingsSchema.parse(
+              thread.modelSettings ?? {},
+            ),
+          };
+        }),
+      }).chatThreads;
+      const compressed = await gzipAsync(
+        Buffer.from(JSON.stringify({ chatThreads })),
+      );
+      const objectKey = chatThreadSnapshotObjectKey({
+        userId: candidate.userId,
+        orgId: candidate.orgId,
+        latestSeqId: candidate.latestSeqId,
+        body: compressed,
+      });
+      await storage.upload(objectKey, compressed);
+      signal?.throwIfAborted();
+      return (await publishChatThreadSnapshot(db, candidate, objectKey))
+        ? candidate
+        : null;
+    },
+  );
   let scopes = 0;
   let eventsApplied = 0;
-  let removedDeletedAgentThreads = 0;
-  for (const candidate of candidates) {
-    signal?.throwIfAborted();
-    const chatThreads = chatThreadSnapshotArchiveSchema.parse({
-      chatThreads: candidate.chatThreads.map((thread) => {
-        return {
-          ...thread,
-          modelSettings: modelSettingsSchema.parse(thread.modelSettings ?? {}),
-        };
-      }),
-    }).chatThreads;
-    const removed = await removedDeletedAgentCount(
-      db,
-      storage,
-      candidate,
-      chatThreads,
-    );
-    signal?.throwIfAborted();
-    const compressed = await gzipAsync(
-      Buffer.from(JSON.stringify({ chatThreads })),
-    );
-    const objectKey = chatThreadSnapshotObjectKey({
-      userId: candidate.userId,
-      orgId: candidate.orgId,
-      latestSeqId: candidate.latestSeqId,
-      body: compressed,
-    });
-    await storage.upload(objectKey, compressed);
-    signal?.throwIfAborted();
-    const published = await publishChatThreadSnapshot(db, candidate, objectKey);
-    if (!published) {
+  for (const candidate of published) {
+    if (candidate === null) {
       continue;
     }
     scopes += 1;
     eventsApplied += candidate.eventsApplied;
-    removedDeletedAgentThreads += removed;
   }
-  return { scopes, eventsApplied, removedDeletedAgentThreads };
+  return { scopes, eventsApplied };
 }
 
 async function compactChatThreadSnapshotsForScope(
@@ -689,7 +599,6 @@ async function compactChatThreadSnapshotsForScope(
   return {
     scopes: compacted.scopes,
     eventsApplied: compacted.eventsApplied,
-    removedDeletedAgentThreads: compacted.removedDeletedAgentThreads,
     eventsPruned: pruned[0]?.count ?? 0,
   };
 }
@@ -705,9 +614,6 @@ export const compactChatThreadSnapshots$ = command(
       set(writeDb$),
       scope,
       {
-        download: async (objectKey) => {
-          return await get(downloadS3Buffer(bucket, objectKey, signal));
-        },
         upload: async (objectKey, body) => {
           await get(
             putImmutableS3Object(bucket, objectKey, body, "application/json", {
