@@ -42,8 +42,6 @@ import {
   usageKindLabel,
 } from "../usage-breakdown-bar.tsx";
 
-const CARD_BORDER = "var(--border-width-surface) solid hsl(var(--gray-400))";
-
 const RANGE_OPTIONS = [
   "today",
   "yesterday",
@@ -263,10 +261,7 @@ function UsageRow({ row, max }: { row: UsageRecordRow; max: number }) {
 
 function UsageRecordSkeleton() {
   return (
-    <div
-      className="overflow-hidden rounded-xl bg-card"
-      style={{ border: CARD_BORDER }}
-    >
+    <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
       {[0, 1, 2].map((i) => {
         return (
           <div
@@ -308,8 +303,7 @@ function UsageRecordEmpty({
 }) {
   return (
     <div
-      className="flex flex-col items-center rounded-xl bg-card px-6 py-12 text-center"
-      style={{ border: CARD_BORDER }}
+      className="flex flex-col items-center rounded-xl bg-card px-6 py-12 text-center border border-surface-border"
       data-testid="usage-records-empty"
     >
       <img
@@ -397,10 +391,7 @@ function UsageRecordList({ data }: { data: UsageRecordResponse }) {
   return (
     <div className="flex flex-col gap-3">
       <TooltipProvider delay={100}>
-        <div
-          className="overflow-hidden rounded-xl bg-card"
-          style={{ border: CARD_BORDER }}
-        >
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           <UsageRecordSummary
             count={data.pagination.total}
             totalCredits={data.totalCredits}

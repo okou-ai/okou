@@ -44,7 +44,8 @@ import {
 // Distance from the bottom of the scroll container at which the next page is
 // requested. The signal layer deduplicates repeated requests for one cursor.
 const ARTIFACT_AUTO_LOAD_VIEWPORT_COUNT = 2;
-const ARTIFACT_GRID_MIN_CARD_WIDTH_PX = 292;
+const ARTIFACT_GRID_CLASS_NAME =
+  "grid grid-cols-[repeat(auto-fit,minmax(min(100%,292px),1fr))] gap-3";
 
 const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "presentation",
@@ -348,10 +349,7 @@ export function ArtifactCatalogGrid({
   return (
     <div
       data-testid="artifact-catalog-grid"
-      className="grid gap-3"
-      style={{
-        gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${String(ARTIFACT_GRID_MIN_CARD_WIDTH_PX)}px), 1fr))`,
-      }}
+      className={ARTIFACT_GRID_CLASS_NAME}
     >
       {artifacts.map((artifact) => {
         return (
@@ -396,13 +394,7 @@ export function ArtifactCatalogSkeleton({
     );
   }
   return (
-    <div
-      className="grid gap-3"
-      aria-label={loadingLabel}
-      style={{
-        gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${String(ARTIFACT_GRID_MIN_CARD_WIDTH_PX)}px), 1fr))`,
-      }}
-    >
+    <div className={ARTIFACT_GRID_CLASS_NAME} aria-label={loadingLabel}>
       {Array.from({ length: 8 }, (_, index) => {
         return (
           <div

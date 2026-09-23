@@ -7806,9 +7806,11 @@ function ConnectorsPopoverButton({
           return $.chat.connectors.title;
         })}
         collisionAvoidance={{ fallbackAxisSide: "none" }}
-        className="flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0"
-        // Keep the search field and actions stationary as results change.
-        style={{ height: showSearch ? "25rem" : undefined }}
+        className={cn(
+          "flex max-h-[var(--available-height)] w-72 flex-col overflow-hidden p-0",
+          // Keep the search field and actions stationary as results change.
+          showSearch && "h-100",
+        )}
       >
         {(connectorItems.length > 0 || connectorsLoading) && (
           <div className="flex min-h-0 flex-1 flex-col py-1">
