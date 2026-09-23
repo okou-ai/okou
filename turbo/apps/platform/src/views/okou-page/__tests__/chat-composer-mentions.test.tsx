@@ -283,7 +283,7 @@ test("Suggest other agents before matching chats", async () => {
     .filter((button) => {
       return Boolean(
         button.compareDocumentPosition(threadsHeading) &
-          Node.DOCUMENT_POSITION_FOLLOWING,
+        Node.DOCUMENT_POSITION_FOLLOWING,
       );
     })
     .map((button) => {
