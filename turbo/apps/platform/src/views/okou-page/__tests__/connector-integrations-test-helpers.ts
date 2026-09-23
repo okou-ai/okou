@@ -70,12 +70,6 @@ export function mockSlack(
     reinstallUrl: null,
     scopeMismatch: false,
     workspaceName: null,
-    environment: {
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    },
   };
   context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
     return respond(200, { ...defaults, ...overrides });

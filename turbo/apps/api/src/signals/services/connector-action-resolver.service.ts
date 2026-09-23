@@ -14,6 +14,7 @@ import { db$ } from "../external/db";
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
+  loadConnectorRuntimeSelection,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeConnector,
   type ConnectorRuntimeMethod,
@@ -111,22 +112,31 @@ export interface ConnectorActionResolver {
   }) => ConnectorSlugsResolution;
 }
 
+function lacksExecutableCapability(args: {
+  readonly connectorSlug: ConnectorSlug;
+  readonly runtimeConnector: ConnectorRuntimeConnector;
+}): boolean {
+  if (
+    [...args.runtimeConnector.methods.values()].some((method) => {
+      return method.executable;
+    })
+  ) {
+    return false;
+  }
+  log.warn("Connector runtime capability is unavailable", {
+    connectorSlug: args.connectorSlug,
+    reason: "missing_executable_capability",
+  });
+  return true;
+}
+
 function resolvedSlug(args: {
   readonly connectorSlug: ConnectorSlug;
   readonly requireExecutable: boolean;
   readonly runtimeConnector: ConnectorRuntimeConnector;
   readonly snapshot: ConnectorRuntimeSnapshot;
 }): ResolvedConnectorSlug | ConnectorSlugResolutionFailure {
-  if (
-    args.requireExecutable &&
-    ![...args.runtimeConnector.methods.values()].some((method) => {
-      return method.executable;
-    })
-  ) {
-    log.warn("Connector runtime capability is unavailable", {
-      connectorSlug: args.connectorSlug,
-      reason: "missing_executable_capability",
-    });
+  if (args.requireExecutable && lacksExecutableCapability(args)) {
     return { ok: false, reason: "missing_executable_capability" };
   }
   return {
@@ -280,6 +290,35 @@ export function connectorActionResolver(): Computed<
   return computed(async (get): Promise<ConnectorActionResolver> => {
     const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
     return createConnectorActionResolver(snapshot);
+  });
+}
+
+/**
+ * Filters the given slugs to connectors that exist in the catalog and have an
+ * executable auth method, matching `resolveSlug` with `requireExecutable`.
+ * Loads only these connectors from the runtime projection, so callers that
+ * check a handful of slugs avoid materializing the full catalog snapshot.
+ */
+export function executableConnectorSlugs(
+  connectorSlugs: readonly ConnectorSlug[],
+): Computed<Promise<readonly ConnectorSlug[]>> {
+  return computed(async (get): Promise<readonly ConnectorSlug[]> => {
+    if (connectorSlugs.length === 0) {
+      return [];
+    }
+    const selection = await loadConnectorRuntimeSelection(get(db$), {
+      requestedConnectorSlugs: connectorSlugs,
+    });
+    return connectorSlugs.filter((connectorSlug) => {
+      const runtimeConnector = getConnectorRuntimeConnector(
+        selection,
+        connectorSlug,
+      );
+      return (
+        runtimeConnector !== undefined &&
+        !lacksExecutableCapability({ connectorSlug, runtimeConnector })
+      );
+    });
   });
 }
 

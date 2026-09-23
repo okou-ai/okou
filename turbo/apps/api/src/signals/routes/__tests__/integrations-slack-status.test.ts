@@ -10,7 +10,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   deleteSlackIntegrationFixture$,
-  seedSlackEnvironmentAgent$,
   seedSlackOrgConnection$,
   seedSlackOrgInstallation$,
   type SlackIntegrationFixture,
@@ -309,38 +308,6 @@ describe("GET /api/integrations/slack", () => {
     expect(response.body.workspaceName).toBe("Test Org Workspace");
   });
 
-  it("returns empty environment details when no default agent version is configured", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const fixture = await track(
-      store.set(seedSlackOrgInstallation$, { orgId }, context.signal),
-    );
-    await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId: fixture.slackWorkspaceId, userId: userId },
-      context.signal,
-    );
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: integrationsSlackRoutes })(
-      integrationsSlackContract,
-    );
-
-    const response = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.environment).toStrictEqual({
-      requiredSecrets: [],
-      requiredVars: [],
-      missingSecrets: [],
-      missingVars: [],
-    });
-  });
-
   it("returns isAdmin=true for admin members", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
@@ -393,42 +360,6 @@ describe("GET /api/integrations/slack", () => {
     );
 
     expect(response.body.isAdmin).toBeFalsy();
-  });
-
-  it("returns environment info when connected", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const fixture = await track(
-      store.set(seedSlackOrgInstallation$, { orgId }, context.signal),
-    );
-    await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId: fixture.slackWorkspaceId, userId: userId },
-      context.signal,
-    );
-    await store.set(
-      seedSlackEnvironmentAgent$,
-      { orgId, userId },
-      context.signal,
-    );
-    mocks.clerk.session(userId, orgId);
-
-    const client = setupApp({ context, routes: integrationsSlackRoutes })(
-      integrationsSlackContract,
-    );
-
-    const response = await accept(
-      client.getStatus({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body.environment).toBeDefined();
-    expect(response.body.environment?.requiredSecrets).toBeDefined();
-    expect(response.body.environment?.requiredVars).toBeDefined();
-    expect(response.body.environment?.missingSecrets).toBeDefined();
-    expect(response.body.environment?.missingVars).toBeDefined();
   });
 
   it("returns scopeMismatch=false when installation has all required scopes", async () => {
