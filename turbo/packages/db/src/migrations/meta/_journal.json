@@ -904,6 +904,13 @@
       "when": 1790179906297,
       "tag": "1206_retire_artifact_chat_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 1207,
+      "version": "7",
+      "when": 1790181675893,
+      "tag": "1207_smart_oracle",
+      "breakpoints": true
     }
   ]
 }

@@ -7090,6 +7090,8 @@
     "configured": "Konfiguriert",
     "credential": {
       "add": "Zugangsdaten hinzufügen",
+      "appleDhFieldHelp": "Je Feld 1–63 UTF-8-Bytes. NUL ist nicht zulässig.",
+      "appleDhMethod": "Apple-DH-Benutzername und Passwort",
       "authentication": "Authentifizierungsmethode",
       "createNew": "Neue Zugangsdaten erstellen",
       "delete": "Zugangsdaten löschen",
@@ -7159,6 +7161,8 @@
     },
     "saving": "Wird gespeichert…",
     "security": {
+      "appleDh": "Mac-Bildschirmfreigabe (Apple DH)",
+      "appleDhHelp": "Erfordert macOS-Bildschirmfreigabe über eine gespeicherte SSH-Verbindung. Das RFB-Ziel muss auf diesem Mac 127.0.0.1 oder ::1 sein. SSH schützt die gesamte VNC-Sitzung. Verwenden Sie einen Mac-SSH-Host, den Sie kontrollieren; sein Host-Schlüssel schließt eine Weiterleitung nicht aus.",
       "caBundle": "CA-Zertifikate (PEM)",
       "caHelp": "Bis zu 8 CA-Zertifikate, insgesamt 64 KiB. Füge keinen privaten Schlüssel und kein Serverzertifikat ein.",
       "caHint": "Füge die öffentlichen CA-Zertifikate ein, die das Serverzertifikat ausgestellt haben",
@@ -7178,6 +7182,7 @@
     "summary_other": "{{count}} konfigurierte Hosts",
     "title": "VNC-Fernzugriff",
     "transport": {
+      "appleDhDestinationHelp": "Geben Sie für Apple DH 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
       "destination": "RFB-Ziel",
       "destinationHelp": "Bei SSH-Routen werden dieser Host und Port vom ausgewählten SSH-Server aus erreicht, nicht direkt vom Runner.",
       "direct": "Direkt vom Runner",

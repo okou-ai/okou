@@ -51,6 +51,9 @@ export const vncTypeBindings = [
         variants: {
           vnc_password: ["Classic VNC password authentication."],
           username_password: ["Plain username/password authentication."],
+          apple_dh_username_password: [
+            "Apple DH username/password authentication with 63-byte fields.",
+          ],
         },
       },
       {
@@ -59,6 +62,7 @@ export const vncTypeBindings = [
         variants: {
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
+          apple_dh: ["Apple DH type 30, requiring SSH to Mac loopback."],
         },
       },
       {
@@ -91,7 +95,7 @@ export const vncTypeBindings = [
           port: ["Current destination port."],
           generation: ["Current saved configuration generation."],
           serverName: [
-            "Explicit certificate identity for a transport-capable handoff.",
+            "Certificate identity for X509 transport handoffs; absent for Apple DH.",
           ],
           transport: [
             "Explicit direct or generation-bound SSH transport snapshot.",
@@ -113,6 +117,9 @@ export const vncTypeBindings = [
           ],
           resolved_transport: [
             "Current credential, policy and explicit generation-bound transport.",
+          ],
+          resolved_apple_dh: [
+            "Apple DH credential and verified SSH-to-Mac-loopback transport only.",
           ],
         },
       },
@@ -144,6 +151,9 @@ export const vncTypeBindings = [
           username_password: [
             "Username/password authentication inside verified TLS.",
           ],
+          apple_dh_username_password: [
+            "Apple DH username/password fields; the Runner validates 63-byte bounds.",
+          ],
         },
       },
       {
@@ -155,6 +165,9 @@ export const vncTypeBindings = [
         variants: {
           x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],
+          apple_dh: [
+            "Apple DH type 30; only the separately verified SSH channel protects the RFB session.",
+          ],
         },
       },
       {
