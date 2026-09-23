@@ -679,7 +679,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
   await readyChat();
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Continue")).toHaveLength(0);
+  expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
 test("A mounted transcript card rechecks callback delivery on page return", async () => {
@@ -701,13 +701,13 @@ test("A mounted transcript card rechecks callback delivery on page return", asyn
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
-  await findButton("Continue");
+  await findButton("Notify agent");
 
   delivered = true;
   window.dispatchEvent(new Event("focus"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Continue")).toHaveLength(0);
+  expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
 test("A freshly mounted direct-interaction card reads accepted cancellation delivery", async () => {
@@ -732,7 +732,7 @@ test("A freshly mounted direct-interaction card reads accepted cancellation deli
   await readyChat();
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Continue")).toHaveLength(0);
+  expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
 test("Share one action state across equivalent absolute and relative URLs", async () => {
@@ -939,10 +939,6 @@ test("Complete a direct Browser interaction before its stable callback", async (
     expect(params.threadId).toBe(RUN_THREAD_ID);
     return respond(200, { browser });
   });
-  context.mocks.api(browserContract.open, ({ params, respond }) => {
-    expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser, lifecycleEventId: null });
-  });
   context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
     return respond(200, { browser });
@@ -959,15 +955,15 @@ test("Complete a direct Browser interaction before its stable callback", async (
   await expect(
     screen.findByText("Finish the visual challenge"),
   ).resolves.toBeVisible();
-  click(await findButton("Take over the browser"));
-  await screen.findByRole("dialog", { name: "Take over the browser" });
-  const browserCard = await findButton("Open Research browser");
-  expect(browserCard).toHaveTextContent("Live");
-  click(browserCard);
+  const actionCard = await screen.findByTestId("browser-user-action-card");
+  click(buttonsByName("Open browser", actionCard)[0]!);
+  expect(
+    screen.queryByRole("dialog", { name: "Take over the browser" }),
+  ).toBeNull();
   await expect(
     screen.findByRole("complementary", { name: "Live browser" }),
   ).resolves.toBeVisible();
-  click(await findButton("Take over the browser"));
+  click(await findButton("Finish step"));
   await screen.findByRole("dialog", { name: "Take over the browser" });
   click(await findButton("Done"));
 
@@ -1015,7 +1011,7 @@ test("Cancel a direct Browser interaction before its fixed callback", async () =
   });
   await readyChat();
   await screen.findByText("Finish the visual challenge");
-  click(await findButton("Take over the browser"));
+  click(await findButton("Finish step"));
   await screen.findByRole("dialog", { name: "Take over the browser" });
   click(await findButton("Cancel"));
 

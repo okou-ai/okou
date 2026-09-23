@@ -23,6 +23,7 @@ import type {
   BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
 import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
+import { openThreadBrowserSession$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
@@ -41,17 +42,25 @@ function BrowserActionSurface({
   readonly variant: BrowserUserActionCardVariant;
 }) {
   return (
-    <ChatCard
-      data-testid="browser-user-action-card"
-      ref={resumeRef}
+    <div
       className={
         variant === "standalone"
-          ? "w-full p-5 sm:p-6"
-          : "h-[136px] w-full p-3 sm:h-[88px]"
+          ? "@container w-full"
+          : "@container w-full max-w-xl"
       }
     >
-      {children}
-    </ChatCard>
+      <ChatCard
+        data-testid="browser-user-action-card"
+        ref={resumeRef}
+        className={
+          variant === "standalone"
+            ? "w-full p-5 sm:p-6"
+            : "h-[160px] w-full p-2 @[320px]:h-[136px] @[380px]:h-[112px] @[380px]:p-2.5 @[520px]:h-[80px]"
+        }
+      >
+        {children}
+      </ChatCard>
+    </div>
   );
 }
 
@@ -62,7 +71,7 @@ function ActionState({
   action,
   variant,
 }: {
-  readonly description: string;
+  readonly description?: string;
   readonly icon: ReactNode;
   readonly title: string;
   readonly action?: ReactNode;
@@ -71,37 +80,52 @@ function ActionState({
   return (
     <div
       className={cn(
-        "flex w-full gap-3",
+        "flex w-full flex-col justify-center gap-2",
         variant === "inline"
-          ? "h-full flex-col justify-between sm:flex-row sm:items-center"
-          : "min-h-24 flex-col",
+          ? "h-full @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3"
+          : "min-h-20 sm:flex-row sm:items-center sm:justify-between sm:gap-4",
       )}
       role="status"
     >
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+      <div className="flex min-w-0 max-w-full items-start gap-2.5 @[520px]:flex-1">
+        <span className="mt-1 shrink-0 text-brand-text [&>svg]:size-4">
           {icon}
-        </div>
-        <div className="min-w-0 flex-1">
+        </span>
+        <div className="min-w-0 max-w-sm">
           <div
             className={cn(
               "text-[0.9375rem] font-medium text-foreground",
-              variant === "inline" && "truncate",
+              variant === "inline" &&
+                (action ? "line-clamp-2 @[380px]:truncate" : "line-clamp-2"),
             )}
           >
             {title}
           </div>
-          <p
-            className={cn(
-              "mt-1 text-sm leading-5 text-muted-foreground",
-              variant === "inline" && "line-clamp-2 sm:line-clamp-1",
-            )}
-          >
-            {description}
-          </p>
+          {description && (
+            <p
+              className={cn(
+                "mt-0.5 text-sm leading-5 text-muted-foreground",
+                variant === "inline" &&
+                  (action ? "line-clamp-1" : "line-clamp-2"),
+              )}
+            >
+              {description}
+            </p>
+          )}
         </div>
       </div>
-      {action && <div className="shrink-0 self-end">{action}</div>}
+      {action && (
+        <div
+          className={cn(
+            "shrink-0 self-start",
+            variant === "inline"
+              ? "pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0"
+              : "pl-[26px] sm:ml-auto sm:self-auto sm:pl-0",
+          )}
+        >
+          {action}
+        </div>
+      )}
     </div>
   );
 }
@@ -132,9 +156,6 @@ function TerminalActionState({
         title={t(($) => {
           return $.chat.browserInput.delivered;
         })}
-        description={t(($) => {
-          return $.chat.browserInput.deliveredDescription;
-        })}
         variant={variant}
       />
     );
@@ -147,20 +168,13 @@ function TerminalActionState({
           ? $.chat.browserInput.cancelled
           : $.chat.browserInput.completed;
       })}
-      description={
-        callbackFailed
-          ? callbackFailureDescription
-          : t(($) => {
-              return cancelled
-                ? $.chat.browserInput.cancelledDescription
-                : $.chat.browserInput.completedDescription;
-            })
-      }
+      description={callbackFailed ? callbackFailureDescription : undefined}
       variant={variant}
       action={
         <Button
           type="button"
           size="sm"
+          variant="outline"
           disabled={continuing}
           onClick={onContinue}
         >
@@ -169,9 +183,13 @@ function TerminalActionState({
             ? t(($) => {
                 return $.chat.browserInput.continuing;
               })
-            : t(($) => {
-                return $.chat.browserInput.continue;
-              })}
+            : callbackFailed
+              ? t(($) => {
+                  return $.chat.browserInput.retry;
+                })
+              : t(($) => {
+                  return $.chat.browserInput.continue;
+                })}
         </Button>
       }
     />
@@ -330,11 +348,14 @@ function PendingFormHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-start gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
-        <Globe size={20} />
-      </div>
-      <div className="min-w-0">
+    <div
+      className={cn(
+        "flex min-w-0 max-w-full items-center",
+        compact ? "gap-2.5 @[520px]:flex-1" : "gap-3",
+      )}
+    >
+      <Globe size={16} className="mt-1 shrink-0 self-start text-brand-text" />
+      <div className="min-w-0 max-w-sm">
         {showTitle && (
           <h2 className="text-[0.9375rem] font-medium text-foreground">
             {t(($) => {
@@ -342,14 +363,12 @@ function PendingFormHeader({
             })}
           </h2>
         )}
-        {!compact && (
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {t(($) => {
-              return $.chat.browserInput.description;
-            })}
-          </p>
-        )}
-        <div className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+        <div
+          className={cn(
+            "flex items-start gap-1.5 text-xs text-muted-foreground",
+            compact ? "mt-1" : "mt-2",
+          )}
+        >
           <span className="shrink-0 font-medium text-foreground">
             {t(($) => {
               return $.chat.browserInput.site;
@@ -638,29 +657,31 @@ function PendingInlineAction({
   const beginEntry = useSet(signals.beginEntry$);
   const endEntry = useSet(signals.endEntry$);
   return (
-    <div className="flex h-full w-full flex-col justify-between gap-3 sm:flex-row sm:items-center">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
-      <ChatCardDetails
-        title={t(($) => {
-          return $.chat.browserInput.title;
-        })}
-        triggerLabel={t(($) => {
-          return $.chat.browserInput.open;
-        })}
-        onOpenChange={(open) => {
-          if (open) {
-            detach(beginEntry(pageSignal), Reason.DomCallback);
-          } else {
-            endEntry();
-          }
-        }}
-      >
-        <PendingFormGate
-          signals={signals}
-          request={request}
-          showTitle={false}
-        />
-      </ChatCardDetails>
+      <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
+        <ChatCardDetails
+          title={t(($) => {
+            return $.chat.browserInput.title;
+          })}
+          triggerLabel={t(($) => {
+            return $.chat.browserInput.open;
+          })}
+          onOpenChange={(open) => {
+            if (open) {
+              detach(beginEntry(pageSignal), Reason.DomCallback);
+            } else {
+              endEntry();
+            }
+          }}
+        >
+          <PendingFormGate
+            signals={signals}
+            request={request}
+            showTitle={false}
+          />
+        </ChatCardDetails>
+      </div>
     </div>
   );
 }
@@ -689,9 +710,6 @@ function DirectTerminalActionState({
         title={t(($) => {
           return $.chat.browserInteraction.delivered;
         })}
-        description={t(($) => {
-          return $.chat.browserInteraction.deliveredDescription;
-        })}
         variant={variant}
       />
     );
@@ -709,17 +727,14 @@ function DirectTerminalActionState({
           ? t(($) => {
               return $.chat.browserInteraction.callbackFailed;
             })
-          : t(($) => {
-              return cancelled
-                ? $.chat.browserInteraction.cancelledDescription
-                : $.chat.browserInteraction.completedDescription;
-            })
+          : undefined
       }
       variant={variant}
       action={
         <Button
           type="button"
           size="sm"
+          variant="outline"
           disabled={continuing}
           onClick={onContinue}
         >
@@ -728,9 +743,13 @@ function DirectTerminalActionState({
             ? t(($) => {
                 return $.chat.browserInteraction.continuing;
               })
-            : t(($) => {
-                return $.chat.browserInteraction.continue;
-              })}
+            : callbackFailed
+              ? t(($) => {
+                  return $.chat.browserInput.retry;
+                })
+              : t(($) => {
+                  return $.chat.browserInteraction.continue;
+                })}
         </Button>
       }
     />
@@ -840,7 +859,7 @@ function PendingDirectInteraction({
       className="flex w-full flex-col gap-4"
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           <MousePointerClick size={20} />
         </div>
         <div className="min-w-0 flex-1">
@@ -860,12 +879,12 @@ function PendingDirectInteraction({
         </div>
       </div>
 
-      <BrowserSessionCard
-        signals={browserSessionSignals}
-        openMode={
-          variant === "standalone" ? "new-page" : "sidebar-and-close-dialog"
-        }
-      />
+      {variant === "standalone" && (
+        <BrowserSessionCard
+          signals={browserSessionSignals}
+          openMode="new-page"
+        />
+      )}
 
       {(completeFailed || cancelFailed) && (
         <p role="alert" className="text-sm text-destructive">
@@ -928,38 +947,56 @@ function PendingInlineDirectInteraction({
   readonly signals: BrowserUserActionSignals;
 }) {
   const { t } = useTranslation();
+  const openBrowserSidebar = useSet(openThreadBrowserSession$);
   return (
-    <div className="flex h-full w-full flex-col justify-between gap-3 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
-          <MousePointerClick size={20} />
-        </div>
-        <div className="min-w-0 flex-1">
+    <div className="flex h-full w-full flex-col justify-center gap-1 @[380px]:gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-between @[520px]:gap-3">
+      <div className="flex min-w-0 max-w-full items-center gap-2.5 @[520px]:flex-1">
+        <MousePointerClick
+          size={16}
+          className="mt-1 shrink-0 self-start text-brand-text"
+        />
+        <div className="min-w-0 max-w-sm">
           <div className="text-[0.9375rem] font-medium text-foreground">
             {t(($) => {
               return $.chat.browserInteraction.title;
             })}
           </div>
-          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground sm:line-clamp-1">
+          <p
+            className="mt-1 line-clamp-1 text-sm leading-5 text-muted-foreground"
+            title={action.reason}
+          >
             {action.reason}
           </p>
         </div>
       </div>
-      <ChatCardDetails
-        title={t(($) => {
-          return $.chat.browserInteraction.title;
-        })}
-        triggerLabel={t(($) => {
-          return $.chat.browserInteraction.title;
-        })}
-      >
-        <PendingDirectInteraction
-          action={action}
-          browserSessionSignals={browserSessionSignals}
-          signals={signals}
-          variant="inline"
-        />
-      </ChatCardDetails>
+      <div className="flex w-full flex-wrap items-center gap-1 self-start pl-[26px] @[380px]:gap-2 @[520px]:ml-auto @[520px]:w-auto @[520px]:self-auto @[520px]:pl-0">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            openBrowserSidebar(browserSessionSignals.threadId);
+          }}
+        >
+          {t(($) => {
+            return $.chat.thread.openBrowser;
+          })}
+        </Button>
+        <ChatCardDetails
+          title={t(($) => {
+            return $.chat.browserInteraction.title;
+          })}
+          triggerLabel={t(($) => {
+            return $.chat.browserInteraction.finish;
+          })}
+        >
+          <PendingDirectInteraction
+            action={action}
+            browserSessionSignals={browserSessionSignals}
+            signals={signals}
+            variant="inline"
+          />
+        </ChatCardDetails>
+      </div>
     </div>
   );
 }
@@ -993,9 +1030,6 @@ function BrowserUserActionCardContent({
         icon={<Loader2 size={20} className="animate-spin" />}
         title={t(($) => {
           return $.chat.browserAction.loading;
-        })}
-        description={t(($) => {
-          return $.chat.browserInput.loadingDescription;
         })}
         variant={variant}
       />
