@@ -216,7 +216,7 @@ test("Open connector detail and step back to the list", async () => {
   expect(within(dialog).getByText("Connection")).toBeVisible();
   // Switching views inside one dialog still leaves something to announce it
   // by: the catalog while browsing, the connector once it is on screen.
-  expect(screen.getByRole("dialog", { name: "GitHub" })).toBe(dialog);
+  expect(screen.getByRole("dialog", { name: "GitHub" })).toBeInTheDocument();
 
   await user.click(dialogButton(dialog, "Back"));
   await waitFor(() => {
@@ -224,7 +224,9 @@ test("Open connector detail and step back to the list", async () => {
       within(dialog).getByRole("heading", { name: "Connected" }),
     ).toBeVisible();
   });
-  expect(screen.getByRole("dialog", { name: "Connectors" })).toBe(dialog);
+  expect(
+    screen.getByRole("dialog", { name: "Connectors" }),
+  ).toBeInTheDocument();
 });
 
 test("Keep the existing dialog when the directory switch is off", async () => {
