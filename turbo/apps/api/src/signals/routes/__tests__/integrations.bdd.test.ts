@@ -1791,8 +1791,8 @@ describe("INT-01: Slack integration and Slack app routes", () => {
 
     const unauthenticatedConnectStatus =
       await integrations.requestSlackConnectStatus(null, [401]);
-    expect(unauthenticatedConnectStatus.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedConnectStatus.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const connectStatus = await integrations.requestSlackConnectStatus(
@@ -1831,16 +1831,19 @@ describe("INT-01: Slack integration and Slack app routes", () => {
       null,
       [401],
     );
-    expect(unauthenticatedChannels.body).toMatchObject({
-      error: { code: "UNAUTHORIZED" },
+    expect(unauthenticatedChannels.body).toStrictEqual({
+      error: { message: "Not authenticated", code: "UNAUTHORIZED" },
     });
 
     const missingChannels = await integrations.requestListSlackChannels(
       admin,
       [404],
     );
-    expect(missingChannels.body).toMatchObject({
-      error: { code: "NOT_FOUND" },
+    expect(missingChannels.body).toStrictEqual({
+      error: {
+        message: "No Slack installation found for this org",
+        code: "NOT_FOUND",
+      },
     });
 
     const unauthenticatedMessage = await integrations.requestSendSlackMessage(
