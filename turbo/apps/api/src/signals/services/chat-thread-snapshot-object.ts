@@ -1,0 +1,36 @@
+import { createHash } from "node:crypto";
+
+const SNAPSHOT_OBJECT_PREFIX = "chat-thread-snapshots/v1";
+
+function sha256(value: string | Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function scopeDigest(userId: string, orgId: string): string {
+  return sha256(`${userId}\0${orgId}`);
+}
+
+export function chatThreadSnapshotObjectKey(args: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly latestSeqId: number | null;
+  readonly body: Buffer;
+}): string {
+  return `${SNAPSHOT_OBJECT_PREFIX}/${scopeDigest(args.userId, args.orgId)}/${(args.latestSeqId ?? 0).toString()}-${sha256(args.body)}.json.gz`;
+}
+
+export function isOwnedChatThreadSnapshotObjectKey(
+  objectKey: string,
+  userId: string,
+  orgId: string,
+  latestSeqId: number | null,
+): boolean {
+  const prefix = `${SNAPSHOT_OBJECT_PREFIX}/${scopeDigest(userId, orgId)}/`;
+  return (
+    objectKey.startsWith(prefix) &&
+    new RegExp(
+      `^${(latestSeqId ?? 0).toString()}-[0-9a-f]{64}[.]json[.]gz$`,
+      "u",
+    ).test(objectKey.slice(prefix.length))
+  );
+}

@@ -15,7 +15,10 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { request$, setResHeader$ } from "../context/hono";
 import { db$ } from "../external/db";
+import { generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
+import { env } from "../../lib/env";
+import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
   applyGoogleDriveArtifactSyncStatuses,
   googleDriveArtifactStatusLookup,
@@ -37,6 +40,7 @@ import {
   getChatThreadEventsSince,
   getChatThreadSnapshot,
 } from "../services/chat-thread-event.service";
+import { isOwnedChatThreadSnapshotObjectKey } from "../services/chat-thread-snapshot-object";
 import type { RouteEntry } from "../route-entry";
 import { chatThreadsArtifactsSyncRoutes } from "./chat-threads-artifacts-sync";
 import { chatThreadComputerUseHostRoutes } from "./chat-threads-computer-use-host";
@@ -93,6 +97,34 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
     userId: auth.userId,
     orgId: auth.orgId,
   });
+
+  if ("objectKey" in snapshot) {
+    if (
+      !isOwnedChatThreadSnapshotObjectKey(
+        snapshot.objectKey,
+        auth.userId,
+        auth.orgId,
+        snapshot.latestSeqId,
+      )
+    ) {
+      throw new Error("Invalid chat thread snapshot object key");
+    }
+    const url = await get(
+      generatePresignedGetUrl(
+        env("R2_USER_STORAGES_BUCKET_NAME"),
+        snapshot.objectKey,
+      ),
+    );
+    return {
+      status: 200 as const,
+      body: {
+        url,
+        expiresInSeconds: PRESIGNED_URL_TTL_SECONDS,
+        latestEventId: snapshot.latestEventId,
+        latestSeqId: snapshot.latestSeqId,
+      },
+    };
+  }
 
   return {
     status: 200 as const,

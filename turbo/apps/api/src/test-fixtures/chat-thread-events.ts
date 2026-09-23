@@ -12,6 +12,7 @@ import { z } from "zod";
 import { db } from "../lib/db";
 import { executeRawRows } from "../lib/db-raw-rows";
 import { appendChatThreadEvent } from "../signals/services/chat-thread-event.service";
+import { chatThreadSnapshotObjectKey } from "../signals/services/chat-thread-snapshot-object";
 import { createDeferredPromise } from "../signals/utils";
 
 const databasePidRowSchema = z.object({ pid: z.int() });
@@ -236,6 +237,24 @@ export async function setChatThreadSnapshotBoundaryFixture(args: {
         updatedAt: args.updatedAt,
       },
     });
+}
+
+export async function setChatThreadSnapshotObjectKeyFixture(args: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly latestSeqId: number | null;
+  readonly body: Buffer;
+}): Promise<void> {
+  const objectKey = chatThreadSnapshotObjectKey(args);
+  await db()
+    .update(chatThreadSnapshots)
+    .set({ objectKey })
+    .where(
+      and(
+        eq(chatThreadSnapshots.userId, args.userId),
+        eq(chatThreadSnapshots.orgId, args.orgId),
+      ),
+    );
 }
 
 /** Reads exact physical lifecycle rows, including rows hidden by the reader. */

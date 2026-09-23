@@ -2,6 +2,7 @@ import { fetchResource } from "../lib/resource-fetch.ts";
 import {
   chatThreadsContract,
   chatThreadEventsContract,
+  chatThreadSnapshotArchiveSchema,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -1044,7 +1045,22 @@ export class SharedDatabaseWorkerRuntime {
     if (snapshot.status !== 200) {
       throw new SharedDatabaseHttpError(snapshot.status);
     }
-    return snapshot.body;
+    if ("chatThreads" in snapshot.body) {
+      return snapshot.body;
+    }
+    const response = await fetchResource(snapshot.body.url, {}, signal);
+    if (!response.ok) {
+      throw new SharedDatabaseHttpError(response.status);
+    }
+    const archive = chatThreadSnapshotArchiveSchema.parse(
+      await response.json(),
+    );
+    signal.throwIfAborted();
+    return {
+      chatThreads: archive.chatThreads,
+      latestEventId: snapshot.body.latestEventId,
+      latestSeqId: snapshot.body.latestSeqId,
+    };
   }
 
   private async readChatEventCache(

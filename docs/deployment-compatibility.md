@@ -1,5 +1,21 @@
 # Deployment Compatibility
 
+## Chat thread snapshot R2 handoff, reader phase (2026-09-23)
+
+Migration `1202_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to
+`chat_thread_snapshots`. This phase changes no compaction writer: existing rows
+continue to carry the legacy `chat_threads` JSONB and the API returns the same
+inline snapshot to old Apps and CLIs. The new API can return a short-lived,
+scope-checked download URL for a row with an object key; the new App and CLI
+materialize that object before caching or replaying its paired event cursor.
+
+Deploy this reader phase and verify the App and CLI versions that understand
+the URL before any compactor stops writing JSONB. Production promotes the API
+before the App, and a previously loaded App can remain open after promotion.
+The writer cutover needs a separately verified App compatibility floor and a
+rollback target that understands R2 pointers. No production writer activation
+or App version floor change is part of this phase.
+
 ## Artifact catalog API handoff (2026-09-23)
 
 The API now enqueues file catalog work in the same transaction as its ordinary

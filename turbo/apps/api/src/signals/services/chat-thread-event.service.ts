@@ -23,6 +23,7 @@ import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
 
 import type { ReadonlyDb } from "../external/db";
 import type { Tx } from "../../lib/db-types";
+import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 
 // The sequence row lock must remain held until its event becomes visible.
 // Requiring a transaction prevents callers from splitting those two commits.
@@ -159,16 +160,28 @@ export async function getChatThreadSnapshot(
     readonly userId: string;
     readonly orgId: string;
   },
-): Promise<{
-  readonly chatThreads: readonly ChatThreadSnapshotProjection[];
-  readonly latestEventId: string | null;
-  readonly latestSeqId: number | null;
-}> {
+): Promise<
+  | {
+      readonly objectKey: string;
+      readonly latestEventId: string | null;
+      readonly latestSeqId: number | null;
+    }
+  | {
+      readonly chatThreads: readonly ChatThreadSnapshotProjection[];
+      readonly latestEventId: string | null;
+      readonly latestSeqId: number | null;
+    }
+> {
   const [snapshot] = await db
     .select({
+      objectKey: chatThreadSnapshots.objectKey,
       latestEventId: chatThreadSnapshots.latestEventId,
       latestSeqId: chatThreadSnapshots.latestEventSeqId,
-      chatThreads: chatThreadSnapshots.chatThreads,
+      // A remote row must not detoast or transfer its retired JSONB payload.
+      chatThreads:
+        sql`CASE WHEN ${chatThreadSnapshots.objectKey} IS NULL THEN ${chatThreadSnapshots.chatThreads} ELSE NULL END`
+          .mapWith(nullableDriverValueDecoder(chatThreadSnapshots.chatThreads))
+          .as("chat_threads_legacy"),
     })
     .from(chatThreadSnapshots)
     .where(
@@ -178,10 +191,17 @@ export async function getChatThreadSnapshot(
       ),
     )
     .limit(1);
+  if (snapshot?.objectKey) {
+    return {
+      objectKey: snapshot.objectKey,
+      latestEventId: snapshot.latestEventId,
+      latestSeqId: snapshot.latestSeqId,
+    };
+  }
 
   return {
     chatThreads:
-      snapshot?.chatThreads.map((thread) => {
+      snapshot?.chatThreads?.map((thread) => {
         return {
           ...thread,
           selectedModel: thread.selectedModel ?? null,

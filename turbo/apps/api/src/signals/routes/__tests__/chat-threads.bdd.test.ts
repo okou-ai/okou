@@ -50,6 +50,7 @@ import {
   insertChatThreadEventTransactionFixture,
   readChatThreadEventIdsFixture,
   setChatThreadSnapshotBoundaryFixture,
+  setChatThreadSnapshotObjectKeyFixture,
   setChatThreadVideoModelFixture,
 } from "../../../test-fixtures/chat-thread-events";
 
@@ -827,6 +828,59 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
         code: "FORBIDDEN",
       },
     });
+  });
+
+  it("returns a scoped R2 URL when a chat thread snapshot has an object pointer", async () => {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped actor");
+    }
+    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
+      data: [
+        {
+          role: actor.orgRole ?? "org:admin",
+          organization: { id: actor.orgId },
+          publicUserData: { userId: actor.userId },
+        },
+      ],
+    });
+    await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: "R2 snapshot pointer agent",
+    });
+    await chat.createThread(actor, {
+      agentId: agent.agentId,
+      title: "R2 snapshot pointer thread",
+    });
+    await compactChatThreadSnapshots(actor);
+    const legacy = await chat.getThreadSnapshot(actor);
+    await setChatThreadSnapshotObjectKeyFixture({
+      userId: actor.userId,
+      orgId: actor.orgId,
+      latestSeqId: legacy.latestSeqId,
+      body: Buffer.from("{}"),
+    });
+
+    const client = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadsContract,
+    );
+    const response = await accept(
+      client.snapshot({
+        headers: okouCapabilityHeaders(
+          actor,
+          randomUUID(),
+          CHAT_THREAD_READ_CAPABILITIES,
+        ),
+      }),
+      [200],
+    );
+    expect(response.body).toMatchObject({
+      url: expect.any(String),
+      expiresInSeconds: expect.any(Number),
+      latestEventId: legacy.latestEventId,
+      latestSeqId: legacy.latestSeqId,
+    });
+    expect("chatThreads" in response.body).toBe(false);
   });
 
   it("rejects thread creation for unknown, cross-org, and org-less callers", async () => {

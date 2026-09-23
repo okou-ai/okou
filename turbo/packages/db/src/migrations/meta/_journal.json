@@ -869,6 +869,13 @@
       "when": 1790136272236,
       "tag": "1201_chat_thread_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 1202,
+      "version": "7",
+      "when": 1790149091336,
+      "tag": "1202_chat_thread_snapshot_r2_pointer",
+      "breakpoints": true
     }
   ]
 }
