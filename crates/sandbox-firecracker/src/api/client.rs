@@ -166,10 +166,9 @@ impl ApiClient {
                 Ok(Err(e)) if e.is_retryable() => {
                     #[cfg(test)]
                     if matches!(&e, ApiError::Connect(error) if error.kind() == std::io::ErrorKind::ConnectionRefused)
+                        && let Some(observed) = &self.connection_refused_observed
                     {
-                        if let Some(observed) = &self.connection_refused_observed {
-                            observed.notify_one();
-                        }
+                        observed.notify_one();
                     }
                     let retry_at = tokio::time::Instant::now() + Duration::from_millis(10);
                     tokio::time::sleep_until(retry_at.min(deadline)).await;
