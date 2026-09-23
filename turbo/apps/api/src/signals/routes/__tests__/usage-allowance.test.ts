@@ -14,7 +14,6 @@ import {
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import {
   createBddApi,
   expectApiError,
@@ -224,46 +223,89 @@ async function readVisibleUsageCredits(actor: ApiTestUser): Promise<number> {
   return response.body.totalCredits;
 }
 
+async function exhaustRunCredits(
+  actor: ApiTestUser,
+  runId: string,
+): Promise<void> {
+  await recordPendingUsage({
+    actor,
+    runId,
+    provider: usageProvider(),
+    quantity: 1,
+  });
+  await processOrgUsageEvents(actor);
+  await expect(readOrgCredits(actor)).resolves.toBe(0);
+}
+
+async function billableFirewallAuthStatus(
+  actor: ApiTestUser,
+  runId: string,
+): Promise<200 | 402> {
+  const api = createRunsApi(context);
+  const client = setupApp({
+    context,
+    routes: webhooksAgentFirewallAuthRoutes,
+  })(webhookFirewallAuthContract);
+  const response = await accept(
+    client.resolve({
+      headers: {
+        authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
+      },
+      body: {
+        encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
+        authHeaders: { Authorization: "Bearer static-token" },
+        firewallBillable: true,
+      },
+    }),
+    [200, 402],
+  );
+  if (response.status === 402) {
+    expect(response.body.error.code).toBe("INSUFFICIENT_CREDITS");
+  }
+  return response.status;
+}
+
+const runCreditExhaustionCases = [
+  ["free", 200],
+  ["limited-free-1", 200],
+  ["pro", 402],
+  ["team", 402],
+  ["custom", 402],
+] as const;
+
 describe("Usage Allowance", () => {
-  it.each([
-    ["free", true],
-    ["limited-free-1", true],
-    ["pro", false],
-    ["team", false],
-    ["custom", false],
-  ] as const)(
-    "writes creditAdmitted only for free plans on %s launches and promotions",
-    async (tier, expectedCreditAdmitted) => {
+  it.each(runCreditExhaustionCases)(
+    "allows or denies a direct built-in run after exhaustion on %s",
+    async (tier, expectedFirewallStatus) => {
+      const { actor, agentId } = await builtInAllowanceActor({
+        tier,
+        credits: 1,
+      });
+      const run = await createBuiltInRun(actor, agentId, "direct built-in run");
+      expect(run.status).toBe("pending");
+      await exhaustRunCredits(actor, run.runId);
+      await expect(billableFirewallAuthStatus(actor, run.runId)).resolves.toBe(
+        expectedFirewallStatus,
+      );
+    },
+  );
+
+  it.each(runCreditExhaustionCases)(
+    "allows or denies a promoted built-in run after exhaustion on %s",
+    async (tier, expectedFirewallStatus) => {
       mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
       const { actor, agentId } = await builtInAllowanceActor({
         tier,
         credits: 1,
       });
       const api = createRunsApi(context);
-      const first = await createBuiltInRun(
-        actor,
-        agentId,
-        "first built-in run",
-      );
-      expect(first.status).toBe("pending");
-      await expect(
-        readRunModelSourceFixture(first.runId),
-      ).resolves.toMatchObject({
-        creditAdmitted: expectedCreditAdmitted,
-      });
-
+      const first = await createBuiltInRun(actor, agentId, "active run");
       const queued = await createBuiltInRun(
         actor,
         agentId,
         "queued built-in run",
       );
       expect(queued.status).toBe("queued");
-      await expect(
-        readRunModelSourceFixture(queued.runId),
-      ).resolves.toMatchObject({
-        creditAdmitted: false,
-      });
-
       await api.requestCancelRun(actor, first.runId, [200]);
       await flushWaitUntilForTest();
       await expect
@@ -271,9 +313,10 @@ describe("Usage Allowance", () => {
           return (await api.readRun(actor, queued.runId)).status;
         })
         .toBe("pending");
+      await exhaustRunCredits(actor, queued.runId);
       await expect(
-        readRunModelSourceFixture(queued.runId),
-      ).resolves.toMatchObject({ creditAdmitted: expectedCreditAdmitted });
+        billableFirewallAuthStatus(actor, queued.runId),
+      ).resolves.toBe(expectedFirewallStatus);
     },
   );
 
@@ -296,11 +339,10 @@ describe("Usage Allowance", () => {
         return (await api.readRun(actor, queued.runId)).status;
       })
       .toBe("pending");
-    await expect(
-      readRunModelSourceFixture(queued.runId),
-    ).resolves.toMatchObject({
-      creditAdmitted: false,
-    });
+    await exhaustRunCredits(actor, queued.runId);
+    await expect(billableFirewallAuthStatus(actor, queued.runId)).resolves.toBe(
+      402,
+    );
   });
 
   it("applies usage allowance before legacy org credits", async () => {
@@ -652,45 +694,6 @@ describe("Usage Allowance", () => {
     );
     expectApiError(rejected.body);
     expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
-  });
-
-  it("denies billable firewall auth to a paid built-in run after exhaustion", async () => {
-    const { actor, agentId } = await builtInAllowanceActor({
-      credits: 1,
-      tier: "pro",
-    });
-    const api = createRunsApi(context);
-    const run = await createBuiltInRun(actor, agentId, "paid built-in run");
-    expect(run.status).toBe("pending");
-
-    const provider = usageProvider();
-    await recordPendingUsage({
-      actor,
-      runId: run.runId,
-      provider,
-      quantity: 1,
-    });
-    await processOrgUsageEvents(actor);
-    await expect(readOrgCredits(actor)).resolves.toBe(0);
-
-    const client = setupApp({
-      context,
-      routes: webhooksAgentFirewallAuthRoutes,
-    })(webhookFirewallAuthContract);
-    const denied = await accept(
-      client.resolve({
-        headers: {
-          authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
-        },
-        body: {
-          encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
-          authHeaders: { Authorization: "Bearer static-token" },
-          firewallBillable: true,
-        },
-      }),
-      [402],
-    );
-    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
   });
 
   it("uses run allowance for billable firewall fallback under shared debt", async () => {
