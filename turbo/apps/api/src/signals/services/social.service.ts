@@ -337,16 +337,6 @@ function providerResult(
   if (!result.success) {
     return { ok: false };
   }
-  // Older CLI versions reject a present null duration. The public field is
-  // optional, so omit this upstream value from the response.
-  const publicResult = { ...result.data };
-  if (
-    request.tool === "instagram_stats" &&
-    isRecord(publicResult) &&
-    publicResult.duration === null
-  ) {
-    delete publicResult.duration;
-  }
   const collection = validatedCollection(result.data, request, tool);
   if (collection === undefined) {
     return { ok: false };
@@ -367,7 +357,7 @@ function providerResult(
       : returnedItemsBillingQuantity;
   return {
     ok: true,
-    result: publicResult,
+    result: result.data,
     collection,
     billingQuantity,
   };

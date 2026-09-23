@@ -401,7 +401,7 @@ describe("managed SocialKit route", () => {
   });
 
   it.each(["session", "sandbox"] as const)(
-    "preserves Instagram views and compatible duration for %s callers",
+    "preserves Instagram views and duration for %s callers",
     async (tokenType) => {
       const actor = createBddApi(context).user();
       if (!actor.orgId) {
@@ -463,13 +463,7 @@ describe("managed SocialKit route", () => {
         );
 
         expect(response.body.result).toStrictEqual({
-          likes: availableData.likes,
-          comments: availableData.comments,
-          author: availableData.author,
-          videoUrl: availableData.videoUrl,
-          ...(availableData.duration === null
-            ? {}
-            : { duration: availableData.duration }),
+          ...availableData,
           ...(views === undefined ? {} : { views }),
         });
         expect(response.body.provider).toBe(
