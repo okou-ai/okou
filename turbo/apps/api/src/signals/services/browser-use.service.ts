@@ -623,6 +623,7 @@ export interface BrowserUseControlInspection {
   readonly mainDocument: boolean;
   readonly writable: boolean;
   readonly siteRequired: boolean;
+  readonly multiple: boolean;
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly pattern?: string;
@@ -660,6 +661,7 @@ function safeControlInspection(
     typeof candidate.mainDocument !== "boolean" ||
     typeof candidate.writable !== "boolean" ||
     typeof candidate.siteRequired !== "boolean" ||
+    typeof candidate.multiple !== "boolean" ||
     !boundedOptionalControlLength(candidate.minLength) ||
     !boundedOptionalControlLength(candidate.maxLength) ||
     !boundedOptionalControlPattern(candidate.pattern)
@@ -673,6 +675,7 @@ function safeControlInspection(
     mainDocument: candidate.mainDocument,
     writable: candidate.writable,
     siteRequired: candidate.siteRequired,
+    multiple: candidate.multiple,
     ...(candidate.minLength === undefined
       ? {}
       : { minLength: candidate.minLength as number }),
@@ -703,6 +706,7 @@ function browserUseControlInspectionFunction(): string {
         mainDocument: control.ownerDocument === document,
         writable: supported && !control.readOnly && !control.disabled,
         siteRequired: supported && control.required === true,
+        multiple: input && control.type === "email" && control.multiple === true,
         ...(supported && control.minLength >= 0 && control.minLength <= 4096
           ? { minLength: control.minLength } : {}),
         ...(supported && control.maxLength >= 0 && control.maxLength <= 4096

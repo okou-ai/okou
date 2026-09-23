@@ -357,6 +357,7 @@ describe("Browser user-action route", () => {
                 mainDocument: true,
                 writable: controlWritable,
                 siteRequired: controlSiteRequired,
+                multiple: objectId === "native-username-object",
                 ...(controlMinLength === undefined
                   ? {}
                   : { minLength: controlMinLength }),
@@ -622,6 +623,7 @@ describe("Browser user-action route", () => {
             tagName: "INPUT",
             inputType: "email",
             siteRequired: true,
+            multiple: true,
             minLength: 3,
           },
         },

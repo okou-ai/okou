@@ -137,6 +137,7 @@ export const browserUserActionDisplayFieldSchema = z
           "number",
         ]),
         siteRequired: z.boolean().optional(),
+        multiple: z.boolean().optional(),
         minLength: z
           .number()
           .int()

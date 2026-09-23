@@ -180,6 +180,7 @@ function publicRequest(
             ? {}
             : {
                 siteRequired: observed.siteRequired,
+                multiple: observed.multiple,
                 ...(observed.minLength === undefined
                   ? {}
                   : { minLength: observed.minLength }),
