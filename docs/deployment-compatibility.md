@@ -71,9 +71,14 @@ normalization. An old API against the contracted schema is not supported.
 Before making that PR mergeable, confirm the explicit production API paths from
 #36258, #36294, #36301 and #36304 have deployed to **all** serving instances.
 Any further production writer fixes discovered in this Draft PR must also ship
-before contraction; the migration cannot be its own expand release. Close the
-API rollback floor below the complete set of explicit writers, and record deployment/rollback
-evidence in the PR. Verify the migration and its permanent inventory against a
+before contraction; the migration cannot be its own expand release. The
+production rollback resolver in this PR rejects API targets before canonical
+main commit `065f970bbb8c21c10ef709495d5824d0a6183e50` (#36301, the last
+preparation to merge): the first supported rollback release is
+`3a2a331d50503a73407029ed9074e7d6930778da` (API 1.664.0). Older entries
+in the rollback dashboard remain visible but are rejected before artifact or
+host access. Record serving deployment and rollback evidence in the PR. Verify
+the migration and its permanent inventory against a
 replayed database, plus API no-trigger integration coverage for ordinary file
 writes and deletion cascades, hosted-site/presentation deletion, chat event and
 snapshot concurrency/retries, and computer host selection on create/update.
