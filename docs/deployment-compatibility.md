@@ -43,6 +43,37 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## User preference initialization (2026-09-23)
+
+`GET /api/user-preferences` now returns `409 USER_PREFERENCES_UNINITIALIZED`
+when the member lacks either a valid timezone or a locale. The App accepts that
+response, then calls `POST /api/user-preferences/initialize` with browser
+timezone and the locale selected during initial resource loading. It uses the
+POST result directly. An invalid or unavailable browser timezone falls back to
+`America/Los_Angeles`; an unsupported browser locale falls back to `en-US`.
+The App also initializes if an older API returns `200` with a missing field.
+
+The App Worker prefetches a successful GET into the HTML, which the App consumes
+without another browser GET. Prefetch is best effort, bounded to 500 ms, and
+does not embed `409`; the client GET remains the fallback when prefetch misses.
+
+The new API continues to accept the older App's optional timezone-only POST.
+An empty body fills missing timezone and locale with Pacific Time and English.
+Initialization preserves each already stored field independently, so a member
+missing only locale keeps their timezone and vice versa. Concurrent writes to
+missing fields remain last-writer-wins without a transaction. Against the old
+API, a new App may receive an initialize result with no locale; it then uses
+the regular preferences update to save locale before returning preferences.
+An old App that reads preferences before its startup POST against the new API
+can temporarily receive `409`; its existing POST then initializes the member.
+
+Morning Brief enrollment remains a separate durable obligation. The POST
+attempts it after saving missing preferences, and the enrollment worker admits up to
+20 timezone-bearing members without enrollment rows on each tick before
+processing due work. Qualification checks the Clerk membership and rollout
+boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
+recreated. No schema migration is needed.
+
 ## Pi 0.87.1 model admission (2026-09-23)
 
 The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains

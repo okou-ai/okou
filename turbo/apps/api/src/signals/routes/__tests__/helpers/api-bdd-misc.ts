@@ -278,6 +278,17 @@ export function createMiscRoutesApi(context: TestContext) {
       );
     },
 
+    async readUninitializedPreferences(actor: ApiTestUser) {
+      return await accept(
+        setupApp({ context, routes: userPreferencesRoutes })(
+          userPreferencesContract,
+        ).get({
+          headers: authenticate(context, actor),
+        }),
+        [409],
+      );
+    },
+
     async updatePreferences<TStatus extends 200 | 400 | 401 | 500>(
       actor: ApiTestUser,
       body: UpdateUserPreferencesInput,
