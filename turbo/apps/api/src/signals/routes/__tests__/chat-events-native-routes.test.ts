@@ -526,7 +526,7 @@ describe("shared native Pi route activation", () => {
       const secondClaim = await claimChatRun(runnerGroup, second.runId);
       expect(secondClaim.claim).toMatchObject({
         piSessionId: first.threadId,
-        piModelConfig: { route: type },
+        piModelConfig: { model: getProviderRuntimeModel(type, model) },
       });
       await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
     },
