@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.357.2](https://github.com/okou-ai/okou/compare/cli-v9.357.1...cli-v9.357.2) (2026-09-23)
+
+
+### Performance Improvements
+
+* load connector catalog data only where it renders ([#36391](https://github.com/okou-ai/okou/issues/36391)) ([0a61ba4](https://github.com/okou-ai/okou/commit/0a61ba404f2bfb5a4b9b4883d63db6d73b094eb2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.499.0
+    * @okouai/core bumped to 8.705.0
+    * @okouai/pi-agent-runtime bumped to 1.40.2
+
 ## [9.357.1](https://github.com/okou-ai/okou/compare/cli-v9.357.0...cli-v9.357.1) (2026-09-23)
 
 

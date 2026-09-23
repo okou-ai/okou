@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "1.291.1",
+  "version": "1.292.0",
   "private": true,
   "type": "module",
   "exports": {

@@ -11,6 +11,38 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.951.0](https://github.com/okou-ai/okou/compare/app-v0.950.1...app-v0.951.0) (2026-09-23)
+
+
+### Features
+
+* **chat:** show run logs beside user message copy ([#36403](https://github.com/okou-ai/okou/issues/36403)) ([d36a8fc](https://github.com/okou-ai/okou/commit/d36a8fc443f4bd68758cac766cf2cf68c1b50332))
+* **vnc:** admit apple dh through saved ssh loopback ([#36398](https://github.com/okou-ai/okou/issues/36398)) ([0646ce8](https://github.com/okou-ai/okou/commit/0646ce8df1312d2f8e09e2953843ab963c5a08eb))
+
+
+### Bug Fixes
+
+* **platform:** shrink app skeleton wordmark on mobile ([#36395](https://github.com/okou-ai/okou/issues/36395)) ([d29c47f](https://github.com/okou-ai/okou/commit/d29c47f26851096082ca1b29e794258d1e112c46))
+
+
+### Refactoring
+
+* remove thread activity summary feature switch ([#36379](https://github.com/okou-ai/okou/issues/36379)) ([b9a889e](https://github.com/okou-ai/okou/commit/b9a889e992e335323bcabef36777a776efe0b8c6))
+
+
+### Performance Improvements
+
+* load connector catalog data only where it renders ([#36391](https://github.com/okou-ai/okou/issues/36391)) ([0a61ba4](https://github.com/okou-ai/okou/commit/0a61ba404f2bfb5a4b9b4883d63db6d73b094eb2))
+* **platform:** load chat thread emoji data on picker open ([#36404](https://github.com/okou-ai/okou/issues/36404)) ([1e50f74](https://github.com/okou-ai/okou/commit/1e50f748375ae84a00dbce7ad060721827a414e2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.499.0
+    * @okouai/core bumped to 8.705.0
+
 ## [0.950.1](https://github.com/okou-ai/okou/compare/app-v0.950.0...app-v0.950.1) (2026-09-23)
 
 
