@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.1.1...runner-provider-v0.2.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
 ## [0.1.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.1.0...runner-provider-v0.1.1) (2026-09-23)
 
 

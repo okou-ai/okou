@@ -8,6 +8,23 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.661.0](https://github.com/okou-ai/okou/compare/api-v1.660.0...api-v1.661.0) (2026-09-23)
+
+
+### Features
+
+* **models:** add Claude Opus 5.5 ([#36168](https://github.com/okou-ai/okou/issues/36168)) ([e0fc624](https://github.com/okou-ai/okou/commit/e0fc62414d039c9e0dfda36145c2e62edfcf79a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.495.0
+    * @okouai/core bumped to 8.702.0
+    * @okouai/db bumped to 1.288.1
+    * @okouai/pi-agent-runtime bumped to 1.39.0
+
 ## [1.660.0](https://github.com/okou-ai/okou/compare/api-v1.659.1...api-v1.660.0) (2026-09-23)
 
 
