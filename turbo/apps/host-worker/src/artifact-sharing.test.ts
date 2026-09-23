@@ -294,7 +294,7 @@ test("thumbnail caches cannot hide missing policy or feed external Image Resizin
   expect(f.render).toHaveBeenCalledTimes(1);
 });
 
-test("legacy ten-character image thumbnails retain public caching and original bytes", async () => {
+test("legacy ten-character image thumbnails retain their original bytes without browser caching", async () => {
   const f = imageFixture("a1b2c3d4e5");
   const key = "artifacts/a1b2c3d4e5.png";
   // The same shape as a new share is classified by its immutable registration.
@@ -315,9 +315,7 @@ test("legacy ten-character image thumbnails retain public caching and original b
   f.objects.delete(policyKey);
   const thumbnail = await fetchWorker(new Request(f.url), f.env);
   expect(await thumbnail.text()).toBe("Thumbnail of Historical image");
-  expect(thumbnail.headers.get("Cache-Control")).toBe(
-    "public, max-age=31536000, immutable",
-  );
+  expect(thumbnail.headers.get("Cache-Control")).toBe("private, no-store");
   expect(
     await (
       await fetchWorker(new Request("https://a.okou.io/a1b2c3d4e5.png"), f.env)
@@ -746,9 +744,7 @@ test.each([
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("Historical public PDF");
-    expect(response.headers.get("Cache-Control")).toBe(
-      "public, max-age=31536000, immutable",
-    );
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
     const head = await fetchWorker(
       new Request(`https://a.okou.io/${legacy}`, { method: "HEAD" }),
       env,
@@ -787,6 +783,40 @@ test.each([
     ).toBe(404);
   },
 );
+
+test("a removed legacy file alias denies warm content and range requests", async () => {
+  const f = fixture();
+  const alias = "user_erased/00000000-0000-4000-8000-000000000015/report.pdf";
+  const key = `artifacts/${alias}`;
+  const registryKey = artifactDeliveryKey(null, "file", alias);
+  f.objects.set(key, "Previously public bytes");
+  f.objects.set(
+    registryKey,
+    JSON.stringify({
+      version: 1,
+      kind: "legacy-file",
+      publicBrand: "okou",
+      audience: "public",
+      key,
+      filename: "report.pdf",
+      contentType: "application/pdf",
+    }),
+  );
+  const env = { ...f.env, PUBLIC_ARTIFACTS_BUCKET: f.env.HOSTED_SITES_BUCKET };
+  const url = `https://a.okou.io/${alias}`;
+  expect((await fetchWorker(new Request(url), env)).status).toBe(200);
+  expect(f.cache.put).toHaveBeenCalled();
+  f.objects.delete(registryKey);
+  expect((await fetchWorker(new Request(url), env)).status).toBe(404);
+  expect(
+    (
+      await fetchWorker(
+        new Request(url, { headers: { Range: "bytes=0-4" } }),
+        env,
+      )
+    ).status,
+  ).toBe(404);
+});
 
 test.each(["", "artifacts/"])(
   "public file shares reject noncanonical %s paths outside cache exclusions",

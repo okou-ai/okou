@@ -666,10 +666,7 @@ describe("dormant relational sweep", () => {
       unattributableDescendants: [],
     };
     const handler = createRelationalErasureCollector(db, runnable);
-    const { job } = await sealedJob(
-      mine,
-      RELATIONAL_ERASURE_COLLECTOR_VERSION,
-    );
+    const { job } = await sealedJob(mine, RELATIONAL_ERASURE_COLLECTOR_VERSION);
     const [collector] = await claimErasureWork(db, job.id, "inventory");
     if (!collector) {
       throw new Error("Missing relational inventory lease");

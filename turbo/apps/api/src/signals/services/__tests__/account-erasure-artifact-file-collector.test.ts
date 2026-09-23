@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it, onTestFinished } from "vitest";
@@ -12,6 +13,7 @@ import {
   sealErasureCapture,
   type ErasureSink,
 } from "@okouai/db/operations/account-erasure";
+import { artifactDeliveryKey } from "@okouai/api-contracts/contracts/artifact-delivery";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
@@ -46,7 +48,11 @@ describe("dormant artifact-file byte erasure", () => {
     return input instanceof Object ? (input as Record<string, unknown>) : {};
   }
 
-  function bucketWithObjects(keys: readonly string[], survivor?: string) {
+  function bucketWithObjects(
+    keys: readonly string[],
+    survivor?: string,
+    registry: ReadonlyMap<string, string> = new Map(),
+  ) {
     const live = new Set(keys);
     const deletions: string[][] = [];
     context.mocks.s3.send.mockImplementation((command: unknown) => {
@@ -57,6 +63,21 @@ describe("dormant artifact-file byte erasure", () => {
       ) {
         if (live.has(String(input.Key))) {
           return Promise.resolve({ ContentLength: 1 });
+        }
+        return Promise.reject(
+          Object.assign(new Error("Object absent"), { name: "NoSuchKey" }),
+        );
+      }
+      if (
+        command instanceof Object &&
+        command.constructor.name === "GetObjectCommand"
+      ) {
+        const body = registry.get(String(input.Key));
+        if (body !== undefined) {
+          return Promise.resolve({
+            Body: Readable.from([Buffer.from(body)]),
+            ETag: '"registry-revision"',
+          });
         }
         return Promise.reject(
           Object.assign(new Error("Object absent"), { name: "NoSuchKey" }),
@@ -230,12 +251,88 @@ describe("dormant artifact-file byte erasure", () => {
     await pool.query("DELETE FROM run_uploaded_files WHERE user_id = $1", [
       userId,
     ]);
-    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(2);
+    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(3);
     expect(bucket.live.size).toBe(0);
     expect(bucket.deletions).toStrictEqual([[key]]);
     await expect(
       finalizeErasureJob(db, captured.job.id, captured.sealed),
     ).resolves.toMatchObject({ state: "verified_erased" });
+  });
+
+  it("removes a captured legacy public alias after its file row disappears", async () => {
+    const userId = "user_artifact_" + randomUUID().replaceAll("-", "");
+    const key = `artifacts/${encodeURIComponent(userId)}/${randomUUID()}/public.txt`;
+    const registryKey = artifactDeliveryKey(
+      null,
+      "file",
+      key.slice("artifacts/".length),
+    );
+    await fileFor(userId, key);
+    const bucket = bucketWithObjects(
+      [key, registryKey],
+      undefined,
+      new Map([
+        [
+          registryKey,
+          JSON.stringify({
+            version: 1,
+            kind: "legacy-file",
+            publicBrand: "vm0",
+            audience: "public",
+            key,
+            filename: "public.txt",
+            contentType: "text/plain",
+          }),
+        ],
+      ]),
+    );
+    const captured = await capture(userId);
+    await pool.query("DELETE FROM run_uploaded_files WHERE user_id = $1", [
+      userId,
+    ]);
+    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(3);
+    expect(bucket.live.size).toBe(0);
+    expect(bucket.deletions.flat().sort()).toStrictEqual(
+      [key, registryKey].sort(),
+    );
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).resolves.toMatchObject({ state: "verified_erased" });
+  });
+
+  it("leaves a registry object that names another file unresolved", async () => {
+    const userId = "user_artifact_" + randomUUID().replaceAll("-", "");
+    const key = `artifacts/${encodeURIComponent(userId)}/${randomUUID()}/public.txt`;
+    const registryKey = artifactDeliveryKey(
+      null,
+      "file",
+      key.slice("artifacts/".length),
+    );
+    await fileFor(userId, key);
+    const bucket = bucketWithObjects(
+      [key, registryKey],
+      undefined,
+      new Map([
+        [
+          registryKey,
+          JSON.stringify({
+            version: 1,
+            kind: "legacy-file",
+            publicBrand: "vm0",
+            audience: "public",
+            key: `artifacts/another-owner/${randomUUID()}/public.txt`,
+            filename: "public.txt",
+            contentType: "text/plain",
+          }),
+        ],
+      ]),
+    );
+    const captured = await capture(userId);
+    await verify(captured.job.id, captured.handler);
+    expect(bucket.live.has(registryKey)).toBeTruthy();
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).rejects.toThrow("account_erasure:work_unresolved");
   });
 
   it("keeps the gate red when a delete response leaves the bytes", async () => {
@@ -375,7 +472,7 @@ describe("dormant artifact-file byte erasure", () => {
     }
     const bucket = bucketWithObjects(keys);
     const captured = await capture(userId, true);
-    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(4);
+    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(7);
     expect(bucket.live.size).toBe(0);
     expect(
       bucket.deletions.map((batch) => {
@@ -402,7 +499,7 @@ describe("dormant artifact-file byte erasure", () => {
     await pool.query("DELETE FROM run_uploaded_files WHERE user_id = $1", [
       userId,
     ]);
-    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(4);
+    await expect(verify(captured.job.id, captured.handler)).resolves.toBe(7);
     expect(bucket.live.size).toBe(0);
     await expect(
       finalizeErasureJob(db, captured.job.id, captured.sealed),

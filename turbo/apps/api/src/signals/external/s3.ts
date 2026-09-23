@@ -1715,6 +1715,13 @@ export function s3ObjectExists(
   return s3ObjectExistsWithClient(s3ClientForBucket(bucket), bucket, key);
 }
 
+export function hostedSitesObjectExists(
+  bucket: string,
+  key: string,
+): Computed<Promise<boolean>> {
+  return s3ObjectExistsWithClient(hostedSitesS3Client$, bucket, key);
+}
+
 function s3ObjectExistsWithClient(
   client$: Computed<S3Client>,
   bucket: string,

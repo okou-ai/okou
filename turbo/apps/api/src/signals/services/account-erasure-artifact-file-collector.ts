@@ -6,6 +6,10 @@ import { z } from "zod";
 
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import {
+  artifactDeliveryKey,
+  artifactDeliveryRecordSchema,
+} from "@okouai/api-contracts/contracts/artifact-delivery";
+import {
   renewErasureLease,
   type EncryptedErasureSelector,
   type ErasureHandler,
@@ -23,8 +27,20 @@ import {
   publicArtifactsBaseUrlForBrand,
 } from "../../lib/file-url";
 import { nowDate } from "../../lib/time";
-import { safeUrlParse } from "../utils";
-import { deleteS3Objects, s3ObjectExists } from "../external/s3";
+import {
+  safeJsonParse,
+  safeUriComponentDecode,
+  safeUrlParse,
+  settle,
+} from "../utils";
+import {
+  deleteArtifactSnapshotObjects,
+  deleteS3Objects,
+  hostedSitesObjectExists,
+  isS3NotFoundError,
+  readArtifactSharePolicyObject,
+  s3ObjectExists,
+} from "../external/s3";
 import {
   decryptErasureSelector,
   encryptErasureSelector,
@@ -47,7 +63,7 @@ interface ObjectLocator {
 const PAGE_SIZE = 20;
 const NAMESPACE = "e413c361-9811-490e-a21d-f48689204f0c";
 export const ARTIFACT_FILE_ERASURE_COLLECTOR_VERSION =
-  "0c3937b8-5b28-496b-927a-9bfa47158d9a";
+  "4c292141-c9fd-40c7-9673-82826c13d37b";
 
 function reference(parts: readonly unknown[]): string {
   return uuidv5(JSON.stringify(parts), NAMESPACE);
@@ -103,6 +119,7 @@ async function leaseObjects(
   const buckets = [
     env("R2_USER_ARTIFACTS_BUCKET_NAME"),
     env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME"),
+    env("R2_HOSTED_SITES_BUCKET_NAME"),
   ];
   const bucket = buckets.find((candidate) => {
     return candidate && selector.storageRef === storageReference(candidate);
@@ -121,6 +138,50 @@ function firstPartyPublicUrl(value: string): boolean {
     new URL(publicArtifactsBaseUrlForBrand("vm0")).origin,
     new URL(publicArtifactsBaseUrlForBrand("okou")).origin,
   ].includes(url.origin);
+}
+
+function legacyFileKeyFromRegistryKey(registryKey: string): string | undefined {
+  const prefix = "artifact-delivery/files/";
+  if (!registryKey.startsWith(prefix) || !registryKey.endsWith(".json")) {
+    return undefined;
+  }
+  const encodedAlias = registryKey.slice(prefix.length, -".json".length);
+  const alias = safeUriComponentDecode(encodedAlias);
+  if (alias === undefined) {
+    return undefined;
+  }
+  return artifactDeliveryKey(null, "file", alias) === registryKey
+    ? `artifacts/${alias}`
+    : undefined;
+}
+
+async function registryIsOwned(
+  bucket: string,
+  key: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const expectedKey = legacyFileKeyFromRegistryKey(key);
+  if (!expectedKey) {
+    return false;
+  }
+  const result = await settle(
+    createStore().get(readArtifactSharePolicyObject(bucket, key, signal)),
+    signal,
+  );
+  if (!result.ok) {
+    if (isS3NotFoundError(result.error)) {
+      return !(await createStore().get(hostedSitesObjectExists(bucket, key)));
+    }
+    throw result.error;
+  }
+  const record = artifactDeliveryRecordSchema.safeParse(
+    safeJsonParse(result.value.buffer.toString("utf8")),
+  );
+  return (
+    record.success &&
+    record.data.kind === "legacy-file" &&
+    record.data.key === expectedKey
+  );
 }
 
 async function publicUrlLocator(
@@ -228,7 +289,41 @@ async function rowLocators(
       locations.push(location);
     }
   }
-  return locations;
+  return withLegacyRegistryLocators(locations, publicBucket, privateBucket);
+}
+
+function withLegacyRegistryLocators(
+  locations: readonly ObjectLocator[],
+  publicBucket: string,
+  privateBucket: string | undefined,
+): readonly ObjectLocator[] | ErasureUnresolved {
+  const publicLocations = locations.filter((location) => {
+    return location.bucket === publicBucket;
+  });
+  if (publicLocations.length === 0) {
+    return locations;
+  }
+  const registryBucket = env("R2_HOSTED_SITES_BUCKET_NAME");
+  if (
+    !registryBucket ||
+    registryBucket === publicBucket ||
+    registryBucket === privateBucket
+  ) {
+    return unresolved("permission_missing");
+  }
+  return [
+    ...locations,
+    ...publicLocations.map((location) => {
+      return {
+        bucket: registryBucket,
+        key: artifactDeliveryKey(
+          null,
+          "file",
+          location.key.slice("artifacts/".length),
+        ),
+      };
+    }),
+  ];
 }
 
 function objectBatches(
@@ -411,11 +506,20 @@ async function eraseObject(
     return unresolved("selector_missing");
   }
   const store = createStore();
+  const hosted = objects.bucket === env("R2_HOSTED_SITES_BUCKET_NAME");
+  if (hosted) {
+    for (const key of objects.keys) {
+      if (!(await registryIsOwned(objects.bucket, key, signal))) {
+        return unresolved("ownership_unknown");
+      }
+    }
+  }
   const present = await Promise.all(
     objects.keys.map(async (key) => {
-      return (await store.get(s3ObjectExists(objects.bucket, key)))
-        ? key
-        : null;
+      const exists = hosted
+        ? hostedSitesObjectExists(objects.bucket, key)
+        : s3ObjectExists(objects.bucket, key);
+      return (await store.get(exists)) ? key : null;
     }),
   );
   const keys = present.filter((key): key is string => {
@@ -426,7 +530,11 @@ async function eraseObject(
   }
   // Reuse the existing DeleteObjects primitive, including its 1000-key bound
   // and per-object provider error handling.
-  await store.get(deleteS3Objects(objects.bucket, keys, signal));
+  await store.get(
+    hosted
+      ? deleteArtifactSnapshotObjects(objects.bucket, keys, true, signal)
+      : deleteS3Objects(objects.bucket, keys, signal),
+  );
   return { requestRef: requestReference(lease, "erased") };
 }
 
@@ -437,9 +545,14 @@ async function verifyObjectAbsent(
   const objects = await leaseObjects(lease);
   if (objects) {
     const store = createStore();
+    const hosted = objects.bucket === env("R2_HOSTED_SITES_BUCKET_NAME");
     const remaining = await Promise.all(
       objects.keys.map(async (key) => {
-        return await store.get(s3ObjectExists(objects.bucket, key));
+        return await store.get(
+          hosted
+            ? hostedSitesObjectExists(objects.bucket, key)
+            : s3ObjectExists(objects.bucket, key),
+        );
       }),
     );
     if (remaining.includes(true)) {
