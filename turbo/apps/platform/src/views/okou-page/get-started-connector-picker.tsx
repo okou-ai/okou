@@ -257,16 +257,14 @@ export function QuestConnectorPicker({
      * what left the tiles ending 12px short of the title above them and the
      * buttons below them, with the bar itself standing in the column.
      *
-     * The rule is the bottom edge of that window. It replaces a fade there
-     * because the fade had to state two things at once: a cut row, and where
-     * the list stops. A line states the second on its own, at the weight
-     * `--default-border-width` gives every boundary in the product, and it
-     * stays put instead of appearing and vanishing with the scroll position.
+     * Nothing is drawn at the bottom -- no rule and no fade. The template
+     * picker ends its grids the same way: the scroller carries its own bottom
+     * padding and the card closes the list, so a boundary drawn on top of that
+     * is a second answer to a question already answered. The viewport's `pb-2`
+     * plus the shell's `gap-4` leave the same 24px of air under the last row
+     * that the picker's `pb-6` leaves under its last card.
      */
-    <div
-      className="-mx-6 border-b border-border"
-      data-testid="quest-connector-picker"
-    >
+    <div className="-mx-6" data-testid="quest-connector-picker">
       <ScrollArea.Root
         // `group` so the viewport's fade can read the root's own
         // `data-overflow-y-start`.
