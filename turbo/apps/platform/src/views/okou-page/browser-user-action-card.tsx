@@ -23,6 +23,7 @@ import type {
   BrowserUserActionSignals,
 } from "../../signals/chat-page/browser-user-action-block.ts";
 import type { BrowserSessionSignals } from "../../signals/chat-page/browser-session-block.ts";
+import { openThreadBrowserSession$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
@@ -867,12 +868,12 @@ function PendingDirectInteraction({
         </div>
       </div>
 
-      <BrowserSessionCard
-        signals={browserSessionSignals}
-        openMode={
-          variant === "standalone" ? "new-page" : "sidebar-and-close-dialog"
-        }
-      />
+      {variant === "standalone" && (
+        <BrowserSessionCard
+          signals={browserSessionSignals}
+          openMode="new-page"
+        />
+      )}
 
       {(completeFailed || cancelFailed) && (
         <p role="alert" className="text-sm text-destructive">
@@ -935,6 +936,7 @@ function PendingInlineDirectInteraction({
   readonly signals: BrowserUserActionSignals;
 }) {
   const { t } = useTranslation();
+  const openBrowserSidebar = useSet(openThreadBrowserSession$);
   return (
     <div className="flex h-full w-full flex-col justify-center gap-2 @[560px]:flex-row @[560px]:items-center @[560px]:justify-start @[560px]:gap-4">
       <div className="flex min-w-0 max-w-full items-center gap-3">
@@ -952,18 +954,34 @@ function PendingInlineDirectInteraction({
           </p>
         </div>
       </div>
-      <ChatCardDetails
-        title={t(($) => {
-          return $.chat.browserInteraction.title;
-        })}
-      >
-        <PendingDirectInteraction
-          action={action}
-          browserSessionSignals={browserSessionSignals}
-          signals={signals}
-          variant="inline"
-        />
-      </ChatCardDetails>
+      <div className="flex shrink-0 items-center gap-2 self-start pl-12 @[560px]:self-auto @[560px]:pl-0">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            openBrowserSidebar(browserSessionSignals.threadId);
+          }}
+        >
+          {t(($) => {
+            return $.chat.thread.openBrowser;
+          })}
+        </Button>
+        <ChatCardDetails
+          title={t(($) => {
+            return $.chat.browserInteraction.title;
+          })}
+          triggerLabel={t(($) => {
+            return $.chat.browserInteraction.finish;
+          })}
+        >
+          <PendingDirectInteraction
+            action={action}
+            browserSessionSignals={browserSessionSignals}
+            signals={signals}
+            variant="inline"
+          />
+        </ChatCardDetails>
+      </div>
     </div>
   );
 }

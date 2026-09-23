@@ -1772,6 +1772,7 @@
       "delivered": "已通知 Agent",
       "description": "打开浏览器并完成此步骤，然后点击完成。",
       "done": "完成",
+      "finish": "完成此步骤",
       "stale": "浏览器已不可用",
       "staleDescription": "请让 Agent 创建新请求。",
       "title": "接管浏览器",

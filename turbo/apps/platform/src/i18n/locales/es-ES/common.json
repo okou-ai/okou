@@ -1804,6 +1804,7 @@
       "delivered": "Agente notificado",
       "description": "Abre el navegador, completa este paso y selecciona Hecho.",
       "done": "Hecho",
+      "finish": "Finalizar paso",
       "stale": "El navegador ya no está disponible",
       "staleDescription": "Pide al agente que cree una nueva solicitud.",
       "title": "Toma el control del navegador",

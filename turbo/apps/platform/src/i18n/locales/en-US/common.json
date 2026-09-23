@@ -1775,6 +1775,7 @@
       "delivered": "Agent notified",
       "description": "Open the browser, complete this step, then choose Done.",
       "done": "Done",
+      "finish": "Finish step",
       "stale": "Browser no longer available",
       "staleDescription": "Ask the agent to create a new request.",
       "title": "Take over the browser",

@@ -1804,6 +1804,7 @@
       "delivered": "Agent informé",
       "description": "Ouvrez le navigateur, terminez cette étape, puis sélectionnez Terminé.",
       "done": "Terminé",
+      "finish": "Terminer l’étape",
       "stale": "Navigateur indisponible",
       "staleDescription": "Demandez à l’agent de créer une nouvelle demande.",
       "title": "Prenez le contrôle du navigateur",

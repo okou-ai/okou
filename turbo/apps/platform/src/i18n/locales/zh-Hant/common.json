@@ -1772,6 +1772,7 @@
       "delivered": "已通知 Agent",
       "description": "開啟瀏覽器並完成此步驟，然後點擊完成。",
       "done": "完成",
+      "finish": "完成此步驟",
       "stale": "瀏覽器已不可用",
       "staleDescription": "請讓 Agent 建立新請求。",
       "title": "接管瀏覽器",

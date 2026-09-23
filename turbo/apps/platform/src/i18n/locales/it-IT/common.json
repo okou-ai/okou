@@ -1804,6 +1804,7 @@
       "delivered": "Agente avvisato",
       "description": "Apri il browser, completa questo passaggio, quindi seleziona Fine.",
       "done": "Fine",
+      "finish": "Completa il passaggio",
       "stale": "Browser non più disponibile",
       "staleDescription": "Chiedi all’agente di creare una nuova richiesta.",
       "title": "Prendi il controllo del browser",

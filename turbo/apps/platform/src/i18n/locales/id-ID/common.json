@@ -1772,6 +1772,7 @@
       "delivered": "Agen diberi tahu",
       "description": "Buka browser, selesaikan langkah ini, lalu pilih Selesai.",
       "done": "Selesai",
+      "finish": "Selesaikan langkah",
       "stale": "Browser tidak lagi tersedia",
       "staleDescription": "Minta agen membuat permintaan baru.",
       "title": "Ambil alih browser",

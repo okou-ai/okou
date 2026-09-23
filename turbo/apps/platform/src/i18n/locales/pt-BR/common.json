@@ -1804,6 +1804,7 @@
       "delivered": "Agente notificado",
       "description": "Abra o navegador, conclua esta etapa e selecione Concluído.",
       "done": "Concluído",
+      "finish": "Concluir etapa",
       "stale": "O navegador não está mais disponível",
       "staleDescription": "Peça ao agente para criar uma nova solicitação.",
       "title": "Assumir o controle do navegador",

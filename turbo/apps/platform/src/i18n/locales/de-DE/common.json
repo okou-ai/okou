@@ -1775,6 +1775,7 @@
       "delivered": "Agent benachrichtigt",
       "description": "Öffnen Sie den Browser, schließen Sie diesen Schritt ab und wählen Sie dann „Fertig“.",
       "done": "Fertig",
+      "finish": "Schritt abschließen",
       "stale": "Browser nicht mehr verfügbar",
       "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
       "title": "Browser übernehmen",
