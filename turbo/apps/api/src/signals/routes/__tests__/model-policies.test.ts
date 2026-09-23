@@ -331,7 +331,7 @@ describe("GET/PUT /api/model-policies", () => {
       }),
       [200],
     );
-    expect(restored.body.policies).toEqual(
+    expect(restored.body.policies).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({ model: "gpt-6-luna", isDefault: false }),
       ]),
