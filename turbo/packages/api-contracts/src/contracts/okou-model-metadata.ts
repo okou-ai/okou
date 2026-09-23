@@ -8,18 +8,28 @@ export type OkouRunModel = (typeof OKOU_RUN_MODELS)[number];
 
 const OKOU_INPUT_MODALITIES = ["text", "image"] as const;
 
+type PiRuntimeLimits = {
+  readonly contextWindow: number;
+  readonly maxTokens: number;
+};
+
+type CodexRuntimeLimits = {
+  readonly contextWindow: number;
+  readonly maxContextWindow: number;
+};
+
 // Pi reflects the OpenRouter model limits. Codex's context_window and
 // max_context_window follow the GPT-6 entries in Codex's own model catalog;
 // they are runtime-specific values, not contradictory limits on the model.
 const GPT_6_PI_LIMITS = {
   contextWindow: 1_050_000,
   maxTokens: 128_000,
-} as const;
+} as const satisfies PiRuntimeLimits;
 
 const GPT_6_CODEX_LIMITS = {
   contextWindow: 272_000,
   maxContextWindow: 872_000,
-} as const;
+} as const satisfies CodexRuntimeLimits;
 
 const OKOU_BACKING_MODELS = {
   "gpt-6-luna": {
@@ -42,8 +52,8 @@ type OkouModelMetadata = {
   readonly presetModel: string;
   readonly reasoningEffort: "low" | "high" | "max";
   readonly inputModalities: typeof OKOU_INPUT_MODALITIES;
-  readonly pi: typeof GPT_6_PI_LIMITS;
-  readonly codex: typeof GPT_6_CODEX_LIMITS & { readonly priority: number };
+  readonly pi: PiRuntimeLimits;
+  readonly codex: CodexRuntimeLimits & { readonly priority: number };
 };
 
 type OkouModelDefinition = {
