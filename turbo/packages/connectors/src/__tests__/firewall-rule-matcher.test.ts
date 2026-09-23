@@ -2166,18 +2166,12 @@ describe("findMatchingPermissions", () => {
       },
     ];
 
-    expect(
-      matchFirewallRequestDecision(
+    const decide = (allow: string[], deny: string[]) => {
+      return matchFirewallRequestDecision(
         firewalls,
         "POST",
         "https://dynamodb.example.com/v1",
-        {
-          aws: {
-            allow: ["root-allowed"],
-            deny: ["nested-blocked"],
-            unknownPolicy: "ask",
-          },
-        },
+        { aws: { allow, deny, unknownPolicy: "ask" } },
         { status: "absent" },
         {
           awsDiagnostic: {
@@ -2189,11 +2183,17 @@ describe("findMatchingPermissions", () => {
             },
           },
         },
-      ),
-    ).toMatchObject({
+      );
+    };
+
+    expect(decide(["root-allowed"], ["nested-blocked"])).toMatchObject({
       kind: "block",
       reason: "permission_denied",
       permissions: ["nested-blocked"],
+    });
+    expect(decide(["nested-blocked"], ["root-allowed"])).toMatchObject({
+      kind: "allow",
+      permission: "nested-blocked",
     });
   });
 
