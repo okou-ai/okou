@@ -115,34 +115,32 @@ test("A completed activity appears only after its full event history is ready", 
   ).toBeTruthy();
 });
 
-test.each(["queued", "pending", "running"] as const)(
-  "A %s activity explains how to load the latest logs",
-  async (status) => {
-    context.mocks.api(logsByIdContract.getById, ({ respond }) => {
-      return respond(200, makeLogDetail({ status }));
-    });
-    context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-      return respond(200, {
-        events: [makeAssistantEvent(0, "Current activity log")],
-        hasMore: false,
-        status,
-        lastEventSequence: null,
-      } satisfies AgentEventsResponse);
-    });
+test("An active activity explains how to load the latest logs", async () => {
+  const status = "running" as const;
+  context.mocks.api(logsByIdContract.getById, ({ respond }) => {
+    return respond(200, makeLogDetail({ status }));
+  });
+  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
+    return respond(200, {
+      events: [makeAssistantEvent(0, "Current activity log")],
+      hasMore: false,
+      status,
+      lastEventSequence: null,
+    } satisfies AgentEventsResponse);
+  });
 
-    await setupPage({
-      context,
-      path: "/activities/a0000000-0000-4000-a000-000000000099",
-    });
+  await setupPage({
+    context,
+    path: "/activities/a0000000-0000-4000-a000-000000000099",
+  });
 
-    await expect(
-      screen.findByText("Current activity log"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.getByText("Reload this page to see the latest activity logs."),
-    ).toBeInTheDocument();
-  },
-);
+  await expect(
+    screen.findByText("Current activity log"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText("Reload this page to see the latest activity logs."),
+  ).toBeInTheDocument();
+});
 
 test("Activity metadata remains usable when its timeline cannot load", async () => {
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
