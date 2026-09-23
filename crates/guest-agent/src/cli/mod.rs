@@ -567,7 +567,7 @@ fn build_pi_command_for_runtime(
     );
     log_info!(
         LOG_TAG,
-        "Pi CLI launch: source={} reason={} required_runtime={} installed_runtime={} installed_cli={}",
+        "Pi CLI launch: source={} reason={} required_runtime={} installed_runtime={} installed_cli={} required_session_construction={} installed_session_construction={}",
         decision.source.as_str(),
         decision.reason,
         requirement
@@ -578,6 +578,13 @@ fn build_pi_command_for_runtime(
             .unwrap_or("<none>"),
         installed_okou_cli
             .map(|installed| installed.versions.cli.as_str())
+            .unwrap_or("<none>"),
+        requirement
+            .required_pi_session_construction_digest
+            .unwrap_or("<none>"),
+        installed_okou_cli
+            .and_then(|installed| installed.session_construction.as_ref())
+            .map(|session_construction| session_construction.digest.as_str())
             .unwrap_or("<none>"),
     );
     if decision.source == okou_cli_launch::PiCliLaunchSource::Installed {
@@ -1602,10 +1609,6 @@ async fn execute_cli_inner(
                             if let Some(projection) = pi_rpc_projection.as_mut() {
                                 match projection.project(event, &pi_rpc_response_tx, line.len()) {
                                     Ok(projected) => {
-                                        if let Some(containment) = workload_containment
-                                            && let Some(timestamp) = projection.runtime_progress_at() {
-                                            containment.record_runtime_progress(timestamp);
-                                        }
                                         if let Some(projected) = projected {
                                             event = projected;
                                         } else {
@@ -1870,6 +1873,51 @@ async fn execute_cli_inner(
                         }
                     }
                     Err(error) => {
+                        // An over-limit record whose type the framework's
+                        // projector ignores cannot lose public output, so it is
+                        // discarded instead of ending the run. The reader
+                        // reports `TooLong` without consuming the record, so
+                        // the remainder must be drained before reading again.
+                        if matches!(error, line_reader::BoundedLineError::TooLong)
+                            && matches!(runtime.framework, env::Framework::Pi)
+                        {
+                            let labels = record_labels::prefix_labels(&stdout_partial_line);
+                            if pi_rpc::oversized_record_is_discardable(labels.event_type) {
+                                log_warn!(
+                                    LOG_TAG,
+                                    "Discarded oversized ignorable CLI stdout record: event_type={} item_type={} size_bucket={} limit_bytes={}",
+                                    labels.event_type,
+                                    labels.item_type,
+                                    record_labels::size_bucket(stdout_partial_line.len()),
+                                    ORDINARY_CLI_STDOUT_MAX_LINE_BYTES,
+                                );
+                                stdout_partial_line.clear();
+                                match line_reader::skip_to_line_end(&mut reader).await {
+                                    // The record was unterminated, so the next
+                                    // read observes EOF and closes stdout
+                                    // through the ordinary path.
+                                    Ok(_) => continue,
+                                    Err(error) => {
+                                        stdout_closed = true;
+                                        active_input_controller.close_terminal();
+                                        let error = AgentError::Io(error);
+                                        if cli_status.is_some() {
+                                            break Err(error);
+                                        }
+                                        let error_log = error.to_string();
+                                        termination_runtime.begin_control_failure(
+                                            TerminationReason::StdoutIngestion,
+                                            error,
+                                            ControlTerminationLog::StdoutIngestionFailed {
+                                                error: error_log,
+                                            },
+                                            termination_deadline.as_mut(),
+                                        );
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
                         stdout_closed = true;
                         active_input_controller.close_terminal();
                         let error = match error {
@@ -2571,6 +2619,7 @@ mod tests {
                 size: 1,
             },
             entrypoint: InstalledOkouCli::entrypoint_for(cli),
+            session_construction: None,
         }
     }
 

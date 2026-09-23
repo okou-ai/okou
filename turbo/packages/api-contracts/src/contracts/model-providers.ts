@@ -133,6 +133,19 @@ export type ModelProviderCodexRuntimeConfig = z.infer<
   typeof modelProviderCodexRuntimeConfigSchema
 >;
 
+export type ModelProviderCodexRuntimeCapabilities = Pick<
+  ModelProviderCodexRuntimeConfig,
+  "supportsWebsockets"
+>;
+
+const MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES: Partial<
+  Record<ModelProviderType, ModelProviderCodexRuntimeCapabilities>
+> = {
+  "openrouter-codex": {
+    supportsWebsockets: false,
+  },
+};
+
 const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
   Record<ModelProviderType, ModelProviderCodexRuntimeConfig>
 > = {
@@ -151,14 +164,14 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
 export const DEFAULT_ORG_MODEL_POLICY_MODELS = [
   "claude-fable-5-1",
   "gpt-6-astra",
-  "gpt-5.6-luna",
+  "gpt-6-luna",
 ] as const satisfies readonly SupportedRunModel[];
 
 export const DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL =
-  "gpt-5.6-luna" as const satisfies SupportedRunModel;
+  "gpt-6-luna" as const satisfies SupportedRunModel;
 
 export const LIMITED_FREE1_DEFAULT_RUN_MODEL =
-  "gpt-5.6-luna" as const satisfies SupportedRunModel;
+  "gpt-6-luna" as const satisfies SupportedRunModel;
 
 export const supportedRunModelSchema = z.enum(SUPPORTED_RUN_MODELS);
 
@@ -182,6 +195,7 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "okou-1.0": "Okou 1.0",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
+  "claude-opus-5-5": "Claude Opus 5.5",
   "claude-opus-5": "Claude Opus 5",
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-sonnet-5": "Claude Sonnet 5",
@@ -191,6 +205,7 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "deepseek-v4-pro": "DeepSeek V4 Pro",
   "gpt-6-astra": "GPT 6 Astra",
   "gpt-6-sol": "GPT 6 Sol",
+  "gpt-6-luna": "GPT 6 Luna",
   "gpt-5.6-sol": "GPT 5.6 Sol",
   "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",
@@ -268,6 +283,7 @@ export function isSupportedRunModel(
 export const CODEX_FAST_MODE_MODELS = [
   "gpt-6-astra",
   "gpt-6-sol",
+  "gpt-6-luna",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
@@ -353,6 +369,15 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       {
         concreteType: "openrouter-api-key",
         apiModel: "anthropic/claude-fable-5.1",
+      },
+    ],
+  },
+  "claude-opus-5-5": {
+    candidates: [
+      { concreteType: "anthropic-api-key" },
+      {
+        concreteType: "openrouter-api-key",
+        apiModel: "anthropic/claude-opus-5.5",
       },
     ],
   },
@@ -455,6 +480,15 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
+  "gpt-6-luna": {
+    candidates: [
+      { concreteType: "openai-api-key" },
+      {
+        concreteType: "openrouter-codex",
+        apiModel: "openai/gpt-6-luna",
+      },
+    ],
+  },
   "gpt-5.6-sol": {
     candidates: [
       { concreteType: "openai-api-key" },
@@ -534,6 +568,7 @@ export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
   "openai/gpt-5.5": "gpt-5.5",
   "anthropic/claude-fable-5.1": "claude-fable-5-1",
   "anthropic/claude-fable-5": "claude-fable-5",
+  "anthropic/claude-opus-5.5": "claude-opus-5-5",
   "anthropic/claude-opus-5": "claude-opus-5",
   "anthropic/claude-opus-4.8": "claude-opus-4-8",
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
@@ -545,6 +580,7 @@ const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
 
 const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
   "okou-1.0",
+  "gpt-6-luna",
   "gpt-5.6-luna",
   "deepseek-v4.1-flash",
   "deepseek-v4-flash",
@@ -583,14 +619,18 @@ const IMAGE_INPUT_SUPPORTED_MODELS = new Set([
   "openai/gpt-6-astra",
   "gpt-6-sol",
   "openai/gpt-6-sol",
+  "gpt-6-luna",
+  "openai/gpt-6-luna",
   "deepseek-v4.1-flash",
   "deepseek/deepseek-v4.1-flash",
   "claude-fable-5-1",
+  "claude-opus-5-5",
   "claude-opus-5",
   "claude-opus-4-8",
   "claude-sonnet-5",
   "claude-sonnet-4-6",
   "anthropic/claude-fable-5.1",
+  "anthropic/claude-opus-5.5",
   "anthropic/claude-opus-5",
   "anthropic/claude-opus-4.8",
   "anthropic/claude-sonnet-5",
@@ -684,6 +724,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "claude-fable-5-1",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
@@ -704,6 +745,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "claude-fable-5-1",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
@@ -729,6 +771,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "anthropic/claude-fable-5.1",
+      "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
@@ -774,6 +817,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "anthropic/claude-fable-5.1",
+      "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
@@ -804,6 +848,7 @@ export const MODEL_PROVIDER_TYPES = {
     models: [
       "openai/gpt-6-astra",
       "openai/gpt-6-sol",
+      "openai/gpt-6-luna",
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.6-luna",
@@ -849,6 +894,7 @@ export const MODEL_PROVIDER_TYPES = {
     models: [
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -924,6 +970,7 @@ export const MODEL_PROVIDER_TYPES = {
     models: [
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -1066,6 +1113,15 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "azure-foundry",
     "aws-bedrock",
   ],
+  "claude-opus-5-5": [
+    "built-in",
+    "claude-code-oauth-token",
+    "anthropic-api-key",
+    "openrouter-api-key",
+    "vercel-ai-gateway",
+    "azure-foundry",
+    "aws-bedrock",
+  ],
   "claude-opus-5": [
     "built-in",
     "claude-code-oauth-token",
@@ -1114,6 +1170,12 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "codex-oauth-token",
     "openrouter-codex",
   ],
+  "gpt-6-luna": [
+    "built-in",
+    "openai-api-key",
+    "codex-oauth-token",
+    "openrouter-codex",
+  ],
   "gpt-5.6-sol": [
     "built-in",
     "openai-api-key",
@@ -1145,6 +1207,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
 > = {
   "openrouter-api-key": {
     "claude-fable-5-1": "anthropic/claude-fable-5.1",
+    "claude-opus-5-5": "anthropic/claude-opus-5.5",
     "claude-opus-5": "anthropic/claude-opus-5",
     "claude-opus-4-8": "anthropic/claude-opus-4.8",
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
@@ -1152,6 +1215,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
   },
   "vercel-ai-gateway": {
     "claude-fable-5-1": "anthropic/claude-fable-5.1",
+    "claude-opus-5-5": "anthropic/claude-opus-5.5",
     "claude-opus-5": "anthropic/claude-opus-5",
     "claude-opus-4-8": "anthropic/claude-opus-4.8",
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
@@ -1163,6 +1227,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
     "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
     "gpt-6-astra": "openai/gpt-6-astra",
     "gpt-6-sol": "openai/gpt-6-sol",
+    "gpt-6-luna": "openai/gpt-6-luna",
     "gpt-5.6-sol": "openai/gpt-5.6-sol",
     "gpt-5.6-terra": "openai/gpt-5.6-terra",
     "gpt-5.6-luna": "openai/gpt-5.6-luna",
@@ -1181,6 +1246,7 @@ const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
     "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
     "anthropic/claude-fable-5.1": "claude-fable-5-1",
     "anthropic/claude-fable-5": "claude-fable-5",
+    "anthropic/claude-opus-5.5": "claude-opus-5-5",
     "anthropic/claude-opus-5": "claude-opus-5",
     "anthropic/claude-opus-4.8": "claude-opus-4-8",
     "anthropic/claude-sonnet-5": "claude-sonnet-5",
@@ -1387,6 +1453,15 @@ export function getModelProviderCodexRuntimeConfig(
   type: ModelProviderType,
 ): ModelProviderCodexRuntimeConfig | undefined {
   return MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type];
+}
+
+/**
+ * Get Codex runtime capabilities that apply independently from model metadata.
+ */
+export function getModelProviderCodexRuntimeCapabilities(
+  type: ModelProviderType,
+): ModelProviderCodexRuntimeCapabilities | undefined {
+  return MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES[type];
 }
 
 const CODEX_MODEL_CATALOG_OVERRIDES: Readonly<
@@ -1692,11 +1767,7 @@ export const orgModelPoliciesResponseSchema = z.object({
   revision: z.string(),
   writePreconditionRequired: z.boolean(),
   policies: z.array(orgModelPolicySchema),
-  // API-first rollout compatibility: a new App can briefly reach an API from
-  // before this catalog projection existed. Missing data fails closed in the
-  // Add model dialog. Make required after those API builds leave rollback;
-  // follow-up #35900.
-  modelsAvailableToAdd: z.array(supportedRunModelSchema).optional(),
+  modelsAvailableToAdd: z.array(supportedRunModelSchema),
   workspaceDefaultModel: supportedRunModelSchema.nullable(),
   workspaceDefaultPolicyId: z.uuid().nullable(),
 });

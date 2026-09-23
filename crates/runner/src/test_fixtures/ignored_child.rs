@@ -10,7 +10,7 @@ use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio_util::sync::CancellationToken;
 
 #[cfg(target_os = "linux")]
-use crate::process::{ProcessStatRead, process_stat_is_live, read_process_stat_checked};
+use runner_host::process::{ProcessStatRead, process_stat_is_live, read_process_stat_checked};
 
 const CHILD_OUTPUT_TIMEOUT: Duration = Duration::from_secs(5);
 const CHILD_KILL_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -861,7 +861,8 @@ mod tests {
             .spawn()
             .expect("spawn quiet descendant");
         let pid = descendant.id();
-        let ProcessStatRead::Found(stat) = crate::process::read_process_stat_checked_blocking(pid)
+        let ProcessStatRead::Found(stat) =
+            runner_host::process::read_process_stat_checked_blocking(pid)
         else {
             panic!("quiet descendant stat must be readable");
         };
@@ -977,7 +978,8 @@ mod tests {
         // This ignored child exits below; the parent fixture owns descendant cleanup.
         let descendant = command.spawn().expect("spawn output-holding descendant");
         let pid = descendant.id();
-        let ProcessStatRead::Found(stat) = crate::process::read_process_stat_checked_blocking(pid)
+        let ProcessStatRead::Found(stat) =
+            runner_host::process::read_process_stat_checked_blocking(pid)
         else {
             panic!("output-holding descendant stat must be readable");
         };
@@ -1085,7 +1087,8 @@ mod tests {
             .stderr(Stdio::null());
         let mut descendant = command.spawn().expect("spawn timeout descendant");
         let pid = descendant.id();
-        let ProcessStatRead::Found(stat) = crate::process::read_process_stat_checked_blocking(pid)
+        let ProcessStatRead::Found(stat) =
+            runner_host::process::read_process_stat_checked_blocking(pid)
         else {
             panic!("timeout descendant process stat must be readable");
         };

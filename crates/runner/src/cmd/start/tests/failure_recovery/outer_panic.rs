@@ -87,20 +87,18 @@ async fn outer_job_panic_after_handoff_keeps_successor_owned_sandbox() {
     env.handle
         .discover_tx
         .send(
-            crate::provider::JobCandidate::new(successor_run_id, "vm0/default".into())
+            runner_provider::JobCandidate::new(successor_run_id, "vm0/default".into())
                 .with_reuse_key(Some(reuse_key.to_owned()))
                 .with_history_generation_run_id(Some(predecessor_run_id))
-                .with_runner_preference_for_test(
-                    crate::provider::ActiveRunnerPreference::ranked_for_test(
-                        crate::runner_process_identity::RunnerProcessIdentity::new(
-                            TEST_RUNNER_ID.parse().unwrap(),
-                            TEST_HEARTBEAT_GENERATION,
-                        )
-                        .unwrap(),
-                        crate::provider::RunnerPreferenceTier::FinalizingPredecessor,
-                        std::time::Instant::now() + Duration::from_secs(30),
-                    ),
-                ),
+                .with_runner_preference(runner_provider::ActiveRunnerPreference::new(
+                    runner_host::runner_process_identity::RunnerProcessIdentity::new(
+                        TEST_RUNNER_ID.parse().unwrap(),
+                        TEST_HEARTBEAT_GENERATION,
+                    )
+                    .unwrap(),
+                    runner_provider::RunnerPreferenceTier::FinalizingPredecessor,
+                    std::time::Instant::now() + Duration::from_secs(30),
+                )),
         )
         .unwrap();
     wait_discover_entered(&env, Duration::from_secs(5)).await;

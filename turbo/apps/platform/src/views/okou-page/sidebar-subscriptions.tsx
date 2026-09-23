@@ -50,7 +50,10 @@ export function AccountMenuSubscriptionsPanel({
 }: {
   readonly loading: boolean;
   readonly rows: readonly AccountMenuSubscriptionUsageRow[];
-  readonly onResetCodexUsage?: (resetCredits: number | null) => void;
+  readonly onResetCodexUsage?: (
+    type: AccountMenuSubscriptionUsageRow["type"],
+    resetCredits: number | null,
+  ) => void;
   readonly resetPending?: boolean;
 }) {
   const { t } = useTranslation();
@@ -59,7 +62,7 @@ export function AccountMenuSubscriptionsPanel({
       {loading && rows.length === 0 ? (
         <AccountMenuSubscriptionsSkeleton />
       ) : (
-        <TooltipProvider delayDuration={100}>
+        <TooltipProvider delay={100}>
           <div className="flex flex-col gap-2.5">
             {rows.map((row, index) => {
               const label =
@@ -137,7 +140,10 @@ function AccountMenuSubscriptionProviderSection({
   readonly resetCredits?: number | null;
   readonly resetCreditsNextExpiresAt?: string | null;
   readonly resetPending: boolean;
-  readonly onResetCodexUsage?: (resetCredits: number | null) => void;
+  readonly onResetCodexUsage?: (
+    type: AccountMenuSubscriptionUsageRow["type"],
+    resetCredits: number | null,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const windows = accountMenuSubscriptionUsageWindows(usage);
@@ -157,21 +163,21 @@ function AccountMenuSubscriptionProviderSection({
         <h3 className="min-w-0 flex-1 truncate text-xs font-medium leading-4 text-foreground">
           {label}
         </h3>
-        {type === "codex-oauth-token" ? (
+        {resetCredits === undefined ? null : (
           <CodexResetCreditsMenuItem
             className="ml-auto"
-            resetCredits={resetCredits ?? null}
+            resetCredits={resetCredits}
             resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}
             resetPending={resetPending}
             onReset={
               onResetCodexUsage
                 ? () => {
-                    onResetCodexUsage(resetCredits ?? null);
+                    onResetCodexUsage(type, resetCredits);
                   }
                 : undefined
             }
           />
-        ) : null}
+        )}
       </div>
       <div className="flex flex-col gap-1">
         {windows.map(({ kind, window }) => {

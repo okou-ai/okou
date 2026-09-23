@@ -4,6 +4,7 @@ import {
   clearAllDetached,
   settleIncludingAbort,
   detach,
+  joinAll,
   joinAllInOrder,
   Mechanism,
   startUntrackedBestEffortCleanup,
@@ -75,6 +76,33 @@ describe("settleIncludingAbort", () => {
         throw error;
       }),
     ).resolves.toStrictEqual({ ok: false, error });
+  });
+});
+
+describe("joinAll", () => {
+  it("settles every owned branch before surfacing the first rejection", async () => {
+    const first = promiseWithResolvers<void>();
+    const second = promiseWithResolvers<void>();
+    const error = new Error("second branch failed");
+    const work = joinAll([first.promise, second.promise]);
+    let settled = false;
+    const settlementObservation = work.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    const secondObservation = settleIncludingAbort(second.promise);
+
+    second.reject(error);
+    await secondObservation;
+    expect(settled).toBeFalsy();
+
+    first.resolve();
+    await expect(work).rejects.toBe(error);
+    await settlementObservation;
   });
 });
 

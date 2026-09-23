@@ -8,20 +8,32 @@ import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { generateArtifactPreviewUrl } from "../external/s3";
-import { uploadedArtifactObject } from "../services/uploaded-artifact.service";
+import {
+  uploadedArtifactObject,
+  uploadedArtifactPreviewImageUrl,
+} from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
 
 const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(authContext$);
   const params = get(queryOf(webFilesContract.fileUrl));
 
-  const object = await get(
-    uploadedArtifactObject({
-      userId: auth.userId,
-      orgId: auth.orgId,
-      id: params.file_id,
-    }),
-  );
+  const [object, previewImageUrl] = await Promise.all([
+    get(
+      uploadedArtifactObject({
+        userId: auth.userId,
+        orgId: auth.orgId,
+        id: params.file_id,
+      }),
+    ),
+    get(
+      uploadedArtifactPreviewImageUrl({
+        userId: auth.userId,
+        orgId: auth.orgId,
+        id: params.file_id,
+      }),
+    ),
+  ]);
   signal.throwIfAborted();
   if (!object) {
     return notFound("File not found");
@@ -41,7 +53,11 @@ const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   return {
     status: 200 as const,
-    body: { ...preview, publicUrl: object.isPrivate ? null : object.url },
+    body: {
+      ...preview,
+      publicUrl: object.isPrivate ? null : object.url,
+      previewImageUrl,
+    },
   };
 });
 

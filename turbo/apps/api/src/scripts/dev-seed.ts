@@ -121,6 +121,26 @@ const GPT_6_ASTRA_PRICING: readonly UsagePricingRow[] = [
   ["tokens.output", usd(50), 1_000_000],
 ];
 
+// Official Standard token rates / 0.8, rounded per billing category.
+const GPT_6_LUNA_PRICING: readonly UsagePricingRow[] = [
+  ["tokens.input", 125, 1_000_000],
+  ["tokens.cache_read", 13, 1_000_000],
+  ["tokens.cache_creation", 156, 1_000_000],
+  ["tokens.output", 625, 1_000_000],
+  ["tokens.input.long_context", 250, 1_000_000],
+  ["tokens.cache_read.long_context", 25, 1_000_000],
+  ["tokens.cache_creation.long_context", 313, 1_000_000],
+  ["tokens.output.long_context", 938, 1_000_000],
+  ["tokens.input.fast", 250, 1_000_000],
+  ["tokens.cache_read.fast", 25, 1_000_000],
+  ["tokens.cache_creation.fast", 313, 1_000_000],
+  ["tokens.output.fast", 1250, 1_000_000],
+  ["tokens.input.long_context.fast", 500, 1_000_000],
+  ["tokens.cache_read.long_context.fast", 50, 1_000_000],
+  ["tokens.cache_creation.long_context.fast", 625, 1_000_000],
+  ["tokens.output.long_context.fast", 1875, 1_000_000],
+];
+
 const GPT_5_6_SOL_PRICING: readonly UsagePricingRow[] = [
   ["tokens.input", usd(5), 1_000_000],
   ["tokens.cache_read", usd(0.5), 1_000_000],
@@ -410,6 +430,14 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.cache_read", usd(0.2), 1_000_000],
     ["tokens.cache_creation", usd(2.5), 1_000_000],
   ]),
+  // Anthropic pricing retrieved 2026-09-22 from:
+  // https://platform.claude.com/docs/en/about-claude/pricing
+  ...usageGroup("model", "claude-opus-5-5", [
+    ["tokens.input", usd(4), 1_000_000],
+    ["tokens.output", usd(20), 1_000_000],
+    ["tokens.cache_read", usd(0.2), 1_000_000],
+    ["tokens.cache_creation", usd(5), 1_000_000],
+  ]),
   ...usageGroup("model", "claude-opus-5", [
     ["tokens.input", usd(5), 1_000_000],
     ["tokens.output", usd(25), 1_000_000],
@@ -457,6 +485,8 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     "gpt-6-astra",
     withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
   ),
+  // https://developers.openai.com/api/docs/models/gpt-6-luna
+  ...usageGroup("model", "gpt-6-luna", GPT_6_LUNA_PRICING),
   // OpenAI API pricing retrieved 2026-07-31 from:
   // https://developers.openai.com/api/docs/pricing
   ...usageGroup("model", "gpt-5.6-sol", GPT_5_6_SOL_USAGE_PRICING),
@@ -549,6 +579,11 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // Perplexity Search API — https://docs.perplexity.ai/docs/getting-started/pricing
   // Raw provider cost is $5 per 1,000 requests with no token charge.
   ...usageGroup("web-search", "perplexity", [["request", usd(0.005), 1]]),
+  // Runtime reports one aggregate Google provider cost in micro-USD; this
+  // converts it once at 1,250 credits/USD (the required 25% markup).
+  ...usageGroup("maps", "google-maps-grounding", [
+    ["provider_cost_usd_micros", 1250, 1_000_000],
+  ]),
   // SocialKit Growth costs $95 per 50,000 requests. A 25% markup is
   // $0.002375, rounded up to 3 whole Okou credits per successful request.
   ...usageGroup("social", "socialkit", [

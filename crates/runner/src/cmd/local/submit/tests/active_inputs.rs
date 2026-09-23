@@ -3,11 +3,11 @@ use std::time::Duration;
 
 use super::super::{ActiveInputProducer, DelayedActiveInput, SubmitPlan, run_submit_with_home};
 use super::support::{submit_args_for_test, submit_queue_entry, write_queue_job_file};
-use crate::active_input::{
+use runner_host::paths::HomePaths;
+use runner_provider::local_queue::{self, JobRequest, JobResponse};
+use runner_provider::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
 };
-use crate::local_queue::{self, JobRequest, JobResponse};
-use crate::paths::HomePaths;
 use runner_types::ids::RunId;
 
 const TEST_QUEUE_WATCH_TIMEOUT: Duration = Duration::from_secs(5);

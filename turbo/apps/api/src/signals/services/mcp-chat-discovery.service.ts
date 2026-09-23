@@ -33,7 +33,6 @@ import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { resolveBuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import {
   loadMemberModelRouteContext,
-  loadPersonalModelRouteSubscriptions,
   resolveEffectivePolicyRoute,
   type MemberModelRouteContext,
   type ResolvedModelFirstPolicyRoute,
@@ -454,23 +453,7 @@ export async function listMcpModels(
         principal.orgId,
         principal.userId,
       );
-      // Explicit member policies still need connection metadata when personal
-      // priority is disabled. Keep this separate from route selection.
-      const needsPersonalMetadata =
-        !member.priorityEnabled &&
-        policies.some((policy) => {
-          return policy.credentialScope === "member";
-        });
-      if (needsPersonalMetadata) {
-        await budget.beforeQuery(tx);
-      }
-      const subscriptions = needsPersonalMetadata
-        ? await loadPersonalModelRouteSubscriptions(
-            tx,
-            principal.orgId,
-            principal.userId,
-          )
-        : member.subscriptions;
+      const subscriptions = member.subscriptions;
       budget.check();
       const models: McpListModelsOutput["models"] = [];
       const policiesByModel = new Map(

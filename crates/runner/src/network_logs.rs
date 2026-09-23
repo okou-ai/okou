@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::time::{Instant, timeout_at};
 use tracing::{error, info, warn};
 
-use crate::error::{ApiFailureKind, ApiRequestContext, ApiTransportCause, RunnerError};
+use crate::error::{ApiFailureKind, ApiRequestContext, ApiTransportCause};
 use crate::http::HttpClient;
 use runner_types::ids::RunId;
 
@@ -842,7 +842,7 @@ impl<'a> NetworkLogBatchUploader<'a> {
             }
             Err(e) => {
                 let failure = match &e {
-                    RunnerError::ApiTransport(error) => {
+                    crate::error::RunnerError::ApiTransport(error) => {
                         info!(
                             run_id = %self.run_id,
                             batch_index,

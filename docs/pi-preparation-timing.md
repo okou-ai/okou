@@ -54,6 +54,7 @@ The phase names below omit the common `pi_prepare_` prefix.
 | `launch_memory`                               | `resolvePiMemoryRecall` with captured mounts and versions; child of `launch`. Absent for maintenance.                                                                                                   |
 | `launch_manifest_sign`, `launch_session_sign` | The two `generatePresignedGetUrl` reads; overlapping children of `launch`, started alongside resume lookup and canonical Storage planning.                                                              |
 | `launch_identity`                             | Resource digest, base-session identity, deadline and unchanged final launch-object assembly; synchronous child of `launch`.                                                                             |
+| `activation_authorize`                        | The dispatched turn's trigger-source authority read in `runPiApiFirstTurn$`; leaf, and the first executable step after the atomic-launch commit returns. Absent when no API-first turn is dispatched.   |
 | `h0_metadata_preflight`                       | `readResumeSessionMetadata` for blob-backed history in `publishLargeHistoryTransfer$`, before API resource loading. Absent for new or inline sessions.                                                  |
 | `resource_snapshot`                           | API `loadApiFirstTurnResource$`, including validation. Existing `pi_resource_snapshot_prepare` is nested and supplies cache/index dimensions.                                                           |
 | `credentials_route`                           | Route normalization and `apiFirstTurnModelConfig`: subscription lookup or decryption, credential resolution and direct-route materialization. KMS HTTP is a nested transport span, not the whole phase. |
@@ -68,8 +69,28 @@ The phase names below omit the common `pi_prepare_` prefix.
 | `session_create`                              | `createAgentSessionFromServices`, including thinking-level/tool arguments.                                                                                                                              |
 | `session_finalize`                            | Existing configured-thinking-level recording after SDK session creation.                                                                                                                                |
 | `compaction_preflight`                        | `assertPiApiFirstTurnCompactionSafe` and compaction settings read, after the shell is ready.                                                                                                            |
+| `credentials_revalidate`                      | `validateApiFirstTurnCredentialSources` before the model turn: captured subscription and model-provider source revalidation, including its KMS decryption. Leaf, and never nested with `credentials_route`, which measures the separate route preparation inside `prepareApiFirstTurnInputs$`. Absent when native-input/large-history transfer, an earlier preparation failure, or cancellation ends the attempt before the model turn. |
 | `model_context`                               | Native history preparation, user-message append, context build and conversion to model messages/tools, before the durable provider gate.                                                                |
 | `provider_boundary`                           | Start of `withApiFirstTurnLifecycle` through transaction return/throw, including lock, eligibility, active input and ownership marking. **Not HTTP transport start.**                                   |
+
+### Previously unattributed steps after the atomic-launch commit
+
+Between `api_dispatch_insert_run_with_concurrency` returning and
+`provider_boundary` starting, two executable steps had no leaf phase, so
+[#36082](https://github.com/okou-ai/okou/issues/36082) measured that window's
+remainder at p50 158 ms of a p50 336 ms window. `activation_authorize` and
+`credentials_revalidate` close both; the endpoints themselves are unchanged, so
+old and new rows stay comparable.
+
+Two further intervals in that window deliberately gain no phase. The atomic
+commit returning through same-thread marker recording and the `waitUntil`
+dispatch entry is in-process telemetry and response assembly with no IO, and its
+endpoints are already exposed by `runner_notification_same_thread_markers_complete`
+and `...activation_entry`; adding a phase there would duplicate those rows. The
+adoption join that waits for prepared inputs also gains none, because the work it
+waits for is already the preparation's own leaf phases and a phase around it
+would nest over them. Use the preparation leaves and the overlapping
+`pi_admission_preparation` records for that wait, never a new wrapper.
 
 Launch preparation now joins all started Storage, encrypted-context and Pi
 branches before propagating an error. Storage errors retain precedence over

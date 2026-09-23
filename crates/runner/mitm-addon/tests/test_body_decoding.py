@@ -178,23 +178,58 @@ class TestStreamDecodeSession:
         assert b"".join(chunks) == plaintext
         assert session.finish_error() is None
 
-    def test_no_encoding_feeds_original_chunks(self, headers):
+    @pytest.mark.parametrize("encoding", [None, "identity"], ids=["missing", "identity"])
+    def test_identity_stream_feeds_bounded_chunks(self, headers, encoding):
         chunks: list[bytes] = []
-        session = create_stream_decode_session(headers(), chunks.append)
-        assert session is not None
-        session.feed(b"hello")
-        session.feed(b" world")
-        assert chunks == [b"hello", b" world"]
-        assert session.finish_error() is None
-
-    def test_identity_feeds_original_chunks(self, headers):
-        chunks: list[bytes] = []
+        response_headers = (
+            headers() if encoding is None else headers(("Content-Encoding", encoding))
+        )
         session = create_stream_decode_session(
-            headers(("Content-Encoding", "identity")), chunks.append
+            response_headers,
+            chunks.append,
+            max_decoded_chunk=8,
         )
         assert session is not None
-        session.feed(b"hello")
-        assert chunks == [b"hello"]
+        session.feed(b"abcdefghijklmnopqrstuvwxy")
+        assert chunks == [b"abcdefgh", b"ijklmnop", b"qrstuvwx", b"y"]
+        assert session.finish_error() is None
+
+    @pytest.mark.parametrize("encoding", [None, "identity"], ids=["missing", "identity"])
+    def test_identity_stream_stops_between_bounded_chunks(self, headers, encoding):
+        chunks: list[bytes] = []
+        continuation_checks = 0
+        response_headers = (
+            headers() if encoding is None else headers(("Content-Encoding", encoding))
+        )
+
+        def should_continue() -> bool:
+            nonlocal continuation_checks
+            continuation_checks += 1
+            return False
+
+        session = create_stream_decode_session(
+            response_headers,
+            chunks.append,
+            max_decoded_chunk=8,
+            should_continue=should_continue,
+        )
+        assert session is not None
+        session.feed(b"abcdefghijklmnopqrstuvwxy")
+        session.feed(b"later")
+        assert chunks == [b"abcdefgh"]
+        assert continuation_checks == 1
+        assert session.finish_error() is None
+
+    @pytest.mark.parametrize("encoding", [None, "identity"], ids=["missing", "identity"])
+    def test_identity_stream_forwards_empty_chunks(self, headers, encoding):
+        chunks: list[bytes] = []
+        response_headers = (
+            headers() if encoding is None else headers(("Content-Encoding", encoding))
+        )
+        session = create_stream_decode_session(response_headers, chunks.append)
+        assert session is not None
+        session.feed(b"")
+        assert chunks == [b""]
         assert session.finish_error() is None
 
     @pytest.mark.parametrize("encoding", ["identity", "gzip", "br"])
@@ -655,6 +690,26 @@ class TestDecompressBody:
         hdrs = headers(("Content-Encoding", "zstd"))
         result = decompress_body(compressed, hdrs, max_output=64 * 1024)
         assert result == plaintext
+
+    def test_zstd_concatenated_frames_share_max_output_cap(self, headers):
+        first = b"A" * 8
+        second = b"B" * 8
+        compressor = zstandard.ZstdCompressor()
+        compressed = compressor.compress(first) + compressor.compress(second)
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        result = decompress_body(compressed, hdrs, max_output=12)
+
+        assert result == first + second[:4]
+
+    def test_zstd_corrupt_later_frame_returns_original_data(self, headers):
+        first = zstandard.ZstdCompressor().compress(b"first")
+        compressed = first + b"not a zstd frame"
+        hdrs = headers(("Content-Encoding", "zstd"))
+
+        result = decompress_body(compressed, hdrs, max_output=64 * 1024)
+
+        assert result == compressed
 
     def test_brotli_large_input_caps_adaptive_chunk_size(self, headers, monkeypatch):
         plaintext = pseudo_random_ascii(DEFAULT_BODY_DECODE_LIMIT * 3)

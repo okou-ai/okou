@@ -141,6 +141,7 @@ test("Unread indicators update after a thread-list event", async () => {
           }
         : {},
       threads: {},
+      unreadAt: {},
     });
   });
   configureAgentList(context, [

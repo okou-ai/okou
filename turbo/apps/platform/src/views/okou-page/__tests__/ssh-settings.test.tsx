@@ -1565,6 +1565,40 @@ test.each(["empty", "oversized", "unreadable"])(
   },
 );
 
+test("Revisiting the selected credential preserves a pending SSH key import", async () => {
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  const pending = context.mocks.deferred<string>();
+  const file = new File(["delayed-key"], "id_ed25519");
+  vi.spyOn(file, "text").mockReturnValue(pending.promise);
+  await page("/connectors/ssh?add=1");
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await selectNewCredential(dialog);
+  await userEvent.upload(
+    within(dialog).getByLabelText("Choose private key file"),
+    file,
+  );
+  await within(dialog).findByText("Reading private key file…");
+
+  await selectNewCredential(dialog);
+
+  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+    "Create new credential",
+  );
+  expect(
+    within(dialog).getByText("Reading private key file…"),
+  ).toBeInTheDocument();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  pending.resolve("imported-key");
+  await waitFor(() => {
+    expect(within(dialog).getByLabelText("Private key")).toHaveValue(
+      "imported-key",
+    );
+  });
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+});
+
 test.each(["another file", "manual input", "close"])(
   "A pending file read cannot overwrite %s",
   async (action) => {

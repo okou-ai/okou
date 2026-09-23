@@ -22,6 +22,7 @@ import {
 } from "@okouai/pi-agent-runtime/node";
 
 import {
+  describePiApiFirstTurnHandoffDegrade,
   resolvePiApiFirstTurnHandoff,
   type PiApiFirstTurnBoundaryControl,
 } from "./pi-api-first-turn-handoff";
@@ -275,9 +276,8 @@ export async function runPiSandboxAgentLoop(args: {
     // Plain text: guest-agent only parses the preparation-timing envelope on
     // stderr and keeps everything else as a failure-tail diagnostic.
     console.error(
-      `Pi API first-turn handoff restarted from H0 as sandbox-first: ${handoff.degraded.reason} ` +
-        `(required pi-agent-runtime ${handoff.degraded.requiredPiAgentRuntimeVersion}, ` +
-        `installed ${handoff.degraded.installedPiAgentRuntimeVersion})`,
+      "Pi API first-turn handoff restarted from H0 as sandbox-first: " +
+        describePiApiFirstTurnHandoffDegrade(handoff.degraded),
     );
   }
   await writePiApiFirstTurnBoundaryControl(handoff.boundaryControl);

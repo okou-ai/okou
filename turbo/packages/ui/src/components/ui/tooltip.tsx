@@ -7,28 +7,14 @@ import { anchoredPopupTransitionClassName } from "./popup-motion";
 import { cn } from "../../lib/utils";
 import { resolveCollisionPadding } from "../../lib/safe-area";
 
-interface TooltipProviderProps extends Omit<
-  TooltipPrimitive.Provider.Props,
-  "delay" | "timeout"
-> {
-  delay?: number;
-  delayDuration?: number;
-  skipDelayDuration?: number;
-  timeout?: number;
-}
-
 function TooltipProvider({
-  delay,
-  delayDuration,
-  skipDelayDuration,
-  timeout,
+  delay = 0,
   ...props
-}: TooltipProviderProps) {
+}: TooltipPrimitive.Provider.Props) {
   return (
     <TooltipPrimitive.Provider
       data-slot="tooltip-provider"
-      delay={delay ?? delayDuration ?? 0}
-      timeout={timeout ?? skipDelayDuration}
+      delay={delay}
       {...props}
     />
   );

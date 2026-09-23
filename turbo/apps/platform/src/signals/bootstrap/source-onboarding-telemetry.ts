@@ -1,9 +1,9 @@
 // Source-first onboarding funnel analytics. The `Onboarding: ` prefix is its
 // own: `PaidOnboarding: ` stays reserved for the paid funnel's dashboards.
 //
-// Nothing a person typed is captured here. Invite addresses, catalog search
-// words and the starting prompt itself never leave the browser; the funnel
-// carries counts, lengths, connector slugs and the enum answers instead.
+// Nothing a person typed is captured here. Invite addresses and the starting
+// prompt itself never leave the browser; the funnel carries counts, lengths,
+// connector slugs and the enum answers instead.
 import { command, state } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
@@ -19,9 +19,6 @@ import {
 
 type TelemetryProperties = Record<string, string | number | boolean>;
 
-/** Which control started a connect, so the grid and the catalog stay apart. */
-type SourceConnectOrigin = "grid" | "search";
-
 /**
  * Every event carries where in this run it happened. The step list is the
  * run's own branch, so `step_index` and `step_count` describe the flow the
@@ -35,7 +32,7 @@ const captureStepEvent$ = command(
     properties: TelemetryProperties = {},
   ): void => {
     const flow = get(sourcesFirstFlow$);
-    const steps = sourcesFirstSteps(flow, get(sourcesFirstDraft$).experienced);
+    const steps = sourcesFirstSteps(flow, get(sourcesFirstDraft$).provider);
     captureOnboardingEvent(name, {
       flow: "source_first",
       step_key: step,
@@ -72,22 +69,15 @@ export const captureSourceOnboardingIndustrySelected$ = command(
   },
 );
 
-/** The control a connect came from, kept until that connect succeeds. */
-const internalConnectStart$ = state<{
-  readonly connectorSlug: ConnectorSlug;
-  readonly origin: SourceConnectOrigin;
-} | null>(null);
+/** The source card a connect came from, kept until that connect succeeds. */
+const internalConnectStart$ = state<ConnectorSlug | null>(null);
 
 export const captureSourceOnboardingConnectStarted$ = command(
-  (
-    { set },
-    connectorSlug: ConnectorSlug,
-    origin: SourceConnectOrigin,
-  ): void => {
-    set(internalConnectStart$, { connectorSlug, origin });
+  ({ set }, connectorSlug: ConnectorSlug): void => {
+    set(internalConnectStart$, connectorSlug);
     set(captureStepEvent$, "sources", "SourceConnectStarted", {
       connector_slug: connectorSlug,
-      source_origin: origin,
+      source_origin: "grid",
     });
   },
 );
@@ -100,23 +90,7 @@ export const captureSourceOnboardingConnected$ = command(
       // A connect that finished without a start of this run, for example one
       // returning from a provider after a reload, is reported as such rather
       // than credited to whichever control was used last.
-      source_origin:
-        started?.connectorSlug === connectorSlug ? started.origin : "unknown",
-    });
-  },
-);
-
-export const captureSourceOnboardingCatalogSearchOpened$ = command(
-  ({ set }): void => {
-    set(captureStepEvent$, "sources", "CatalogSearchOpened");
-  },
-);
-
-export const captureSourceOnboardingCatalogSearchResultSelected$ = command(
-  ({ set }, connectorSlug: ConnectorSlug, resultCount: number): void => {
-    set(captureStepEvent$, "sources", "CatalogSearchResultSelected", {
-      connector_slug: connectorSlug,
-      result_count: resultCount,
+      source_origin: started === connectorSlug ? "grid" : "unknown",
     });
   },
 );

@@ -1,4 +1,12 @@
 export { resumePiApiFirstTurn, runPiOfficialRpcMode } from "./rpc";
+export {
+  computePiSessionConstructionDigest,
+  computePiSessionConstructionDocument,
+} from "./session-construction-digest-node";
+export type {
+  PiSessionConstructionDocument,
+  PiSessionConstructionProfileDocument,
+} from "./session-construction-digest-node";
 export type {
   PiLangfuseRuntimeConfig,
   PiSandboxOwnershipTransferMode,

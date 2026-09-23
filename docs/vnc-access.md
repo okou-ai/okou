@@ -99,8 +99,22 @@ credential.
 
 With `vncAccess` enabled, open **Connectors → Remote access → VNC**.
 The independent VNC page at `/connectors/vnc` manages hosts and reusable
-credentials. Add a host's hostname or IP address and port (default 5900), then
-select a saved credential or create one. The initial supported profile is
+credentials. Choose **Direct from Runner** or **Through saved SSH host**. The
+SSH choice lists the current owner's secret-free saved SSH hosts; SSH
+credentials and learned host-key material are not copied into VNC state. A
+missing or deleted selection blocks saving and preserves the draft until the
+owner selects another SSH host or explicitly switches to Direct.
+
+The **RFB destination host** and **RFB destination port** identify the socket
+the VNC client opens. For an SSH route, they are resolved and reached from the
+selected SSH server, not from the Runner. The SSH server must therefore have
+network access to that destination. SSH authenticates and encrypts only the
+Runner-to-SSH-server hop; the selected VeNCrypt profile independently protects
+and authenticates the onward RFB connection. Switching routes preserves the
+draft endpoint, security, credential and SSH selection instead of rewriting
+them.
+
+Select a saved VNC credential or create one. The initial supported profile is
 VeNCrypt X509Vnc (certificate-verified TLS plus a classic VNC password) or
 VeNCrypt X509Plain (certificate-verified TLS plus username/password
 authentication). Classic passwords must contain 1–8 printable ASCII characters.
@@ -112,11 +126,18 @@ insecure certificate bypass.
 
 Choose system certificate authorities or paste the public CA certificates
 needed to verify the server. Custom trust accepts at most eight CA certificates
-and 64 KiB; do not paste private keys or leaf server certificates. The server
-certificate must identify the configured hostname or IP address. Saving a host
-records configuration; it does not test reachability or authenticate a session.
-The current app does not expose the saved SSH transport or separate certificate
-identity controls; those remain behind later UI/runtime delivery.
+and 64 KiB; do not paste private keys or leaf server certificates. **TLS
+certificate identity** is separate from the RFB destination: leave it blank to
+verify the certificate against the RFB destination host, or set the DNS/IP name
+actually covered by the server certificate. It never changes where the socket
+connects. Saved cards show the route, selected SSH host, RFB destination and
+effective certificate identity before Agent access is granted. Saving records
+configuration; it does not test reachability or authenticate a session.
+
+An SSH host referenced by a VNC route cannot be deleted. Rebind every dependent
+VNC route, switch it explicitly to Direct where that destination is valid, or
+delete it first. The app reports this dependency without cascading, clearing or
+silently converting the VNC route.
 
 Adding the first VNC host automatically grants access to every Agent currently
 visible to the owner, including another workspace member's public Agents. The
@@ -126,9 +147,14 @@ one again repeats this onboarding default for the Agents visible at that time.
 
 Manage VNC access explicitly using the card's Agent access control or the Agent's
 authorization tab. This grant is independent of SSH and permits access to the
-owner's current and future configured VNC hosts. Agents select shared or exclusive
-mode when opening each session; the server decides admission and may override
-the requested mode. The settings page adds no controller lock.
+owner's current and future configured VNC hosts. Direct rows appear in the live
+Agent inventory with VNC access alone. An SSH-backed row appears only while that
+same Agent independently holds both VNC and SSH access; revoking SSH immediately
+removes only the SSH-backed rows from later inventory reads and authorization
+checks. The inventory remains secret-free and does not expose the route, SSH
+reference, trust material, certificate identity or generations. Agents select
+shared or exclusive mode when opening each session; the server decides admission
+and may override the requested mode. The settings page adds no controller lock.
 
 The Credentials tab shows which hosts use each credential. Renaming does not
 rotate its authentication; explicitly replacing the password (and X509Plain
@@ -155,7 +181,10 @@ retained-data rollback for the base profile were verified in
 [#35299](https://github.com/vm0-ai/okou/issues/35299). X509Plain full-path
 verification is recorded in the
 [head-specific acceptance record](vnc-x509plain-acceptance.md); merging support
-is not production activation evidence.
+is not production activation evidence. The independent SSH matrix and its
+disposable-host procedure are documented in
+[OpenSSH plus TigerVNC interoperability](../crates/runner/tests/VNC_SSH_INTEROPERABILITY.md).
+That ignored lane is explicit evidence, not ordinary CI or activation.
 
 ## Secret inventory
 
@@ -274,6 +303,10 @@ There is no request retry, inferred route or downgrade. Once such a row exists,
 rolling the API below the typed-route slice is unsafe: an old writer cannot
 preserve or validate its transport semantics. Disabling the feature does not
 remove that rollback floor.
+The bounded old-Runner omission fallback must remain until replacement Runners
+are deployed and every Run started on the prior revision has exceeded the
+two-hour maximum lifetime. A merge, green CI or preview success does not by
+itself prove that deployment-and-drain gate.
 After new-profile rows are permitted, rolling back to a pre-reader API is unsafe;
 disabling the feature does not erase saved credentials. Any later rollback below
 that floor requires a separately verified disablement, drain and VNC erasure.
@@ -288,6 +321,13 @@ rejoined owner access, secret-free output, validation, zero-to-one Agent grants,
 concurrent first-host creation, live-resource retries, recreation after deletion,
 optimistic concurrency, rotation, inline rollback and scoped cleanup through
 production HTTP boundaries.
+Focused inventory coverage also creates direct and SSH-backed rows for one
+Agent, proves that VNC access alone exposes only the direct row, proves that both
+grants expose both rows, and proves that SSH revocation removes the tunneled row
+without broadening the response shape. Platform Router tests exercise direct and
+SSH editing, route switching without draft loss, separate destination and
+certificate identity, stale SSH references, topology summaries and actionable
+restrictive-deletion errors.
 The dedicated migration test seeds populated pre-change credentials,
 connections, grants and unrelated owner data, applies the profile and typed-route
 migrations, and verifies row identity, ciphertext, versions, trust configuration
@@ -296,3 +336,14 @@ direct transport default, both exact pairs, same-owner SSH reference, restrictiv
 deletion, route/server-identity checks, credential compatibility, version and
 trust constraints on a disposable schema. Broader API tests and required checks
 run in the PR pipeline.
+
+The ignored Runner interoperability lane composes the production SSH authority,
+direct-tcpip forwarding, VNC authority, session, capture and close paths against
+OpenSSH `1:9.6p1-3ubuntu13.14` and TigerVNC
+`1.13.1+dfsg-2build2`. It covers password and public-key SSH crossed with
+X509Vnc and X509Plain, pins the SSH host key and `localhost` certificate
+identity, records the exact forwarded destination, and requires teardown of the
+disposable account, daemons and generated material. Existing deterministic
+tests retain the negative matrix for bad host keys, wrong credentials,
+certificate mismatch, unsupported Runner tuples, route/revocation generations,
+cancellation and cleanup.

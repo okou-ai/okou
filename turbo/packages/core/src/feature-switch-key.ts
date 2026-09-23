@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   SocialDataJobs = "socialDataJobs",
-  PersonalSubscriptionPriority = "personalSubscriptionPriority",
   WelcomeThread = "welcomeThread",
   ThreadActivitySummary = "threadActivitySummary",
   Dummy = "_dummy",
@@ -47,6 +46,7 @@ export enum FeatureSwitchKey {
   WorkdayConnector = "workdayConnector",
   ChatPreference = "chatPreference",
   PaidToolControls = "paidToolControls",
+  SettingsToolsTab = "settingsToolsTab",
   NewUserVideoPickers = "newUserVideoPickers",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
@@ -58,7 +58,6 @@ export enum FeatureSwitchKey {
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   VncAccess = "vncAccess",
-  RunUsage = "runUsage",
   PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
@@ -74,7 +73,6 @@ export enum FeatureSwitchKey {
   ConnectorDirectory = "connectorDirectory",
   ChatThreadHeaderActions = "chatThreadHeaderActions",
   ChatThreadArchiving = "chatThreadArchiving",
-  ChatUnreadOnlyShortcut = "chatUnreadOnlyShortcut",
   ComposerTemplateChipCover = "composerTemplateChipCover",
   ComposerSlashTemplatePanel = "composerSlashTemplatePanel",
   GetStartedQuests = "getStartedQuests",
@@ -85,7 +83,8 @@ export enum FeatureSwitchKey {
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
   OnboardingSourcesFirst = "onboardingSourcesFirst",
-  OptimisticMessageSpinner = "optimisticMessageSpinner",
   UserMessageLinks = "userMessageLinks",
   BrowserNativeInput = "browserNativeInput",
+  HomeTaskRecommendations = "homeTaskRecommendations",
+  ClaudeCodeUsageReset = "claudeCodeUsageReset",
 }

@@ -8,7 +8,7 @@ const OTHER_SNAPSHOT_HASH: &str =
     "2222222222222222222222222222222222222222222222222222222222222222";
 
 async fn assert_rootfs_lock_held(home: &HomePaths, hash: &str) {
-    let error = crate::lock::try_acquire(home.rootfs_lock(hash))
+    let error = runner_host::lock::try_acquire(home.rootfs_lock(hash))
         .await
         .unwrap_err();
     assert!(
@@ -19,7 +19,7 @@ async fn assert_rootfs_lock_held(home: &HomePaths, hash: &str) {
 
 async fn assert_rootfs_lock_released(home: &HomePaths, hash: &str) {
     drop(
-        crate::lock::try_acquire(home.rootfs_lock(hash))
+        runner_host::lock::try_acquire(home.rootfs_lock(hash))
             .await
             .unwrap(),
     );
@@ -981,7 +981,7 @@ async fn lock_and_validate_profile_image_artifacts_holds_resource_locks() {
 
     assert_rootfs_lock_held(&home, TEST_ROOTFS_HASH).await;
 
-    let snapshot_err = crate::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
+    let snapshot_err = runner_host::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
         .await
         .unwrap_err();
     assert!(
@@ -991,7 +991,7 @@ async fn lock_and_validate_profile_image_artifacts_holds_resource_locks() {
 
     drop(guard);
     assert_rootfs_lock_released(&home, TEST_ROOTFS_HASH).await;
-    let released_lock = crate::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
+    let released_lock = runner_host::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
         .await
         .unwrap();
     drop(released_lock);
@@ -1016,7 +1016,7 @@ async fn lock_and_validate_runner_image_artifacts_releases_locks_on_validation_e
     );
 
     assert_rootfs_lock_released(&home, TEST_ROOTFS_HASH).await;
-    let snapshot_lock = crate::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
+    let snapshot_lock = runner_host::lock::try_acquire(home.snapshot_lock(TEST_SNAPSHOT_HASH))
         .await
         .unwrap();
     drop(snapshot_lock);
@@ -1066,7 +1066,7 @@ async fn lock_and_validate_runner_image_artifacts_holds_all_resource_locks() {
         (OTHER_ROOTFS_HASH, OTHER_SNAPSHOT_HASH),
     ] {
         assert_rootfs_lock_held(&home, rootfs_hash).await;
-        let snapshot_err = crate::lock::try_acquire(home.snapshot_lock(snapshot_hash))
+        let snapshot_err = runner_host::lock::try_acquire(home.snapshot_lock(snapshot_hash))
             .await
             .unwrap_err();
         assert!(
@@ -1081,7 +1081,7 @@ async fn lock_and_validate_runner_image_artifacts_holds_all_resource_locks() {
         (OTHER_ROOTFS_HASH, OTHER_SNAPSHOT_HASH),
     ] {
         assert_rootfs_lock_released(&home, rootfs_hash).await;
-        let released_lock = crate::lock::try_acquire(home.snapshot_lock(snapshot_hash))
+        let released_lock = runner_host::lock::try_acquire(home.snapshot_lock(snapshot_hash))
             .await
             .unwrap();
         drop(released_lock);

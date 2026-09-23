@@ -37,10 +37,6 @@ const sshHostReferenceSchema = z
 export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
   .extend({ sshHosts: z.array(sshHostReferenceSchema) })
   .strict();
-export const sshCloudflareAccessConfigSchema =
-  cloudflareAccessConfigMetadataSchema
-    .extend({ hosts: z.array(sshHostReferenceSchema) })
-    .strict();
 const c = initContract();
 const errors = {
   400: apiErrorSchema,
@@ -106,53 +102,8 @@ export const cloudflareAccessContract = c.router({
     responses: { 204: c.noBody(), ...errors },
   },
 });
-// The deployed SSH settings page temporarily needs this projection. #36038
-// moves it to the neutral contract before #36068 removes this rollout bridge.
-export const sshCloudflareAccessContract = c.router({
-  list: {
-    method: "GET",
-    path: "/api/ssh/cloudflare-access/configs",
-    headers: authHeadersSchema,
-    responses: {
-      200: z
-        .object({ configs: z.array(sshCloudflareAccessConfigSchema) })
-        .strict(),
-      ...errors,
-    },
-  },
-  create: {
-    method: "POST",
-    path: "/api/ssh/cloudflare-access/configs",
-    headers: authHeadersSchema,
-    body: createBody,
-    responses: {
-      201: sshCloudflareAccessConfigSchema,
-      204: c.noBody(),
-      ...errors,
-    },
-  },
-  update: {
-    method: "PATCH",
-    path: "/api/ssh/cloudflare-access/configs/:configId",
-    headers: authHeadersSchema,
-    pathParams,
-    body: updateBody,
-    responses: { 200: sshCloudflareAccessConfigSchema, ...errors },
-  },
-  delete: {
-    method: "DELETE",
-    path: "/api/ssh/cloudflare-access/configs/:configId",
-    headers: authHeadersSchema,
-    pathParams,
-    body: deleteBody,
-    responses: { 204: c.noBody(), ...errors },
-  },
-});
 export type CloudflareAccessConfig = z.infer<
   typeof cloudflareAccessConfigSchema
->;
-export type SshCloudflareAccessConfig = z.infer<
-  typeof sshCloudflareAccessConfigSchema
 >;
 export type CreateCloudflareAccessRequest = z.infer<
   typeof createCloudflareAccessRequestSchema

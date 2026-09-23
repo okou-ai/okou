@@ -133,17 +133,17 @@ use crate::idle_pool::{
     SpeculativeReparkResult,
 };
 use crate::lifecycle::RunnerMode;
-use crate::paths::short_digest;
-use crate::provider::{
-    ClaimedJob, JobCandidate, JobProvider, RunnerPreferenceRemovalReason, RunnerPreferenceTier,
-};
 use crate::resource_budget::{BudgetLease, ResourceBudget};
-use crate::run_cancellation::{
-    RunCancellationHandle, RunCancellationRegistration, RunCancellationRegistry,
-};
-use crate::runner_process_identity::RunnerProcessIdentity;
 use crate::status::{StatusPersistenceError, StatusTracker};
 use crate::telemetry::JobTelemetry;
+use runner_host::paths::short_digest;
+use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::{
+    ClaimedJob, JobCandidate, JobProvider, RunnerPreferenceRemovalReason, RunnerPreferenceTier,
+};
+use runner_provider::{
+    RunCancellationHandle, RunCancellationRegistration, RunCancellationRegistry,
+};
 use runner_types::ids::RunId;
 use runner_types::types::{
     CompleteRequest, ExecutionContext, HeldWorkspaceState, SandboxReuseResult,
@@ -300,7 +300,7 @@ struct ClaimAdmissionRequest<'a> {
 
 struct PreferenceCandidateRequest<'a> {
     candidate: JobCandidate,
-    preference: &'a crate::provider::ActiveRunnerPreference,
+    preference: &'a runner_provider::ActiveRunnerPreference,
     reuse_key: &'a str,
     profile_name: &'a str,
     job_vcpu: u32,
@@ -1547,7 +1547,7 @@ fn finalizing_preparation(
 
 async fn defer_preference_candidate(
     candidate: JobCandidate,
-    preference: &crate::provider::ActiveRunnerPreference,
+    preference: &runner_provider::ActiveRunnerPreference,
     reuse_key: &str,
     ctx: &DiscoveredJobContext<'_>,
     retain: bool,

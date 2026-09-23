@@ -3,7 +3,7 @@ use std::time::Duration;
 use clap::Args;
 
 use crate::error::RunnerResult;
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 mod debootstrap;
 mod filesystem;
@@ -220,7 +220,7 @@ async fn run_gc_with_operations(
     home: &HomePaths,
     operations: &mut impl GcOperations,
 ) -> RunnerResult<()> {
-    let _gc_lock = crate::lock::acquire(home.gc_lock()).await?;
+    let _gc_lock = runner_host::lock::acquire(home.gc_lock()).await?;
 
     // Retained version and service configs protect their image pairs before
     // version cleanup consumes the same retention analysis.

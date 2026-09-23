@@ -25,6 +25,18 @@ cargo test --manifest-path crates/Cargo.toml --profile local
 # Specific crate
 cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 
+# Extracted Runner host primitives and their owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local \
+  -j 1 -p runner-host -- --test-threads=1
+
+# Extracted Runner provider coordination and its owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-provider -- --test-threads=1
+
+# Extracted Runner storage planning and cache owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-storage -- --test-threads=1
+
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -p shell-quote --lib tests::quoted_words_round_trip_through_posix_shell -- --exact
@@ -119,24 +131,28 @@ Use `httpmock` for mocking external HTTP services:
 
 ```rust
 use httpmock::prelude::*;
-
-static MOCK_SERVER: LazyLock<MockServer> = LazyLock::new(|| {
-    let server = MockServer::start();
-    unsafe {
-        std::env::set_var("OKOU_API_BACKEND_URL", server.base_url());
-    }
-    server
-});
+use serde_json::json;
+use std::time::Duration;
 
 #[tokio::test]
 async fn post_json_success() {
-    let server = &*MOCK_SERVER;
+    let server = MockServer::start();
+    let http = guest_agent::http::HttpClient::with_api_config(
+        server.base_url(),
+        "test-token",
+        "test-vercel-bypass",
+        "test-client-session",
+        Duration::ZERO,
+    )
+    .expect("build explicit API client");
+
     let mock = server.mock(|when, then| {
         when.method(POST).path("/test");
         then.status(200).json_body(json!({"status": "ok"}));
     });
 
-    let result = http::post_json(&format!("{}/test", server.base_url()), &json!({}), 1).await;
+    let url = format!("{}/test", server.base_url());
+    let result = http.post_json(&url, &json!({}), 1).await;
 
     mock.assert_calls_async(1).await;
     assert_eq!(result.unwrap().unwrap()["status"], "ok");
@@ -166,6 +182,8 @@ fn command_with_test_env(binary: &Path) -> Command {
 ```
 
 For inline runner tests, reuse `run_ignored_child_test` from `crates/runner/src/test_fixtures.rs`. It invokes one exact ignored test in a bounded child process and accepts per-child environment settings and removals.
+Tests owned by the extracted `runner-host` crate use its crate-local equivalent;
+the helper is intentionally not part of the production API.
 
 ### Temp Directories
 
@@ -217,6 +235,17 @@ async fn downloads_and_extracts() {
     // ... async operations with .await
 }
 ```
+
+For in-process timer behavior, use Tokio's paused clock instead of waiting for
+real time. `#[tokio::test(start_paused = true)]` and `tokio::time::advance(...)`
+let the test exercise the production timer while keeping the test fast. See
+`crates/runner-rpc-client/tests/helper.rs` and `tests/stream.rs` for examples.
+Advance only after the timed task is armed, then assert its observable result.
+For external processes and kernel I/O, wait for the observable completion under
+a bounded deadline; a paused Tokio clock does not control those systems. A
+completed `dd` followed by `sync` already supplies that completion boundary in
+`crates/nbd-cow/tests/integration.rs`, so an additional fixed sleep adds no
+signal.
 
 For sync-only logic, plain `#[test]` is fine:
 

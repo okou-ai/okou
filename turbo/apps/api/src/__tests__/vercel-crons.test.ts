@@ -14,6 +14,7 @@ import {
   cronDrainEmailOutboxContract,
   cronExecuteMorningBriefsContract,
   cronExecuteWorkflowAutomationsContract,
+  cronRefreshHomeTaskRecommendationsContract,
   cronMonitorChatEventQueueContract,
   cronMaterializeMemorySummariesContract,
   cronMaterializePiResourceIndexesContract,
@@ -92,6 +93,10 @@ const expectedVercelCrons = [
   },
   {
     path: cronExecuteMorningBriefsContract.execute.path,
+    schedule: "* * * * *",
+  },
+  {
+    path: cronRefreshHomeTaskRecommendationsContract.refresh.path,
     schedule: "* * * * *",
   },
   {

@@ -7,6 +7,7 @@ import type { Db } from "../external/db";
 type ReadDb = Pick<Db, "select">;
 
 export interface OrgPlanCapabilities {
+  readonly planKey: string;
   readonly status: "active" | "suspended";
   readonly baseConcurrencyLimit: number;
   readonly canBuyConcurrency: boolean;
@@ -23,6 +24,7 @@ export interface OrgPlanCapabilities {
 }
 
 const CAPABILITY_SELECTION = {
+  planKey: orgPlanEntitlements.planKey,
   status: orgPlanEntitlements.status,
   baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
   canBuyConcurrency: orgPlanEntitlements.canBuyConcurrency,

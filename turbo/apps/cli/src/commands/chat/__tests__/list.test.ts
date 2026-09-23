@@ -25,6 +25,7 @@ const SORT_SEQ_ID = 3;
 const REFRESH_SEQ_ID = 4;
 const SNAPSHOT_URL = "http://localhost:3000/api/chat-threads/snapshot";
 const EVENTS_URL = "http://localhost:3000/api/chat-threads/events";
+const INDICATORS_URL = "http://localhost:3000/api/indicators";
 const UNREADS_URL = "http://localhost:3000/api/chat-thread-unreads";
 
 function okouToken(): string {
@@ -364,20 +365,23 @@ describe("okou chat list command", () => {
         sortAt: "2026-07-24T08:00:00.000Z",
       }),
     ]);
-    let unreadRequests = 0;
+    let indicatorRequests = 0;
     server.use(
-      http.get(UNREADS_URL, ({ request }) => {
-        unreadRequests++;
-        expect(new URL(request.url).searchParams.get("agentId")).toBe(AGENT_ID);
+      http.get(INDICATORS_URL, ({ request }) => {
+        indicatorRequests++;
+        expect(new URL(request.url).searchParams.size).toBe(0);
         return HttpResponse.json({
-          unreads: [
-            { threadId: THREAD_ID, unreadAt },
-            { threadId: SECOND_THREAD_ID, unreadAt },
-            {
-              threadId: OTHER_THREAD_ID,
-              unreadAt: "2026-07-24T09:00:00.000Z",
-            },
-          ],
+          agents: { [AGENT_ID]: "unread", [OTHER_AGENT_ID]: "unread" },
+          threads: {
+            [THREAD_ID]: "unread",
+            [SECOND_THREAD_ID]: "unread",
+            [OTHER_THREAD_ID]: "unread",
+          },
+          unreadAt: {
+            [THREAD_ID]: unreadAt,
+            [SECOND_THREAD_ID]: unreadAt,
+            [OTHER_THREAD_ID]: "2026-07-24T09:00:00.000Z",
+          },
         });
       }),
     );
@@ -423,10 +427,10 @@ describe("okou chat list command", () => {
     expect(humanOutput.indexOf(SECOND_THREAD_ID)).toBeLessThan(
       humanOutput.indexOf(THREAD_ID),
     );
-    expect(unreadRequests).toBe(2);
+    expect(indicatorRequests).toBe(2);
   });
 
-  it("fans unread requests across snapshot agents with bounded concurrency", async () => {
+  it("lists unread threads across agents with one indicators request", async () => {
     const agentIds = Array.from({ length: 6 }, (_, index) => {
       return `00000000-0000-4000-8000-${String(110 + index).padStart(12, "0")}`;
     });
@@ -441,46 +445,31 @@ describe("okou chat list command", () => {
       });
     });
     mockStableThreadSnapshot(threads);
-    const threadByAgent = new Map(
-      threads.map((thread) => {
-        return [thread.agentId, thread] as const;
-      }),
-    );
-    const requestedAgentIds = new Set<string>();
     let requestCount = 0;
-    let activeRequests = 0;
-    let maxActiveRequests = 0;
-    let releaseRequests: (() => void) | undefined;
-    const requestGate = new Promise<void>((resolve) => {
-      releaseRequests = resolve;
-    });
     server.use(
-      http.get(UNREADS_URL, async ({ request }) => {
-        const url = new URL(request.url);
-        expect([...url.searchParams.keys()]).toStrictEqual(["agentId"]);
-        const agentId = url.searchParams.get("agentId");
-        if (!agentId) {
-          throw new Error("Expected an unread request agentId");
-        }
-        const thread = threadByAgent.get(agentId);
-        if (!thread) {
-          throw new Error(`Unexpected unread request for ${agentId}`);
-        }
-        requestedAgentIds.add(agentId);
+      http.get(INDICATORS_URL, () => {
         requestCount += 1;
-        activeRequests += 1;
-        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
-        if (requestCount <= 4) {
-          await requestGate;
-        }
-        activeRequests -= 1;
         return HttpResponse.json({
-          unreads: [{ threadId: thread.id, unreadAt: thread.sortAt }],
+          agents: Object.fromEntries(
+            agentIds.map((id) => {
+              return [id, "unread"];
+            }),
+          ),
+          threads: Object.fromEntries(
+            threads.map((thread) => {
+              return [thread.id, "unread"];
+            }),
+          ),
+          unreadAt: Object.fromEntries(
+            threads.map((thread) => {
+              return [thread.id, thread.sortAt];
+            }),
+          ),
         });
       }),
     );
 
-    const parsing = chatCommand.parseAsync([
+    await chatCommand.parseAsync([
       "node",
       "cli",
       "list",
@@ -488,21 +477,7 @@ describe("okou chat list command", () => {
       "--all-agents",
       "--json",
     ]);
-    await expect
-      .poll(() => {
-        return requestCount;
-      })
-      .toBeGreaterThanOrEqual(4);
-    const firstWaveRequests = requestCount;
-    if (!releaseRequests) {
-      throw new Error("Expected the unread request gate to be initialized");
-    }
-    releaseRequests();
-    await parsing;
-
-    expect(firstWaveRequests).toBe(4);
-    expect(maxActiveRequests).toBe(4);
-    expect(requestedAgentIds).toStrictEqual(new Set(agentIds));
+    expect(requestCount).toBe(1);
     const output = JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0])) as {
       readonly allAgents: boolean;
       readonly total: number;
@@ -520,6 +495,44 @@ describe("okou chat list command", () => {
       agentId: threads.at(-1)?.agentId,
       unreadAt: threads.at(-1)?.sortAt,
     });
+  });
+
+  it("uses the old unread route when a rollback API omits unreadAt", async () => {
+    const unreadAt = "2026-07-24T06:00:00.000Z";
+    mockStableThreadSnapshot([
+      snapshotThread({
+        id: THREAD_ID,
+        agentId: AGENT_ID,
+        title: "Unread thread",
+        sortAt: unreadAt,
+      }),
+    ]);
+    let oldRouteRequests = 0;
+    server.use(
+      http.get(INDICATORS_URL, () => {
+        return HttpResponse.json({
+          agents: { [AGENT_ID]: "unread" },
+          threads: { [THREAD_ID]: "unread" },
+        });
+      }),
+      http.get(UNREADS_URL, ({ request }) => {
+        oldRouteRequests++;
+        expect(new URL(request.url).searchParams.get("agentId")).toBe(AGENT_ID);
+        return HttpResponse.json({
+          unreads: [{ threadId: THREAD_ID, unreadAt }],
+        });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "list", "--unread", "--json"]);
+
+    expect(oldRouteRequests).toBe(1);
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toMatchObject(
+      {
+        total: 1,
+        threads: [{ id: THREAD_ID, unreadAt }],
+      },
+    );
   });
 
   it("rejects --all-agents with --agent", async () => {
@@ -549,8 +562,8 @@ describe("okou chat list command", () => {
       }),
     ]);
     server.use(
-      http.get(UNREADS_URL, () => {
-        return HttpResponse.json({ unreads: [] });
+      http.get(INDICATORS_URL, () => {
+        return HttpResponse.json({ agents: {}, threads: {}, unreadAt: {} });
       }),
     );
 

@@ -3,6 +3,7 @@ import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
 import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
+import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as deviceCodesSchema from "./schema/device-codes";
@@ -162,6 +163,7 @@ export const schema = {
   ...accountErasureSchema,
   ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,
+  ...homeTaskRecommendationSchema,
   ...userSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,

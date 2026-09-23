@@ -1,5 +1,6 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { act, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
@@ -104,7 +105,8 @@ test("A signed-in viewer is not asked to sign in or sign up", async () => {
   expect(getLinkByName("Try it yourself")).toBeInTheDocument();
 });
 
-test("A visitor can copy complete public message content", async () => {
+test("A visitor can copy complete public message content from the keyboard", async () => {
+  const user = userEvent.setup({ delay: null });
   const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
     return respond(200, {
@@ -156,7 +158,10 @@ test("A visitor can copy complete public message content", async () => {
     throw new Error("Expected copy actions for both public messages");
   }
 
-  click(userMessageCopy);
+  userMessageCopy.focus();
+  expect(userMessageCopy).toHaveFocus();
+  expect(userMessageCopy).toHaveAccessibleName("Copy message");
+  await user.keyboard(" ");
 
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual(["What should we launch?"]);

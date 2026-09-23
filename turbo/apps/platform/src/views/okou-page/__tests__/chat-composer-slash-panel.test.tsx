@@ -1,4 +1,10 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { workflowsCollectionContract } from "@okouai/api-contracts";
@@ -680,4 +686,97 @@ test("Choosing a cover consumes the slash token that opened the panel", async ()
   // The whole token goes, not only its slash, and the prose before it stays.
   expect(editor).not.toHaveTextContent("/");
   expect(editor).toHaveTextContent("Draft");
+});
+
+test("Activate a template cover with Space after a cancelled pointer press", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openSlashMenu();
+  const editor = await findComposerEditor();
+  const [template] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!template) {
+    throw new Error("Expected a presentation template");
+  }
+  const cover = slashButton(template.title);
+  await user.pointer({ target: cover, keys: "[MouseLeft>]" });
+  expect(cover).toHaveFocus();
+  expect(editor).toHaveTextContent("Draft /");
+  expect(screen.getByTestId("slash-workflow-menu")).toBeInTheDocument();
+  // Cancel the button press within the popup. Releasing outside the whole
+  // suggestion tree may dismiss it and no longer leaves a keyboard target.
+  await user.pointer({
+    target: screen.getByRole("dialog", { name: "Presentation" }),
+    keys: "[/MouseLeft]",
+  });
+  await user.pointer({ target: cover, keys: "[MouseRight]" });
+  expect(editor).toHaveTextContent("Draft /");
+  act(() => {
+    cover.focus();
+  });
+  expect(cover).toHaveFocus();
+
+  await user.keyboard(" ");
+  await expectInlineTemplateInComposer(template.title);
+  expect(editor).not.toHaveTextContent("Draft /");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  await waitFor(() => {
+    expect(editor).toHaveFocus();
+  });
+});
+
+test("Escape from a focused template cover dismisses the slash menu", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openSlashMenu();
+  const editor = await findComposerEditor();
+  const [template] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!template) {
+    throw new Error("Expected a presentation template");
+  }
+  const cover = slashButton(template.title);
+  await user.pointer({ target: cover, keys: "[MouseLeft>]" });
+  // Cancel the button press within the popup. Releasing outside the whole
+  // suggestion tree may dismiss it and no longer leaves a keyboard target.
+  await user.pointer({
+    target: screen.getByRole("dialog", { name: "Presentation" }),
+    keys: "[/MouseLeft]",
+  });
+  expect(editor).toHaveTextContent("Draft /");
+  act(() => {
+    cover.focus();
+  });
+  expect(cover).toHaveFocus();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(flyout()).toBeNull();
+  });
+  expect(editor).toHaveTextContent("Draft /");
+  expect(editor).toHaveFocus();
+  await user.keyboard("next");
+  expect(editor).toHaveTextContent("Draft /next");
+});
+
+test("Tab from the last template cover leaves and dismisses the suggestion tree", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openSlashMenu();
+  const editor = await findComposerEditor();
+  const lastCover = queryAllByRoleFast(
+    "button",
+    screen.getByRole("dialog", { name: "Presentation" }),
+  ).at(-1);
+  if (!lastCover) {
+    throw new Error("Expected a presentation template cover");
+  }
+  act(() => {
+    lastCover.focus();
+  });
+
+  await user.keyboard("{Tab}");
+
+  await waitFor(() => {
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+    expect(flyout()).toBeNull();
+    expect(screen.getByLabelText("Attach")).toHaveFocus();
+  });
+  expect(editor).toHaveTextContent("Draft /");
 });

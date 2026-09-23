@@ -1,5 +1,91 @@
 # Changelog
 
+## [9.356.0](https://github.com/okou-ai/okou/compare/cli-v9.355.3...cli-v9.356.0) (2026-09-23)
+
+
+### Features
+
+* consolidate chat unread reads into indicators ([#36171](https://github.com/okou-ai/okou/issues/36171)) ([1ca25a4](https://github.com/okou-ai/okou/commit/1ca25a41379780bb0d6add1a086ea359251eea18))
+* **maps:** replace managed maps apis with grounded search ([#36118](https://github.com/okou-ai/okou/issues/36118)) ([098cc04](https://github.com/okou-ai/okou/commit/098cc049bbb8b5da84be38b1b829b4b8b8522273))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.496.0
+    * @okouai/core bumped to 8.702.1
+    * @okouai/pi-agent-runtime bumped to 1.39.1
+
+## [9.355.3](https://github.com/okou-ai/okou/compare/cli-v9.355.2...cli-v9.355.3) (2026-09-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.495.0
+    * @okouai/core bumped to 8.702.0
+    * @okouai/pi-agent-runtime bumped to 1.39.0
+
+## [9.355.2](https://github.com/okou-ai/okou/compare/cli-v9.355.1...cli-v9.355.2) (2026-09-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.494.0
+    * @okouai/core bumped to 8.701.0
+    * @okouai/pi-agent-runtime bumped to 1.38.0
+
+## [9.355.1](https://github.com/okou-ai/okou/compare/cli-v9.355.0...cli-v9.355.1) (2026-09-22)
+
+
+### Refactoring
+
+* remove run-usage feature switch ([#36138](https://github.com/okou-ai/okou/issues/36138)) ([9355b61](https://github.com/okou-ai/okou/commit/9355b61c1e61a1b747da8e69391f77217e22f19f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/core bumped to 8.700.2
+    * @okouai/pi-agent-runtime bumped to 1.37.1
+
+## [9.355.0](https://github.com/okou-ai/okou/compare/cli-v9.354.0...cli-v9.355.0) (2026-09-22)
+
+
+### Features
+
+* **pi:** key installed-CLI parity on a session-construction digest ([#36142](https://github.com/okou-ai/okou/issues/36142)) ([322efb6](https://github.com/okou-ai/okou/commit/322efb6d72508e15b90dc788100a776da1485751)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.493.0
+    * @okouai/core bumped to 8.700.1
+    * @okouai/pi-agent-runtime bumped to 1.37.0
+
+## [9.354.0](https://github.com/okou-ai/okou/compare/cli-v9.353.0...cli-v9.354.0) (2026-09-22)
+
+
+### Features
+
+* **cli:** add browser user-action requests ([#36065](https://github.com/okou-ai/okou/issues/36065)) ([fd85154](https://github.com/okou-ai/okou/commit/fd851548eb07acf939c8e15a411f8b894af6c2ad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.492.0
+    * @okouai/core bumped to 8.700.0
+    * @okouai/pi-agent-runtime bumped to 1.36.1
+
 ## [9.353.0](https://github.com/okou-ai/okou/compare/cli-v9.352.8...cli-v9.353.0) (2026-09-22)
 
 

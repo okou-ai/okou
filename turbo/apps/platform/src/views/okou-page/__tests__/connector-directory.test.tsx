@@ -1,5 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -13,6 +14,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   builtinConnector,
+  connectorAccount,
   noAuthMethod,
   httpConnector,
   ACME_CONNECTOR_ID,
@@ -212,6 +214,9 @@ test("Open connector detail and step back to the list", async () => {
     ).toBeVisible();
   });
   expect(within(dialog).getByText("Connection")).toBeVisible();
+  // Switching views inside one dialog still leaves something to announce it
+  // by: the catalog while browsing, the connector once it is on screen.
+  expect(screen.getByRole("dialog", { name: "GitHub" })).toBeInTheDocument();
 
   await user.click(dialogButton(dialog, "Back"));
   await waitFor(() => {
@@ -219,6 +224,9 @@ test("Open connector detail and step back to the list", async () => {
       within(dialog).getByRole("heading", { name: "Connected" }),
     ).toBeVisible();
   });
+  expect(
+    screen.getByRole("dialog", { name: "Connectors" }),
+  ).toBeInTheDocument();
 });
 
 test("Keep the existing dialog when the directory switch is off", async () => {
@@ -604,7 +612,10 @@ test.each(["{Enter}", " "])(
     await waitFor(() => {
       expect(gmail).toBeDisabled();
     });
-    expect(dialogButton(dialog, "Connect Notion")).toBeDisabled();
+    expect(gmail).toHaveAttribute("aria-busy", "true");
+    const notion = dialogButton(dialog, "Connect Notion");
+    expect(notion).toBeDisabled();
+    expect(notion).not.toHaveAttribute("aria-busy");
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(dialog).getByRole("textbox")).toBeInTheDocument();
     expect(browserOpen.calls).toHaveLength(1);
@@ -614,6 +625,72 @@ test.each(["{Enter}", " "])(
     });
   },
 );
+
+test("Keep only the selected card busy while connection success settles", async () => {
+  const user = userEvent.setup({ delay: null });
+  const fixture = installComposerConnectorFixture({
+    catalog: directoryCatalog(),
+  });
+  const authorizationStarted = context.mocks.deferred<void>();
+  const authorization = context.mocks.deferred<void>();
+  context.mocks.api(
+    userBuiltinConnectorsContract.update,
+    async ({ body, respond }) => {
+      authorizationStarted.resolve();
+      await authorization.promise;
+      return respond(200, {
+        enabledConnectorSlugs: body.enabledConnectorSlugs,
+      });
+    },
+  );
+  const authWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authWindow, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  context.mocks.browser.open(authWindow);
+  await setupPage({
+    context,
+    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
+  });
+
+  const dialog = await openDirectory(user);
+  const gmail = dialogButton(dialog, "Connect Gmail");
+  const notion = dialogButton(dialog, "Connect Notion");
+  await user.click(gmail);
+  await waitFor(() => {
+    expect(authWindow.location.href).toBe(
+      "https://accounts.example.test/gmail",
+    );
+  });
+
+  const account = connectorAccount({
+    id: "f0000000-0000-4000-a000-000000000064",
+    target: { kind: "builtin", connectorSlug: GMAIL_SLUG },
+    displayName: "Work",
+    isDefault: true,
+  });
+  context.mocks.data.connectors([{ ...account, slug: GMAIL_SLUG }]);
+  fixture.completeOAuth(account.id);
+  authWindow.close();
+  await authorizationStarted.promise;
+
+  await waitFor(() => {
+    expect(gmail).toHaveAttribute("aria-busy", "true");
+  });
+  expect(gmail).toBeDisabled();
+  expect(notion).toBeDisabled();
+  expect(notion).not.toHaveAttribute("aria-busy");
+
+  authorization.resolve();
+  await expect(
+    screen.findByText("Gmail connected and authorized for Scout"),
+  ).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+});
 
 test("Enter the remaining connected card after filtering through an empty result", async () => {
   const user = userEvent.setup({ delay: null });

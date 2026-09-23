@@ -193,6 +193,29 @@ function configureCatalog(
   };
 }
 
+function configureResearchAgent(): void {
+  configureCatalog(
+    [
+      agent(CORE_AGENT_ID, {
+        displayName: "Okou",
+        visibility: "public",
+      }),
+      agent(RESEARCH_AGENT_ID, {
+        description: "Collects and verifies evidence",
+        displayName: "Research Agent",
+        visibility: "public",
+      }),
+    ],
+    {
+      defaultAgentId: CORE_AGENT_ID,
+      instructions: {
+        [RESEARCH_AGENT_ID]:
+          "# Research guidance\n\nVerify every source before writing conclusions.",
+      },
+    },
+  );
+}
+
 async function openCreateDialog(
   visibility: "Private" | "Public",
   locale: "en-US" | "pt-BR" = "en-US",
@@ -351,26 +374,7 @@ test("Open an agent's management page from its card", async () => {
 });
 
 test("Review an agent's profile and instructions", async () => {
-  configureCatalog(
-    [
-      agent(CORE_AGENT_ID, {
-        displayName: "Okou",
-        visibility: "public",
-      }),
-      agent(RESEARCH_AGENT_ID, {
-        description: "Collects and verifies evidence",
-        displayName: "Research Agent",
-        visibility: "public",
-      }),
-    ],
-    {
-      defaultAgentId: CORE_AGENT_ID,
-      instructions: {
-        [RESEARCH_AGENT_ID]:
-          "# Research guidance\n\nVerify every source before writing conclusions.",
-      },
-    },
-  );
+  configureResearchAgent();
   await setupPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
   await screen.findByRole("heading", { name: "Research Agent" });
   expect(buttonByText("Chat with Research Agent")).toBeVisible();
@@ -390,6 +394,66 @@ test("Review an agent's profile and instructions", async () => {
   expect(editor).toHaveTextContent(
     "Verify every source before writing conclusions.",
   );
+});
+
+test("Review agent details with the named section select", async () => {
+  const user = userEvent.setup({ delay: null });
+  configureResearchAgent();
+  await setupPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
+  await screen.findByRole("heading", { name: "Research Agent" });
+  const section = screen.getByRole("combobox", {
+    name: "Agent details section",
+  });
+  expect(section).toHaveTextContent("Authorization");
+
+  section.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Authorization", selected: true });
+  await user.keyboard("{ArrowDown}{Enter}");
+
+  await expect(screen.findByLabelText("Name")).resolves.toHaveValue(
+    "Research Agent",
+  );
+  expect(screen.getByLabelText("Description")).toHaveValue(
+    "Collects and verifies evidence",
+  );
+  expect(window.location.pathname).toBe(`/agents/${RESEARCH_AGENT_ID}`);
+  expect(window.location.search).toBe("?tab=profile");
+  const profileSection = screen.getByRole("combobox", {
+    name: "Agent details section",
+  });
+  expect(profileSection).toHaveTextContent("Profile");
+  await waitFor(() => {
+    expect(profileSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Profile", selected: true });
+  await user.keyboard("{ArrowDown}{Enter}");
+
+  const editor = await screen.findByLabelText("Instructions editor");
+  expect(editor).toHaveTextContent(
+    "Verify every source before writing conclusions.",
+  );
+  expect(window.location.pathname).toBe(`/agents/${RESEARCH_AGENT_ID}`);
+  expect(window.location.search).toBe("?tab=instructions");
+  const instructionsSection = screen.getByRole("combobox", {
+    name: "Agent details section",
+  });
+  expect(instructionsSection).toHaveTextContent("Instructions");
+  await waitFor(() => {
+    expect(instructionsSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Instructions", selected: true });
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(instructionsSection).toHaveFocus();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+  expect(window.location.search).toBe("?tab=instructions");
 });
 
 test("Switch between public and private agent lists", async () => {

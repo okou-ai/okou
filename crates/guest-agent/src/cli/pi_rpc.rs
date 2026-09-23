@@ -614,6 +614,26 @@ struct PiRetryAttempt {
     max_attempts: u32,
 }
 
+/// Whether an over-limit record of this type can be discarded without losing
+/// public output.
+///
+/// This is deliberately an allowlist of one. `agent_end` carries the agent
+/// loop's return value — every message it produced — which the official RPC
+/// wire has already delivered individually as `message_end` records, so
+/// [`PiRpcProjection::project`] ignores it and `agent_settled` owns the public
+/// terminal result. Discarding an oversized `agent_end` therefore drops a
+/// duplicate, while terminating on one loses a run that has already finished
+/// its work.
+///
+/// Every other record either owns public output or participates in the startup
+/// boundary, so an oversized one must stay fatal: silently dropping it would
+/// downgrade a structured record to nothing, which is worse than failing
+/// loudly. Only the record's type is known here — it is recovered from a
+/// bounded prefix and never parsed — so nothing may be assumed about content.
+pub(super) fn oversized_record_is_discardable(event_type: &str) -> bool {
+    event_type == "agent_end"
+}
+
 pub(super) struct PiRpcProjection {
     run_id: String,
     session_id: String,
@@ -624,7 +644,6 @@ pub(super) struct PiRpcProjection {
     assistant_stream: Option<PiAssistantStream>,
     pending_retry: Option<PiRetryAttempt>,
     terminal_error: bool,
-    runtime_progress_at: Option<u64>,
 }
 
 impl PiRpcProjection {
@@ -639,19 +658,12 @@ impl PiRpcProjection {
             assistant_stream: None,
             pending_retry: None,
             terminal_error: false,
-            runtime_progress_at: None,
         }
     }
 
     pub(super) fn with_session_output(mut self, output: PiSessionOutputSender) -> Self {
         self.session_output = Some(output);
         self
-    }
-
-    /// Source timestamp of the latest validated native message. Reading a
-    /// buffered line is not by itself evidence of post-OOM runtime progress.
-    pub(super) fn runtime_progress_at(&self) -> Option<u64> {
-        self.runtime_progress_at
     }
 
     /// Project one official Pi RPC record into the existing public event stream.
@@ -801,14 +813,6 @@ impl PiRpcProjection {
                 "Pi RPC message_end omitted its message".to_string(),
             ));
         };
-        let timestamp = message
-            .get("timestamp")
-            .and_then(Value::as_u64)
-            .filter(|timestamp| {
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .is_ok_and(|now| u128::from(*timestamp) <= now.as_millis())
-            });
         let projected = match message.get("role").and_then(Value::as_str) {
             Some("assistant") => {
                 let event_id_prefix = self.assistant_stream.take().map(PiAssistantStream::finish);
@@ -817,7 +821,6 @@ impl PiRpcProjection {
             Some("toolResult") => Some(self.project_tool_result_message(message)?),
             _ => return Ok(None),
         };
-        self.runtime_progress_at = self.runtime_progress_at.max(timestamp);
         Ok(projected)
     }
 
@@ -2121,6 +2124,32 @@ mod tests {
     }
 
     #[test]
+    fn only_records_the_projection_ignores_are_discardable_when_oversized() {
+        assert!(oversized_record_is_discardable("agent_end"));
+
+        // Every record that owns public output, drives the startup boundary or
+        // reports a failure must stay fatal when oversized: discarding one
+        // would silently drop a structured record instead of failing loudly.
+        for owned in [
+            "message_end",
+            "message_start",
+            "message_update",
+            "agent_settled",
+            "response",
+            "extension_error",
+            "auto_retry_start",
+            "auto_retry_end",
+            "unknown",
+            "",
+        ] {
+            assert!(
+                !oversized_record_is_discardable(owned),
+                "{owned} must not be discardable"
+            );
+        }
+    }
+
+    #[test]
     fn projection_uses_agent_settled_as_the_terminal_event() {
         let (responses, _rx) = response_channel();
         let mut projection = PiRpcProjection::new("run", "session");
@@ -2424,10 +2453,9 @@ mod tests {
     }
 
     #[test]
-    fn native_progress_preserves_failed_tools_and_independent_quota_failure() {
+    fn failed_tools_and_independent_quota_failure_reach_a_terminal_error() {
         let (responses, _rx) = response_channel();
         let mut projection = PiRpcProjection::new("run", "session");
-        assert_eq!(projection.runtime_progress_at(), None);
         let tool = projection
             .project(
                 json!({
@@ -2442,7 +2470,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(tool["message"]["content"][0]["is_error"], true);
-        assert_eq!(projection.runtime_progress_at(), Some(20));
         assert!(
             projection
                 .project(
@@ -2454,7 +2481,6 @@ mod tests {
                 )
                 .is_err()
         );
-        assert_eq!(projection.runtime_progress_at(), Some(20));
         projection
             .project(
                 json!({
@@ -2467,7 +2493,6 @@ mod tests {
                 0,
             )
             .unwrap();
-        assert_eq!(projection.runtime_progress_at(), Some(40));
         let terminal = projection
             .project(json!({"type": "agent_settled"}), &responses, 0)
             .unwrap()

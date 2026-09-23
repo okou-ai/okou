@@ -56,6 +56,25 @@ describe("Pi API first-turn runtime requirements", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("carries the session construction digest as the parity key", () => {
+    const digest = "c".repeat(64);
+    const parsed = piApiFirstTurnConfigSchema.parse({
+      ...API_FIRST_TURN,
+      requiredPiAgentRuntimeVersion: "1.36.0",
+      minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+      requiredPiSessionConstructionDigest: digest,
+    });
+    expect(parsed.requiredPiSessionConstructionDigest).toBe(digest);
+    for (const invalid of ["C".repeat(64), "c".repeat(63), ""]) {
+      expect(
+        piApiFirstTurnConfigSchema.safeParse({
+          ...API_FIRST_TURN,
+          requiredPiSessionConstructionDigest: invalid,
+        }).success,
+      ).toBe(false);
+    }
+  });
 });
 
 describe("runner claim installed versions", () => {
@@ -76,6 +95,13 @@ describe("runner claim installed versions", () => {
       piAgentRuntime: "1.36.0",
       piSdk: "0.86.1+okou.0123456789ab",
     });
+    const advertised = runnerInstalledVersionsSchema.parse({
+      cli: "9.353.0",
+      piAgentRuntime: "1.36.0",
+      piSdk: "0.86.1+okou.0123456789ab",
+      piSessionConstructionDigest: "d".repeat(64),
+    });
+    expect(advertised.piSessionConstructionDigest).toBe("d".repeat(64));
   });
 
   it("rejects unknown fields and loose versions", () => {

@@ -11,8 +11,9 @@ use super::super::{
     WorkspaceCacheTerminalStatus, WorkspaceImageCache, WorkspaceImageCacheInspectionStatus,
 };
 use super::support::{TEST_PROFILE_NAME, local_cache, write_current_cache_entry};
-use crate::paths::{RunnerPaths, workspace_image_cache_key};
 use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
+use crate::test_fixtures::workspace_image_cache_key;
+use runner_host::paths::RunnerPaths;
 use runner_types::ids::RunId;
 
 #[tokio::test]
@@ -337,7 +338,7 @@ async fn inspect_reports_locked_entry_without_blocking() {
     )
     .await
     .unwrap();
-    let _lock = crate::lock::acquire(cache.entry_lock_path(&key))
+    let _lock = runner_host::lock::acquire(cache.entry_lock_path(&key))
         .await
         .unwrap();
 
@@ -477,7 +478,7 @@ async fn inspect_rejects_oversized_metadata() {
     .unwrap();
     fs::write(
         cache.entry_paths(&key).metadata().to_path_buf(),
-        vec![b' '; crate::state_file::WORKSPACE_METADATA_MAX_BYTES as usize + 1],
+        vec![b' '; runner_host::state_file::WORKSPACE_METADATA_MAX_BYTES as usize + 1],
     )
     .await
     .unwrap();

@@ -342,7 +342,7 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let lock_path = home.path().join("rootfs.lock");
         let guard = runtime
-            .block_on(crate::lock::acquire(lock_path.clone()))
+            .block_on(runner_host::lock::acquire(lock_path.clone()))
             .unwrap();
         let directory = test_directory(Arc::new(guard));
         let mut command = std::process::Command::new("bash");
@@ -377,7 +377,7 @@ mod tests {
         assert!(!home.path().join("started").exists());
         assert!(
             runtime
-                .block_on(crate::lock::try_acquire(lock_path))
+                .block_on(runner_host::lock::try_acquire(lock_path))
                 .is_ok()
         );
     }
@@ -386,7 +386,7 @@ mod tests {
     async fn cancellation_retains_lock_and_scripts_until_process_cleanup_finishes() {
         let home = tempfile::tempdir().unwrap();
         let lock_path = home.path().join("rootfs.lock");
-        let guard = Arc::new(crate::lock::acquire(lock_path.clone()).await.unwrap());
+        let guard = Arc::new(runner_host::lock::acquire(lock_path.clone()).await.unwrap());
         let directory = test_directory(guard);
         let scripts_path = directory.directory.path().to_path_buf();
         let mut command = std::process::Command::new("bash");
@@ -426,16 +426,16 @@ exit 18
             "script directory must survive cancellation"
         );
         assert!(matches!(
-            crate::lock::try_acquire_or_busy(lock_path.clone())
+            runner_host::lock::try_acquire_or_busy(lock_path.clone())
                 .await
                 .unwrap(),
-            crate::lock::TryLock::Busy
+            runner_host::lock::TryLock::Busy
         ));
 
         std::fs::write(home.path().join("release"), b"release").unwrap();
         let new_guard = tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            crate::lock::acquire(lock_path),
+            runner_host::lock::acquire(lock_path),
         )
         .await
         .unwrap()

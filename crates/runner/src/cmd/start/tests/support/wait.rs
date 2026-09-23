@@ -5,8 +5,8 @@ use std::future::Future;
 use std::panic::AssertUnwindSafe;
 
 use crate::idle_pool::ParkingState;
-use crate::run_cancellation::{RunCancellationHandle, RunCancellationRegistry};
 use crate::workspace_image_cache::WorkspaceImageCache;
+use runner_provider::{RunCancellationHandle, RunCancellationRegistry};
 
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
@@ -281,7 +281,7 @@ pub(in super::super) async fn wait_cancel_token_removed(
     timeout: Duration,
 ) {
     wait_for_probe(timeout, || async {
-        let present = tokens.contains(run_id).await;
+        let present = tokens.handle(run_id).await.is_some();
         if present {
             WaitProbe::Pending(format!(
                 "cancel token for {run_id} still present after {timeout:?}",

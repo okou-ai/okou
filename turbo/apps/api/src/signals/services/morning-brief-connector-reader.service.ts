@@ -1,7 +1,4 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { connectorRuntimeTargetKey } from "@okouai/api-contracts/contracts/runners";
-import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
-import type { NetworkPolicies } from "@okouai/connectors/firewall-types";
 import {
   isFeatureEnabled,
   getAllFeatureStates,
@@ -30,10 +27,6 @@ import {
 } from "../utils";
 import { loadAgentConnectorScope } from "./agent-connector-scope.service";
 import {
-  buildConnectorDiagnosticBaseCandidates,
-  loadConnectorDiagnosticCatalogView,
-} from "./connector-diagnostic-runtime.service";
-import {
   listConnectorRuntimeVisibleSlugs,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeSnapshot,
@@ -52,7 +45,7 @@ import {
   type MorningBriefNativeCollectionAuthority,
 } from "./morning-brief-native-generation-admission.service";
 import { readMorningBriefNativeSchedule } from "./morning-brief-native-schedule.service";
-import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
+import { connectorUrlPermission } from "./connector-url-permission.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
 
 /**
@@ -743,100 +736,6 @@ async function connectorIsVisible(
   }).includes(connectorSlug);
 }
 
-function decisionPermissions(
-  routes: readonly { readonly permissionName: string; readonly rule: string }[],
-) {
-  const rulesByPermission = new Map<string, string[]>();
-  for (const route of routes) {
-    const rules = rulesByPermission.get(route.permissionName);
-    if (rules) {
-      rules.push(route.rule);
-      continue;
-    }
-    rulesByPermission.set(route.permissionName, [route.rule]);
-  }
-  return [...rulesByPermission].map(([name, rules]) => {
-    return { name, rules };
-  });
-}
-
-/**
- * The effective, current URL-level decision for this exact request.
- *
- * Routing metadata comes from the accepted catalog and the policy from the
- * Agent's active grants, so an expired or revoked grant collapses to the
- * connector's default policy rather than to a stale allow. The policy map is
- * keyed by the runtime target key, because that is the firewall name the
- * matcher looks a policy up by; a bare slug key silently misses every active
- * `deny` and `ask` and evaluates as if the member held no grants at all.
- */
-async function urlPermission(args: {
-  readonly db: ReadonlyDb;
-  readonly snapshot: ConnectorRuntimeSnapshot;
-  readonly scope: MorningBriefCollectionScope;
-  readonly connectorSlug: ConnectorSlug;
-  readonly url: string;
-}): Promise<{ readonly allowed: boolean; readonly permission: string | null }> {
-  const view = await loadConnectorDiagnosticCatalogView(
-    args.snapshot.serverFirewalls,
-    args.connectorSlug,
-  );
-  if (!view) {
-    return { allowed: false, permission: null };
-  }
-  const { candidates } = buildConnectorDiagnosticBaseCandidates(view, null, {
-    allowStructuralDynamic: false,
-  });
-  const refreshes = await resolveActiveNetworkPolicyRefreshes(
-    args.db,
-    {
-      orgId: args.scope.orgId,
-      userId: args.scope.userId,
-      agentId: args.scope.agentId,
-    },
-    [args.connectorSlug],
-    args.snapshot,
-  );
-  const firewallName = connectorRuntimeTargetKey({
-    kind: "builtin",
-    connectorSlug: args.connectorSlug,
-  });
-  const policies: NetworkPolicies = Object.fromEntries(
-    refreshes.map((refresh) => {
-      return [
-        connectorRuntimeTargetKey({
-          kind: "builtin",
-          connectorSlug: refresh.connectorSlug as ConnectorSlug,
-        }),
-        refresh.networkPolicy,
-      ];
-    }),
-  );
-  const decision = matchFirewallRequestDecision(
-    [
-      {
-        name: firewallName,
-        apis: candidates.map((candidate) => {
-          return {
-            base: candidate.decisionBase,
-            auth: {},
-            permissions: decisionPermissions(candidate.routes),
-          };
-        }),
-      },
-    ],
-    "GET",
-    args.url,
-    policies,
-    { status: "present", value: firewallName },
-  );
-  // Only an unambiguous allow passes. `no_match`, every block reason and an
-  // ambiguous route are refusals.
-  return decision.kind === "allow"
-    ? { allowed: true, permission: decision.permission ?? null }
-    : { allowed: false, permission: null };
-}
-
 /**
  * Is the member still the exact Clerk membership generation this scope names?
  *
@@ -1142,11 +1041,12 @@ async function authorizeUrl(
   if (identity.kind !== "allow") {
     return identity;
   }
-  const decision = await urlPermission({
+  const decision = await connectorUrlPermission({
     db: request.db,
     snapshot: identity.snapshot,
     scope: request.scope,
     connectorSlug: request.connectorSlug,
+    method: "GET",
     url,
   });
   signal.throwIfAborted();

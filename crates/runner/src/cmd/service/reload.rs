@@ -3,7 +3,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::paths::HomePaths;
+use runner_host::paths::HomePaths;
 
 use super::drain_override::drain_restart_override_path;
 use super::systemctl::{
@@ -99,8 +99,8 @@ async fn acquire_systemd_reload_lock(
     lock_timeout: Option<Duration>,
 ) -> RunnerResult<nix::fcntl::Flock<std::fs::File>> {
     let path = home.systemd_daemon_reload_lock();
-    match lock_timeout {
-        Some(duration) => tokio::time::timeout(duration, crate::lock::acquire(path))
+    Ok(match lock_timeout {
+        Some(duration) => tokio::time::timeout(duration, runner_host::lock::acquire(path))
             .await
             .map_err(|_| {
                 RunnerError::Internal(format!(
@@ -108,9 +108,9 @@ async fn acquire_systemd_reload_lock(
                     duration.as_secs(),
                     unit.unit_name()
                 ))
-            })?,
-        None => crate::lock::acquire(path).await,
-    }
+            })??,
+        None => runner_host::lock::acquire(path).await?,
+    })
 }
 
 async fn coordinate_systemd_reload_with_ops(
@@ -430,10 +430,12 @@ mod tests {
                         read_entered.notified().await;
                         assert!(
                             matches!(
-                                crate::lock::try_acquire_or_busy(home.systemd_daemon_reload_lock())
-                                    .await
-                                    .unwrap(),
-                                crate::lock::TryLock::Busy
+                                runner_host::lock::try_acquire_or_busy(
+                                    home.systemd_daemon_reload_lock()
+                                )
+                                .await
+                                .unwrap(),
+                                runner_host::lock::TryLock::Busy
                             ),
                             "leader must acquire the host-global lock before reading state"
                         );
@@ -443,10 +445,12 @@ mod tests {
                         reload_entered.notified().await;
                         assert!(
                             matches!(
-                                crate::lock::try_acquire_or_busy(home.systemd_daemon_reload_lock())
-                                    .await
-                                    .unwrap(),
-                                crate::lock::TryLock::Busy
+                                runner_host::lock::try_acquire_or_busy(
+                                    home.systemd_daemon_reload_lock()
+                                )
+                                .await
+                                .unwrap(),
+                                runner_host::lock::TryLock::Busy
                             ),
                             "leader must hold the host-global lock during daemon-reload"
                         );
@@ -479,7 +483,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let home = HomePaths::with_root(dir.path().join("home"));
         let unit = RunnerServiceUnit::from_suffix("test").unwrap();
-        let _holder = crate::lock::acquire(home.systemd_daemon_reload_lock())
+        let _holder = runner_host::lock::acquire(home.systemd_daemon_reload_lock())
             .await
             .unwrap();
         let mut ops = fake_ops(true);

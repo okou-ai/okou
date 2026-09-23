@@ -246,12 +246,12 @@ async fn owner_child() {
     let home = PathBuf::from(std::env::var_os(FIXTURE_ENV).expect("isolated fixture directory"));
     let mode = std::env::var(MODE_ENV).unwrap();
     let primary = Arc::new(
-        crate::lock::acquire(home.join("rootfs.lock"))
+        runner_host::lock::acquire(home.join("rootfs.lock"))
             .await
             .unwrap(),
     );
     let template = Arc::new(
-        crate::lock::acquire(home.join("template.lock"))
+        runner_host::lock::acquire(home.join("template.lock"))
             .await
             .unwrap(),
     );
