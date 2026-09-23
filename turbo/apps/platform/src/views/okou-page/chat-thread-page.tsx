@@ -4899,33 +4899,47 @@ function PaidCreditCheckoutActions({
             </Button>
           );
         })}
-        <details>
+        <details
+          className="group flex"
+          onToggle={(event) => {
+            if (event.currentTarget.open) {
+              event.currentTarget.querySelector("input")?.focus();
+            }
+          }}
+        >
           <summary
             role="button"
-            className="inline-flex h-8 cursor-pointer list-none items-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-state-hover marker:hidden disabled:opacity-60 [&::-webkit-details-marker]:hidden"
+            className={cn(
+              buttonVariants({ size: "sm", variant: "outline" }),
+              "list-none group-open:hidden [&::-webkit-details-marker]:hidden",
+            )}
           >
             {t(($) => {
               return $.chat.billing.custom;
             })}
           </summary>
-          <form className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">$</span>
-            <Input
-              type="text"
-              inputMode="numeric"
-              name="customUsd"
-              defaultValue="100"
-              onInput={(event) => {
-                event.currentTarget.value = event.currentTarget.value.replace(
-                  /\D/g,
-                  "",
-                );
-              }}
-              aria-label={t(($) => {
-                return $.chat.billing.customDollarAmount;
-              })}
-              className="h-8 w-24 px-2"
-            />
+          <form className="flex items-center gap-2">
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm text-muted-foreground">
+                $
+              </span>
+              <Input
+                type="text"
+                inputMode="numeric"
+                name="customUsd"
+                defaultValue="100"
+                onInput={(event) => {
+                  event.currentTarget.value = event.currentTarget.value.replace(
+                    /\D/g,
+                    "",
+                  );
+                }}
+                aria-label={t(($) => {
+                  return $.chat.billing.customDollarAmount;
+                })}
+                className="h-8 w-24 pr-2 pl-5"
+              />
+            </div>
             <Button
               type="button"
               onClick={handleCustomCreditClick}

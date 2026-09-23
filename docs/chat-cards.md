@@ -147,7 +147,8 @@ owned by the card even when the dialog is closed. Preserve those action and
 lifecycle owners when adding another state. Paid-workspace credit options and
 the Custom amount form live in the recovery card; selecting an amount opens the
 purchase review. Preset amounts use the primary `Button` style; Custom remains
-secondary.
+secondary and, when opened, is replaced in the same row by a `$`-prefixed
+amount input and its Buy button.
 
 Current frame owners are `AssistantErrorContent` (including billing),
 `ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,
