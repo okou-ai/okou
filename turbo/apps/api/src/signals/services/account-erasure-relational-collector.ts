@@ -1081,10 +1081,14 @@ export async function sweepRelationalErasure(
     // closes new admissions. Its durable row is the cleanup coordinator; do
     // not sweep that row until export cleanup has quiesced the writer, aborted
     // uploads and removed the row itself.
+    const exportOwner =
+      subject.subjectKind === "user"
+        ? sql`user_id = ${subject.subjectId}`
+        : sql`org_id = ${subject.subjectId}`;
     const [activeExport] = await executeRawRows(
       tx,
       sql`SELECT id FROM background_jobs
-          WHERE user_id = ${subject.subjectId} AND kind = 'user-export'
+          WHERE ${exportOwner} AND kind = 'user-export'
           LIMIT 1`,
       z.object({ id: z.uuid() }),
     );

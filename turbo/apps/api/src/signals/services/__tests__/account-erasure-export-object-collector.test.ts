@@ -183,7 +183,7 @@ describe("export object erasure", () => {
     );
   });
 
-  it("keeps a running durable export pending until its job can be cleaned", async () => {
+  it("replays a running durable export after lease loss and catalog deletion", async () => {
     const userId = `user_export_${randomUUID()}`;
     const jobId = randomUUID();
     await createExport(userId, jobId, "durable-v1");
@@ -204,8 +204,8 @@ describe("export object erasure", () => {
     );
     expect(inventory).toBeDefined();
     expect(erase).toBeDefined();
-    if (!erase) {
-      throw new Error("Missing captured export work");
+    if (!inventory || !erase) {
+      throw new Error("Missing captured export work or inventory proof");
     }
     await executeErasureWork(db, erase, handler, context.signal);
     expect(objects.live.has(result)).toBeTruthy();
@@ -218,6 +218,37 @@ describe("export object erasure", () => {
     });
     await expect(finalizeErasureJob(db, job.id, job)).rejects.toThrow(
       "work_unresolved",
+    );
+
+    // The legacy phase removes the export catalog, and the old worker can no
+    // longer own a live lease. Its cleanup coordinator must finish before B1
+    // can delete and verify the captured result bytes.
+    await db.execute(sql`DELETE FROM export_jobs WHERE id = ${jobId}`);
+    await db.execute(sql`
+      UPDATE background_jobs
+      SET lease_expires_at = timezone('UTC', clock_timestamp()) - interval '3 minutes',
+          updated_at = timezone('UTC', clock_timestamp()) - interval '3 minutes'
+      WHERE id = ${jobId}
+    `);
+    await executeErasureWork(db, inventory, handler, context.signal);
+    await db.execute(sql`
+      UPDATE account_erasure_work
+      SET available_at = clock_timestamp()
+      WHERE id = ${erase.workId}
+    `);
+    const [replayed] = await claimErasureWork(db, job.id, "verification");
+    expect(replayed?.workId).toBe(erase.workId);
+    if (!replayed) {
+      throw new Error("Missing replayed export erasure work");
+    }
+    await executeErasureWork(db, replayed, handler, context.signal);
+    const coordinator = await db.execute(sql`
+      SELECT id FROM background_jobs WHERE id = ${jobId}
+    `);
+    expect(coordinator.rows).toStrictEqual([]);
+    expect(objects.live.has(result)).toBeFalsy();
+    expect((await finalizeErasureJob(db, job.id, job)).state).toBe(
+      "verified_erased",
     );
   });
 });
