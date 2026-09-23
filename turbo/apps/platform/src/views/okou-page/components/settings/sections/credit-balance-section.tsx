@@ -164,11 +164,7 @@ function UsagePackSegmentBar({
               <TooltipContent
                 side="top"
                 sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="border shadow-md"
+                className="border shadow-md bg-popover! text-popover-foreground!"
               >
                 <div className="font-medium text-foreground">
                   {segment.label} — {formattedCredits}

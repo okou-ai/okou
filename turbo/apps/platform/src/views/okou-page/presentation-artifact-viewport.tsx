@@ -22,11 +22,9 @@ export function PresentationArtifactViewport({
       <div
         data-presentation-artifact-canvas
         data-testid="presentation-artifact-canvas"
-        className="absolute left-0 top-0"
+        className="invisible absolute left-0 top-0 origin-top-left"
         style={{
           height: PRESENTATION_ARTIFACT_VIEWPORT_HEIGHT,
-          transformOrigin: "top left",
-          visibility: "hidden",
           width: PRESENTATION_ARTIFACT_VIEWPORT_WIDTH,
         }}
       >

@@ -788,18 +788,8 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
                   <TooltipContent
                     side="bottom"
                     align="start"
-                    className="w-64 rounded-lg border border-[hsl(var(--gray-400))] p-3 text-left font-normal"
-                    style={{
-                      backgroundColor: "hsl(var(--popover))",
-                      color: "hsl(var(--popover-foreground))",
-                      // The light value of --okou-card-shadow, spelled out.
-                      // The token is declared at :root and would resolve here;
-                      // adopting it is a visual change, because it carries a
-                      // gradient-palette override this literal does not.
-                      boxShadow:
-                        "0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
-                      whiteSpace: "normal",
-                    }}
+                    // Preserve the literal shadow; the card token changes under palettes.
+                    className="w-64 rounded-lg border border-[hsl(var(--gray-400))] p-3 text-left font-normal bg-popover! text-popover-foreground! shadow-[0_2px_12px_hsl(30_6%_45%/0.05),0_0_0_0.5px_hsl(30_6%_45%/0.025)] whitespace-normal"
                   >
                     <span className="flex items-center gap-2">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full">

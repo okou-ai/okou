@@ -1366,16 +1366,18 @@ function ExpandedChatThreadsContent({
   return (
     <OverlayScrollArea
       scrollSignals={scrollSignals}
-      className="mt-1 min-h-0 flex-1"
+      className={cn(
+        "mt-1 min-h-0 flex-1",
+        isScrolled
+          ? "shadow-[0_-1px_0_0_hsl(var(--border)/0.4)]"
+          : "shadow-none",
+      )}
       contentClassName={contentClassName}
       aria-label={t(($) => {
         return $.chat.sidebar.chatThreads;
       })}
       data-testid="sidebar-scroll-area"
       tabIndex={currentMainThreadId ? 0 : undefined}
-      style={{
-        boxShadow: isScrolled ? "0 -1px 0 0 hsl(var(--border) / 0.4)" : "none",
-      }}
     >
       {unreadOnly ? (
         <UnreadChatThreadsContent
