@@ -570,31 +570,20 @@ describe("custom model provider gateway routes", () => {
       await runs.heartbeatRunner(runnerGroup);
       const deepseekClaim = await runs.claimRunnerJob(deepseekRunId);
 
-      expect(deepseekClaim.cliAgentType).toBe("codex");
+      // DeepSeek now runs on Pi even through a custom gateway; preserve the
+      // upstream mapping and firewall contract instead of a retired Codex catalog.
+      expect(deepseekClaim.cliAgentType).toBe("pi");
       expect(deepseekClaim.environment).toMatchObject({
         OPENAI_BASE_URL: "https://gateway.example.com/openai/v1",
         OPENAI_MODEL: upstreamModel,
       });
-      const catalogModels =
-        deepseekClaim.codexRuntimeConfig?.modelCatalog?.models;
-      if (!Array.isArray(catalogModels) || catalogModels.length !== 1) {
-        throw new Error(`Expected one Codex catalog model for ${logicalModel}`);
-      }
-      const [catalogModel] = catalogModels;
-      if (!isRecord(catalogModel)) {
-        throw new Error(
-          `Expected a Codex catalog model record for ${logicalModel}`,
-        );
-      }
-      expect(catalogModel).toMatchObject({
-        slug: upstreamModel,
-        apply_patch_tool_type: "freeform",
-        input_modalities: ["text"],
-        base_instructions: expect.stringContaining("You are Codex"),
-        model_messages: {
-          instructions_template: expect.stringContaining("You are Codex"),
-        },
+      expect(deepseekClaim.piModelConfig).toMatchObject({
+        provider: "deepseek",
+        baseUrl: "https://gateway.example.com/openai/v1",
+        model: upstreamModel,
+        catalogModel: logicalModel,
       });
+      expect(deepseekClaim.codexRuntimeConfig).toBeUndefined();
       expect(deepseekClaim.appendSystemPrompt).toContain(
         'okou image-recognition --file <image-path> --prompt "<instruction>"',
       );

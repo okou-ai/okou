@@ -6,11 +6,12 @@ runner_e2e_require_environment() {
     command -v jq >/dev/null
 }
 
-# Legacy Runner firewall and protocol probes exercise the native Codex harness,
-# which now belongs to the permanently native Astra model route. Pi-admitted
-# models retain their own dedicated E2E coverage and are never switched off.
+# Firewall and protocol probes need deterministic shell output from the Codex
+# mock, not an expensive real Astra completion that paraphrases stdout. The
+# mock-Claude organization also exposes a native Astra route in preview; its
+# Claude route and the separate real-model billing account remain untouched.
 runner_e2e_use_native_codex_account() {
-    local credentials="/tmp/e2e-api-credentials-runner-real-codex-built-in.json"
+    local credentials="/tmp/e2e-api-credentials-runner-mock-claude.json"
     export E2E_API_TOKEN E2E_API_URL E2E_NATIVE_CODEX_MODEL
     E2E_NATIVE_CODEX_MODEL="gpt-6-astra"
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")" || return

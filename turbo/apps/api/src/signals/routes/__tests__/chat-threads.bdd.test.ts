@@ -170,6 +170,18 @@ interface EntitledChatActor {
 
 type EntitledChatActorWithoutRunner = Omit<EntitledChatActor, "runnerGroup">;
 
+async function selectNativeClaudeModel(actor: ApiTestUser, providerId: string) {
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
+}
+
 async function entitledChatActorWithoutRunner(
   displayName: string,
 ): Promise<EntitledChatActorWithoutRunner> {
@@ -183,15 +195,7 @@ async function entitledChatActorWithoutRunner(
   const { providerId } = await api.ensureOrgModelProvider(actor);
   // Thread lifecycle tests claim and complete a native-harness run. Fable is
   // the permanently native Claude route now that Pi has no off switch.
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      isDefault: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  await selectNativeClaudeModel(actor, providerId);
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",
@@ -2188,7 +2192,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "pin the first run model",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
 
     let detail = await chat.readThread(actor, run.threadId);
@@ -2626,7 +2630,8 @@ describe("CHAT-01 chat thread read state", () => {
       throw new Error("Expected an organization-scoped peer");
     }
 
-    await api.ensureOrgModelProvider(peer);
+    const peerProvider = await api.ensureOrgModelProvider(peer);
+    await selectNativeClaudeModel(peer, peerProvider.providerId);
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Unread peer agent",
       visibility: "private",
@@ -2638,7 +2643,11 @@ describe("CHAT-01 chat thread read state", () => {
 
     const sameUserOtherOrg = bdd.user({ userId: owner.userId });
     await api.grantProEntitlement(sameUserOtherOrg);
-    await api.ensureOrgModelProvider(sameUserOtherOrg);
+    const otherOrgProvider = await api.ensureOrgModelProvider(sameUserOtherOrg);
+    await selectNativeClaudeModel(
+      sameUserOtherOrg,
+      otherOrgProvider.providerId,
+    );
     const otherOrgAgent = await bdd.createAgent(sameUserOtherOrg, {
       displayName: "Unread other org agent",
       visibility: "private",

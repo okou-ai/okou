@@ -25,7 +25,7 @@ policy_payload=$(jq -c '
       revision,
       policies: (
         [.policies[] |
-          select(.model != "claude-sonnet-4-6") |
+          select(.model != "claude-sonnet-4-6" and .model != "gpt-6-astra") |
           {
             model,
             isDefault,
@@ -39,6 +39,13 @@ policy_payload=$(jq -c '
             isDefault: false,
             defaultProviderType: "claude-code-oauth-token",
             credentialScope: "member",
+            modelProviderId: null
+          },
+          {
+            model: "gpt-6-astra",
+            isDefault: false,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
             modelProviderId: null
           }
         ]
