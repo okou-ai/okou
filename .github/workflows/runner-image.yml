@@ -415,7 +415,8 @@ jobs:
           name: okou-cli-rootfs-input
           path: okou-cli-artifact/
           if-no-files-found: error
-          retention-days: 1
+          overwrite: true
+          retention-days: 7
 
   build:
     name: Build runner image (${{ matrix.label }})

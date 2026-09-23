@@ -351,7 +351,8 @@ jq -e '
     .with.name == "okou-cli-rootfs-input" and
     .with.path == "okou-cli-artifact/" and
     .with["if-no-files-found"] == "error" and
-    .with["retention-days"] == 1
+    .with.overwrite == true and
+    .with["retention-days"] == 7
   )
 ' <<<"$workflow_json" >/dev/null || fail "CLI artifact resolution must run once for the source head and preserve the optional fallback"
 
