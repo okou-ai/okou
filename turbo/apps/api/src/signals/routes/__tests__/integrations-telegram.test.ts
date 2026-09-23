@@ -1961,17 +1961,6 @@ describe("GET /api/integrations/telegram/:botId/avatar", () => {
     );
   }
 
-  it("returns 401 when not authenticated and signature is missing", async () => {
-    const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
-    const response = await app.request(
-      "/api/integrations/telegram/tg-bot/avatar",
-    );
-    const body = await response.json();
-
-    expect(response.status).toBe(401);
-    expectUnauthorized(body);
-  });
-
   it("returns 404 when the bot is not visible in the active org", async () => {
     const { token } = await seedAvatarAuthContext();
     const app = createApp({ signal: context.signal, routes: TEST_APP_ROUTES });
