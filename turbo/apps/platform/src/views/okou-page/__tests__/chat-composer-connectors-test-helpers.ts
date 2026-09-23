@@ -18,6 +18,7 @@ import {
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -31,6 +32,7 @@ import {
   customConnectorsContract,
   customConnectorHttpResponseSchema,
   customConnectorValuesContract,
+  isIntegrationManagedCustomConnector,
   type CustomConnectorHttpResponse,
   type CustomConnectorMcpResponse,
   type CustomConnectorResponse,
@@ -380,6 +382,70 @@ export function installComposerConnectorFixture(
   context.mocks.api(customConnectorsContract.list, ({ respond }) => {
     return respond(200, { connectors: customConnectors });
   });
+  context.mocks.api(composerConnectorsContract.overview, ({ respond }) => {
+    return respond(200, {
+      builtinConnectors: catalog
+        .filter((connector) => {
+          return connector.connected;
+        })
+        .map((connector) => {
+          return {
+            slug: connector.slug,
+            label: connector.label,
+            icon: connector.icon,
+            hasPermissions: connector.permissionSummary.hasPermissions,
+          };
+        }),
+      customConnectors: customConnectors
+        .filter((connector) => {
+          return connector.connected;
+        })
+        .map((connector) => {
+          return {
+            id: connector.id,
+            slug: connector.slug,
+            displayName: connector.displayName,
+            permissionBundleRef: connector.permissionBundleRef ?? null,
+            integrationManaged: isIntegrationManagedCustomConnector(connector),
+          };
+        }),
+      accountSummaries: (options.accountSummaries ?? []).map((summary) => {
+        const account = summary.defaultConnection;
+        return {
+          target: summary.target,
+          accountCount: summary.accountCount,
+          attentionCount: summary.attentionCount,
+          defaultConnection: account
+            ? {
+                id: account.id,
+                authMethod: account.authMethod,
+                displayName: account.displayName,
+                externalId: account.externalId,
+                externalUsername: account.externalUsername,
+                externalEmail: account.externalEmail,
+                connectionStatus: account.connectionStatus,
+              }
+            : null,
+        };
+      }),
+      computerUseHosts: [],
+      cloudBrowserEnabledByDefault: true,
+    });
+  });
+  context.mocks.api(
+    composerConnectorsContract.agent,
+    async ({ params, respond }) => {
+      await options.authorizationGates?.[params.id];
+      return respond(200, {
+        enabledConnectorSlugs: builtinAuthorizations.get(params.id) ?? [],
+        customConnectorIds: (customAuthorizations.get(params.id) ?? []).map(
+          (grant) => {
+            return grant.customConnectorId;
+          },
+        ),
+      });
+    },
+  );
   context.mocks.api(
     userBuiltinConnectorsContract.get,
     async ({ params, respond }) => {

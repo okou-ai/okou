@@ -3,6 +3,7 @@ import {
   type AgentCustomConnectorGrant,
 } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   agentsByIdContract,
@@ -129,6 +130,17 @@ function mockCustomConnectorGrantUpdateResponse(
 }
 
 export const apiAgentsHandlers = [
+  mockApi(composerConnectorsContract.agent, ({ params, respond }) => {
+    return respond(200, {
+      enabledConnectorSlugs:
+        mockEnabledConnectorSlugsByAgent.get(params.id) ?? [],
+      customConnectorIds: (
+        mockCustomConnectorGrantsByAgent.get(params.id) ?? []
+      ).map((grant) => {
+        return grant.customConnectorId;
+      }),
+    });
+  }),
   // GET /api/agents
   mockApi(agentsMainContract.list, ({ respond }) => {
     return respond(200, mockAgents);

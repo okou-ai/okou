@@ -1065,6 +1065,19 @@ export {
   type UserBuiltinConnectorsContract,
 } from "./user-connectors";
 export {
+  composerConnectorsContract,
+  composerConnectorOverviewSchema,
+  composerAgentConnectorsSchema,
+  composerAccountSummarySchema,
+  composerDefaultAccountSchema,
+  type ComposerConnectorOverview,
+  type ComposerBuiltinConnector,
+  type ComposerCustomConnector,
+  type ComposerAgentConnectors,
+  type ComposerAccountSummary,
+  type ComposerDefaultAccount,
+} from "./composer-connectors";
+export {
   userPermissionGrantsContract,
   userPermissionGrantScopeSchema,
   userPermissionGrantActionSchema,

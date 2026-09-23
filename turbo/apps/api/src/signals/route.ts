@@ -94,6 +94,7 @@ import { computerUseAuthorizationRoutes } from "./routes/computer-use-authorizat
 import { computerUseRoutes } from "./routes/computer-use";
 import { codexDeviceAuthRoutes } from "./routes/codex-device-auth";
 import { connectorCatalogRoutes } from "./routes/connector-catalog";
+import { composerConnectorsRoutes } from "./routes/composer-connectors";
 import { connectorCheckRoutes } from "./routes/connector-check";
 import { builtinConnectorsExternalCodeRoutes } from "./routes/connectors-external-code";
 import { builtinConnectorsOauthDeviceAuthRoutes } from "./routes/connectors-oauth-device-auth";
@@ -325,6 +326,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...computerUseRoutes,
   ...codexDeviceAuthRoutes,
   ...connectorCatalogRoutes,
+  ...composerConnectorsRoutes,
   ...connectorCheckRoutes,
   ...builtinConnectorsExternalCodeRoutes,
   ...builtinConnectorsOauthDeviceAuthRoutes,

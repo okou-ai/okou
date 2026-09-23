@@ -9,19 +9,18 @@ import {
 import type {
   ConnectorAccountConnection,
   ConnectorAccountSelection,
-  ConnectorAccountSummary,
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { ComposerAccountSummary } from "@okouai/api-contracts/contracts/composer-connectors";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import {
-  connectorAccountSummaryByTarget$,
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
-  reloadConnectorAccountSummaries$,
 } from "./connector-accounts.ts";
+import { composerConnectorOverview$ } from "./composer-connector-overview.ts";
 
 export interface ComposerConnectorAccountPreferenceState {
   readonly selections: readonly ConnectorAccountSelection[];
@@ -33,7 +32,7 @@ export interface ComposerConnectorAccountSignals {
     Promise<ComposerConnectorAccountPreferenceState>
   >;
   readonly summaryByTarget$: Computed<
-    Promise<ReadonlyMap<string, ConnectorAccountSummary>>
+    Promise<ReadonlyMap<string, ComposerAccountSummary>>
   >;
   readonly menuTarget$: Computed<ConnectorAccountTarget | null>;
   readonly menuOpen$: Computed<boolean>;
@@ -59,7 +58,6 @@ export interface ComposerConnectorAccountSignals {
   >;
   readonly reloadPreference$: Command<void, []>;
   readonly reload$: Command<void, []>;
-  readonly openPopover$: Command<void, []>;
   readonly resetPendingSelections$: Command<void, []>;
 }
 
@@ -167,6 +165,14 @@ export function createComposerConnectorAccountSignals(
   threadId?: string,
 ): ComposerConnectorAccountSignals {
   const list = createConnectorAccountListSignals();
+  const summaryByTarget$ = computed(async (get) => {
+    const overview = await get(composerConnectorOverview$);
+    return new Map(
+      overview.accountSummaries.map((summary) => {
+        return [connectorAccountTargetKey(summary.target), summary];
+      }),
+    );
+  });
   const menuTarget$ = state<ConnectorAccountTarget | null>(null);
   const menuOpen$ = state(false);
   const reloadVersion$ = state(0);
@@ -196,10 +202,6 @@ export function createComposerConnectorAccountSignals(
   });
   const reload$ = command(({ set }) => {
     set(reloadPreference$);
-    set(reloadConnectorAccountSummaries$);
-  });
-  const openPopover$ = command(({ set }) => {
-    set(reload$);
   });
   const openTarget$ = command(
     (
@@ -243,7 +245,7 @@ export function createComposerConnectorAccountSignals(
 
   return {
     preferenceState$,
-    summaryByTarget$: connectorAccountSummaryByTarget$,
+    summaryByTarget$,
     menuTarget$: computed((get) => {
       return get(menuTarget$);
     }),
@@ -260,7 +262,6 @@ export function createComposerConnectorAccountSignals(
     useDefault$,
     reloadPreference$,
     reload$,
-    openPopover$,
     resetPendingSelections$,
   };
 }

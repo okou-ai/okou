@@ -958,6 +958,25 @@ export const currentAgentSshAccess$ = computed(async (get) => {
     ? { identity, agentId: agent.agentId, ...result.body }
     : null;
 });
+
+export function sshAccessForAgent(agentId: string) {
+  return computed(async (get) => {
+    const [identity, summary] = await Promise.all([
+      get(sshIdentity$),
+      get(sshSummary$),
+    ]);
+    if (!identity || !summary || summary.configuredCount === 0) {
+      return null;
+    }
+    const result = await accept(
+      (await get(sshClients$)).access.get({ params: { agentId } }),
+      [200, 404],
+      undefined,
+      { showErrorToast: false },
+    );
+    return result.status === 200 ? result.body : null;
+  });
+}
 export const updateAgentSshAccess$ = command(
   async (
     { get, set },

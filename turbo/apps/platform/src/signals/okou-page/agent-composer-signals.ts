@@ -22,7 +22,7 @@ import {
 } from "./agent-draft.ts";
 import { selectedComputerUseHostId } from "./computer-use-hosts.ts";
 import type { DraftSignals } from "./chat-draft.ts";
-import { computerUseHostsFromWorker$ } from "../shared-database.ts";
+import { composerConnectorOverview$ } from "./composer-connector-overview.ts";
 import {
   createComposerSignals,
   type ComposerSubmission,
@@ -220,14 +220,15 @@ function createAgentSubmitMessage(
       }
       const access = await get(newThreadComputerAccess$);
       signal.throwIfAborted();
-      const [hosts, imageModelPin, videoModelPin, connectorPreference] =
+      const [overview, imageModelPin, videoModelPin, connectorPreference] =
         await Promise.all([
-          get(computerUseHostsFromWorker$),
+          get(composerConnectorOverview$),
           get(chatPageImageModelPin$),
           get(chatPageVideoModelPin$),
           get(connector.accounts.preferenceState$),
         ]);
       signal.throwIfAborted();
+      const hosts = overview.computerUseHosts;
       const hostId =
         access.kind === "computerUse"
           ? selectedComputerUseHostId(hosts, access.hostId)
@@ -250,10 +251,10 @@ function createAgentSubmitMessage(
               });
             },
           ),
-          ...connectorAuthorization.customConnectorGrants.map((grant) => {
+          ...connectorAuthorization.customConnectorIds.map((connectorId) => {
             return connectorAccountTargetKey({
               kind: "custom",
-              customConnectorId: grant.customConnectorId,
+              customConnectorId: connectorId,
             });
           }),
         ]);

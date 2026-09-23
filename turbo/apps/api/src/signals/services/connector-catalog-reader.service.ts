@@ -1,4 +1,5 @@
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
+import type { ComposerBuiltinConnector } from "@okouai/api-contracts/contracts/composer-connectors";
 import type {
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
@@ -17,6 +18,7 @@ import {
   getExternalPublicConnectorCatalogPermissionDetail,
   listExternalPublicConnectorCatalog,
   listExternalPublicConnectorCatalogStatus,
+  listExternalConnectedConnectorBriefs,
   searchExternalConnectorCatalog,
 } from "./connector-catalog-external-reader.service";
 
@@ -59,6 +61,14 @@ export async function listPublicConnectorCatalogStatus(
     referenceConnectorSlugs: [],
   });
   return read.status;
+}
+
+export async function listConnectedConnectorBriefs(
+  args: ConnectorCatalogReadArgs & {
+    readonly connectorSlugs: readonly string[];
+  },
+): Promise<readonly ComposerBuiltinConnector[]> {
+  return await listExternalConnectedConnectorBriefs(args);
 }
 
 export async function discoverPublicConnectorCatalogStatus(

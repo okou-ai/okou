@@ -244,11 +244,15 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import type {
+  ComposerBuiltinConnector,
+  ComposerCustomConnector,
+  ComposerDefaultAccount,
+} from "@okouai/api-contracts/contracts/composer-connectors";
 import {
   isIntegrationManagedCustomConnector,
   type CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { getModelDisplayName } from "@okouai/core/model-display-name";
 import {
   ImageModelBrandIcon,
@@ -285,22 +289,9 @@ import {
 } from "../../signals/connector-connection-progress.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  sshAgentAccessSnapshot$,
-  sshIdentity$,
-  updateAgentSshAccess$,
-  invalidateSsh$,
-  sshSummary$,
-} from "../../signals/ssh.ts";
-import {
-  vncAgentAccessSnapshot$,
-  updateAgentVncAccess$,
-} from "../../signals/vnc-access.ts";
-import {
-  vncIdentity$,
-  invalidateVnc$,
-  vncSummary$,
-} from "../../signals/vnc.ts";
+import { updateAgentSshAccess$, sshSummary$ } from "../../signals/ssh.ts";
+import { updateAgentVncAccess$ } from "../../signals/vnc-access.ts";
+import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncLoadError } from "./vnc-load-error.tsx";
 import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
 import { SshLoadError } from "./ssh-load-error.tsx";
@@ -327,7 +318,7 @@ import {
   OKOU_DESKTOP_DOWNLOAD_URL,
   desktopDownloadSupportStatus$,
 } from "../../signals/okou-page/computer-use-hosts.ts";
-import { computerUseHostsFromWorker$ } from "../../signals/shared-database.ts";
+import { composerConnectorOverview$ } from "../../signals/okou-page/composer-connector-overview.ts";
 import { computerUseProductName$ } from "../../signals/branding.ts";
 import {
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
@@ -475,11 +466,11 @@ type TemplatePreviewImageSize = Parameters<typeof r2ImageTransformUrl>[1];
 // Helpers
 // ---------------------------------------------------------------------------
 
-type ComposerConnectorItem = PlatformConnectorCatalogStatusItem & {
+type ComposerConnectorItem = ComposerBuiltinConnector & {
   readonly authorized: boolean;
 };
 
-type ComposerCustomConnectorItem = CustomConnectorResponse & {
+type ComposerCustomConnectorItem = ComposerCustomConnector & {
   readonly authorized: boolean;
 };
 
@@ -7020,7 +7011,9 @@ function matchesComposerPopoverConnectorSearch(
   }
   return item.kind === "builtin"
     ? matchesConnectorSearch(search, item.connector)
-    : matchesCustomConnectorSearch(search, item.connector);
+    : [item.connector.displayName, item.connector.slug].some((value) => {
+        return value.toLowerCase().includes(search.trim().toLowerCase());
+      });
 }
 
 function ComposerConnectorAccessRow({
@@ -7085,7 +7078,7 @@ function ComposerConnectorAccountMenu({
   readonly target: ConnectorAccountTarget;
   readonly connectorLabel: string;
   readonly selectedConnection: ConnectorAccountConnection | undefined;
-  readonly defaultConnection: ConnectorAccountConnection | null;
+  readonly defaultConnection: ComposerDefaultAccount | null;
   readonly explicit: boolean;
 }) {
   const { t } = useTranslation();
@@ -7219,7 +7212,7 @@ function ComposerConnectorAccountChoices({
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
   readonly selection: ConnectorAccountSelection | undefined;
-  readonly defaultConnection: ConnectorAccountConnection | null;
+  readonly defaultConnection: ComposerDefaultAccount | null;
   readonly saving: boolean;
   readonly loading: boolean;
   readonly unavailable: boolean;
@@ -7631,8 +7624,7 @@ function ComposerConnectorAccountAction({
   const summary = summaries?.get(targetKey);
   if (
     !item.connector.authorized ||
-    (item.kind === "custom" &&
-      isIntegrationManagedCustomConnector(item.connector)) ||
+    (item.kind === "custom" && item.connector.integrationManaged) ||
     !summary ||
     summary.accountCount <= 1
   ) {
@@ -7658,38 +7650,6 @@ function ComposerConnectorAccountAction({
       defaultConnection={summary.defaultConnection}
     />
   );
-}
-
-function useComposerSshAccess(agentId: string | null) {
-  const identity = useLoadable(sshIdentity$);
-  const rows = useLoadable(sshAgentAccessSnapshot$);
-  const retained = useLastLoadable(sshAgentAccessSnapshot$);
-  const access =
-    identity.state === "hasData" &&
-    identity.data !== null &&
-    retained.state === "hasData" &&
-    retained.data.identity === identity.data
-      ? retained.data.rows?.find((row) => {
-          return row.agent.agentId === agentId;
-        })
-      : undefined;
-  return { rows, access };
-}
-
-function useComposerVncAccess(agentId: string | null) {
-  const identity = useLoadable(vncIdentity$);
-  const rows = useLoadable(vncAgentAccessSnapshot$);
-  const retained = useLastLoadable(vncAgentAccessSnapshot$);
-  const access =
-    identity.state === "hasData" &&
-    identity.data !== null &&
-    retained.state === "hasData" &&
-    retained.data.identity === identity.data
-      ? retained.data.rows?.find((row) => {
-          return row.agent.agentId === agentId;
-        })
-      : undefined;
-  return { rows, access };
 }
 
 function ComposerConnectorTriggerIcons({
@@ -7753,7 +7713,6 @@ function ConnectorsPopoverButton({
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
-  const openAccountsPopover = useSet(signals.connector.accounts.openPopover$);
   const search = connectorUi.popoverSearch;
   const sortOrder = connectorUi.popoverSortOrder;
   const downloadDialogOpen = useGet(
@@ -7763,13 +7722,13 @@ function ConnectorsPopoverButton({
     signals.computer.setComputerUseDownloadDialogOpen$,
   );
   const permissionConnectorSlug = connectorUi.permissionConnectorSlug;
-  const { rows: sshRows, access: sshAccess } = useComposerSshAccess(agentId);
+  const sshRows = useLoadable(signals.connector.sshAccess$);
+  const sshAccess = useLastResolved(signals.connector.sshAccess$);
   const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
-  const { rows: vncRows, access: vncAccess } = useComposerVncAccess(agentId);
+  const vncRows = useLoadable(signals.connector.vncAccess$);
+  const vncAccess = useLastResolved(signals.connector.vncAccess$);
   const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
-  const reloadVnc = useSet(invalidateVnc$);
   const pageSignal = useGet(pageSignal$);
-  const reloadSsh = useSet(invalidateSsh$);
   const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;
   const connectorItems: ComposerPopoverConnectorItem[] = [
     ...agentConnectors.map((connector) => {
@@ -7822,11 +7781,13 @@ function ConnectorsPopoverButton({
       // Snapshot the sort order when popover opens
       const freshSort = connectorItems.map(composerPopoverConnectorId);
       updateConnectorUi({ popoverSortOrder: freshSort });
-      openAccountsPopover();
-      reloadSsh();
-      reloadVnc();
+      updateConnectorUi({ popoverOpen: true, popoverHasOpened: true });
     } else {
-      updateConnectorUi({ popoverSortOrder: null, popoverSearch: "" });
+      updateConnectorUi({
+        popoverOpen: false,
+        popoverSortOrder: null,
+        popoverSearch: "",
+      });
       closeAccountMenu();
     }
   };
@@ -7867,8 +7828,8 @@ function ConnectorsPopoverButton({
                         connectors={agentConnectors}
                         customConnectors={agentCustomConnectors}
                         computerUse={computerUse}
-                        sshAccess={sshAccess}
-                        vncAccess={vncAccess}
+                        sshAccess={sshAccess ?? undefined}
+                        vncAccess={vncAccess ?? undefined}
                       />
                     )}
                   </button>
@@ -8068,7 +8029,7 @@ function ConnectorsPopoverButton({
                   const showPermissionAction =
                     Boolean(agentId) &&
                     connector.authorized &&
-                    connector.permissionSummary.hasPermissions;
+                    connector.hasPermissions;
                   return (
                     <ComposerConnectorAccessRow
                       key={connector.slug}
@@ -9931,71 +9892,67 @@ interface ResolvedComposerConnectorCollections {
   readonly unconnectedCustomConnectors: CustomConnectorResponse[];
   readonly agentConnectors: ComposerConnectorItem[];
   readonly agentCustomConnectors: ComposerCustomConnectorItem[];
+  readonly directoryConnected: PlatformConnectorCatalogStatusItem[];
+  readonly directoryConnectedCustom: CustomConnectorResponse[];
   readonly selectedCustomConnector: CustomConnectorResponse | undefined;
 }
 
 function resolveComposerConnectorCollections({
-  relatedCatalogItems,
+  connectedBuiltins,
+  connectedCustom,
   addDialogCatalogItems,
-  customConnectors,
+  addDialogCustomConnectors,
   authorizedConnectorSlugs,
-  customConnectorGrants,
+  customConnectorIds,
   selectedCustomConnectorId,
 }: {
-  relatedCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
+  connectedBuiltins: readonly ComposerBuiltinConnector[];
+  connectedCustom: readonly ComposerCustomConnector[];
   addDialogCatalogItems: readonly PlatformConnectorCatalogStatusItem[];
-  customConnectors: readonly CustomConnectorResponse[];
+  addDialogCustomConnectors: readonly CustomConnectorResponse[];
   authorizedConnectorSlugs: readonly ConnectorSlug[] | null;
-  customConnectorGrants: readonly AgentCustomConnectorGrant[] | null;
+  customConnectorIds: readonly string[] | null;
   selectedCustomConnectorId: string | null;
 }): ResolvedComposerConnectorCollections {
-  const resolvedRelatedCatalogItems = relatedCatalogItems;
-  const resolvedAddDialogCatalogItems = addDialogCatalogItems;
   const authorizedSet = new Set(authorizedConnectorSlugs ?? []);
-  const authorizedCustomSet = new Set(
-    customConnectorGrants?.map((grant) => {
-      return grant.customConnectorId;
-    }) ?? [],
-  );
+  const authorizedCustomSet = new Set(customConnectorIds ?? []);
   const connectorMap = new Map(
-    [...resolvedRelatedCatalogItems, ...resolvedAddDialogCatalogItems].map(
-      (connector) => {
-        return [connector.slug, connector];
-      },
-    ),
+    addDialogCatalogItems.map((connector) => {
+      return [connector.slug, connector];
+    }),
   );
-  const unconnectedConnectors = resolvedAddDialogCatalogItems.filter(
+  const unconnectedConnectors = addDialogCatalogItems.filter((connector) => {
+    return !connector.connected;
+  });
+  const unconnectedCustomConnectors = addDialogCustomConnectors.filter(
     (connector) => {
-      return !connector.connected;
+      return (
+        !connector.connected && !isIntegrationManagedCustomConnector(connector)
+      );
     },
   );
-  const unconnectedCustomConnectors = customConnectors.filter((connector) => {
-    return (
-      !connector.connected && !isIntegrationManagedCustomConnector(connector)
-    );
+  const agentConnectors = connectedBuiltins.map((connector) => {
+    return {
+      ...connector,
+      authorized: authorizedSet.has(connector.slug),
+    };
   });
-  const agentConnectors = resolvedRelatedCatalogItems
-    .filter((connector) => {
+  const agentCustomConnectors = connectedCustom.map((connector) => {
+    return {
+      ...connector,
+      authorized: authorizedCustomSet.has(connector.id),
+    };
+  });
+  const directoryConnected = addDialogCatalogItems.filter((connector) => {
+    return connector.connected;
+  });
+  const directoryConnectedCustom = addDialogCustomConnectors.filter(
+    (connector) => {
       return connector.connected;
-    })
-    .map((connector) => {
-      return {
-        ...connector,
-        authorized: authorizedSet.has(connector.slug),
-      };
-    });
-  const agentCustomConnectors = customConnectors
-    .filter((connector) => {
-      return connector.connected;
-    })
-    .map((connector) => {
-      return {
-        ...connector,
-        authorized: authorizedCustomSet.has(connector.id),
-      };
-    });
+    },
+  );
   const selectedCustomConnector = selectedCustomConnectorId
-    ? customConnectors.find((connector) => {
+    ? addDialogCustomConnectors.find((connector) => {
         return connector.id === selectedCustomConnectorId;
       })
     : undefined;
@@ -10006,6 +9963,8 @@ function resolveComposerConnectorCollections({
     unconnectedCustomConnectors,
     agentConnectors,
     agentCustomConnectors,
+    directoryConnected,
+    directoryConnectedCustom,
     selectedCustomConnector,
   };
 }
@@ -10117,12 +10076,12 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   const setCloudBrowserEnabled = useSet(
     signals.computer.setCloudBrowserEnabled$,
   );
-  const computerUseHostsState = useLastLoadable(computerUseHostsFromWorker$);
+  const computerUseHostsState = useLastLoadable(composerConnectorOverview$);
   const lastComputerUseHosts =
-    useLastResolved(computerUseHostsFromWorker$) ?? [];
+    useLastResolved(composerConnectorOverview$)?.computerUseHosts ?? [];
   const computerUseHosts =
     computerUseHostsState.state === "hasData"
-      ? computerUseHostsState.data
+      ? computerUseHostsState.data.computerUseHosts
       : lastComputerUseHosts;
   const resolvedComputerUseHostId = selectedComputerUseHostId(
     computerUseHosts,
@@ -10167,8 +10126,11 @@ function ComposerConnectorsSlot({
   const connectorDirectoryEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const connectorData = useLastResolved(signals.connector.data$);
+  const addDialogCatalog = useLastResolved(signals.connector.addDialogCatalog$);
   const addDialogCatalogItems =
     useLastResolved(signals.connector.addDialogCatalogItems$) ?? [];
+  const addDialogCustomConnectors =
+    useLastResolved(signals.connector.addDialogCustomConnectors$) ?? [];
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
@@ -10193,20 +10155,20 @@ function ComposerConnectorsSlot({
     unconnectedCustomConnectors,
     agentConnectors,
     agentCustomConnectors,
+    directoryConnected,
+    directoryConnectedCustom,
     selectedCustomConnector,
   } = resolveComposerConnectorCollections({
-    relatedCatalogItems: connectorData?.relatedCatalogItems ?? [],
+    connectedBuiltins: connectorData?.overview.builtinConnectors ?? [],
+    connectedCustom: connectorData?.overview.customConnectors ?? [],
     addDialogCatalogItems,
-    customConnectors: connectorData?.customConnectors ?? [],
+    addDialogCustomConnectors,
     authorizedConnectorSlugs:
       connectorData?.authorization.enabledConnectorSlugs ?? null,
-    customConnectorGrants:
-      connectorData?.authorization.customConnectorGrants ?? null,
+    customConnectorIds: connectorData?.authorization.customConnectorIds ?? null,
     selectedCustomConnectorId,
   });
-  const selectedConnector = selectedConnectorSlug
-    ? connectorMap.get(selectedConnectorSlug)
-    : undefined;
+  const selectedConnector = connectorUi.selectedConnector ?? undefined;
   const selectedConnectorAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
   const selectedCustomConnectorAccountOptions =
@@ -10277,6 +10239,7 @@ function ComposerConnectorsSlot({
         updateConnectorUi({
           showAddDialog: false,
           selectedConnectorSlug: connectorSlug,
+          selectedConnector: connector,
         });
       },
       connectBrowserAuth: async (authMethod) => {
@@ -10372,7 +10335,10 @@ function ComposerConnectorsSlot({
         }
         agentId={agentRecordId}
         onBuiltinClose={() => {
-          updateConnectorUi({ selectedConnectorSlug: null });
+          updateConnectorUi({
+            selectedConnectorSlug: null,
+            selectedConnector: null,
+          });
         }}
         onBuiltinSuccess={async (_connectionId, signal) => {
           const connectorSlug = selectedConnectorSlug;
@@ -10389,13 +10355,15 @@ function ComposerConnectorsSlot({
           <ConnectorDirectoryDialog
             state={connectorUi}
             onUpdateState={updateConnectorUi}
-            categoryCounts={connectorData?.categoryConnectorCounts}
-            categoryMetadata={connectorData?.categoryMetadata}
-            loading={connectorData === undefined}
-            chipCatalog={connectorData?.relatedCatalogItems ?? []}
-            connected={agentConnectors}
+            categoryCounts={addDialogCatalog?.categoryConnectorCounts}
+            categoryMetadata={addDialogCatalog?.categoryMetadata}
+            loading={
+              addDialogCatalog === undefined || addDialogCatalog === null
+            }
+            chipCatalog={addDialogCatalogItems}
+            connected={directoryConnected}
             unconnected={unconnectedConnectors}
-            connectedCustom={agentCustomConnectors}
+            connectedCustom={directoryConnectedCustom}
             unconnectedCustom={unconnectedCustomConnectors}
             connecting={actions.connecting}
             isConnectorConnecting={actions.isConnectorConnecting}

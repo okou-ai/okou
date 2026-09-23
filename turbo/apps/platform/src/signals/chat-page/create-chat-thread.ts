@@ -191,7 +191,7 @@ import {
   runGroupVisualWindowStartIndex,
 } from "./run-group-visual-window.ts";
 import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
-import { computerUseHostsFromWorker$ } from "../shared-database.ts";
+import { composerConnectorOverview$ } from "../okou-page/composer-connector-overview.ts";
 import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
 import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
 import type {
@@ -3851,7 +3851,7 @@ function createThreadSubmitMessageSignal(
     ): Promise<boolean> => {
       const explicit = get(computerUseHostSelection.computerUseHostIdExplicit$);
       const storedHostId = get(computerUseHostSelection.computerUseHostId$);
-      const hosts = await get(computerUseHostsFromWorker$);
+      const hosts = (await get(composerConnectorOverview$)).computerUseHosts;
       signal.throwIfAborted();
       const computerUseHostId = selectedComputerUseHostId(hosts, storedHostId);
       const cloudBrowserEnabled = get(
