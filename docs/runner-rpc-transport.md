@@ -3,7 +3,7 @@
 The transport delivered by #32012 is infrastructure under #31932. Its first
 consumer is the [Runner SSH dispatcher](runner-ssh-execution.md), installed by
 #32387 for official API-backed Runs. The shared Runner-side owner now lives in
-`crates/runner/src/guest_rpc`; SSH owns only its business handlers and run-local
+`crates/runner-remote/src/guest_rpc`; SSH owns only its business handlers and run-local
 authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
 The [SSH CLI and owner/Agent UI](ssh-access.md) are delivered. SSH is generally

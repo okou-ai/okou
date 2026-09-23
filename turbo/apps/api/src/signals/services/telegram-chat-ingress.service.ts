@@ -128,6 +128,7 @@ async function createCanonicalTelegramChatThread(
       userId: args.userId,
       agentId: args.agentId,
       computerUseHostId,
+      cloudBrowserEnabled: false,
       selectedModel: args.selectedModel,
       modelSettings,
       codexServiceTier: args.serviceTier === "priority" ? "fast" : null,

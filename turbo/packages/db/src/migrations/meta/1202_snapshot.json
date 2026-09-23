@@ -1,5 +1,5 @@
 {
-  "id": "74e45474-0c11-42eb-863e-cda118a82c03",
+  "id": "b1fee8e0-81d3-4d79-8bae-6e971fbdc39b",
   "prevId": "b33968f8-435a-4852-ab5d-81880e5d4047",
   "version": "7",
   "dialect": "postgresql",
@@ -7193,6 +7193,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "group_id": {
+          "name": "group_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "channel": {
           "name": "channel",
           "type": "text",
@@ -9322,12 +9328,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
-        },
-        "object_key": {
-          "name": "object_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",

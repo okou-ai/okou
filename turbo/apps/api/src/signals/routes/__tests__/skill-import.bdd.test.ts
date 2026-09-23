@@ -202,8 +202,8 @@ describe("POST /api/skill-import/sessions", () => {
     expect(session.token.startsWith("vm0_skillimport_")).toBeTruthy();
     expect(session.limits).toStrictEqual(SKILL_IMPORT_LIMITS);
     const remainingMs = Date.parse(session.expiresAt) - now();
-    expect(remainingMs).toBeGreaterThan(55 * 60 * 1000);
-    expect(remainingMs).toBeLessThanOrEqual(60 * 60 * 1000);
+    expect(remainingMs).toBeGreaterThan(23 * 60 * 60 * 1000);
+    expect(remainingMs).toBeLessThanOrEqual(24 * 60 * 60 * 1000);
   });
 
   it("refuses a caller whose onboarding flow switch is off", async () => {

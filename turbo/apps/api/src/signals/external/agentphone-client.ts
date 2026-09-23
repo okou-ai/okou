@@ -58,8 +58,7 @@ export function isAgentPhoneApiError(
 export async function sendAgentPhoneMessage(
   opts: {
     readonly agentphoneAgentId: string;
-    readonly toNumber?: string | null;
-    readonly conversationId?: string | null;
+    readonly toNumber: string;
     readonly replyToMessageId?: string | null;
     readonly body: string;
     readonly mediaUrl?: string | null;
@@ -75,8 +74,7 @@ export async function sendAgentPhoneMessage(
     },
     body: JSON.stringify({
       agent_id: opts.agentphoneAgentId,
-      ...(opts.toNumber ? { to_number: opts.toNumber } : {}),
-      ...(opts.conversationId ? { conversation_id: opts.conversationId } : {}),
+      to_number: opts.toNumber,
       ...(opts.replyToMessageId
         ? { reply_to_message_id: opts.replyToMessageId }
         : {}),
@@ -110,9 +108,7 @@ export async function sendAgentPhoneMessage(
     fromNumber:
       typeof result.from_number === "string" ? result.from_number : null,
     toNumber:
-      typeof result.to_number === "string"
-        ? result.to_number
-        : (opts.toNumber ?? null),
+      typeof result.to_number === "string" ? result.to_number : opts.toNumber,
     mediaUrls,
   };
 }

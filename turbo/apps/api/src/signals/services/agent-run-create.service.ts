@@ -330,6 +330,7 @@ import {
   type PreparedPersonalSubscriptionAdmission,
   isPersonalSubscriptionProviderType,
   personalModelProviderAccountById,
+  type CapturedPersonalSubscriptionAccount,
 } from "./model-provider-account.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
@@ -1113,6 +1114,9 @@ export interface CreateAgentRunArgs {
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
+  /** Captured by the product entry point for this request only. This skips
+   * an identity lookup, never the fresh environment or admission checks. */
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly codexServiceTier?: "fast";
@@ -2722,6 +2726,7 @@ interface ResolveModelProviderEnvironmentArgs {
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly retainedRunId?: string;
@@ -2948,14 +2953,27 @@ async function resolveExactPersonalModelProviderAccount(
   if (!args.modelProviderId || args.modelProviderCredentialScope === "org") {
     return null;
   }
-  const account = await personalModelProviderAccountById({
-    db,
-    id: args.modelProviderId,
-    orgId: args.orgId,
-    userId: args.userId,
-    runId: args.retainedRunId,
-  });
-  if (!account || !isPersonalSubscriptionProviderType(account.type)) {
+  const captured = args.capturedPersonalSubscriptionAccount;
+  const capturedType =
+    !args.retainedRunId &&
+    captured?.id === args.modelProviderId &&
+    captured.orgId === args.orgId &&
+    captured.userId === args.userId &&
+    (args.modelProviderType === undefined ||
+      captured.type === args.modelProviderType)
+      ? captured.type
+      : undefined;
+  const account = capturedType
+    ? null
+    : await personalModelProviderAccountById({
+        db,
+        id: args.modelProviderId,
+        orgId: args.orgId,
+        userId: args.userId,
+        runId: args.retainedRunId,
+      });
+  const accountType = capturedType ?? account?.type;
+  if (!accountType || !isPersonalSubscriptionProviderType(accountType)) {
     return null;
   }
   // A deferred Run keeps the account its original request authorized. Snapshot
@@ -2963,6 +2981,9 @@ async function resolveExactPersonalModelProviderAccount(
   // owner's live credentials and skips accounts they have since disconnected,
   // so it can neither authorize nor observe a retained continuation.
   if (args.retainedRunId) {
+    if (!account) {
+      return null;
+    }
     const [provider] = await db
       .select({ selectedModel: modelProviders.selectedModel })
       .from(modelProviders)
@@ -2981,8 +3002,8 @@ async function resolveExactPersonalModelProviderAccount(
     db,
     orgId: args.orgId,
     userId: args.userId,
-    type: account.type,
-    sourceId: account.id,
+    type: accountType,
+    sourceId: args.modelProviderId,
     featureSwitchContext: args.featureSwitchContext,
   });
   if (!coordinated) {
@@ -9731,6 +9752,8 @@ async function resolveRunModelProvider(
         modelProviderId: args.modelProviderId,
         modelProviderCredentialScope: args.modelProviderCredentialScope,
         modelProviderType: args.modelProviderType,
+        capturedPersonalSubscriptionAccount:
+          args.capturedPersonalSubscriptionAccount,
         selectedModelOverride: args.selectedModelOverride,
         builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
         piExecution: args.piExecution,

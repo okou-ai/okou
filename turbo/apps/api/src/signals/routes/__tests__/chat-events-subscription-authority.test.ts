@@ -158,6 +158,55 @@ describe("CHAT-02: run-level model overrides", () => {
       await cancelChatRun(f.actor, run.runId);
     });
 
+    it("rejects an account disconnected after capture before environment preparation", async () => {
+      const f = await prepareSubscriptionThread();
+      const clientEventId = randomUUID();
+      const prompt = "reject a disconnected captured account";
+      const send = requestSendEventRaw(f.actor, {
+        agentId: f.agentId,
+        threadId: f.thread.id,
+        model: "gpt-5.6-terra",
+        prompt,
+        clientEventId,
+        userMessage: { version: 1, parts: [{ type: "text", text: prompt }] },
+        hasTextContent: true,
+      });
+      const observed = observePendingSend(send);
+
+      await Promise.all([
+        f.preparation.arrival("subscription-account"),
+        f.preparation.arrival("thread-session"),
+      ]);
+      f.preparation.release("subscription-account");
+      await observed.beforeSettlement(
+        f.preparation.arrival("post-authorization-context"),
+      );
+      await authDeviceSupport.deletePersonalModelProviderAccount(
+        f.actor,
+        f.captured.accountSourceId,
+      );
+      f.preparation.release("post-authorization-context");
+      f.preparation.release("thread-session");
+      f.preparation.releaseAll();
+
+      await expect(send).resolves.toMatchObject({
+        status: 503,
+        body: { error: { code: "PROVIDER_UNAVAILABLE" } },
+      });
+      await observed.joinPhases();
+      const events = await chat.listThreadEvents(f.actor, f.thread.id);
+      expect(events.events).toStrictEqual([
+        expect.objectContaining({
+          eventType: "input.prompt",
+          id: clientEventId,
+        }),
+        expect.objectContaining({
+          eventType: "control.revoke",
+          revokesEventId: clientEventId,
+        }),
+      ]);
+    });
+
     it("captures once while a stale thread snapshot retries with the same account", async () => {
       const { actor, agentId } = await entitledChatActor();
       const captured = await configureSubscriptionPiModel(actor, {
