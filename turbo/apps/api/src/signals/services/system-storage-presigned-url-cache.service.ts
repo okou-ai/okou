@@ -912,6 +912,36 @@ function storageManifestExceedsObjectKeyLowerBound(
   return false;
 }
 
+async function lookupMixedStorageManifestPresignedUrlCacheRows(
+  db: Db,
+  pairs: readonly StorageManifestPresignedUrlCacheLookupPair[],
+) {
+  const scopes = pairs.map((pair) => {
+    return pair.scope;
+  });
+  const cacheKeys = pairs.map((pair) => {
+    return pair.cacheKey;
+  });
+  return await db
+    .select({
+      scope: systemStoragePresignedUrlCache.scope,
+      cacheKey: systemStoragePresignedUrlCache.cacheKey,
+      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+      expiresAt: systemStoragePresignedUrlCache.expiresAt,
+    })
+    .from(systemStoragePresignedUrlCache)
+    .innerJoin(
+      sql`unnest(
+        ${sql.param(scopes)}::varchar(64)[],
+        ${sql.param(cacheKeys)}::varchar(64)[]
+      ) AS requested(scope, cache_key)`,
+      and(
+        eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
+        eq(systemStoragePresignedUrlCache.cacheKey, sql`requested.cache_key`),
+      ),
+    );
+}
+
 export function prefetchStorageManifestPresignedUrlCacheRows(args: {
   readonly db: Db;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
@@ -988,40 +1018,16 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       uniquePairCount: pairs.length,
     });
 
-    const scopes = pairs.map((pair) => {
-      return pair.scope;
-    });
-    const cacheKeys = pairs.map((pair) => {
-      return pair.cacheKey;
-    });
-    const lookup = async () => {
-      return await args.db
-        .select({
-          scope: systemStoragePresignedUrlCache.scope,
-          cacheKey: systemStoragePresignedUrlCache.cacheKey,
-          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-          expiresAt: systemStoragePresignedUrlCache.expiresAt,
-        })
-        .from(systemStoragePresignedUrlCache)
-        .innerJoin(
-          sql`unnest(
-            ${sql.param(scopes)}::varchar(64)[],
-            ${sql.param(cacheKeys)}::varchar(64)[]
-          ) AS requested(scope, cache_key)`,
-          and(
-            eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
-            eq(
-              systemStoragePresignedUrlCache.cacheKey,
-              sql`requested.cache_key`,
-            ),
-          ),
-        );
-    };
     const rows = await measureApiDispatchTiming(
       args.observation?.timing,
       "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
       "nested",
-      lookup,
+      async () => {
+        return await lookupMixedStorageManifestPresignedUrlCacheRows(
+          args.db,
+          pairs,
+        );
+      },
       {
         storage_manifest_branch: args.observation?.branch ?? "unobserved",
         storage_manifest_cache_requested_count_bucket:
