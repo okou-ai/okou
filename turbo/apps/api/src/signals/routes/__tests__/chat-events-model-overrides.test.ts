@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { MODEL_PROVIDER_ENV_PLACEHOLDERS } from "@okouai/api-contracts/contracts/model-providers";
+import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
@@ -639,34 +640,42 @@ describe("CHAT-02: run-level model overrides", () => {
         model: selectedModel,
         runOptions: { codexServiceTier: tier },
       });
-      await waitForRunStatus(actor, continued.runId, "completed");
       await flushWaitUntilForTest();
-      expect(providerRequests).toHaveLength(2);
-      expectNativeSubscriptionRequest(
-        providerRequests[1],
-        refreshedAccessToken,
-        tier,
-        selectedModel,
+      expect(providerRequests).toHaveLength(1);
+      const continuedManifestBytes = checkpointObjects.get(
+        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${continued.runId}/manifest.json`,
       );
-      expect(JSON.stringify(providerRequests[1]?.body)).toContain(
-        "Okou CLI help output",
-      );
+      if (!continuedManifestBytes) {
+        throw new Error("Expected resumed subscription manifest");
+      }
       expect(
-        eventBackedContents(
-          (await chat.listThreadEvents(actor, run.threadId)).events,
-          continued.runId,
+        piApiFirstTurnManifestSchema.parse(
+          JSON.parse(continuedManifestBytes.toString("utf8")),
         ),
-      ).toContainEqual(
-        expect.objectContaining({
-          content: "Subscription API-first continuation complete",
-        }),
-      );
+      ).toMatchObject({
+        schemaVersion: 4,
+        mode: "sandbox-first",
+        baseSession: { sessionId: run.threadId, sha256: h2Hash },
+      });
+      const continuedClaim = await claimChatRun(runnerGroup, continued.runId);
+      expect(continuedClaim.claim).toMatchObject({
+        piSessionId: run.threadId,
+        piModelConfig: {
+          model: selectedModel,
+          ...(tier === undefined ? {} : { serviceTier: tier }),
+        },
+      });
       await expect(
         readThreadSessionConversation(context, run.threadId),
       ).resolves.toMatchObject({
         agent_session_id: firstSession.agent_session_id,
       });
       await expectNoBuiltInModelUsage(continued.runId);
+      await cancelChatRun(
+        actor,
+        continued.runId,
+        continuedClaim.sandboxHeaders,
+      );
     },
     90_000,
   );

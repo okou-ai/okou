@@ -13,7 +13,7 @@ import type { PiApiFirstTurnActivation } from "./pi-api-first-turn-config";
 import { recordPiAdmissionPreparation } from "./pi-preparation-timing.service";
 
 export type PiApiFirstTurnPreparedInputs =
-  | { readonly kind: "large-history" }
+  | { readonly kind: "resume-history-transfer" }
   | {
       readonly kind: "api";
       readonly model: PiAgentModelConfig;

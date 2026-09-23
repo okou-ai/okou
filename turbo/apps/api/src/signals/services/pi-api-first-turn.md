@@ -9,11 +9,11 @@ compatibility map is [Pi runtime architecture](../../../../../../docs/pi-runtime
   release in `finally`, and completion side-effect dispatch. The configured
   dispatcher and public `runPiApiFirstTurn$` entry retain their source fencing.
 - `pi-api-first-turn.service.ts` owns preparation, the provider attempt, and
-  guarded effects. Its module-scope commands share history validation and
+  guarded effects. Its module-scope commands share resume-checkpoint identity and
   immutable launch identity locally; no command accessors escape into helpers.
   `runPiApiFirstTurnCore$` interprets explicit completed/transferred results,
   then a recovery decision, then canonical terminal arbitration.
-- `../../lib/pi-api-first-turn-policy.ts` owns pure history, H1, recovery and
+- `../../lib/pi-api-first-turn-policy.ts` owns pure first-turn eligibility, H1, recovery and
   terminal decisions, with the existing typed errors. It receives observed
   facts and time values and imports no service, database, signal or clock.
 - `../../lib/pi-api-first-turn-events.ts` is the actual API public-event
@@ -34,8 +34,12 @@ The runtime's `ownership.stage` is the irreversible provider-request fact.
 `commitProgress.started` is a separate irreversible publication fact. Both keep
 their existing owners; decisions are immutable snapshots, not a second lifecycle.
 
-1. Validated blob metadata selects large-history transfer before API resource
-   loading or history materialization. Raw and encoded bounds remain independent.
+1. Only a run without `resumeSession` prepares the API model. A blob-backed or
+   inline continuation transfers to Sandbox before resource or credential work.
+   Blob history uses the existing v4 reference handoff after metadata and base
+   identity validation; inline history keeps its exact bytes in the v3 session
+   handoff under its existing size limit. The API does not download or decode
+   the full history blob.
 2. Before transport, the lifecycle lock validates run status, immutable identity
    and active delivery. Active input transfers H0 without an API request.
 3. Before the first H1 side effect, the lock revalidates eligibility and marks
@@ -52,7 +56,7 @@ their existing owners; decisions are immutable snapshots, not a second lifecycle
    output is terminal with `output_token_limit`; pending tool continuation still
    transfers ownership.
 5. Commit start prevents H0 replay even if publication's response was lost. The
-   large-history manifest marks this fact immediately before publication too.
+   resume-history manifest marks this fact immediately before publication too.
 6. Every selected handoff still validates status, identity, deadline and durable
    delivery under the same lock. Network calls and H0 readback/hash checks stay
    inside their existing critical section. The API-attempt deadline and the
@@ -172,9 +176,9 @@ deadline, byte limit, provider policy or release authority changes here.
 After request authorization and final payload construction, the creation command
 issues a private creator-authorized preparation input through the configured
 dispatch seam. It starts snapshot and credential reads concurrently, preserving
-resource-error precedence, then loads authenticated H0 and prepares the official
-SDK session. Metadata-only large-history and slash-input checks precede resource
-work. `preparePiApiTurn` receives no provider ownership or publication callback;
+resource-error precedence, then synthesizes an empty H0 and prepares the official
+SDK session for a strict first turn. The resume-session decision precedes resource
+and credential work; slash-input checks still precede resource work. `preparePiApiTurn` receives no provider ownership or publication callback;
 `executePreparedPiApiTurn` consumes its session once. The combined runtime entry
 remains available.
 
