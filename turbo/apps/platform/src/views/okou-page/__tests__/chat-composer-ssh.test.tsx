@@ -79,7 +79,18 @@ test("A chat can override multiple SSH hosts and return to each host default", a
     featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
   });
   click(await findFastControl("button", "Connectors"));
-  click(await screen.findByText("Remote access"));
+  const remoteAccess = await screen.findByText("Remote access");
+  const cloudBrowser = screen.getByText("Cloud browser");
+  const yourComputer = screen.getByText("Your computer");
+  expect(
+    cloudBrowser.compareDocumentPosition(remoteAccess) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    remoteAccess.compareDocumentPosition(yourComputer) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  click(remoteAccess);
   const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
   const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
   expect(first).toHaveValue("default");

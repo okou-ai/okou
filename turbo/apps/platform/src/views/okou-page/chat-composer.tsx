@@ -6654,9 +6654,11 @@ function AddConnectorsDialog({
 function ComputerUseConnectorMenuSection({
   computerUse,
   onOpenDownloadDialog,
+  remoteAccess,
 }: {
   computerUse: ComposerComputerUse;
   onOpenDownloadDialog: () => void;
+  remoteAccess?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -6683,6 +6685,7 @@ function ComputerUseConnectorMenuSection({
           />
         </span>
       </label>
+      {remoteAccess}
       <div className="mx-2 my-1 border-t border-border/50" />
       <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
         {t(($) => {
@@ -6768,6 +6771,33 @@ function ComputerUseConnectorMenuSection({
         }
       />
     </div>
+  );
+}
+
+function ComposerRemoteAccessMenu({
+  signals,
+  computerUse,
+  onOpenDownloadDialog,
+}: {
+  signals: ComposerSignals;
+  computerUse: ComposerComputerUse | undefined;
+  onOpenDownloadDialog: () => void;
+}) {
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess];
+  const remoteAccess = enabled ? (
+    <ThreadRemoteAccessSection
+      threadId={signals.threadId}
+      remoteAccess$={signals.remoteAccess$}
+    />
+  ) : null;
+  return computerUse ? (
+    <ComputerUseConnectorMenuSection
+      computerUse={computerUse}
+      onOpenDownloadDialog={onOpenDownloadDialog}
+      remoteAccess={remoteAccess}
+    />
+  ) : (
+    remoteAccess
   );
 }
 
@@ -8090,20 +8120,11 @@ function ComposerConnectorsPopoverBody({
           }
         />
       </div>
-      {computerUse && (
-        <ComputerUseConnectorMenuSection
-          computerUse={computerUse}
-          onOpenDownloadDialog={() => {
-            onOpenDownloadDialog();
-          }}
-        />
-      )}
-      {threadRemoteAccessEnabled && (
-        <ThreadRemoteAccessSection
-          threadId={signals.threadId}
-          remoteAccess$={signals.remoteAccess$}
-        />
-      )}
+      <ComposerRemoteAccessMenu
+        signals={signals}
+        computerUse={computerUse}
+        onOpenDownloadDialog={onOpenDownloadDialog}
+      />
     </div>
   );
 }
