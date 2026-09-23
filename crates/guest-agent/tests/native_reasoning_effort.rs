@@ -105,6 +105,27 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
         (
             "claude-code",
             &claude_mock,
+            "claude-opus-5-5",
+            Some("low"),
+            Some("low"),
+        ),
+        (
+            "claude-code",
+            &claude_mock,
+            "anthropic/claude-opus-5.5",
+            Some("extra"),
+            Some("xhigh"),
+        ),
+        (
+            "claude-code",
+            &claude_mock,
+            "claude-opus-5-5",
+            None,
+            Some("medium"),
+        ),
+        (
+            "claude-code",
+            &claude_mock,
             "claude-opus-5",
             Some("medium"),
             Some("medium"),

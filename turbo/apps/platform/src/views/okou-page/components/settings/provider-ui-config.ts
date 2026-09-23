@@ -101,6 +101,7 @@ const MODEL_BRAND_ICON: Readonly<Record<SupportedRunModel, ModelProviderType>> =
     "okou-1.0": "built-in",
     "claude-fable-5-1": "anthropic-api-key",
     "claude-fable-5": "anthropic-api-key",
+    "claude-opus-5-5": "anthropic-api-key",
     "claude-opus-5": "anthropic-api-key",
     "claude-opus-4-8": "anthropic-api-key",
     "claude-sonnet-5": "anthropic-api-key",

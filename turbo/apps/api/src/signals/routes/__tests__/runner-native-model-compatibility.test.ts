@@ -1,4 +1,5 @@
 import {
+  NATIVE_CLAUDE_OPUS_5_5_HEADER,
   NATIVE_GPT_6_LUNA_HEADER,
   NATIVE_GPT_6_SOL_HEADER,
 } from "@okouai/api-contracts/contracts/runners";
@@ -207,4 +208,166 @@ describe("native model claim compatibility", () => {
       await api.requestCancelRun(newModelFixture.actor, newModelRunId, [200]);
     },
   );
+  it.each(["built-in", "anthropic-api-key", "openrouter-api-key"] as const)(
+    "keeps %s Claude Opus 5.5 work pending until a capable Runner claims it",
+    async (providerType) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      if (!actor.orgId) {
+        throw new Error("Expected an org-scoped chat actor");
+      }
+      const model = "claude-opus-5-5";
+      const runtimeModel =
+        providerType === "openrouter-api-key"
+          ? "anthropic/claude-opus-5.5"
+          : model;
+      let providerId: string | null = null;
+      if (providerType === "built-in") {
+        await seedBuiltInModelKey(context, model);
+      } else {
+        const provider = await api.createOrgModelProvider(actor, {
+          type: providerType,
+          secret: "test-native-model-key",
+          selectedModel: runtimeModel,
+        });
+        providerId = provider.providerId;
+      }
+      await stagePreAddabilityModelPolicyFixture({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        model,
+      });
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model,
+          isDefault: true,
+          defaultProviderType: providerType,
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
+      const sent = await chat.requestSendEvent(
+        actor,
+        { agentId, model, prompt: "Run Claude Opus 5.5" },
+        [201],
+      );
+      if (sent.status !== 201 || sent.body.runId === null) {
+        throw new Error("Expected a queued Claude Opus 5.5 chat run");
+      }
+      const runId = sent.body.runId;
+      await api.heartbeatRunner(runnerGroup);
+
+      const oldPoll = await api.pollRunner(runnerGroup);
+      expect(oldPoll.body.job).toBeNull();
+      const capablePoll = await api.pollRunner(runnerGroup, {
+        [NATIVE_CLAUDE_OPUS_5_5_HEADER]: "1",
+      });
+      expect(capablePoll.body.job?.runId).toBe(runId);
+
+      await api.requestClaimRunnerJob(true, runId, [404]);
+      await expect(api.readRun(actor, runId)).resolves.toMatchObject({
+        status: "pending",
+      });
+      await api.requestClaimRunnerJob(
+        true,
+        runId,
+        [404],
+        {},
+        {
+          [NATIVE_CLAUDE_OPUS_5_5_HEADER]: "0",
+        },
+      );
+      await expect(api.readRun(actor, runId)).resolves.toMatchObject({
+        status: "pending",
+      });
+
+      const claim = await api.claimRunnerJob(
+        runId,
+        {},
+        {
+          [NATIVE_CLAUDE_OPUS_5_5_HEADER]: "1",
+        },
+      );
+      expect(claim.cliAgentType).toBe("claude-code");
+      expect(claim.environment).toMatchObject({
+        ANTHROPIC_MODEL: runtimeModel,
+      });
+      expect(claim.platformEnvironment).toMatchObject({
+        OKOU_REASONING_EFFORT: "medium",
+      });
+      await api.requestCancelRun(actor, runId, [200]);
+    },
+  );
+
+  it("lets an old Runner poll existing work behind an unsupported Claude Opus 5.5 job", async () => {
+    const opus55 = await entitledChatActor();
+    const opus5 = await entitledChatActor();
+    const runnerGroup = opus5.runnerGroup;
+    const runIds: string[] = [];
+    for (const [fixture, model] of [
+      [opus55, "claude-opus-5-5"],
+      [opus5, "claude-opus-5"],
+    ] as const) {
+      const { actor, agentId } = fixture;
+      if (!actor.orgId) {
+        throw new Error("Expected an org-scoped chat actor");
+      }
+      const { providerId } = await api.createOrgModelProvider(actor, {
+        type: "anthropic-api-key",
+        secret: "test-native-model-key",
+        selectedModel: model,
+      });
+      if (model === "claude-opus-5-5") {
+        await stagePreAddabilityModelPolicyFixture({
+          orgId: actor.orgId,
+          userId: actor.userId,
+          model,
+        });
+      }
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model,
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
+      const sent = await chat.requestSendEvent(
+        actor,
+        { agentId, model, prompt: `Run ${model} through the shared queue` },
+        [201],
+      );
+      if (sent.status !== 201 || sent.body.runId === null) {
+        throw new Error("Expected a queued Claude chat run");
+      }
+      runIds.push(sent.body.runId);
+    }
+    const [opus55RunId, opus5RunId] = runIds;
+    if (!opus55RunId || !opus5RunId) {
+      throw new Error("Expected both Claude runs");
+    }
+    await api.heartbeatRunner(runnerGroup);
+    const capablePoll = await api.pollRunner(runnerGroup, {
+      [NATIVE_CLAUDE_OPUS_5_5_HEADER]: "1",
+    });
+    expect(capablePoll.body.job?.runId).toBe(opus55RunId);
+    for (const headers of [
+      undefined,
+      { [NATIVE_CLAUDE_OPUS_5_5_HEADER]: "0" },
+    ]) {
+      const oldPoll = await api.pollRunner(runnerGroup, headers);
+      expect(oldPoll.body.job?.runId).toBe(opus5RunId);
+    }
+    const claim = await api.claimRunnerJob(opus5RunId);
+    expect(claim.environment).toMatchObject({
+      ANTHROPIC_MODEL: "claude-opus-5",
+    });
+    await expect(api.readRun(opus55.actor, opus55RunId)).resolves.toMatchObject(
+      {
+        status: "pending",
+      },
+    );
+    await api.requestCancelRun(opus5.actor, opus5RunId, [200]);
+    await api.requestCancelRun(opus55.actor, opus55RunId, [200]);
+  });
 });

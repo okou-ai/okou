@@ -110,6 +110,7 @@ fn default_claude_effort_for_model(model: &str) -> Option<&'static str> {
     let bare = model.strip_prefix("anthropic/").unwrap_or(model);
     match bare {
         "claude-fable-5-1" | "claude-fable-5.1" | "fable" => Some("max"),
+        "claude-opus-5-5" | "claude-opus-5.5" => Some("medium"),
         _ => None,
     }
 }
@@ -383,7 +384,21 @@ mod tests {
     }
 
     #[test]
-    fn build_claude_args_non_fable_omits_effort() {
+    fn build_claude_args_opus_5_5_defaults_effort_medium() {
+        for model in [
+            "claude-opus-5-5",
+            "claude-opus-5.5",
+            "anthropic/claude-opus-5-5",
+            "anthropic/claude-opus-5.5",
+        ] {
+            let args = build_claude_args_for_model_test(model);
+            let effort_idx = args.iter().position(|arg| arg == "--effort").unwrap();
+            assert_eq!(args[effort_idx + 1], "medium");
+        }
+    }
+
+    #[test]
+    fn build_claude_args_other_models_omit_effort() {
         for model in [
             "",
             "claude-sonnet-5",

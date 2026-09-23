@@ -189,10 +189,10 @@ const EXPECTED_ADMITTED_ROUTES = [
 
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
- * does not shrink when admission narrows: all 276 combinations are still
+ * does not shrink when admission narrows: all 298 combinations are still
  * evaluated, and fewer of them are admitted.
  */
-const ENUMERATED_COMBINATIONS = 276;
+const ENUMERATED_COMBINATIONS = 298;
 
 interface Combination {
   readonly selectedModel: string;
@@ -266,6 +266,7 @@ describe("Pi admission policy table", () => {
       }),
     ).toStrictEqual([
       "claude-fable-5-1",
+      "claude-opus-5-5",
       "gpt-6-astra",
       "gpt-6-sol",
       "gpt-6-luna",
@@ -391,24 +392,30 @@ describe("Pi admission decisions", () => {
     }
   });
 
-  it("keeps a model the pinned runtime cannot resolve out of the loop", () => {
-    expect(
-      isPiRouteRuntimeCapable({
-        selectedModel: "gpt-6-sol",
-        modelProviderType: "openai-api-key",
-        runtimeProviderType: "openai-api-key",
-      }),
-    ).toBe(false);
-    expect(
-      isPiExecutionRoute({
-        selectedModel: "gpt-6-sol",
-        modelProviderType: "openai-api-key",
-        runtimeProviderType: "openai-api-key",
-        codexServiceTier: undefined,
-        piEnabled: true,
-      }),
-    ).toBe(false);
-  });
+  it.each([
+    ["claude-opus-5-5", "anthropic-api-key"],
+    ["gpt-6-sol", "openai-api-key"],
+  ] as const)(
+    "keeps %s out of the loop while the pinned runtime cannot resolve it",
+    (selectedModel, providerType) => {
+      expect(
+        isPiRouteRuntimeCapable({
+          selectedModel,
+          modelProviderType: providerType,
+          runtimeProviderType: providerType,
+        }),
+      ).toBe(false);
+      expect(
+        isPiExecutionRoute({
+          selectedModel,
+          modelProviderType: providerType,
+          runtimeProviderType: providerType,
+          codexServiceTier: undefined,
+          piEnabled: true,
+        }),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("Pi runtime capability data", () => {
