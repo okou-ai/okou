@@ -17,6 +17,40 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Thread draft child table, phase 1 (2026-09-23)
+
+`chat_thread_drafts` holds one row per thread whose composer draft has been
+written since the table existed. Phase 1 of #36230 only adds the table and
+writes it. `chat_threads.draft_user_message` and `chat_threads.draft_attachments`
+remain the values every reader serves, and the draft `PATCH` writes both in one
+transaction, so an API version that predates the table is unaffected and keeps
+serving the same drafts.
+
+Rolling the API back is schema-compatible, and the table then simply stops
+receiving writes. It does not stay correct: an older API still clears and
+rewrites the legacy columns, so the child row becomes stale rather than merely
+missing. The phase-2 cutover therefore cannot assume the child row is current
+for a thread that already has one. Its backfill has to reconcile existing rows,
+not only insert missing ones, and it must run after phase 1 is serving
+everywhere.
+
+A cleared draft is stored as a retained row with null draft values, never a
+deleted row. Phase 2 reads the child row first and falls back to the legacy
+columns only when the row is absent, so absence has to keep meaning "never
+written" — deleting on clear would resurrect a cleared draft.
+
+Two draft writers in the current API still touch only the legacy columns: the
+message-send paths clear the draft inside the transaction that reserves the
+thread's event sequence. Phase 1 deliberately leaves them alone, because they
+lock the thread row before they could write a child row and the reverse order
+in `PATCH` would make the two paths deadlock. Phase 2 owns converting them
+together with the read cutover.
+
+This phase changes no read, contract, or response, and performs no historical
+backfill. It does not remove the `chat_threads` row contention in #36173: the
+draft `PATCH` still updates that row and can still fail with 55P03 while
+another transaction holds it.
+
 ## Browser user-action retention (2026-09-23)
 
 Browser user-action requests have no independent expiry. Their active lifetime
