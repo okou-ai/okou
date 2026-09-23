@@ -641,7 +641,6 @@ fn is_reserved_normalized_private_dir_path(normalized: &Path) -> bool {
         || normalized == home.runners_dir()
         || home
             .shared_subtree_roots()
-            .iter()
             .any(|shared| normalized.starts_with(shared))
 }
 

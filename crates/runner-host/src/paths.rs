@@ -162,6 +162,45 @@ pub struct HomePaths {
     root: PathBuf,
 }
 
+// Declare shared top-level directories once so their getters and private-state
+// reservation inventory cannot drift apart. `runners` is intentionally separate.
+macro_rules! shared_home_dirs {
+    ($($(#[$meta:meta])* $vis:vis fn $method:ident => $component:literal;)+) => {
+        impl HomePaths {
+            $(
+                $(#[$meta])*
+                $vis fn $method(&self) -> PathBuf {
+                    self.root.join($component)
+                }
+            )+
+
+            pub(crate) fn shared_subtree_roots(&self) -> impl Iterator<Item = PathBuf> {
+                [$(self.$method(),)+].into_iter()
+            }
+        }
+    };
+}
+
+shared_home_dirs! {
+    pub fn bin_dir => "bin";
+    pub fn ca_dir => "ca";
+    pub fn runner_control_dir => "control";
+    pub fn debootstrap_dir => "debootstrap";
+    fn firecracker_root_dir => "firecracker";
+    pub fn groups_dir => "groups";
+    pub fn images_dir => "images";
+    pub fn locks_dir => "locks";
+    pub fn live_runner_instances_dir => "live-runner-instances";
+    pub fn logs_dir => "logs";
+    fn mitmproxy_root_dir => "mitmproxy";
+    /// Root directory for the runner-side storage archive cache.
+    ///
+    /// Layout: `<storages_dir>/<hash(vasStorageName)>/<hash(vasVersionId)>/archive.tar.gz`.
+    /// Populated by the cache writer (#10808) and reaped by `gc_storage_cache`.
+    pub fn storages_dir => "storages";
+    pub fn workspace_image_cache_dir => "workspace-image-cache";
+}
+
 impl HomePaths {
     pub fn new() -> HostResult<Self> {
         Ok(Self {
@@ -175,38 +214,6 @@ impl HomePaths {
 
     pub(crate) fn root(&self) -> &Path {
         &self.root
-    }
-
-    /// Host-wide directories that cannot contain private per-runner state.
-    /// `runners_dir` is excluded because its children are private runner homes.
-    pub(crate) fn shared_subtree_roots(&self) -> [PathBuf; 13] {
-        [
-            self.bin_dir(),
-            self.ca_dir(),
-            self.runner_control_dir(),
-            self.debootstrap_dir(),
-            self.firecracker_root_dir(),
-            self.groups_dir(),
-            self.images_dir(),
-            self.locks_dir(),
-            self.live_runner_instances_dir(),
-            self.logs_dir(),
-            self.mitmproxy_root_dir(),
-            self.storages_dir(),
-            self.workspace_image_cache_dir(),
-        ]
-    }
-
-    fn firecracker_root_dir(&self) -> PathBuf {
-        self.root.join("firecracker")
-    }
-
-    fn mitmproxy_root_dir(&self) -> PathBuf {
-        self.root.join("mitmproxy")
-    }
-
-    pub fn bin_dir(&self) -> PathBuf {
-        self.root.join("bin")
     }
 
     pub fn firecracker_dir(&self, version: &str) -> PathBuf {
@@ -230,22 +237,6 @@ impl HomePaths {
         self.mitmproxy_dir(version).join("mitmdump")
     }
 
-    pub fn images_dir(&self) -> PathBuf {
-        self.root.join("images")
-    }
-
-    pub fn logs_dir(&self) -> PathBuf {
-        self.root.join("logs")
-    }
-
-    pub fn live_runner_instances_dir(&self) -> PathBuf {
-        self.root.join("live-runner-instances")
-    }
-
-    pub fn runner_control_dir(&self) -> PathBuf {
-        self.root.join("control")
-    }
-
     pub fn live_runner_instance_record_path(&self, pid: u32, starttime: u64) -> PathBuf {
         self.live_runner_instances_dir()
             .join(format!("{pid}-{starttime}.json"))
@@ -253,26 +244,6 @@ impl HomePaths {
 
     pub fn runners_dir(&self) -> PathBuf {
         self.root.join("runners")
-    }
-
-    pub fn workspace_image_cache_dir(&self) -> PathBuf {
-        self.root.join("workspace-image-cache")
-    }
-
-    pub fn groups_dir(&self) -> PathBuf {
-        self.root.join("groups")
-    }
-
-    pub fn ca_dir(&self) -> PathBuf {
-        self.root.join("ca")
-    }
-
-    pub fn debootstrap_dir(&self) -> PathBuf {
-        self.root.join("debootstrap")
-    }
-
-    pub fn locks_dir(&self) -> PathBuf {
-        self.root.join("locks")
     }
 
     pub fn debootstrap_lock(&self) -> PathBuf {
@@ -309,14 +280,6 @@ impl HomePaths {
 
     pub fn snapshot_lock(&self, hash: &str) -> PathBuf {
         self.locks_dir().join(format!("snapshot-{hash}.lock"))
-    }
-
-    /// Root directory for the runner-side storage archive cache.
-    ///
-    /// Layout: `<storages_dir>/<hash(vasStorageName)>/<hash(vasVersionId)>/archive.tar.gz`.
-    /// Populated by the cache writer (#10808) and reaped by `gc_storage_cache`.
-    pub fn storages_dir(&self) -> PathBuf {
-        self.root.join("storages")
     }
 
     /// Cache directory for a specific storage (name, version) pair.
