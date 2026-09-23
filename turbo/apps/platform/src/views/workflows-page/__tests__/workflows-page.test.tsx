@@ -3030,7 +3030,8 @@ test.each([
       readonly automationId: string;
       readonly body: WorkflowAutomationUpdateRequest;
     }[] = [];
-    const workflow = { ...salesResearch(), automations: [automation] };
+    const automations: WorkflowGoogleCalendarAutomationSummary[] = [automation];
+    const workflow = { ...salesResearch(), automations };
     mockWorkflowApis([workflow]);
     mockUpdateWorkflowAutomation((automationId, body) => {
       updates.push({ automationId, body });

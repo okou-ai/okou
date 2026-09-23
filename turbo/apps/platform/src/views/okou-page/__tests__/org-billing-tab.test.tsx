@@ -1810,7 +1810,7 @@ test("Hide retained package records for people who left the workspace", async ()
   expect(buttonByText("Confirm", orderSummary)).not.toBeDisabled();
 });
 
-test.each([50] as const)(
+test.each<number>([50])(
   "Restore a member package scheduled to downgrade to $%s",
   async (targetUsagePackUsd) => {
     let restored = false;
