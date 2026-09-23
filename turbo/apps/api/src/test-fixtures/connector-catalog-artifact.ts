@@ -715,7 +715,12 @@ const connectors = [
             sessionToken: secretTemplate("AWS_SESSION_TOKEN"),
           },
         },
-        permissions: [],
+        permissions: [
+          {
+            name: "sts:get-caller-identity",
+            rules: ["POST / AWS sigv4=sts action=GetCallerIdentity"],
+          },
+        ],
       },
     ]),
   }),

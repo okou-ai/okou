@@ -143,6 +143,7 @@ interface FirewallRoutingIndexApiMetadata {
 
 interface FirewallRoutingApiMetadata {
   readonly base: string;
+  readonly usesAwsSigv4: boolean;
   readonly environmentNames: readonly string[];
   readonly routes: readonly FirewallRoutingRouteMetadata[];
 }
@@ -404,6 +405,7 @@ function acceptedRoutingMetadata(args: {
     apis: args.routing.apis.map((api) => {
       return {
         base: api.base,
+        usesAwsSigv4: api.usesAwsSigv4,
         environmentNames: api.environmentNames,
         routes: api.routes,
       };

@@ -403,6 +403,49 @@ describe("POST /api/connectors/diagnostics/check", () => {
     });
   });
 
+  it("returns an unknown endpoint for AWS without selectors and matches explicit SigV4 selectors", async () => {
+    const actor = bdd.user();
+    const url = "https://sts.us-west-2.amazonaws.com/";
+    const withoutSelectors = await checkWithSession(actor, {
+      mode: "url",
+      method: "POST",
+      url,
+      connectorSlug: "aws",
+    });
+    expect(withoutSelectors.body).toMatchObject({
+      outcome: "resolved",
+      mode: "url",
+      connector: { connectorSlug: "aws" },
+      base: "https://sts.us-west-2.amazonaws.com",
+      permission: {
+        kind: "unknown-endpoint",
+        policy: { outcome: "unavailable", basis: "not-run-scoped" },
+      },
+    });
+
+    const withSelectors = await checkWithSession(actor, {
+      mode: "url",
+      method: "POST",
+      url,
+      connectorSlug: "aws",
+      aws: { sigv4Service: "sts", action: "GetCallerIdentity" },
+    });
+    expect(withSelectors.body).toMatchObject({
+      outcome: "resolved",
+      mode: "url",
+      connector: { connectorSlug: "aws" },
+      permission: {
+        kind: "matched",
+        permissions: [
+          {
+            name: "sts:get-caller-identity",
+            policy: { outcome: "unavailable", basis: "not-run-scoped" },
+          },
+        ],
+      },
+    });
+  });
+
   it("ignores stale stored connectors that are absent from the catalog", async () => {
     const actor = bdd.user();
     await seedConnectorStorageRow(context, {

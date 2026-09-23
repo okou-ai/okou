@@ -77,6 +77,7 @@ type ResolvedConnectorRuntimeTarget =
 
 interface ConnectorRuntimeDiagnosticApi {
   readonly base: string;
+  readonly usesAwsSigv4: boolean;
   readonly permissions: readonly {
     readonly name: string;
     readonly rules: readonly string[];
@@ -618,6 +619,7 @@ function diagnosticCustomApis(
   return result.firewall.firewall.apis.map((api) => {
     return {
       base: api.base,
+      usesAwsSigv4: api.auth.awsSigv4 !== undefined,
       permissions: (api.permissions ?? []).map((permission) => {
         return { name: permission.name, rules: [...permission.rules] };
       }),

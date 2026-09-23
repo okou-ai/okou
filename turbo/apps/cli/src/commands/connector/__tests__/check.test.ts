@@ -374,6 +374,82 @@ describe("okou connector check command", () => {
   }
 
   describe("JSON output", () => {
+    it("preserves AWS selectors in the diagnostic request and retry command", async () => {
+      const awsIdentity = connectorIdentity({
+        connectorSlug: "aws",
+        label: "AWS",
+      });
+      let diagnosticRequest: unknown;
+      stubDiagnostic(
+        resolvedUrl({
+          connector: awsIdentity,
+          method: "POST",
+          base: "https://sts.us-west-2.amazonaws.com",
+          relativePath: "/",
+          environmentNames: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
+          run: {
+            status: "configured",
+            bases: ["https://sts.us-west-2.amazonaws.com"],
+          },
+          permission: {
+            kind: "unknown-endpoint",
+            policy: { outcome: "ask", basis: "unknown-policy" },
+          },
+        }),
+        (body) => {
+          diagnosticRequest = body;
+        },
+      );
+      stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
+      setRunAccount("aws", "connected");
+
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--url",
+        "https://sts.us-west-2.amazonaws.com/?token=private",
+        "--method",
+        "POST",
+        "--connector",
+        "aws",
+        "--aws-service",
+        "sts",
+        "--aws-action",
+        "GetCallerIdentity",
+        "--json",
+      ]);
+
+      const json: unknown = JSON.parse(getOutput());
+      expect(diagnosticRequest).toMatchObject({
+        mode: "url",
+        method: "POST",
+        url: "https://sts.us-west-2.amazonaws.com/",
+        connectorSlug: "aws",
+        aws: { sigv4Service: "sts", action: "GetCallerIdentity" },
+      });
+      expect(json).toMatchObject({
+        request: {
+          aws: { sigv4Service: "sts", action: "GetCallerIdentity" },
+        },
+        actions: expect.arrayContaining([
+          expect.objectContaining({
+            command: expect.stringContaining(
+              "okou connector permission-request 'aws' --permission '__unknown__' --url 'https://sts.us-west-2.amazonaws.com/' --method 'POST' --aws-service 'sts' --aws-action 'GetCallerIdentity'",
+            ),
+          }),
+          expect.objectContaining({
+            command: expect.stringContaining(
+              "--aws-service 'sts' --aws-action 'GetCallerIdentity' --json",
+            ),
+          }),
+        ]),
+      });
+      expect(getOutput()).toContain(
+        "no SigV4 signature was validated and no AWS request was sent",
+      );
+      expect(getOutput()).not.toContain("private");
+    });
+
     it("preserves sanitized diagnostics, exact accounts, separate grants, and permission actions", async () => {
       stubDiagnostic(
         resolvedUrl({
@@ -775,6 +851,47 @@ describe("okou connector check command", () => {
         name: "rejects method without URL",
         args: ["--env-name", "GH_TOKEN", "--method", "POST"],
         expected: "--method can only be used with --url",
+      },
+      {
+        name: "requires a service when AWS selectors are used",
+        args: [
+          "--url",
+          "https://sts.us-west-2.amazonaws.com/",
+          "--aws-action",
+          "GetCallerIdentity",
+        ],
+        expected: "--aws-service is required",
+      },
+      {
+        name: "rejects conflicting AWS action and target selectors",
+        args: [
+          "--url",
+          "https://sts.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "sts",
+          "--aws-action",
+          "GetCallerIdentity",
+          "--aws-target",
+          "Example.Target",
+        ],
+        expected: "--aws-action and --aws-target cannot be combined",
+      },
+      {
+        name: "rejects empty AWS query selector values",
+        args: [
+          "--url",
+          "https://sts.us-west-2.amazonaws.com/",
+          "--aws-service",
+          "sts",
+          "--aws-query-param",
+          "Action=",
+        ],
+        expected: "Invalid --aws-query-param value",
+      },
+      {
+        name: "rejects AWS selectors without URL mode",
+        args: ["--aws-service", "sts"],
+        expected: "AWS diagnostic selectors can only be used with --url",
       },
     ])("$name", async ({ args, expected }) => {
       await expectCommandFailure(args);

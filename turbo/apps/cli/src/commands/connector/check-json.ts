@@ -52,6 +52,16 @@ type CheckAction =
     }
   | { readonly kind: "guidance"; readonly message: string };
 
+function diagnosticContextGuidance(
+  request: ConnectorCheckRequestBody,
+): string[] {
+  return request.mode === "url" && request.aws !== undefined
+    ? [
+        "AWS selectors describe the intended operation only; no SigV4 signature was validated and no AWS request was sent.",
+      ]
+    : [];
+}
+
 function permissionActions(
   request: ConnectorCheckRequestBody,
   diagnostic: ResolvedDiagnostic,
@@ -241,6 +251,7 @@ export async function printConnectorCheckJson(
           request,
           diagnostic,
           message: connectorCheckDiagnosticError(request, diagnostic).message,
+          guidance: diagnosticContextGuidance(request),
           actions: [retry],
         },
         null,
@@ -318,6 +329,7 @@ export async function printConnectorCheckJson(
         authorization: agentId === undefined ? null : { agentId, authorized },
         guidance: [
           "Routing and permission diagnostics describe current intended state; they do not confirm that the runner has applied the latest update.",
+          ...diagnosticContextGuidance(request),
           ...(runBound
             ? [
                 "Connector changes apply to future runs. Reconnect or change the thread selection, then start a new run.",

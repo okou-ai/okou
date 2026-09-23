@@ -440,6 +440,7 @@ function configsToDecisionFirewalls(
         return {
           base: candidate.decisionBase,
           auth: {},
+          awsSigv4Capability: candidate.usesAwsSigv4,
           permissions: routesToDecisionPermissions(candidate.routes),
         };
       }),
@@ -505,6 +506,7 @@ function configFromCustomRuntime(
         sourceBase: api.base,
         decisionBase: api.base,
         displayBase: baseKey(api.base),
+        usesAwsSigv4: api.usesAwsSigv4,
         routes: customDiagnosticRoutes(api.permissions),
         environmentNames: null,
       };
@@ -827,6 +829,7 @@ function environmentNamesForWinningCandidates(
         {
           base: candidate.decisionBase,
           auth: {},
+          awsSigv4Capability: candidate.usesAwsSigv4,
           permissions: routesToDecisionPermissions(candidate.routes),
         },
       ],
@@ -1421,6 +1424,25 @@ async function resolveUrlMode(
           value: connectorRuntimeTargetKey(requestedTarget),
         }
       : { status: "absent" },
+    {
+      awsDiagnostic: {
+        ...(request.aws === undefined
+          ? {}
+          : {
+              context: {
+                sigv4Service: request.aws.sigv4Service,
+                ...(request.aws.action === undefined
+                  ? {}
+                  : { action: request.aws.action }),
+                ...(request.aws.target === undefined
+                  ? {}
+                  : { target: request.aws.target }),
+                query: request.aws.query ?? [],
+                headerNames: request.aws.headerNames ?? [],
+              },
+            }),
+      },
+    },
   );
 
   if (decision.kind === "no_match") {
