@@ -85,6 +85,7 @@ describe("managed SocialKit contract", () => {
     })!.resultSchema;
     for (const result of [
       { views: null, duration: null, likes: 4, author: "example" },
+      { duration: "00:12", likes: 4, author: "example" },
       { likes: 4, author: "example" },
       { views: 0, likes: 4, author: "example" },
       { views: 12, likes: 4, author: "example" },
