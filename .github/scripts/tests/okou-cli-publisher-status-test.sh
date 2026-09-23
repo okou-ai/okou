@@ -13,12 +13,18 @@ cat > "$test_root/bin/gh" <<'MOCK_GH'
 set -euo pipefail
 [[ "$1" == api ]]
 case "$*" in
-  *"/jobs?per_page=100"*)
+  *"/jobs?filter=all&per_page=100"*)
     [[ "$*" == *"--paginate"* ]] || exit 90
     [[ "$MOCK_CASE" != jobs_api_error ]] || exit 97
     [[ "$*" =~ /runs/([0-9]+)/jobs ]] || exit 96
     run_id="${BASH_REMATCH[1]}"
     case "$MOCK_CASE" in
+      prior_success_then_skipped)
+        jq -nc --arg name "$EXPECTED_JOB" \
+          '{id:21,name:$name,status:"completed",conclusion:"success"}'
+        jq -nc --arg name "$EXPECTED_JOB" \
+          '{id:22,name:$name,status:"completed",conclusion:"skipped"}'
+        ;;
       skipped|failed|cancelled|timed_out|success|queued|older_active|older_success|all_skipped)
         job_case="$MOCK_CASE"
         case "$MOCK_CASE:$run_id" in
@@ -106,6 +112,7 @@ assert_status skipped unavailable
 assert_status failed pending
 assert_status cancelled pending
 assert_status timed_out pending
+assert_status prior_success_then_skipped pending
 assert_status older_active pending
 assert_status older_success pending
 assert_status all_skipped unavailable

@@ -49,19 +49,22 @@ run_rows=$(jq -c '.[]' <<<"$runs")
 while IFS= read -r run; do
   run_id=$(jq -er '.id' <<<"$run")
   run_status=$(jq -er '.status' <<<"$run")
-  jobs_endpoint="repos/${repo}/actions/runs/${run_id}/jobs?per_page=100"
-  # Turbo and Staging can exceed one jobs page because of test matrices. The
-  # exact deploy-cli job may be on a later page; an incomplete list must never
-  # be mistaken for an absent publisher.
+  jobs_endpoint="repos/${repo}/actions/runs/${run_id}/jobs?filter=all&per_page=100"
+  # A rerun may omit deploy-cli from the latest attempt even though an earlier
+  # attempt published it. Inspect every attempt and page before deciding that
+  # this run had no publisher.
   job_rows=$(gh api --paginate "$jobs_endpoint" --jq '
     .jobs[] | select(.name == "deploy-cli" or .name == "deploy-and-test / deploy-cli")
     | {id, name, status, conclusion}
   ')
-  job=$(jq -sc --arg name "$job_name" '
-    [ .[] | select(.name == $name) ] | sort_by(.id) | last // empty
+  job_state=$(jq -sr --arg name "$job_name" '
+    [ .[] | select(.name == $name) ] |
+    if length == 0 then "absent"
+    elif any(.[]; .status != "completed" or .conclusion != "skipped") then "pending"
+    else "skipped" end
   ' <<<"$job_rows")
 
-  if [[ -z "$job" ]]; then
+  if [[ "$job_state" == absent ]]; then
     if [[ "$run_status" != completed ]]; then
       echo pending
       exit 0
@@ -69,12 +72,9 @@ while IFS= read -r run; do
     continue
   fi
 
-  job_status=$(jq -er '.status' <<<"$job")
-  job_conclusion=$(jq -r '.conclusion // empty' <<<"$job")
-  # Only a skipped job proves its upload step never ran. A failed, cancelled,
-  # or timed-out job may have written ready.json before a later step failed;
-  # keep polling the CDN in those cases.
-  if [[ "$job_status" != completed || "$job_conclusion" != skipped ]]; then
+  # Only skipped jobs prove their upload steps never ran. A failed, cancelled,
+  # or timed-out attempt may have written ready.json before a later step failed.
+  if [[ "$job_state" == pending ]]; then
     echo pending
     exit 0
   fi
