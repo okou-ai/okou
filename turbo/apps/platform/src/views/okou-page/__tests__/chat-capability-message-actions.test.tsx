@@ -129,7 +129,7 @@ test("Open an active run's logs beside Copy before any assistant output", async 
   const actions = screen
     .getByText(prompt)
     .closest('[data-role="user"]')
-    ?.querySelector('[data-chat-user-message-actions]');
+    ?.querySelector("[data-chat-user-message-actions]");
   if (!actions) {
     throw new Error("User message action row was not available");
   }
@@ -145,7 +145,9 @@ test("Open an active run's logs beside Copy before any assistant output", async 
   expect(logs.querySelector("svg")).toBeInTheDocument();
 
   click(logs);
-  expect(await screen.findByRole("heading", { name: "Run inspection" })).toBeVisible();
+  expect(
+    await screen.findByRole("heading", { name: "Run inspection" }),
+  ).toBeVisible();
   expect(window.location.pathname).toBe(
     `/activities/${FIRST_CAPABILITY_RUN_ID}`,
   );
@@ -172,7 +174,7 @@ test("Do not show user run logs before a run ID is assigned", async () => {
   const actions = screen
     .getByText("Wait for run creation")
     .closest('[data-role="user"]')
-    ?.querySelector('[data-chat-user-message-actions]');
+    ?.querySelector("[data-chat-user-message-actions]");
   if (!actions) {
     throw new Error("User message action row was not available");
   }
@@ -211,7 +213,7 @@ test("Keep run logs under the user message when a run fails without output", asy
   const actions = screen
     .getByText(prompt)
     .closest('[data-role="user"]')
-    ?.querySelector('[data-chat-user-message-actions]');
+    ?.querySelector("[data-chat-user-message-actions]");
   if (!actions) {
     throw new Error("User message action row was not available");
   }
