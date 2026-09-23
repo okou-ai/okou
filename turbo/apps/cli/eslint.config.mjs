@@ -30,13 +30,13 @@ export default [
               file: "src/commands/ssh/__tests__/index.test.ts",
               kinds: ["fakeTimer"],
               reason:
-                "Issue #35594 tracks replacing the SSH session timeout fixture with an owned clock.",
+                "The hung-helper 65-second process deadline is the documented CLI SSH exception in docs/testing/cli-testing.md.",
             },
             {
               file: "src/commands/ssh/__tests__/files.test.ts",
               kinds: ["fakeTimer"],
               reason:
-                "Issue #35594 tracks replacing the SSH file timeout fixture with an owned clock.",
+                "The hung-helper 15-minute process deadline is the documented CLI SSH exception in docs/testing/cli-testing.md.",
             },
             {
               file: "src/lib/pi-agent-loop.test.ts",
