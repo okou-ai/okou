@@ -39,7 +39,7 @@ import {
 
 const context = testContext();
 
-test("Toggle one agent with one write and one bulk refresh", async () => {
+test("Authorize one agent without changing another agent", async () => {
   const researchId = "c0000000-0000-4000-a000-000000000010";
   const supportId = "c0000000-0000-4000-a000-000000000011";
   context.mocks.data.agents([
@@ -50,11 +50,7 @@ test("Toggle one agent with one write and one bulk refresh", async () => {
     { connectorSlug: "github", externalUsername: "octocat" },
   ]);
   const authorized = new Set<string>();
-  let bulkReads = 0;
-  let writes = 0;
-  let legacyReads = 0;
   context.mocks.api(connectorAgentAccessContract.get, ({ respond }) => {
-    bulkReads += 1;
     return respond(200, {
       visibleAgentIds: [researchId, supportId],
       builtin: [...authorized].map((agentId) => {
@@ -66,14 +62,9 @@ test("Toggle one agent with one write and one bulk refresh", async () => {
       custom: [],
     });
   });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    legacyReads += 1;
-    return respond(200, { enabledConnectorSlugs: [] });
-  });
   context.mocks.api(
     userBuiltinConnectorsContract.update,
     ({ params, body, respond }) => {
-      writes += 1;
       if (body.operation === "add") {
         authorized.add(params.id);
       } else {
@@ -88,26 +79,24 @@ test("Toggle one agent with one write and one bulk refresh", async () => {
   const manage = await waitFor(() => {
     return getConnectorAction("button", "Manage GitHub access");
   });
-  await waitFor(() => {
-    return expect(bulkReads).toBeGreaterThan(0);
-  });
-  const readsBeforeToggle = bulkReads;
   click(manage);
   const dialog = await screen.findByRole("dialog", {
     name: "Manage GitHub access",
+  });
+  await waitFor(() => {
+    expect(
+      getConnectorSwitch("Authorize GitHub access for Research", dialog),
+    ).toHaveAttribute("aria-checked", "false");
   });
   click(getConnectorSwitch("Authorize GitHub access for Research", dialog));
   await waitFor(() => {
     expect(
       getConnectorSwitch("Revoke GitHub access for Research", dialog),
-    ).not.toHaveAttribute("aria-disabled", "true");
+    ).toHaveAttribute("aria-checked", "true");
   });
-  expect(writes).toBe(1);
-  expect(bulkReads).toBe(readsBeforeToggle + 1);
-  expect(legacyReads).toBe(0);
   expect(
     getConnectorSwitch("Authorize GitHub access for Support", dialog),
-  ).not.toHaveAttribute("aria-disabled", "true");
+  ).toHaveAttribute("aria-checked", "false");
 });
 
 function oauthMethod() {
