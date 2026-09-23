@@ -10,13 +10,13 @@
 
 mod common;
 
+use guest_agent::env::{GuestConfig, GuestConfigRaw};
 use guest_agent::masker::SecretMasker;
+use guest_agent::paths::GuestPaths;
+use guest_agent::run_context::GuestRuntime;
 use guest_contracts::diagnostics::CliTerminationReason;
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
-use std::collections::HashMap;
-use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 use std::time::Duration;
 
 /// Padding that pushes one record past the ordinary stdout line limit.
@@ -60,8 +60,6 @@ struct OversizedCase<'a> {
 
 async fn run_oversized_case(
     case: OversizedCase<'_>,
-    base_path: &OsStr,
-    original_directory: &Path,
 ) -> Result<guest_agent::cli::CliExecutionResult, Box<dyn std::error::Error>> {
     let tmp = tempfile::tempdir()?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
@@ -105,58 +103,60 @@ fi
     permissions.set_mode(0o700);
     std::fs::set_permissions(&npx, permissions)?;
 
-    let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), case.run_id)?;
-    unsafe {
-        common::clear_guest_agent_bootstrap_env_for_test();
-        std::env::set_var(guest_contracts::env::CLI_AGENT_TYPE_ENV, "pi");
-        std::env::set_var(guest_contracts::env::RUN_ID_ENV, case.run_id);
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_API_URL_ENV,
+    let paths = GuestPaths::from_home(tmp.path(), case.run_id)?;
+    let payload_path = common::write_run_payload_file_for_test(
+        paths.runtime_dir(),
+        &guest_contracts::env::RunPayload {
+            prompt: "verify oversized Pi record handling".to_string(),
+            pi_launch_config:
+                r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#.to_string(),
+            pi_model_config: "{}".to_string(),
+            pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
+            ..guest_contracts::env::RunPayload::default()
+        },
+    )?;
+    let mut config = GuestConfig::from_raw(GuestConfigRaw {
+        run_id: case.run_id.to_string(),
+        api_url: server.base_url.clone(),
+        api_token: "test-token".into(),
+        sandbox_id: "00000000-0000-4000-8000-000000000abc".into(),
+        sandbox_reuse_result: "reused".into(),
+        cli_agent_type: "pi".into(),
+        home: Some(tmp.path().to_string_lossy().into_owned()),
+        run_payload_file: payload_path.to_string_lossy().into_owned(),
+        guest_runtime_dir: Some(paths.runtime_dir().into()),
+        ..Default::default()
+    })?;
+    config.user_env.extend([
+        (
+            "PATH".into(),
+            format!("{}:/usr/bin:/bin", bin_dir.display()),
+        ),
+        (
+            "CLI_PKG_URL".into(),
+            "https://example.invalid/current-okou-cli.tgz".into(),
+        ),
+        (
+            "PI_EVENT_PATH".into(),
+            event_path.to_string_lossy().into_owned(),
+        ),
+    ]);
+    let runtime = GuestRuntime {
+        http: guest_agent::http::HttpClient::with_api_config(
             &server.base_url,
-        );
-        std::env::set_var(guest_contracts::env::CANONICAL_API_TOKEN_ENV, "test-token");
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
-            "00000000-0000-4000-8000-000000000abc",
-        );
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        );
-        std::env::set_var("HOME", tmp.path());
-        let mut paths = vec![bin_dir];
-        paths.extend(std::env::split_paths(base_path));
-        std::env::set_var("PATH", std::env::join_paths(paths)?);
-        common::set_run_payload_file_env_for_test(
-            &runtime_dir,
-            &guest_contracts::env::RunPayload {
-                prompt: "verify oversized Pi record handling".to_string(),
-                pi_launch_config:
-                    r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#
-                        .to_string(),
-                pi_model_config: "{}".to_string(),
-                pi_session_id: "11111111-1111-4111-8111-111111111111".to_string(),
-                ..guest_contracts::env::RunPayload::default()
-            },
-        )?;
-        common::set_user_env_file_env_for_test(
-            &runtime_dir,
-            &HashMap::from([
-                (
-                    "CLI_PKG_URL".to_string(),
-                    "https://example.invalid/current-okou-cli.tgz".to_string(),
-                ),
-                (
-                    "PI_EVENT_PATH".to_string(),
-                    event_path.to_string_lossy().into_owned(),
-                ),
-            ]),
-        )?;
-    }
+            "test-token",
+            "",
+            case.run_id,
+            Duration::ZERO,
+        )?,
+        config,
+        paths,
+        workload_containment: None,
+        process_control_endpoint: None,
+    };
+    let _system_log = common::SystemLogOverrideGuard::set(runtime.paths.system_log_file());
     common::ensure_canonical_workspace_for_test()?;
-    std::env::set_current_dir(tmp.path())?;
 
-    let runtime = common::guest_runtime_from_process_env()?;
     let result = tokio::time::timeout(
         Duration::from_secs(30),
         common::execute_cli_for_runtime(
@@ -167,30 +167,22 @@ fi
     )
     .await
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Pi CLI process timed out"))??;
-    std::env::set_current_dir(original_directory)?;
     Ok(result)
 }
 
 #[tokio::test]
 async fn oversized_pi_records_end_the_run_only_when_the_projection_consumes_them()
 -> Result<(), Box<dyn std::error::Error>> {
-    let base_path = std::env::var_os("PATH").ok_or("PATH must be set")?;
-    let original_directory = std::env::current_dir()?;
-
     // An oversized `agent_end` is discarded, so the run reaches `agent_settled`
     // and settles normally. This is the regression this file exists for: a
     // completed run must not be lost to a record the projection never reads.
-    let settled = run_oversized_case(
-        OversizedCase {
-            run_id: "00000000-0000-4000-8000-0000000001a1",
-            records: &[
-                ASSISTANT_RECORD.to_string(),
-                oversized_record(OversizedRecordType::AgentEnd),
-            ],
-        },
-        &base_path,
-        &original_directory,
-    )
+    let settled = run_oversized_case(OversizedCase {
+        run_id: "00000000-0000-4000-8000-0000000001a1",
+        records: &[
+            ASSISTANT_RECORD.to_string(),
+            oversized_record(OversizedRecordType::AgentEnd),
+        ],
+    })
     .await?;
 
     assert!(
@@ -215,14 +207,10 @@ async fn oversized_pi_records_end_the_run_only_when_the_projection_consumes_them
 
     // A record the projection does consume stays fatal, and the failure names
     // the record without exposing its content.
-    let failed = run_oversized_case(
-        OversizedCase {
-            run_id: "00000000-0000-4000-8000-0000000001a2",
-            records: &[oversized_record(OversizedRecordType::MessageEnd)],
-        },
-        &base_path,
-        &original_directory,
-    )
+    let failed = run_oversized_case(OversizedCase {
+        run_id: "00000000-0000-4000-8000-0000000001a2",
+        records: &[oversized_record(OversizedRecordType::MessageEnd)],
+    })
     .await?;
 
     let error = failed
