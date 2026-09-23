@@ -2018,10 +2018,7 @@ describe("findMatchingPermissions", () => {
       awsDiagnostic: {
         context: {
           sigv4Service: "s3",
-          query: [
-            { key: "acl" },
-            { key: "versionId", value: "one" },
-          ],
+          query: [{ key: "acl" }, { key: "versionId", value: "one" }],
           headerNames: [],
         },
       },
