@@ -19,6 +19,13 @@ release. Their removal requires the remaining file writers, parent-deletion
 paths, event and computer-access writers to use explicit operations, followed
 by evidence that all old API instances and rollback binaries have drained.
 
+Run deletion now locks its files and deletes file/image/video catalog rows in
+the same transaction before the Run cascade removes their source entities.
+Agent deletion uses the same operation before its Session/Run cascade. Repeated
+deletes coexist with the old triggers because deleting an absent catalog row is
+idempotent. The direct hosted-site and account-erasure paths need their own
+source-scoped cleanup before the delete triggers can be retired.
+
 This document focuses on three independently deployed surfaces that have
 cross-version API or persisted-state compatibility boundaries:
 
