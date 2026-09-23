@@ -5696,6 +5696,11 @@ describe("INT-01: Slack app deep webhook flows", () => {
       orgId: actor.orgId,
       orgRole: "org:member",
     });
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor2.userId, orgId: actor.orgId, orgRole: "org:member" },
+      { [FeatureSwitchKey.PiLoop]: false },
+    );
     const slackUser2 = uniqueSlackUserId();
     await integrations.connectSlackUser(actor2, {
       workspaceId: teamId,
