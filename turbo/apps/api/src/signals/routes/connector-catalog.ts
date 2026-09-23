@@ -1,3 +1,4 @@
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -147,7 +148,10 @@ export const listConnectorCatalogConnectItems$ = command(
   async (
     { get, set },
     filter:
-      | { readonly kind: "slugs"; readonly connectorSlugs: readonly string[] }
+      | {
+          readonly kind: "slugs";
+          readonly connectorSlugs: readonly ConnectorSlug[];
+        }
       | { readonly kind: "one-click" },
     signal: AbortSignal,
   ) => {

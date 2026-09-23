@@ -66,16 +66,19 @@ describe("GET /api/onboarding/sources", () => {
     );
 
     assertPublicConnectorCatalogHasNoPrivateFields(sources.body);
-    const onboardingSlugs = new Set<string>(
-      ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+    // The visible onboarding sources, in the order onboarding names them.
+    const visibleSlugs = new Set(
+      status.body.connectors.map((connector) => {
+        return connector.slug;
+      }),
     );
     expect(
       sources.body.connectors.map((connector) => {
         return connector.slug;
       }),
     ).toStrictEqual(
-      status.body.connectors.flatMap((connector) => {
-        return onboardingSlugs.has(connector.slug) ? [connector.slug] : [];
+      ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS.filter((slug) => {
+        return visibleSlugs.has(slug);
       }),
     );
     const github = sources.body.connectors.find((connector) => {
