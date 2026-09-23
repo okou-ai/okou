@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.356.0](https://github.com/okou-ai/okou/compare/cli-v9.355.3...cli-v9.356.0) (2026-09-23)
+
+
+### Features
+
+* consolidate chat unread reads into indicators ([#36171](https://github.com/okou-ai/okou/issues/36171)) ([1ca25a4](https://github.com/okou-ai/okou/commit/1ca25a41379780bb0d6add1a086ea359251eea18))
+* **maps:** replace managed maps apis with grounded search ([#36118](https://github.com/okou-ai/okou/issues/36118)) ([098cc04](https://github.com/okou-ai/okou/commit/098cc049bbb8b5da84be38b1b829b4b8b8522273))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.496.0
+    * @okouai/core bumped to 8.702.1
+    * @okouai/pi-agent-runtime bumped to 1.39.1
+
 ## [9.355.3](https://github.com/okou-ai/okou/compare/cli-v9.355.2...cli-v9.355.3) (2026-09-23)
 
 
