@@ -939,10 +939,6 @@ test("Complete a direct Browser interaction before its stable callback", async (
     expect(params.threadId).toBe(RUN_THREAD_ID);
     return respond(200, { browser });
   });
-  context.mocks.api(browserContract.open, ({ params, respond }) => {
-    expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser, lifecycleEventId: null });
-  });
   context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
     expect(params.threadId).toBe(RUN_THREAD_ID);
     return respond(200, { browser });
