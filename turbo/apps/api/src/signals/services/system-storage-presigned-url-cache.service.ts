@@ -834,12 +834,11 @@ export function buildKeyedStorageManifestPresignedUrlCacheQuery(
     .from(systemStoragePresignedUrlCache)
     .where(
       and(
-        inArray(
-          systemStoragePresignedUrlCache.cacheKey,
+        sql`${systemStoragePresignedUrlCache.cacheKey} = ANY(${sql.param(
           pairs.map((pair) => {
             return pair.cacheKey;
           }),
-        ),
+        )}::varchar(64)[])`,
         inArray(systemStoragePresignedUrlCache.scope, [
           ...new Set(
             pairs.map((pair) => {
