@@ -10,6 +10,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
   readStoredChatThreadDraftRowFixture,
+  setChatThreadUserFixture,
   withChatThreadContentBarrierFixture,
   type StoredChatThreadDraftRow,
 } from "../../../test-fixtures/chat-thread-content-erasure";
@@ -171,6 +172,40 @@ describe("thread drafts are written to chat_thread_drafts and chat_threads", () 
 
     await expect(servedDraftText(fixture)).resolves.toBe("ordered draft");
     await expect(storedDraftText(fixture)).resolves.toBe("ordered draft");
+  });
+
+  it("keeps the 404 and writes no child row when the thread moves away", async () => {
+    const fixture = await createDraftFixture();
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "draft-child-upsert",
+        work: async (barrier) => {
+          const writing = chat.requestPatchThread(
+            fixture.actor,
+            fixture.threadId,
+            draftBody("moved thread draft"),
+            [404],
+          );
+          await barrier.entered;
+          // `user_id` is not a key column, so the retained FOR KEY SHARE lock
+          // does not stop this move, and it lands after the fence has already
+          // revalidated the identity. The legacy statement then matches nothing.
+          await setChatThreadUserFixture({
+            chatThreadId: fixture.threadId,
+            userId: `user_${randomUUID()}`,
+          });
+          barrier.release();
+          await writing;
+        },
+      },
+      context.signal,
+    );
+
+    // The staged child row rolled back with the whole transaction rather than
+    // committing one account's draft against a thread another account now owns.
+    await expect(storedDraftRow(fixture)).resolves.toBeNull();
   });
 
   it("commits neither store when the thread-row update loses its lock", async () => {

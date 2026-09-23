@@ -60,6 +60,7 @@ import {
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
+import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
 import { latestReadWatermarkEventSubquery } from "./chat-thread-read-state-query";
 import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
@@ -83,7 +84,6 @@ import {
 } from "./chat-thread-connector-selection.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
-import { settle } from "../utils";
 
 type ChatThreadRow = {
   readonly id: string;
@@ -1096,6 +1096,9 @@ export const updateChatThreadDraft$ = command(
     );
     signal.throwIfAborted();
     if (!result.ok) {
+      // The legacy statement matched no owned thread, so the transaction rolled
+      // back with the child row it had already staged and the route keeps its
+      // existing 404. Every other failure propagates unchanged.
       if (result.error instanceof ChatThreadDraftNotWritten) {
         return { updated: false };
       }
