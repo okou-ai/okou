@@ -687,7 +687,6 @@ async fn assert_bounded_enabled_service_discovery(system_dir: &Path) {
         tokio::spawn(async move { enabled_runner_service_config_paths(&system_dir).await });
 
     wait_for_started_enabled_service_queries(&state_dir, ENABLED_SERVICE_QUERY_CONCURRENCY).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
     let first_batch = started_enabled_service_queries(&state_dir);
     assert_eq!(first_batch.len(), ENABLED_SERVICE_QUERY_CONCURRENCY);
     release_enabled_service_queries(&state_dir, &first_batch);

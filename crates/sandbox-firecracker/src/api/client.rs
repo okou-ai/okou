@@ -93,6 +93,8 @@ pub struct ApiClient {
     http: reqwest::Client,
     #[cfg(test)]
     pub(super) socket_wait_started: Option<std::sync::Arc<tokio::sync::Notify>>,
+    #[cfg(test)]
+    pub(super) connection_refused_observed: Option<std::sync::Arc<tokio::sync::Notify>>,
 }
 
 impl ApiClient {
@@ -112,6 +114,8 @@ impl ApiClient {
             http: http::build_client(socket_path)?,
             #[cfg(test)]
             socket_wait_started: None,
+            #[cfg(test)]
+            connection_refused_observed: None,
         })
     }
 
@@ -160,6 +164,13 @@ impl ApiClient {
             {
                 Ok(Ok(_)) => return Ok(()),
                 Ok(Err(e)) if e.is_retryable() => {
+                    #[cfg(test)]
+                    if matches!(&e, ApiError::Connect(error) if error.kind() == std::io::ErrorKind::ConnectionRefused)
+                    {
+                        if let Some(observed) = &self.connection_refused_observed {
+                            observed.notify_one();
+                        }
+                    }
                     let retry_at = tokio::time::Instant::now() + Duration::from_millis(10);
                     tokio::time::sleep_until(retry_at.min(deadline)).await;
                 }
