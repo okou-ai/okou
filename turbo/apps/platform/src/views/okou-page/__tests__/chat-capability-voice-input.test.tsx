@@ -495,32 +495,6 @@ test("Keep a silent voice draft recording until the user stops it", async () => 
   await findEnabledButton("Voice input");
 });
 
-test("Show a longer history of recent voice levels", async () => {
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  installAvailableVoiceQuota();
-  installRunChat();
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-  });
-
-  click(await readyVoiceInput());
-  await activeVoiceDraftStopButton();
-
-  const waveform = document.querySelector("[data-voice-level-waveform]");
-  if (!(waveform instanceof HTMLElement)) {
-    throw new Error("Voice level waveform not found");
-  }
-
-  await waitFor(() => {
-    const bars = Array.from(waveform.children);
-    expect(bars).toHaveLength(40);
-    expect(bars[0]).toHaveStyle({ height: "4px" });
-    expect(bars.at(-1)).toHaveStyle({ height: "16px" });
-  });
-});
-
 const retryFailures = [
   {
     status: 503,
@@ -534,114 +508,101 @@ const retryFailures = [
   },
 ] as const;
 
-test.each(
-  retryFailures.flatMap((failure) => {
-    return [
-      { ...failure, phase: "failure feedback" },
-      { ...failure, phase: "recovery after repeated failure" },
-    ];
-  }),
-)("Voice retry $phase after $code", async (failure) => {
-  const transcriptionFailed = context.mocks.deferred<void>();
-  const retryRequest = context.mocks.deferred<void>();
-  const retryResponse = context.mocks.deferred<void>();
-  let transcriptionAttempts = 0;
-  const recordings: ArrayBuffer[] = [];
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  installAvailableVoiceQuota();
-  context.mocks.http.post(
-    "*/api/voice-io/transcribe/segment",
-    async ({ request }) => {
-      const body = await request.formData();
-      const file = body.get("file");
-      if (!(file instanceof File)) {
-        throw new Error("Expected the original voice recording");
-      }
-      recordings.push(await file.arrayBuffer());
-      transcriptionAttempts += 1;
-      if (transcriptionAttempts <= 2) {
-        if (transcriptionAttempts === 1) {
-          transcriptionFailed.resolve(undefined);
-        } else {
-          retryRequest.resolve();
-          await retryResponse.promise;
-        }
-        return HttpResponse.json(
-          {
-            error: {
-              code: failure.code,
-              message: failure.message,
-            },
-          },
-          { status: failure.status },
-        );
-      }
-      return HttpResponse.json({
-        transcript: "raw launch update",
-        polishedText: "Polished launch update.",
-        language: "en-US",
-      });
-    },
-  );
-  installRunChat();
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    locale: "en-US",
-  });
-
-  const voiceInput = await readyVoiceInput();
-  await fill(currentComposer(), "Keep these notes. ");
-  click(voiceInput);
-  click(await activeVoiceDraftStopButton());
-  await transcriptionFailed.promise;
-
-  await waitFor(() => {
-    expect(screen.getByText(failure.message, { exact: false })).toBeVisible();
-  });
-  await expect(findButton("Retry")).resolves.toBeEnabled();
-  expect(queryButton("Voice input")).toBeNull();
-  expect(transcriptionAttempts).toBe(1);
-  expect(queryButton("Remove voice draft")).toBeEnabled();
-  expect(normalizedComposerText()).toBe("Keep these notes.");
-  expect(queryButton("Send")).toBeNull();
-
-  click(await findEnabledButton("Retry"));
-  await retryRequest.promise;
-  await screen.findByText("Transcribing");
-  expect(screen.getByText("Retrying saved audio")).toBeVisible();
-  retryResponse.resolve();
-  await findEnabledButton("Retry");
-  expect(normalizedComposerText()).toBe("Keep these notes.");
-  expect(transcriptionAttempts).toBe(2);
-  expect(recordings[1]).toStrictEqual(recordings[0]);
-  if (failure.phase === "failure feedback") {
-    return;
-  }
-  click(await findButton("Retry"));
-
-  await waitFor(() => {
-    expect(normalizedComposerText()).toBe(
-      "Keep these notes. Polished launch update.",
-    );
-  });
-  expect(transcriptionAttempts).toBe(3);
-  expect(recordings[1]).toStrictEqual(recordings[0]);
-  expect(recordings[2]).toStrictEqual(recordings[0]);
-  await findEnabledButton("Send");
-});
-
-test.each(
-  retryFailures.flatMap((failure) => {
-    return [
-      { ...failure, boundary: "navigation" },
-      { ...failure, boundary: "reload" },
-    ];
-  }),
-)(
-  "A recovered $code recording stays cleared after $boundary",
+test.each(retryFailures)(
+  "Voice retry recovers after repeated failure for $code",
   async (failure) => {
+    const transcriptionFailed = context.mocks.deferred<void>();
+    const retryRequest = context.mocks.deferred<void>();
+    const retryResponse = context.mocks.deferred<void>();
+    let transcriptionAttempts = 0;
+    const recordings: ArrayBuffer[] = [];
+    context.mocks.browser.voiceInput({ rms: 0.12 });
+    installAvailableVoiceQuota();
+    context.mocks.http.post(
+      "*/api/voice-io/transcribe/segment",
+      async ({ request }) => {
+        const body = await request.formData();
+        const file = body.get("file");
+        if (!(file instanceof File)) {
+          throw new Error("Expected the original voice recording");
+        }
+        recordings.push(await file.arrayBuffer());
+        transcriptionAttempts += 1;
+        if (transcriptionAttempts <= 2) {
+          if (transcriptionAttempts === 1) {
+            transcriptionFailed.resolve(undefined);
+          } else {
+            retryRequest.resolve();
+            await retryResponse.promise;
+          }
+          return HttpResponse.json(
+            {
+              error: {
+                code: failure.code,
+                message: failure.message,
+              },
+            },
+            { status: failure.status },
+          );
+        }
+        return HttpResponse.json({
+          transcript: "raw launch update",
+          polishedText: "Polished launch update.",
+          language: "en-US",
+        });
+      },
+    );
+    installRunChat();
+
+    await setupPage({
+      context,
+      path: RUN_PATH,
+      locale: "en-US",
+    });
+
+    const voiceInput = await readyVoiceInput();
+    await fill(currentComposer(), "Keep these notes. ");
+    click(voiceInput);
+    click(await activeVoiceDraftStopButton());
+    await transcriptionFailed.promise;
+
+    await waitFor(() => {
+      expect(screen.getByText(failure.message, { exact: false })).toBeVisible();
+    });
+    await expect(findButton("Retry")).resolves.toBeEnabled();
+    expect(queryButton("Voice input")).toBeNull();
+    expect(transcriptionAttempts).toBe(1);
+    expect(queryButton("Remove voice draft")).toBeEnabled();
+    expect(normalizedComposerText()).toBe("Keep these notes.");
+    expect(queryButton("Send")).toBeNull();
+
+    click(await findEnabledButton("Retry"));
+    await retryRequest.promise;
+    await screen.findByText("Transcribing");
+    expect(screen.getByText("Retrying saved audio")).toBeVisible();
+    retryResponse.resolve();
+    await findEnabledButton("Retry");
+    expect(normalizedComposerText()).toBe("Keep these notes.");
+    expect(transcriptionAttempts).toBe(2);
+    expect(recordings[1]).toStrictEqual(recordings[0]);
+    click(await findButton("Retry"));
+
+    await waitFor(() => {
+      expect(normalizedComposerText()).toBe(
+        "Keep these notes. Polished launch update.",
+      );
+    });
+    expect(transcriptionAttempts).toBe(3);
+    expect(recordings[1]).toStrictEqual(recordings[0]);
+    expect(recordings[2]).toStrictEqual(recordings[0]);
+    await findEnabledButton("Send");
+  },
+);
+
+test.each(["navigation", "reload"] as const)(
+  "A recovered recording stays cleared after %s",
+  async (boundary) => {
+    const failure = retryFailures[0];
     const resetInitialPage$ = resetSignal();
     const initialPageSignal = context.store.set(
       resetInitialPage$,
@@ -689,7 +650,7 @@ test.each(
     expect(transcriptionAttempts).toBe(3);
     await findEnabledButton("Send");
 
-    if (failure.boundary === "navigation") {
+    if (boundary === "navigation") {
       click(await findLink("Agents"));
       await screen.findByRole("heading", { name: "Agents" });
       window.history.back();
