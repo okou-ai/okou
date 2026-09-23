@@ -94,9 +94,7 @@ export const setPersonalAccountDisconnectDialog$ = command(
  * shared by every such provider, so the name is a parameter rather than a
  * separate string per provider.
  */
-export function subscriptionResetProviderLabel(
-  type: ModelProviderType,
-): string {
+function subscriptionResetProviderLabel(type: ModelProviderType): string {
   return i18n.t(($) => {
     return type === "codex-oauth-token"
       ? $.settings.accountMenu.subscriptions.providers.codex
