@@ -88,7 +88,8 @@ describe("GET /api/chat/search durable reader", () => {
     );
     const keyword = `bounded${randomUUID().replaceAll("-", "")}`;
     await insertChatSearchWindowFixture({
-      ...source,
+      chatThreadId: source.threadId,
+      agentId: source.agentId,
       userId: owner.userId,
       orgId,
       keyword,
