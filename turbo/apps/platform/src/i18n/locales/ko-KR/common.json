@@ -1959,7 +1959,7 @@
         "usageTitle": "{{framework}} 한도에 도달했습니다",
         "weeklyReset": "주간 한도는 {{time}}에 재설정"
       },
-      "runCancelled": "실행이 일시 중지됨 — 언제든 재개하세요."
+      "runCancelled": "실행이 일시 중지됨 — 재개하세요."
     },
     "feedback": {
       "emailDraftDescription": "이메일 초안",

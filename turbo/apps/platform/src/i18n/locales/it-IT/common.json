@@ -2000,7 +2000,7 @@
         "usageTitle": "Limite di {{framework}} raggiunto",
         "weeklyReset": "Il limite settimanale si reimposta {{time}}"
       },
-      "runCancelled": "Esecuzione in pausa: riprendi quando vuoi."
+      "runCancelled": "Esecuzione in pausa — riprendi."
     },
     "feedback": {
       "emailDraftDescription": "una bozza di email",

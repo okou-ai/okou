@@ -1966,7 +1966,7 @@
         "usageTitle": "{{framework}}-Limit erreicht",
         "weeklyReset": "Das Wochenlimit wird {{time}} zurückgesetzt"
       },
-      "runCancelled": "Lauf pausiert – jederzeit fortsetzen."
+      "runCancelled": "Lauf pausiert – fortsetzen."
     },
     "feedback": {
       "emailDraftDescription": "einem E-Mail-Entwurf",

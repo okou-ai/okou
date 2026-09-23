@@ -1959,7 +1959,7 @@
         "usageTitle": "{{framework}} の使用制限に達しました",
         "weeklyReset": "週間上限は {{time}} にリセット"
       },
-      "runCancelled": "実行を一時停止しました。いつでも再開できます。"
+      "runCancelled": "実行を一時停止しました。再開できます。"
     },
     "feedback": {
       "emailDraftDescription": "メールの下書き",
