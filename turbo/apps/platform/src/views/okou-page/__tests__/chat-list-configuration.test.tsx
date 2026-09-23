@@ -1,5 +1,4 @@
 import { screen, waitFor } from "@testing-library/react";
-import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { expect, test } from "vitest";
 
 import {
@@ -132,9 +131,6 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
   installActiveChatBoundaries(context, {
     metadata: thread,
     hosts: [onlineComputerUseHost(HOST_ID)],
-  });
-  context.mocks.api(computerUseHostsContract.list, ({ respond }) => {
-    return respond(200, { hosts: [onlineComputerUseHost(HOST_ID)] });
   });
 
   const page = await startPage({
