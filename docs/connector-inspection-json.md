@@ -78,6 +78,17 @@ evidence. `account` is run-bound; `connection` is current-context data. Environm
 entries contain only names and presence booleans, never values. URL userinfo is
 rejected, and query strings/fragments are stripped before transport and output.
 
+AWS URL checks may include a bounded `request.aws` selector object, supplied by
+`--aws-service` with optional `--aws-action`, `--aws-target`, repeated
+`--aws-query-param`, and repeated `--aws-header-present` CLI options. Action and
+target are mutually exclusive; S3 header selectors are limited to the
+allowlisted permission-selector names. These selectors classify the intended
+operation only: they do not validate a SigV4 signature or send a request to
+AWS. The raw URL query and fragment remain stripped. AWS rules that do not
+match the explicit selectors remain unmatched and use the configured unknown-
+endpoint policy. Selector values are included in JSON and generated follow-up
+commands, so never supply credentials or other secrets as selectors.
+
 Check's `actions` contain commands, links, or guidance. Builtin permission
 requests are offered only for denied/ask outcomes from a URL diagnostic.
 Custom connectors retain their settings-based remediation; unknown custom
