@@ -715,6 +715,9 @@ export default [
       // A candidate SELECT can finish before the D1 lock is acquired; no
       // endpoint can hold that exact DB boundary while sealing B1 capture.
       "src/signals/services/__tests__/account-erasure-chat-snapshot-writer-fence.test.ts",
+      // B1 must persist >1,000 command locators and test provider absence
+      // after a sealed lease, a removed catalog row, and a held D1 PUT.
+      "src/signals/services/__tests__/account-erasure-computer-use-collector.test.ts",
       // Storage erasure must use a sealed locator after its catalog row is
       // gone; no endpoint can construct that dormant executor state yet.
       "src/signals/services/__tests__/account-erasure-storage-object-collector.test.ts",
@@ -959,6 +962,7 @@ export default [
       "src/signals/services/__tests__/account-erasure-browser-session-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-chat-snapshot-collector.test.ts",
       "src/signals/services/__tests__/account-erasure-chat-snapshot-writer-fence.test.ts",
+      "src/signals/services/__tests__/account-erasure-computer-use-collector.test.ts",
       // Immutable Feishu ownership must be measured across admission,
       // disconnect and rebind commits, which HTTP cannot interleave.
       "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",

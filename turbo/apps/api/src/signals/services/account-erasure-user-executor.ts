@@ -45,6 +45,10 @@ import {
   createChatSnapshotErasureCollector,
 } from "./account-erasure-chat-snapshot-collector";
 import {
+  COMPUTER_USE_ERASURE_COLLECTOR_VERSION,
+  createComputerUseErasureCollector,
+} from "./account-erasure-computer-use-collector";
+import {
   EXPORT_OBJECT_ERASURE_COLLECTOR_VERSION,
   createExportObjectErasureCollector,
 } from "./account-erasure-export-object-collector";
@@ -92,6 +96,7 @@ type SinkName =
   | "browser_profile"
   | "browser_session"
   | "chat_snapshot"
+  | "computer_use"
   | "export_object"
   | "hosted_site"
   | "shared_blob"
@@ -127,6 +132,11 @@ const sinkSpecs: readonly {
     name: "chat_snapshot",
     domain: "objects",
     version: CHAT_SNAPSHOT_ERASURE_COLLECTOR_VERSION,
+  },
+  {
+    name: "computer_use",
+    domain: "providers",
+    version: COMPUTER_USE_ERASURE_COLLECTOR_VERSION,
   },
   {
     name: "export_object",
@@ -243,6 +253,7 @@ async function handlers(db: Db) {
     browser_profile: createBrowserProfileErasureCollector(db),
     browser_session: createBrowserSessionErasureCollector(db),
     chat_snapshot: createChatSnapshotErasureCollector(db),
+    computer_use: createComputerUseErasureCollector(db),
     export_object: createExportObjectErasureCollector(db),
     hosted_site: createHostedSiteErasureCollector(db),
     shared_blob: createSharedBlobErasureCollector(db),
