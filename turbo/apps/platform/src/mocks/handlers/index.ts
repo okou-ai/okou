@@ -109,12 +109,14 @@ import { apiVoiceIoHandlers } from "./api-voice-io.ts";
 import { apiBuildInfoHandlers } from "./api-build-info.ts";
 import { apiWebFilesHandlers } from "./api-web-files.ts";
 import { localeResourceHandlers } from "./locale-resources.ts";
+import { chatThreadEmojiHandlers } from "./chat-thread-emoji.ts";
 import { clerkLocalizationHandlers } from "./clerk-localizations.ts";
 
 export const handlers = [
   ...apiMarketingEventsHandlers,
   ...clerkLocalizationHandlers,
   ...localeResourceHandlers,
+  ...chatThreadEmojiHandlers,
   ...apiBuildInfoHandlers,
   ...apiConnectorsHandlers,
   ...apiOrgHandlers,
