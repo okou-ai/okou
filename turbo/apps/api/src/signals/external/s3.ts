@@ -351,21 +351,6 @@ export function listS3Objects(
   return listS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, prefix);
 }
 
-/** Hosted sites hold their own credentials, so `s3ClientForBucket` does not
- * reach them. This is the hosted-bucket listing counterpart to
- * `deleteArtifactSnapshotObjects(..., hosted: true, ...)`.
- */
-export function listHostedSitesObjectsUnderPrefix(
-  bucket: string,
-  prefix: string,
-): Computed<Promise<readonly S3Object[]>> {
-  return listS3ObjectsWithClient(
-    hostedSitesS3Client$,
-    bucket,
-    boundedListPrefix(prefix),
-  );
-}
-
 function listS3ObjectsWithClient(
   client$: Computed<S3Client>,
   bucket: string,
