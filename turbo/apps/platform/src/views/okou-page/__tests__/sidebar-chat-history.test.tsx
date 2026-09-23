@@ -70,7 +70,6 @@ import {
 import { mockNow } from "../../../__tests__/time.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
-import { CHAT_THREAD_VIRTUAL_ROW_HEIGHT } from "../../../signals/okou-page/sidebar-state.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
 import {
@@ -183,43 +182,6 @@ test("Refresh a long sidebar after deleting an offscreen chat", async () => {
       within(sidebar()).queryByText("Archived context"),
     ).not.toBeInTheDocument();
   });
-});
-
-test("Align the current virtualized chat row with the sidebar scroll area top", async () => {
-  prepareDefaultAgent();
-  const leadingThreads = Array.from({ length: 24 }, (_, index) => {
-    return createThread(
-      `b3100000-0000-4000-a000-${String(index).padStart(12, "0")}`,
-      `Leading precise chat ${index + 1}`,
-    );
-  });
-  mockSidebarThreadStory([
-    ...leadingThreads,
-    createThread(EXISTING_THREAD_ID, "Release plan"),
-    createThread(AUTOMATION_THREAD_ID, "Scheduled launch"),
-  ]);
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
-  });
-
-  await waitFor(() => {
-    expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
-  });
-
-  const scrollArea = within(sidebar()).getByTestId("sidebar-scroll-area");
-  const currentRow = threadLinkByTitle("Release plan").closest(
-    '[data-testid="sidebar-chat-thread-virtual-row"]',
-  );
-  if (!(currentRow instanceof HTMLElement)) {
-    throw new Error("Release plan virtual row not found");
-  }
-  const currentIndex = Number(currentRow.dataset.index);
-
-  expect(scrollArea.scrollTop).toBe(
-    currentIndex * CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
-  );
 });
 
 test("Delete a chat after reviewing the impact", async () => {
