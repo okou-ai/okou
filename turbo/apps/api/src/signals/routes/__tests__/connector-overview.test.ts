@@ -309,8 +309,20 @@ test("a saved custom connector proposal invalidates the Agent access snapshot", 
           operation: "create",
           displayName: "Proposal connector",
           prefixTemplates: ["https://proposal.example.com/"],
-          fields: [],
-          headerInjections: [],
+          fields: [
+            {
+              key: "api_key",
+              label: "API key",
+              kind: "secret",
+              required: false,
+            },
+          ],
+          headerInjections: [
+            {
+              name: "Authorization",
+              valueTemplate: "Bearer {{secrets.api_key}}",
+            },
+          ],
           queryInjections: [],
         },
         values: [],
