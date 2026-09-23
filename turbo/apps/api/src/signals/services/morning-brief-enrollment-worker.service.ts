@@ -26,6 +26,8 @@ const executeMorningBriefEnrollmentScope$ = command(
     const db = set(writeDb$);
     // Older members can have a timezone without an enrollment row. Admit a
     // bounded set before selecting due work; qualification checks eligibility.
+    // Remove after old timezone writers drain and the historical gap is empty;
+    // #36270 tracks the production inventory and cleanup.
     const missing = await db
       .select({
         orgId: orgMembersMetadata.orgId,

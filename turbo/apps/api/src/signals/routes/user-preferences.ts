@@ -180,6 +180,8 @@ async function fillMissingUserPreferenceFields(
     !existingTimezone || !isValidTimeZone(existingTimezone);
   const localeMissing = !isValidUserLocale(existingLocale);
   const timezone = requested.timezone ?? DEFAULT_USER_TIMEZONE;
+  // Old App -> new API: timezone-only initialize omits locale. Reassess the
+  // optional request after the client-version floor excludes that App; #36270.
   const locale = requested.locale ?? DEFAULT_USER_LOCALE;
   if (!isValidTimeZone(timezone)) {
     return { kind: "invalid-timezone" };

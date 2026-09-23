@@ -49,7 +49,8 @@ export const userPreferences$ = computed(
     const createClient = get(apiClient$);
     const client = createClient(userPreferencesContract);
     const result = await accept(client.get(), [200, 409]);
-    // An older API version may return 200 with a missing field during rollout.
+    // New App -> old API: an older API may return 200 with a missing field.
+    // Remove after that API is neither serving nor retained for rollback; #36270.
     if (
       result.status === 200 &&
       result.body.timezone !== null &&
@@ -79,7 +80,8 @@ export const userPreferences$ = computed(
       throw new Error("Initialization returned invalid preferences");
     }
     if (initialized.body.locale === null) {
-      // A previous API version accepted only timezone in initialize.
+      // New App -> old API: initialize may return without locale.
+      // Remove after that API is neither serving nor retained for rollback; #36270.
       const updated = await accept(client.update({ body: { locale } }), [200]);
       if (
         updated.body.timezone === null ||
