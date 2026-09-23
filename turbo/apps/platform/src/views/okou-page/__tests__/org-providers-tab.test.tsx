@@ -1322,15 +1322,15 @@ test("Reconnect a stale workspace Claude account", async () => {
     throw new Error("Claude Code reconnect dialog not found");
   }
   expect(
-    within(reconnectDialog).getByText("Re-connect Claude Code"),
+    within(reconnectDialog).getByText("Reconnect Claude"),
   ).toBeInTheDocument();
 
   await fill(codeInput, "workspace-claude-code");
   click(within(reconnectDialog).getByTestId("claude-code-device-auth-submit"));
 
   await waitFor(() => {
-    expect(screen.getByText("Claude Code connected")).toBeInTheDocument();
-    expect(screen.queryByText("Re-connect Claude Code")).toBeNull();
+    expect(screen.getByText("Claude connected")).toBeInTheDocument();
+    expect(screen.queryByText("Reconnect Claude")).toBeNull();
     expect(
       screen.queryByText("Claude Code session needs reconnection"),
     ).toBeNull();

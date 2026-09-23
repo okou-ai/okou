@@ -9,20 +9,27 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import {
+  readChatThreadEventSequenceFixture,
   readStoredChatThreadDraftRowFixture,
+  setLegacyChatThreadDraftFixture,
   setChatThreadUserFixture,
   withChatThreadContentBarrierFixture,
+  withChatThreadSendClearBarrierFixture,
+  withHeldChatThreadDraftRowFixture,
   type StoredChatThreadDraftRow,
 } from "../../../test-fixtures/chat-thread-content-erasure";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
+const runs = createRunsApi(context);
 
 interface DraftFixture {
   readonly actor: ReturnType<typeof bdd.user>;
+  readonly agentId: string;
   readonly threadId: string;
 }
 
@@ -33,7 +40,24 @@ async function createDraftFixture(): Promise<DraftFixture> {
     agentId: agent.agentId,
     title: `Draft ${randomUUID()}`,
   });
-  return { actor, threadId: thread.id };
+  return { actor, agentId: agent.agentId, threadId: thread.id };
+}
+
+async function sendWithoutCredits(fixture: DraftFixture): Promise<void> {
+  const sent = await chat.requestSendEvent(
+    fixture.actor,
+    {
+      agentId: fixture.agentId,
+      threadId: fixture.threadId,
+      prompt: "Send the saved draft",
+      clientEventId: randomUUID(),
+    },
+    [201],
+  );
+  if (sent.status !== 201) {
+    throw new Error("Expected a no-credit message send");
+  }
+  expect(sent.body.runId).toBeNull();
 }
 
 function draftDocument(text: string): UserMessageInputDocument {
@@ -284,5 +308,216 @@ describe("thread drafts are written to chat_thread_drafts and chat_threads", () 
     await chat.deleteThread(fixture.actor, fixture.threadId);
 
     await expect(storedDraftRow(fixture)).resolves.toBeNull();
+  });
+});
+
+describe("send-coupled draft clears", () => {
+  it("clears a saved child in the send transaction and retains its row", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensureOrgModelProvider(fixture.actor);
+    await chat.patchThread(fixture.actor, fixture.threadId, {
+      draftUserMessage: draftDocument("saved before send"),
+      draftAttachments: [draftAttachment()],
+    });
+    const before = await storedDraftRow(fixture);
+
+    await sendWithoutCredits(fixture);
+
+    await expect(servedDraftText(fixture)).resolves.toBeNull();
+    const after = await storedDraftRow(fixture);
+    expect(after).not.toBeNull();
+    expect(after?.draftUserMessage).toBeNull();
+    expect(after?.draftAttachments).toBeNull();
+    expect(after?.createdAt).toBe(before?.createdAt);
+  });
+
+  it("clears a legacy-only draft without creating a child row", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensureOrgModelProvider(fixture.actor);
+    await setLegacyChatThreadDraftFixture({
+      chatThreadId: fixture.threadId,
+      draftUserMessage: draftDocument("old API draft"),
+    });
+    await expect(storedDraftRow(fixture)).resolves.toBeNull();
+    await expect(servedDraftText(fixture)).resolves.toBe("old API draft");
+
+    await sendWithoutCredits(fixture);
+
+    await expect(servedDraftText(fixture)).resolves.toBeNull();
+    await expect(storedDraftRow(fixture)).resolves.toBeNull();
+  });
+
+  it("lets a phase-1 PATCH finish before a waiting send clear", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensureOrgModelProvider(fixture.actor);
+    await chat.patchThread(
+      fixture.actor,
+      fixture.threadId,
+      draftBody("initial"),
+    );
+
+    await withChatThreadContentBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "draft-child-upsert",
+        work: async (barrier) => {
+          const patch = chat.patchThread(
+            fixture.actor,
+            fixture.threadId,
+            draftBody("PATCH wins first"),
+          );
+          await barrier.entered;
+          const send = sendWithoutCredits(fixture);
+          await expect
+            .poll(barrier.blockedWaiterCount, { interval: 10, timeout: 750 })
+            .toBeGreaterThan(0);
+          barrier.release();
+          await patch;
+          await send;
+        },
+      },
+      context.signal,
+    );
+    await expect(servedDraftText(fixture)).resolves.toBeNull();
+    await expect(storedDraftText(fixture)).resolves.toBeNull();
+  });
+
+  it("lets a send clear finish before a waiting phase-1 PATCH", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensureOrgModelProvider(fixture.actor);
+    await chat.patchThread(
+      fixture.actor,
+      fixture.threadId,
+      draftBody("initial"),
+    );
+
+    await withChatThreadSendClearBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "child-clear",
+        work: async (barrier) => {
+          const send = sendWithoutCredits(fixture);
+          await barrier.entered;
+          const patch = chat.patchThread(
+            fixture.actor,
+            fixture.threadId,
+            draftBody("PATCH wins last"),
+          );
+          await expect
+            .poll(barrier.blockedWaiterCount, { interval: 10, timeout: 750 })
+            .toBeGreaterThan(0);
+          barrier.release();
+          await send;
+          await patch;
+        },
+      },
+      context.signal,
+    );
+    await expect(servedDraftText(fixture)).resolves.toBe("PATCH wins last");
+    await expect(storedDraftText(fixture)).resolves.toBe("PATCH wins last");
+  });
+
+  it("rolls back the parent clear, sequence and event when the child fails", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensureOrgModelProvider(fixture.actor);
+    await chat.patchThread(
+      fixture.actor,
+      fixture.threadId,
+      draftBody("retained"),
+    );
+    const child = await storedDraftRow(fixture);
+    const sequence = await readChatThreadEventSequenceFixture(fixture.threadId);
+    const events = await chat.listThreadEvents(fixture.actor, fixture.threadId);
+
+    await withHeldChatThreadDraftRowFixture(
+      {
+        chatThreadId: fixture.threadId,
+        work: async (control) => {
+          const send = sendWithoutCredits(fixture);
+          await expect
+            .poll(control.blockedWaiterCount, { interval: 10, timeout: 750 })
+            .toBeGreaterThan(0);
+          await expect(control.cancelBlockedQueries()).resolves.toBe(1);
+          await expect(send).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+
+    await expect(servedDraftText(fixture)).resolves.toBe("retained");
+    await expect(storedDraftRow(fixture)).resolves.toStrictEqual(child);
+    await expect(
+      readChatThreadEventSequenceFixture(fixture.threadId),
+    ).resolves.toBe(sequence);
+    await expect(
+      chat.listThreadEvents(fixture.actor, fixture.threadId),
+    ).resolves.toStrictEqual(events);
+  });
+
+  it("leaves a foreign or deleted thread's child untouched", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensureOrgModelProvider(fixture.actor);
+    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
+    const before = await storedDraftRow(fixture);
+    const foreign = bdd.user({ orgId: fixture.actor.orgId });
+    const denied = await chat.requestSendEvent(
+      foreign,
+      {
+        agentId: fixture.agentId,
+        threadId: fixture.threadId,
+        prompt: "Not my thread",
+      },
+      [403],
+    );
+    expect(denied.status).toBe(403);
+    await expect(storedDraftRow(fixture)).resolves.toStrictEqual(before);
+
+    await chat.deleteThread(fixture.actor, fixture.threadId);
+    await expect(storedDraftRow(fixture)).resolves.toBeNull();
+    const deleted = await chat.requestSendEvent(
+      fixture.actor,
+      {
+        agentId: fixture.agentId,
+        threadId: fixture.threadId,
+        prompt: "Deleted thread",
+      },
+      [404],
+    );
+    expect(deleted.status).toBe(404);
+    await expect(storedDraftRow(fixture)).resolves.toBeNull();
+  });
+
+  it("does not clear a child when ownership changes before the strong lock", async () => {
+    const fixture = await createDraftFixture();
+    await runs.ensureOrgModelProvider(fixture.actor);
+    await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
+    const before = await storedDraftRow(fixture);
+
+    await withChatThreadSendClearBarrierFixture(
+      {
+        chatThreadId: fixture.threadId,
+        stopAt: "entry",
+        work: async (barrier) => {
+          const send = chat.requestSendEvent(
+            fixture.actor,
+            {
+              agentId: fixture.agentId,
+              threadId: fixture.threadId,
+              prompt: "Ownership race",
+            },
+            [201, 404],
+          );
+          await barrier.entered;
+          await setChatThreadUserFixture({
+            chatThreadId: fixture.threadId,
+            userId: `user_${randomUUID()}`,
+          });
+          barrier.release();
+          await expect(send).rejects.toThrow(/Unknown response status 500/);
+        },
+      },
+      context.signal,
+    );
+    await expect(storedDraftRow(fixture)).resolves.toStrictEqual(before);
   });
 });

@@ -13,8 +13,9 @@ use zeroize::Zeroizing;
 use super::Failure;
 use runner_types::ids::RunId;
 
-use crate::http::HttpClient;
+use crate::RemoteApiRequestFactory;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use std::sync::Arc;
 
 const MAX_API_BYTES: usize = 512 * 1024;
 const MAX_CA_BYTES: usize = 64 * 1024;
@@ -22,7 +23,7 @@ const MAX_CA_CERTIFICATES: usize = 8;
 const MAX_PLAIN_USERNAME_BYTES: usize = 255;
 
 pub(super) struct Authority {
-    http: HttpClient,
+    http: Arc<dyn RemoteApiRequestFactory>,
     transport: reqwest::Client,
     token: Zeroizing<String>,
     identity: RunnerProcessIdentity,
@@ -47,7 +48,7 @@ pub(super) enum Transport {
 
 impl Authority {
     pub(super) fn new(
-        http: HttpClient,
+        http: Arc<dyn RemoteApiRequestFactory>,
         token: String,
         identity: RunnerProcessIdentity,
     ) -> Result<Self, Failure> {
@@ -71,11 +72,10 @@ impl Authority {
         route: api_contracts::ResolvedRoute,
         body: &impl Serialize,
     ) -> Result<T, Failure> {
+        let body = serde_json::to_value(body).map_err(|_| Failure::Authority)?;
         let request = self
             .http
-            .request_resolved_route(route, &self.token)
-            .json(body)
-            .build()
+            .json_request(route, &self.token, &body)
             .map_err(|_| Failure::Authority)?;
         let mut response = self
             .transport

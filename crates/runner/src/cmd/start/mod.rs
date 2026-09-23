@@ -936,12 +936,14 @@ async fn run_start_with_home(
 
     // Create provider — handles discovery + claim + complete
     let ssh = if local_group_dir.is_none() {
-        crate::ssh::SshRuntime::official(http.clone(), &server.token, runner_identity)?
+        crate::ssh::SshRuntime::official(http.clone(), &server.token, runner_identity)
+            .map_err(|error| crate::error::RunnerError::Internal(error.to_string()))?
     } else {
         None
     };
     let vnc = if local_group_dir.is_none() {
-        crate::vnc::VncRuntime::official(http.clone(), &server.token, runner_identity)?
+        crate::vnc::VncRuntime::official(http.clone(), &server.token, runner_identity)
+            .map_err(|error| crate::error::RunnerError::Internal(error.to_string()))?
     } else {
         None
     };

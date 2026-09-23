@@ -9,7 +9,11 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { VIDEO_TEMPLATE_ITEMS } from "@okouai/core/video-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -405,7 +409,7 @@ test("Presentation preview keeps keyboard navigation inside its focused controls
   });
 });
 
-test("Navigate template categories on different screen sizes", async () => {
+test("Keyboard category navigation selects and labels the active template panel", async () => {
   mockTemplateChat();
   const user = userEvent.setup();
 
@@ -415,27 +419,80 @@ test("Navigate template categories on different screen sizes", async () => {
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user);
+  const dialog = await openTemplatePicker(user);
+  const categories = within(dialog).getByRole("tablist", {
+    name: "Template categories",
+  });
+  expect(categories).toHaveAttribute("aria-orientation", "vertical");
   const presentation = tabByText("Presentation");
-  presentation.focus();
+  await user.click(presentation);
   await user.keyboard("{ArrowDown}");
-  expect(tabByText("Website")).toHaveAttribute("aria-selected", "true");
+  const website = tabByText("Website");
+  expect(website).toHaveAttribute("aria-selected", "true");
+  expect(website).toHaveFocus();
+  const websitePanel = await within(dialog).findByRole("tabpanel", {
+    name: "Website",
+  });
+  expect(website).toHaveAttribute("aria-controls", websitePanel.id);
+  expect(websitePanel).toHaveAttribute("aria-labelledby", website.id);
   expect(
-    screen.getByLabelText(
+    within(websitePanel).getByLabelText(
       `Preview website template ${WEBSITE_TEMPLATE_ITEMS[0]!.title}`,
     ),
   ).toBeVisible();
 
   await user.keyboard("{End}");
-  expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
+  const workflow = tabByText("Workflow");
+  expect(workflow).toHaveAttribute("aria-selected", "true");
+  expect(workflow).toHaveFocus();
+  const workflowPanel = await within(dialog).findByRole("tabpanel", {
+    name: "Workflow",
+  });
+  expect(workflow).toHaveAttribute("aria-controls", workflowPanel.id);
   expect(
-    document.querySelector("[data-workflow-template-grid-scroll]"),
+    within(workflowPanel).getByLabelText("Search templates"),
   ).toBeInTheDocument();
-  await user.keyboard("{Home}");
-  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+
+  // The category rail occupies one tab stop before the selected panel and its
+  // controls; it does not make the user visit every unselected category.
+  await user.keyboard("{Tab}");
+  expect(workflowPanel).toHaveFocus();
+  await user.keyboard("{Tab}");
+  const search = within(workflowPanel).getByLabelText("Search templates");
+  expect(search).toHaveFocus();
+  await user.type(search, "morning");
+  expect(search).toHaveValue("morning");
+  await user.keyboard("{Shift>}{Tab}{Tab}{/Shift}");
+  expect(workflow).toHaveFocus();
+
+  await user.keyboard("{ArrowDown}");
+  expect(presentation).toHaveFocus();
+  expect(presentation).toHaveAttribute("aria-selected", "true");
+  await user.keyboard("{ArrowUp}");
+  expect(workflow).toHaveFocus();
+  expect(workflow).toHaveAttribute("aria-selected", "true");
   expect(
-    screen.getByLabelText(`Select template ${builtInTemplate().title}`),
+    within(
+      await within(dialog).findByRole("tabpanel", { name: "Workflow" }),
+    ).getByLabelText("Search templates"),
+  ).toHaveValue("morning");
+  await user.keyboard("{Home}");
+  expect(presentation).toHaveAttribute("aria-selected", "true");
+  expect(presentation).toHaveFocus();
+  const presentationPanel = await within(dialog).findByRole("tabpanel", {
+    name: "Presentation",
+  });
+  expect(presentation).toHaveAttribute("aria-controls", presentationPanel.id);
+  expect(
+    within(presentationPanel).getByLabelText(
+      `Select template ${builtInTemplate().title}`,
+    ),
   ).toBeVisible();
+  expect(
+    queryAllByRoleFast("tab", categories).filter((tab) => {
+      return tab.tabIndex === 0;
+    }),
+  ).toStrictEqual([presentation]);
 });
 
 test("Navigate template categories on a narrow screen", async () => {
@@ -449,7 +506,7 @@ test("Navigate template categories on a narrow screen", async () => {
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user);
+  const dialog = await openTemplatePicker(user);
   const category = screen.getByLabelText("Template category");
   await user.click(category);
   await user.click(screen.getByRole("option", { name: "Video" }));
@@ -461,4 +518,13 @@ test("Navigate template categories on a narrow screen", async () => {
       ),
     ).toBeVisible();
   });
+  const panel = within(dialog).getByRole("tabpanel", { name: "Video" });
+  expect(tabByText("Video")).toHaveAttribute("aria-controls", panel.id);
+  expect(panel).toHaveAttribute("aria-labelledby", tabByText("Video").id);
+  expect(category).toHaveFocus();
+  await user.click(category);
+  await user.keyboard("{Escape}");
+  expect(category).toHaveFocus();
+  expect(category).toHaveTextContent("Video");
+  expect(dialog).toBeInTheDocument();
 });
