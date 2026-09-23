@@ -320,58 +320,19 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "compiler caches must exist only in the miss-only compile job"
 
 jq -e '
-  .jobs["cli-artifact"] as $cli |
-  $cli.name == "Resolve Okou CLI artifact" and
-  $cli["runs-on"] == "ubuntu-latest" and
-  $cli.permissions.contents == "read" and
-  $cli.needs == ["prepare"] and
-  ($cli.if | contains("!cancelled()")) and
-  ($cli.if | contains("needs.prepare.result == '\''success'\''")) and
-  ($cli.if | contains("current-runner-image-needed == '\''true'\''")) and
-  $cli["timeout-minutes"] == 15 and
-  $cli.outputs.found == "${{ steps.okou-cli.outputs.found }}" and
-  $cli.steps[0].uses == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" and
-  ([.jobs | to_entries[] |
-    .key as $job |
-    .value.steps[]? |
-    select(.run == ".github/scripts/download-okou-cli-artifact.sh") |
-    $job] == ["cli-artifact"]) and
-  any($cli.steps[];
-    .id == "okou-cli" and
-    .run == ".github/scripts/download-okou-cli-artifact.sh" and
-    .env.ARTIFACT_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
-    .env.OUTPUT_DIR == "okou-cli-artifact" and
-    .env.ARTIFACT_REQUIRED == "false" and
-    .env.WAIT_SECONDS == "600"
-  ) and
-  any($cli.steps[];
-    .name == "Upload verified Okou CLI artifact" and
-    .if == "steps.okou-cli.outputs.found == '\''true'\''" and
-    .uses == "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a" and
-    .with.name == "okou-cli-rootfs-input" and
-    .with.path == "okou-cli-artifact/" and
-    .with["if-no-files-found"] == "error" and
-    .with.overwrite == true and
-    .with["retention-days"] == 7
-  )
-' <<<"$workflow_json" >/dev/null || fail "CLI artifact resolution must run once for the source head and preserve the optional fallback"
-
-jq -e '
   .jobs.build.name == "Build runner image (${{ matrix.label }})" and
   .jobs.build["runs-on"] == "ubuntu-latest" and
   .jobs.build["timeout-minutes"] == 20 and
   (.jobs.build | has("container") | not) and
-  ((.jobs.build.needs | sort) == ["cli-artifact", "compile", "prepare"]) and
   .jobs.build.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-host-groups-matrix) }}" and
-  (.jobs.build.if | contains("needs.cli-artifact.result == '\''success'\''")) and
   (.jobs.build.if | contains("needs.compile.result == '\''skipped'\''")) and
   (.jobs.build.if | contains("needs.compile.result == '\''success'\''")) and
   any(.jobs.build.steps[];
-    .name == "Download verified Okou CLI artifact" and
-    .if == "needs.cli-artifact.outputs.found == '\''true'\''" and
-    .uses == "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c" and
-    .with.name == "okou-cli-rootfs-input" and
-    .with.path == "okou-cli-artifact"
+    .id == "okou-cli" and
+    .run == ".github/scripts/download-okou-cli-artifact.sh" and
+    .env.ARTIFACT_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
+    .env.ARTIFACT_REQUIRED == "false" and
+    .env.WAIT_SECONDS == "600"
   ) and
   any(.jobs.build.steps[];
     .name == "Download cached runner binary from R2" and
@@ -389,8 +350,7 @@ jq -e '
   any(.jobs.build.steps[];
     .run == ".github/scripts/prepare-runner-image.sh" and
     .env.RUNNER_PATH == "runner-binary-transport/${{ matrix.target }}/runner" and
-    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
-    .env.OKOU_CLI_ARTIFACT_DIR == "${{ needs.cli-artifact.outputs.found == '\''true'\'' && '\''okou-cli-artifact'\'' || '\'''\'' }}"
+    .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}"
   )
 ' <<<"$workflow_json" >/dev/null || fail "build must preserve the all-target host readiness contract for hits and misses"
 
