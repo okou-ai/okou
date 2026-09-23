@@ -3575,6 +3575,7 @@ dependencies = [
  "rfb-client",
  "rsa",
  "runner-host",
+ "runner-network",
  "runner-provider",
  "runner-rpc-client",
  "runner-rpc-proto",
@@ -3633,6 +3634,37 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "runner-network"
+version = "0.1.0"
+dependencies = [
+ "api-contracts",
+ "async-trait",
+ "chrono",
+ "futures-util",
+ "hex",
+ "httpmock",
+ "libc",
+ "log",
+ "nix",
+ "reqwest",
+ "runner-host",
+ "runner-types",
+ "rustix",
+ "sandbox-firecracker",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test-support",
  "uuid",
 ]
 
