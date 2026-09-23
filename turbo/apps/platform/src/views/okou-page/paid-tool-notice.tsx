@@ -154,13 +154,13 @@ function ComposerPaidToolNoticeContent({
         {row.message}
       </span>
       {(row.discard || row.action) && (
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center">
           {row.discard && (
             <Button
               type="button"
-              variant="ghost"
-              size="sm"
-              className="text-xs font-medium text-foreground"
+              variant="secondary"
+              size="xs"
+              className="text-xs font-medium"
               onClick={row.discard.run}
             >
               {row.discard.label}
@@ -170,7 +170,7 @@ function ComposerPaidToolNoticeContent({
             <Button
               type="button"
               variant="ghost"
-              size="sm"
+              size="xs"
               className="text-xs font-medium text-foreground"
               onClick={row.action.run}
             >
