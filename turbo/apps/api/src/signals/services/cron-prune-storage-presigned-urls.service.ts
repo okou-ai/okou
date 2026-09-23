@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
 import {
   PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
+  PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
   pruneStoragePresignedUrls$,
   READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
   SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
@@ -10,46 +11,66 @@ import {
 export const pruneStoragePresignedUrlCache$ = command(
   async ({ set }, signal: AbortSignal) => {
     const db = set(writeDb$);
-    const [system, workflowSkill, readOnly, presentationTemplatePreview] =
-      await Promise.all([
-        set(
-          pruneStoragePresignedUrls$,
-          {
-            db,
-            scope: "system_storage",
-            limit: SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
-          },
-          signal,
-        ),
-        set(
-          pruneStoragePresignedUrls$,
-          {
-            db,
-            scope: "workflow_skill_storage",
-            limit: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
-          },
-          signal,
-        ),
-        set(
-          pruneStoragePresignedUrls$,
-          {
-            db,
-            scope: "readonly_storage",
-            limit: READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
-          },
-          signal,
-        ),
-        set(
-          pruneStoragePresignedUrls$,
-          {
-            db,
-            scope: "presentation_template_preview",
-            limit: PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
-          },
-          signal,
-        ),
-      ]);
+    const [
+      system,
+      workflowSkill,
+      readOnly,
+      presentationTemplatePreview,
+      privateArtifactPreview,
+    ] = await Promise.all([
+      set(
+        pruneStoragePresignedUrls$,
+        {
+          db,
+          scope: "system_storage",
+          limit: SYSTEM_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
+        },
+        signal,
+      ),
+      set(
+        pruneStoragePresignedUrls$,
+        {
+          db,
+          scope: "workflow_skill_storage",
+          limit: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
+        },
+        signal,
+      ),
+      set(
+        pruneStoragePresignedUrls$,
+        {
+          db,
+          scope: "readonly_storage",
+          limit: READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT,
+        },
+        signal,
+      ),
+      set(
+        pruneStoragePresignedUrls$,
+        {
+          db,
+          scope: "presentation_template_preview",
+          limit: PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
+        },
+        signal,
+      ),
+      set(
+        pruneStoragePresignedUrls$,
+        {
+          db,
+          scope: "private_artifact_preview",
+          limit: PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
+        },
+        signal,
+      ),
+    ]);
     signal.throwIfAborted();
-    return { system, workflowSkill, readOnly, presentationTemplatePreview };
+    return {
+      system,
+      workflowSkill,
+      readOnly,
+      presentationTemplatePreview,
+      privateArtifactPreview,
+    };
   },
 );

@@ -1,3 +1,12 @@
+import { Combobox } from "@base-ui/react/combobox";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
+} from "@okouai/ui/components/ui/dropdown-menu";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import {
   useComposerConnectorActions,
@@ -175,8 +184,9 @@ import {
   TEMPLATE_TILE_CAPTION,
   TEMPLATE_TILE_MEDIA,
   TEMPLATE_TILE_NAME,
-  TEMPLATE_TILE_RING,
-  TEMPLATE_TILE_RING_SELECTED,
+  TEMPLATE_TILE_PREVIEW_FOCUS,
+  TEMPLATE_TILE_SELECTED,
+  TEMPLATE_TILE_SELECTION_FRAME,
   TEMPLATE_TILE_SCRIM,
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
@@ -1007,57 +1017,57 @@ function VideoTemplateCard({
     <div className={TEMPLATE_TILE_WRAPPER}>
       <div
         className={cn(
-          TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
-          "aspect-[16/9]",
-          selected && TEMPLATE_TILE_RING_SELECTED,
+          TEMPLATE_TILE_SELECTION_FRAME,
+          selected && TEMPLATE_TILE_SELECTED,
         )}
       >
-        <VideoTemplatePreview item={item} />
-        {selected ? (
-          <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check size={14} />
-          </span>
-        ) : null}
-        <button
-          type="button"
-          aria-label={
-            requiresPro
-              ? t(
-                  ($) => {
-                    return $.artifacts.templates.viewVideoPlans;
-                  },
-                  {
-                    title: item.title,
-                  },
-                )
-              : t(
-                  ($) => {
-                    return $.artifacts.templates.selectVideo;
-                  },
-                  {
-                    title: item.title,
-                  },
-                )
-          }
-          aria-pressed={requiresPro ? undefined : selected}
-          onClick={() => {
-            onSelect(item);
-          }}
-          className={cn(
-            TEMPLATE_TILE_USE,
-            requiresPro && "inline-flex items-center gap-1 !opacity-100",
-          )}
-        >
-          {requiresPro ? <Lock size={12} aria-hidden="true" /> : null}
-          {requiresPro
-            ? t(($) => {
-                return $.artifacts.templates.needPro;
-              })
-            : t(($) => {
-                return $.artifacts.templates.use;
-              })}
-        </button>
+        <div className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}>
+          <VideoTemplatePreview item={item} />
+          {selected ? (
+            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check size={14} />
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label={
+              requiresPro
+                ? t(
+                    ($) => {
+                      return $.artifacts.templates.viewVideoPlans;
+                    },
+                    {
+                      title: item.title,
+                    },
+                  )
+                : t(
+                    ($) => {
+                      return $.artifacts.templates.selectVideo;
+                    },
+                    {
+                      title: item.title,
+                    },
+                  )
+            }
+            aria-pressed={requiresPro ? undefined : selected}
+            onClick={() => {
+              onSelect(item);
+            }}
+            className={cn(
+              TEMPLATE_TILE_USE,
+              requiresPro && "inline-flex items-center gap-1 !opacity-100",
+            )}
+          >
+            {requiresPro ? <Lock size={12} aria-hidden="true" /> : null}
+            {requiresPro
+              ? t(($) => {
+                  return $.artifacts.templates.needPro;
+                })
+              : t(($) => {
+                  return $.artifacts.templates.use;
+                })}
+          </button>
+        </div>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
         <p className={TEMPLATE_TILE_NAME}>{item.title}</p>
@@ -1112,88 +1122,92 @@ function WebsiteTemplateCard({
   };
 
   return (
+    // Keep the full-card preview below the independent Use action locally.
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={t(
-        ($) => {
-          return $.artifacts.templates.previewWebsite;
-        },
-        {
-          title: item.title,
-        },
-      )}
-      onClick={preview}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          preview();
-        }
-      }}
       className={cn(
         TEMPLATE_TILE_WRAPPER,
-        "cursor-zoom-in focus-visible:outline-none",
+        "rounded-xl cursor-zoom-in ring-offset-1 ring-offset-card has-[>button:focus-visible]:ring-2 has-[>button:focus-visible]:ring-ring",
       )}
     >
+      <button
+        type="button"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.templates.previewWebsite;
+          },
+          {
+            title: item.title,
+          },
+        )}
+        onClick={preview}
+        className="absolute inset-0 z-10 cursor-zoom-in focus-visible:outline-none"
+      />
       <div
         className={cn(
-          TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
-          "aspect-[16/9] group-focus-visible/tile:ring-1 group-focus-visible/tile:ring-ring",
-          selected && TEMPLATE_TILE_RING_SELECTED,
+          TEMPLATE_TILE_SELECTION_FRAME,
+          selected && TEMPLATE_TILE_SELECTED,
         )}
       >
-        <img
-          alt={t(
-            ($) => {
-              return $.artifacts.templates.websitePreview;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          title={t(
-            ($) => {
-              return $.artifacts.templates.websitePreview;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          src={previewImageUrl}
-          loading="eager"
-          decoding="async"
-          fetchPriority="high"
-          draggable={false}
-          className="pointer-events-none h-full w-full bg-background object-cover"
-        />
-        <div className={TEMPLATE_TILE_SCRIM} />
-        {selected ? (
-          <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check size={14} />
-          </span>
-        ) : null}
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.artifacts.templates.selectWebsite;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          aria-pressed={selected}
-          onClick={(event) => {
-            event.stopPropagation();
-            onSelect(item);
-          }}
-          className={cn(TEMPLATE_TILE_USE, "cursor-pointer")}
-        >
-          {t(($) => {
-            return $.artifacts.templates.use;
-          })}
-        </button>
+        <div className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}>
+          <img
+            alt={t(
+              ($) => {
+                return $.artifacts.templates.websitePreview;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            title={t(
+              ($) => {
+                return $.artifacts.templates.websitePreview;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            src={previewImageUrl}
+            loading="eager"
+            decoding="async"
+            fetchPriority="high"
+            draggable={false}
+            className="pointer-events-none h-full w-full bg-background object-cover"
+          />
+          <div
+            className={cn(
+              TEMPLATE_TILE_SCRIM,
+              "group-has-[:focus-visible]/tile:opacity-100",
+            )}
+          />
+          {selected ? (
+            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check size={14} />
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.selectWebsite;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            aria-pressed={selected}
+            onClick={() => {
+              onSelect(item);
+            }}
+            className={cn(
+              TEMPLATE_TILE_USE,
+              "cursor-pointer [@media(hover:hover)]:group-has-[:focus-visible]/tile:opacity-100",
+            )}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </button>
+        </div>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
         <p className={TEMPLATE_TILE_NAME}>{item.title}</p>
@@ -1309,10 +1323,9 @@ function WorkflowTemplateCard({
   return (
     <div
       className={cn(
-        "group/tile flex flex-col border border-border bg-card p-4",
+        "group/tile flex flex-col rounded-xl border border-border bg-card p-4",
         TEMPLATE_CARD_SHADOW,
-        TEMPLATE_TILE_RING,
-        selected && TEMPLATE_TILE_RING_SELECTED,
+        selected && "border-primary",
       )}
     >
       <p className="text-sm font-semibold text-foreground">{copy.title}</p>
@@ -2455,7 +2468,7 @@ function TemplatePreview({
             title: item.title,
           },
         )}
-        className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
         onClick={() => {
           onPreview(item, slideIndex);
         }}
@@ -2899,46 +2912,51 @@ function PptCard({
     <div className={TEMPLATE_TILE_WRAPPER}>
       <div
         className={cn(
-          TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
-          selected && TEMPLATE_TILE_RING_SELECTED,
+          TEMPLATE_TILE_SELECTION_FRAME,
+          TEMPLATE_TILE_PREVIEW_FOCUS,
+          selected && TEMPLATE_TILE_SELECTED,
         )}
       >
-        <TemplatePreview
-          item={item}
-          onPreview={onPreview}
-          signals={signals}
-          theme={selectedTheme}
-        />
-        <div className={TEMPLATE_TILE_SCRIM} />
-        {selected ? (
-          <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-            <Check size={14} />
-          </span>
-        ) : null}
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.artifacts.templates.selectTemplate;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          aria-pressed={selected}
-          onClick={() => {
-            onSelect(item, presentationTemplateColorSystemId(selectedTheme.id));
-          }}
-          className={TEMPLATE_TILE_USE}
-        >
-          {t(($) => {
-            return $.artifacts.templates.use;
-          })}
-        </button>
+        <div className={TEMPLATE_TILE_MEDIA}>
+          <TemplatePreview
+            item={item}
+            onPreview={onPreview}
+            signals={signals}
+            theme={selectedTheme}
+          />
+          <div className={TEMPLATE_TILE_SCRIM} />
+          {selected ? (
+            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+              <Check size={14} />
+            </span>
+          ) : null}
+          <button
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.selectTemplate;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            aria-pressed={selected}
+            onClick={() => {
+              onSelect(
+                item,
+                presentationTemplateColorSystemId(selectedTheme.id),
+              );
+            }}
+            className={TEMPLATE_TILE_USE}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </button>
+        </div>
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
-        <TooltipProvider delayDuration={300}>
+        <TooltipProvider delay={300}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -3425,128 +3443,134 @@ function IllustrationTemplateCard({
 
   return (
     <div
-      data-illustration-template-card=""
       className={cn(
-        "group/tile mb-4 break-inside-avoid overflow-hidden border border-border bg-card",
-        TEMPLATE_CARD_SHADOW,
-        TEMPLATE_TILE_RING,
-        selected && TEMPLATE_TILE_RING_SELECTED,
+        "isolate mb-4 break-inside-avoid",
+        TEMPLATE_TILE_SELECTION_FRAME,
+        selected && TEMPLATE_TILE_SELECTED,
       )}
     >
-      <IllustrationTemplateHero
-        item={item}
-        images={images}
-        activeIndex={safeIndex}
-        priority={priority}
-        source={heroSource}
-        onVariantChange={onVariantChange}
-        runtime={runtime}
-      />
-      {hasMultipleVariants && (
-        <div
-          data-illustration-variant-strip=""
-          className="flex items-center gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        >
-          {images.map((image, index) => {
-            const active = index === safeIndex;
-            const thumbnailImage = r2ImageTransformUrl(
-              image,
-              ILLUSTRATION_VARIANT_THUMB_SIZE,
-            );
-            return (
-              <button
-                key={image}
-                type="button"
-                aria-label={t(
-                  ($) => {
-                    return $.artifacts.templates.showVariant;
-                  },
-                  {
-                    variantNumber: index + 1,
-                  },
-                )}
-                aria-pressed={active}
-                className={cn(
-                  "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  active ? "border-primary" : "border-border",
-                )}
-                onFocus={() => {
-                  preloadIllustrationPreviewImage(
-                    runtime,
-                    illustrationHeroImageUrl(image),
-                  );
-                }}
-                onMouseEnter={() => {
-                  preloadIllustrationPreviewImage(
-                    runtime,
-                    illustrationHeroImageUrl(image),
-                  );
-                }}
-                onClick={(event) => {
-                  selectIllustrationVariant({
-                    card: event.currentTarget.closest<HTMLElement>(
-                      "[data-illustration-template-card]",
-                    ),
-                    index,
-                    item,
-                    onVariantChange,
-                    runtime,
-                  });
-                  const scrollDirection = active
-                    ? activeIllustrationThumbnailScrollDirection(
-                        event.currentTarget,
-                      )
-                    : index > safeIndex
-                      ? 1
-                      : -1;
-                  if (scrollDirection !== null) {
-                    scrollIllustrationThumbnailIntoView(
-                      event.currentTarget,
-                      scrollDirection,
+      <div
+        data-illustration-template-card=""
+        className={cn(
+          "group/tile overflow-hidden rounded-xl border border-border bg-card",
+          TEMPLATE_CARD_SHADOW,
+        )}
+      >
+        <IllustrationTemplateHero
+          item={item}
+          images={images}
+          activeIndex={safeIndex}
+          priority={priority}
+          source={heroSource}
+          onVariantChange={onVariantChange}
+          runtime={runtime}
+        />
+        {hasMultipleVariants && (
+          <div
+            data-illustration-variant-strip=""
+            className="flex items-center gap-2 overflow-x-auto px-3 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {images.map((image, index) => {
+              const active = index === safeIndex;
+              const thumbnailImage = r2ImageTransformUrl(
+                image,
+                ILLUSTRATION_VARIANT_THUMB_SIZE,
+              );
+              return (
+                <button
+                  key={image}
+                  type="button"
+                  aria-label={t(
+                    ($) => {
+                      return $.artifacts.templates.showVariant;
+                    },
+                    {
+                      variantNumber: index + 1,
+                    },
+                  )}
+                  aria-pressed={active}
+                  className={cn(
+                    "relative h-12 w-12 shrink-0 overflow-hidden rounded-md border-(length:--border-width-emphasis) bg-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active ? "border-primary" : "border-border",
+                  )}
+                  onFocus={() => {
+                    preloadIllustrationPreviewImage(
+                      runtime,
+                      illustrationHeroImageUrl(image),
                     );
-                  }
-                }}
-              >
-                <img
-                  src={thumbnailImage}
-                  alt=""
-                  className="h-full w-full object-cover"
-                  loading="lazy"
-                />
-              </button>
-            );
-          })}
+                  }}
+                  onMouseEnter={() => {
+                    preloadIllustrationPreviewImage(
+                      runtime,
+                      illustrationHeroImageUrl(image),
+                    );
+                  }}
+                  onClick={(event) => {
+                    selectIllustrationVariant({
+                      card: event.currentTarget.closest<HTMLElement>(
+                        "[data-illustration-template-card]",
+                      ),
+                      index,
+                      item,
+                      onVariantChange,
+                      runtime,
+                    });
+                    const scrollDirection = active
+                      ? activeIllustrationThumbnailScrollDirection(
+                          event.currentTarget,
+                        )
+                      : index > safeIndex
+                        ? 1
+                        : -1;
+                    if (scrollDirection !== null) {
+                      scrollIllustrationThumbnailIntoView(
+                        event.currentTarget,
+                        scrollDirection,
+                      );
+                    }
+                  }}
+                >
+                  <img
+                    src={thumbnailImage}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="flex items-center justify-between gap-3 px-3.5 py-3">
+          <p className="min-w-0 truncate text-sm font-semibold text-foreground">
+            {item.title}
+          </p>
+          <button
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.selectTemplate;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            aria-pressed={selected}
+            onClick={() => {
+              onSelect(item);
+            }}
+            className={cn(
+              "h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              selected
+                ? "border-primary/40 bg-primary/10 text-selected-foreground"
+                : "border-border bg-background text-foreground hover:bg-state-hover",
+            )}
+          >
+            {t(($) => {
+              return $.artifacts.templates.use;
+            })}
+          </button>
         </div>
-      )}
-      <div className="flex items-center justify-between gap-3 px-3.5 py-3">
-        <p className="min-w-0 truncate text-sm font-semibold text-foreground">
-          {item.title}
-        </p>
-        <button
-          type="button"
-          aria-label={t(
-            ($) => {
-              return $.artifacts.templates.selectTemplate;
-            },
-            {
-              title: item.title,
-            },
-          )}
-          aria-pressed={selected}
-          onClick={() => {
-            onSelect(item);
-          }}
-          className={cn(
-            "h-8 shrink-0 rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            selected
-              ? "border-primary/40 bg-primary/10 text-selected-foreground"
-              : "border-border bg-background text-foreground hover:bg-state-hover",
-          )}
-        >
-          {t(($) => {
-            return $.artifacts.templates.use;
-          })}
-        </button>
       </div>
     </div>
   );
@@ -3661,6 +3685,18 @@ function TemplatePickerCategoryNav({
     },
   ];
 
+  const categoryItems = categoryOptions.map(({ value, label, Icon }) => {
+    return {
+      value,
+      label: (
+        <span className="flex items-center gap-2">
+          <Icon className="h-4 w-4" />
+          {label}
+        </span>
+      ),
+    };
+  });
+
   return (
     <>
       <div
@@ -3671,7 +3707,22 @@ function TemplatePickerCategoryNav({
             : "border-b border-border bg-gray-50 px-4 pb-4 pr-14 pt-4",
         )}
       >
-        <Select value={selectedCategory} onValueChange={onChange}>
+        <Select
+          items={categoryItems}
+          value={selectedCategory}
+          onValueChange={(value, details) => {
+            if (
+              value === null ||
+              !categoryItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            onChange(value);
+          }}
+        >
           <SelectTrigger
             aria-label={t(($) => {
               return $.artifacts.templates.category;
@@ -3685,13 +3736,10 @@ function TemplatePickerCategoryNav({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {categoryOptions.flatMap(({ value, label, Icon }) => {
+            {categoryItems.flatMap(({ value, label }) => {
               return [
                 <SelectItem key={value} value={value}>
-                  <span className="flex items-center gap-2">
-                    <Icon className="h-4 w-4" />
-                    {label}
-                  </span>
+                  {label}
                 </SelectItem>,
                 ...(value === "custom"
                   ? [<SelectSeparator key={`${value}-rule`} />]
@@ -3705,7 +3753,6 @@ function TemplatePickerCategoryNav({
         <div className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
           <TemplatePickerHeader />
           <TabsList
-            render={<nav />}
             activateOnFocus
             aria-label={t(($) => {
               return $.artifacts.templates.categories;
@@ -3719,12 +3766,12 @@ function TemplatePickerCategoryNav({
                 <TabsTrigger
                   key={value}
                   value={value}
-                  // Reopening Custom resets its view without refreshing again
-                  // after native focus activation has changed the category.
+                  // Reactivating Custom clears its view without reloading the
+                  // catalog after native focus activation changed the category.
                   onClick={
                     selected && value === "custom" ? onReopenCustom : undefined
                   }
-                  className="group flex h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:shadow-none! focus-visible:ring-inset"
+                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:text-foreground data-active:shadow-none focus-visible:ring-inset"
                 >
                   <Icon
                     className={cn(
@@ -3871,7 +3918,6 @@ function PptImportCard({
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
           "block aspect-video bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
           compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
@@ -3978,7 +4024,7 @@ function ImportedPptCardMediaControls({
           },
           { title: template.title },
         )}
-        className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
         onClick={onPreview}
       />
       <div className={TEMPLATE_TILE_SCRIM} />
@@ -4225,47 +4271,50 @@ function ImportedPptCardMedia({
 }) {
   return (
     <div
-      data-imported-presentation-template-media=""
       className={cn(
-        TEMPLATE_TILE_MEDIA,
-        TEMPLATE_TILE_RING,
-        "aspect-[16/9]",
-        selected && TEMPLATE_TILE_RING_SELECTED,
+        TEMPLATE_TILE_SELECTION_FRAME,
+        TEMPLATE_TILE_PREVIEW_FOCUS,
+        selected && TEMPLATE_TILE_SELECTED,
       )}
-      onMouseEnter={() => {
-        onRequestDetail();
-        onHover(0);
-      }}
-      onMouseMove={(event) => {
-        const nextIndex = importedPresentationTemplateSlideIndex(
-          event,
-          slideCount,
-        );
-        if (nextIndex !== null && nextIndex !== activeSlideIndex) {
-          onHover(nextIndex);
-        }
-      }}
-      onMouseLeave={() => {
-        onHover(null);
-      }}
     >
-      <ImportedPptImage
-        imageSignals={imageSignals}
-        label={label}
-        loading="eager"
-        fetchPriority="high"
-        size={TEMPLATE_CARD_PREVIEW_SIZE}
-        placeholder={<ImageIcon size={24} aria-hidden="true" />}
-        className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-      />
-      <ImportedPptCardMediaControls
-        template={template}
-        selected={selected}
-        loading={loading}
-        onPreview={onPreview}
-        previewRef={previewRef}
-        onSelect={onSelect}
-      />
+      <div
+        data-imported-presentation-template-media=""
+        className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}
+        onMouseEnter={() => {
+          onRequestDetail();
+          onHover(0);
+        }}
+        onMouseMove={(event) => {
+          const nextIndex = importedPresentationTemplateSlideIndex(
+            event,
+            slideCount,
+          );
+          if (nextIndex !== null && nextIndex !== activeSlideIndex) {
+            onHover(nextIndex);
+          }
+        }}
+        onMouseLeave={() => {
+          onHover(null);
+        }}
+      >
+        <ImportedPptImage
+          imageSignals={imageSignals}
+          label={label}
+          loading="eager"
+          fetchPriority="high"
+          size={TEMPLATE_CARD_PREVIEW_SIZE}
+          placeholder={<ImageIcon size={24} aria-hidden="true" />}
+          className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
+        />
+        <ImportedPptCardMediaControls
+          template={template}
+          selected={selected}
+          loading={loading}
+          onPreview={onPreview}
+          previewRef={previewRef}
+          onSelect={onSelect}
+        />
+      </div>
     </div>
   );
 }
@@ -4277,7 +4326,7 @@ function ImportedPptCardCaption({
 }) {
   return (
     <div className={TEMPLATE_TILE_CAPTION}>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -4489,7 +4538,7 @@ function ImportedPresentationTemplateRenameControl({
           }}
         />
       </div>
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -4525,15 +4574,18 @@ const IMPORTED_TEMPLATE_VISIBILITY_OPTIONS = [
  * because reading the current state is the common act and switching it is not.
  */
 function ImportedPresentationTemplateVisibilityControl({
+  templateId,
   visibility,
   updating,
   onChange,
 }: {
+  templateId: string;
   visibility: PresentationTemplateSummary["visibility"];
   updating: boolean;
   onChange: (visibility: PresentationTemplateSummary["visibility"]) => void;
 }) {
   const { t } = useTranslation();
+  const descriptionId = `imported-template-${templateId}-visibility`;
   const optionLabel = (value: PresentationTemplateSummary["visibility"]) => {
     return value === "private"
       ? t(($) => {
@@ -4554,12 +4606,12 @@ function ImportedPresentationTemplateVisibilityControl({
   };
   const CurrentIcon = visibility === "private" ? Lock : Users;
   return (
-    <Popover>
+    <DropdownMenu>
       <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
         <CurrentIcon size={14} className="shrink-0" aria-hidden="true" />
         <span>{optionState(visibility)}</span>
         <span aria-hidden="true">·</span>
-        <PopoverTrigger
+        <DropdownMenuTrigger
           disabled={updating}
           className="font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:decoration-foreground disabled:opacity-50"
           aria-label={t(($) => {
@@ -4569,74 +4621,68 @@ function ImportedPresentationTemplateVisibilityControl({
           {t(($) => {
             return $.artifacts.templates.visibility.change;
           })}
-        </PopoverTrigger>
+        </DropdownMenuTrigger>
       </p>
-      <PopoverContent
+      <DropdownMenuContent
         align="start"
         side="bottom"
         sideOffset={6}
         className="w-[19rem] p-1.5"
       >
-        <div
-          role="radiogroup"
+        <DropdownMenuRadioGroup
+          value={visibility}
+          onValueChange={(next: PresentationTemplateSummary["visibility"]) => {
+            if (next !== visibility) {
+              onChange(next);
+            }
+          }}
           aria-label={t(($) => {
             return $.workflows.detail.metadata.visibility;
           })}
         >
           {IMPORTED_TEMPLATE_VISIBILITY_OPTIONS.map(({ value, Icon }) => {
-            const selected = value === visibility;
             return (
-              <PopoverClose
+              <DropdownMenuRadioItem
                 key={value}
-                render={
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    className={cn(
-                      "flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-state-hover",
-                      selected && "bg-state-selected",
-                    )}
-                    onClick={() => {
-                      if (!selected) {
-                        onChange(value);
-                      }
-                    }}
+                value={value}
+                label={optionLabel(value)}
+                aria-label={optionLabel(value)}
+                aria-describedby={`${descriptionId}-${value}`}
+                closeOnClick
+                className="w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left data-checked:bg-state-selected"
+              >
+                <Icon
+                  size={16}
+                  className="mt-0.5 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm text-foreground">
+                    {optionLabel(value)}
+                  </span>
+                  <span
+                    id={`${descriptionId}-${value}`}
+                    className="block text-xs text-muted-foreground"
                   >
-                    <Icon
+                    {optionState(value)}
+                  </span>
+                </span>
+                {/* Reserve the check column so descriptions do not reflow. */}
+                <span className="mt-0.5 w-4 shrink-0">
+                  <DropdownMenuRadioItemIndicator>
+                    <Check
                       size={16}
-                      className="mt-0.5 shrink-0 text-muted-foreground"
+                      className="text-foreground"
                       aria-hidden="true"
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm text-foreground">
-                        {optionLabel(value)}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {optionState(value)}
-                      </span>
-                    </span>
-                    {/* The check column is reserved on both rows: letting it
-                      appear only on the selected one narrows that row's text
-                      box, so the description reflows every time the selection
-                      moves. */}
-                    <span className="mt-0.5 w-4 shrink-0">
-                      {selected ? (
-                        <Check
-                          size={16}
-                          className="text-foreground"
-                          aria-hidden="true"
-                        />
-                      ) : null}
-                    </span>
-                  </button>
-                }
-              />
+                  </DropdownMenuRadioItemIndicator>
+                </span>
+              </DropdownMenuRadioItem>
             );
           })}
-        </div>
-      </PopoverContent>
-    </Popover>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -4755,6 +4801,7 @@ function ImportedPresentationTemplateSidebar({
           <>
             <div className="my-5 border-t border-border" />
             <ImportedPresentationTemplateVisibilityControl
+              templateId={activeTemplate.id}
               visibility={activeTemplate.visibility}
               updating={updating}
               onChange={(nextVisibility) => {
@@ -5175,7 +5222,6 @@ function ComposerPresentationSuggestion({
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
-          TEMPLATE_TILE_RING,
           "block aspect-video group-hover/tile:opacity-90",
         )}
       >
@@ -5671,7 +5717,11 @@ function TemplatePickerDialog({
             </DialogHeader>
             <Tabs
               value={selectedCategory}
-              onValueChange={handleCategoryChange}
+              onValueChange={(nextCategory) => {
+                if (typeof nextCategory === "string") {
+                  handleCategoryChange(nextCategory);
+                }
+              }}
               orientation="vertical"
               className="flex min-h-0 flex-1 flex-col sm:flex-row"
             >
@@ -5682,10 +5732,11 @@ function TemplatePickerDialog({
                 onChange={handleCategoryChange}
                 onReopenCustom={resetCustomTemplatePickerView}
               />
+              {/* Keep the existing single active content tree and its category
+                  unmounting policy; signals retain search and scroll state. */}
               <TabsContent
-                key={selectedCategory}
                 value={selectedCategory}
-                className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+                className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <TemplatePaidToolNotice category={selectedCategory} />
                 {selectedCategory !== "custom" ? (
@@ -6158,7 +6209,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
 function TemplatePickerButton({ signals }: { signals: ComposerSignals }) {
   const { label, prewarm, open } = useTemplatePickerTrigger(signals);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -6260,7 +6311,7 @@ function CreateWorkflowPromptButton({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -7124,37 +7175,7 @@ function ComposerConnectorAccountMenu({
   );
 }
 
-function handleConnectorAccountRadioKeyDown(
-  event: ReactKeyboardEvent<HTMLDivElement>,
-): void {
-  const buttons = [
-    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-      '[role="radio"]:not(:disabled)',
-    ),
-  ];
-  if (buttons.length === 0 || !(event.target instanceof HTMLButtonElement)) {
-    return;
-  }
-  const currentIndex = buttons.indexOf(event.target);
-  if (currentIndex === -1) {
-    return;
-  }
-  let nextIndex: number;
-  if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-    nextIndex = (currentIndex + 1) % buttons.length;
-  } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-    nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
-  } else if (event.key === "Home") {
-    nextIndex = 0;
-  } else if (event.key === "End") {
-    nextIndex = buttons.length - 1;
-  } else {
-    return;
-  }
-  event.preventDefault();
-  buttons[nextIndex]?.focus();
-  buttons[nextIndex]?.click();
-}
+const DEFAULT_CONNECTOR_ACCOUNT = "default";
 
 function ComposerConnectorAccountChoices({
   connectorLabel,
@@ -7166,8 +7187,6 @@ function ComposerConnectorAccountChoices({
   unavailable,
   noResults,
   loadingAccountCount,
-  onSelect,
-  onUseDefault,
 }: {
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
@@ -7178,12 +7197,10 @@ function ComposerConnectorAccountChoices({
   readonly unavailable: boolean;
   readonly noResults: boolean;
   readonly loadingAccountCount: number;
-  readonly onSelect: (connection: ConnectorAccountConnection) => void;
-  readonly onUseDefault: () => void;
 }) {
   const { t } = useTranslation();
   const choiceClassName = cn(
-    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover data-highlighted:bg-state-hover data-highlighted:ring-2 data-highlighted:ring-inset data-highlighted:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     saving && "cursor-default opacity-50",
   );
   const accountLabel = useConnectorAccountLabel();
@@ -7192,9 +7209,6 @@ function ComposerConnectorAccountChoices({
     : t(($) => {
         return $.chat.connectors.noUsableAccount;
       });
-  const hasCheckedConnection = connections.some((connection) => {
-    return selection?.connectionId === connection.id;
-  });
   const accountStatus = (connection: ConnectorAccountConnection): string => {
     if (connection.connectionStatus === "connected") {
       return t(($) => {
@@ -7223,20 +7237,16 @@ function ComposerConnectorAccountChoices({
   };
 
   return (
-    <div
-      className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto p-1"
-      role="radiogroup"
+    <Combobox.List
+      className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto p-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       aria-label={connectorLabel}
-      onKeyDown={handleConnectorAccountRadioKeyDown}
+      aria-busy={saving}
+      tabIndex={0}
     >
-      <button
-        type="button"
-        role="radio"
-        aria-checked={!selection}
-        tabIndex={!selection || !hasCheckedConnection ? 0 : -1}
+      <Combobox.Item
         disabled={saving}
+        value={DEFAULT_CONNECTOR_ACCOUNT}
         className={choiceClassName}
-        onClick={onUseDefault}
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-brand-text">
           {!selection ? <Check size={15} strokeWidth={2.5} /> : null}
@@ -7256,7 +7266,7 @@ function ComposerConnectorAccountChoices({
               : ""}
           </span>
         </span>
-      </button>
+      </Combobox.Item>
       {loading ? (
         <>
           <div className="flex flex-col" aria-hidden="true">
@@ -7297,17 +7307,11 @@ function ComposerConnectorAccountChoices({
       {connections.map((connection) => {
         const checked = selection?.connectionId === connection.id;
         return (
-          <button
+          <Combobox.Item
             key={connection.id}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            tabIndex={checked ? 0 : -1}
             disabled={saving}
+            value={connection.id}
             className={choiceClassName}
-            onClick={() => {
-              onSelect(connection);
-            }}
           >
             <span className="flex h-4 w-4 shrink-0 items-center justify-center text-brand-text">
               {checked ? <Check size={15} strokeWidth={2.5} /> : null}
@@ -7320,7 +7324,7 @@ function ComposerConnectorAccountChoices({
                 {accountStatus(connection)}
               </span>
             </span>
-          </button>
+          </Combobox.Item>
         );
       })}
       {noResults ? (
@@ -7330,7 +7334,7 @@ function ComposerConnectorAccountChoices({
           })}
         </div>
       ) : null}
-    </div>
+    </Combobox.List>
   );
 }
 
@@ -7358,8 +7362,7 @@ function ComposerConnectorAccountMenuContent({
   const search = useGet(signals.connector.accounts.search$);
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const setSearch = useSet(signals.connector.accounts.setSearch$);
-  const selectAccount = actions.selectAccount;
-  const clearAccountSelection = actions.useDefaultAccount;
+  const commitSelection = actions.commitAccountSelection;
   const [loadMoreLoadable, loadMore] = useLoadableSet(
     signals.connector.accounts.loadMore$,
   );
@@ -7381,7 +7384,7 @@ function ComposerConnectorAccountMenuContent({
     summariesLoadable.state === "hasData"
       ? summariesLoadable.data.get(targetKey)
       : undefined;
-  const defaultConnection = summary?.defaultConnection ?? null;
+  const defaultConnection = summary ? summary.defaultConnection : null;
   const accountList =
     accountsLoadable.state === "hasData"
       ? accountsLoadable.data
@@ -7399,111 +7402,119 @@ function ComposerConnectorAccountMenuContent({
     (summary?.accountCount ?? 0) > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
     accountList.nextCursor !== null;
   const saving = actions.savingAccount;
-  const selectAndClose = (connection: ConnectorAccountConnection): void => {
-    detach(
-      (async () => {
-        await selectAccount(connection, signal);
-        closeMenu();
-      })(),
-      Reason.DomCallback,
-    );
-  };
-  const selectDefaultAndClose = (): void => {
-    detach(
-      (async () => {
-        await clearAccountSelection(target, signal);
-        closeMenu();
-      })(),
-      Reason.DomCallback,
-    );
-  };
-
   return (
-    <div
-      className={cn(
-        "flex max-h-[min(25rem,var(--available-height))] min-h-0 flex-col overflow-hidden",
-        showSearch && "h-[min(25rem,var(--available-height))]",
-      )}
-    >
-      <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 pl-1.5 pr-2 text-sm font-medium text-foreground">
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          aria-label={t(($) => {
-            return $.chat.connectors.back;
-          })}
-          onClick={closeMenu}
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-        </Button>
-        <span className="min-w-0 flex-1 truncate">
-          {t(($) => {
-            return $.chat.connectors.accountForThread;
-          })}
-        </span>
-      </div>
-      {showSearch ? (
-        <div className="shrink-0 border-b border-border/50 px-3 py-2">
-          <Input
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value, signal);
-            }}
-            placeholder={t(($) => {
-              return $.connectors.accounts.find;
-            })}
-            className="h-8"
-          />
-        </div>
-      ) : null}
-      <ComposerConnectorAccountChoices
-        connectorLabel={connectorLabel}
-        connections={connections}
-        selection={selection}
-        defaultConnection={defaultConnection}
-        saving={saving}
-        loading={accountsLoadable.state === "loading"}
-        unavailable={
-          accountsLoadable.state === "hasError" || !accountList.available
+    <Combobox.Root<string>
+      inline
+      open
+      readOnly={saving}
+      value={selection ? selection.connectionId : DEFAULT_CONNECTOR_ACCOUNT}
+      filter={null}
+      onValueChange={(value, details) => {
+        if (details.reason !== "item-press") {
+          return;
         }
-        noResults={connectorAccountSearchHasNoResults({
-          state: accountsLoadable.state,
-          available: accountList.available,
-          resultCount: accountList.connections.length,
-          search,
-        })}
-        loadingAccountCount={summary?.accountCount ?? 0}
-        onSelect={(connection) => {
-          selectAndClose(connection);
-        }}
-        onUseDefault={() => {
-          selectDefaultAndClose();
-        }}
-      />
-      {accountList.nextCursor ? (
-        <div className="shrink-0 border-t border-border/50 p-2">
+        // The server (or new-chat pending state) owns the accepted selection.
+        // Reject the immediate transition, including its automatic close.
+        details.cancel();
+        if (saving) {
+          return;
+        }
+        if (value === DEFAULT_CONNECTOR_ACCOUNT) {
+          detach(commitSelection(null, signal), Reason.DomCallback);
+          return;
+        }
+        const connection = connections.find((candidate) => {
+          return candidate.id === value;
+        });
+        if (connection) {
+          detach(commitSelection(connection, signal), Reason.DomCallback);
+        }
+      }}
+    >
+      <div
+        className={cn(
+          "flex max-h-[min(25rem,var(--available-height))] min-h-0 flex-col overflow-hidden",
+          showSearch && "h-[min(25rem,var(--available-height))]",
+        )}
+      >
+        <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 pl-1.5 pr-2 text-sm font-medium text-foreground">
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            disabled={loadMoreLoadable.state === "loading"}
-            onClick={() => {
-              return detach(loadMore(signal), Reason.DomCallback);
-            }}
+            variant="quiet"
+            size="icon-xs"
+            aria-label={t(($) => {
+              return $.chat.connectors.back;
+            })}
+            onClick={closeMenu}
           >
-            {loadMoreLoadable.state === "loading"
-              ? t(($) => {
-                  return $.connectors.accounts.loadingMore;
-                })
-              : t(($) => {
-                  return $.connectors.accounts.loadMore;
-                })}
+            <ArrowLeft size={16} aria-hidden="true" />
           </Button>
+          <span className="min-w-0 flex-1 truncate">
+            {t(($) => {
+              return $.chat.connectors.accountForThread;
+            })}
+          </span>
         </div>
-      ) : null}
-    </div>
+        {showSearch ? (
+          <div className="shrink-0 border-b border-border/50 px-3 py-2">
+            <Input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value, signal);
+              }}
+              readOnly={saving}
+              aria-label={t(($) => {
+                return $.connectors.accounts.find;
+              })}
+              placeholder={t(($) => {
+                return $.connectors.accounts.find;
+              })}
+              className="h-8"
+            />
+          </div>
+        ) : null}
+        <ComposerConnectorAccountChoices
+          connectorLabel={connectorLabel}
+          connections={connections}
+          selection={selection}
+          defaultConnection={defaultConnection}
+          saving={saving}
+          loading={accountsLoadable.state === "loading"}
+          unavailable={
+            accountsLoadable.state === "hasError" || !accountList.available
+          }
+          noResults={connectorAccountSearchHasNoResults({
+            state: accountsLoadable.state,
+            available: accountList.available,
+            resultCount: accountList.connections.length,
+            search,
+          })}
+          loadingAccountCount={summary?.accountCount ?? 0}
+        />
+        {accountList.nextCursor ? (
+          <div className="shrink-0 border-t border-border/50 p-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={saving || loadMoreLoadable.state === "loading"}
+              onClick={() => {
+                return detach(loadMore(signal), Reason.DomCallback);
+              }}
+            >
+              {loadMoreLoadable.state === "loading"
+                ? t(($) => {
+                    return $.connectors.accounts.loadingMore;
+                  })
+                : t(($) => {
+                    return $.connectors.accounts.loadMore;
+                  })}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </Combobox.Root>
   );
 }
 
@@ -7799,7 +7810,7 @@ function ConnectorsPopoverButton({
         handleOpenChange(open);
       }}
     >
-      <TooltipProvider delayDuration={300}>
+      <TooltipProvider delay={300}>
         <Tooltip>
           <PopoverTrigger
             render={
@@ -8315,7 +8326,7 @@ function MicButton({
   };
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -8543,7 +8554,7 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9063,7 +9074,7 @@ function ComposerSendButton({
     </Button>
   );
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9125,7 +9136,7 @@ function ModelConfigurationWarning({
   blocker: ComposerSubmitBlocker;
 }) {
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -9229,8 +9240,6 @@ function ComposerRunModelPickerControl({
   const { t } = useTranslation();
   const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
   const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
-  const flyoutCategory = useGet(signals.model.menu.flyoutCategory$);
-  const setMediaModelCategory = useSet(signals.model.setMediaModelCategory$);
   const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
   return (
     <div
@@ -9251,12 +9260,6 @@ function ComposerRunModelPickerControl({
         // The flyout needs the room a phone does not have; narrow viewports keep
         // the menu's pages until the sheet layout lands.
         flyoutLayout={desktopLayout}
-        onSelected={() => {
-          setMediaModelCategory(
-            flyoutCategory === "chat" ? null : flyoutCategory,
-          );
-          setModelPickerOpen(false);
-        }}
         compactTrigger
         mobileIconTrigger
         open={modelPickerOpen}
@@ -9517,7 +9520,7 @@ function ComposerModelPickerSlotBase({
   );
 }
 
-/** Choosing a media model writes its pin and closes the shared popover. */
+/** Media callbacks write their pins; each native menu item owns dismissal. */
 function ComposerVideoModelPickerSlot({
   signals,
   videoModelSignals,
@@ -9525,7 +9528,6 @@ function ComposerVideoModelPickerSlot({
   signals: ComposerSignals;
   videoModelSignals: ComposerVideoModelSignals;
 }) {
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const selectedVideoModel =
     useLastResolved(videoModelSignals.selectedVideoModel$) ?? null;
   const setVideoModel = useSet(videoModelSignals.setVideoModel$);
@@ -9534,7 +9536,6 @@ function ComposerVideoModelPickerSlot({
     value: selectedVideoModel,
     onChange: (next) => {
       detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   return (
@@ -9555,7 +9556,6 @@ function ComposerExistingMediaModelPickerSlot({
   imageModelSignals: ComposerImageModelSignals;
   videoModelSignals: ComposerVideoModelSignals;
 }) {
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
   const selectedImageModel =
     useLastResolved(imageModelSignals.selectedImageModel$) ?? null;
   const selectedVideoModel =
@@ -9567,14 +9567,12 @@ function ComposerExistingMediaModelPickerSlot({
     value: selectedImageModel,
     onChange: (next) => {
       detach(setImageModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   const videoModel: ComposerVideoModelPickerState = {
     value: selectedVideoModel,
     onChange: (next) => {
       detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-      setModelPickerOpen(false);
     },
   };
   return (

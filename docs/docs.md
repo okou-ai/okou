@@ -45,6 +45,8 @@ surface; the index does not replace their detailed rules.
 
 - [VNC configuration and authority](./vnc-access.md): encrypted credentials, saved
   hosts, TLS trust, membership fences, and the disabled rollout boundary.
+- [OpenSSH plus TigerVNC interoperability](../crates/runner/tests/VNC_SSH_INTEROPERABILITY.md):
+  disposable pinned outer-SSH and inner-VNC production-path acceptance.
 - [X509Plain VNC acceptance](./vnc-x509plain-acceptance.md): head-specific owner,
   Agent, current-Runner, real-server and cleanup evidence.
 - [Runner VNC authority](./runner-vnc-authority.md): explicit Agent grants,
@@ -143,8 +145,9 @@ surface; the index does not replace their detailed rules.
   unread Chat collection that consumes it, and the old-writer activation gate.
 - [Marketing privacy rollback](./marketing-privacy-choices.md): withdrawn runtime
   behavior, storage retirement, and rollout boundaries.
-- [Google Cloud LLM voice routing](./google-llm-voice.md): shared Vercel workload
-  identities, API configuration, Oregon-first model routing, and rollout gates.
+- [Google Cloud LLM voice and Maps Grounding routing](./google-llm-voice.md):
+  shared Vercel workload identities, native provider contracts, billing,
+  compliance boundaries, and rollout gates.
 - [Retired App browser attribution](./google-ads-browser-routing.md): the
   Marketing-owned boundary, App cleanup, rollout compatibility, and historical
   field inventory.
@@ -161,6 +164,8 @@ surface; the index does not replace their detailed rules.
   commits.
 - [Chat cards](./chat-cards.md): recognizing links in chat messages, creating
   thread-scoped card signals, and rendering rich interactive cards.
+- [Home task recommendations](./home-task-recommendations.md): the two-stage
+  ranking and writing pipeline, its first-party evidence, and the refresh claim.
 - [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
   ordering, delayed events, visibility, and the newest-20 boundary.
 - [Pi native provider preparation](./pi-native-provider-preparation.md): additive

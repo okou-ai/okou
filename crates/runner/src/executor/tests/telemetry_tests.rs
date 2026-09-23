@@ -39,15 +39,15 @@ use crate::http::{HttpClient, HttpClientConfig};
 use crate::idle_pool::{
     IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
 };
-use crate::provider::ApiClaimTiming;
 use crate::resource_budget::ResourceBudget;
-use crate::run_cancellation::RunCancellationSignals;
 use crate::telemetry::{
     JobTelemetry, RunnerPreSpawnAttribution, RunnerPreSpawnConcurrencyBucket,
     RunnerResourceBudgetLeaseCountBucket, RunnerResourceBudgetOccupancy,
     RunnerResourceBudgetUtilizationBucket, RunnerStartupPath,
 };
 use crate::workspace_mount::ensure_workspace_drive_mounted;
+use runner_provider::ApiClaimTiming;
+use runner_provider::RunCancellationSignals;
 use runner_types::ids::RunId;
 use runner_types::storage_manifest::{StorageEntry, StorageManifest};
 use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
@@ -1436,7 +1436,7 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         },
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -1571,7 +1571,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
             },
             &config,
             &default_params(),
-            RunCancellationSignals::hard_only(cancel),
+            RunCancellationSignals::from_hard_token(cancel),
             ExecutionHooks {
                 sandbox_prepared: None,
                 active_input_source: None,
@@ -1607,7 +1607,7 @@ async fn execute_job_attributes_overlapping_pre_spawn_work_and_releases_membersh
         },
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -1652,7 +1652,7 @@ async fn execute_job_attributes_resource_budget_occupancy_until_agent_ready() {
         },
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -1695,7 +1695,7 @@ async fn execute_job_records_exact_reuse_speculation_timing() {
         },
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -2039,7 +2039,7 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
         context,
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -2159,7 +2159,7 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
         minimal_context(),
         &config,
         &params,
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -2224,7 +2224,7 @@ async fn assert_reused_private_write_timeout_telemetry(
         context,
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -2281,7 +2281,7 @@ async fn assert_reused_required_private_batch_failure(
         context,
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -2431,7 +2431,7 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
         },
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,
@@ -2472,7 +2472,7 @@ async fn start_process_failure_records_phase_failure_without_spawn_completion() 
         },
         &config,
         &default_params(),
-        RunCancellationSignals::hard_only(cancel),
+        RunCancellationSignals::from_hard_token(cancel),
         ExecutionHooks {
             sandbox_prepared: None,
             active_input_source: None,

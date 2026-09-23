@@ -71,7 +71,7 @@ function usePaidToolNoticeRow(
         return $.settings.paidTools.openSettings;
       }),
       run: () => {
-        detach(openSettings("chat", signal), Reason.DomCallback);
+        detach(openSettings("tools", signal), Reason.DomCallback);
       },
     },
   };
@@ -80,7 +80,7 @@ function usePaidToolNoticeRow(
 function usePaidToolNoticeEnabled(tools: readonly PaidToolId[]): boolean {
   const features = useGet(featureSwitch$);
   return (
-    features[FeatureSwitchKey.ChatPreference] &&
+    features[FeatureSwitchKey.SettingsToolsTab] &&
     features[FeatureSwitchKey.PaidToolControls] &&
     tools.length > 0
   );

@@ -343,27 +343,27 @@ describe("AUTH-03 user model preference", () => {
     });
 
     const switched = await cfg.updateModelPreference(admin, {
-      selectedModel: "gpt-5.6-luna",
+      selectedModel: "gpt-6-luna",
       serviceTier: null,
     });
     expect(switched.modelSettings).toStrictEqual(astra.modelSettings);
 
     const luna = await cfg.updateModelPreference(admin, {
-      selectedModel: "gpt-5.6-luna",
+      selectedModel: "gpt-6-luna",
       serviceTier: null,
-      modelSettingsPatch: { model: "gpt-5.6-luna", effort: "low" },
+      modelSettingsPatch: { model: "gpt-6-luna", effort: "low" },
     });
     expect(luna.modelSettings).toStrictEqual({
       "gpt-6-astra": { effort: "high" },
-      "gpt-5.6-luna": { effort: "low" },
+      "gpt-6-luna": { effort: "low" },
     });
 
     const unsupported = await cfg.requestUpdateModelPreference(
       admin,
       {
-        selectedModel: "gpt-5.6-luna",
+        selectedModel: "gpt-6-luna",
         serviceTier: null,
-        modelSettingsPatch: { model: "gpt-5.6-luna", effort: "ultra" },
+        modelSettingsPatch: { model: "gpt-6-luna", effort: "ultra" },
       },
       [400],
     );

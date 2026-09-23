@@ -21,7 +21,10 @@ import {
   Archive,
   ArchiveRestore,
 } from "lucide-react";
-import { useChatThreadsTitleLabels } from "./sidebar-shared.tsx";
+import {
+  ChatThreadStateText,
+  useChatThreadsTitleLabels,
+} from "./sidebar-shared.tsx";
 import {
   Tooltip,
   TooltipContent,
@@ -111,6 +114,7 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
 // state indicators keep their own contrast.
 const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
+const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
 
 function ChatThreadMenuShortcut({ shortcut }: { readonly shortcut: string }) {
   return (
@@ -129,6 +133,7 @@ function equalSidebarChatThreadWindows(
 ): boolean {
   return (
     previous.startIndex === next.startIndex &&
+    previous.showAllChatsRow === next.showAllChatsRow &&
     equalArrays(previous.items, next.items, (left, right) => {
       return left === right;
     })
@@ -140,7 +145,6 @@ function SessionStateIndicator({
 }: {
   signals: SidebarChatThreadItemSignals;
 }) {
-  const { t } = useTranslation();
   const state = useLastResolved(signals.indicatorState$) ?? null;
   if (state === null) {
     return null;
@@ -149,24 +153,10 @@ function SessionStateIndicator({
     return <RunningIndicator />;
   }
   if (state === "unread") {
-    return (
-      <span
-        role="img"
-        aria-label={t(($) => {
-          return $.chat.sidebar.unread;
-        })}
-        className="h-2 w-2 rounded-full bg-sky-600"
-      />
-    );
+    return <span className="h-2 w-2 rounded-full bg-sky-600" />;
   }
   return (
-    <span
-      role="img"
-      aria-label={t(($) => {
-        return $.chat.sidebar.draft;
-      })}
-      className="flex items-center justify-center text-sidebar-foreground"
-    >
+    <span className="flex items-center justify-center text-sidebar-foreground">
       <Pencil className="opacity-35" size={16} />
     </span>
   );
@@ -338,7 +328,7 @@ function ChatThreadMenu({
   const hasRestingIndicator = showStateIndicator || showPinIndicator;
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -350,7 +340,7 @@ function ChatThreadMenu({
               className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${
                 hasRestingIndicator
                   ? ""
-                  : "md:invisible md:group-hover:visible md:data-popup-open:visible"
+                  : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
               } ${CHAT_THREAD_ROW_ICON_CLASS}`}
               aria-label={t(($) => {
                 return $.chat.sidebar.openChatMenu;
@@ -364,13 +354,6 @@ function ChatThreadMenu({
             <TooltipTrigger
               render={
                 <span
-                  aria-label={
-                    showPinIndicator
-                      ? t(($) => {
-                          return $.chat.sidebar.pinned;
-                        })
-                      : undefined
-                  }
                   data-testid={
                     showPinIndicator
                       ? "chat-thread-pinned-indicator"
@@ -380,7 +363,11 @@ function ChatThreadMenu({
                 >
                   {hasRestingIndicator ? (
                     <>
-                      <span className="flex items-center justify-center md:group-hover:hidden md:group-data-[popup-open]/thread-menu:hidden">
+                      <span
+                        aria-hidden="true"
+                        data-testid="chat-thread-state-indicator"
+                        className="flex items-center justify-center md:group-hover:hidden group-focus-visible/thread-menu:hidden md:group-data-[popup-open]/thread-menu:hidden"
+                      >
                         {showStateIndicator ? (
                           <SessionStateIndicator signals={signals} />
                         ) : (
@@ -389,7 +376,7 @@ function ChatThreadMenu({
                       </span>
                       <Ellipsis
                         size={17}
-                        className="hidden opacity-70 md:group-hover:block md:group-data-[popup-open]/thread-menu:block"
+                        className="hidden opacity-70 md:group-hover:block group-focus-visible/thread-menu:block md:group-data-[popup-open]/thread-menu:block"
                       />
                     </>
                   ) : (
@@ -506,6 +493,8 @@ function ChatThreadItemLink({
   const isCurrentPage = useGet(signals.currentPage$);
   const isHighlighted = useGet(signals.highlighted$);
   const isUnread = useLastResolved(signals.unread$) ?? false;
+  const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
+  const isPinned = useGet(signals.pinned$);
   const select = useSet(signals.select$);
   const openRename = useSet(signals.openRename$);
   const pageSignal = useGet(pageSignal$);
@@ -545,6 +534,9 @@ function ChatThreadItemLink({
               return $.chat.newChat;
             })
           }
+        />
+        <ChatThreadStateText
+          state={indicatorState ?? (isPinned ? "pinned" : null)}
         />
       </span>
       <span className="flex items-center pr-2 empty:hidden">
@@ -758,6 +750,29 @@ export function ChatThreadDialogs() {
   );
 }
 
+function ShowAllChatsRow() {
+  const { t } = useTranslation();
+  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
+
+  return (
+    <div data-testid="sidebar-chat-show-all-row" className="pb-1">
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="w-full justify-start px-2 font-normal leading-5 focus-visible:ring-inset focus-visible:ring-offset-0"
+        onClick={() => {
+          setUnreadFilter(false);
+        }}
+      >
+        {t(($) => {
+          return $.chat.sidebar.showAllChats;
+        })}
+      </Button>
+    </div>
+  );
+}
+
 function VirtualizedChatThreads({
   listSignals,
 }: {
@@ -765,7 +780,7 @@ function VirtualizedChatThreads({
 }) {
   const setShortcutRoot = useSet(setThreadListNumberShortcutRoot$);
   const searchOpen = useGet(threeColumnSearchOpen$);
-  const threadCount = useGet(listSignals.count$);
+  const rowCount = useGet(listSignals.rowCount$);
   const window = useGet(listSignals.window$, {
     equalityFn: equalSidebarChatThreadWindows,
   });
@@ -777,7 +792,7 @@ function VirtualizedChatThreads({
       ref={setShortcutRoot}
       className="relative w-full"
       data-testid="sidebar-chat-threads-virtual-list"
-      style={{ height: threadCount * CHAT_THREAD_VIRTUAL_ROW_HEIGHT }}
+      style={{ height: rowCount * CHAT_THREAD_VIRTUAL_ROW_HEIGHT }}
     >
       {visibleItems.map((signals, visibleOffset) => {
         const index = startIndex + visibleOffset;
@@ -800,6 +815,20 @@ function VirtualizedChatThreads({
           </div>
         );
       })}
+      {window.showAllChatsRow ? (
+        <div
+          data-index={rowCount - 1}
+          data-testid="sidebar-chat-show-all-virtual-row"
+          className="absolute left-0 top-0 w-full"
+          style={{
+            transform: `translateY(${
+              (rowCount - 1) * CHAT_THREAD_VIRTUAL_ROW_HEIGHT
+            }px)`,
+          }}
+        >
+          <ShowAllChatsRow />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -859,11 +888,14 @@ function ChatThreads({
   if (threadCount === 0) {
     if (archiveEnabled && archivedOnly) {
       return (
-        <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
-          {t(($) => {
-            return $.chat.sidebar.noArchived;
-          })}
-        </p>
+        <div className="w-full">
+          <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
+            {t(($) => {
+              return $.chat.sidebar.noArchived;
+            })}
+          </p>
+          <ShowAllChatsRow />
+        </div>
       );
     }
     if (hasHiddenArchivedThreads) {
@@ -972,11 +1004,7 @@ function MarkAllReadMenuItem({
   );
 }
 
-function ChatThreadFilterMenuItems({
-  unreadShortcutEnabled,
-}: {
-  unreadShortcutEnabled: boolean;
-}) {
+function ChatThreadFilterMenuItems() {
   const { t } = useTranslation();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
@@ -1005,20 +1033,16 @@ function ChatThreadFilterMenuItems({
           setUnreadFilter(true);
         }}
         aria-keyshortcuts={
-          unreadShortcutEnabled
-            ? GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
-            : undefined
+          GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
         }
       >
         <Check size={16} className={`mr-2 ${unreadOnly ? "" : "invisible"}`} />
         {t(($) => {
           return $.chat.sidebar.unreadOnly;
         })}
-        {unreadShortcutEnabled ? (
-          <ChatThreadMenuShortcut
-            shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
-          />
-        ) : null}
+        <ChatThreadMenuShortcut
+          shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
+        />
       </DropdownMenuItem>
       {archiveEnabled ? (
         <DropdownMenuItem
@@ -1046,11 +1070,8 @@ function ChatThreadsListMenu({
 }) {
   const { t } = useTranslation();
   const markAllReadAction = useMarkAllReadMenuAction(showMarkAllRead);
-  const unreadShortcutEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatUnreadOnlyShortcut] === true;
-
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <DropdownMenu>
         <DropdownMenuTrigger
           render={
@@ -1068,26 +1089,27 @@ function ChatThreadsListMenu({
         >
           <ChatThreadsListMenuTooltip />
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          className={unreadShortcutEnabled ? "w-56" : "w-44"}
-        >
+        <DropdownMenuContent align="end" className="w-56">
           {markAllReadAction.visible ? (
             <>
               <MarkAllReadMenuItem {...markAllReadAction} />
               <DropdownMenuSeparator />
             </>
           ) : null}
-          <ChatThreadFilterMenuItems
-            unreadShortcutEnabled={unreadShortcutEnabled}
-          />
+          <ChatThreadFilterMenuItems />
         </DropdownMenuContent>
       </DropdownMenu>
     </TooltipProvider>
   );
 }
 
-function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
+function ChatThreadsTitle({
+  showMarkAllRead,
+  contentId,
+}: {
+  showMarkAllRead: boolean;
+  contentId: string;
+}) {
   const { t } = useTranslation();
   const { titleLabel } = useChatThreadsTitleLabels();
   const newChatAction = useNewChatAction();
@@ -1098,33 +1120,27 @@ function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
   const collapsed = useGet(sessionListCollapsed$);
 
   return (
-    <div
-      className="group flex h-8 shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 hover:bg-state-hover transition-colors"
-      onClick={(event) => {
-        const target = event.target;
-        if (
-          !(target instanceof Element) ||
-          !event.currentTarget.contains(target) ||
-          target.closest(
-            "a, button, input, select, textarea, [role='button'], [role='link'], [role^='menuitem'], [contenteditable='true']",
-          )
-        ) {
-          return;
-        }
-        return setCollapsed(!collapsed);
-      }}
-    >
-      <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-nav-copy-muted group-hover:text-nav-copy transition-colors">
-        {titleLabel}
-        <span className="shrink-0 opacity-0 group-hover:opacity-100">
+    <div className="group flex h-8 shrink-0 items-center justify-between rounded-lg pr-0 hover:bg-state-hover transition-colors">
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        aria-expanded={!collapsed}
+        aria-controls={contentId}
+        onClick={() => {
+          setCollapsed(!collapsed);
+        }}
+        className="h-8 min-w-0 flex-1 cursor-pointer justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
+      >
+        <span className="min-w-0 truncate">{titleLabel}</span>
+        <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
           <ChevronRight
             className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
-            size={12}
           />
         </span>
-      </span>
+      </Button>
       <div className="flex items-center gap-0.5">
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1176,21 +1192,33 @@ function ChatThreadsSkeleton() {
 function ChatThreadsContent({
   scrollSignals,
   contentClassName,
+  contentId,
+  stylesheetLoaded,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
+  contentId: string;
+  stylesheetLoaded: boolean;
 }) {
   const collapsed = useGet(sessionListCollapsed$);
 
-  if (collapsed) {
-    return null;
-  }
-
+  // The region stays mounted so the title's `aria-controls` always resolves.
+  // The attribute carries the collapsed state to assistive technology; the
+  // display utility owns the cascade, because an author `display: flex` would
+  // otherwise beat the user-agent `[hidden]` rule while expanded.
   return (
-    <ExpandedChatThreadsContent
-      scrollSignals={scrollSignals}
-      contentClassName={contentClassName}
-    />
+    <div
+      id={contentId}
+      hidden={collapsed}
+      className={cn("min-h-0 flex-1 flex-col", collapsed ? "hidden" : "flex")}
+    >
+      {!collapsed && stylesheetLoaded ? (
+        <ExpandedChatThreadsContent
+          scrollSignals={scrollSignals}
+          contentClassName={contentClassName}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -1208,7 +1236,6 @@ function UnreadChatThreadsContent({
   const scrollCurrentChatThreadOnRef = useSet(
     scrollSignals.scrollCurrentChatThreadOnRef$,
   );
-  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
 
   if (list.state === "loading") {
     return (
@@ -1222,24 +1249,13 @@ function UnreadChatThreadsContent({
   }
   if (list.data.items.length === 0) {
     return (
-      <div className="px-2 py-2">
-        <p className="text-xs text-nav-copy-muted leading-relaxed">
+      <div className="w-full">
+        <p className="px-2 py-2 text-xs text-nav-copy-muted leading-relaxed">
           {t(($) => {
             return $.chat.sidebar.noUnread;
           })}
         </p>
-        <Button
-          type="button"
-          variant="link"
-          className="mt-1 h-auto p-0 text-xs"
-          onClick={() => {
-            setUnreadFilter(false);
-          }}
-        >
-          {t(($) => {
-            return $.chat.sidebar.showAllChats;
-          })}
-        </Button>
+        <ShowAllChatsRow />
       </div>
     );
   }
@@ -1263,6 +1279,7 @@ function UnreadChatThreadsContent({
           </div>
         );
       })}
+      <ShowAllChatsRow />
     </div>
   );
 }
@@ -1382,14 +1399,15 @@ export function ChatThreadsSection({
         <ChatThreadsTitle
           key={agentScope ?? "no-agent"}
           showMarkAllRead={showMarkAllRead}
+          contentId={CHAT_THREADS_CONTENT_ID}
         />
       </div>
-      {mainStylesheetLoaded && (
-        <ChatThreadsContent
-          scrollSignals={scrollSignals}
-          contentClassName={contentClassName}
-        />
-      )}
+      <ChatThreadsContent
+        scrollSignals={scrollSignals}
+        contentClassName={contentClassName}
+        contentId={CHAT_THREADS_CONTENT_ID}
+        stylesheetLoaded={mainStylesheetLoaded === true}
+      />
     </div>
   );
 }

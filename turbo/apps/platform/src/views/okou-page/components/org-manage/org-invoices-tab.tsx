@@ -138,7 +138,18 @@ function ReceiptMonthSelect({
   return (
     <label className="grid gap-1.5 text-sm" htmlFor={id}>
       <span className="font-medium text-foreground">{label}</span>
-      <Select name={name} value={value} onValueChange={onValueChange}>
+      <Select
+        name={name}
+        items={months}
+        value={value}
+        onValueChange={(nextValue, details) => {
+          if (nextValue === null) {
+            details.cancel();
+            return;
+          }
+          onValueChange(nextValue);
+        }}
+      >
         <SelectTrigger
           id={id}
           aria-label={t(
@@ -381,7 +392,7 @@ export function OrgInvoicesTab() {
                 </div>
                 <div className="flex justify-end">
                   {inv.hostedInvoiceUrl ? (
-                    <TooltipProvider delayDuration={200}>
+                    <TooltipProvider delay={200}>
                       <Tooltip>
                         <TooltipTrigger
                           render={

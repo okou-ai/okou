@@ -1,3 +1,4 @@
+import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import {
   billingStatusContract,
@@ -22,21 +23,21 @@ import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts"
 
 const context = testContext();
 
-function radioByName(
+function activationButton(
   name: string | RegExp,
   container: ParentNode = document.body,
 ): HTMLElement {
-  const radio = queryAllByRoleFast("radio", container).find((candidate) => {
+  const button = queryAllByRoleFast("button", container).find((candidate) => {
     const accessibleName =
       candidate.getAttribute("aria-label") ?? candidate.textContent ?? "";
     return typeof name === "string"
       ? accessibleName.trim() === name
       : name.test(accessibleName);
   });
-  if (!radio) {
-    throw new Error(`Radio not found: ${String(name)}`);
+  if (!button) {
+    throw new Error(`Activation button not found: ${String(name)}`);
   }
-  return radio;
+  return button;
 }
 
 function stalePersonalCodexProvider(): ModelProviderResponse {
@@ -251,15 +252,10 @@ function mockBrowserTimeZone(timeZone: string): void {
   });
 }
 
-test("Review personal subscriptions through account identity", async () => {
-  const user = userEvent.setup();
+async function setupPersonalSubscriptionIdentityReview() {
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
-  context.mocks.data.org({
-    id: "org_1",
-    name: "Test Org",
-    role: "member",
-  });
+  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "member" });
   const accountA = {
     ...connectedPersonalCodexAccount({
       id: "00000000-0000-4000-a000-000000000311",
@@ -292,9 +288,16 @@ test("Review personal subscriptions through account identity", async () => {
   await openModelSettings("Models", {
     [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
   });
-  const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
-  const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
-  const rowC = await screen.findByTestId(`oauth-account-${accountC.id}`);
+  return {
+    accountA,
+    rowA: await screen.findByTestId(`oauth-account-${accountA.id}`),
+    rowB: await screen.findByTestId(`oauth-account-${accountB.id}`),
+    rowC: await screen.findByTestId(`oauth-account-${accountC.id}`),
+  };
+}
+
+test("Review personal subscription identity and usage", async () => {
+  const { rowA, rowB, rowC } = await setupPersonalSubscriptionIdentityReview();
   expect(within(rowA).getByText("account-a@example.com")).toBeInTheDocument();
   expect(within(rowB).getByText("account-b@example.com")).toBeInTheDocument();
   expect(within(rowA).getByText("2 resets left")).toBeVisible();
@@ -306,20 +309,80 @@ test("Review personal subscriptions through account identity", async () => {
   expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
-  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
-  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  expect(
+    activationButton(
+      "Active: account-a@example.com (Account A Organization)",
+      rowA,
+    ),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(activationButton("Use: account-b@example.com", rowB)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   const usageRings = within(rowA).getAllByRole("progressbar");
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
   expect(usageRings[1]).toHaveAttribute("aria-valuenow", "55");
   expect(within(rowA).queryByText("82% left")).not.toBeInTheDocument();
+});
+
+test("Organize personal subscriptions in accessible provider tables", async () => {
+  const { accountA, rowA } = await setupPersonalSubscriptionIdentityReview();
+  const claudeTable = screen.getByRole("table", { name: "Claude Code OAuth" });
+  const codexTable = screen.getByRole("table", { name: "ChatGPT (Codex)" });
+  const claudeHeading = screen.getByRole("heading", {
+    name: "Claude Code OAuth",
+  });
+  const codexHeading = screen.getByRole("heading", { name: "ChatGPT (Codex)" });
+  for (const [table, heading] of [
+    [claudeTable, claudeHeading],
+    [codexTable, codexHeading],
+  ] as const) {
+    expect(table.parentElement).toContainElement(heading);
+    expect(table).toHaveAttribute("aria-labelledby", heading.id);
+    expect(queryAllByRoleFast("columnheader", table)).toHaveLength(0);
+  }
+  expect(screen.queryAllByRole("radiogroup")).toHaveLength(0);
+  expect(queryAllByRoleFast("radio")).toHaveLength(0);
   expect(
-    queryAllByRoleFast("button").filter((button) => {
-      return button.textContent?.trim() === "Add account";
-    }),
-  ).toHaveLength(2);
-  const accountIdentity = within(rowA).getByText("account-a@example.com");
-  await user.hover(accountIdentity);
+    within(claudeTable).getByText("No accounts connected."),
+  ).toBeInTheDocument();
+  expect(within(codexTable).getByTestId(`oauth-account-${accountA.id}`)).toBe(
+    rowA,
+  );
+  expect(
+    within(claudeTable).queryByTestId(`oauth-account-${accountA.id}`),
+  ).toBeNull();
+});
+
+test("Offer personal subscription providers from one add-account menu", async () => {
+  await setupPersonalSubscriptionIdentityReview();
+  const addAccountButtons = queryAllByRoleFast("button").filter((button) => {
+    return button.textContent?.trim() === "Add account";
+  });
+  expect(addAccountButtons).toHaveLength(1);
+  const addAccountButton = addAccountButtons[0];
+  if (!addAccountButton) {
+    throw new Error("Add account button not found");
+  }
+  click(addAccountButton);
+  const addAccountMenu = await screen.findByRole("menu");
+  expect(
+    within(addAccountMenu).getByText("Claude Code OAuth"),
+  ).toBeInTheDocument();
+  expect(
+    within(addAccountMenu).getByText("ChatGPT (Codex)"),
+  ).toBeInTheDocument();
+  click(addAccountButton);
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
+
+test("Show personal subscription workspace and account actions", async () => {
+  const user = userEvent.setup();
+  const { rowA } = await setupPersonalSubscriptionIdentityReview();
+  await user.hover(within(rowA).getByText("account-a@example.com"));
   await expect(
     screen.findAllByText("Account A Organization"),
   ).resolves.not.toHaveLength(0);
@@ -482,8 +545,16 @@ test("Review personal subscriptions through usage details", async () => {
   expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
-  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
-  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  expect(
+    activationButton(
+      "Active: account-a@example.com (Account A Organization)",
+      rowA,
+    ),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(activationButton("Use: account-b@example.com", rowB)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   const usageRings = within(rowA).getAllByRole("progressbar");
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
@@ -493,7 +564,7 @@ test("Review personal subscriptions through usage details", async () => {
     queryAllByRoleFast("button").filter((button) => {
       return button.textContent?.trim() === "Add account";
     }),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
   await user.hover(within(rowA).getByLabelText("2 resets left"));
   await expect(
     screen.findAllByText("2 resets left · expires in 3d"),
@@ -573,8 +644,16 @@ test("Review personal subscriptions through account switching", async () => {
   expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Active")).not.toBeInTheDocument();
   expect(within(rowB).queryByText("Use")).not.toBeInTheDocument();
-  expect(radioByName("Active", rowA)).toHaveAttribute("aria-checked", "true");
-  expect(radioByName("Use", rowB)).toHaveAttribute("aria-checked", "false");
+  expect(
+    activationButton(
+      "Active: account-a@example.com (Account A Organization)",
+      rowA,
+    ),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(activationButton("Use: account-b@example.com", rowB)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   const usageRings = within(rowA).getAllByRole("progressbar");
   expect(usageRings).toHaveLength(2);
   expect(usageRings[0]).toHaveAttribute("aria-valuenow", "82");
@@ -584,11 +663,18 @@ test("Review personal subscriptions through account switching", async () => {
     queryAllByRoleFast("button").filter((button) => {
       return button.textContent?.trim() === "Add account";
     }),
-  ).toHaveLength(2);
-  click(radioByName("Use", rowB));
+  ).toHaveLength(1);
+  click(activationButton("Use: account-b@example.com", rowB));
   await waitFor(() => {
-    expect(radioByName("Active", rowB)).toHaveAttribute("aria-checked", "true");
-    expect(radioByName("Use", rowA)).toHaveAttribute("aria-checked", "false");
+    expect(
+      activationButton("Active: account-b@example.com", rowB),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      activationButton(
+        "Use: account-a@example.com (Account A Organization)",
+        rowA,
+      ),
+    ).toHaveAttribute("aria-pressed", "false");
     expect(within(rowA).queryByText("Active")).not.toBeInTheDocument();
   });
 });
@@ -627,14 +713,44 @@ test("Offer Pro when personal subscription providers are unavailable", async () 
   ).resolves.toBeInTheDocument();
 });
 
-test("Start and close personal Claude login", async () => {
+test("Offer Pro from personal account groups when BYOK is unavailable", async () => {
+  context.mocks.data.org({
+    id: "org_1",
+    name: "Test Org",
+    role: "admin",
+  });
+  context.mocks.data.personalModelProviders([]);
+  mockBillingCapabilities({
+    supportByok: false,
+    restrictedBuiltInModels: false,
+  });
+
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+
+  const upgradeButton = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Upgrade Pro to use";
+  });
+  if (!upgradeButton) {
+    throw new Error("Upgrade Pro button not found");
+  }
+  click(upgradeButton);
+
+  await expect(
+    screen.findByRole("heading", { name: "Choose a plan" }),
+  ).resolves.toBeInTheDocument();
+});
+
+test("Start and close personal Claude login from the account menu", async () => {
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
     role: "member",
   });
   context.mocks.data.personalModelProviders([]);
-  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
+  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ body, respond }) => {
+    expect(body).toStrictEqual({ scope: "personal", mode: "add" });
     return respond(200, {
       sessionToken: "mock-personal-claude-code-session",
       type: "claude-code",
@@ -645,19 +761,19 @@ test("Start and close personal Claude login", async () => {
     });
   });
 
-  await openModelSettings();
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
 
-  const claudeCodeRow = await screen.findByTestId(
-    "oauth-card-claude-code-oauth-token",
-  );
-  expect(
-    within(claudeCodeRow).getByText("Claude Code OAuth"),
-  ).toBeInTheDocument();
-  const connectButton = connectButtonInRow(
-    claudeCodeRow,
-    "Connect Claude Code OAuth",
-  );
-  click(connectButton);
+  const addAccountButton = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Add account";
+  });
+  if (!addAccountButton) {
+    throw new Error("Add account button not found");
+  }
+  click(addAccountButton);
+  const addAccountMenu = await screen.findByRole("menu");
+  click(within(addAccountMenu).getByText("Claude Code OAuth"));
 
   const authorizationCodeInputs = await screen.findAllByTestId(
     "claude-code-device-auth-code",
@@ -669,9 +785,7 @@ test("Start and close personal Claude login", async () => {
     expect(
       screen.queryAllByTestId("claude-code-device-auth-code"),
     ).toHaveLength(0);
-    expect(
-      connectButtonInRow(claudeCodeRow, "Connect Claude Code OAuth"),
-    ).toBeEnabled();
+    expect(addAccountButton).toBeEnabled();
   });
 });
 
@@ -893,4 +1007,212 @@ test("Show the saved Codex reset date when live usage is unavailable", async () 
     ),
   ).toBeInTheDocument();
   expect(within(codexRow).queryByText(/% left/u)).toBeNull();
+});
+
+test.each(["{Enter}", " "])(
+  "Account activation waits for explicit %s and server confirmation",
+  async (key) => {
+    const accountA = connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000311",
+      email: "account-a@example.com",
+      isActive: true,
+      createdAt: "2026-03-01T00:00:00Z",
+    });
+    const accountB = connectedPersonalCodexAccount({
+      id: "00000000-0000-4000-a000-000000000312",
+      email: "account-b@example.com",
+      isActive: false,
+      createdAt: "2026-03-02T00:00:00Z",
+    });
+    const response = context.mocks.deferred<void>();
+    let activations = 0;
+    context.mocks.data.personalModelProviders([accountA, accountB]);
+    context.mocks.api(
+      personalModelProviderAccountsByIdContract.activate,
+      async ({ params, respond, withSignal }) => {
+        activations += 1;
+        expect(params.id).toBe(accountB.id);
+        await withSignal(response.promise);
+        context.mocks.data.personalModelProviders([
+          { ...accountA, isActive: false },
+          { ...accountB, isActive: true },
+        ]);
+        return respond(200, { ...accountB, isActive: true });
+      },
+    );
+    await openModelSettings("Models", {
+      [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+    });
+    const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
+    const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
+    const current = activationButton("Active: account-a@example.com", rowA);
+    const target = activationButton("Use: account-b@example.com", rowB);
+    expect(current).toBeDisabled();
+    const user = userEvent.setup();
+    target.focus();
+    await user.keyboard("{ArrowDown}{ArrowUp}{ArrowRight}{ArrowLeft}");
+    expect(target).toHaveFocus();
+    expect(current).toHaveAttribute("aria-pressed", "true");
+    expect(activations).toBe(0);
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(
+        activationButton("Use: account-b@example.com", rowB),
+      ).toBeDisabled();
+    });
+    expect(current).toHaveAttribute("aria-pressed", "true");
+    expect(target).toHaveAttribute("aria-pressed", "false");
+    await user.keyboard(key);
+    expect(activations).toBe(1);
+    response.resolve();
+    await waitFor(() => {
+      expect(
+        activationButton("Active: account-b@example.com", rowB),
+      ).toBeDisabled();
+    });
+    expect(activationButton("Use: account-a@example.com", rowA)).toBeEnabled();
+    expect(activations).toBe(1);
+  },
+);
+
+test("A failed account activation keeps each provider's active account and permits retry", async () => {
+  const accountA = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000311",
+    email: "account-a@example.com",
+    isActive: true,
+    createdAt: "2026-03-01T00:00:00Z",
+  });
+  const accountB = connectedPersonalCodexAccount({
+    id: "00000000-0000-4000-a000-000000000312",
+    email: "account-b@example.com",
+    isActive: false,
+    createdAt: "2026-03-02T00:00:00Z",
+  });
+  const claude = { ...connectedPersonalClaudeCodeProvider(), isActive: true };
+  const failed = context.mocks.deferred<void>();
+  let attempts = 0;
+  context.mocks.data.personalModelProviders([accountA, accountB, claude]);
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.activate,
+    async ({ params, respond, withSignal }) => {
+      attempts += 1;
+      expect(params.id).toBe(accountB.id);
+      if (attempts === 1) {
+        await withSignal(failed.promise);
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Activation unavailable",
+          },
+        });
+      }
+      context.mocks.data.personalModelProviders([
+        { ...accountA, isActive: false },
+        { ...accountB, isActive: true },
+        claude,
+      ]);
+      return respond(200, { ...accountB, isActive: true });
+    },
+  );
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+  const rowA = await screen.findByTestId(`oauth-account-${accountA.id}`);
+  const rowB = await screen.findByTestId(`oauth-account-${accountB.id}`);
+  const claudeRow = await screen.findByTestId(`oauth-account-${claude.id}`);
+  click(activationButton("Use: account-b@example.com", rowB));
+  await waitFor(() => {
+    expect(activationButton("Use: account-b@example.com", rowB)).toBeDisabled();
+  });
+  failed.resolve();
+  await waitFor(() => {
+    expect(activationButton("Use: account-b@example.com", rowB)).toBeEnabled();
+  });
+  expect(
+    activationButton("Active: account-a@example.com", rowA),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(
+    activationButton("Active: claude.user@example.com", claudeRow),
+  ).toHaveAttribute("aria-pressed", "true");
+  expect(attempts).toBe(1);
+  click(activationButton("Use: account-b@example.com", rowB));
+  await expect(
+    screen.findByText("Active account switched"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      activationButton("Active: account-b@example.com", rowB),
+    ).toBeDisabled();
+  });
+  expect(
+    activationButton("Active: claude.user@example.com", claudeRow),
+  ).toBeDisabled();
+  expect(attempts).toBe(2);
+});
+
+// The reset control is offered by the presence of `subscriptionResetCredits`
+// rather than by a provider-type allowlist, so a Claude Code account whose
+// upstream reports grants must show it and one without the field must not.
+test("Redeem a Claude Code subscription reset from the account row", async () => {
+  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "member" });
+  const granted = {
+    ...connectedPersonalClaudeCodeProvider(),
+    isActive: true,
+    modelProviderId: "00000000-0000-4000-a000-000000000320",
+    subscriptionResetCredits: 3,
+    subscriptionResetCreditsNextExpiresAt: "2030-01-04T00:48:00.000Z",
+  };
+  const withoutGrants = {
+    ...connectedPersonalClaudeCodeProvider(),
+    id: "00000000-0000-4000-a000-000000000321",
+    modelProviderId: "00000000-0000-4000-a000-000000000320",
+    isActive: false,
+    accountEmail: "no-grants@example.com",
+    workspaceName: "no-grants@example.com",
+    createdAt: "2026-03-02T00:00:00Z",
+  };
+  let resetAccountId: string | undefined;
+  context.mocks.api(
+    personalModelProviderAccountsByIdContract.resetSubscriptionUsage,
+    ({ params, respond }) => {
+      resetAccountId = params.id;
+      return respond(200, { outcome: "reset" });
+    },
+  );
+  context.mocks.data.personalModelProviders([granted, withoutGrants]);
+  await openModelSettings("Models", {
+    [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
+  });
+
+  const grantedRow = await screen.findByTestId(`oauth-account-${granted.id}`);
+  const withoutGrantsRow = await screen.findByTestId(
+    `oauth-account-${withoutGrants.id}`,
+  );
+  expect(within(grantedRow).getByText("3 resets left")).toBeVisible();
+  expect(
+    within(withoutGrantsRow).queryByText(/resets left/u),
+  ).not.toBeInTheDocument();
+  expect(
+    within(withoutGrantsRow).queryByText("Resets —"),
+  ).not.toBeInTheDocument();
+
+  click(within(grantedRow).getByLabelText("3 resets left"));
+  const confirmDialog = await screen.findByRole("dialog", {
+    name: "Reset Claude Code usage?",
+  });
+  expect(within(confirmDialog).getByText(/3 resets left/u)).toBeInTheDocument();
+  const resetButton = queryAllByRoleFast("button", confirmDialog).find(
+    (button) => {
+      return button.textContent === "Reset usage";
+    },
+  );
+  if (!resetButton) {
+    throw new Error("Reset usage button not found");
+  }
+  click(resetButton);
+
+  await expect(
+    screen.findByText("Claude Code usage reset"),
+  ).resolves.toBeInTheDocument();
+  expect(resetAccountId).toBe(granted.id);
 });

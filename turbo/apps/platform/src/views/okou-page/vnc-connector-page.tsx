@@ -11,11 +11,15 @@ import {
   vncCredentials$,
   vncView$,
   vncAuthMethodForProfile,
+  vncSshConnectionId,
   type VncAuthMethod,
   type VncProfile,
 } from "../../signals/vnc.ts";
+import { sshConnections$ } from "../../signals/ssh.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import {
@@ -76,6 +80,15 @@ function VncHostCard({
   const { t } = useTranslation();
   const open = useSet(openVncDialog$);
   const signal = useGet(pageSignal$);
+  const sshConnections = useLoadable(sshConnections$);
+  const sshConnectionId = vncSshConnectionId(connection);
+  const sshConnection =
+    sshConnectionId && sshConnections.state === "hasData"
+      ? sshConnections.data?.find((candidate) => {
+          return candidate.id === sshConnectionId;
+        })
+      : null;
+  const destination = `${connection.host.includes(":") ? `[${connection.host}]` : connection.host}:${connection.port}`;
   return (
     <article className="grid gap-3 rounded-xl border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -86,11 +99,39 @@ function VncHostCard({
           })}
         </span>
       </div>
+      <p className="text-sm text-muted-foreground">
+        {sshConnectionId
+          ? t(($) => {
+              return $.vnc.transport.ssh;
+            })
+          : t(($) => {
+              return $.vnc.transport.direct;
+            })}
+      </p>
+      {sshConnectionId && (
+        <p className="break-all text-sm">
+          {t(($) => {
+            return $.vnc.transport.via;
+          })}{" "}
+          {sshConnection?.displayName ??
+            t(($) => {
+              return $.vnc.transport.selectionUnavailable;
+            })}
+        </p>
+      )}
       <p className="break-all text-sm">
-        {connection.host.includes(":")
-          ? `[${connection.host}]`
-          : connection.host}
-        :{connection.port}
+        {t(($) => {
+          return $.vnc.transport.destination;
+        })}
+        {": "}
+        {destination}
+      </p>
+      <p className="break-all text-sm">
+        {t(($) => {
+          return $.vnc.security.serverName;
+        })}
+        {": "}
+        {connection.security.serverName ?? connection.host}
       </p>
       <p className="break-all text-sm text-muted-foreground">
         {connection.credentialName}
@@ -136,7 +177,7 @@ function VncHostCard({
   );
 }
 
-function VncHosts() {
+export function VncHosts() {
   const { t } = useTranslation();
   const hosts = useLoadable(vncConnections$);
   const open = useSet(openVncDialog$);
@@ -260,7 +301,7 @@ function VncCredentialCard({
   );
 }
 
-function VncCredentials() {
+export function VncCredentials() {
   const { t } = useTranslation();
   const credentials = useLoadable(vncCredentials$);
   const open = useSet(openVncDialog$);
@@ -326,11 +367,22 @@ function VncCredentials() {
 
 function VncPageHeader() {
   const { t } = useTranslation();
+  const directoryEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   return (
     <>
       <DetailPageBreadcrumbBar>
         <Link
           pathname={ROUTES.connectors}
+          options={
+            directoryEnabled
+              ? {
+                  searchParams: new URLSearchParams({
+                    scope: "remote-control",
+                  }),
+                }
+              : undefined
+          }
           className="inline-flex min-w-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-inherit no-underline transition-colors hover:bg-state-hover hover:text-foreground"
         >
           <Plug size={14} className="shrink-0" aria-hidden="true" />

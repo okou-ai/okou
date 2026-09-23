@@ -5,13 +5,13 @@ use tokio::sync::mpsc::error::TryRecvError;
 use tracing_subscriber::prelude::*;
 
 use super::{DELIVERY_ID, EVENT_ID, api_active_input_source};
-use crate::active_input::ActiveInputNotifications;
 use crate::executor::agent_run::{RunControls, RunStart, run_in_sandbox};
 use crate::executor::tests::support::{
     CapturedEvents, RUN_IN_SANDBOX_TEST_TIMEOUT, create_overridden_sandbox, minimal_context,
     test_executor_config, test_telemetry,
 };
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
+use runner_provider::ActiveInputNotifications;
 use runner_types::ids::RunId;
 use runner_types::types::SandboxReuseResult;
 

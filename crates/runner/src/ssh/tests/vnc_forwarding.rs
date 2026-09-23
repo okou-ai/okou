@@ -6,12 +6,10 @@ use super::{
     harness::{CONNECTION, Harness, PASSWORD, Reply, TOKEN},
     terminal, wait_for,
 };
-use crate::{
-    http::{HttpClient, HttpClientConfig},
-    vnc::{
-        VncRuntime,
-        tests::peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
-    },
+use crate::http::{HttpClient, HttpClientConfig};
+use crate::vnc::{
+    VncRuntime,
+    tests::peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
 };
 
 struct BridgeTask(JoinHandle<()>);

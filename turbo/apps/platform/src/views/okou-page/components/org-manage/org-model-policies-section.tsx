@@ -9,6 +9,7 @@ import {
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
+import { Field } from "@base-ui/react/field";
 import {
   AlertTriangle,
   EllipsisVertical,
@@ -307,9 +308,25 @@ function DefaultModelRow({
   onUpgrade: () => void;
 }) {
   const { t } = useTranslation();
-  const selectItems = policies.filter((policy) => {
-    return policy.routeStatus === "valid";
-  });
+  const selectItems = policies
+    .filter((policy) => {
+      return policy.routeStatus === "valid";
+    })
+    .map((policy) => {
+      const iconType = getModelIconType(policy.model);
+      const restricted = !modelPolicyAllowedForPlan(policy, modelCapabilities);
+      return {
+        ...policy,
+        value: policy.model,
+        label: (
+          <div className="flex w-full min-w-0 items-center gap-2">
+            {iconType && <ProviderIcon type={iconType} size={16} />}
+            <span className="min-w-0 flex-1 truncate">{policy.modelLabel}</span>
+            {restricted && <ProBadge />}
+          </div>
+        ),
+      };
+    });
   const currentDefault = selectItems.some((policy) => {
     return policy.model === workspaceDefaultModel;
   })
@@ -317,7 +334,7 @@ function DefaultModelRow({
     : "";
 
   return (
-    <div
+    <Field.Root
       data-testid="default-model-row"
       className="flex flex-col gap-3 overflow-hidden rounded-xl bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
       style={{
@@ -325,11 +342,15 @@ function DefaultModelRow({
       }}
     >
       <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground">
+        <Field.Label
+          render={<p />}
+          nativeLabel={false}
+          className="text-sm font-medium text-foreground"
+        >
           {t(($) => {
             return $.settings.models.policies.defaultModel;
           })}
-        </p>
+        </Field.Label>
         <p className="mt-0.5 text-[13px] text-muted-foreground">
           {t(($) => {
             return $.settings.models.policies.defaultModelDescription;
@@ -344,20 +365,25 @@ function DefaultModelRow({
         </span>
       ) : (
         <Select
+          items={selectItems}
           value={currentDefault}
-          onValueChange={(value) => {
-            const model = value as SupportedRunModel;
+          onValueChange={(value, details) => {
             const policy = selectItems.find((item) => {
-              return item.model === model;
+              return item.model === value;
             });
-            if (
-              policy !== undefined &&
-              !modelPolicyAllowedForPlan(policy, modelCapabilities)
-            ) {
+            if (!policy) {
+              details.cancel();
+              return;
+            }
+            if (policy.model === workspaceDefaultModel) {
+              return;
+            }
+            if (!modelPolicyAllowedForPlan(policy, modelCapabilities)) {
+              details.cancel();
               onUpgrade();
               return;
             }
-            onChange(model);
+            onChange(policy.model);
           }}
           disabled={disabled}
         >
@@ -374,28 +400,17 @@ function DefaultModelRow({
             />
           </SelectTrigger>
           <SelectContent>
-            {selectItems.map((policy) => {
-              const iconType = getModelIconType(policy.model);
-              const restricted = !modelPolicyAllowedForPlan(
-                policy,
-                modelCapabilities,
-              );
+            {selectItems.map((item) => {
               return (
-                <SelectItem key={policy.id} value={policy.model}>
-                  <div className="flex w-full min-w-0 items-center gap-2">
-                    {iconType && <ProviderIcon type={iconType} size={16} />}
-                    <span className="min-w-0 flex-1 truncate">
-                      {policy.modelLabel}
-                    </span>
-                    {restricted && <ProBadge />}
-                  </div>
+                <SelectItem key={item.id} value={item.value}>
+                  {item.label}
                 </SelectItem>
               );
             })}
           </SelectContent>
         </Select>
       )}
-    </div>
+    </Field.Root>
   );
 }
 
@@ -408,7 +423,7 @@ function getPolicyDetail(policy: OrgModelPolicy): string | null {
 
 function PriceTierBadge({ tier }: { tier: ModelPriceTier }) {
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -722,6 +737,7 @@ function RouteChoiceButton({
   active,
   disabled = false,
   pro = false,
+  upgrade = false,
   title,
   description,
   onClick,
@@ -729,23 +745,32 @@ function RouteChoiceButton({
   active: boolean;
   disabled?: boolean;
   pro?: boolean;
+  upgrade?: boolean;
   title: string;
   description: string;
   onClick: () => void;
 }) {
+  const { t } = useTranslation();
   return (
-    <button
+    <Button
       type="button"
-      role="radio"
-      aria-checked={active}
+      variant="quiet"
+      aria-pressed={upgrade ? undefined : active}
+      aria-description={
+        upgrade
+          ? t(($) => {
+              return $.settings.models.actions.upgradeToPro;
+            })
+          : undefined
+      }
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex flex-col gap-0.5 rounded-xl border bg-card px-5 py-4 text-left transition-colors",
+        "h-auto flex-col items-stretch justify-start gap-0.5 whitespace-normal rounded-xl border bg-card px-5 py-4 text-left font-normal transition-colors hover:bg-card active:bg-card",
         // A text card, so selection recolours the shared hairline rather than
         // thickening it.
         active ? "border-primary" : "border-surface-border",
-        active && "bg-primary/5",
+        active && "bg-primary/5 hover:bg-primary/5 active:bg-primary/5",
         !active && !disabled && "hover:bg-state-hover",
         disabled && "cursor-not-allowed opacity-50",
       )}
@@ -755,7 +780,7 @@ function RouteChoiceButton({
         {pro && <ProBadge />}
       </span>
       <span className="text-[13px] text-muted-foreground">{description}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -777,8 +802,16 @@ function ProviderTypeSelect({
   return (
     <Select
       value={value}
-      onValueChange={(next) => {
-        onChange(next as ModelProviderType);
+      onValueChange={(next, details) => {
+        if (
+          next === null ||
+          !types.includes(next) ||
+          !getSelectableProviderTypes().includes(next)
+        ) {
+          details.cancel();
+          return;
+        }
+        onChange(next);
       }}
     >
       <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
@@ -937,16 +970,18 @@ function GatewayProviderSection({
       </label>
       <Select
         value={surfaceId}
-        onValueChange={(next) => {
+        onValueChange={(next, details) => {
           const selected = options.find((option) => {
             return option.surface.id === next;
           });
-          if (selected) {
-            onChange(
-              selected.surface.id,
-              gatewayProviderType(selected.surface.protocol),
-            );
+          if (!selected) {
+            details.cancel();
+            return;
           }
+          onChange(
+            selected.surface.id,
+            gatewayProviderType(selected.surface.protocol),
+          );
         }}
       >
         <SelectTrigger className="h-10 rounded-lg" style={ZERO_BORDER}>
@@ -1182,8 +1217,12 @@ function ModelSelectionField({
       </label>
       <Select
         value={selectedModel}
-        onValueChange={(next) => {
-          onChange(next as SupportedRunModel);
+        onValueChange={(next, details) => {
+          if (next === null || !addableModels.includes(next)) {
+            details.cancel();
+            return;
+          }
+          onChange(next);
         }}
         disabled={disabled}
       >
@@ -1250,7 +1289,7 @@ function ProviderRouteChoices({
         })}
       </label>
       <div
-        role="radiogroup"
+        role="group"
         aria-label={t(($) => {
           return $.settings.models.policies.providedBy;
         })}
@@ -1273,6 +1312,7 @@ function ProviderRouteChoices({
           active={routeKind === "api-key"}
           disabled={apiTypes.length === 0}
           pro={!supportByok}
+          upgrade={!supportByok}
           title={t(($) => {
             return $.settings.models.policies.apiKey;
           })}
@@ -1287,6 +1327,7 @@ function ProviderRouteChoices({
           active={routeKind === "gateway"}
           disabled={gatewayCount === 0}
           pro={!supportByok}
+          upgrade={!supportByok}
           title={t(($) => {
             return $.settings.models.policies.gateway;
           })}
@@ -1301,6 +1342,7 @@ function ProviderRouteChoices({
           <RouteChoiceButton
             active={routeKind === "oauth"}
             pro={!supportByok}
+            upgrade={!supportByok}
             title={
               oauthRouteKind === "codex"
                 ? t(($) => {
@@ -1774,9 +1816,7 @@ export function OrgModelPoliciesSection() {
   const visiblePolicies = policies.filter((policy) => {
     return ACTIVE_RUN_MODELS.includes(policy.model);
   });
-  // A new App can briefly reach an API from before this projection existed.
-  // Fail closed during that rollback window; make the field required in #35900.
-  const addableModels = (data.modelsAvailableToAdd ?? []).filter((model) => {
+  const addableModels = data.modelsAvailableToAdd.filter((model) => {
     return isAddableBuiltInModel(model);
   });
 

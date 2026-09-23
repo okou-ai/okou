@@ -646,7 +646,11 @@ function MemberUsageRow({
         <Select
           disabled={disabled}
           value={String(selection)}
-          onValueChange={(value) => {
+          onValueChange={(value, details) => {
+            if (value === null) {
+              details.cancel();
+              return;
+            }
             onSelect(parseUsagePackOption(value, catalog));
           }}
         >
@@ -789,6 +793,9 @@ function MemberUsageConfiguration({
               member={member}
               selection={selection}
               onSelect={(usage) => {
+                if (usage === selection) {
+                  return;
+                }
                 setSelection({ memberId: member.id, usage });
                 onSelectionChange?.();
               }}
@@ -1106,7 +1113,7 @@ function PlanSelectionCard({
 function PricingBackButton({ onBack }: { readonly onBack: () => void }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -1778,7 +1785,7 @@ function ManagedSubscriptionComparisonTooltip({
     { price: formatUsd(totalUsd, 0) },
   );
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delay={200}>
       <Tooltip>
         <TooltipTrigger
           type="button"

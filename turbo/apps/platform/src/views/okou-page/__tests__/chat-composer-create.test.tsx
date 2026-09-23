@@ -10,6 +10,10 @@ import {
 } from "@okouai/core/image-model-catalog";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  userModelPreferenceContract,
+  type UpdateUserModelPreferenceRequest,
+} from "@okouai/api-contracts/contracts/user-model-preference";
+import {
   click,
   fill,
   queryAllByRoleFast,
@@ -369,6 +373,70 @@ test("Image mode combines styles and image models while preserving the prompt", 
   await composerModelTrigger("Claude Fable 5.1");
   expect(screen.queryByLabelText("Remove Image")).toBeNull();
   expect(editor).toHaveTextContent("A quiet garden");
+});
+
+test("Retry a failed image preference by selecting the displayed model again", async () => {
+  setupModels();
+  const updates: UpdateUserModelPreferenceRequest[] = [];
+  context.mocks.api(userModelPreferenceContract.update, ({ body, respond }) => {
+    updates.push(body);
+    if (updates.length === 1) {
+      return respond(500, {
+        error: {
+          code: "PREFERENCE_SAVE_FAILED",
+          message: "Image preference could not be saved",
+        },
+      });
+    }
+    if (body.selectedImageModel === undefined) {
+      throw new Error("Expected an explicit image model preference");
+    }
+    const preference = {
+      selectedModel: body.selectedModel,
+      serviceTier: body.serviceTier,
+      modelSettings: {},
+      selectedImageModel: body.selectedImageModel,
+      selectedVideoModel: "dreamina-seedance-2-0-260128" as const,
+      updatedAt: "2026-09-22T00:00:00.000Z",
+    };
+    context.mocks.data.userModelPreference(preference);
+    return respond(200, preference);
+  });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
+      [FeatureSwitchKey.ComposerTaskChips]: true,
+      [FeatureSwitchKey.ChatPreference]: false,
+    },
+  });
+  const editor = await findComposerEditor();
+  await chooseCommand(editor, "A quiet garden /", "image");
+  const picker = await screen.findByRole("combobox", { name: "Image models" });
+  expect(picker).toHaveTextContent("GPT Image 2");
+  click(picker);
+  click(await screen.findByRole("option", { name: "GPT Image 1" }));
+  await screen.findByText("Image preference could not be saved");
+  expect(picker).toHaveTextContent("GPT Image 1");
+
+  click(picker);
+  click(await screen.findByRole("option", { name: "GPT Image 1" }));
+  await waitFor(() => {
+    expect(updates).toStrictEqual([
+      {
+        selectedModel: "claude-fable-5-1",
+        serviceTier: null,
+        selectedImageModel: "gpt-image-1",
+      },
+      {
+        selectedModel: "claude-fable-5-1",
+        serviceTier: null,
+        selectedImageModel: "gpt-image-1",
+      },
+    ]);
+  });
+  expect(picker).toHaveTextContent("GPT Image 1");
 });
 
 test("Image mode sends when the model menu is still open", async () => {

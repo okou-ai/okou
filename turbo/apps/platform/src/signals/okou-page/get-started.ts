@@ -177,65 +177,14 @@ export const setRewardsNoteOpen$ = command(({ set }, open: boolean) => {
  * same reason the share dialog is.
  */
 const internalQuestIntroKey$ = state<GetStartedQuestKey | null>(null);
-/**
- * Whether the workflow intro has advanced from its three steps to the prompt
- * it hands over. Every open starts on the steps.
- */
-const internalQuestIntroPromptShown$ = state(false);
-/**
- * What the connector step's search box holds.
- *
- * The step offers the whole one-click catalog, so the tool someone actually
- * came to connect can sit below the fold of a list they have to scroll. This
- * is its own value rather than the connectors page's `connectorsSearch$`
- * because the two surfaces are filtering different lists: typing here must not
- * decide what that page shows the next time it opens.
- */
-const internalQuestConnectorSearch$ = state("");
-/**
- * The workflow prompt as the reader has edited it, or `null` while it is still
- * the suggestion.
- *
- * The screen's own subtitle offers to change the wording first, so the sentence
- * has to be editable. `null` rather than a copy of the default, because the
- * default is a translated string that only the view can resolve -- seeding this
- * with it would freeze one language into the signal.
- */
-const internalQuestWorkflowPrompt$ = state<string | null>(null);
 export const questIntroKey$ = computed((get) => {
   return get(internalQuestIntroKey$);
-});
-export const questIntroPromptShown$ = computed((get) => {
-  return get(internalQuestIntroPromptShown$);
-});
-export const questConnectorSearch$ = computed((get) => {
-  return get(internalQuestConnectorSearch$);
-});
-export const questWorkflowPrompt$ = computed((get) => {
-  return get(internalQuestWorkflowPrompt$);
 });
 export const setQuestIntroKey$ = command(
   ({ set }, key: GetStartedQuestKey | null) => {
     set(internalQuestIntroKey$, key);
-    set(internalQuestIntroPromptShown$, false);
-    // Every open starts on the whole catalog. A search left over from the last
-    // time the dialog was open would otherwise hide most of it with no visible
-    // cause but a filled box the reader has to notice first.
-    set(internalQuestConnectorSearch$, "");
-    // And on the suggested prompt rather than a sentence edited in a session
-    // the reader has since left.
-    set(internalQuestWorkflowPrompt$, null);
   },
 );
-export const setQuestWorkflowPrompt$ = command(({ set }, value: string) => {
-  set(internalQuestWorkflowPrompt$, value);
-});
-export const setQuestConnectorSearch$ = command(({ set }, value: string) => {
-  set(internalQuestConnectorSearch$, value);
-});
-export const showQuestIntroPrompt$ = command(({ set }) => {
-  set(internalQuestIntroPromptShown$, true);
-});
 
 const internalShareDialogOpen$ = state(false);
 const internalSharePostDraft$ = state("");

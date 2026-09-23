@@ -107,9 +107,9 @@ The number is a stable file identifier, not an execution order. Test titles
 should describe behavior without repeating the file identifier.
 
 The workflow prepares separate real Codex BYOK, real Codex built-in, and
-real Claude/Pi identities. Luna billing and fallback use the built-in Codex
-identity, whose bootstrap disables Pi so those tests retain Codex execution.
-The BYOK steering and Claude/Pi accounts keep their existing configurations.
+real Claude/Pi identities. Bootstrap disables Pi for the shared Runner, mock
+Claude, Codex BYOK, and Codex built-in identities so their tests retain Runner
+execution. The real Claude/Pi account enables Pi in its dedicated smoke test.
 The shared mock-runner identity starts with `UTC` as its timezone.
 Runner BATS must not mutate shared account-level preferences from parallel
 shards. Coverage that needs mutable account-level state requires a dedicated

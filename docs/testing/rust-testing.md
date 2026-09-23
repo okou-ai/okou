@@ -29,6 +29,18 @@ cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -j 1 -p runner-host -- --test-threads=1
 
+# Extracted Runner provider coordination and its owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-provider -- --test-threads=1
+
+# Extracted Runner network behavior and its owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-network -- --test-threads=1
+
+# Extracted Runner storage planning and cache owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-storage -- --test-threads=1
+
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -p shell-quote --lib tests::quoted_words_round_trip_through_posix_shell -- --exact
@@ -227,6 +239,17 @@ async fn downloads_and_extracts() {
     // ... async operations with .await
 }
 ```
+
+For in-process timer behavior, use Tokio's paused clock instead of waiting for
+real time. `#[tokio::test(start_paused = true)]` and `tokio::time::advance(...)`
+let the test exercise the production timer while keeping the test fast. See
+`crates/runner-rpc-client/tests/helper.rs` and `tests/stream.rs` for examples.
+Advance only after the timed task is armed, then assert its observable result.
+For external processes and kernel I/O, wait for the observable completion under
+a bounded deadline; a paused Tokio clock does not control those systems. A
+completed `dd` followed by `sync` already supplies that completion boundary in
+`crates/nbd-cow/tests/integration.rs`, so an additional fixed sleep adds no
+signal.
 
 For sync-only logic, plain `#[test]` is fine:
 

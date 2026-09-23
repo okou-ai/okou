@@ -545,6 +545,13 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_descendant",
     parents: ["chat_threads"],
   },
+  // The composer draft moved off the thread row into its own child. It carries
+  // no account identity of its own and `chat_thread_id` is both its primary key
+  // and a cascading foreign key, so the thread's own deletion removes it.
+  chat_thread_drafts: {
+    coverage: "user_descendant",
+    parents: ["chat_threads"],
+  },
   chat_thread_event_sequences: {
     coverage: "user_root",
     ownership: ["user_id"],
@@ -676,6 +683,10 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   google_workspace_processed_events: {
     coverage: "user_descendant",
     parents: ["google_workspace_event_subscription_states"],
+  },
+  home_task_recommendations: {
+    coverage: "user_root",
+    ownership: ["user_id"],
   },
   hosted_deployments: { coverage: "user_root", ownership: ["user_id"] },
   hosted_sites: { coverage: "user_root", ownership: ["user_id"] },

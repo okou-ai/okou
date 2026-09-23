@@ -241,16 +241,10 @@ impl AdditionalRun {
 }
 
 impl Harness {
-    pub(super) fn notifications(&self) -> crate::provider::AblyTestEvents {
-        crate::provider::AblyTestEvents::new(
-            HttpClient::new(HttpClientConfig {
-                api_url: self.api.base_url(),
-                vercel_bypass: None,
-                client_session_id: "ssh-notification-test".into(),
-            })
-            .unwrap(),
-            Arc::clone(&self.runtime),
-        )
+    pub(super) fn notifications(&self) -> TestNotifications {
+        TestNotifications {
+            runtime: Arc::clone(&self.runtime),
+        }
     }
 
     pub(super) async fn new(reply: Reply) -> Self {
@@ -495,6 +489,18 @@ impl Harness {
                 &self.cancel,
             ),
         );
+    }
+}
+
+pub(super) struct TestNotifications {
+    runtime: Arc<SshRuntime>,
+}
+
+impl TestNotifications {
+    pub(super) async fn send(&mut self, event: Option<ably_subscriber::Event>) {
+        if let Some(ably_subscriber::Event::Message(message)) = event {
+            self.runtime.ably_message(&message);
+        }
     }
 }
 impl Drop for Harness {

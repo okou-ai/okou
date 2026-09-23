@@ -38,6 +38,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/refresh-home-task-recommendations",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/renew-gmail-watches",
       "schedule": "0 */12 * * *"
     },
@@ -56,6 +60,10 @@
     {
       "path": "/api/cron/compact-chat-thread-snapshots",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/reconcile-artifact-catalog",
+      "schedule": "* * * * *"
     },
     {
       "path": "/api/cron/compact-usage-events",

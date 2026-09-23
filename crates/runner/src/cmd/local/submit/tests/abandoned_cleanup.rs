@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::super::write_abandoned_result_marker;
 use super::support::{submit_queue_entry, write_queue_job_file};
-use crate::local_queue::{self, JobResponse};
+use runner_provider::local_queue::{self, JobResponse};
 use runner_types::ids::RunId;
 
 fn write_orphaned_active_input(group_dir: &Path, job_id: RunId) {

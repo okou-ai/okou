@@ -128,12 +128,6 @@ pub(crate) async fn read_http_request(socket: &mut TcpStream) -> io::Result<Stri
     read_http_request_with_timeout(socket, RAW_HTTP_FIXTURE_TIMEOUT).await
 }
 
-pub(crate) async fn join_raw_http_task<T>(task: JoinHandle<T>, description: &str) -> T {
-    finish_task_with_timeout(task, RAW_HTTP_FIXTURE_TIMEOUT)
-        .await
-        .unwrap_or_else(|error| panic!("{description} should finish: {error}"))
-}
-
 async fn finish_task_with_timeout<T>(
     mut task: JoinHandle<T>,
     timeout: Duration,

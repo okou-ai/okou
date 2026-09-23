@@ -982,7 +982,7 @@ describe("Google Workspace Events subscription lifecycle", () => {
     });
   });
 
-  it("reprojects a copied automation to the destination default account", async () => {
+  async function setupCopiedMeetAutomation() {
     const fixture = await setupFixture();
     const source = await createMeetAutomation(fixture);
     if (!source.body.chatThreadId) {
@@ -1030,6 +1030,21 @@ describe("Google Workspace Events subscription lifecycle", () => {
       }),
       [200],
     );
+    const copiedSubscription =
+      fixture.provider.accounts.primary.createdNames[1];
+    if (!copiedSubscription) {
+      throw new Error("Expected a destination-default subscription");
+    }
+    return {
+      fixture,
+      copiedAutomations,
+      sourceSubscription,
+      copiedSubscription,
+    };
+  }
+
+  it("reprojects a copied automation to the destination default account", async () => {
+    const { fixture, copiedAutomations } = await setupCopiedMeetAutomation();
     expect(copiedAutomations.body).toContainEqual(
       expect.objectContaining({
         kind: "event",
@@ -1037,13 +1052,12 @@ describe("Google Workspace Events subscription lifecycle", () => {
         enabled: true,
       }),
     );
-    const copiedSubscription =
-      fixture.provider.accounts.primary.createdNames[1];
-    if (!copiedSubscription) {
-      throw new Error("Expected a destination-default subscription");
-    }
     expect(fixture.provider.accounts.secondary.deletedUrls).toStrictEqual([]);
+  });
 
+  it("dispatches source and copied Google Meet automations independently", async () => {
+    const { sourceSubscription, copiedSubscription } =
+      await setupCopiedMeetAutomation();
     const sourcePush = await postWorkspaceEvent(sourceSubscription);
     expect(sourcePush.status).toBe(200);
     await expect(sourcePush.json()).resolves.toMatchObject({

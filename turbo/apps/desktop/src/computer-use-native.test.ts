@@ -205,6 +205,8 @@ process.stdin.on("data", (chunk) => {
 // requests are in flight when each one arrives, defers its response so overlap
 // would be visible, records every process launch, and never answers a request
 // for the "HANG" app so the client-side timeout/respawn path can be exercised.
+// This external helper holds real replies briefly so requests overlap across
+// the process boundary; the test observes concurrent protocol activity.
 async function createConcurrencyHelper(responseDelayMs: number): Promise<{
   readonly dir: string;
   readonly helperPath: string;

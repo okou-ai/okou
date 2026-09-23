@@ -10,11 +10,11 @@ use serde::Serialize;
 use tokio::task::JoinHandle;
 use tracing::warn;
 
-use crate::archive_connection_attempt::ArchiveConnectionAttempt;
 use crate::duration::duration_ms;
-use crate::error::{ApiFailureKind, RunnerError};
+use crate::error::ApiFailureKind;
 use crate::http::HttpClient;
 use crate::resource_budget::ResourceBudget;
+use runner_storage::ArchiveConnectionAttempt;
 use runner_types::ids::RunId;
 use runner_types::types::SandboxReuseResult;
 pub(crate) use session_history::{
@@ -24,16 +24,16 @@ pub(crate) use session_history::{
     SessionHistoryTransferEncodingState, session_history_prefix_extension_action_type,
 };
 
-mod archive_size_mismatch;
 mod dns_readiness;
 mod history_transfer;
 mod session_history;
 mod workspace_session_history;
 
-pub(crate) use archive_size_mismatch::ArchiveSizeMismatch;
 pub(crate) use history_transfer::{
     HistoryCodecDecision, HistoryTransferMeasurements, HistoryTransferSource,
 };
+pub(crate) use runner_storage::ArchiveSizeMismatch;
+pub(crate) use runner_storage::SandboxOpRecord;
 pub(crate) use workspace_session_history::WorkspaceSessionHistoryTelemetry;
 
 /// How long before we auto-flush pending ops (matching TS: 30s).
@@ -58,9 +58,11 @@ enum OomEvidenceUploadFailure {
 }
 
 impl OomEvidenceUploadFailure {
-    fn from_request_error(error: &RunnerError) -> Self {
+    fn from_request_error(error: &crate::error::RunnerError) -> Self {
         match error {
-            RunnerError::ApiTransport(error) => Self::from_api_failure_kind(error.failure_kind),
+            crate::error::RunnerError::ApiTransport(error) => {
+                Self::from_api_failure_kind(error.failure_kind)
+            }
             _ => Self::Transport,
         }
     }
@@ -504,6 +506,28 @@ impl JobTelemetry {
         self.push_operation(op);
     }
 
+    /// Record a storage-apply call using only fixed transport/position and
+    /// serialized-manifest-size labels. The manifest and its identifiers never
+    /// enter this operation.
+    pub(crate) fn record_storage_apply_batch(
+        &mut self,
+        duration: Duration,
+        success: bool,
+        transport_position: &'static str,
+        manifest_size_bucket: &'static str,
+    ) {
+        let mut op = sandbox_op(
+            "runner_storage_manifest_batch_apply",
+            duration,
+            success,
+            (!success).then_some("storage_batch_apply_failed"),
+            Some(transport_position),
+            None,
+        );
+        op.reason = Some(manifest_size_bucket.to_string());
+        self.push_operation(op);
+    }
+
     /// Record a timed operation with low-cardinality session-history transport
     /// dimensions derived from the hash-backed resume history ref.
     pub fn record_with_session_history_metadata(
@@ -721,15 +745,6 @@ impl JobTelemetry {
     }
 
     #[cfg(test)]
-    pub(crate) fn pending_archive_connection_attempt_payloads(&self) -> Vec<serde_json::Value> {
-        self.pending_ops
-            .iter()
-            .filter(|op| op.archive_connection_attempt.is_some())
-            .map(|op| serde_json::to_value(op).expect("serialize archive connection attempt"))
-            .collect()
-    }
-
-    #[cfg(test)]
     pub(crate) fn pending_workspace_history_restore_payloads(&self) -> Vec<serde_json::Value> {
         self.pending_ops
             .iter()
@@ -854,30 +869,6 @@ pub(crate) struct SandboxOpReporter {
     runner_hostname: Option<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct SandboxOpRecord {
-    pub(crate) action_type: &'static str,
-    pub(crate) duration: Duration,
-    pub(crate) success: bool,
-    pub(crate) error: Option<&'static str>,
-}
-
-impl SandboxOpRecord {
-    pub(crate) const fn new(
-        action_type: &'static str,
-        duration: Duration,
-        success: bool,
-        error: Option<&'static str>,
-    ) -> Self {
-        Self {
-            action_type,
-            duration,
-            success,
-            error,
-        }
-    }
-}
-
 impl SandboxOpReporter {
     pub(crate) async fn report(&self, records: Vec<SandboxOpRecord>) {
         let ops = records
@@ -901,6 +892,52 @@ impl SandboxOpReporter {
             ops,
         )
         .await;
+    }
+}
+
+impl runner_storage::StorageTelemetry for JobTelemetry {
+    fn record(
+        &mut self,
+        action_type: &str,
+        duration: Duration,
+        success: bool,
+        error: Option<&str>,
+    ) {
+        JobTelemetry::record(self, action_type, duration, success, error);
+    }
+
+    fn record_bounded_outcome(
+        &mut self,
+        action_type: &'static str,
+        success: bool,
+        outcome: &'static str,
+        reason: Option<&'static str>,
+    ) {
+        JobTelemetry::record_bounded_outcome(self, action_type, success, outcome, reason);
+    }
+
+    fn record_archive_phase_at(
+        &mut self,
+        record: SandboxOpRecord,
+        completed_at: DateTime<Utc>,
+        mismatch: Option<ArchiveSizeMismatch>,
+        connection_attempt: Option<ArchiveConnectionAttempt>,
+    ) {
+        JobTelemetry::record_archive_phase_at(
+            self,
+            record,
+            completed_at,
+            mismatch,
+            connection_attempt,
+        );
+    }
+
+    fn reporter(&self) -> runner_storage::SandboxOpReporter {
+        let reporter = JobTelemetry::reporter(self);
+        runner_storage::SandboxOpReporter::new(move |records| {
+            let reporter = reporter.clone();
+            async move { reporter.report(records).await }
+        })
     }
 }
 
@@ -1015,7 +1052,7 @@ async fn send_telemetry(
             warn!(run_id = %run_id, status = %resp.status(), "telemetry flush rejected");
         }
         Err(error) => match &error {
-            RunnerError::ApiTransport(api_error) => warn!(
+            crate::error::RunnerError::ApiTransport(api_error) => warn!(
                 run_id = %run_id,
                 error = %error,
                 endpoint = api_error.request.endpoint_label,

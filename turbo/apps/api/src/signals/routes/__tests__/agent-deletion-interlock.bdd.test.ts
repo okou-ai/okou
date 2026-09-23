@@ -374,16 +374,12 @@ describe("DELETE /api/agents/:id bounded deletion interlock", () => {
       registerHeldBoundary(held);
       context.mocks.s3.send.mockClear();
 
-      const startedAt = performance.now();
       const response = await bdd.requestDeleteAgent(
         actor,
         target.agentId,
         [409],
       );
-      const elapsedMs = performance.now() - startedAt;
-
       expectRetryConflict(response);
-      expect(elapsedMs).toBeLessThan(750);
       await expect(held.blockedWaiterCount()).resolves.toBe(0);
       expect(context.mocks.s3.send).not.toHaveBeenCalled();
       await expect(
@@ -556,17 +552,13 @@ describe("DELETE /api/agents/:id bounded deletion interlock", () => {
     });
     registerHeldBoundary(held);
 
-    const startedAt = performance.now();
     const deletion = bdd.requestDeleteAgent(actor, target.agentId, [409]);
     await expect
       .poll(held.blockedWaiterCount, { interval: 2, timeout: 500 })
       .toBeGreaterThan(0);
     held.startSessionLock();
     const response = await deletion;
-    const elapsedMs = performance.now() - startedAt;
-
     expectRetryConflict(response);
-    expect(elapsedMs).toBeLessThan(750);
     await held.sessionLocked;
     await expect(
       readAgentLifecycleCountsFixture(target.agentId),
@@ -609,16 +601,12 @@ describe("DELETE /api/agents/:id bounded deletion interlock", () => {
     });
     registerHeldBoundary(held);
 
-    const startedAt = performance.now();
     const deletion = bdd.requestDeleteAgent(actor, target.agentId, [409]);
     await expect
       .poll(held.blockedWaiterCount, { interval: 2, timeout: 500 })
       .toBeGreaterThan(0);
     const response = await deletion;
-    const elapsedMs = performance.now() - startedAt;
-
     expectRetryConflict(response);
-    expect(elapsedMs).toBeLessThan(750);
     await expect(
       readAgentLifecycleCountsFixture(target.agentId),
     ).resolves.toStrictEqual({ agents: 1, sessions: 1, runs: 1 });

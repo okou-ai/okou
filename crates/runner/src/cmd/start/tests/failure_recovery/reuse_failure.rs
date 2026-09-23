@@ -8,8 +8,8 @@ use super::super::support::{
 
 use runner_types::types::SandboxReuseResult;
 
-fn reusable_candidate(run_id: RunId, session_id: &str) -> crate::provider::JobCandidate {
-    crate::provider::JobCandidate::new(run_id, "vm0/default".into())
+fn reusable_candidate(run_id: RunId, session_id: &str) -> runner_provider::JobCandidate {
+    runner_provider::JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(session_id.to_string()))
 }
 

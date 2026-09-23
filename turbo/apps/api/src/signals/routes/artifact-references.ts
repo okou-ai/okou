@@ -9,7 +9,8 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
-import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
+import { s3ObjectHead } from "../external/s3";
+import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
 import { privateArtifactRecord } from "../services/private-artifact-storage.service";
 import {
   resolveArtifactShare$,
@@ -58,10 +59,10 @@ const resolveFileReference$ = command(
       if (object.kind === "missing") {
         return notFound("Artifact unavailable");
       }
-      const preview = await get(
-        generateArtifactPreviewUrl(file.bucket, file.key, {
-          signingDate: nowDate(),
-        }),
+      const preview = await set(
+        resolveArtifactPreviewUrl$,
+        { bucket: file.bucket, key: file.key, signingDate: nowDate() },
+        signal,
       );
       signal.throwIfAborted();
       return {

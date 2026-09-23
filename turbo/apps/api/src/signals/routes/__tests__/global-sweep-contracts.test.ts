@@ -5,6 +5,7 @@ import { mockEnv } from "../../../lib/env";
 import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
 import { cronCleanupXResourceReadsRoutes } from "../cron-cleanup-x-resource-reads";
 import { cronCompactChatThreadSnapshotsRoutes } from "../cron-compact-chat-thread-snapshots";
+import { cronReconcileArtifactCatalogRoutes } from "../cron-reconcile-artifact-catalog";
 import { cronConnectorOauthStateCleanupRoutes } from "../cron-connector-oauth-state-cleanup";
 import { cronDrainEmailOutboxRoutes } from "../cron-drain-email-outbox";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
@@ -49,6 +50,15 @@ describe("production-global sweep route contracts", () => {
       context,
       cronCompactChatThreadSnapshotsRoutes,
       "/api/cron/compact-chat-thread-snapshots",
+    );
+  });
+
+  it("rejects artifact reconciliation without authorization", async () => {
+    expect.hasAssertions();
+    await expectGlobalSweepMissingAuth(
+      context,
+      cronReconcileArtifactCatalogRoutes,
+      "/api/cron/reconcile-artifact-catalog",
     );
   });
 

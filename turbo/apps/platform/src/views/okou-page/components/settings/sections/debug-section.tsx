@@ -1,3 +1,4 @@
+import { Field } from "@base-ui/react/field";
 import { useGet, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -45,19 +46,19 @@ function CaptureNetworkBodiesBlock() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-4 bg-card p-4 rounded-xl border border-surface-border">
+      <Field.Root className="flex items-center gap-4 bg-card p-4 rounded-xl border border-surface-border">
         <div className="shrink-0">
           <div className="flex h-7 w-7 items-center justify-center">
             <Bug size={22} className="text-muted-foreground" />
           </div>
         </div>
         <div className="flex flex-1 flex-col gap-1 min-w-0">
-          <div className="text-sm font-medium text-foreground">
+          <Field.Label className="text-sm font-medium text-foreground">
             {t(($) => {
               return $.settings.preferences.debug.capture.title;
             })}
-          </div>
-          <div className="text-sm text-muted-foreground">
+          </Field.Label>
+          <Field.Description className="text-sm text-muted-foreground">
             {enabled
               ? t(
                   ($) => {
@@ -70,14 +71,14 @@ function CaptureNetworkBodiesBlock() {
               : t(($) => {
                   return $.settings.preferences.debug.capture.disabled;
                 })}
-          </div>
+          </Field.Description>
         </div>
         <Switch
           checked={enabled}
           onCheckedChange={handleToggle}
           disabled={saving}
         />
-      </div>
+      </Field.Root>
     </div>
   );
 }

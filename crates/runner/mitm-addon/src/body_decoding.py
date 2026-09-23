@@ -86,11 +86,6 @@ class StreamDecodeSession(NamedTuple):
     finish_error: _StreamDecodeFinishError
 
 
-def _feed_chunks(feed: _StreamDecodeFeed, data: bytes, max_decoded_chunk: int) -> None:
-    for offset in range(0, len(data), max_decoded_chunk):
-        feed(data[offset : offset + max_decoded_chunk])
-
-
 def _no_stream_decode_error() -> str | None:
     return None
 
@@ -345,19 +340,24 @@ def create_stream_decode_session(
     if _stream_decode_skip_reason(encoding) is not None:
         return None
     if not encoding or encoding == "identity":
-        if should_continue is None:
-            return StreamDecodeSession(feed, _no_stream_decode_error)
         inspection_stopped = False
 
-        def feed_until_stopped(chunk: bytes) -> None:
+        def feed_identity_chunks(chunk: bytes) -> None:
             nonlocal inspection_stopped
             if inspection_stopped:
                 return
-            feed(chunk)
-            if not should_continue():
-                inspection_stopped = True
+            if not chunk:
+                feed(chunk)
+                if should_continue is not None and not should_continue():
+                    inspection_stopped = True
+                return
+            for offset in range(0, len(chunk), max_decoded_chunk):
+                feed(chunk[offset : offset + max_decoded_chunk])
+                if should_continue is not None and not should_continue():
+                    inspection_stopped = True
+                    return
 
-        return StreamDecodeSession(feed_until_stopped, _no_stream_decode_error)
+        return StreamDecodeSession(feed_identity_chunks, _no_stream_decode_error)
     if encoding == "br":
         return _create_brotli_stream_decode_session(
             feed,
@@ -389,9 +389,10 @@ def decompress_body(
     - gzip/deflate: hard cap via ``decompressobj.decompress(data, max_length=)``;
       zlib stops decoding once the cap is reached. Concatenated members are
       decoded until the shared cap is exhausted.
-    - zstd: hard cap via ``ZstdDecompressor.stream_reader(data).read(max_output)``;
-      zstd reads incrementally so total memory is bounded by
-      ``max_output`` plus library internal buffers.
+    - zstd: hard cap via a cross-frame
+      ``ZstdDecompressor.stream_reader(data).read(max_output)``; concatenated
+      frames share the cap, and total memory remains bounded by ``max_output``
+      plus library internal buffers.
     - br: exact accumulator cap over adaptive compressed-input chunks.
       Brotli 1.2's ``output_buffer_limit`` keeps transient output near the
       remaining budget, plus library allocation blocks; returned chunks may
@@ -613,7 +614,10 @@ def _decode_body_bounded(
             # stream_reader.read(n) reads *up to* n bytes: the full frame if
             # smaller than n, exactly n if larger — so total memory is bounded
             # by n plus ZSTD_DStream{In,Out}Size (~128 KB library buffers).
-            with zstandard.ZstdDecompressor().stream_reader(data) as reader:
+            with zstandard.ZstdDecompressor().stream_reader(
+                data,
+                read_across_frames=True,
+            ) as reader:
                 return _BodyDecodeResult(reader.read(max_output), False)
     except (zlib.error, brotli.error, zstandard.ZstdError) as exc:
         return _BodyDecodeResult(data, True, exc)

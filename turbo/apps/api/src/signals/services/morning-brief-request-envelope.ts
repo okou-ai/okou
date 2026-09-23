@@ -30,6 +30,15 @@ import {
   type MorningBriefRequestAllocation,
 } from "./morning-brief-collection-plan";
 import { MORNING_BRIEF_GENERATION_MODEL } from "./morning-brief-generation-prompt";
+import {
+  MAX_HEADING_LENGTH,
+  MAX_ITEM_LENGTH,
+  MAX_ITEMS_PER_SECTION,
+  MAX_SECTIONS,
+  MAX_SOURCE_IDS,
+  MAX_TITLE_LENGTH,
+  MORNING_BRIEF_COMPOSED_RESULT_JSON_SCHEMA,
+} from "./morning-brief-generation-result";
 import type { MorningBriefLanguagePlan } from "./morning-brief-language-policy";
 import {
   morningBriefSourceOmissions,
@@ -57,17 +66,32 @@ const MORNING_BRIEF_REQUEST_POLICY = [
   "Return one JSON object only. Use either the deliver or skip shape in the schema.",
 ].join("\n");
 
-/** The response contract the single call must satisfy. */
+/**
+ * The response contract the single call must satisfy.
+ *
+ * Every number here is the validator's own, so the document cannot describe a
+ * brief the validator would refuse. `limits` sits beside the two shapes rather
+ * than inside `deliver`, because the two shapes are copied literally: a count
+ * written next to the array it bounds would read as one more field to emit, and
+ * the provider schema refuses fields nobody asked for.
+ *
+ * How many sections and how many items each may hold were missing from this
+ * document while the validator enforced both. A model that is told a limit
+ * writes something useful within it; one that is only cut off at it does not.
+ */
 const MORNING_BRIEF_RESPONSE_SCHEMA = {
   deliver: {
     decision: "deliver",
     language: "BCP-47 tag",
-    title: "at most 120 characters",
+    title: `at most ${String(MAX_TITLE_LENGTH)} characters`,
     sections: [
       {
-        heading: "at most 60 characters",
+        heading: `at most ${String(MAX_HEADING_LENGTH)} characters`,
         items: [
-          { text: "at most 400 characters", citations: ["one to four ids"] },
+          {
+            text: `at most ${String(MAX_ITEM_LENGTH)} characters`,
+            citations: [`one to ${String(MAX_SOURCE_IDS)} ids`],
+          },
         ],
       },
     ],
@@ -77,75 +101,31 @@ const MORNING_BRIEF_RESPONSE_SCHEMA = {
     language: "BCP-47 tag",
     reason: "nothing_actionable",
   },
+  limits: {
+    sections: `one to ${String(MAX_SECTIONS)} sections`,
+    itemsPerSection: `one to ${String(MAX_ITEMS_PER_SECTION)} items in every section`,
+  },
 } as const;
 
 /**
- * The same union, in the one form the provider can actually enforce.
+ * The same union, in the one form the provider can actually enforce, is
+ * `MORNING_BRIEF_COMPOSED_RESULT_JSON_SCHEMA` — derived from the result
+ * validator and imported above rather than written out here.
  *
  * The schema above travels inside the message, where it is documentation: the
  * model may honour it, wrap it in a code fence or introduce it with a sentence,
  * and a policy line asking for "one JSON object only" can refuse none of that.
- * This copy travels as `response_format`, so decoding is constrained to one
- * bare object of one of the two shapes instead of merely being asked for it.
+ * The derived copy travels as `response_format`, so decoding is constrained to
+ * one bare object of one of the two shapes instead of merely being asked for it.
  *
- * It describes structure only. Lengths, counts, the citation vocabulary and the
- * no-link rule stay with the result validator, which is strict, terminal and
- * untouched by this contract: restating a content limit here would be a second
- * place it has to stay true. `additionalProperties: false` is the one overlap,
- * and only because it is the same refusal the validator already makes — an
- * answer carrying fields nobody asked for is not the requested shape.
+ * It used to describe structure only, on the reasoning that a content limit
+ * restated here would be a second place it has to stay true. That reasoning
+ * held for the restating and not for the limits: the validator enforced seven
+ * bounds the provider was never told about, so a model could satisfy the
+ * provider completely and still have its answer thrown away. Deriving the
+ * schema settles both at once — the bounds arrive, and there is still only one
+ * place they are written.
  */
-const MORNING_BRIEF_RESPONSE_JSON_SCHEMA = {
-  // Both branches are objects and the union is over which one, so the type is
-  // stated beside `anyOf` for a reader — or a provider-side translator — that
-  // dispatches on it before looking at the branches.
-  type: "object",
-  anyOf: [
-    {
-      type: "object",
-      properties: {
-        decision: { type: "string", enum: ["deliver"] },
-        language: { type: "string" },
-        title: { type: "string" },
-        sections: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              heading: { type: "string" },
-              items: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    text: { type: "string" },
-                    citations: { type: "array", items: { type: "string" } },
-                  },
-                  required: ["text", "citations"],
-                  additionalProperties: false,
-                },
-              },
-            },
-            required: ["heading", "items"],
-            additionalProperties: false,
-          },
-        },
-      },
-      required: ["decision", "language", "title", "sections"],
-      additionalProperties: false,
-    },
-    {
-      type: "object",
-      properties: {
-        decision: { type: "string", enum: ["skip"] },
-        language: { type: "string" },
-        reason: { type: "string", enum: ["nothing_actionable"] },
-      },
-      required: ["decision", "language", "reason"],
-      additionalProperties: false,
-    },
-  ],
-} as const;
 
 /**
  * How much of each source survived, as the request reports it.
@@ -295,12 +275,13 @@ export function buildMorningBriefProviderRequest(
     // the model reads it. Its bytes are budgeted for free: this is the exact
     // object the 128 KiB ceiling is measured against, so the schema takes its
     // room from the evidence allocator instead of from the transport limit.
+    // Carrying the bounds made it larger, and that is the trade being made.
     response_format: {
       type: "json_schema",
       json_schema: {
         name: "morning_brief_result",
         strict: true,
-        schema: MORNING_BRIEF_RESPONSE_JSON_SCHEMA,
+        schema: MORNING_BRIEF_COMPOSED_RESULT_JSON_SCHEMA,
       },
     },
   });

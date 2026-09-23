@@ -7,7 +7,8 @@ and finalization are described in
 what happens to the evidence in between, and which language the result is
 written in.
 
-`simpleMorningBrief` is default-off and has no allowlist.
+`simpleMorningBrief` is default-off and enabled for the staff org allowlist
+only.
 
 ## Source-neutral evidence
 
@@ -198,6 +199,14 @@ inside that measurement: once inside the message as documentation, and once as
 the body's `response_format`, where the provider enforces it. Measuring the
 complete body is what keeps the second copy a charge against evidence rather
 than a surprise at the transport.
+
+The enforced copy is derived from the result validator rather than written
+alongside it, so both state the same lengths and the same counts. They did not
+always: the validator bounded the title, the heading, the item text, the
+citations, the sections and the items per section while `response_format`
+bounded none of them, and an answer that satisfied the provider completely was
+still thrown away. Deriving costs a few hundred bytes of the evidence budget and
+removes the place the two could disagree.
 
 Item sizes are measured the same way, by serializing the exact projection the
 request carries. Summing field lengths is not the same number and is not

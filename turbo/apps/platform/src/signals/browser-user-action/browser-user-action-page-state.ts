@@ -4,6 +4,7 @@ import {
   createBrowserUserActionSignals,
   parseBrowserUserActionUrl,
 } from "../chat-page/browser-user-action-block.ts";
+import { createBrowserSessionSignals } from "../chat-page/browser-session-block.ts";
 import { pathParams$, searchParams$ } from "../route.ts";
 
 export const browserUserActionPageDescriptor$ = computed((get) => {
@@ -18,4 +19,9 @@ export const browserUserActionPageDescriptor$ = computed((get) => {
 export const browserUserActionPageSignals$ = computed((get) => {
   const descriptor = get(browserUserActionPageDescriptor$);
   return descriptor ? createBrowserUserActionSignals(descriptor) : null;
+});
+
+export const browserUserActionPageBrowserSessionSignals$ = computed((get) => {
+  const descriptor = get(browserUserActionPageDescriptor$);
+  return descriptor ? createBrowserSessionSignals(descriptor.threadId) : null;
 });

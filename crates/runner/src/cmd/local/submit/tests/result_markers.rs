@@ -2,7 +2,7 @@ use std::os::unix::fs::{MetadataExt, symlink};
 
 use super::super::{result_file_is_empty, try_read_result, write_abandoned_result_marker};
 use super::support::{mode, submit_queue_entry};
-use crate::local_queue;
+use runner_provider::local_queue;
 use runner_types::ids::RunId;
 
 #[test]

@@ -292,6 +292,30 @@ function AgentTabNav({
   showProfileAndInstructions: boolean;
 }) {
   const { t } = useTranslation("agents");
+  const tabItems = [
+    {
+      value: "authorization",
+      label: t(($) => {
+        return $.detail.tabs.authorization;
+      }),
+    },
+    ...(showProfileAndInstructions
+      ? [
+          {
+            value: "profile",
+            label: t(($) => {
+              return $.detail.tabs.profile;
+            }),
+          },
+          {
+            value: "instructions",
+            label: t(($) => {
+              return $.detail.tabs.instructions;
+            }),
+          },
+        ]
+      : []),
+  ];
   return (
     <Tabs
       value={activeTab}
@@ -300,30 +324,40 @@ function AgentTabNav({
     >
       {/* Mobile: Select dropdown */}
       <div className="sm:hidden">
-        <Select value={activeTab} onValueChange={onTabChange}>
-          <SelectTrigger className="h-9 w-full">
+        <Select
+          items={tabItems}
+          value={activeTab}
+          onValueChange={(value, details) => {
+            if (
+              value === null ||
+              !tabItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            if (value !== activeTab) {
+              onTabChange(value);
+            }
+          }}
+        >
+          <SelectTrigger
+            className="h-9 w-full"
+            aria-label={t(($) => {
+              return $.detail.sectionNavigation;
+            })}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="authorization">
-              {t(($) => {
-                return $.detail.tabs.authorization;
-              })}
-            </SelectItem>
-            {showProfileAndInstructions && (
-              <SelectItem value="profile">
-                {t(($) => {
-                  return $.detail.tabs.profile;
-                })}
-              </SelectItem>
-            )}
-            {showProfileAndInstructions && (
-              <SelectItem value="instructions">
-                {t(($) => {
-                  return $.detail.tabs.instructions;
-                })}
-              </SelectItem>
-            )}
+            {tabItems.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>
@@ -990,7 +1024,7 @@ function AgentHeader({
               className="h-14 w-14 shrink-0 rounded-full object-cover object-top sm:h-16 sm:w-16"
             />
             {showProfileAndInstructions && isDefaultAgent === false && (
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -1000,7 +1034,7 @@ function AgentHeader({
                           onTabChange("profile");
                           openMaker(avatarUrl, pageSignal);
                         }}
-                        className="absolute -right-0.5 -bottom-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border opacity-0 group-hover:opacity-100 hover:text-foreground transition-colors"
+                        className="absolute -right-0.5 -bottom-0.5 flex h-6 w-6 items-center justify-center rounded-full bg-background text-muted-foreground shadow-sm border border-border [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background transition-colors"
                         aria-label={t(($) => {
                           return $.avatar.actions.customize;
                         })}

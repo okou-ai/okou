@@ -3,8 +3,8 @@ use super::super::support::{
     assert_run_exits_within, mock_run_config, mock_run_config_with_runtime, shutdown,
     test_profiles, wait_status_mode,
 };
-use crate::provider::{ClaimedJob, CompletionAuth, JobCandidate};
 use async_trait::async_trait;
+use runner_provider::{ClaimedJob, CompletionAuth, JobCandidate};
 use runner_types::types::HeartbeatState;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -15,7 +15,7 @@ struct ShutdownRecordingProvider {
 }
 
 #[async_trait]
-impl crate::provider::JobProvider for ShutdownRecordingProvider {
+impl runner_provider::JobProvider for ShutdownRecordingProvider {
     async fn discover(&self) -> Option<JobCandidate> {
         panic!("publish failure cleanup test does not discover jobs")
     }

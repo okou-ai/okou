@@ -92,6 +92,66 @@ test("Browse a long sidebar chat history", async () => {
   expect(scrollArea).toBeInTheDocument();
 });
 
+test("Toggle the chat list from its title with pointer and keyboard", async () => {
+  const user = userEvent.setup({ delay: null });
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Release plan");
+  const titleButton = buttonByText("Chats with Okou", list);
+  const contentId = titleButton.getAttribute("aria-controls");
+  if (!contentId) {
+    throw new Error("Chat list title does not control its content");
+  }
+  const content = document.getElementById(contentId);
+  if (!content) {
+    throw new Error("Controlled chat list content not found");
+  }
+
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).toBeVisible();
+  titleButton.focus();
+  await user.keyboard("{Enter}");
+
+  expect(titleButton).toHaveFocus();
+  expect(titleButton).toHaveAttribute("aria-expanded", "false");
+  expect(content).not.toBeVisible();
+  expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
+
+  await user.keyboard(" ");
+
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).toBeVisible();
+  await within(list).findByText("Release plan");
+
+  // Pointer activation runs through the same control as Enter and Space.
+  click(titleButton);
+  await waitFor(() => {
+    expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
+  });
+  expect(titleButton).toHaveAttribute("aria-expanded", "false");
+  expect(content).not.toBeVisible();
+
+  click(titleButton);
+  await within(list).findByText("Release plan");
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+  expect(content).toBeVisible();
+
+  const titleRow = titleButton.parentElement;
+  if (!titleRow) {
+    throw new Error("Chat list title row not found");
+  }
+  click(within(titleRow).getByLabelText("Open chat list menu"));
+  await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+  expect(titleButton).toHaveAttribute("aria-expanded", "true");
+});
+
 test("Refresh a long sidebar after deleting an offscreen chat", async () => {
   const remote = context.mocks.deferred<void>();
   const cachedChatThreadEvents = mockLongSidebarHistory(remote.promise);
@@ -256,7 +316,7 @@ test("Fade a clipped chat title and pace its scroll by the hidden distance", asy
   );
 });
 
-test("Filter the chat list to unread conversations", async () => {
+test("Filter unread conversations when a rollback API omits unreadAt", async () => {
   prepareDefaultAgent();
   const pinnedUnreadThread = createThread(
     AUTOMATION_THREAD_ID,
@@ -293,7 +353,8 @@ test("Filter the chat list to unread conversations", async () => {
       },
     });
   });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.unreads, ({ query, respond }) => {
+    expect(query.agentId).toBe(AGENT_ID);
     return respond(200, {
       unreads: [
         {
@@ -353,14 +414,10 @@ test("Keep unread conversations visible while remote read cursors refresh", asyn
       return respond(200, {
         agents: { [AGENT_ID]: "unread" },
         threads: { [unreadThreadId]: "unread" },
+        unreadAt: { [unreadThreadId]: "2026-03-10T00:05:00Z" },
       });
     },
   );
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: [{ threadId: unreadThreadId, unreadAt: "2026-03-10T00:05:00Z" }],
-    });
-  });
   await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
   await within(sidebar()).findByText("Read conversation");
   openChatListMenu();
@@ -465,16 +522,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
     return respond(200, {
       agents: { [AGENT_ID]: "unread" },
       threads: { [INCIDENT_THREAD_ID]: "unread" },
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: [
-        {
-          threadId: INCIDENT_THREAD_ID,
-          unreadAt: "2026-03-10T00:05:00Z",
-        },
-      ],
+      unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
   });
 
@@ -512,6 +560,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["✅ Waiting for review"]);
   });
+  expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
 
   openChatListMenu();
   click(menuItemByText("Archived"));
@@ -525,6 +574,7 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["✅ Archived context", "✅ Waiting for review"]);
   });
+  expect(within(sidebar()).getByText("Show all chats")).toBeInTheDocument();
 
   openChatListMenu();
   click(menuItemByText("All chats"));
@@ -538,6 +588,9 @@ test("Filter chats by All chats, Unread, or Archived", async () => {
       ]),
     ).toStrictEqual(["Release plan"]);
   });
+  expect(
+    within(sidebar()).queryByText("Show all chats"),
+  ).not.toBeInTheDocument();
 });
 
 test("Hide the current chat after archiving it", async () => {
@@ -582,6 +635,14 @@ test("Hide the current chat after archiving it", async () => {
     expect(within(sidebar()).queryByText("New Thread")).not.toBeInTheDocument();
     expect(within(sidebar()).queryByText("✅")).not.toBeInTheDocument();
   });
+
+  click(buttonByText("Show all chats", sidebar()));
+  await expect(
+    within(sidebar()).findByText("New Thread"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(sidebar()).queryByText("No archived chats"),
+  ).not.toBeInTheDocument();
 });
 
 test("Find archived chats in All and Chats workspace search results", async () => {
@@ -592,10 +653,6 @@ test("Find archived chats in All and Chats workspace search results", async () =
     "✅ Archived context",
   );
   mockSidebarThreadStory([currentThread, archivedThread]);
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, { unreads: [] });
-  });
-
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
@@ -650,17 +707,6 @@ test("Find conversations by title in workspace search", async () => {
     [],
     [INCIDENT_THREAD_ID],
   );
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: [
-        {
-          threadId: EXISTING_THREAD_ID,
-          unreadAt: "2026-03-10T00:05:00Z",
-        },
-      ],
-    });
-  });
-
   await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
 
   await waitFor(() => {
@@ -691,9 +737,9 @@ test("Find conversations by title in workspace search", async () => {
   await fill(search, "support");
   await waitFor(() => {
     expect(
-      within(agentRowByName(dialog, "Support escalation")).getByLabelText(
-        "Running",
-      ),
+      within(dialog).getByRole("option", {
+        name: /^Support escalation Running /u,
+      }),
     ).toBeInTheDocument();
   });
   click(within(dialog).getByText("Support escalation"));
@@ -784,7 +830,7 @@ test("Keep chat navigation usable while secondary data is unavailable", async ()
   ]);
   context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
     await indicatorResponse.promise;
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.drafts, async ({ respond }) => {
     draftRequestStarted.resolve();
@@ -813,11 +859,9 @@ test("Keep chat navigation usable while secondary data is unavailable", async ()
       sidebar().querySelectorAll('[data-testid="sidebar-skeleton"]'),
     ).toHaveLength(0);
   });
-  expect(
-    within(threadRowByTitle("Existing conversation")).queryByLabelText(
-      "Running",
-    ),
-  ).not.toBeInTheDocument();
+  expect(threadLinkByTitle("Existing conversation")).toHaveAccessibleName(
+    "Existing conversation",
+  );
 
   indicatorResponse.resolve();
   await draftRequestStarted.promise;
@@ -1095,6 +1139,46 @@ test("Locate the current chat in a long sidebar history", async () => {
   });
 });
 
+test.each([
+  { pinnedAt: null, key: "{Enter}" },
+  { pinnedAt: "2026-03-10T00:00:00Z", key: " " },
+])(
+  "Open a chat menu by keyboard and restore focus after $key (pinned: $pinnedAt)",
+  async ({ pinnedAt, key }) => {
+    const user = userEvent.setup({ delay: null });
+    prepareDefaultAgent();
+    mockSidebarThreadStory([
+      createThread(EXISTING_THREAD_ID, "Existing conversation", { pinnedAt }),
+    ]);
+
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+    });
+
+    const list = await screen.findByTestId("chat-list-column");
+    await within(list).findByText("Existing conversation");
+    const row = threadRowByTitle("Existing conversation", list);
+    const trigger = within(row).getByLabelText("Open chat menu");
+    trigger.focus();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAccessibleName("Open chat menu");
+
+    await user.keyboard(key);
+    await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  },
+);
+
 test("Keep the chat-list menu closed when navigating with a shortcut", async () => {
   const user = userEvent.setup({ delay: null });
   prepareDefaultAgent();
@@ -1139,18 +1223,9 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
     return respond(200, {
       agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
       threads: hasUnread ? { [INCIDENT_THREAD_ID]: "unread" } : {},
-    });
-  });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, {
-      unreads: hasUnread
-        ? [
-            {
-              threadId: INCIDENT_THREAD_ID,
-              unreadAt: "2026-03-10T00:05:00Z",
-            },
-          ]
-        : [],
+      unreadAt: hasUnread
+        ? { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" }
+        : {},
     });
   });
   context.mocks.api(
@@ -1178,7 +1253,9 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   const list = await screen.findByTestId("chat-list-column");
   await waitFor(() => {
     expect(within(list).getByText("Unread conversation")).toBeInTheDocument();
-    expect(within(list).getAllByLabelText("Unread").length).toBeGreaterThan(0);
+    expect(threadLinkByTitle("Unread conversation", list)).toHaveAccessibleName(
+      "Unread conversation Unread",
+    );
   });
 
   click(within(list).getByLabelText("Open chat list menu"));
@@ -1213,7 +1290,9 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
   await within(list).findByText("No unread chats");
   await waitFor(() => {
     expect(markedAgentIds).toStrictEqual([AGENT_ID]);
-    expect(within(list).queryByLabelText("Unread")).not.toBeInTheDocument();
+    expect(
+      within(list).queryByText("Unread conversation"),
+    ).not.toBeInTheDocument();
   });
 
   click(within(list).getByLabelText("Open chat list menu"));
@@ -1360,7 +1439,7 @@ async function setupReadUnreadSidebar() {
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
   ]);
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     const unreads = serverUnreads();
     if (
       unreadThreadIds.has(EXISTING_THREAD_ID) &&
@@ -1368,7 +1447,19 @@ async function setupReadUnreadSidebar() {
     ) {
       unreadSnapshotRefreshed.resolve();
     }
-    return respond(200, { unreads });
+    return respond(200, {
+      agents: unreads.length > 0 ? { [AGENT_ID]: "unread" } : {},
+      threads: Object.fromEntries(
+        unreads.map(({ threadId }) => {
+          return [threadId, "unread" as const];
+        }),
+      ),
+      unreadAt: Object.fromEntries(
+        unreads.map(({ threadId, unreadAt }) => {
+          return [threadId, unreadAt];
+        }),
+      ),
+    });
   });
   context.mocks.api(
     chatThreadMarkUnreadContract.markUnread,
@@ -1450,14 +1541,14 @@ async function markReleasePlanUnread(
   openThreadMenu("Release plan");
   click(menuItemByText("Mark unread"));
   await scenario.unreadSnapshotRefreshed.promise;
-  expect(
-    within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
-  ).not.toBeInTheDocument();
+  expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+    "Release plan",
+  );
   click(threadLinkByTitle("Incident notes"));
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
-    ).toBeInTheDocument();
+    expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+      "Release plan Unread",
+    );
   });
 }
 
@@ -1469,9 +1560,9 @@ async function completeHeldReleaseRead(
   await scenario.markReadStarted.promise;
   click(threadLinkByTitle("Incident notes"));
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
+    expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+      "Release plan",
+    );
   });
   scenario.markReadDeferred.resolve();
   await scenario.markReadCompleted.promise;
@@ -1480,18 +1571,18 @@ async function completeHeldReleaseRead(
 test("Mark the current conversation unread after navigating away", async () => {
   const scenario = await setupReadUnreadSidebar();
   await markReleasePlanUnread(scenario);
-  expect(
-    within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
-  ).toBeInTheDocument();
+  expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+    "Release plan Unread",
+  );
 });
 
 test("Clear an unread conversation while its read request is pending", async () => {
   const scenario = await setupReadUnreadSidebar();
   await markReleasePlanUnread(scenario);
   await completeHeldReleaseRead(scenario);
-  expect(
-    within(threadRowByTitle("Release plan")).queryByLabelText("Unread"),
-  ).not.toBeInTheDocument();
+  expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+    "Release plan",
+  );
 });
 
 test("Restore a conversation when a later realtime unread arrives", async () => {
@@ -1506,9 +1597,9 @@ test("Restore a conversation when a later realtime unread arrives", async () => 
     lastReadAt: null,
   });
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Release plan")).getByLabelText("Unread"),
-    ).toBeInTheDocument();
+    expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
+      "Release plan Unread",
+    );
   });
 });
 
@@ -1540,11 +1631,12 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
   const secondMarkStarted = context.mocks.deferred<void>();
   const releaseSecondMark = context.mocks.deferred<void>();
 
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     unreadRequests += 1;
     return respond(200, {
-      unreads:
-        unreadAt === null ? [] : [{ threadId: EXISTING_THREAD_ID, unreadAt }],
+      agents: unreadAt === null ? {} : { [AGENT_ID]: "unread" },
+      threads: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: "unread" },
+      unreadAt: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: unreadAt },
     });
   });
   context.mocks.api(
@@ -1658,8 +1750,8 @@ test("An open native-only thread reads each newer delivery without a terminal Ru
 
   click(threadLinkByTitle("Other conversation"));
   await waitFor(() => {
-    expect(
-      within(threadRowByTitle("Native brief")).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
+    expect(threadLinkByTitle("Native brief")).toHaveAccessibleName(
+      "Native brief",
+    );
   });
 });

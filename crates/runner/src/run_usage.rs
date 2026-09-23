@@ -14,7 +14,6 @@ use crate::{
     proxy::{CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, TokenTotals},
 };
 
-const FEATURE_SWITCH: &str = "runUsage";
 const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
 const TERMINAL_RESERVE: Duration = Duration::from_secs(1);
 
@@ -28,19 +27,11 @@ impl Runtime {
         Self { mitm }
     }
 
-    pub(crate) fn for_context(&self, context: &ExecutionContext) -> Option<Arc<Run>> {
-        let enabled = context
-            .feature_flags
-            .as_ref()
-            .and_then(|flags| flags.get(FEATURE_SWITCH))
-            .copied()
-            .unwrap_or(false);
-        enabled.then(|| {
-            Arc::new(Run {
-                run_id: context.run_id,
-                api: capture_api_source(context.pi_launch_config.as_ref()),
-                mitm: self.mitm.for_run(context.run_id),
-            })
+    pub(crate) fn for_context(&self, context: &ExecutionContext) -> Arc<Run> {
+        Arc::new(Run {
+            run_id: context.run_id,
+            api: capture_api_source(context.pi_launch_config.as_ref()),
+            mitm: self.mitm.for_run(context.run_id),
         })
     }
 }

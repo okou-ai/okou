@@ -10,8 +10,11 @@ It covers `morning_brief_native_schedules`,
 `/api/cron/execute-morning-briefs` tick, and every writer that may change a
 member's choice, schedule or execution ownership.
 
-**This is not a production rollout.** `simpleMorningBrief` stays registered off
-with no allowlist, and the hard pre-activation gates are listed at the end.
+**This is not a general production rollout.** `simpleMorningBrief` stays
+registered off by default and is enabled for the staff org allowlist only, under
+S8 ([#36203](https://github.com/okou-ai/okou/issues/36203)). Every other
+organization is still off, a per-user override still wins over the allowlist,
+and the hard pre-activation gates are listed at the end.
 
 ## The two rows
 

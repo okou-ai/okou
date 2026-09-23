@@ -2,6 +2,7 @@
 // (SKILL.md is never shown), automations, visibility controls, metadata
 // editing, slash use, copy, and delete.
 import type { FormEvent, ReactNode } from "react";
+import { Field } from "@base-ui/react/field";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { OfficialWorkflowInstallationDefinition } from "@okouai/api-contracts/contracts/official-workflows";
@@ -1169,6 +1170,26 @@ function WorkflowTabNav({
   readonly activeTab: WorkflowDetailTab;
   readonly onTabChange: (tab: WorkflowDetailTab) => void;
 }) {
+  const tabItems: { value: WorkflowDetailTab; label: string }[] = [
+    {
+      value: "automations",
+      label: i18n.t(($) => {
+        return $.workflows.list.automations;
+      }),
+    },
+    {
+      value: "instructions",
+      label: i18n.t(($) => {
+        return $.workflows.common.instructions;
+      }),
+    },
+    {
+      value: "info",
+      label: i18n.t(($) => {
+        return $.workflows.common.settings;
+      }),
+    },
+  ];
   return (
     <Tabs
       value={activeTab}
@@ -1179,30 +1200,34 @@ function WorkflowTabNav({
     >
       <div className="sm:hidden">
         <Select
+          items={tabItems}
           value={activeTab}
-          onValueChange={(tab) => {
-            onTabChange(tab as WorkflowDetailTab);
+          onValueChange={(tab, details) => {
+            if (tab === null) {
+              details.cancel();
+              return;
+            }
+            if (tab !== activeTab) {
+              onTabChange(tab);
+            }
           }}
         >
-          <SelectTrigger className="h-9 w-full">
+          <SelectTrigger
+            className="h-9 w-full"
+            aria-label={i18n.t(($) => {
+              return $.workflows.detail.sectionNavigation;
+            })}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="automations">
-              {i18n.t(($) => {
-                return $.workflows.list.automations;
-              })}
-            </SelectItem>
-            <SelectItem value="instructions">
-              {i18n.t(($) => {
-                return $.workflows.common.instructions;
-              })}
-            </SelectItem>
-            <SelectItem value="info">
-              {i18n.t(($) => {
-                return $.workflows.common.settings;
-              })}
-            </SelectItem>
+            {tabItems.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>
@@ -2241,6 +2266,9 @@ function WorkflowCopyForm({
   readonly enabledSourceAutomationCount: number;
 }) {
   const noAgents = agentsLoaded && agents.length === 0;
+  const agentItems = agents.map((agent) => {
+    return { value: agent.agentId, label: agent.displayName ?? agent.agentId };
+  });
 
   return (
     <div className="space-y-4">
@@ -2258,10 +2286,17 @@ function WorkflowCopyForm({
           </p>
         ) : (
           <Select
+            items={agentItems}
             value={form.selectedAgentId}
             disabled={!agentsLoaded}
-            onValueChange={(value) => {
-              onChange({ ...form, selectedAgentId: value });
+            onValueChange={(value, details) => {
+              if (value === null) {
+                details.cancel();
+                return;
+              }
+              if (value !== form.selectedAgentId) {
+                onChange({ ...form, selectedAgentId: value });
+              }
             }}
           >
             <SelectTrigger
@@ -2277,10 +2312,10 @@ function WorkflowCopyForm({
               />
             </SelectTrigger>
             <SelectContent>
-              {agents.map((agent) => {
+              {agentItems.map((item) => {
                 return (
-                  <SelectItem key={agent.agentId} value={agent.agentId}>
-                    {agent.displayName ?? agent.agentId}
+                  <SelectItem key={item.value} value={item.value}>
+                    {item.label}
                   </SelectItem>
                 );
               })}
@@ -5481,6 +5516,23 @@ function NotionPageContentUpdatedScopeFields({
   readonly creating: boolean;
   readonly setScope: (scope: NotionPageContentUpdatedScopeMode) => void;
 }) {
+  const scopeItems: {
+    value: NotionPageContentUpdatedScopeMode;
+    label: string;
+  }[] = [
+    {
+      value: "page",
+      label: i18n.t(($) => {
+        return $.workflows.automations.notion.page;
+      }),
+    },
+    {
+      value: "database",
+      label: i18n.t(($) => {
+        return $.workflows.automations.notion.database;
+      }),
+    },
+  ];
   return (
     <>
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -5488,10 +5540,15 @@ function NotionPageContentUpdatedScopeFields({
           return $.workflows.automations.notion.scope;
         })}
         <Select
+          items={scopeItems}
           value={scope}
           disabled={creating}
-          onValueChange={(value) => {
-            setScope(value === "database" ? "database" : "page");
+          onValueChange={(value, details) => {
+            if (value === null) {
+              details.cancel();
+              return;
+            }
+            setScope(value);
           }}
         >
           <SelectTrigger
@@ -5502,16 +5559,13 @@ function NotionPageContentUpdatedScopeFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="page">
-              {i18n.t(($) => {
-                return $.workflows.automations.notion.page;
-              })}
-            </SelectItem>
-            <SelectItem value="database">
-              {i18n.t(($) => {
-                return $.workflows.automations.notion.database;
-              })}
-            </SelectItem>
+            {scopeItems.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </label>
@@ -6073,12 +6127,21 @@ function WorkflowIntervalField({
   readonly disabled: boolean;
   readonly defaultIntervalSeconds?: number;
 }) {
+  const intervalItems = getWorkflowIntervalSecondOptions(
+    defaultIntervalSeconds,
+  ).map((seconds) => {
+    return {
+      value: String(seconds),
+      label: formatWorkflowIntervalSeconds(seconds),
+    };
+  });
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {i18n.t(($) => {
         return $.workflows.automations.schedule.every;
       })}
       <Select
+        items={intervalItems}
         name="intervalSeconds"
         defaultValue={String(defaultIntervalSeconds)}
         disabled={disabled}
@@ -6092,15 +6155,13 @@ function WorkflowIntervalField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {getWorkflowIntervalSecondOptions(defaultIntervalSeconds).map(
-            (seconds) => {
-              return (
-                <SelectItem key={seconds} value={String(seconds)}>
-                  {formatWorkflowIntervalSeconds(seconds)}
-                </SelectItem>
-              );
-            },
-          )}
+          {intervalItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </label>
@@ -6194,10 +6255,15 @@ function WorkflowCronFrequencyField({
         return $.workflows.automations.schedule.repeats;
       })}
       <Select
+        items={WORKFLOW_CRON_FREQUENCY_OPTIONS}
         value={frequency}
         disabled={disabled}
-        onValueChange={(value) => {
-          onChange(value as WorkflowCronFrequency);
+        onValueChange={(value, details) => {
+          if (value === null) {
+            details.cancel();
+            return;
+          }
+          onChange(value);
         }}
       >
         <SelectTrigger className="h-9 w-full">
@@ -6255,12 +6321,27 @@ function WorkflowDayOfMonthField({
   readonly disabled: boolean;
   readonly onChange: (dayOfMonth: string) => void;
 }) {
+  const dayItems = Array.from({ length: 31 }, (_, index) => {
+    const day = String(index + 1);
+    return { value: day, label: day };
+  });
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {i18n.t(($) => {
         return $.workflows.automations.schedule.dayOfMonth;
       })}
-      <Select value={dayOfMonth} disabled={disabled} onValueChange={onChange}>
+      <Select
+        items={dayItems}
+        value={dayOfMonth}
+        disabled={disabled}
+        onValueChange={(value, details) => {
+          if (value === null) {
+            details.cancel();
+            return;
+          }
+          onChange(value);
+        }}
+      >
         <SelectTrigger
           className="h-9 w-full"
           aria-label={i18n.t(($) => {
@@ -6270,11 +6351,10 @@ function WorkflowDayOfMonthField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {Array.from({ length: 31 }, (_, index) => {
-            const day = String(index + 1);
+          {dayItems.map((item) => {
             return (
-              <SelectItem key={day} value={day}>
-                {day}
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
               </SelectItem>
             );
           })}
@@ -6347,11 +6427,22 @@ function WorkflowNumberSelect({
   readonly ariaLabel: string;
   readonly onChange: (value: number) => void;
 }) {
+  const numberItems = options.map((option) => {
+    return {
+      value: String(option),
+      label: String(option).padStart(2, "0"),
+    };
+  });
   return (
     <Select
+      items={numberItems}
       value={String(value)}
       disabled={disabled}
-      onValueChange={(nextValue) => {
+      onValueChange={(nextValue, details) => {
+        if (nextValue === null) {
+          details.cancel();
+          return;
+        }
         onChange(Number(nextValue));
       }}
     >
@@ -6359,10 +6450,10 @@ function WorkflowNumberSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {options.map((option) => {
+        {numberItems.map((item) => {
           return (
-            <SelectItem key={option} value={String(option)}>
-              {String(option).padStart(2, "0")}
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
             </SelectItem>
           );
         })}
@@ -6492,6 +6583,44 @@ function removeGmailMatchCondition(
   });
 }
 
+function gmailMatchConditionSelectItems(
+  condition: GmailMatchCondition,
+  conditions: readonly GmailMatchCondition[],
+  index: number,
+) {
+  const fieldItems = GMAIL_MATCH_FIELDS.map((option) => {
+    const operator = gmailMatchOperatorForField(
+      option.field,
+      condition.operator,
+    );
+    return {
+      value: option.field,
+      label: option.label,
+      disabled: gmailMatchConditionUsed(
+        conditions,
+        index,
+        option.field,
+        operator,
+      ),
+    };
+  });
+  const operatorItems = gmailMatchOperatorOptions(condition.field).map(
+    (option) => {
+      return {
+        value: option.operator,
+        label: option.label,
+        disabled: gmailMatchConditionUsed(
+          conditions,
+          index,
+          condition.field,
+          option.operator,
+        ),
+      };
+    },
+  );
+  return { fieldItems, operatorItems };
+}
+
 function GmailMatchConditionRow({
   condition,
   conditions,
@@ -6506,7 +6635,11 @@ function GmailMatchConditionRow({
   readonly onChange: (conditions: readonly GmailMatchCondition[]) => void;
 }) {
   const fieldLabel = gmailMatchFieldOption(condition.field).label;
-  const operatorOptions = gmailMatchOperatorOptions(condition.field);
+  const { fieldItems, operatorItems } = gmailMatchConditionSelectItems(
+    condition,
+    conditions,
+    index,
+  );
   const operatorOption = gmailMatchOperatorOption(
     condition.field,
     condition.operator,
@@ -6523,9 +6656,14 @@ function GmailMatchConditionRow({
   return (
     <div className="group grid grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_2.25rem] items-center gap-2 sm:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,2fr)_2.25rem]">
       <Select
+        items={fieldItems}
         value={condition.field}
         disabled={disabled}
-        onValueChange={(value) => {
+        onValueChange={(value, details) => {
+          if (value === null) {
+            details.cancel();
+            return;
+          }
           const field = gmailMatchFieldOption(value).field;
           updateCondition({
             field,
@@ -6537,21 +6675,12 @@ function GmailMatchConditionRow({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {GMAIL_MATCH_FIELDS.map((option) => {
-            const operator = gmailMatchOperatorForField(
-              option.field,
-              condition.operator,
-            );
+          {fieldItems.map((option) => {
             return (
               <SelectItem
-                key={option.field}
-                value={option.field}
-                disabled={gmailMatchConditionUsed(
-                  conditions,
-                  index,
-                  option.field,
-                  operator,
-                )}
+                key={option.value}
+                value={option.value}
+                disabled={option.disabled}
               >
                 {option.label}
               </SelectItem>
@@ -6560,9 +6689,14 @@ function GmailMatchConditionRow({
         </SelectContent>
       </Select>
       <Select
+        items={operatorItems}
         value={condition.operator}
         disabled={disabled}
-        onValueChange={(value) => {
+        onValueChange={(value, details) => {
+          if (value === null) {
+            details.cancel();
+            return;
+          }
           updateCondition({
             operator: gmailMatchOperatorOption(condition.field, value).operator,
           });
@@ -6572,17 +6706,12 @@ function GmailMatchConditionRow({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {operatorOptions.map((option) => {
+          {operatorItems.map((option) => {
             return (
               <SelectItem
-                key={option.operator}
-                value={option.operator}
-                disabled={gmailMatchConditionUsed(
-                  conditions,
-                  index,
-                  condition.field,
-                  option.operator,
-                )}
+                key={option.value}
+                value={option.value}
+                disabled={option.disabled}
               >
                 {option.label}
               </SelectItem>
@@ -7189,6 +7318,26 @@ function GithubDeploymentAutomationFields({
   readonly config?: GithubDeploymentStatusCreatedEventConfig;
 }) {
   const productionEnvironment = config?.filters.productionEnvironment;
+  const productionItems = [
+    {
+      value: "any",
+      label: i18n.t(($) => {
+        return $.workflows.automations.github.any;
+      }),
+    },
+    {
+      value: "true",
+      label: i18n.t(($) => {
+        return $.workflows.automations.github.productionOnly;
+      }),
+    },
+    {
+      value: "false",
+      label: i18n.t(($) => {
+        return $.workflows.automations.github.nonProductionOnly;
+      }),
+    },
+  ];
   return (
     <>
       <GithubFilterInput
@@ -7218,6 +7367,7 @@ function GithubDeploymentAutomationFields({
           return $.workflows.automations.github.productionEnvironment;
         })}
         <Select
+          items={productionItems}
           name="productionEnvironment"
           defaultValue={
             productionEnvironment === undefined
@@ -7235,21 +7385,13 @@ function GithubDeploymentAutomationFields({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="any">
-              {i18n.t(($) => {
-                return $.workflows.automations.github.any;
-              })}
-            </SelectItem>
-            <SelectItem value="true">
-              {i18n.t(($) => {
-                return $.workflows.automations.github.productionOnly;
-              })}
-            </SelectItem>
-            <SelectItem value="false">
-              {i18n.t(($) => {
-                return $.workflows.automations.github.nonProductionOnly;
-              })}
-            </SelectItem>
+            {productionItems.map((item) => {
+              return (
+                <SelectItem key={item.value} value={item.value}>
+                  {item.label}
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </label>
@@ -7302,6 +7444,7 @@ function GithubCommentAutomationFields({
           return $.workflows.automations.github.subject;
         })}
         <Select
+          items={GITHUB_SUBJECT_OPTIONS}
           name="subject"
           defaultValue={config?.filters.subject ?? "both"}
           disabled={disabled}
@@ -7358,12 +7501,33 @@ function GithubPullRequestMergedSelect({
   readonly disabled: boolean;
   readonly config?: GithubPullRequestEventConfig;
 }) {
+  const mergedItems = [
+    {
+      value: "any",
+      label: i18n.t(($) => {
+        return $.workflows.automations.github.any;
+      }),
+    },
+    {
+      value: "true",
+      label: i18n.t(($) => {
+        return $.workflows.automations.github.pullRequestMergedOnly;
+      }),
+    },
+    {
+      value: "false",
+      label: i18n.t(($) => {
+        return $.workflows.automations.github.pullRequestClosedWithoutMergeOnly;
+      }),
+    },
+  ];
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
       {i18n.t(($) => {
         return $.workflows.automations.github.pullRequestMerged;
       })}
       <Select
+        items={mergedItems}
         name="merged"
         defaultValue={
           config?.merged === undefined ? "any" : String(config.merged)
@@ -7379,22 +7543,13 @@ function GithubPullRequestMergedSelect({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="any">
-            {i18n.t(($) => {
-              return $.workflows.automations.github.any;
-            })}
-          </SelectItem>
-          <SelectItem value="true">
-            {i18n.t(($) => {
-              return $.workflows.automations.github.pullRequestMergedOnly;
-            })}
-          </SelectItem>
-          <SelectItem value="false">
-            {i18n.t(($) => {
-              return $.workflows.automations.github
-                .pullRequestClosedWithoutMergeOnly;
-            })}
-          </SelectItem>
+          {mergedItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </label>
@@ -7495,11 +7650,16 @@ function GithubPullRequestAutomationFields({
           return $.workflows.automations.github.pullRequestAction;
         })}
         <Select
+          items={GITHUB_PULL_REQUEST_ACTION_OPTIONS}
           name="action"
           value={action}
           disabled={disabled}
-          onValueChange={(value) => {
-            setAction(githubPullRequestActionValue(value, "closed"));
+          onValueChange={(value, details) => {
+            if (value === null) {
+              details.cancel();
+              return;
+            }
+            setAction(value);
           }}
         >
           <SelectTrigger
@@ -8163,34 +8323,31 @@ function CreatedWebhookAutomationView({
   readonly automation: WebhookWorkflowAutomationSummary;
   readonly onDone: () => void;
 }) {
+  const copy = workflowWebhookCopy();
   const curlExample = signedWebhookCurlExample(automation);
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-        {i18n.t(($) => {
-          return $.workflows.automations.webhook.url;
-        })}
-        {automation.webhookUrl ? (
-          <WebhookReadonlyField
-            value={automation.webhookUrl}
-            onCopy={() => {
-              copyText(automation.webhookUrl ?? "");
-            }}
-          />
-        ) : null}
-      </label>
+      {automation.webhookUrl ? (
+        <WebhookReadonlyField
+          label={copy.url}
+          value={automation.webhookUrl}
+          onCopy={() => {
+            copyText(automation.webhookUrl ?? "");
+          }}
+        />
+      ) : (
+        <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          {copy.url}
+        </div>
+      )}
       {automation.webhookSecret ? (
-        <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-          {i18n.t(($) => {
-            return $.workflows.automations.webhook.secret;
-          })}
-          <WebhookReadonlyField
-            value={automation.webhookSecret}
-            onCopy={() => {
-              copyText(automation.webhookSecret ?? "");
-            }}
-          />
-        </label>
+        <WebhookReadonlyField
+          label={copy.secret}
+          value={automation.webhookSecret}
+          onCopy={() => {
+            copyText(automation.webhookSecret ?? "");
+          }}
+        />
       ) : null}
       <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
         {i18n.t(($) => {
@@ -8227,22 +8384,27 @@ function CreatedWebhookAutomationView({
 }
 
 function WebhookReadonlyField({
+  label,
   value,
   onCopy,
 }: {
+  readonly label: string;
   readonly value: string;
   readonly onCopy: () => void;
 }) {
   return (
-    <div className="flex min-w-0 gap-2">
-      <Input readOnly value={value} className="min-w-0" />
-      <Button type="button" variant="outline" onClick={onCopy}>
-        <Copy size={14} />
-        {i18n.t(($) => {
-          return $.workflows.automations.webhook.copy;
-        })}
-      </Button>
-    </div>
+    <Field.Root className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+      <Field.Label>{label}</Field.Label>
+      <div className="flex min-w-0 gap-2">
+        <Input readOnly value={value} className="min-w-0" />
+        <Button type="button" variant="outline" onClick={onCopy}>
+          <Copy size={14} />
+          {i18n.t(($) => {
+            return $.workflows.automations.webhook.copy;
+          })}
+        </Button>
+      </div>
+    </Field.Root>
   );
 }
 
@@ -8283,24 +8445,20 @@ function RevealWebhookSecretDialog({
         </DialogHeader>
         {secret ? (
           <div className="flex min-w-0 flex-col gap-3">
-            <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-              {copy.url}
-              <WebhookReadonlyField
-                value={secret.webhookUrl}
-                onCopy={() => {
-                  copyText(secret.webhookUrl);
-                }}
-              />
-            </label>
-            <label className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-              {copy.secret}
-              <WebhookReadonlyField
-                value={secret.webhookSecret}
-                onCopy={() => {
-                  copyText(secret.webhookSecret);
-                }}
-              />
-            </label>
+            <WebhookReadonlyField
+              label={copy.url}
+              value={secret.webhookUrl}
+              onCopy={() => {
+                copyText(secret.webhookUrl);
+              }}
+            />
+            <WebhookReadonlyField
+              label={copy.secret}
+              value={secret.webhookSecret}
+              onCopy={() => {
+                copyText(secret.webhookSecret);
+              }}
+            />
             {curlExample ? (
               <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
                 {copy.signedCurl}
@@ -9034,7 +9192,7 @@ function AutomationControls({
 
   return (
     <div className="flex min-w-0 items-center justify-end pr-1.5">
-      <TooltipProvider delayDuration={200}>
+      <TooltipProvider delay={200}>
         <div className="flex items-center justify-end gap-1 opacity-100 pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
           <Tooltip>
             <TooltipTrigger

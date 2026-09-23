@@ -45,6 +45,22 @@ export type BrowserSessionChangedPayload = z.infer<
   typeof browserSessionChangedPayloadSchema
 >;
 
+/** Notify one Agent's home page when its visible task cards change. */
+export const homeTaskRecommendationsChangedPayloadSchema = z
+  .object({
+    agentId: z.uuid(),
+    revision: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
+    removed: z.boolean().optional(),
+  })
+  .strict();
+
+export type HomeTaskRecommendationsChangedPayload = z.infer<
+  typeof homeTaskRecommendationsChangedPayloadSchema
+>;
+
 /**
  * Preference keys that can flip as part of a `userPreferenceChanged` push.
  * Consumers subscribe and reload the corresponding resource when its key is

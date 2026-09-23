@@ -92,7 +92,15 @@ export function OnboardingIndustryPage() {
         value={flow.draft.industry ?? ""}
         onValueChange={(value) => {
           const industry = value as OnboardingIndustry;
-          updateDraft({ industry });
+          updateDraft({
+            industry,
+            startingPromptDraft: "",
+            startingPromptKey: "",
+            recommendationJobId: null,
+            recommendationStartedAt: null,
+            recommendationStatus: "idle",
+            recommendation: null,
+          });
           captureIndustrySelected(industry);
         }}
         className="grid gap-3 sm:grid-cols-2"

@@ -1451,6 +1451,14 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     await completeChatRunOk(second.runId, secondClaim.sandboxHeaders);
 
+    // A connected personal subscription outranks the organization API for a
+    // model it supports, so the organization route only becomes observable once
+    // the member disconnects it.
+    await authDeviceSupport.deletePersonalModelProvider(
+      actor,
+      "claude-code-oauth-token",
+      [204],
+    );
     const { providerId: openRouterProviderId } = await upsertOrgModelProvider(
       actor,
       {

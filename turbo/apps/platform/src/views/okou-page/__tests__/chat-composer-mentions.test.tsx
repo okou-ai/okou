@@ -5,10 +5,7 @@ import {
   agentsMainContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import {
-  chatThreadsContract,
-  type ChatThreadSnapshotProjection,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadSnapshotProjection } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
@@ -202,10 +199,6 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
     threads: [current, archived],
   });
   installAgents([agent(AGENT_ID, "Scout", SCOUT_AVATAR)]);
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, { unreads: [] });
-  });
-
   await setupPage({
     context,
     path: `/chats/${current.id}`,

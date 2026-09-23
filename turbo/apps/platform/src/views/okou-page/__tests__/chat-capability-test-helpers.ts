@@ -170,7 +170,12 @@ function setPassageSelection(
     throw new Error("Selectable passage has no element target");
   }
   if (interaction === "mouse") {
-    fireEvent.mouseDown(target, { button: 0 });
+    fireEvent.pointerDown(target, {
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
   }
   const range = visibleSelectionRange(
     node,
@@ -185,10 +190,16 @@ function setPassageSelection(
   selection.removeAllRanges();
   selection.addRange(range);
   if (interaction === "mouse") {
-    fireEvent.mouseUp(target, { button: 0 });
+    fireEvent(document, new Event("selectionchange"));
+    fireEvent.pointerUp(target, {
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      pointerType: "mouse",
+    });
     // A drag that selects a passage ends in a click, and the browser dispatches
-    // it after the mouseup that captures the passage. Omitting it hides every
-    // way the toolbar can be dismissed by the gesture that created it.
+    // it after pointerup captures the passage. Omitting it hides every way the
+    // toolbar can be dismissed by the gesture that created it.
     fireEvent.click(target, { button: 0 });
   } else {
     fireEvent(document, new Event("selectionchange"));
@@ -229,7 +240,12 @@ export async function selectAcrossPassages(
   if (!target) {
     throw new Error("Selectable passage has no element target");
   }
-  fireEvent.mouseDown(target, { button: 0 });
+  fireEvent.pointerDown(target, {
+    button: 0,
+    isPrimary: true,
+    pointerId: 1,
+    pointerType: "mouse",
+  });
   const selection = window.getSelection();
   if (!selection) {
     throw new Error("Selection API is unavailable");
@@ -238,7 +254,13 @@ export async function selectAcrossPassages(
   selection.addRange(
     visibleSelectionRange(startNode, startOffset, endNode, endOffset),
   );
-  fireEvent.mouseUp(endNode.parentElement ?? target, { button: 0 });
+  fireEvent(document, new Event("selectionchange"));
+  fireEvent.pointerUp(endNode.parentElement ?? target, {
+    button: 0,
+    isPrimary: true,
+    pointerId: 1,
+    pointerType: "mouse",
+  });
   await waitFor(() => {
     if (existingQuoteAction.isConnected) {
       throw new Error("Ambiguous selection still exposes passage actions");

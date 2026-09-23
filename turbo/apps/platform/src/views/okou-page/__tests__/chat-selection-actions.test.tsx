@@ -258,6 +258,35 @@ test("Dismiss the passage actions when a press lands outside them", async () => 
   });
 });
 
+test("Keep the passage actions closed while a click collapses the selection", async () => {
+  await openSelection();
+  const target = screen.getByText(NEXT_PASSAGE);
+
+  fireEvent.pointerDown(target, {
+    button: 0,
+    isPrimary: true,
+    pointerId: 3,
+    pointerType: "mouse",
+  });
+  expect(queryQuoteButton()).not.toBeInTheDocument();
+
+  // Chromium can retain the old range through pointerup. A gesture that did
+  // not change that range must not recapture the just-dismissed toolbar.
+  fireEvent.pointerUp(target, {
+    button: 0,
+    isPrimary: true,
+    pointerId: 3,
+    pointerType: "mouse",
+  });
+  expect(queryQuoteButton()).not.toBeInTheDocument();
+
+  window.getSelection()?.removeAllRanges();
+  fireEvent(document, new Event("selectionchange"));
+  fireEvent.click(target, { button: 0 });
+
+  expect(queryQuoteButton()).not.toBeInTheDocument();
+});
+
 test("Capture a new gesture when the previous toolbar press never clicked", async () => {
   await openSelection();
   const button = await findButton("Quote");

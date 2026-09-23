@@ -15,7 +15,7 @@ use super::super::super::{
 };
 use super::config::test_telemetry;
 use crate::error::RunnerResult;
-use crate::run_cancellation::RunCancellationSignals;
+use runner_provider::RunCancellationSignals;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 pub(in crate::executor::tests) const RUN_IN_SANDBOX_TEST_TIMEOUT: Duration = Duration::from_secs(5);

@@ -7,8 +7,8 @@ use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 
 use super::ActiveInputForwarder;
-use crate::active_input::{ActiveInputSource, local_active_input_delivery_id};
-use crate::local_queue::{self, ActiveInputEntry, LocalQueue};
+use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
+use runner_provider::{ActiveInputSource, local_active_input_delivery_id};
 use runner_types::ids::RunId;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);

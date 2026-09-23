@@ -186,7 +186,7 @@ test("Carry a connector account choice into a new chat", async () => {
     user,
     "GitHub · Using default account: Work",
   );
-  await user.click(within(chooser).getByRole("radio", { name: /Personal/u }));
+  await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
   await expect(
     findFastControl("button", "GitHub · Selected account: Personal"),
   ).resolves.toBeVisible();
@@ -297,7 +297,7 @@ test("Choose an account for a custom MCP connector", async () => {
     user,
     "DeepWiki · Using default account: Team",
   );
-  await user.click(within(chooser).getByRole("radio", { name: /Personal/u }));
+  await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
   await waitFor(() => {
     expect(fixture.threadSelectionUpdates).toStrictEqual([
       {
@@ -311,7 +311,7 @@ test("Choose an account for a custom MCP connector", async () => {
   });
   await openAccountChooser(user, "DeepWiki · Selected account: Personal");
   expect(
-    screen.getByRole("radio", { name: /Use default.*Team/u }),
+    screen.getByRole("option", { name: /Use default.*Team/u }),
   ).toBeVisible();
 });
 
@@ -350,11 +350,11 @@ test("Keep the selected connector account visible during search", async () => {
   await waitFor(() => {
     expect(within(chooser).getByText("No accounts found")).toBeVisible();
     expect(
-      within(chooser).getByRole("radio", { name: /Personal/u }),
+      within(chooser).getByRole("option", { name: /Personal/u }),
     ).toBeVisible();
     expect(
-      within(chooser).getByRole("radio", { name: /Personal/u }),
-    ).toHaveAttribute("aria-checked", "true");
+      within(chooser).getByRole("option", { name: /Personal/u }),
+    ).toHaveAttribute("aria-selected", "true");
   });
 });
 
@@ -381,7 +381,7 @@ test("Choose which connector account a chat uses", async () => {
     user,
     "GitHub · Using default account: Work",
   );
-  await user.click(within(chooser).getByRole("radio", { name: /Personal/u }));
+  await user.click(within(chooser).getByRole("option", { name: /Personal/u }));
   await expect(
     findFastControl("button", "GitHub · Selected account: Personal"),
   ).resolves.toBeVisible();
@@ -394,7 +394,7 @@ test("Choose which connector account a chat uses", async () => {
     "GitHub · Selected account: Personal",
   );
   await user.click(
-    within(chooser).getByRole("radio", { name: /Use default/u }),
+    within(chooser).getByRole("option", { name: /Use default/u }),
   );
   await expect(
     findFastControl("button", "GitHub · Using default account: Work"),
