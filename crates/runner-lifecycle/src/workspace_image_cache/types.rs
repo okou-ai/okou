@@ -19,14 +19,14 @@ pub enum WorkspaceCacheCheckoutResult {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WorkspaceCacheLockOwner {
+pub(super) enum WorkspaceCacheLockOwner {
     Active,
     Finalizing,
     Unknown,
 }
 
 impl WorkspaceCacheLockOwner {
-    pub const fn as_str(self) -> &'static str {
+    pub(super) const fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
             Self::Finalizing => "finalizing",
@@ -36,20 +36,20 @@ impl WorkspaceCacheLockOwner {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WorkspaceCacheLockDecision {
+pub(super) enum WorkspaceCacheLockDecision {
     Busy(WorkspaceCacheLockOwner),
     Unavailable,
 }
 
 impl WorkspaceCacheLockDecision {
-    pub const fn outcome(self) -> &'static str {
+    pub(super) const fn outcome(self) -> &'static str {
         match self {
             Self::Busy(_) => "busy",
             Self::Unavailable => "unavailable",
         }
     }
 
-    pub const fn reason(self) -> Option<&'static str> {
+    pub(super) const fn reason(self) -> Option<&'static str> {
         match self {
             Self::Busy(owner) => Some(owner.as_str()),
             Self::Unavailable => None,
