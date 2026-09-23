@@ -6,7 +6,7 @@ import { agentSshAccess } from "@okouai/db/schema/agent-ssh-access";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, or } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
@@ -95,6 +95,7 @@ function runSshHostRows(
       algorithm: sshConnections.learnedHostKeyAlgorithm,
       fingerprint: sshConnections.learnedHostKeyFingerprint,
       accessId: sshConnections.cloudflareAccessId,
+      needsRebind: sshConnections.needsRebind,
       accessConfigId: cloudflareAccessConfigs.id,
     })
     .from(agentRuns)
@@ -142,7 +143,13 @@ function runSshHostRows(
       and(
         eq(cloudflareAccessConfigs.id, sshConnections.cloudflareAccessId),
         eq(cloudflareAccessConfigs.orgId, owner.orgId),
-        eq(cloudflareAccessConfigs.userId, owner.userId),
+        or(
+          eq(cloudflareAccessConfigs.scope, "organization"),
+          and(
+            eq(cloudflareAccessConfigs.scope, "personal"),
+            eq(cloudflareAccessConfigs.userId, owner.userId),
+          ),
+        ),
       ),
     )
     .where(
@@ -169,6 +176,9 @@ export async function listRunSshHosts(
   return {
     hosts: rows.flatMap((row) => {
       if (row.id === null) {
+        return [];
+      }
+      if (row.needsRebind) {
         return [];
       }
       if (row.accessId !== null) {
