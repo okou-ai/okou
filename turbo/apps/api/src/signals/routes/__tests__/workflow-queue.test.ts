@@ -1741,26 +1741,16 @@ describe("workflow queue", () => {
   });
 
   it("uses the event ID to break equal-timestamp workflow queue ties", async () => {
-    const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    const first = {
-      id: await admitWorkflowAutomationEventFixture({
-        automationId: automation.automationId,
-        chatThreadId: automation.threadId,
-        triggerBrief: "First tied automation event",
-      }),
-      brief: "First tied automation event",
-    };
-    const second = {
-      id: await admitWorkflowAutomationEventFixture({
-        automationId: automation.automationId,
-        chatThreadId: automation.threadId,
-        triggerBrief: "Second tied automation event",
-      }),
-      brief: "Second tied automation event",
-    };
+    const { scenario, automation, runningRunId } = await busyQueueFixture(2);
+    const pending = await pendingAutomationEvents(automation.threadId);
+    expect(pending).toHaveLength(2);
+    const [first, second] = pending;
+    if (!first || !second) {
+      throw new Error("Expected two webhook events to remain queued");
+    }
     const [earlier, later] =
-      first.id.localeCompare(second.id) < 0 ? [first, second] : [second, first];
+      first.id < second.id ? [first, second] : [second, first];
+    // Public requests cannot force equal PostgreSQL microsecond timestamps.
     await Promise.all(
       [first.id, second.id].map((eventId) => {
         return setWorkflowQueueEventCreatedAtFixture({
@@ -1770,10 +1760,8 @@ describe("workflow queue", () => {
       }),
     );
 
-    expectAcceptedWithoutRun(
-      await postWorkflowWebhook(automation, "drain tied workflow queue"),
-    );
-    const [runId] = await workflowRunIds(automation.threadId);
+    await completeRunThroughSandbox(scenario, runningRunId);
+    const runId = (await workflowRunIds(automation.threadId))[1];
     if (!runId) {
       throw new Error("Expected the first tied queue event to create a run");
     }
@@ -1782,11 +1770,7 @@ describe("workflow queue", () => {
         return event.runId === runId && event.eventType === "input.prompt";
       },
     );
-    expect(
-      claimedEvent
-        ? chatEventAutomationPart(claimedEvent)?.automationBrief
-        : undefined,
-    ).toBe(earlier.brief);
+    expect(claimedEvent?.revokesEventId).toBe(earlier.id);
     expect(
       (await pendingAutomationEvents(automation.threadId)).map((event) => {
         return event.id;
