@@ -880,7 +880,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       latestEventId: legacy.latestEventId,
       latestSeqId: legacy.latestSeqId,
     });
-    expect("chatThreads" in response.body).toBe(false);
+    expect("chatThreads" in response.body).toBeFalsy();
   });
 
   it("rejects thread creation for unknown, cross-org, and org-less callers", async () => {

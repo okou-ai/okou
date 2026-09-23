@@ -26,11 +26,11 @@ export function isOwnedChatThreadSnapshotObjectKey(
   latestSeqId: number | null,
 ): boolean {
   const prefix = `${SNAPSHOT_OBJECT_PREFIX}/${scopeDigest(userId, orgId)}/`;
-  return (
-    objectKey.startsWith(prefix) &&
-    new RegExp(
-      `^${(latestSeqId ?? 0).toString()}-[0-9a-f]{64}[.]json[.]gz$`,
-      "u",
-    ).test(objectKey.slice(prefix.length))
+  if (!objectKey.startsWith(prefix)) {
+    return false;
+  }
+  const match = /^([0-9]+)-[0-9a-f]{64}[.]json[.]gz$/u.exec(
+    objectKey.slice(prefix.length),
   );
+  return match?.[1] === (latestSeqId ?? 0).toString();
 }
