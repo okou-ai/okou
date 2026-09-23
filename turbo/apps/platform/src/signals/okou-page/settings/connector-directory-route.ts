@@ -37,10 +37,7 @@ export const connectorsScope$ = computed((get): ConnectorsScope => {
   ) {
     return raw;
   }
-  // Preserve links to the former catalog category after moving its resources.
-  return get(searchParams$).get("category") === "remote-access"
-    ? "remote-control"
-    : "discover";
+  return "discover";
 });
 
 /** Custom is a scope of its own rather than a destination inside the catalog. */
