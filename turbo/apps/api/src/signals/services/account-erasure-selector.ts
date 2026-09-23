@@ -75,6 +75,14 @@ const selectorSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     version: z.literal(1),
+    kind: z.literal("chat_snapshot"),
+    storageRef: z.uuid(),
+    subjectId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    prefix: z.string().min(1).max(2048),
+  }),
+  z.strictObject({
+    version: z.literal(1),
     kind: z.literal("provider"),
     accountRef: z.uuid(),
     subjectId: z.string().min(1).max(192),

@@ -41,6 +41,10 @@ import {
   createBrowserSessionErasureCollector,
 } from "./account-erasure-browser-session-collector";
 import {
+  CHAT_SNAPSHOT_ERASURE_COLLECTOR_VERSION,
+  createChatSnapshotErasureCollector,
+} from "./account-erasure-chat-snapshot-collector";
+import {
   EXPORT_OBJECT_ERASURE_COLLECTOR_VERSION,
   createExportObjectErasureCollector,
 } from "./account-erasure-export-object-collector";
@@ -71,6 +75,7 @@ const DEADLINE_MS = 365 * 24 * 60 * 60 * 1000;
 const REQUIRED_SERVER_CAPTURE = [
   "artifact_file",
   "artifact_share",
+  "chat_snapshot",
   "hosted_site",
   "shared_blob",
   "storage_object",
@@ -86,6 +91,7 @@ type SinkName =
   | "artifact_share"
   | "browser_profile"
   | "browser_session"
+  | "chat_snapshot"
   | "export_object"
   | "hosted_site"
   | "shared_blob"
@@ -116,6 +122,11 @@ const sinkSpecs: readonly {
     name: "browser_session",
     domain: "providers",
     version: BROWSER_SESSION_ERASURE_COLLECTOR_VERSION,
+  },
+  {
+    name: "chat_snapshot",
+    domain: "objects",
+    version: CHAT_SNAPSHOT_ERASURE_COLLECTOR_VERSION,
   },
   {
     name: "export_object",
@@ -231,6 +242,7 @@ async function handlers(db: Db) {
     artifact_share: createArtifactShareErasureCollector(db),
     browser_profile: createBrowserProfileErasureCollector(db),
     browser_session: createBrowserSessionErasureCollector(db),
+    chat_snapshot: createChatSnapshotErasureCollector(db),
     export_object: createExportObjectErasureCollector(db),
     hosted_site: createHostedSiteErasureCollector(db),
     shared_blob: createSharedBlobErasureCollector(db),
