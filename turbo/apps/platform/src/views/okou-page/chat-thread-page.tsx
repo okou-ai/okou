@@ -4797,7 +4797,7 @@ const ASSISTANT_ERROR_ACTION_SLOT_CLASS =
 
 /** Let translated recovery actions fit narrow chat cards without clipping. */
 const ERROR_CARD_ACTION_CLASS =
-  "h-auto min-h-8 max-w-full shrink-0 whitespace-normal break-words py-1.5 text-center";
+  "h-auto min-h-8 max-w-full shrink-0 whitespace-normal break-words py-1 text-center";
 
 function creditsAvailableCopy(): {
   readonly headline: string;
