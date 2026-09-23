@@ -188,14 +188,14 @@ describe("POST /api/onboarding/complete", () => {
   it.each([
     {
       provider: "codex" as const,
-      models: ["gpt-6-astra", "gpt-6-luna", "gpt-5.6-sol"],
-      defaultModel: "gpt-6-luna",
+      models: ["gpt-6-astra", "gpt-6-luna", "gpt-6-sol"],
+      defaultModel: "gpt-6-astra",
       route: "codex-oauth-token",
     },
     {
       provider: "claudeCode" as const,
-      models: ["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5"],
-      defaultModel: "claude-opus-5",
+      models: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"],
+      defaultModel: "claude-fable-5-1",
       route: "claude-code-oauth-token",
     },
   ])(
@@ -319,13 +319,13 @@ describe("POST /api/onboarding/complete", () => {
       policies.list({ headers: authHeaders() }),
       [200],
     );
-    expect(after.body.workspaceDefaultModel).toBe("gpt-6-luna");
+    expect(after.body.workspaceDefaultModel).toBe("gpt-6-astra");
     expect(
       after.body.policies.find((policy) => {
         return policy.isDefault;
       }),
     ).toMatchObject({
-      model: "gpt-6-luna",
+      model: "gpt-6-astra",
       defaultProviderType: "codex-oauth-token",
     });
   });
@@ -350,8 +350,8 @@ describe("POST /api/onboarding/complete", () => {
       policies.body.policies.map((policy) => {
         return policy.model;
       }),
-    ).toStrictEqual(["claude-fable-5-1", "claude-opus-5", "claude-sonnet-5"]);
-    expect(policies.body.workspaceDefaultModel).toBe("claude-opus-5");
+    ).toStrictEqual(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"]);
+    expect(policies.body.workspaceDefaultModel).toBe("claude-fable-5-1");
   });
 
   it("keeps a customized model policy when onboarding completes", async () => {
