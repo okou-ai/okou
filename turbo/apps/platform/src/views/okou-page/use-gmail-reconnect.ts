@@ -1,7 +1,7 @@
 import { useGet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
+import { gmailCatalogItem$ } from "../../signals/okou-page/connector-catalog-reads.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import {
   connectBuiltinConnectorOAuthAuthCodeAndSettle$,
@@ -14,13 +14,12 @@ export function useGmailReconnect(
   connectionId: string | undefined,
   onSuccess: () => void | Promise<void>,
 ) {
-  const catalogBySlug = useLastResolved(connectorCatalogStatusBySlug$);
+  const connector = useLastResolved(gmailCatalogItem$);
   const connectFlowConnectorSlug = useGet(builtinConnectFlowSlug$);
   const [connection, connect] = useLoadableSet(
     connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   );
   const signal = useGet(pageSignal$);
-  const connector = catalogBySlug?.get("gmail");
   const authMethod = connector
     ? getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(connector)
     : null;

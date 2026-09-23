@@ -55,8 +55,15 @@ function mockPublicConnectorStatus(
 function mockPublicConnectorStatuses(
   connectors: readonly PublicConnectorCatalogStatusItem[],
 ): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [...connectors] });
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
+    });
+    return connector
+      ? respond(200, { connector })
+      : respond(404, {
+          error: { message: "Connector not found", code: "NOT_FOUND" },
+        });
   });
 }
 

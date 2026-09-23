@@ -17,6 +17,8 @@ import {
 import {
   connectorCatalogContract,
   CONNECTOR_CATALOG_MAX_RAW_BYTES,
+  type PublicConnectorCatalogBriefListResponse,
+  type PublicConnectorCatalogListResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
@@ -112,6 +114,17 @@ import { featureSwitchesRoutes } from "../feature-switches";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
+
+function fullCatalogList(
+  body:
+    | PublicConnectorCatalogListResponse
+    | PublicConnectorCatalogBriefListResponse,
+): PublicConnectorCatalogListResponse {
+  if ("view" in body) {
+    throw new Error("Expected the full connector catalog list");
+  }
+  return body;
+}
 
 const TEST_APP_ROUTES = Object.freeze([
   ...builtinConnectorsSlugCallbackRoutes,
@@ -1918,7 +1931,7 @@ describe("connector catalog valid lifecycle", () => {
         hasDefaultPolicyOverrides: true,
       },
     });
-    expect(list.body.categoryMetadata).toStrictEqual({
+    expect(fullCatalogList(list.body).categoryMetadata).toStrictEqual({
       categories: [
         {
           id: "testing",
@@ -2372,9 +2385,11 @@ describe("connector catalog valid lifecycle", () => {
     })(connectorCatalogContract);
     const released = await accept(catalogClient.list({ headers }), [200]);
     expect(
-      released.body.connectors[0]?.authMethods.map((method) => {
-        return method.id;
-      }),
+      fullCatalogList(released.body).connectors[0]?.authMethods.map(
+        (method) => {
+          return method.id;
+        },
+      ),
     ).toStrictEqual(["api-token", "cli"]);
 
     const graduated = buildRelease({

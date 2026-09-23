@@ -158,6 +158,76 @@ export function stubConnectorCatalog(
   });
 }
 
+/**
+ * A catalog API that understands `view=brief`: it filters by `slugs` and
+ * `generation` and answers with the brief shape. Requests without `view` get
+ * the full list shape.
+ */
+export function stubConnectorCatalogBriefs(
+  connectors: readonly PublicConnectorCatalogItem[],
+  origin = "http://localhost:3000",
+) {
+  return http.get(`${origin}/api/connector-catalog`, ({ request }) => {
+    const query = new URL(request.url).searchParams;
+    if (query.get("view") !== "brief") {
+      return HttpResponse.json({ connectors });
+    }
+    const slugs = query.get("slugs")?.split(",");
+    const generation = query.get("generation");
+    return HttpResponse.json({
+      view: "brief",
+      connectors: connectors
+        .filter((connector) => {
+          return (
+            (!slugs || slugs.includes(connector.slug)) &&
+            (!generation || connector.generation.includes(generation))
+          );
+        })
+        .map(({ slug, label, icon, category, generation }) => {
+          return { slug, label, icon, category, generation };
+        }),
+    });
+  });
+}
+
+const CATALOG_COLLECTION_ROUTES = new Set([
+  "status",
+  "discovery",
+  "diagnostics",
+]);
+
+/** `GET /api/connector-catalog/:connectorSlug`, 404 for unknown slugs. */
+export function stubConnectorCatalogDetails(
+  connectors: readonly PublicConnectorCatalogStatusItem[],
+  origin = "http://localhost:3000",
+) {
+  return http.get(
+    `${origin}/api/connector-catalog/:connectorSlug`,
+    ({ params }) => {
+      const connectorSlug = String(params.connectorSlug);
+      // Leave the sibling collection routes to their own handlers.
+      if (CATALOG_COLLECTION_ROUTES.has(connectorSlug)) {
+        return undefined;
+      }
+      const connector = connectors.find((item) => {
+        return item.slug === connectorSlug;
+      });
+      if (!connector) {
+        return HttpResponse.json(
+          {
+            error: {
+              message: "Connector catalog item not found",
+              code: "NOT_FOUND",
+            },
+          },
+          { status: 404 },
+        );
+      }
+      return HttpResponse.json({ connector });
+    },
+  );
+}
+
 export function stubConnectorCatalogStatus(
   connectors: readonly PublicConnectorCatalogStatusItem[],
   origin = "http://localhost:3000",

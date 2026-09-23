@@ -65,7 +65,10 @@ function mockMemberOnboardingNeeded(): void {
   });
 }
 
-/** One catalog entry, so the source step has a grid to render. */
+/**
+ * One catalog entry, so the source step has a grid to render, and the matching
+ * connection when the visitor has already connected it.
+ */
 function mockCatalog({
   connected = false,
   ready,
@@ -111,20 +114,46 @@ function mockCatalog({
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
-    if (ready) {
-      await ready;
-    }
-    if (unavailable?.()) {
-      return respond(503, {
-        error: {
-          code: "PROVIDER_UNAVAILABLE",
-          message: "Connector catalog is temporarily unavailable",
-        },
-      });
-    }
-    return respond(200, { connectors: [connector] });
-  });
+  context.mocks.api(
+    connectorCatalogContract.get,
+    async ({ params, respond }) => {
+      if (ready) {
+        await ready;
+      }
+      if (unavailable?.()) {
+        return respond(503, {
+          error: {
+            code: "PROVIDER_UNAVAILABLE",
+            message: "Connector catalog is temporarily unavailable",
+          },
+        });
+      }
+      if (params.connectorSlug !== connector.slug) {
+        return respond(404, {
+          error: { message: "Connector not found", code: "NOT_FOUND" },
+        });
+      }
+      return respond(200, { connector });
+    },
+  );
+  if (connected) {
+    context.mocks.data.connectors([
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        slug: "gmail",
+        authMethod: "oauth",
+        externalId: "gmail-user-1",
+        externalUsername: "gmail-user",
+        externalEmail: null,
+        oauthScopes: ["read"],
+        connectionStatus: "connected",
+        reconnectReason: null,
+        tokenExpiresAt: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+  }
 }
 
 function getButtonByName(name: string): HTMLElement {

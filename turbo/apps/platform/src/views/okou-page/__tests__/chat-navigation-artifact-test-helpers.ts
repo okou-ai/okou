@@ -205,8 +205,10 @@ export function mockArtifactConversation(
       connectorProvidedBindings: [],
     });
   });
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [] });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { message: "Connector not found", code: "NOT_FOUND" },
+    });
   });
 }
 

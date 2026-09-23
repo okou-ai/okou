@@ -191,6 +191,40 @@ function defaultPublicCatalog(): PublicConnectorCatalogItem[] {
   });
 }
 
+const API_ORIGINS = [
+  "http://localhost:3000",
+  "https://app.okou.ai",
+  "https://www.okou.ai",
+] as const;
+
+function defaultPublicCatalogList(request: Request) {
+  const query = new URL(request.url).searchParams;
+  if (query.get("view") !== "brief") {
+    return { connectors: defaultPublicCatalog() };
+  }
+  const slugs = query.get("slugs")?.split(",");
+  const generation = query.get("generation");
+  return {
+    view: "brief",
+    connectors: defaultPublicCatalogStatus
+      .filter((item) => {
+        return (
+          (!slugs || slugs.includes(item.slug)) &&
+          (!generation || item.generation.includes(generation))
+        );
+      })
+      .map((item) => {
+        return {
+          slug: item.slug,
+          label: item.label,
+          icon: item.icon,
+          category: item.category,
+          generation: [...item.generation],
+        };
+      }),
+  };
+}
+
 function manualGrantAuthMethodFromBody(body: unknown): ConnectorAuthMethodId {
   if (isRecord(body) && isConnectorAuthMethodId(body.authMethod)) {
     return body.authMethod;
@@ -238,42 +272,45 @@ export const apiHandlers = [
   }),
 
   // GET /api/connector-catalog - list public connector catalog
-  http.get("http://localhost:3000/api/connector-catalog", () => {
-    return HttpResponse.json(
-      { connectors: defaultPublicCatalog() },
-      { status: 200 },
-    );
-  }),
-  http.get("https://app.okou.ai/api/connector-catalog", () => {
-    return HttpResponse.json(
-      { connectors: defaultPublicCatalog() },
-      { status: 200 },
-    );
-  }),
-  http.get("https://www.okou.ai/api/connector-catalog", () => {
-    return HttpResponse.json(
-      { connectors: defaultPublicCatalog() },
-      { status: 200 },
-    );
+  ...API_ORIGINS.map((origin) => {
+    return http.get(`${origin}/api/connector-catalog`, ({ request }) => {
+      return HttpResponse.json(defaultPublicCatalogList(request), {
+        status: 200,
+      });
+    });
   }),
 
   // GET /api/connector-catalog/status - public catalog with connection status
-  http.get("http://localhost:3000/api/connector-catalog/status", () => {
-    return HttpResponse.json(
-      { connectors: defaultPublicCatalogStatus },
-      { status: 200 },
-    );
+  ...API_ORIGINS.map((origin) => {
+    return http.get(`${origin}/api/connector-catalog/status`, () => {
+      return HttpResponse.json(
+        { connectors: defaultPublicCatalogStatus },
+        { status: 200 },
+      );
+    });
   }),
-  http.get("https://app.okou.ai/api/connector-catalog/status", () => {
-    return HttpResponse.json(
-      { connectors: defaultPublicCatalogStatus },
-      { status: 200 },
-    );
-  }),
-  http.get("https://www.okou.ai/api/connector-catalog/status", () => {
-    return HttpResponse.json(
-      { connectors: defaultPublicCatalogStatus },
-      { status: 200 },
+
+  // GET /api/connector-catalog/:connectorSlug - one connector with status
+  ...API_ORIGINS.map((origin) => {
+    return http.get(
+      `${origin}/api/connector-catalog/:connectorSlug`,
+      ({ params }) => {
+        const connector = defaultPublicCatalogStatus.find((item) => {
+          return item.slug === params.connectorSlug;
+        });
+        if (!connector) {
+          return HttpResponse.json(
+            {
+              error: {
+                message: "Connector catalog item not found",
+                code: "NOT_FOUND",
+              },
+            },
+            { status: 404 },
+          );
+        }
+        return HttpResponse.json({ connector }, { status: 200 });
+      },
     );
   }),
   http.post(

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import {
   connectorCatalogContract,
+  type PublicConnectorCatalogBriefListResponse,
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -68,6 +69,17 @@ async function deleteFeatureSwitches(
     client.delete({ headers: { authorization: "Bearer clerk-session" } }),
     [200],
   );
+}
+
+function fullCatalogList(
+  body:
+    | PublicConnectorCatalogListResponse
+    | PublicConnectorCatalogBriefListResponse,
+): PublicConnectorCatalogListResponse {
+  if ("view" in body) {
+    throw new Error("Expected the full connector catalog list");
+  }
+  return body;
 }
 
 function currentSecond(): number {
@@ -229,7 +241,9 @@ describe("GET /api/connector-catalog", () => {
       );
 
       assertPublicConnectorCatalogHasNoPrivateFields(response.body);
-      assertCategoryMetadataMatchesVisibleConnectors(response.body);
+      assertCategoryMetadataMatchesVisibleConnectors(
+        fullCatalogList(response.body),
+      );
       expect(response.body.connectors).toContainEqual(
         expect.objectContaining({
           slug: connectorSlug,
@@ -256,9 +270,11 @@ describe("GET /api/connector-catalog", () => {
 
     assertPublicConnectorCatalogHasNoPrivateFields(response.body);
     expect(response.body.connectors.length).toBeGreaterThan(0);
-    const openai = response.body.connectors.find((connector) => {
-      return connector.slug === "openai";
-    });
+    const openai = fullCatalogList(response.body).connectors.find(
+      (connector) => {
+        return connector.slug === "openai";
+      },
+    );
     expect(openai).toBeDefined();
     expect(openai?.label).toBe("OpenAI");
     expect(openai?.generation).toContain("text");
@@ -278,6 +294,71 @@ describe("GET /api/connector-catalog", () => {
       hasDefaultPolicyOverrides: false,
     });
     expect(openai?.permissionSummary).not.toHaveProperty("permissions");
+  });
+
+  it("returns only the requested brief connectors", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const response = await accept(
+      client.list({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { view: "brief", slugs: "openai,not-a-connector" },
+      }),
+      [200],
+    );
+
+    expect(response.body).toStrictEqual({
+      view: "brief",
+      connectors: [
+        {
+          slug: "openai",
+          label: "OpenAI",
+          icon: expect.objectContaining({ url: expect.any(String) }),
+          category: expect.any(String),
+          generation: expect.arrayContaining(["text"]),
+        },
+      ],
+    });
+  });
+
+  it("filters brief connectors by generation type", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const response = await accept(
+      client.list({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { view: "brief", generation: "text" },
+      }),
+      [200],
+    );
+
+    expect(response.body.connectors.length).toBeGreaterThan(0);
+    for (const connector of response.body.connectors) {
+      expect(connector.generation).toContain("text");
+    }
+  });
+
+  it("rejects a brief request with an invalid slug", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+
+    const client = setupApp({ context, routes: connectorCatalogRoutes })(
+      connectorCatalogContract,
+    );
+    const response = await accept(
+      client.list({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { view: "brief", slugs: "Not A Slug" },
+      }),
+      [400],
+    );
+
+    expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
   it("returns shared public icon descriptors across catalog views", async () => {

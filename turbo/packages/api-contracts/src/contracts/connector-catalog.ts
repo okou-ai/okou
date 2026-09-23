@@ -83,6 +83,28 @@ const publicConnectorCatalogItemSchema = z.object({
   permissionSummary: publicConnectorCatalogPermissionSummarySchema,
 });
 
+/**
+ * The connector fields a list, picker, or icon row draws. Callers that need
+ * auth methods or connection state read one connector at a time.
+ */
+const publicConnectorCatalogBriefSchema = publicConnectorCatalogItemSchema.pick(
+  {
+    slug: true,
+    label: true,
+    icon: true,
+    category: true,
+    generation: true,
+  },
+);
+
+const publicConnectorCatalogBriefListResponseSchema = z.object({
+  view: z.literal("brief"),
+  connectors: z.array(publicConnectorCatalogBriefSchema),
+});
+
+/** Upper bound on `slugs` in a brief list request. */
+export const CONNECTOR_CATALOG_BRIEF_SLUG_LIMIT = 200;
+
 const publicConnectorCatalogManualFieldSchema = z.object({
   id: z.string(),
   label: z.string(),
@@ -248,6 +270,12 @@ export type PublicConnectorCatalogCategoryMetadata = z.infer<
 export type PublicConnectorCatalogItem = z.infer<
   typeof publicConnectorCatalogItemSchema
 >;
+export type PublicConnectorCatalogBrief = z.infer<
+  typeof publicConnectorCatalogBriefSchema
+>;
+export type PublicConnectorCatalogBriefListResponse = z.infer<
+  typeof publicConnectorCatalogBriefListResponseSchema
+>;
 export type PublicConnectorCatalogManualField = z.infer<
   typeof publicConnectorCatalogManualFieldSchema
 >;
@@ -293,8 +321,27 @@ export const connectorCatalogContract = c.router({
     method: "GET",
     path: "/api/connector-catalog",
     headers: authHeadersSchema,
+    query: z.object({
+      /**
+       * `brief` returns only the fields in `publicConnectorCatalogBriefSchema`
+       * and honors `slugs` and `generation`. Without it the response keeps the
+       * original full list shape that older clients parse, and the filters are
+       * ignored.
+       */
+      view: z.literal("brief").optional(),
+      /** Comma-separated connector slugs to return. */
+      slugs: z.string().optional(),
+      /** Only connectors that support this generation type. */
+      generation: z.string().optional(),
+    }),
     responses: {
-      200: publicConnectorCatalogListResponseSchema,
+      // A server that predates `view` answers every request with the full
+      // shape, so clients must accept both.
+      200: z.union([
+        publicConnectorCatalogBriefListResponseSchema,
+        publicConnectorCatalogListResponseSchema,
+      ]),
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       503: apiErrorSchema,

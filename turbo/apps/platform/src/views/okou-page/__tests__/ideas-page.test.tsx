@@ -1,8 +1,8 @@
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import {
   connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-  type PublicConnectorCatalogStatusResponse,
+  type PublicConnectorCatalogBrief,
+  type PublicConnectorCatalogBriefListResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -44,49 +44,23 @@ function agentFixture(): AgentResponse {
 function catalogItem(
   slug: ConnectorSlug,
   label: string,
-): PublicConnectorCatalogStatusItem {
+): PublicConnectorCatalogBrief {
   return {
     slug,
     label,
-    description: `${label} test connector`,
     icon: {
       url: `https://icons.example.test/${slug}.svg`,
       invertInDarkMode: slug === "github",
     },
     category: "test",
     generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: "Sign in to grant access.",
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: false,
-    connectionStatus: "not-connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: true,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
   };
 }
 
 function catalogResponse(
-  connectors: readonly PublicConnectorCatalogStatusItem[],
-): PublicConnectorCatalogStatusResponse {
-  return { connectors: [...connectors] };
+  connectors: readonly PublicConnectorCatalogBrief[],
+): PublicConnectorCatalogBriefListResponse {
+  return { view: "brief", connectors: [...connectors] };
 }
 
 function configureAgent(): void {
@@ -94,10 +68,8 @@ function configureAgent(): void {
   context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
 }
 
-function mockCatalog(
-  connectors: readonly PublicConnectorCatalogStatusItem[],
-): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+function mockCatalog(connectors: readonly PublicConnectorCatalogBrief[]): void {
+  context.mocks.api(connectorCatalogContract.list, ({ respond }) => {
     return respond(200, catalogResponse(connectors));
   });
 }
@@ -160,7 +132,7 @@ test("Connector-dependent ideas fail closed when availability cannot be verified
   configureAgent();
   const failCatalog = context.mocks.deferred<void>();
   const failureReturned = context.mocks.deferred<void>();
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
+  context.mocks.api(connectorCatalogContract.list, async ({ respond }) => {
     await failCatalog.promise;
     failureReturned.resolve(undefined);
     return respond(503, {
@@ -186,8 +158,8 @@ test("Connector-dependent ideas fail closed when availability cannot be verified
 test("Ideas fall back to All when the selected category becomes unavailable", async () => {
   configureAgent();
   const catalog =
-    context.mocks.deferred<PublicConnectorCatalogStatusResponse>();
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
+    context.mocks.deferred<PublicConnectorCatalogBriefListResponse>();
+  context.mocks.api(connectorCatalogContract.list, async ({ respond }) => {
     return respond(200, await catalog.promise);
   });
 
@@ -226,8 +198,8 @@ test("A use case is hidden when any required connector is unavailable", async ()
 test("Pending connector availability is not mistaken for no connectors", async () => {
   configureAgent();
   const catalog =
-    context.mocks.deferred<PublicConnectorCatalogStatusResponse>();
-  context.mocks.api(connectorCatalogContract.status, async ({ respond }) => {
+    context.mocks.deferred<PublicConnectorCatalogBriefListResponse>();
+  context.mocks.api(connectorCatalogContract.list, async ({ respond }) => {
     return respond(200, await catalog.promise);
   });
 

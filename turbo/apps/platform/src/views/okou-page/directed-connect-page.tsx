@@ -44,7 +44,7 @@ import {
   manualGrantInputValuesForMethod,
   type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { directedConnectCatalogItem$ } from "../../signals/okou-page/connector-catalog-reads.ts";
 import { hasTokenInputValue } from "../../signals/okou-page/settings/token-input.ts";
 import {
   bestEffort,
@@ -550,14 +550,16 @@ function useDirectedConnectCatalogState(
   connectorSlug: ConnectorSlug | null,
 ): DirectedConnectCatalogState {
   const justConnected = useGet(justConnectedBuiltinSlugs$);
-  const allLoadable = useLastLoadable(connectorCatalogStatus$);
-  const catalogLoaded = allLoadable.state === "hasData";
-  const allData = catalogLoaded ? allLoadable.data.connectors : [];
-  const item = connectorSlug
-    ? allData.find((connector) => {
-        return connector.slug === connectorSlug;
-      })
-    : undefined;
+  const catalogLoadable = useLastLoadable(directedConnectCatalogItem$);
+  // A last-resolved read keeps the previous route's answer while the current
+  // slug loads, so only an answer for this slug counts as loaded.
+  const catalogLoaded =
+    catalogLoadable.state === "hasData" &&
+    catalogLoadable.data.connectorSlug === connectorSlug;
+  const item =
+    connectorSlug && catalogLoaded
+      ? (catalogLoadable.data.item ?? undefined)
+      : undefined;
   const optimisticallyConnected =
     connectorSlug !== null && justConnected.has(connectorSlug);
   const isConnected = optimisticallyConnected || (item?.connected ?? false);
@@ -567,7 +569,8 @@ function useDirectedConnectCatalogState(
     isLoading:
       connectorSlug !== null &&
       !optimisticallyConnected &&
-      allLoadable.state === "loading",
+      (catalogLoadable.state === "loading" ||
+        (catalogLoadable.state === "hasData" && !catalogLoaded)),
     unavailable:
       connectorSlug !== null &&
       catalogLoaded &&

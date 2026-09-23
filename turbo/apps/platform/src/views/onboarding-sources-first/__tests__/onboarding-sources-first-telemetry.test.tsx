@@ -94,24 +94,47 @@ function catalogItem(item: {
  * are reachable, and one that is not, to connect during the run.
  */
 function mockCatalog(): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [
-        catalogItem({
-          slug: "gmail",
-          label: "Gmail",
-          description: "Mail for your workspace",
-          connected: true,
-        }),
-        catalogItem({
-          slug: "notion",
-          label: "Notion",
-          description: "Shared notes for a team",
-          connected: false,
-        }),
-      ],
+  const connectors = [
+    catalogItem({
+      slug: "gmail",
+      label: "Gmail",
+      description: "Mail for your workspace",
+      connected: true,
+    }),
+    catalogItem({
+      slug: "notion",
+      label: "Notion",
+      description: "Shared notes for a team",
+      connected: false,
+    }),
+  ];
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
     });
+    if (!connector) {
+      return respond(404, {
+        error: { message: "Connector not found", code: "NOT_FOUND" },
+      });
+    }
+    return respond(200, { connector });
   });
+  context.mocks.data.connectors([
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      slug: "gmail",
+      authMethod: "oauth",
+      externalId: "gmail-user-1",
+      externalUsername: "gmail-user",
+      externalEmail: null,
+      oauthScopes: ["read"],
+      connectionStatus: "connected",
+      reconnectReason: null,
+      tokenExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]);
 }
 
 function getButtonByName(name: string): HTMLElement {

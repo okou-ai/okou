@@ -187,8 +187,39 @@ function mockCatalogItem({
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    if (params.connectorSlug !== slug) {
+      return respond(404, {
+        error: { message: "Connector not found", code: "NOT_FOUND" },
+      });
+    }
+    return respond(200, { connector });
+  });
+  context.mocks.api(connectorCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      view: "brief",
+      connectors: [
+        {
+          slug,
+          label,
+          icon,
+          category: connector.category,
+          generation: connector.generation,
+        },
+      ],
+    });
+  });
+}
+
+/** A catalog that offers none of the connectors a page asks for. */
+function mockEmptyCatalog(): void {
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(404, {
+      error: { message: "Connector not found", code: "NOT_FOUND" },
+    });
+  });
+  context.mocks.api(connectorCatalogContract.list, ({ respond }) => {
+    return respond(200, { view: "brief", connectors: [] });
   });
 }
 
@@ -682,9 +713,7 @@ test("Workflow drafts identify required and optional connectors clearly", async 
 
 test("Built-in workflows can start without connector setup", async () => {
   mockOnboardingNeeded();
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [] });
-  });
+  mockEmptyCatalog();
   await setupPage({
     context,
     path: "/onboarding/workflow-run?choice=workflow&category=marketing&workflow=track-keyword-ranks-ahrefs",
@@ -809,9 +838,7 @@ test("A workflow preview can be selected as the first draft", async () => {
 
 test("Workflow drafts can be created before connectors are connected", async () => {
   mockOnboardingNeeded();
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [] });
-  });
+  mockEmptyCatalog();
   await setupPage({
     context,
     path: "/onboarding/workflow-run?choice=workflow&category=engineering&workflow=watch-sentry-after-release",

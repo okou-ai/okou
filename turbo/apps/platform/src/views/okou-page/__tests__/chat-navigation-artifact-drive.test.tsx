@@ -179,11 +179,16 @@ function installDriveMocks(
       connectorProvidedBindings: [],
     });
   });
-  targetContext.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [googleDriveCatalogItem(connectionState)],
-    });
-  });
+  targetContext.mocks.api(
+    connectorCatalogContract.get,
+    ({ params, respond }) => {
+      return params.connectorSlug === "google-drive"
+        ? respond(200, { connector: googleDriveCatalogItem(connectionState) })
+        : respond(404, {
+            error: { message: "Connector not found", code: "NOT_FOUND" },
+          });
+    },
+  );
   targetContext.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
     return respond(200, {
       enabledConnectorSlugs: agentAuthorized ? ["google-drive"] : [],

@@ -2,15 +2,15 @@ import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { feishuPlatform$ } from "../../signals/okou-page/feishu.ts";
 import { useGet, useLastLoadable } from "ccstate-react";
 
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
+import { larkCatalogItem$ } from "../../signals/okou-page/connector-catalog-reads.ts";
 import { ConnectorCallbackPage } from "./connector-callback-page.tsx";
 
 export function FeishuOAuthCallbackPage(): React.JSX.Element {
   const platform = useGet(feishuPlatform$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatusBySlug$);
+  const catalogLoadable = useLastLoadable(larkCatalogItem$);
   const connectorIcon =
     catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.get("lark")?.icon
+      ? catalogLoadable.data?.icon
       : undefined;
 
   return (

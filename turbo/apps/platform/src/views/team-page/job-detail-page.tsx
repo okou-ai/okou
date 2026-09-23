@@ -30,6 +30,7 @@ import {
   Wand,
 } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorOverview } from "@okouai/api-contracts/contracts/connector-overview";
 import {
   surfaceVariants,
   Button,
@@ -93,7 +94,10 @@ import {
 import { isOrgAdmin$ } from "../../signals/org.ts";
 import { user$ } from "../../signals/auth.ts";
 import { NoPermissionIllustration } from "../okou-page/components/no-permission-illustration.tsx";
-import { ConnectorCard } from "../okou-page/components/settings/connector-card.tsx";
+import {
+  ConnectorCard,
+  type PermissionConnectorCardItem,
+} from "../okou-page/components/settings/connector-card.tsx";
 import { PermissionsDrawer } from "../okou-page/components/settings/permissions-dialog.tsx";
 import type { PermissionDraftIntent } from "../../signals/okou-page/settings/permission-draft-intent.ts";
 import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
@@ -104,7 +108,7 @@ import {
   currentAgentUserPermissionGrants$,
 } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { connectorOverview$ } from "../../signals/okou-page/connector-overview.ts";
 import {
   copyWorkflow$,
   currentAgentVisibleWorkflows$,
@@ -124,7 +128,6 @@ import {
 } from "../../signals/okou-page/job-detail-page.ts";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-contracts";
 import type {
-  PlatformConnectorCatalogStatusItem,
   PlatformConnectorPermissionMetadata,
   PlatformUserPermissionGrant,
 } from "../../signals/connector-domain.ts";
@@ -478,6 +481,11 @@ function NoConnectedConnectors() {
   );
 }
 
+interface ConnectedPermissionConnector extends PermissionConnectorCardItem {
+  readonly slug: ConnectorSlug;
+  readonly hasPermissions: boolean;
+}
+
 function ConnectedConnectorPermissions({
   sshAccess,
   vncAccess,
@@ -496,7 +504,7 @@ function ConnectedConnectorPermissions({
   sshAccess: { readonly agentId: string; readonly enabled: boolean } | null;
   vncAccess: { readonly agentId: string; readonly enabled: boolean } | null;
   status: ReactNode;
-  filteredConnectors: readonly PlatformConnectorCatalogStatusItem[];
+  filteredConnectors: readonly ConnectedPermissionConnector[];
   authorizedSet: ReadonlySet<string>;
   search: string;
   setSearch: (value: string) => void;
@@ -609,9 +617,7 @@ function ConnectedConnectorPermissions({
                     await onToggle(c.slug, checked);
                   })}
                   loading={savingConnectorSlug === c.slug}
-                  showManage={
-                    canManagePermissions && c.permissionSummary.hasPermissions
-                  }
+                  showManage={canManagePermissions && c.hasPermissions}
                   onManage={() => {
                     return onManage(c.slug);
                   }}
@@ -754,6 +760,32 @@ function useJobRemoteAccess(agentId: string) {
   };
 }
 
+function connectedPermissionConnectors(
+  overview: ConnectorOverview,
+): readonly ConnectedPermissionConnector[] {
+  const externalUsernames = new Map(
+    overview.accountSummaries.flatMap((summary) => {
+      return summary.target.kind === "builtin"
+        ? [
+            [
+              summary.target.connectorSlug,
+              summary.defaultConnection?.externalUsername ?? null,
+            ] as const,
+          ]
+        : [];
+    }),
+  );
+  return overview.builtinConnectors.map((connector) => {
+    return {
+      slug: connector.slug,
+      label: connector.label,
+      icon: connector.icon,
+      hasPermissions: connector.hasPermissions,
+      externalUsername: externalUsernames.get(connector.slug) ?? null,
+    };
+  });
+}
+
 function JobPermissionsTab({
   agentId,
   displayName,
@@ -802,18 +834,17 @@ function JobPermissionsTab({
 
   const connectorsLoading = connectorsLoadable.state === "loading";
 
-  const catalogItemsLoadable = useLastLoadable(connectorCatalogStatus$);
-  const allConnectors =
-    catalogItemsLoadable.state === "hasData"
-      ? catalogItemsLoadable.data.connectors
+  const overviewLoadable = useLastLoadable(connectorOverview$);
+  const connectedConnectors =
+    overviewLoadable.state === "hasData"
+      ? connectedPermissionConnectors(overviewLoadable.data)
       : [];
   const canManagePermissions = true;
 
-  const connectedConnectors = allConnectors.filter((c) => {
-    return c.connected;
-  });
+  // The drawer only opens from a connected row, so a label outside the
+  // connected list means the connector was just disconnected: the slug names it.
   const connectorLabel = connectorSlug
-    ? (allConnectors.find((connector) => {
+    ? (connectedConnectors.find((connector) => {
         return connector.slug === connectorSlug;
       })?.label ?? connectorSlug)
     : "";
@@ -852,7 +883,7 @@ function JobPermissionsTab({
   };
 
   const status =
-    catalogItemsLoadable.state !== "hasData" ||
+    overviewLoadable.state !== "hasData" ||
     connectorsLoading ||
     userGrantsLoadable.state === "loading" ? (
       <PermissionListSkeleton />

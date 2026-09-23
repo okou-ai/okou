@@ -119,16 +119,34 @@ function catalogItem(
   };
 }
 
-function mockQuestCatalog(): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+/** The picker browses discovery; a picked connector is read on its own. */
+function mockQuestCatalogItems(
+  connectors: readonly PublicConnectorCatalogStatusItem[],
+): void {
+  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
     return respond(200, {
-      connectors: [
-        catalogItem("gmail", "Gmail", "auth-code"),
-        catalogItem("notion", "Notion", "auth-code"),
-        catalogItem("openai", "OpenAI", "manual"),
-      ],
+      connectors: [...connectors],
+      totalConnectorCount: connectors.length,
     });
   });
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
+    });
+    return connector
+      ? respond(200, { connector })
+      : respond(404, {
+          error: { message: "Connector not found", code: "NOT_FOUND" },
+        });
+  });
+}
+
+function mockQuestCatalog(): void {
+  mockQuestCatalogItems([
+    catalogItem("gmail", "Gmail", "auth-code"),
+    catalogItem("notion", "Notion", "auth-code"),
+    catalogItem("openai", "OpenAI", "manual"),
+  ]);
 }
 
 function configureQuestPage(
@@ -898,14 +916,10 @@ test("The dialog leads with the connectors the step can still be completed with"
   // Slack is the better-ranked connector and is already connected, so the
   // catalog order alone would put it first. The step can only be finished on
   // Notion, so Notion is what the reader meets first in spite of that rank.
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [
-        catalogItem("slack", "Slack", "auth-code", true, 1),
-        catalogItem("notion", "Notion", "auth-code", false, 2),
-      ],
-    });
-  });
+  mockQuestCatalogItems([
+    catalogItem("slack", "Slack", "auth-code", true, 1),
+    catalogItem("notion", "Notion", "auth-code", false, 2),
+  ]);
   await setupPage({
     context,
     path: questChatPath(),

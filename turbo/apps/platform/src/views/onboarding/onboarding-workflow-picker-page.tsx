@@ -25,7 +25,7 @@ import {
   updateOnboardingUi$,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
+import { onboardingWorkflowConnectorBriefs$ } from "../../signals/onboarding/onboarding-connector-catalog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { searchParams$ } from "../../signals/route.ts";
@@ -334,7 +334,9 @@ function CategoryConnectorBackground({
 }: {
   readonly category: OnboardingWorkflowCategory;
 }) {
-  const catalogBySlugLoadable = useLastLoadable(connectorCatalogStatusBySlug$);
+  const catalogBySlugLoadable = useLastLoadable(
+    onboardingWorkflowConnectorBriefs$,
+  );
   if (catalogBySlugLoadable.state !== "hasData") {
     return null;
   }

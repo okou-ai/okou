@@ -469,8 +469,12 @@ test("A successful Feishu callback opens the connected bot", async () => {
     "https://applink.feishu.cn/client/bot/open?appId=cli_test";
   const locationAssign = context.mocks.browser.locationAssign();
   let callbackQuery: unknown;
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [feishuConnectorStatus()] });
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    return params.connectorSlug === "lark"
+      ? respond(200, { connector: feishuConnectorStatus() })
+      : respond(404, {
+          error: { message: "Connector not found", code: "NOT_FOUND" },
+        });
   });
   context.mocks.api(feishuOauthContract.callback, ({ query, respond }) => {
     callbackQuery = query;

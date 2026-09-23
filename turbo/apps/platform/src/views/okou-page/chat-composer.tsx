@@ -289,7 +289,7 @@ import {
   matchesConnectorSearch,
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { workflowTemplateConnectorBriefs$ } from "../../signals/okou-page/workflow-template-connectors.ts";
 import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
 import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
 import {
@@ -1259,13 +1259,9 @@ function WorkflowTemplateConnectorIcons({
   limit?: number;
   withDivider?: boolean;
 }) {
-  const catalogConnectors = useLastResolved(
-    connectorCatalogStatus$,
-  )?.connectors;
+  const briefs = useLastResolved(workflowTemplateConnectorBriefs$);
   const visibleConnectors = connectorSlugs.flatMap((connectorSlug) => {
-    const connector = catalogConnectors?.find((candidate) => {
-      return candidate.slug === connectorSlug;
-    });
+    const connector = briefs?.get(connectorSlug);
     return connector ? [connector] : [];
   });
   if (visibleConnectors.length === 0) {

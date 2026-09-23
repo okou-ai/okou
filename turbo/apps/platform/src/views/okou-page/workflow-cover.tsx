@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { useLastResolved } from "ccstate-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cn } from "@okouai/ui/lib/utils";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
-import type {
-  WorkflowCoverKind,
-  WorkflowCoverTone,
-  WorkflowRecommendation,
+import {
+  workflowRecommendationConnectorBriefs$,
+  type WorkflowCoverKind,
+  type WorkflowCoverTone,
+  type WorkflowRecommendation,
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 
@@ -186,10 +186,9 @@ function CoverMark({
   readonly slug: ConnectorSlug;
   readonly size: number;
 }) {
-  const connectors = useLastResolved(connectorCatalogStatus$)?.connectors;
-  const icon = connectors?.find((candidate) => {
-    return candidate.slug === slug;
-  })?.icon;
+  const icon = useLastResolved(workflowRecommendationConnectorBriefs$)?.get(
+    slug,
+  )?.icon;
   return <ConnectorIcon icon={icon} size={size} />;
 }
 

@@ -5,9 +5,9 @@ import { cn, ScrollBar, surfaceVariants } from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   WORKFLOW_RECOMMENDATIONS,
+  workflowRecommendationConnectorBriefs$,
   type WorkflowRecommendation,
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { SCROLL_FADE_Y_START_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 
@@ -48,16 +48,14 @@ function WorkflowMarks({
 }: {
   readonly connectors: readonly ConnectorSlug[];
 }) {
-  const catalog = useLastResolved(connectorCatalogStatus$)?.connectors;
+  const briefs = useLastResolved(workflowRecommendationConnectorBriefs$);
   return (
     <span
       className="flex shrink-0 items-center gap-1"
       style={{ width: MARK_SLOT_W }}
     >
       {connectors.slice(0, MAX_MARKS).map((slug) => {
-        const connector = catalog?.find((candidate) => {
-          return candidate.slug === slug;
-        });
+        const connector = briefs?.get(slug);
         return (
           <span
             key={slug}

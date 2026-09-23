@@ -9,9 +9,9 @@ import {
   captureSourceOnboardingConnectStarted$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { startOnboardingRecommendation$ } from "../../signals/onboarding/onboarding-recommendation.ts";
+import { sourcesFirstCatalogItems$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { OnboardingConnectorSetup } from "../onboarding/onboarding-connectors.tsx";
@@ -31,19 +31,12 @@ function featuredSlugsFor(
     : INDUSTRY_SOURCE_SLUGS[industry];
 }
 
-function isOnboardingSourceSlug(slug: string): boolean {
-  return FEATURED_SOURCE_SLUGS.some((featuredSlug) => {
-    return featuredSlug === slug;
-  });
-}
-
 function connectedOnboardingSlugs(
-  connectors: readonly PlatformConnectorCatalogStatusItem[],
+  connectors: ReadonlyMap<ConnectorSlug, PlatformConnectorCatalogStatusItem>,
   justConnected: ReadonlySet<ConnectorSlug>,
 ): readonly ConnectorSlug[] {
-  return connectors.flatMap((connector) => {
-    return isOnboardingSourceSlug(connector.slug) &&
-      (connector.connected || justConnected.has(connector.slug))
+  return [...connectors.values()].flatMap((connector) => {
+    return connector.connected || justConnected.has(connector.slug)
       ? [connector.slug]
       : [];
   });
@@ -56,11 +49,11 @@ export function OnboardingSourcesPage() {
   const flow = useSourcesFirstFlow("sources");
   const rootSignal = useGet(rootSignal$);
   const startRecommendation = useSet(startOnboardingRecommendation$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(sourcesFirstCatalogItems$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const connectedSlugs =
     catalogLoadable.state === "hasData"
-      ? connectedOnboardingSlugs(catalogLoadable.data.connectors, justConnected)
+      ? connectedOnboardingSlugs(catalogLoadable.data, justConnected)
       : [];
   // Keep previously connected sources visible even when they are not featured
   // for the selected field, so Continue reflects a source shown on this step.

@@ -1,5 +1,6 @@
-import { listConnectorCatalog } from "../../../lib/api/domains/connectors";
-import type { ConnectorCatalogItem } from "../../../lib/api/domains/connectors";
+import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { listConnectorCatalogBriefs } from "../../../lib/api/domains/connectors";
+import type { ConnectorCatalogBrief } from "../../../lib/api/domains/connectors";
 import type { GenerationType } from "./lister";
 
 function toConnectorGenerationType(
@@ -31,9 +32,9 @@ function toConnectorGenerationType(
 }
 
 function findConnector(
-  connectors: readonly ConnectorCatalogItem[],
+  connectors: readonly ConnectorCatalogBrief[],
   provider: string,
-): ConnectorCatalogItem | null {
+): ConnectorCatalogBrief | null {
   const exact = connectors.find((connector) => {
     return connector.slug === provider;
   });
@@ -57,8 +58,14 @@ async function resolveConnector(
   provider: string,
   generationType: GenerationType,
 ): Promise<ConnectorGuidance | null> {
-  const catalog = await listConnectorCatalog();
-  const connector = findConnector(catalog.connectors, provider);
+  // Only a well-formed slug can name a catalog connector.
+  const slugs = [...new Set([provider, provider.toLowerCase()])].filter(
+    (slug) => {
+      return connectorSlugSchema.safeParse(slug).success;
+    },
+  );
+  const connectors = await listConnectorCatalogBriefs({ slugs });
+  const connector = findConnector(connectors, provider);
   if (!connector) return null;
 
   const connectorGenerationType = toConnectorGenerationType(generationType);

@@ -12,7 +12,7 @@ import {
   builtinConnectorScopeDiff$,
   type BuiltinConnectorScopeReviewSelection,
 } from "../../../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../../../signals/external/connectors.ts";
+import { scopeReviewCatalogItem$ } from "../../../../signals/okou-page/connector-catalog-reads.ts";
 
 interface ScopeReviewModalProps {
   selection: BuiltinConnectorScopeReviewSelection;
@@ -121,14 +121,15 @@ export function ScopeReviewModal({
 }: ScopeReviewModalProps) {
   const { t } = useTranslation();
   const scopeDiffLoadable = useLoadable(builtinConnectorScopeDiff$);
-  const connectorCatalog = useLastResolved(connectorCatalogStatus$);
+  const catalogItem = useLastResolved(scopeReviewCatalogItem$);
   const loading = scopeDiffLoadable.state === "loading";
   const scopeDiff =
     scopeDiffLoadable.state === "hasData" ? scopeDiffLoadable.data : null;
 
-  const connector = connectorCatalog?.connectors.find((candidate) => {
-    return candidate.slug === selection.connectorSlug;
-  });
+  const connector =
+    catalogItem?.connectorSlug === selection.connectorSlug
+      ? catalogItem.item
+      : null;
   const connectorLabel = connector?.label ?? selection.connectorSlug;
 
   return (

@@ -19,6 +19,7 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import {
   connectorCatalogContract,
+  type PublicConnectorCatalogBrief,
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
@@ -60,6 +61,7 @@ export type BuiltinConnector = BuiltinConnectorResponse;
 type BuiltinConnectorListResponse = ApiBuiltinConnectorListResponse;
 export type ConnectorCatalogItem =
   PublicConnectorCatalogListResponse["connectors"][number];
+export type ConnectorCatalogBrief = PublicConnectorCatalogBrief;
 export type ConnectorCatalogStatus = PublicConnectorCatalogStatusItem;
 type ConnectorCatalogListResponse = PublicConnectorCatalogListResponse;
 type ConnectorCatalogStatusResponse = PublicConnectorCatalogStatusResponse;
@@ -164,10 +166,93 @@ export async function listConnectorCatalog(): Promise<ConnectorCatalogListRespon
   const result = await client.list({ headers: {} });
 
   if (result.status === 200) {
+    // Only a `view=brief` request is answered with the brief shape.
+    if ("view" in result.body) {
+      throw new Error("Connector catalog returned an unexpected brief list");
+    }
     return result.body;
   }
 
   handleError(result, "Failed to list connector catalog");
+}
+
+interface ConnectorCatalogBriefFilter {
+  readonly generation?: string;
+  readonly slugs?: readonly string[];
+}
+
+/**
+ * List the brief catalog fields for the connectors matching `filter`.
+ * An API that predates `view=brief` ignores the filters and returns the full
+ * catalog, so the filters are applied again here.
+ */
+export async function listConnectorCatalogBriefs(
+  filter: ConnectorCatalogBriefFilter,
+): Promise<ConnectorCatalogBrief[]> {
+  const { generation, slugs } = filter;
+  if (slugs?.length === 0) {
+    return [];
+  }
+  const config = await getClientConfig();
+  const client = initClient(connectorCatalogContract, config);
+
+  const result = await client.list({
+    headers: {},
+    query: {
+      view: "brief",
+      ...(slugs ? { slugs: slugs.join(",") } : {}),
+      ...(generation ? { generation } : {}),
+    },
+  });
+
+  if (result.status !== 200) {
+    handleError(result, "Failed to list connector catalog");
+  }
+
+  const requestedSlugs = slugs ? new Set(slugs) : null;
+  const connectors: readonly ConnectorCatalogBrief[] = result.body.connectors;
+  return connectors
+    .filter((connector) => {
+      return (
+        (!requestedSlugs || requestedSlugs.has(connector.slug)) &&
+        (!generation || connector.generation.includes(generation))
+      );
+    })
+    .map((connector) => {
+      return {
+        slug: connector.slug,
+        label: connector.label,
+        icon: connector.icon,
+        category: connector.category,
+        generation: connector.generation,
+      };
+    });
+}
+
+/**
+ * Get one catalog connector with its connection status.
+ * Returns null when the catalog has no connector with this slug.
+ */
+export async function getConnectorCatalogStatus(
+  connectorSlug: ConnectorSlug,
+): Promise<ConnectorCatalogStatus | null> {
+  const config = await getClientConfig();
+  const client = initClient(connectorCatalogContract, config);
+
+  const result = await client.get({ headers: {}, params: { connectorSlug } });
+
+  if (result.status === 200) {
+    return result.body.connector;
+  }
+
+  if (result.status === 404) {
+    return null;
+  }
+
+  handleError(
+    result,
+    `Failed to get connector catalog item "${connectorSlug}"`,
+  );
 }
 
 export async function listConnectorCatalogStatus(): Promise<ConnectorCatalogStatusResponse> {

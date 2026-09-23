@@ -1,7 +1,15 @@
-import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  CONNECTOR_CATALOG_BRIEF_SLUG_LIMIT,
+  connectorCatalogContract,
+} from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  connectorSlugSchema,
+  type ConnectorSlug,
+} from "@okouai/api-contracts/contracts/connector-identity";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
+import { z } from "zod";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -16,10 +24,15 @@ import {
   getPublicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
   listPublicConnectorCatalog,
+  listPublicConnectorCatalogBriefs,
   listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
 import { builtinConnectorCatalogConnectionList } from "../services/connector-data.service";
-import { notFound, providerUnavailable } from "../../lib/error";
+import {
+  badRequestMessage,
+  notFound,
+  providerUnavailable,
+} from "../../lib/error";
 import { settle } from "../utils";
 
 const connectorCatalogAuth = {
@@ -82,10 +95,49 @@ const connectorCatalogRequestContext$ = command(async ({ get }) => {
   };
 });
 
+function parseBriefSlugs(
+  slugs: string | undefined,
+): { readonly ok: true; readonly value: ConnectorSlug[] | undefined } | null {
+  if (slugs === undefined) {
+    return { ok: true, value: undefined };
+  }
+  const values = slugs.split(",").filter((value) => {
+    return value.length > 0;
+  });
+  if (values.length > CONNECTOR_CATALOG_BRIEF_SLUG_LIMIT) {
+    return null;
+  }
+  const parsed = z.array(connectorSlugSchema).safeParse(values);
+  return parsed.success ? { ok: true, value: parsed.data } : null;
+}
+
 const listConnectorCatalogInner$ = command(
-  async ({ set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
+    const query = get(queryOf(connectorCatalogContract.list));
     const context = await set(connectorCatalogRequestContext$);
     signal.throwIfAborted();
+
+    if (query.view === "brief") {
+      const slugs = parseBriefSlugs(query.slugs);
+      if (!slugs) {
+        return badRequestMessage(
+          `slugs must list at most ${CONNECTOR_CATALOG_BRIEF_SLUG_LIMIT} valid connector slugs`,
+        );
+      }
+      const briefs = await settleConnectorCatalogRead(
+        listPublicConnectorCatalogBriefs({
+          db: context.db,
+          featureStates: context.featureStates,
+          connectorSlugs: slugs.value,
+          generation: query.generation,
+        }),
+        signal,
+      );
+      if (!briefs.ok) {
+        return connectorCatalogUnavailable();
+      }
+      return { status: 200 as const, body: briefs.value };
+    }
 
     const catalog = await settleConnectorCatalogRead(
       listPublicConnectorCatalog({

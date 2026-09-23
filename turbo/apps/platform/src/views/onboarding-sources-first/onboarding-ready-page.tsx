@@ -3,7 +3,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Textarea } from "@okouai/ui";
 import { Loader2 } from "lucide-react";
-import { ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS } from "@okouai/api-contracts/contracts/onboarding";
 import {
   ONBOARDING_INDUSTRY_IDS,
   type OnboardingIndustry,
@@ -12,9 +11,9 @@ import {
   captureSourceOnboardingPromptEdited$,
   captureSourceOnboardingStartClicked$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
+import { sourcesFirstCatalogItems$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import {
   updateSourcesFirstDraft$,
   type SourcesFirstDraft,
@@ -35,12 +34,6 @@ const STARTING_PROMPT_MAX_LENGTH = 1000;
 const SUPPORT_EMAIL = "support@okou.ai";
 const CELEBRATION_URL =
   "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_640.png";
-
-function isOnboardingSourceSlug(slug: string): boolean {
-  return ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS.some((sourceSlug) => {
-    return sourceSlug === slug;
-  });
-}
 
 function fallbackIndustry(
   industry: OnboardingIndustry | null,
@@ -161,7 +154,7 @@ export function OnboardingReadyPage() {
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
   const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(sourcesFirstCatalogItems$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const pageSignal = useGet(pageSignal$);
   const searchParams = useGet(searchParams$);
@@ -170,11 +163,8 @@ export function OnboardingReadyPage() {
 
   const connected =
     catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.connectors.filter((connector) => {
-          return (
-            isOnboardingSourceSlug(connector.slug) &&
-            (connector.connected || justConnected.has(connector.slug))
-          );
+      ? [...catalogLoadable.data.values()].filter((connector) => {
+          return connector.connected || justConnected.has(connector.slug);
         })
       : [];
   const industry = fallbackIndustry(flow.draft.industry);

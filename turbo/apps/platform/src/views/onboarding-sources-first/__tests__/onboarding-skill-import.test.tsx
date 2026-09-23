@@ -1,7 +1,3 @@
-import {
-  connectorCatalogContract,
-  type PublicConnectorCatalogStatusItem,
-} from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import {
@@ -65,45 +61,22 @@ const OTHER_AGENT_SKILL = "Someone else's skill";
 
 /** One connected source, which every step after the source step requires. */
 function mockConnectedSource(): void {
-  const connector: PublicConnectorCatalogStatusItem = {
-    slug: "gmail",
-    label: "Gmail",
-    description: "Connect Gmail to continue",
-    icon: {
-      url: "https://icons.example.test/onboarding-gmail.svg",
-      invertInDarkMode: false,
+  context.mocks.data.connectors([
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      slug: "gmail",
+      authMethod: "oauth",
+      externalId: "gmail-user-1",
+      externalUsername: "gmail-user",
+      externalEmail: null,
+      oauthScopes: ["read"],
+      connectionStatus: "connected",
+      reconnectReason: null,
+      tokenExpiresAt: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     },
-    category: "productivity",
-    generation: [],
-    tags: [],
-    authMethods: [
-      {
-        id: "oauth",
-        label: "OAuth",
-        description: null,
-        grantKind: "auth-code",
-        manualFields: [],
-        startOptions: [],
-      },
-    ],
-    permissionSummary: {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    },
-    connection: null,
-    connected: true,
-    connectionStatus: "connected",
-    scopeMismatch: false,
-    authMethodSupportsRefresh: false,
-    tokenExpiresAt: null,
-    singleAuthCodeAuthMethodId: "oauth",
-    connectNotice: null,
-  };
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [connector] });
-  });
+  ]);
 }
 
 function workflow(entry: {

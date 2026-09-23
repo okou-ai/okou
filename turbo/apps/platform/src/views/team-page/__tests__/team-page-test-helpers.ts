@@ -14,6 +14,7 @@ import type {
   PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import type { UserPermissionGrantResponse } from "@okouai/api-contracts/contracts/user-permission-grants";
 import type { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
@@ -101,6 +102,52 @@ export function catalogConnectorFixture(
     singleAuthCodeAuthMethodId: "oauth",
     connectNotice: null,
   };
+}
+
+/** Serves the connected ones among `connectors` as the user's connector overview. */
+export function mockConnectorOverview(
+  testContextValue: TestContext,
+  connectors: readonly PublicConnectorCatalogStatusItem[],
+): void {
+  const connected = connectors.filter((connector) => {
+    return connector.connected;
+  });
+  testContextValue.mocks.api(
+    connectorOverviewContract.overview,
+    ({ respond }) => {
+      return respond(200, {
+        builtinConnectors: connected.map((connector) => {
+          return {
+            slug: connector.slug,
+            label: connector.label,
+            icon: connector.icon,
+            hasPermissions: connector.permissionSummary.hasPermissions,
+          };
+        }),
+        customConnectors: [],
+        accountSummaries: connected.map((connector) => {
+          return {
+            target: { kind: "builtin" as const, connectorSlug: connector.slug },
+            accountCount: 1,
+            attentionCount: 0,
+            defaultConnection: connector.connection
+              ? {
+                  id: connector.connection.id ?? crypto.randomUUID(),
+                  authMethod: connector.connection.authMethod,
+                  displayName: null,
+                  externalId: null,
+                  externalUsername: connector.connection.externalUsername,
+                  externalEmail: connector.connection.externalEmail,
+                  connectionStatus: "connected" as const,
+                }
+              : null,
+          };
+        }),
+        computerUseHosts: [],
+        cloudBrowserEnabledByDefault: true,
+      });
+    },
+  );
 }
 
 function customConnectorBase() {

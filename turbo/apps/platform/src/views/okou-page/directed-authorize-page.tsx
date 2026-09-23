@@ -24,7 +24,7 @@ import {
   builtinPollingOAuthAuthCodeSlug$,
   type BuiltinConnectorConnectionResult,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { directedAuthorizeCatalogItem$ } from "../../signals/okou-page/connector-catalog-reads.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   directedAuthorizeSlug$,
@@ -120,14 +120,16 @@ function useDirectedAuthorizeParams(): {
 
 function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
   const justConnected = useGet(justConnectedBuiltinSlugs$);
-  const allLoadable = useLastLoadable(connectorCatalogStatus$);
-  const catalogLoaded = allLoadable.state === "hasData";
-  const allData = catalogLoaded ? allLoadable.data.connectors : [];
-  const item = connectorSlug
-    ? allData.find((connector) => {
-        return connector.slug === connectorSlug;
-      })
-    : undefined;
+  const catalogLoadable = useLastLoadable(directedAuthorizeCatalogItem$);
+  // A last-resolved read keeps the previous route's answer while the current
+  // slug loads, so only an answer for this slug counts as loaded.
+  const catalogLoaded =
+    catalogLoadable.state === "hasData" &&
+    catalogLoadable.data.connectorSlug === connectorSlug;
+  const item =
+    connectorSlug && catalogLoaded
+      ? (catalogLoadable.data.item ?? undefined)
+      : undefined;
   const isConnected =
     connectorSlug !== null &&
     (justConnected.has(connectorSlug) || item?.connected === true);
@@ -137,7 +139,8 @@ function useDirectedAuthorizeCatalogState(connectorSlug: ConnectorSlug | null) {
     catalogLoading:
       connectorSlug !== null &&
       !justConnected.has(connectorSlug) &&
-      allLoadable.state === "loading",
+      (catalogLoadable.state === "loading" ||
+        (catalogLoadable.state === "hasData" && !catalogLoaded)),
     unavailable:
       connectorSlug !== null && catalogLoaded && !item && !isConnected,
   };

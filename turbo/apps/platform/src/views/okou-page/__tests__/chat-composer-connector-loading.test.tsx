@@ -87,9 +87,6 @@ test("Show connected connectors while an older API is still serving", async () =
       error: { code: "NOT_FOUND", message: "Route unavailable" },
     });
   });
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, { connectors: [github] });
-  });
 
   await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
   const trigger = await findFastControl("button", "Connectors");

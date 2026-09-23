@@ -4,7 +4,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
 import { cn, ScrollBar, surfaceVariants } from "@okouai/ui";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { questConnectorCatalog$ } from "../../signals/okou-page/connector-catalog-reads.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
   builtinConnectFlowSlug$,
@@ -167,8 +167,9 @@ function ConnectorGroup({
 }
 
 /**
- * Every one-click connector, inside the dialog that explains why to connect
- * one.
+ * The one-click connectors from the catalog's keyword-free discovery browse
+ * (what this workspace has connected plus the leading connectors of each
+ * category), inside the dialog that explains why to connect one.
  *
  * Pressing one starts its authorization here rather than opening a second
  * dialog that would repeat the connector's name and hold a single Connect
@@ -188,7 +189,7 @@ export function QuestConnectorPicker({
   ) => void;
 }) {
   const { t } = useTranslation();
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(questConnectorCatalog$);
   const pageSignal = useGet(pageSignal$);
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
   const connectFlowSlug = useGet(builtinConnectFlowSlug$);

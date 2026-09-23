@@ -276,12 +276,6 @@ export function mockPublicConnectorStatus(
   categoryMetadata?: PublicConnectorCatalogCategoryMetadata,
   categoryConnectorCounts?: Readonly<Record<string, number>>,
 ): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [...connectors],
-      ...(categoryMetadata ? { categoryMetadata } : {}),
-    });
-  });
   context.mocks.api(
     connectorCatalogContract.discovery,
     ({ query, respond }) => {
@@ -302,6 +296,17 @@ export function mockPublicConnectorStatus(
       });
     },
   );
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    const connector = connectors.find((candidate) => {
+      return candidate.slug === params.connectorSlug;
+    });
+    if (!connector) {
+      return respond(404, {
+        error: { message: "Connector not found", code: "NOT_FOUND" },
+      });
+    }
+    return respond(200, { connector });
+  });
 }
 
 export function customConnector(

@@ -1,13 +1,13 @@
 import chalk from "chalk";
 import type {
-  ConnectorCatalogItem,
+  ConnectorCatalogBrief,
   ConnectorCatalogStatus,
 } from "../../../lib/api/domains/connectors";
 import { getBillingStatus } from "../../../lib/api/domains/billing";
 import { getAgentUserBuiltinConnectors } from "../../../lib/api/domains/agents";
 import {
-  listConnectorCatalog,
-  listConnectorCatalogStatus,
+  getConnectorCatalogStatus,
+  listConnectorCatalogBriefs,
 } from "../../../lib/api/domains/connectors";
 import { getPlatformOrigin } from "../../../lib/platform-url";
 import {
@@ -409,10 +409,9 @@ function getGenerationContext(
   return GENERATION_CONTEXT[generationType] ?? null;
 }
 
-function getGenerationConnectors<T extends ConnectorCatalogItem>(
-  generationType: ConnectorGenerationType,
-  connectors: readonly T[],
-): T[] {
+function getGenerationConnectors<
+  T extends Pick<ConnectorCatalogBrief, "slug" | "generation">,
+>(generationType: ConnectorGenerationType, connectors: readonly T[]): T[] {
   return connectors
     .filter((connector) => {
       return connector.generation.includes(generationType);
@@ -538,7 +537,7 @@ function runUnavailableReason(lookup: RunUnavailableAccountLookup): string {
 }
 
 function toRunCandidate(params: {
-  connector: ConnectorCatalogItem;
+  connector: Pick<ConnectorCatalogBrief, "slug" | "label">;
   lookup: RunConnectorAccountLookup;
   authorizedConnectorSlugs: Set<string> | null;
   agentId: string | undefined;
@@ -799,7 +798,7 @@ function renderText(params: {
 type GenerationCatalogSource =
   | {
       readonly kind: "run";
-      readonly connectors: readonly ConnectorCatalogItem[];
+      readonly connectors: readonly ConnectorCatalogBrief[];
     }
   | {
       readonly kind: "current";
@@ -814,12 +813,23 @@ async function loadGenerationCatalog(
   if (!connectorGenerationType) {
     return { kind: "none", connectors: [] };
   }
+  const briefs = await listConnectorCatalogBriefs({
+    generation: connectorGenerationType,
+  });
   if (runBound) {
-    const { connectors } = await listConnectorCatalog();
-    return { kind: "run", connectors };
+    return { kind: "run", connectors: briefs };
   }
-  const { connectors } = await listConnectorCatalogStatus();
-  return { kind: "current", connectors };
+  const statuses = await Promise.all(
+    briefs.map((brief) => {
+      return getConnectorCatalogStatus(brief.slug);
+    }),
+  );
+  return {
+    kind: "current",
+    connectors: statuses.filter((status) => {
+      return status !== null;
+    }),
+  };
 }
 
 export async function runLister(

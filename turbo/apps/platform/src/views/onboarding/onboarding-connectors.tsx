@@ -20,10 +20,12 @@ import {
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
+import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
-  connectorCatalogStatus$,
-  reloadBuiltinConnectors$,
-} from "../../signals/external/connectors.ts";
+  onboardingPromptConnectorItems$,
+  onboardingWorkflowRunConnectorItems$,
+} from "../../signals/onboarding/onboarding-connector-catalog.ts";
+import { sourcesFirstCatalogItems$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "../okou-page/components/settings/add-connection-dialog.tsx";
@@ -39,6 +41,12 @@ import { detach, Reason } from "../../signals/utils.ts";
 type ConnectorSetupVariant = "workflow" | "prompt" | "sources";
 
 interface ConnectorSetupProps {
+  /**
+   * The order to show connectors in. Each layout reads catalog entries for the
+   * connectors its page offers (the source step's featured sources, the chosen
+   * workflow's connectors, or the make link's `connector` list), so these
+   * slugs must come from that same set.
+   */
   readonly connectorSlugs: readonly string[];
   readonly requiredConnectorSlugs?: readonly string[];
   readonly variant?: ConnectorSetupVariant;
@@ -204,7 +212,7 @@ function SourcesConnectorGrid({
 }: ConnectorSetupProps) {
   const validConnectorSlugs = parseConnectorSlugs(connectorSlugs);
   const connectorCatalogItemsLoadable = useLastLoadable(
-    connectorCatalogStatus$,
+    sourcesFirstCatalogItems$,
   );
   const retryCatalog = useSet(reloadBuiltinConnectors$);
   const { t } = useTranslation();
@@ -217,12 +225,10 @@ function SourcesConnectorGrid({
   const justConnectedSlugs = useGet(justConnectedBuiltinSlugs$);
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
-      ? connectorCatalogItemsLoadable.data.connectors
-      : [];
+      ? connectorCatalogItemsLoadable.data
+      : new Map<ConnectorSlug, PlatformConnectorCatalogStatusItem>();
   const selectedConnector = selectedConnectorSlug
-    ? connectorCatalogItems.find((connector) => {
-        return connector.slug === selectedConnectorSlug;
-      })
+    ? connectorCatalogItems.get(selectedConnectorSlug)
     : undefined;
   const selectedAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
@@ -268,9 +274,7 @@ function SourcesConnectorGrid({
           narrow to read its own description. */}
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {validConnectorSlugs.map((connectorSlug) => {
-          const item = connectorCatalogItems.find((candidate) => {
-            return candidate.slug === connectorSlug;
-          });
+          const item = connectorCatalogItems.get(connectorSlug);
           if (!item) {
             return null;
           }
@@ -331,7 +335,9 @@ function ListConnectorSetup({
   );
   const pageSignal = useGet(pageSignal$);
   const connectorCatalogItemsLoadable = useLastLoadable(
-    connectorCatalogStatus$,
+    layout === "prompt"
+      ? onboardingPromptConnectorItems$
+      : onboardingWorkflowRunConnectorItems$,
   );
   const connect = useSet(connectBuiltinConnectorOAuthAuthCode$);
   const connectNoAuth = useSet(connectBuiltinConnectorNoAuth$);
@@ -348,12 +354,10 @@ function ListConnectorSetup({
 
   const connectorCatalogItems =
     connectorCatalogItemsLoadable.state === "hasData"
-      ? connectorCatalogItemsLoadable.data.connectors
-      : [];
+      ? connectorCatalogItemsLoadable.data
+      : new Map<ConnectorSlug, PlatformConnectorCatalogStatusItem>();
   const selectedConnector = selectedConnectorSlug
-    ? connectorCatalogItems.find((connector) => {
-        return connector.slug === selectedConnectorSlug;
-      })
+    ? connectorCatalogItems.get(selectedConnectorSlug)
     : undefined;
   const selectedAccountOptions =
     defaultBuiltinConnectorAccountOptions(selectedConnector);
@@ -369,9 +373,7 @@ function ListConnectorSetup({
         )}
       >
         {validConnectorSlugs.map((connectorSlug) => {
-          const item = connectorCatalogItems.find((candidate) => {
-            return candidate.slug === connectorSlug;
-          });
+          const item = connectorCatalogItems.get(connectorSlug);
           const connected =
             item?.connected === true || justConnectedSlugs.has(connectorSlug);
           const connecting =

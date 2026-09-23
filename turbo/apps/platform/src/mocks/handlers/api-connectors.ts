@@ -476,11 +476,32 @@ export const apiConnectorsHandlers = [
     });
   }),
 
-  mockApi(connectorCatalogContract.status, ({ respond }) => {
-    const connectors = mockConnectorCatalogStatus();
+  mockApi(connectorCatalogContract.list, ({ query, respond }) => {
+    const requested = query.slugs
+      ?.split(",")
+      .filter((slug) => {
+        return slug.length > 0;
+      });
+    const wanted = requested ? new Set(requested) : null;
     return respond(200, {
-      connectors,
-      categoryMetadata: testConnectorCatalogCategoryMetadata,
+      view: "brief",
+      connectors: mockConnectorCatalogStatus()
+        .filter((connector) => {
+          return (
+            (wanted === null || wanted.has(connector.slug)) &&
+            (query.generation === undefined ||
+              connector.generation.includes(query.generation))
+          );
+        })
+        .map((connector) => {
+          return {
+            slug: connector.slug,
+            label: connector.label,
+            icon: connector.icon,
+            category: connector.category,
+            generation: connector.generation,
+          };
+        }),
     });
   }),
 

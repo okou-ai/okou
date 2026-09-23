@@ -7,10 +7,10 @@ import { useTranslation } from "react-i18next";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { getCategories } from "./ideation-data.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { currentAgentId$ } from "../../signals/agent.ts";
 import {
+  ideationConnectorBriefs$,
   ideationActiveTab$,
   setIdeationActiveTab$,
   ideationSearchQuery$,
@@ -24,20 +24,18 @@ import {
 export function IdeationPage() {
   const { t } = useTranslation("agents");
   const features = useLastResolved(featureSwitch$);
-  const connectorStatusLoadable = useLoadable(connectorCatalogStatusBySlug$);
-  const lastConnectorStatusBySlug = useLastResolved(
-    connectorCatalogStatusBySlug$,
-  );
-  const connectorStatusBySlug =
-    connectorStatusLoadable.state === "hasData"
-      ? connectorStatusLoadable.data
-      : connectorStatusLoadable.state === "loading"
-        ? lastConnectorStatusBySlug
+  const connectorBriefsLoadable = useLoadable(ideationConnectorBriefs$);
+  const lastConnectorBriefs = useLastResolved(ideationConnectorBriefs$);
+  const connectorBriefs =
+    connectorBriefsLoadable.state === "hasData"
+      ? connectorBriefsLoadable.data
+      : connectorBriefsLoadable.state === "loading"
+        ? lastConnectorBriefs
         : undefined;
   const visibleConnectorSlugs =
-    connectorStatusBySlug !== undefined
-      ? new Set(connectorStatusBySlug.keys())
-      : connectorStatusLoadable.state === "loading"
+    connectorBriefs !== undefined
+      ? new Set<string>(connectorBriefs.keys())
+      : connectorBriefsLoadable.state === "loading"
         ? undefined
         : new Set<string>();
   const catalogCopy: IdeationCatalogCopy = t(
@@ -237,7 +235,7 @@ export function IdeationPage() {
                           const connectors =
                             useCase.connectorSlugs?.flatMap((connectorSlug) => {
                               const connector =
-                                connectorStatusBySlug?.get(connectorSlug);
+                                connectorBriefs?.get(connectorSlug);
                               return connector
                                 ? [{ connectorSlug, icon: connector.icon }]
                                 : [];

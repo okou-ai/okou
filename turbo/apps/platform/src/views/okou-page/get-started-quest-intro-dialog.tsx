@@ -26,7 +26,7 @@ import {
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { questSelectedCatalogItem$ } from "../../signals/okou-page/connector-catalog-reads.ts";
 import {
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
@@ -568,12 +568,12 @@ export function GetStartedQuestIntroDialog({
 function QuestConnectModal() {
   const selectedSlug = useGet(selectedBuiltinConnectorSlug$);
   const setSelectedSlug = useSet(setSelectedBuiltinConnectorSlug$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(questSelectedCatalogItem$);
   const selected =
-    selectedSlug !== null && catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.connectors.find((connector) => {
-          return connector.slug === selectedSlug;
-        })
+    selectedSlug !== null &&
+    catalogLoadable.state === "hasData" &&
+    catalogLoadable.data.connectorSlug === selectedSlug
+      ? (catalogLoadable.data.item ?? undefined)
       : undefined;
   const accountOptions = defaultBuiltinConnectorAccountOptions(selected);
   if (!selected || !accountOptions) {

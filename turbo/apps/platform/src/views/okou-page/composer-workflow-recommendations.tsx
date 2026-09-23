@@ -23,9 +23,9 @@ import { findWorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import {
   WORKFLOW_RECOMMENDATIONS,
+  workflowRecommendationConnectorBriefs$,
   type WorkflowRecommendation,
 } from "../../signals/okou-page/composer-workflow-recommendations.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
@@ -45,13 +45,11 @@ function WorkflowConnectors({
 }: {
   readonly item: WorkflowRecommendation;
 }) {
-  const connectors = useLastResolved(connectorCatalogStatus$)?.connectors;
+  const briefs = useLastResolved(workflowRecommendationConnectorBriefs$);
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
       {item.connectors.map((slug) => {
-        const connector = connectors?.find((candidate) => {
-          return candidate.slug === slug;
-        });
+        const connector = briefs?.get(slug);
         return connector ? (
           <span key={slug} className="inline-flex items-center gap-1">
             <ConnectorIcon icon={connector.icon} size={12} />

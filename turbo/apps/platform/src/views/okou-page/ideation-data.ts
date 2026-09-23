@@ -549,6 +549,17 @@ const categories: readonly Category[] = [
   },
 ];
 
+/** Every connector a use case names, so their visibility is asked for at once. */
+export const IDEATION_CONNECTOR_SLUGS: readonly ConnectorSlug[] = [
+  ...new Set(
+    categories.flatMap((category) => {
+      return category.cases.flatMap((useCase) => {
+        return useCase.connectorSlugs ?? [];
+      });
+    }),
+  ),
+];
+
 function isEnabled(
   useCase: UseCase,
   features?: Partial<Record<FeatureSwitchKey, boolean>>,

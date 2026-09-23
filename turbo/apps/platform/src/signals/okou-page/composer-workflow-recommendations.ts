@@ -2,6 +2,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
+import { connectorCatalogBriefs } from "../external/connectors.ts";
 
 export interface WorkflowRecommendationActions {
   readonly insertTemplate$: WorkflowComposerSignals["insertTemplate$"];
@@ -168,6 +169,20 @@ export const WORKFLOW_RECOMMENDATIONS = [
 
 export type WorkflowRecommendation = (typeof WORKFLOW_RECOMMENDATIONS)[number];
 export type WorkflowRecommendationId = WorkflowRecommendation["id"];
+
+/**
+ * Label and icon for every connector a recommendation names, on its card or its
+ * cover, in one request. A slug the current user cannot see is absent.
+ */
+export const workflowRecommendationConnectorBriefs$ = connectorCatalogBriefs(
+  WORKFLOW_RECOMMENDATIONS.flatMap((item) => {
+    return [
+      ...item.connectors,
+      ...item.cover.sources,
+      ...(item.cover.destination === null ? [] : [item.cover.destination]),
+    ];
+  }),
+);
 
 export function createWorkflowRecommendationSignals(
   visible$: Computed<boolean>,

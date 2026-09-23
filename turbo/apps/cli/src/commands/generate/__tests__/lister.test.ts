@@ -13,7 +13,8 @@ import {
   catalogStatusItem,
   manualAuthMethod,
   stubConnectorCatalog,
-  stubConnectorCatalogStatus,
+  stubConnectorCatalogBriefs,
+  stubConnectorCatalogDetails,
 } from "../../__tests__/helpers/connector-catalog";
 import {
   stubRunConnectorAccountInspection,
@@ -119,19 +120,25 @@ function stubConnectorsWithCatalogSlugs(
     ...catalogConnectorSlugs,
     ...connectedBySlug.keys(),
   ]);
-  return stubConnectorCatalogStatus(
-    [...visibleConnectorSlugs].map((connectorSlug) => {
-      return (
-        connectedBySlug.get(connectorSlug) ??
-        catalogStatusItem({
-          connectorSlug,
-          label: CONNECTOR_LABELS[connectorSlug] ?? connectorSlug,
-          generation: [...(CONNECTOR_GENERATION[connectorSlug] ?? [])],
-          authMethods: [manualAuthMethod()],
-        })
-      );
-    }),
-  );
+  const statusItems = [...visibleConnectorSlugs].map((connectorSlug) => {
+    return (
+      connectedBySlug.get(connectorSlug) ??
+      catalogStatusItem({
+        connectorSlug,
+        label: CONNECTOR_LABELS[connectorSlug] ?? connectorSlug,
+        generation: [...(CONNECTOR_GENERATION[connectorSlug] ?? [])],
+        authMethods: [manualAuthMethod()],
+      })
+    );
+  });
+  return [
+    stubConnectorCatalogBriefs(
+      statusItems.map((item) => {
+        return catalogItem({ ...item, connectorSlug: item.slug });
+      }),
+    ),
+    stubConnectorCatalogDetails(statusItems),
+  ] as const;
 }
 
 function stubRunConnectorsWithCatalogSlugs(
@@ -159,7 +166,7 @@ function stubRunConnectorsWithCatalogSlugs(
     }),
   );
   return [
-    stubConnectorCatalog(
+    stubConnectorCatalogBriefs(
       [...visibleConnectorSlugs].map((connectorSlug) => {
         return catalogItem({
           connectorSlug,
@@ -470,11 +477,129 @@ describe("okou generate lister", () => {
   it("preserves default-account generation discovery outside a run", async () => {
     vi.stubEnv("OKOU_AGENT_ID", "");
     vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
-    server.use(stubConnectors([connector("fal", "default-account-a")]));
+    server.use(...stubConnectors([connector("fal", "default-account-a")]));
 
     await generateCommand.parseAsync(["node", "cli", "image"]);
 
     expect(output()).toContain("@default-account-a");
+  });
+
+  it("reads only the generation connectors outside a run", async () => {
+    vi.stubEnv("OKOU_AGENT_ID", "");
+    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
+    const listQueries: string[] = [];
+    const detailSlugs: string[] = [];
+    const statusItems = [
+      catalogStatusItem({
+        connectorSlug: "fal",
+        label: "fal.ai",
+        generation: ["image", "video"],
+        connection: {
+          authMethod: "api-token",
+          externalUsername: "fal-default",
+          externalEmail: null,
+          reconnectReason: null,
+        },
+      }),
+      catalogStatusItem({
+        connectorSlug: "openai",
+        label: "OpenAI",
+        generation: ["audio", "image", "text"],
+      }),
+      catalogStatusItem({
+        connectorSlug: "elevenlabs",
+        label: "ElevenLabs",
+        generation: ["audio"],
+      }),
+    ];
+    server.use(
+      http.get("http://localhost:3000/api/connector-catalog", ({ request }) => {
+        listQueries.push(new URL(request.url).search);
+        return undefined;
+      }),
+      http.get(
+        "http://localhost:3000/api/connector-catalog/:connectorSlug",
+        ({ params }) => {
+          detailSlugs.push(String(params.connectorSlug));
+          return undefined;
+        },
+      ),
+      stubConnectorCatalogBriefs([
+        ...statusItems.map((item) => {
+          return catalogItem({ ...item, connectorSlug: item.slug });
+        }),
+        catalogItem({
+          connectorSlug: "retired-image",
+          label: "Retired Image",
+          generation: ["image"],
+        }),
+      ]),
+      stubConnectorCatalogDetails(statusItems),
+    );
+
+    await generateCommand.parseAsync(["node", "cli", "image", "--all"]);
+
+    const text = output();
+    expect(listQueries).toStrictEqual(["?view=brief&generation=image"]);
+    expect([...detailSlugs].sort()).toStrictEqual([
+      "fal",
+      "openai",
+      "retired-image",
+    ]);
+    expect(text).toContain("@fal-default");
+    expect(text).toContain("OpenAI");
+    expect(text).toContain("[Connect OpenAI]");
+  });
+
+  it("filters a full catalog list from an API without the brief view", async () => {
+    vi.stubEnv("OKOU_AGENT_ID", "");
+    vi.stubEnv("OKOU_CONNECTOR_ACCOUNT_CONTEXT_FILE", "");
+    const detailSlugs: string[] = [];
+    const statusItems = [
+      catalogStatusItem({
+        connectorSlug: "fal",
+        label: "fal.ai",
+        generation: ["image"],
+        connection: {
+          authMethod: "api-token",
+          externalUsername: "fal-default",
+          externalEmail: null,
+          reconnectReason: null,
+        },
+      }),
+      catalogStatusItem({
+        connectorSlug: "elevenlabs",
+        label: "ElevenLabs",
+        generation: ["audio"],
+        connection: {
+          authMethod: "api-token",
+          externalUsername: "elevenlabs-default",
+          externalEmail: null,
+          reconnectReason: null,
+        },
+      }),
+    ];
+    server.use(
+      http.get(
+        "http://localhost:3000/api/connector-catalog/:connectorSlug",
+        ({ params }) => {
+          detailSlugs.push(String(params.connectorSlug));
+          return undefined;
+        },
+      ),
+      stubConnectorCatalog(
+        statusItems.map((item) => {
+          return catalogItem({ ...item, connectorSlug: item.slug });
+        }),
+      ),
+      stubConnectorCatalogDetails(statusItems),
+    );
+
+    await generateCommand.parseAsync(["node", "cli", "image", "--all"]);
+
+    const text = output();
+    expect(detailSlugs).toStrictEqual(["fal"]);
+    expect(text).toContain("@fal-default");
   });
 
   it("fails closed when connector-backed discovery has no run projection", async () => {
@@ -549,7 +674,7 @@ describe("okou generate lister", () => {
 
   it("uses the public catalog when --provider names a connector that does not advertise the generation type", async () => {
     server.use(
-      stubConnectorCatalog([
+      stubConnectorCatalogBriefs([
         catalogItem({
           connectorSlug: "elevenlabs",
           label: "ElevenLabs",
@@ -574,6 +699,64 @@ describe("okou generate lister", () => {
     expect(text).toContain(
       'Run "okou generate image" to see every provider that supports this generation type.',
     );
+  });
+
+  it("looks up a --provider by its lowercased slug", async () => {
+    const listQueries: string[] = [];
+    server.use(
+      http.get("http://localhost:3000/api/connector-catalog", ({ request }) => {
+        listQueries.push(new URL(request.url).search);
+        return undefined;
+      }),
+      stubConnectorCatalogBriefs([
+        catalogItem({
+          connectorSlug: "replicate",
+          label: "Replicate",
+          generation: ["image"],
+        }),
+        catalogItem({
+          connectorSlug: "runway",
+          label: "Runway",
+          generation: ["image"],
+        }),
+      ]),
+    );
+
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image",
+      "--provider",
+      "Replicate",
+    ]);
+
+    expect(listQueries).toStrictEqual(["?view=brief&slugs=replicate"]);
+    expect(output()).toContain(
+      'Replicate (replicate) handles image generation through its own connector skill, not through "okou generate".',
+    );
+  });
+
+  it("reports a --provider that cannot be a connector slug as unknown", async () => {
+    let listRequests = 0;
+    server.use(
+      http.get("http://localhost:3000/api/connector-catalog", () => {
+        listRequests += 1;
+        return undefined;
+      }),
+    );
+
+    await generateCommand.parseAsync([
+      "node",
+      "cli",
+      "image",
+      "--provider",
+      "Not A Slug",
+    ]);
+
+    expect(output()).toContain(
+      'Provider "Not A Slug" is not a known connector.',
+    );
+    expect(listRequests).toBe(0);
   });
 
   it("suggests the built-in video command when no video connector is ready", async () => {
@@ -670,7 +853,10 @@ describe("okou generate lister", () => {
   });
 
   it("suggests the built-in presentation command", async () => {
-    server.use(stubConnectorsWithCatalogSlugs([], []), stubUserConnectors([]));
+    server.use(
+      ...stubConnectorsWithCatalogSlugs([], []),
+      stubUserConnectors([]),
+    );
 
     await generateCommand.parseAsync(["node", "cli", "presentation"]);
 
@@ -690,7 +876,10 @@ describe("okou generate lister", () => {
   });
 
   it("suggests the built-in website command", async () => {
-    server.use(stubConnectorsWithCatalogSlugs([], []), stubUserConnectors([]));
+    server.use(
+      ...stubConnectorsWithCatalogSlugs([], []),
+      stubUserConnectors([]),
+    );
 
     await generateCommand.parseAsync(["node", "cli", "website"]);
 
@@ -732,7 +921,10 @@ describe("okou generate lister", () => {
       "Built-in mobile app design generation",
     ],
   ])("suggests the built-in %s command", async (type, label, commandLabel) => {
-    server.use(stubConnectorsWithCatalogSlugs([], []), stubUserConnectors([]));
+    server.use(
+      ...stubConnectorsWithCatalogSlugs([], []),
+      stubUserConnectors([]),
+    );
 
     await generateCommand.parseAsync(["node", "cli", type]);
 

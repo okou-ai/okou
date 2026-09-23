@@ -12,7 +12,7 @@ import { command, computed, state, type Command, type Computed } from "ccstate";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { connectorCatalogStatusBySlug$ } from "../external/connectors.ts";
+import { connectorCatalogItemBySlug } from "../external/connectors.ts";
 import type {
   ComposerConnectorAuthorizationState,
   ComposerConnectorSignals,
@@ -199,15 +199,19 @@ function createConnectorAccountActionSignals(
   const confirmationState$ = computed((get) => {
     return get(internalConfirmationState$);
   });
+  const target = descriptor.selection.target;
+  const builtinCatalogItem$ =
+    target.kind === "builtin"
+      ? connectorCatalogItemBySlug(target.connectorSlug)
+      : null;
   const connector$ = computed(
     async (get): Promise<ConnectorAccountActionConnector> => {
-      const target = descriptor.selection.target;
       if (target.kind === "builtin") {
         return {
           kind: "builtin",
-          icon: (await get(connectorCatalogStatusBySlug$)).get(
-            target.connectorSlug,
-          )?.icon,
+          icon: builtinCatalogItem$
+            ? (await get(builtinCatalogItem$))?.icon
+            : undefined,
         };
       }
       const customConnectorId = target.customConnectorId;

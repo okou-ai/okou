@@ -4,7 +4,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { OnboardingWorkflow } from "./onboarding-data.ts";
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
+import { onboardingWorkflowConnectorBriefs$ } from "../../signals/onboarding/onboarding-connector-catalog.ts";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 
@@ -33,7 +33,9 @@ export function WorkflowConnectorIcon({
   readonly connectorSlug: ConnectorSlug;
   readonly size: number;
 }) {
-  const catalogBySlugLoadable = useLastLoadable(connectorCatalogStatusBySlug$);
+  const catalogBySlugLoadable = useLastLoadable(
+    onboardingWorkflowConnectorBriefs$,
+  );
   const icon =
     catalogBySlugLoadable.state === "hasData"
       ? catalogBySlugLoadable.data.get(connectorSlug)?.icon

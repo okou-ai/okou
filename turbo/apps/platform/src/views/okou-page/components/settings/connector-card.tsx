@@ -84,9 +84,16 @@ type ActionConnectorCardProps = {
   readonly onActivate: () => void;
 };
 
+/** What a permission row shows of a connector the user has connected. */
+export interface PermissionConnectorCardItem {
+  readonly icon: PublicConnectorCatalogIcon;
+  readonly label: string;
+  readonly externalUsername: string | null;
+}
+
 type PermissionConnectorCardProps = {
   readonly variant: "permission";
-  readonly connector: PlatformConnectorCatalogStatusItem;
+  readonly connector: PermissionConnectorCardItem;
   readonly enabled: boolean;
   readonly loading: boolean;
   readonly showManage: boolean;
@@ -752,15 +759,6 @@ function ActionConnectorCard({
   );
 }
 
-function permissionDescription(description: string): string {
-  return description
-    .replace(/^Connect your \w+ account to /iu, "")
-    .replace(/^access /iu, "")
-    .replace(/^./u, (character) => {
-      return character.toUpperCase();
-    });
-}
-
 function PermissionConnectorCard({
   connector,
   enabled,
@@ -775,19 +773,14 @@ function PermissionConnectorCard({
       icon={<ConnectorIcon icon={connector.icon} size={20} />}
       label={connector.label}
       labelSuffix={
-        connector.connection?.externalUsername ? (
+        connector.externalUsername ? (
           <span
             className="min-w-0 truncate text-xs text-muted-foreground"
-            title={`@${connector.connection.externalUsername}`}
+            title={`@${connector.externalUsername}`}
           >
-            @{connector.connection.externalUsername}
+            @{connector.externalUsername}
           </span>
         ) : undefined
-      }
-      description={
-        connector.description
-          ? permissionDescription(connector.description)
-          : undefined
       }
       enabled={enabled}
       loading={loading}
