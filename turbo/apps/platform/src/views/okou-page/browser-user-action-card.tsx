@@ -960,7 +960,7 @@ function PendingInlineDirectInteraction({
   const { t } = useTranslation();
   const openBrowserSidebar = useSet(openThreadBrowserSession$);
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3">
+    <div className="flex h-full w-full flex-col justify-center gap-1 @[380px]:gap-2 @[520px]:flex-row @[520px]:items-center @[520px]:justify-start @[520px]:gap-3">
       <div className="flex min-w-0 max-w-full items-center gap-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           <MousePointerClick size={20} />
@@ -979,7 +979,7 @@ function PendingInlineDirectInteraction({
           </p>
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2 self-start pl-[42px] @[520px]:self-auto @[520px]:pl-0">
+      <div className="flex w-full flex-wrap items-center gap-1 self-start pl-[42px] @[380px]:gap-2 @[520px]:w-auto @[520px]:self-auto @[520px]:pl-0">
         <Button
           type="button"
           size="sm"
