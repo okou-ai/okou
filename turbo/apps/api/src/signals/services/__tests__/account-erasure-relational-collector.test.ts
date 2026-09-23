@@ -133,7 +133,7 @@ describe("relational erasure plan", () => {
       })
       .from(feishuChatIngress)
       .where(eq(feishuChatIngress.installationId, installationId));
-    expect(rows).toEqual(
+    expect(rows).toStrictEqual(
       expect.arrayContaining([
         { eventId: "first", senderOpenId: openId, ownerUserId: firstUser },
         { eventId: "second", senderOpenId: openId, ownerUserId: secondUser },

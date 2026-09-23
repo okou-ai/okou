@@ -31,6 +31,7 @@ describe("email outbox physical identity", () => {
     ).toStrictEqual([
       "email_outbox_created_at_idx",
       "email_outbox_drain_idx",
+      "email_outbox_owner_user_id_idx",
       "email_outbox_provider_idempotency_key_unique",
       "email_outbox_source_run_automation_unique",
     ]);

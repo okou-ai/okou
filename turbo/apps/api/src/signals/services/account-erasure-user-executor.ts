@@ -20,8 +20,10 @@ import {
 import { now } from "../../lib/time";
 import type { Db } from "../external/db";
 import { settle } from "../utils";
-import type { ClaimedBackgroundJob } from "./background-job.service";
-import { BACKGROUND_JOB_LEASE_MS } from "./background-job.service";
+import {
+  BACKGROUND_JOB_LEASE_MS,
+  type ClaimedBackgroundJob,
+} from "./background-job.service";
 import {
   ARTIFACT_FILE_ERASURE_COLLECTOR_VERSION,
   createArtifactFileErasureCollector,
@@ -30,6 +32,10 @@ import {
   ARTIFACT_SHARE_ERASURE_COLLECTOR_VERSION,
   createArtifactShareErasureCollector,
 } from "./account-erasure-artifact-share-collector";
+import {
+  EXPORT_OBJECT_ERASURE_COLLECTOR_VERSION,
+  createExportObjectErasureCollector,
+} from "./account-erasure-export-object-collector";
 import {
   HOSTED_SITE_ERASURE_COLLECTOR_VERSION,
   createHostedSiteErasureCollector,
@@ -70,6 +76,7 @@ const REQUIRED_SERVER_CAPTURE = [
 type SinkName =
   | "artifact_file"
   | "artifact_share"
+  | "export_object"
   | "hosted_site"
   | "shared_blob"
   | "storage_object"
@@ -89,6 +96,11 @@ const sinkSpecs: readonly {
     name: "artifact_share",
     domain: "objects",
     version: ARTIFACT_SHARE_ERASURE_COLLECTOR_VERSION,
+  },
+  {
+    name: "export_object",
+    domain: "objects",
+    version: EXPORT_OBJECT_ERASURE_COLLECTOR_VERSION,
   },
   {
     name: "hosted_site",
@@ -197,6 +209,7 @@ async function handlers(db: Db) {
   const byName: Record<SinkName, ErasureHandler> = {
     artifact_file: createArtifactFileErasureCollector(db),
     artifact_share: createArtifactShareErasureCollector(db),
+    export_object: createExportObjectErasureCollector(db),
     hosted_site: createHostedSiteErasureCollector(db),
     shared_blob: createSharedBlobErasureCollector(db),
     storage_object: createStorageObjectErasureCollector(db),

@@ -712,6 +712,9 @@ export default [
       // The dormant artifact-byte sink must survive its catalog row vanishing
       // between sealed capture and verification; no endpoint exposes that.
       "src/signals/services/__tests__/account-erasure-artifact-file-collector.test.ts",
+      // Export result and staging bytes must disappear after the owner row is
+      // removed; no API can create that sealed-capture replay state.
+      "src/signals/services/__tests__/account-erasure-export-object-collector.test.ts",
       // Storage erasure must use a sealed locator after its catalog row is
       // gone; no endpoint can construct that dormant executor state yet.
       "src/signals/services/__tests__/account-erasure-storage-object-collector.test.ts",
@@ -948,6 +951,7 @@ export default [
       // No production endpoint can construct B1's dormant jobs or DB races.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
       "src/signals/services/__tests__/account-erasure-user-executor.test.ts",
+      "src/signals/services/__tests__/account-erasure-export-object-collector.test.ts",
       // Immutable Feishu ownership must be measured across admission,
       // disconnect and rebind commits, which HTTP cannot interleave.
       "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",

@@ -30,6 +30,16 @@ const selectorSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     version: z.literal(1),
+    kind: z.literal("export_object"),
+    storageRef: z.uuid(),
+    subjectId: z.string().min(1).max(192),
+    jobId: z.uuid(),
+    resultKey: z.string().min(1).max(2048),
+    stagingPrefix: z.string().min(1).max(2048),
+    legacyKey: z.string().min(1).max(2048).optional(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
     kind: z.literal("artifact_share"),
     storageRef: z.uuid(),
     shareId: z.uuid(),

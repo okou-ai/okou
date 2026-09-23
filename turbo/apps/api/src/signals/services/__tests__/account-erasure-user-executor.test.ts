@@ -80,7 +80,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
   }
   await expect(
     captureUserErasureWork(db, first, context.signal),
-  ).rejects.toThrow("account_erasure:required_capture_missing:export_object");
+  ).rejects.toThrow("account_erasure:required_capture_missing:remote");
 
   const [captured] = await db
     .select()
@@ -92,7 +92,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
     .select()
     .from(accountErasureSinks)
     .where(eq(accountErasureSinks.jobId, captured?.id ?? ""));
-  expect(sinks).toHaveLength(6);
+  expect(sinks).toHaveLength(7);
   const inventory = await db
     .select()
     .from(accountErasureWork)
@@ -101,7 +101,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
     inventory.filter((item) => {
       return item.kind === "inventory";
     }),
-  ).toHaveLength(6);
+  ).toHaveLength(7);
   expect(
     inventory.every((item) => {
       return item.kind !== "inventory" || item.captureComplete;
@@ -135,7 +135,7 @@ test("captures bounded file pages once and reuses them after worker lease loss",
   }
   await expect(
     captureUserErasureWork(db, reclaimed, context.signal),
-  ).rejects.toThrow("account_erasure:required_capture_missing:export_object");
+  ).rejects.toThrow("account_erasure:required_capture_missing:remote");
   const [resumed] = await db
     .select()
     .from(accountErasureJobs)
@@ -170,7 +170,7 @@ test("durable user.deleted worker retries an incomplete B1 capture without advan
     status: "pending",
     failureCount: 1,
     checkpoint: {},
-    lastError: "account_erasure:required_capture_missing:export_object",
+    lastError: "account_erasure:required_capture_missing:remote",
   });
   const [captured] = await db
     .select()
@@ -300,7 +300,7 @@ test("durable user.deleted worker resumes the same capture after an external obj
     .from(backgroundJobs)
     .where(eq(backgroundJobs.id, jobId));
   expect(stillRetryable?.lastError).toBe(
-    "account_erasure:required_capture_missing:export_object",
+    "account_erasure:required_capture_missing:remote",
   );
 });
 
