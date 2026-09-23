@@ -1139,6 +1139,7 @@ export interface CreateAgentRunArgs {
   readonly validateEnvironmentReferences?: boolean;
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueOnConcurrencyLimit?: boolean;
+  /** Require initial Built-in credits; this does not grant deficit continuation. */
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;

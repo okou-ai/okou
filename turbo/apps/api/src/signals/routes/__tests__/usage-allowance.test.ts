@@ -68,7 +68,7 @@ interface AllowanceEntitlementArgs {
 async function builtInAllowanceActor(args: {
   readonly credits: number;
   readonly allowance?: AllowanceEntitlementArgs;
-  readonly tier?: "free" | "limited-free-1" | "pro" | "team";
+  readonly tier?: "free" | "limited-free-1" | "pro" | "team" | "custom";
 }): Promise<{
   readonly actor: ApiTestUser;
   readonly orgId: string;
@@ -230,6 +230,7 @@ describe("Usage Allowance", () => {
     ["limited-free-1", true],
     ["pro", false],
     ["team", false],
+    ["custom", false],
   ] as const)(
     "writes creditAdmitted only for free plans on %s launches and promotions",
     async (tier, expectedCreditAdmitted) => {
@@ -651,6 +652,45 @@ describe("Usage Allowance", () => {
     );
     expectApiError(rejected.body);
     expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
+  });
+
+  it("denies billable firewall auth to a paid built-in run after exhaustion", async () => {
+    const { actor, agentId } = await builtInAllowanceActor({
+      credits: 1,
+      tier: "pro",
+    });
+    const api = createRunsApi(context);
+    const run = await createBuiltInRun(actor, agentId, "paid built-in run");
+    expect(run.status).toBe("pending");
+
+    const provider = usageProvider();
+    await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider,
+      quantity: 1,
+    });
+    await processOrgUsageEvents(actor);
+    await expect(readOrgCredits(actor)).resolves.toBe(0);
+
+    const client = setupApp({
+      context,
+      routes: webhooksAgentFirewallAuthRoutes,
+    })(webhookFirewallAuthContract);
+    const denied = await accept(
+      client.resolve({
+        headers: {
+          authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
+        },
+        body: {
+          encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
+          authHeaders: { Authorization: "Bearer static-token" },
+          firewallBillable: true,
+        },
+      }),
+      [402],
+    );
+    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
   });
 
   it("uses run allowance for billable firewall fallback under shared debt", async () => {

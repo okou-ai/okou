@@ -50,6 +50,7 @@ type OrgPlanRunAdmissionCapabilities = Pick<
 export interface RunCreditAdmissionState {
   readonly orgId: string;
   readonly status: typeof agentRuns.$inferSelect.status;
+  /** Persisted permission for this active run to continue after credits run out. */
   readonly creditAdmitted: boolean;
 }
 
