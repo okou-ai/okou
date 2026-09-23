@@ -487,16 +487,12 @@ describe("Morning Brief native delivery", () => {
       },
     ]);
 
-    // Native-only unread state remains available through the thread read-state
-    // API, but the Run-only indicators endpoint does not classify the delivery.
-    // The cursor still clears through both the single-thread and Agent routes.
+    // The Run-only indicators endpoint does not classify the native delivery.
+    // The thread read-state routes still advance and clear its delivery cursor.
     const unread = {
       threadId: response.body.delivery.chatThreadId,
       unreadAt: response.body.delivery.deliveredAt,
     };
-    await expect(
-      chat.listThreadUnreads(actor, f.agentId),
-    ).resolves.toStrictEqual([unread]);
     await expect(chat.listIndicators(actor)).resolves.toStrictEqual({
       agents: {},
       threads: {},
@@ -509,15 +505,9 @@ describe("Morning Brief native delivery", () => {
       unreads: [],
     });
     await expect(
-      chat.listThreadUnreads(actor, f.agentId),
-    ).resolves.toStrictEqual([]);
-    await expect(
       chat.markThreadUnread(actor, response.body.delivery.chatThreadId),
     ).resolves.toStrictEqual({ lastReadAt: null, unreads: [unread] });
     await chat.markAgentThreadsRead(actor, f.agentId);
-    await expect(
-      chat.listThreadUnreads(actor, f.agentId),
-    ).resolves.toStrictEqual([]);
 
     // The thread is the member's own Morning Brief thread, and it carries the
     // sticky exclusion so tomorrow's brief cannot summarise this one.
@@ -653,18 +643,15 @@ describe("Morning Brief native delivery", () => {
       threadId,
       unreadAt: response.body.delivery.deliveredAt,
     };
-    await expect(
-      chat.listThreadUnreads(actor, f.agentId),
-    ).resolves.toStrictEqual([nativeUnread]);
     await expect(chat.markThreadRead(actor, threadId)).resolves.toStrictEqual({
       lastReadAt: response.body.delivery.deliveredAt,
       unreads: [],
     });
-    await chat.markThreadUnread(actor, threadId);
+    await expect(chat.markThreadUnread(actor, threadId)).resolves.toStrictEqual({
+      lastReadAt: null,
+      unreads: [nativeUnread],
+    });
     await chat.markAgentThreadsRead(actor, f.agentId);
-    await expect(
-      chat.listThreadUnreads(actor, f.agentId),
-    ).resolves.toStrictEqual([]);
   });
 
   it("returns the same delivery to a repeated request without a second message", async () => {
