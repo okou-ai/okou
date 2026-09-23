@@ -28,6 +28,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { stubTestTimezone } from "../../../__tests__/env-stub";
+import { apiTestS3PresignedUrl } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -663,6 +664,11 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
   const threadSnapshotObjects = new Map<string, Buffer>();
 
   function mockThreadSnapshotStorage(): void {
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (_client: unknown, command: unknown) => {
+        return Promise.resolve(apiTestS3PresignedUrl(command));
+      },
+    );
     const previousSend = context.mocks.s3.send.getMockImplementation();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       const candidate = command as {
