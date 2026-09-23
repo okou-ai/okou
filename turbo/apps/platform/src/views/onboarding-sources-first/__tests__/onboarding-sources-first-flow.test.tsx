@@ -17,6 +17,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
+import { now } from "../../../lib/time.ts";
 import { pathname, search } from "../../../signals/location.ts";
 import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
@@ -413,7 +414,7 @@ test("The profile step shows a skeleton until the shared context result arrives"
       startingPromptDraft: "",
       startingPromptKey: "",
       recommendationJobId: jobId,
-      recommendationStartedAt: Date.now(),
+      recommendationStartedAt: now(),
     }),
   );
   const generatedPrompt = "Draft replies to the most important messages.";
