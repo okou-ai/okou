@@ -189,7 +189,11 @@ export function ThreadRemoteAccessSection({
         ) : (
           <>
             {access.data.ssh.length > 0 && (
-              <p className="px-2 pt-1 text-xs text-muted-foreground">SSH</p>
+              <p className="px-2 pt-1 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.ssh.label;
+                })}
+              </p>
             )}
             {access.data.ssh.map((host) => {
               return (
@@ -202,7 +206,11 @@ export function ThreadRemoteAccessSection({
               );
             })}
             {access.data.vnc.length > 0 && (
-              <p className="px-2 pt-1 text-xs text-muted-foreground">VNC</p>
+              <p className="px-2 pt-1 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.vnc.label;
+                })}
+              </p>
             )}
             {access.data.vnc.map((host) => {
               const configured =
