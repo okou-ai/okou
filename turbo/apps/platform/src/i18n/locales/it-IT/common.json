@@ -7159,8 +7159,8 @@
     "configured": "Configurato",
     "credential": {
       "add": "Aggiungi credenziali",
-      "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
-      "appleDhMethod": "Apple DH username and password",
+      "appleDhFieldHelp": "Ogni campo deve contenere da 1 a 63 byte UTF-8. NUL non è consentito.",
+      "appleDhMethod": "Nome utente e password Apple DH",
       "authentication": "Metodo di autenticazione",
       "createNew": "Crea credenziali",
       "delete": "Elimina credenziali",
@@ -7232,8 +7232,8 @@
     },
     "saving": "Salvataggio…",
     "security": {
-      "appleDh": "Mac Screen Sharing (Apple DH)",
-      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
+      "appleDh": "Condivisione schermo Mac (Apple DH)",
+      "appleDhHelp": "Richiede Condivisione schermo di macOS tramite una connessione SSH salvata. La destinazione RFB deve essere 127.0.0.1 o ::1 su quel Mac. SSH protegge l’intera sessione VNC. Usa un host SSH Mac che controlli: la sua chiave host non esclude un proxy successivo.",
       "caBundle": "Certificati CA (PEM)",
       "caHelp": "Fino a 8 certificati CA, per un totale di 64 KiB. Non incollare una chiave privata né un certificato del server.",
       "caHint": "Incolla i certificati CA pubblici che hanno emesso il certificato del server",
@@ -7254,7 +7254,7 @@
     "summary_other": "{{count}} host configurati",
     "title": "Accesso remoto VNC",
     "transport": {
-      "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
+      "appleDhDestinationHelp": "Per Apple DH, inserisci 127.0.0.1 o ::1. È l’indirizzo di loopback del Mac raggiunto tramite l’host SSH selezionato.",
       "destination": "Destinazione RFB",
       "destinationHelp": "Per i percorsi SSH, questo host e questa porta vengono raggiunti dal server SSH selezionato, non direttamente dal Runner.",
       "direct": "Diretto dal Runner",
