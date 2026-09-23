@@ -346,16 +346,11 @@ describe.each(targets)(
       await findEnabledButton("Retry", dialog);
       return { dialog, originalComposer };
     }
-    it("offers the restored recording for retry without replacing its saved audio", async () => {
-      const { saved } = preparedRecording;
-      const { dialog } = await openRestoredRecording();
+    it("recovers the restored audio into the forward dialog without changing the original composer", async () => {
+      const { saved, uploads } = preparedRecording;
+      const { dialog, originalComposer } = await openRestoredRecording();
       expect(queryButton("Voice input", dialog)).toBeNull();
       await expect(recordings()).resolves.toStrictEqual(saved);
-    });
-
-    it("recovers the restored audio into the forward dialog without changing the original composer", async () => {
-      const { uploads } = preparedRecording;
-      const { dialog, originalComposer } = await openRestoredRecording();
       preparedRecording.successful = true;
       click(await findEnabledButton("Retry", dialog));
       await findEnabledButton("Voice input", dialog);

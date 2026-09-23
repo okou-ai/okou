@@ -747,35 +747,34 @@ test("Deleting a gateway removes it from an already routed workspace model", asy
   });
 });
 
-test.each([
-  { model: "GPT 6 Sol", available: false },
-  { model: "GPT 5.6 Sol", available: true },
-  { model: "GPT 5.6 Luna", available: true },
-  { model: "GPT 5.5", available: false },
-  { model: "Claude Sonnet 4.6", available: true },
-  { model: "Claude Opus 4.8", available: true },
-  { model: "DeepSeek V4 Flash", available: true },
-  { model: "DeepSeek V4 Pro", available: true },
-  { model: "Kimi K2.7 Code", available: false },
-  { model: "Claude Opus 4.7", available: false },
-])(
-  "Offer $model only when available to add a workspace route",
-  async ({ model, available }) => {
-    mockAdminOrg();
-    context.mocks.data.orgModelProviders([]);
-    context.mocks.data.orgModelPolicies([]);
-    await openProvidersTab();
+test("Offer only models available to add a workspace route", async () => {
+  mockAdminOrg();
+  context.mocks.data.orgModelProviders([]);
+  context.mocks.data.orgModelPolicies([]);
+  await openProvidersTab();
 
-    click(buttonByText("Add model"));
-    const dialog = screen.getByRole("dialog", { name: "Add model" });
-    click(within(dialog).getByRole("combobox"));
+  click(buttonByText("Add model"));
+  const dialog = screen.getByRole("dialog", { name: "Add model" });
+  click(within(dialog).getByRole("combobox"));
 
-    await screen.findByRole("option", { name: "GPT 5.6 Sol" });
+  await screen.findByRole("option", { name: "GPT 5.6 Sol" });
+  for (const { model, available } of [
+    { model: "GPT 6 Sol", available: false },
+    { model: "GPT 5.6 Sol", available: true },
+    { model: "GPT 5.6 Luna", available: true },
+    { model: "GPT 5.5", available: false },
+    { model: "Claude Sonnet 4.6", available: true },
+    { model: "Claude Opus 4.8", available: true },
+    { model: "DeepSeek V4 Flash", available: true },
+    { model: "DeepSeek V4 Pro", available: true },
+    { model: "Kimi K2.7 Code", available: false },
+    { model: "Claude Opus 4.7", available: false },
+  ]) {
     expect(screen.queryAllByRole("option", { name: model })).toHaveLength(
       available ? 1 : 0,
     );
-  },
-);
+  }
+});
 
 test("Hide the Add model button when no model is available to add", async () => {
   mockAdminOrg();

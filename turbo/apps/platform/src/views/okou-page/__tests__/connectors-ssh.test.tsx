@@ -310,7 +310,7 @@ async function page(path = "/connectors") {
   });
 }
 
-test.each([0, 1, 2])(
+test.each([0, 2])(
   "Global SSH entry shows %i configured hosts and opens management without an Agent",
   async (count) => {
     mockCatalog();

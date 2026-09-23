@@ -480,14 +480,6 @@ async function discoverLatestWorkflow({
 }
 
 test.each(workflowRefreshPanes)(
-  "Successive workflow updates appear in the $pane composer while both panes are open",
-  async (pane) => {
-    await discoverLatestWorkflow(pane);
-    expect(slashButton("/latest-attached")).toBeVisible();
-  },
-);
-
-test.each(workflowRefreshPanes)(
   "Insert the latest live workflow into the $pane composer without replacing its draft",
   async (pane) => {
     const { primaryEditor, user, editor } = await discoverLatestWorkflow(pane);

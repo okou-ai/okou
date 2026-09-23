@@ -1150,23 +1150,29 @@ test("Browse workflows opens the existing template picker in Workflow and preser
   expect(capture.sentMessages).toHaveLength(0);
 });
 
-test.each([
-  "Start your day with a clear plan",
-  "Walk into meetings prepared",
-  "Keep important emails moving",
-  "Wrap up your week clearly",
-  "Turn meetings into next steps",
-  "Keep your invoices organized",
-  "Know when competitors change",
-  "See how your business is doing",
-  "Catch the reply you’re waiting for",
-] as const)("%s opens its result preview", async (title) => {
+test("Each built-in workflow opens its result preview", async () => {
   mockTemplateChat();
   await selectWorkflow();
-  click(button(title));
-  const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByRole("img", { name: /^Sample:/ })).toBeVisible();
-  expect(within(dialog).getByRole("heading", { name: title })).toBeVisible();
+  for (const title of [
+    "Start your day with a clear plan",
+    "Walk into meetings prepared",
+    "Keep important emails moving",
+    "Wrap up your week clearly",
+    "Turn meetings into next steps",
+    "Keep your invoices organized",
+    "Know when competitors change",
+    "See how your business is doing",
+    "Catch the reply you’re waiting for",
+  ]) {
+    click(button(title));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("img", { name: /^Sample:/ })).toBeVisible();
+    expect(within(dialog).getByRole("heading", { name: title })).toBeVisible();
+    click(button("Close", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  }
 });
 
 test("Browse workflows from a result preview opens the existing picker without overlapping dialogs", async () => {

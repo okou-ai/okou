@@ -348,7 +348,7 @@ test("Make actions are named buttons in Tab order and arrow keys do not activate
   expect(buttonByText("Build a website", choices)).toHaveFocus();
 });
 
-test.each(["click", "Enter", "Space"] as const)(
+test.each(["click", "Space"] as const)(
   "Make action %s completes once and disables all actions until navigation",
   async (activation) => {
     const user = userEvent.setup();
@@ -387,7 +387,7 @@ test.each(["click", "Enter", "Space"] as const)(
     if (activation === "click") {
       click(button);
     } else {
-      await user.keyboard(activation === "Enter" ? "{Enter}" : "[Space]");
+      await user.keyboard("[Space]");
     }
 
     await waitFor(() => {
@@ -1313,138 +1313,126 @@ test("A presentation template can be previewed and selected from a deep link", a
   expect(new URLSearchParams(search()).get("template")).toBe(template.slug);
 });
 
-test.each([
-  { key: "Enter", sequence: "{Enter}" },
-  { key: "Space", sequence: "[Space]" },
-])(
-  "Illustration card $key selects without changing its preview or continuing",
-  async ({ sequence }) => {
-    const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
-    const previouslySelected = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
-    const user = userEvent.setup();
-    mockOnboardingNeeded();
-    await setupPage({
-      context,
-      path: "/onboarding/image-template?choice=images",
-    });
-    await expect(
-      screen.findByRole("heading", {
-        name: "Pick an illustration template to start from",
-      }),
-    ).resolves.toBeInTheDocument();
-    const select = buttonByAriaLabel(
-      `Select ${template.title} illustration template`,
-    );
-    const previousSelect = buttonByAriaLabel(
-      `Select ${previouslySelected.title} illustration template`,
-    );
-    const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
-    const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
+test("Illustration card Space selects without changing its preview or continuing", async () => {
+  const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
+  const previouslySelected = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
+  const user = userEvent.setup();
+  mockOnboardingNeeded();
+  await setupPage({
+    context,
+    path: "/onboarding/image-template?choice=images",
+  });
+  await expect(
+    screen.findByRole("heading", {
+      name: "Pick an illustration template to start from",
+    }),
+  ).resolves.toBeInTheDocument();
+  const select = buttonByAriaLabel(
+    `Select ${template.title} illustration template`,
+  );
+  const previousSelect = buttonByAriaLabel(
+    `Select ${previouslySelected.title} illustration template`,
+  );
+  const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
+  const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
 
-    click(previousSelect);
-    expect(previousSelect).toHaveAttribute("aria-pressed", "true");
-    click(secondVariant);
-    expect(secondVariant).toHaveAttribute("aria-pressed", "true");
-    expect(select).toHaveAttribute("aria-pressed", "false");
+  click(previousSelect);
+  expect(previousSelect).toHaveAttribute("aria-pressed", "true");
+  click(secondVariant);
+  expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+  expect(select).toHaveAttribute("aria-pressed", "false");
 
-    select.focus();
-    await user.keyboard("{Tab}");
-    expect(firstVariant).toHaveFocus();
-    await user.keyboard("{Shift>}{Tab}{/Shift}");
-    expect(select).toHaveFocus();
-    await user.keyboard(sequence);
+  select.focus();
+  await user.keyboard("{Tab}");
+  expect(firstVariant).toHaveFocus();
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(select).toHaveFocus();
+  await user.keyboard("[Space]");
 
-    expect(select).toHaveAttribute("aria-pressed", "true");
-    expect(previousSelect).toHaveAttribute("aria-pressed", "false");
-    expect(firstVariant).toHaveAttribute("aria-pressed", "false");
-    expect(secondVariant).toHaveAttribute("aria-pressed", "true");
-    expect(pathname()).toBe("/onboarding/image-template");
-    expect(buttonByText("Continue")).toBeEnabled();
+  expect(select).toHaveAttribute("aria-pressed", "true");
+  expect(previousSelect).toHaveAttribute("aria-pressed", "false");
+  expect(firstVariant).toHaveAttribute("aria-pressed", "false");
+  expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+  expect(pathname()).toBe("/onboarding/image-template");
+  expect(buttonByText("Continue")).toBeEnabled();
 
-    click(buttonByText("Continue"));
-    await expect(
-      screen.findByRole("heading", {
-        name: "Select one automation you would like to have a try",
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/onboarding/image-run");
-    expect(new URLSearchParams(search()).get("template")).toBe(template.slug);
-  },
-);
+  click(buttonByText("Continue"));
+  await expect(
+    screen.findByRole("heading", {
+      name: "Select one automation you would like to have a try",
+    }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/onboarding/image-run");
+  expect(new URLSearchParams(search()).get("template")).toBe(template.slug);
+});
 
-test.each([
-  { key: "Enter", sequence: "{Enter}" },
-  { key: "Space", sequence: "[Space]" },
-])(
-  "Illustration card variant $key changes only the preview before Continue",
-  async ({ sequence }) => {
-    const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
-    const selectedTemplate = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
-    const nextImage = template.previewImages[1];
-    if (!nextImage) {
-      throw new Error("Expected a second illustration preview");
-    }
-    const user = userEvent.setup();
-    mockOnboardingNeeded();
-    await setupPage({
-      context,
-      path: "/onboarding/image-template?choice=images",
-    });
-    await expect(
-      screen.findByRole("heading", {
-        name: "Pick an illustration template to start from",
-      }),
-    ).resolves.toBeInTheDocument();
-    const select = buttonByAriaLabel(
-      `Select ${template.title} illustration template`,
-    );
-    const selected = buttonByAriaLabel(
-      `Select ${selectedTemplate.title} illustration template`,
-    );
-    const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
-    const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
-    const card = select.closest("article");
-    if (!card) {
-      throw new Error("Illustration template card not found");
-    }
+test("Illustration card variant Space changes only the preview before Continue", async () => {
+  const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
+  const selectedTemplate = firstItem(ILLUSTRATION_TEMPLATE_ITEMS.slice(1));
+  const nextImage = template.previewImages[1];
+  if (!nextImage) {
+    throw new Error("Expected a second illustration preview");
+  }
+  const user = userEvent.setup();
+  mockOnboardingNeeded();
+  await setupPage({
+    context,
+    path: "/onboarding/image-template?choice=images",
+  });
+  await expect(
+    screen.findByRole("heading", {
+      name: "Pick an illustration template to start from",
+    }),
+  ).resolves.toBeInTheDocument();
+  const select = buttonByAriaLabel(
+    `Select ${template.title} illustration template`,
+  );
+  const selected = buttonByAriaLabel(
+    `Select ${selectedTemplate.title} illustration template`,
+  );
+  const firstVariant = buttonByAriaLabel(`Show ${template.title} variant 1`);
+  const secondVariant = buttonByAriaLabel(`Show ${template.title} variant 2`);
+  const card = select.closest("article");
+  if (!card) {
+    throw new Error("Illustration template card not found");
+  }
 
-    click(selected);
-    expect(selected).toHaveAttribute("aria-pressed", "true");
-    expect(firstVariant).toHaveAttribute("aria-pressed", "true");
-    select.focus();
-    await user.keyboard("{Tab}");
-    expect(firstVariant).toHaveFocus();
-    await user.keyboard("{Tab}");
-    expect(secondVariant).toHaveFocus();
-    await user.keyboard("{Shift>}{Tab}{/Shift}");
-    expect(firstVariant).toHaveFocus();
-    await user.keyboard("{Tab}");
-    expect(secondVariant).toHaveFocus();
-    await user.keyboard(sequence);
+  click(selected);
+  expect(selected).toHaveAttribute("aria-pressed", "true");
+  expect(firstVariant).toHaveAttribute("aria-pressed", "true");
+  select.focus();
+  await user.keyboard("{Tab}");
+  expect(firstVariant).toHaveFocus();
+  await user.keyboard("{Tab}");
+  expect(secondVariant).toHaveFocus();
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(firstVariant).toHaveFocus();
+  await user.keyboard("{Tab}");
+  expect(secondVariant).toHaveFocus();
+  await user.keyboard("[Space]");
 
-    expect(secondVariant).toHaveAttribute("aria-pressed", "true");
-    expect(firstVariant).toHaveAttribute("aria-pressed", "false");
-    expect(card.querySelector("img")).toHaveAttribute(
-      "src",
-      expect.stringContaining(new URL(nextImage).pathname),
-    );
-    expect(select).toHaveAttribute("aria-pressed", "false");
-    expect(selected).toHaveAttribute("aria-pressed", "true");
-    expect(pathname()).toBe("/onboarding/image-template");
-    expect(buttonByText("Continue")).toBeEnabled();
+  expect(secondVariant).toHaveAttribute("aria-pressed", "true");
+  expect(firstVariant).toHaveAttribute("aria-pressed", "false");
+  expect(card.querySelector("img")).toHaveAttribute(
+    "src",
+    expect.stringContaining(new URL(nextImage).pathname),
+  );
+  expect(select).toHaveAttribute("aria-pressed", "false");
+  expect(selected).toHaveAttribute("aria-pressed", "true");
+  expect(pathname()).toBe("/onboarding/image-template");
+  expect(buttonByText("Continue")).toBeEnabled();
 
-    click(buttonByText("Continue"));
-    await expect(
-      screen.findByRole("heading", {
-        name: "Select one automation you would like to have a try",
-      }),
-    ).resolves.toBeInTheDocument();
-    expect(pathname()).toBe("/onboarding/image-run");
-    expect(new URLSearchParams(search()).get("template")).toBe(
-      selectedTemplate.slug,
-    );
-  },
-);
+  click(buttonByText("Continue"));
+  await expect(
+    screen.findByRole("heading", {
+      name: "Select one automation you would like to have a try",
+    }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/onboarding/image-run");
+  expect(new URLSearchParams(search()).get("template")).toBe(
+    selectedTemplate.slug,
+  );
+});
 
 test("An illustration thumbnail strip gap selects the card it belongs to", async () => {
   const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);

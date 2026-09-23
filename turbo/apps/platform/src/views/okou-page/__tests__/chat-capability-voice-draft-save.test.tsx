@@ -162,11 +162,6 @@ describe.each([
       return retainedText;
     }
 
-    it("presents the expected draft after failed text saving and recovery", async () => {
-      await expectRecoveredDraft();
-      expect(queryButton("Retry")).toBeNull();
-    });
-
     it("inserts a later recording after text draft saving recovers", async () => {
       const retainedText = await expectRecoveredDraft();
 

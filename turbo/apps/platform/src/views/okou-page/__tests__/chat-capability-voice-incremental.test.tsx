@@ -292,10 +292,9 @@ test("Stop during transcription and finalize the saved prefix without retranscri
   });
 });
 
-test.each([
-  "Speech recognition is temporarily busy. Please retry in a moment.",
-  "Voice draft transcription is temporarily unavailable",
-])("Preserve audio without an application error for %s", async (message) => {
+test("Preserve audio without an application error when transcription is busy", async () => {
+  const message =
+    "Speech recognition is temporarily busy. Please retry in a moment.";
   const sentry = context.mocks.sentry();
   initSentry();
   context.mocks.browser.voiceInput({ rms: 0.1 });

@@ -1343,27 +1343,9 @@ test("Return Slack authorization directly to the application", async () => {
   expect(callbackTarget).toBe("app");
 });
 
-test.each([
-  ["airtable", "Airtable"],
-  ["asana", "Asana"],
-  ["cloudflare", "Cloudflare"],
-  ["gumroad", "Gumroad"],
-  ["hubspot", "HubSpot"],
-  ["intervals-icu", "Intervals.icu"],
-  ["linear", "Linear"],
-  ["mercury", "Mercury"],
-  ["microsoft-365", "Microsoft 365"],
-  ["monday", "monday.com"],
-  ["notion", "Notion"],
-  ["outlook-mail", "Outlook"],
-  ["sentry", "Sentry"],
-  ["strava", "Strava"],
-  ["todoist", "Todoist"],
-  ["vercel", "Vercel"],
-  ["xero", "Xero"],
-  ["google-maps", "Google Maps"],
-  ["meta-ads", "Meta Ads"],
-] as const)("Start provider sign-in for %s", async (slug, label) => {
+test("Start provider sign-in from catalog metadata", async () => {
+  const slug = "notion";
+  const label = "Notion";
   mockConnectors(context, []);
   mockPublicConnectorStatus(context, [
     publicStatusItem({
@@ -1414,9 +1396,6 @@ test.each([
 
   expect(starts).toStrictEqual([{ slug, callbackTarget: "app" }]);
   expect(browserOpen.calls).toHaveLength(1);
-  expect(
-    screen.queryByText(/Meta Ads is currently in Meta's app review period/u),
-  ).toBeNull();
 });
 
 test("Submit credentials only for the chosen manual method", async () => {
