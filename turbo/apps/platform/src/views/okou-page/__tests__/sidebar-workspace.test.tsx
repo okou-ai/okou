@@ -16,7 +16,6 @@ import {
   openChatListMenu,
   pinnedAgentLink,
   prepareAgents,
-  prepareDefaultAgent,
   queryMenuItemByText,
   RESEARCH_AGENT_ID,
   RESEARCH_THREAD_ID,
