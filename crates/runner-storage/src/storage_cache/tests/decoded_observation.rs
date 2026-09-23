@@ -20,6 +20,24 @@ fn conflicting_plan(url: &str) -> StoragePlan {
     )
 }
 
+fn mixed_archive_plan(url: &str) -> StoragePlan {
+    let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
+    instruction.instructions_target_filename = Some("AGENTS.md".into());
+    plan_from_entries(
+        vec![
+            instruction,
+            storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
+        ],
+        vec![artifact_entry(
+            "/mnt/artifact".into(),
+            url.into(),
+            NAME,
+            VERSION,
+        )],
+        None,
+    )
+}
+
 async fn warm_positive(home: &HomePaths, cache: &decoded::DecodedCache) {
     write_cached_archive(home, NAME, VERSION, &tarball_bytes());
     write_storage_lock(home, NAME, VERSION);
@@ -331,21 +349,7 @@ async fn archive_required_instruction_does_not_exclude_same_key_decoded_targets(
         let cache = decoded::DecodedCache::new(home.clone());
         warm_positive(&home, &cache).await;
         let url = "https://storage.example/unused";
-        let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
-        instruction.instructions_target_filename = Some("AGENTS.md".into());
-        let mut plan = plan_from_entries(
-            vec![
-                instruction,
-                storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
-            ],
-            vec![artifact_entry(
-                "/mnt/artifact".into(),
-                url.into(),
-                NAME,
-                VERSION,
-            )],
-            None,
-        );
+        let mut plan = mixed_archive_plan(url);
         let mut telemetry = new_telemetry();
         let mut fresh = if use_fresh_delivery {
             Some(
@@ -412,21 +416,7 @@ async fn mixed_key_archive_miss_counts_only_archive_consumers_as_misses() {
     warm_positive(&home, &cache).await;
     std::fs::remove_file(home.storage_cache_dir(NAME, VERSION).join("archive.tar.gz")).unwrap();
     let url = "https://storage.example/unused";
-    let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
-    instruction.instructions_target_filename = Some("AGENTS.md".into());
-    let mut plan = plan_from_entries(
-        vec![
-            instruction,
-            storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
-        ],
-        vec![artifact_entry(
-            "/mnt/artifact".into(),
-            url.into(),
-            NAME,
-            VERSION,
-        )],
-        None,
-    );
+    let mut plan = mixed_archive_plan(url);
     let mut telemetry = new_telemetry();
 
     let deferred = populate_cache_with_fresh_delivery(
@@ -495,21 +485,7 @@ async fn archive_required_group_warms_decoded_files_for_later_eligible_targets()
     write_storage_lock(&home, NAME, VERSION);
     let archive = home.storage_cache_dir(NAME, VERSION).join("archive.tar.gz");
     let url = "https://storage.example/unused";
-    let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
-    instruction.instructions_target_filename = Some("AGENTS.md".into());
-    let mut plan = plan_from_entries(
-        vec![
-            instruction,
-            storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
-        ],
-        vec![artifact_entry(
-            "/mnt/artifact".into(),
-            url.into(),
-            NAME,
-            VERSION,
-        )],
-        None,
-    );
+    let mut plan = mixed_archive_plan(url);
 
     let deferred = populate_cache_with_fresh_delivery(
         &mut plan,
@@ -530,6 +506,67 @@ async fn archive_required_group_warms_decoded_files_for_later_eligible_targets()
         archive.exists(),
         "instruction consumers still need the archive"
     );
+    cache.shutdown().await;
+}
+
+#[tokio::test]
+async fn mixed_archive_fill_warms_decoded_files_for_the_next_plan() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let body = tarball_bytes();
+    let server = MockServer::start_async().await;
+    let probe = server
+        .mock_async(|when, then| {
+            when.method(GET)
+                .path("/archive")
+                .header("range", "bytes=0-0");
+            then.status(206)
+                .header("content-range", format!("bytes 0-0/{}", body.len()))
+                .body(&body[..1]);
+        })
+        .await;
+    let get = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/archive").header_missing("range");
+            then.status(200).body(body.clone());
+        })
+        .await;
+    let url = server.url("/archive");
+    let mut first = mixed_archive_plan(&url);
+    let deferred = populate_cache_with_fresh_delivery(
+        &mut first,
+        &MockSandbox::new("mixed-key-cold"),
+        &home,
+        &mut new_telemetry(),
+        None,
+        Some(&cache),
+    )
+    .await
+    .unwrap()
+    .expect("cold instruction source requires an archive fill");
+    assert!(first.take_decoded().is_empty());
+    deferred.run().await;
+
+    let archive = home.storage_cache_dir(NAME, VERSION).join("archive.tar.gz");
+    assert_eq!(std::fs::read(&archive).unwrap(), body);
+    assert!(cache.get_ready(NAME, VERSION).await.unwrap().is_some());
+    let mut next = mixed_archive_plan(&url);
+    let later_fill = populate_cache_with_fresh_delivery(
+        &mut next,
+        &MockSandbox::new("mixed-key-warm-next"),
+        &home,
+        &mut new_telemetry(),
+        None,
+        Some(&cache),
+    )
+    .await
+    .unwrap();
+    assert!(later_fill.is_none());
+    assert_eq!(next.take_decoded().len(), 2);
+    assert!(archive.exists(), "instruction still requires the archive");
+    probe.assert_calls_async(1).await;
+    get.assert_calls_async(1).await;
     cache.shutdown().await;
 }
 
