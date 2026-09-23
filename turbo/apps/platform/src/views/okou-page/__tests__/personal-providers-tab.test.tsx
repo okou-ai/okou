@@ -777,9 +777,11 @@ test("Start and close personal Claude login from the account menu", async () => 
     "claude-code-device-auth-code",
   );
   expect(authorizationCodeInputs).not.toHaveLength(0);
-  expect(screen.getAllByText("Connect Claude")).not.toHaveLength(0);
+  const connectDialog = await screen.findByRole("dialog", {
+    name: "Connect Claude",
+  });
   expect(
-    screen.getByText(
+    within(connectDialog).getByText(
       "Sign in with your Claude subscription to use Claude models with Claude Code-backed agents.",
     ),
   ).toBeVisible();
