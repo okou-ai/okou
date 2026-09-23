@@ -7,13 +7,13 @@ import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$, setAblyPayloadLoop$ } from "../realtime.ts";
 
 const reloadVersion$ = state(0);
-const reload$ = command(({ set }) => {
+export const invalidateComposerConnectorOverview$ = command(({ set }) => {
   set(reloadVersion$, (version) => {
     return version + 1;
   });
 });
 const reloadFromRealtime$ = command(({ set }): boolean => {
-  set(reload$);
+  set(invalidateComposerConnectorOverview$);
   return false;
 });
 const reloadAfterPreferenceChange$ = command(
@@ -23,7 +23,7 @@ const reloadAfterPreferenceChange$ = command(
       parsed.success &&
       parsed.data.kinds.includes("cloudBrowserEnabledByDefault")
     ) {
-      set(reload$);
+      set(invalidateComposerConnectorOverview$);
     }
     return false;
   },

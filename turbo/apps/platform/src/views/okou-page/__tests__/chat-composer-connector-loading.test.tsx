@@ -63,7 +63,7 @@ test("Read composer summaries without fetching the connector directory or old au
   await waitFor(() => {
     expect(connectorIcon(trigger, GITHUB_SLUG)).toBeInTheDocument();
   });
-  expect(reads).toEqual({
+  expect(reads).toStrictEqual({
     discovery: 0,
     custom: 0,
     builtinGrants: 0,

@@ -11,10 +11,10 @@ import { agentsRoutes } from "../agents";
 import { composerConnectorsRoutes } from "../composer-connectors";
 
 const context = testContext({ connectorCatalog: true });
-const mocks = createRouteMocks(context);
-const headers = { authorization: "Bearer clerk-session" };
 
 test("composer overview and Agent grants stay scoped to the signed-in user", async () => {
+  const mocks = createRouteMocks(context);
+  const headers = { authorization: "Bearer clerk-session" };
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
   mocks.clerk.session(userId, orgId);
@@ -23,7 +23,7 @@ test("composer overview and Agent grants stay scoped to the signed-in user", asy
   const created = await accept(
     setupApp({ context, routes: agentsRoutes })(agentsMainContract).create({
       headers,
-      body: {},
+      body: { visibility: "private" },
     }),
     [201],
   );

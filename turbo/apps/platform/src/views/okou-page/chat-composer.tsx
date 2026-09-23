@@ -318,7 +318,11 @@ import {
   OKOU_DESKTOP_DOWNLOAD_URL,
   desktopDownloadSupportStatus$,
 } from "../../signals/okou-page/computer-use-hosts.ts";
-import { composerConnectorOverview$ } from "../../signals/okou-page/composer-connector-overview.ts";
+import {
+  composerConnectorOverview$,
+  invalidateComposerConnectorOverview$,
+} from "../../signals/okou-page/composer-connector-overview.ts";
+import { invalidateComposerAgentConnectors$ } from "../../signals/okou-page/composer-agent-connectors.ts";
 import { computerUseProductName$ } from "../../signals/branding.ts";
 import {
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
@@ -7677,6 +7681,55 @@ function ComposerConnectorTriggerIcons({
   );
 }
 
+function composerPopoverItems({
+  agentConnectors,
+  agentCustomConnectors,
+  sshAccess,
+  vncAccess,
+  sshLabel,
+  vncLabel,
+}: {
+  readonly agentConnectors: ComposerConnectorItem[];
+  readonly agentCustomConnectors: ComposerCustomConnectorItem[];
+  readonly sshAccess: { readonly enabled: boolean } | undefined;
+  readonly vncAccess: { readonly enabled: boolean } | undefined;
+  readonly sshLabel: string;
+  readonly vncLabel: string;
+}): ComposerPopoverConnectorItem[] {
+  return [
+    ...agentConnectors.map((connector) => {
+      return { kind: "builtin" as const, connector };
+    }),
+    ...(sshAccess
+      ? [
+          {
+            kind: "ssh" as const,
+            connector: {
+              id: "ssh" as const,
+              label: sshLabel,
+              authorized: sshAccess.enabled,
+            },
+          },
+        ]
+      : []),
+    ...(vncAccess
+      ? [
+          {
+            kind: "vnc" as const,
+            connector: {
+              id: "vnc" as const,
+              label: vncLabel,
+              authorized: vncAccess.enabled,
+            },
+          },
+        ]
+      : []),
+    ...agentCustomConnectors.map((connector) => {
+      return { kind: "custom" as const, connector };
+    }),
+  ];
+}
+
 function ConnectorsPopoverButton({
   signals,
   agentId,
@@ -7730,42 +7783,18 @@ function ConnectorsPopoverButton({
   const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
   const pageSignal = useGet(pageSignal$);
   const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;
-  const connectorItems: ComposerPopoverConnectorItem[] = [
-    ...agentConnectors.map((connector) => {
-      return { kind: "builtin" as const, connector };
+  const connectorItems = composerPopoverItems({
+    agentConnectors,
+    agentCustomConnectors,
+    sshAccess: sshAccess ?? undefined,
+    vncAccess: vncAccess ?? undefined,
+    sshLabel: t(($) => {
+      return $.ssh.label;
     }),
-    ...(sshAccess
-      ? [
-          {
-            kind: "ssh" as const,
-            connector: {
-              id: "ssh" as const,
-              label: t(($) => {
-                return $.ssh.label;
-              }),
-              authorized: sshAccess.enabled,
-            },
-          },
-        ]
-      : []),
-    ...(vncAccess
-      ? [
-          {
-            kind: "vnc" as const,
-            connector: {
-              id: "vnc" as const,
-              label: t(($) => {
-                return $.vnc.label;
-              }),
-              authorized: vncAccess.enabled,
-            },
-          },
-        ]
-      : []),
-    ...agentCustomConnectors.map((connector) => {
-      return { kind: "custom" as const, connector };
+    vncLabel: t(($) => {
+      return $.vnc.label;
     }),
-  ];
+  });
   const showSearch = connectorItems.length > 20;
   const { visibleConnectors, permissionConnector } =
     deriveComposerConnectorPopoverState({
@@ -10027,6 +10056,7 @@ function ComposerConnectorConnectDialogs({
   onBuiltinClose,
   onBuiltinSuccess,
   onCustomClose,
+  onCustomSuccess,
 }: {
   readonly selectedConnector: PlatformConnectorCatalogStatusItem | undefined;
   readonly selectedConnectorAccountOptions: DefaultConnectorAccountMutationOptions | null;
@@ -10036,6 +10066,7 @@ function ComposerConnectorConnectDialogs({
   readonly onBuiltinClose: () => void;
   readonly onBuiltinSuccess: ConnectorConnectSuccess;
   readonly onCustomClose: () => void;
+  readonly onCustomSuccess: () => void;
 }) {
   return (
     <>
@@ -10054,6 +10085,7 @@ function ComposerConnectorConnectDialogs({
           agentId={agentId}
           accountOptions={selectedCustomConnectorAccountOptions}
           onClose={onCustomClose}
+          onSuccess={onCustomSuccess}
         />
       ) : null}
     </>
@@ -10137,6 +10169,10 @@ function ComposerConnectorsSlot({
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
   );
+  const invalidateConnectorOverview = useSet(
+    invalidateComposerConnectorOverview$,
+  );
+  const invalidateAgentConnectors = useSet(invalidateComposerAgentConnectors$);
 
   const pageSignal = useGet(pageSignal$);
   const selectedConnectorSlug = connectorUi.selectedConnectorSlug;
@@ -10211,6 +10247,7 @@ function ComposerConnectorsSlot({
       await handleConnectSuccess(connectorSlug, signal);
     }
     signal.throwIfAborted();
+    invalidateConnectorOverview();
     updateConnectorUi({
       showAddDialog: false,
     });
@@ -10348,6 +10385,10 @@ function ComposerConnectorsSlot({
         }}
         onCustomClose={() => {
           updateConnectorUi({ selectedCustomConnectorId: null });
+        }}
+        onCustomSuccess={() => {
+          invalidateConnectorOverview();
+          invalidateAgentConnectors(agentRecordId);
         }}
       />
       {connectorUi.showAddDialog &&

@@ -71,6 +71,17 @@ function selectionForConnection(
   return { connectionId: connection.id, target: connection.target };
 }
 
+function createComposerAccountSummaryByTargetSignal() {
+  return computed(async (get) => {
+    const overview = await get(composerConnectorOverview$);
+    return new Map(
+      overview.accountSummaries.map((summary) => {
+        return [connectorAccountTargetKey(summary.target), summary];
+      }),
+    );
+  });
+}
+
 function createConnectorAccountMutationSignals(args: {
   readonly threadId: string | undefined;
   readonly pendingState$: State<ComposerConnectorAccountPreferenceState>;
@@ -165,14 +176,7 @@ export function createComposerConnectorAccountSignals(
   threadId?: string,
 ): ComposerConnectorAccountSignals {
   const list = createConnectorAccountListSignals();
-  const summaryByTarget$ = computed(async (get) => {
-    const overview = await get(composerConnectorOverview$);
-    return new Map(
-      overview.accountSummaries.map((summary) => {
-        return [connectorAccountTargetKey(summary.target), summary];
-      }),
-    );
-  });
+  const summaryByTarget$ = createComposerAccountSummaryByTargetSignal();
   const menuTarget$ = state<ConnectorAccountTarget | null>(null);
   const menuOpen$ = state(false);
   const reloadVersion$ = state(0);
