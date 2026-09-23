@@ -34,6 +34,7 @@ use tokio_util::sync::CancellationToken;
 use super::cli_framework::effective_cli_framework;
 use super::session_history_cpu::SessionHistoryCpuPool;
 use super::session_history_download::{SessionHistoryMaterializer, SessionHistoryProbe};
+use super::session_restore::restored_session_identity_from_context;
 use super::telemetry::{RunnerPreSpawnPhase, RunnerPreSpawnTiming};
 use super::workspace_session_history_materializer::WorkspaceSessionHistoryMaterializer;
 use crate::http::HttpClient;
@@ -221,7 +222,7 @@ pub(crate) fn build_session_history_restore_plan(
     let mut prefix_attribution = None;
     let fallback = match reuse_result {
         SandboxReuseResult::Reused => {
-            let requested_identity = RestoredSessionIdentity::from_context(context);
+            let requested_identity = restored_session_identity_from_context(context);
             if let Some(requested_identity) = requested_identity {
                 match restored_identity {
                     Some(restored_identity)
@@ -495,7 +496,7 @@ mod tests {
     #[tokio::test]
     async fn restore_plan_falls_back_when_matching_reused_identity_is_unverified() {
         let context = context_with_history_ref("history-hash-a");
-        let restored_identity = RestoredSessionIdentity::from_context(&context).unwrap();
+        let restored_identity = restored_session_identity_from_context(&context).unwrap();
 
         let plan = build_plan(
             &context,

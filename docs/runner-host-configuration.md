@@ -419,7 +419,7 @@ the per-drive split.
   the file path, allowed keys, and file parser.
 - [`crates/runner/src/runtime_overrides.rs`](../crates/runner/src/runtime_overrides.rs)
   resolves the concurrency-factor override.
-- [`crates/runner/src/resource_budget.rs`](../crates/runner/src/resource_budget.rs)
+- [`crates/runner-lifecycle/src/resource_budget.rs`](../crates/runner-lifecycle/src/resource_budget.rs)
   defines the effective CPU and memory budget.
 - [`crates/runner/src/io_limits.rs`](../crates/runner/src/io_limits.rs) validates
   host capacity and derives sandbox-level limits.
