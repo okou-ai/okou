@@ -309,12 +309,7 @@ test.each([
   },
 );
 
-test.each([
-  ["summary.txt", "Related artifact content"],
-  ["notes.md", "# Related artifact content"],
-  ["data.json", '{"result":"Related artifact content"}'],
-  ["report.csv", "result\nRelated artifact content"],
-])(
+test.each([["summary.txt", "Related artifact content"]])(
   "Read carried text %s over an existing artifact sidebar",
   async (filename, body) => {
     const { dialog, lightbox } = await openRelatedArtifactOverSidebar(

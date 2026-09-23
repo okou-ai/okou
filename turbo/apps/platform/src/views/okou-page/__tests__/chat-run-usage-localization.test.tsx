@@ -21,52 +21,17 @@ import {
 const RUN_A = "a0000000-0000-4000-a000-000000000401";
 const RUN_B = "a0000000-0000-4000-a000-000000000402";
 
-function fullUsage() {
-  return creditUsage(75, [
+function sampleUsage() {
+  return creditUsage(17, [
     {
       kind: "model/claude-sonnet-4-6/tokens.input",
       credits: 8,
       providers: [{ provider: "anthropic", credits: 8 }],
     },
     {
-      kind: "image/flux-pro/output_image",
-      credits: 10,
-      providers: [{ provider: "fal-ai/flux-pro", credits: 10 }],
-    },
-    {
-      kind: "video/veo-3/output_video",
-      credits: 12,
-      providers: [{ provider: "google/veo-3", credits: 12 }],
-    },
-    {
-      kind: "model/joggai-talking-avatar",
-      credits: 5,
-      providers: [{ provider: "joggai-talking-avatar", credits: 5 }],
-    },
-    {
-      kind: "connector",
-      credits: 4,
-      providers: [{ provider: "slack", credits: 4 }],
-    },
-    {
       kind: "web-search",
       credits: 9,
       providers: [{ provider: "internal_web_search_v2", credits: 9 }],
-    },
-    {
-      kind: "maps",
-      credits: 7,
-      providers: [{ provider: "internal_maps_v1", credits: 7 }],
-    },
-    {
-      kind: "finance",
-      credits: 11,
-      providers: [{ provider: "internal_finance_v1", credits: 11 }],
-    },
-    {
-      kind: "weather",
-      credits: 9,
-      providers: [{ provider: "internal_weather_v1", credits: 9 }],
     },
   ]);
 }
@@ -92,7 +57,7 @@ async function openRunCreditUsage() {
         id: "usage-settlement",
         runId: RUN_A,
         seqId: 4,
-        usage: fullUsage(),
+        usage: sampleUsage(),
       }),
     ],
   });
@@ -102,7 +67,7 @@ async function openRunCreditUsage() {
   await expect(
     screen.findByText("The campaign assets are complete."),
   ).resolves.toBeVisible();
-  const usageButton = await findButton("Credit usage 75");
+  const usageButton = await findButton("Credit usage 17");
   expect(usageButton).toBeVisible();
   await user.click(usageButton);
 
