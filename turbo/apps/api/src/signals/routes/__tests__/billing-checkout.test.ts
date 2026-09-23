@@ -10176,11 +10176,15 @@ describe("usage pack allocation management", () => {
 
   it("cancels an old package downgrade when that member upgrades immediately", async () => {
     const userId = `user_${randomUUID()}`;
-    const fixture = await seedManagedUsagePack([{ userId, usagePackUsd: 50 }]);
+    const otherUserId = `user_${randomUUID()}`;
+    const fixture = await seedManagedUsagePack([
+      { userId, usagePackUsd: 50 },
+      { userId: otherUserId, usagePackUsd: 50 },
+    ]);
     const scheduleId = `sub_sched_${randomUUID()}`;
     const sourceSubscription = managedUsagePackSubscription(
       fixture,
-      new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+      new Map([[TEST_PRICE_USAGE_PACK_50, 2]]),
     );
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       sourceSubscription,
@@ -10193,7 +10197,7 @@ describe("usage pack allocation management", () => {
     });
     mockUsagePackSubscriptionPackagePreviews({
       immediateAmountCents: 0,
-      nextRecurringAmountCents: 2000,
+      nextRecurringAmountCents: 7000,
       sourcePriceId: TEST_PRICE_USAGE_PACK_50,
       targetPriceId: TEST_PRICE_USAGE_PACK_20,
     });
@@ -10205,7 +10209,10 @@ describe("usage pack allocation management", () => {
         headers: { authorization: "Bearer clerk-session" },
         body: {
           targetTier: "pro",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 20 }],
+          memberUsagePacks: [
+            { memberId: userId, usagePackUsd: 20 },
+            { memberId: otherUserId, usagePackUsd: 50 },
+          ],
         },
       }),
       [200],
@@ -10219,7 +10226,7 @@ describe("usage pack allocation management", () => {
     );
     const scheduledSubscription = managedUsagePackSubscription(
       fixture,
-      new Map([[TEST_PRICE_USAGE_PACK_50, 1]]),
+      new Map([[TEST_PRICE_USAGE_PACK_50, 2]]),
       fixture.billingPeriod,
       { scheduleId },
     );
@@ -10239,7 +10246,7 @@ describe("usage pack allocation management", () => {
           end_date: fixture.billingPeriod.end,
           items: [
             { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
-            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_50, quantity: 2 },
           ],
         },
         {
@@ -10247,14 +10254,15 @@ describe("usage pack allocation management", () => {
           end_date: fixture.billingPeriod.end + 30 * 86_400,
           items: [
             { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
             { price: TEST_PRICE_USAGE_PACK_20, quantity: 1 },
           ],
         },
       ],
     });
     mockUsagePackSubscriptionPackagePreviews({
-      immediateAmountCents: 2500,
-      nextRecurringAmountCents: 10_000,
+      immediateAmountCents: 4998,
+      nextRecurringAmountCents: 15_000,
       sourcePriceId: TEST_PRICE_USAGE_PACK_50,
       targetPriceId: TEST_PRICE_USAGE_PACK_100,
     });
@@ -10263,7 +10271,10 @@ describe("usage pack allocation management", () => {
         headers: { authorization: "Bearer clerk-session" },
         body: {
           targetTier: "pro",
-          memberUsagePacks: [{ memberId: userId, usagePackUsd: 100 }],
+          memberUsagePacks: [
+            { memberId: userId, usagePackUsd: 100 },
+            { memberId: otherUserId, usagePackUsd: 50 },
+          ],
         },
       }),
       [200],
@@ -10271,12 +10282,35 @@ describe("usage pack allocation management", () => {
     const prorationTimestamp = Math.floor(
       new Date(preview.body.prorationDate).getTime() / 1000,
     );
-    const paidInvoice = managedUsagePackUpgradeInvoice(fixture, {
+    const upgradeInvoice = managedUsagePackUpgradeInvoice(fixture, {
       invoiceId: `in_${randomUUID()}`,
       sourcePriceId: TEST_PRICE_USAGE_PACK_50,
       targetPriceId: TEST_PRICE_USAGE_PACK_100,
       prorationTimestamp,
     });
+    const [oldPriceLine, newPriceLine] = upgradeInvoice.lines.data;
+    if (!oldPriceLine || !newPriceLine) {
+      throw new Error("Expected upgrade proration lines");
+    }
+    // Stripe reprices the full old quantity, including the member who keeps
+    // the $50 pack: +$99.98 for $100, +$49.99 for $50, -$99.99 for 2 × $50.
+    const paidInvoice = {
+      ...upgradeInvoice,
+      amount_paid: 4998,
+      lines: {
+        has_more: false,
+        data: [
+          { ...newPriceLine, amount: 9998, subtotal: 9998 },
+          {
+            ...oldPriceLine,
+            id: `il_${randomUUID()}`,
+            amount: 4999,
+            subtotal: 4999,
+          },
+          { ...oldPriceLine, amount: -9999, subtotal: -9999, quantity: 2 },
+        ],
+      },
+    };
     context.mocks.stripe.subscriptions.update.mockResolvedValue({
       ...scheduledSubscription,
       pending_update: { expires_at: prorationTimestamp + 300 },
@@ -10292,7 +10326,10 @@ describe("usage pack allocation management", () => {
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       managedUsagePackSubscription(
         fixture,
-        new Map([[TEST_PRICE_USAGE_PACK_100, 1]]),
+        new Map([
+          [TEST_PRICE_USAGE_PACK_100, 1],
+          [TEST_PRICE_USAGE_PACK_50, 1],
+        ]),
         fixture.billingPeriod,
         { scheduleId },
       ),
@@ -10307,12 +10344,14 @@ describe("usage pack allocation management", () => {
           expect.objectContaining({
             items: expect.arrayContaining([
               { price: TEST_PRICE_USAGE_PACK_100, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
             ]),
           }),
           expect.objectContaining({
             start_date: fixture.billingPeriod.end,
             items: expect.arrayContaining([
               { price: TEST_PRICE_USAGE_PACK_100, quantity: 1 },
+              { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
             ]),
           }),
         ],
@@ -10338,6 +10377,12 @@ describe("usage pack allocation management", () => {
           targetUsagePackUsd: 100,
         }),
       ]),
+    );
+    expect(state.refunds).toContainEqual(
+      expect.objectContaining({
+        userId,
+        sourceAmountCents: 4998,
+      }),
     );
     expect(
       state.changes.filter((change) => {
