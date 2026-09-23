@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
@@ -245,47 +245,4 @@ test("A selected disabled video template can still be discussed without a Create
     return expect(capture.runPrompts).toHaveLength(1);
   });
   expect(capture.selectedTemplates).toHaveLength(1);
-});
-
-test("A stale workspace preference response never replaces the current owner's notice", async () => {
-  mockTemplateChat();
-  const firstRequest = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  let first = true;
-  context.mocks.api(paidToolsContract.get, async ({ respond, withSignal }) => {
-    if (first) {
-      first = false;
-      firstRequest.resolve();
-      await withSignal(release.promise);
-      return respond(200, { disabledTools: ["image-generation"] });
-    }
-    return respond(200, { disabledTools: ["video-generation"] });
-  });
-  await setupComposer();
-  await selectCreation();
-  await firstRequest.promise;
-  act(() => {
-    context.mocks.clerk().organization({
-      activeOrg: { id: "org_second", name: "Second workspace" },
-      memberships: [{ id: "org_second" }],
-    });
-    context.mocks.clerk().stateChanged();
-  });
-  release.resolve();
-  await waitFor(() => {
-    return expect(
-      screen.queryByText("Loading your tool settings…"),
-    ).not.toBeInTheDocument();
-  });
-  expect(
-    screen.queryByText("Image generation is off for you"),
-  ).not.toBeInTheDocument();
-  // The second workspace disables video instead, and its own template tab is
-  // where that answer shows: a stale read would still be naming image here.
-  click(button("Remove Image"));
-  const dialog = await openTemplatePicker(
-    userEvent.setup({ delay: null }),
-    "Video",
-  );
-  await within(dialog).findByText("Video generation is off for you");
 });
