@@ -352,6 +352,48 @@ test("Navigating away cancels a pending preference save", async () => {
   });
 });
 
+test("A checkout toast follows saved, selected and system appearance", async () => {
+  mockPreferences({ theme: null });
+  context.mocks.browser.cookie("__Secure-okou-theme=v1.dark");
+  const media = context.mocks.browser.matchMedia(false);
+
+  await setupPage({
+    context,
+    path: "/settings?concurrency=purchased",
+    host: "app.okou.ai",
+  });
+
+  const message = await screen.findByText(
+    "Concurrency added. Your new slots will become available after Stripe confirms the subscription.",
+  );
+  const toaster = message.closest("[data-sonner-toaster]");
+  expect(toaster).toHaveAttribute("data-sonner-theme", "dark");
+
+  click(getFastRole("button", "Light"));
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "light");
+  });
+
+  click(getFastRole("button", "System"));
+  media.setMatches((query) => {
+    return query === "(prefers-color-scheme: dark)";
+  });
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "dark");
+  });
+
+  media.setMatches(false);
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "light");
+  });
+
+  click(getFastRole("button", "Dark"));
+  await waitFor(() => {
+    expect(toaster).toHaveAttribute("data-sonner-theme", "dark");
+  });
+  expect(message).toBeInTheDocument();
+});
+
 test("Theme preferences initialize from the shared cookie", async () => {
   const updates = mockPreferences({ theme: null });
   const cookieWrites: string[] = [];
