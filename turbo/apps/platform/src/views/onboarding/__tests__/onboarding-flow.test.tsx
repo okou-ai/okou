@@ -997,25 +997,6 @@ test("Okou custom workflow onboarding addresses Okou by default", async () => {
   await expect(runCreated.promise).resolves.toBe("@Okou Build a daily brief");
 });
 
-test("Custom workflow onboarding addresses Okou by default", async () => {
-  const runCreated = context.mocks.deferred<string>();
-  await setupCustomWorkflowPage("app.okou.ai", runCreated.resolve);
-
-  await expect(
-    screen.findByRole("heading", { name: "Describe your workflow" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByPlaceholderText("Describe what you want Okou to build"),
-  ).toBeVisible();
-  await fill(
-    screen.getByLabelText("Describe your workflow"),
-    "Build a daily brief",
-  );
-  click(buttonByText("Continue with Okou"));
-
-  await expect(runCreated.promise).resolves.toBe("@Okou Build a daily brief");
-});
-
 test("Custom workflow onboarding preserves an explicit assistant mention", async () => {
   const runCreated = context.mocks.deferred<string>();
   await setupCustomWorkflowPage("app.okou.ai", runCreated.resolve);

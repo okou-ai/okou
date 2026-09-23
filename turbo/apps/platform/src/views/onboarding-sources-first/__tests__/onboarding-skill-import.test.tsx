@@ -431,19 +431,6 @@ test("The step hands over the prompt its session produced, and copies it whole",
   expect(JSON.stringify(posthog.events)).not.toContain(SESSION_TOKEN);
 });
 
-test("The skills step names Claude Code when it was selected", async () => {
-  mockAgentWorkflows();
-
-  await openSkillsStep("Claude Code");
-
-  expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Paste this prompt into your own Claude Code session and it brings the skills on your machine into Okou.",
-    ),
-  ).toBeInTheDocument();
-});
-
 test.each([
   {
     card: "Codex" as const,
