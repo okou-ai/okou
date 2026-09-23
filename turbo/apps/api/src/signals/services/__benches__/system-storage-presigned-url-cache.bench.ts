@@ -11,6 +11,7 @@ import { executeRawRows } from "../../../lib/db-raw-rows";
 import { nowDate } from "../../../lib/time";
 import { writeDb$ } from "../../external/db";
 import {
+  buildPartitionedStorageManifestPresignedUrlCacheQuery,
   prefetchStorageManifestPresignedUrlCacheRows,
   readOnlyStoragePresignedUrlCacheKey,
   resolveReadOnlyStoragePresignedUrls,
@@ -27,7 +28,7 @@ import {
 
 const context = testContext();
 const store = createStore();
-const BENCH_SIZES = [1, 4, 17, 51, 52, 64, 500, 501] as const;
+const BENCH_SIZES = [1, 4, 17, 51, 52, 64, 96, 128, 129, 500, 501] as const;
 const BACKGROUND_ROW_COUNT = 5000;
 const INSERT_CHUNK_SIZE = 500;
 const benchOptions = {
@@ -241,6 +242,42 @@ async function logQueryPlan(
   );
 }
 
+async function logPartitionedQueryPlan(
+  fixture: BenchFixture,
+  pairCount: number,
+): Promise<void> {
+  const db = store.set(writeDb$);
+  const query = buildPartitionedStorageManifestPresignedUrlCacheQuery(
+    db,
+    fixture.pairs.slice(0, pairCount),
+  );
+  const plan = await executeRawRows(
+    db,
+    sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT) ${query}`,
+    queryPlanRowSchema,
+  );
+  if (
+    plan.some((row) => {
+      return row["QUERY PLAN"].includes(
+        "Seq Scan on system_storage_presigned_url_cache",
+      );
+    })
+  ) {
+    throw new Error(
+      `Partitioned cache lookup scanned the cache table at ${String(pairCount)} pairs`,
+    );
+  }
+  process.stdout.write(
+    `\n[bench-explain] storage cache partitioned lookup, ${String(
+      pairCount,
+    )} exact pairs\n${plan
+      .map((row) => {
+        return row["QUERY PLAN"];
+      })
+      .join("\n")}\n\n`,
+  );
+}
+
 function logicalLookupCount(fixture: BenchFixture): number {
   return [
     fixture.systemRequests,
@@ -255,6 +292,7 @@ async function resolveFixture(
   fixture: BenchFixture,
   useMixedLookup: boolean,
   expectedMissCount = 0,
+  verifyFixtureUrls = false,
 ): Promise<void> {
   const db = store.set(writeDb$);
   const prefetchedRows = useMixedLookup
@@ -305,16 +343,31 @@ async function resolveFixture(
   ) {
     throw new Error("Storage cache benchmark fixture status count changed");
   }
+  if (verifyFixtureUrls) {
+    const expectedUrls = new Map(
+      fixture.rows.map((row) => {
+        return [row.cacheKey, row.presignedUrl];
+      }),
+    );
+    if (
+      resolved.some((result) => {
+        return expectedUrls.get(result.cacheKey) !== result.url;
+      })
+    ) {
+      throw new Error("Storage cache benchmark returned an incorrect URL");
+    }
+  }
 }
 
 async function resolveFixtureWithExpiredRows(
   fixture: BenchFixture,
   useMixedLookup: boolean,
+  expiredEvery = 10,
 ): Promise<void> {
   const db = store.set(writeDb$);
   const expiredCacheKeys = fixture.pairs
     .filter((_, index) => {
-      return index % 10 === 0;
+      return index % expiredEvery === 0;
     })
     .map((pair) => {
       return pair.cacheKey;
@@ -358,6 +411,15 @@ const ensureSeeded: () => Promise<ReadonlyMap<number, BenchFixture>> = (() => {
         }
         await logQueryPlan(planFixture, pairCount);
       }
+      for (const pairCount of [52, 64, 96, 128] as const) {
+        const planFixture = fixtures.get(pairCount);
+        if (!planFixture) {
+          throw new Error(
+            `Missing ${String(pairCount)}-pair storage cache benchmark fixture`,
+          );
+        }
+        await logPartitionedQueryPlan(planFixture, pairCount);
+      }
       return fixtures;
     })();
     return cached;
@@ -385,7 +447,7 @@ test(
       await bench(`current per-scope lookup ${String(size)}`, async () => {
         await resolveFixture(fixture, false);
       }).run(benchOptions);
-      await bench(`bounded mixed lookup ${String(size)}`, async () => {
+      await bench(`adaptive cache lookup ${String(size)}`, async () => {
         await resolveFixture(fixture, true);
       }).run(benchOptions);
     }
@@ -396,6 +458,28 @@ test(
     }).run(benchOptions);
     await bench("bounded mixed lookup 17 with expired rows", async () => {
       await resolveFixtureWithExpiredRows(concurrentFixture, true);
+    }).run(benchOptions);
+
+    const mediumFixture = fixtureAt(fixtures, 96);
+    await bench("current per-scope lookup 96 with half expired", async () => {
+      await resolveFixtureWithExpiredRows(mediumFixture, false, 2);
+    }).run(benchOptions);
+    await bench("adaptive cache lookup 96 with half expired", async () => {
+      await resolveFixtureWithExpiredRows(mediumFixture, true, 2);
+    }).run(benchOptions);
+    await bench("current per-scope lookup 96 x32", async () => {
+      await Promise.all(
+        Array.from({ length: 32 }, async () => {
+          await resolveFixture(mediumFixture, false);
+        }),
+      );
+    }).run(benchOptions);
+    await bench("adaptive cache lookup 96 x32", async () => {
+      await Promise.all(
+        Array.from({ length: 32 }, async () => {
+          await resolveFixture(mediumFixture, true);
+        }),
+      );
     }).run(benchOptions);
 
     await bench("current per-scope lookup 17 x32", async () => {
@@ -414,3 +498,39 @@ test(
     }).run(benchOptions);
   },
 );
+
+test("partitioned lookup returns exact scoped URLs", async () => {
+  const fixture = benchFixture(96, `storage-cache-urls-${randomUUID()}`);
+  await insertChunks(fixture.rows);
+  await resolveFixture(fixture, true, 0, true);
+});
+
+test("partitioned lookup preserves scope and hard-expiry classification", async () => {
+  const fixture = benchFixture(52, `storage-cache-scope-${randomUUID()}`);
+  const wrongScope = fixture.rows[0];
+  const expired = fixture.rows[1];
+  if (!wrongScope || !expired) {
+    throw new Error("Incomplete storage cache scope fixture");
+  }
+  const expiredAt = new Date(nowDate().getTime() - 60_000);
+  await insertChunks(
+    fixture.rows
+      .filter((_, index) => {
+        return index !== 2;
+      })
+      .map((row, index) => {
+        if (index === 0) {
+          return { ...row, scope: "readonly_storage" as const };
+        }
+        if (index === 1) {
+          return {
+            ...row,
+            expiresAt: expiredAt,
+            refreshAfter: expiredAt,
+          };
+        }
+        return row;
+      }),
+  );
+  await resolveFixture(fixture, true, 3);
+});

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
 import { and, eq, inArray, like, lte, sql } from "drizzle-orm";
+import { unionAll } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import { joinAll, safeSync } from "../utils";
@@ -76,6 +77,7 @@ export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
 // Leave time for clients and asynchronous providers to fetch a returned URL.
 const PRIVATE_ARTIFACT_PREVIEW_MIN_REMAINING_MS = 60 * 60 * 1000;
 const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
+const STORAGE_MANIFEST_PRESIGNED_URL_PARTITIONED_LOOKUP_MAX_REQUESTS = 128;
 const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
@@ -183,7 +185,8 @@ type StorageManifestPrefetchDecision =
   | "over_request_limit"
   | "no_pairs"
   | "over_unique_pair_limit"
-  | "mixed_lookup_selected";
+  | "mixed_lookup_selected"
+  | "partitioned_lookup_selected";
 
 interface StorageManifestCacheObservationStats {
   readonly requestedCount: number;
@@ -818,6 +821,78 @@ function storageManifestPresignedUrlCacheLookupPairs(
     });
 }
 
+export function buildPartitionedStorageManifestPresignedUrlCacheQuery(
+  db: Db,
+  pairs: readonly StorageManifestPresignedUrlCacheLookupPair[],
+) {
+  const keysByScope = new Map<
+    StorageManifestPresignedUrlCacheScope,
+    string[]
+  >();
+  for (const pair of pairs) {
+    const keys = keysByScope.get(pair.scope) ?? [];
+    keys.push(pair.cacheKey);
+    keysByScope.set(pair.scope, keys);
+  }
+  const queries = [...keysByScope].map(([scope, cacheKeys]) => {
+    return db
+      .select({
+        scope: systemStoragePresignedUrlCache.scope,
+        cacheKey: systemStoragePresignedUrlCache.cacheKey,
+        presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+        expiresAt: systemStoragePresignedUrlCache.expiresAt,
+      })
+      .from(systemStoragePresignedUrlCache)
+      .where(
+        and(
+          eq(systemStoragePresignedUrlCache.scope, scope),
+          inArray(systemStoragePresignedUrlCache.cacheKey, cacheKeys),
+        ),
+      );
+  });
+  const [first, second, third] = queries;
+  if (!first) {
+    throw new Error("Storage manifest cache lookup requires a scope");
+  }
+  if (!second) {
+    return first;
+  }
+  if (!third) {
+    return unionAll(first, second);
+  }
+  return unionAll(first, second, third);
+}
+
+function buildMixedStorageManifestPresignedUrlCacheQuery(
+  db: Db,
+  pairs: readonly StorageManifestPresignedUrlCacheLookupPair[],
+) {
+  const scopes = pairs.map((pair) => {
+    return pair.scope;
+  });
+  const cacheKeys = pairs.map((pair) => {
+    return pair.cacheKey;
+  });
+  return db
+    .select({
+      scope: systemStoragePresignedUrlCache.scope,
+      cacheKey: systemStoragePresignedUrlCache.cacheKey,
+      presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
+      expiresAt: systemStoragePresignedUrlCache.expiresAt,
+    })
+    .from(systemStoragePresignedUrlCache)
+    .innerJoin(
+      sql`unnest(
+        ${sql.param(scopes)}::varchar(64)[],
+        ${sql.param(cacheKeys)}::varchar(64)[]
+      ) AS requested(scope, cache_key)`,
+      and(
+        eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
+        eq(systemStoragePresignedUrlCache.cacheKey, sql`requested.cache_key`),
+      ),
+    );
+}
+
 export function prefetchStorageManifestPresignedUrlCacheRows(args: {
   readonly db: Db;
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
@@ -838,7 +913,8 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       return undefined;
     }
     if (
-      requestedCount > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS
+      requestedCount >
+      STORAGE_MANIFEST_PRESIGNED_URL_PARTITIONED_LOOKUP_MAX_REQUESTS
     ) {
       recordStorageManifestPrefetchDecision({
         observation: args.observation,
@@ -859,7 +935,10 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       });
       return undefined;
     }
-    if (pairs.length > STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS) {
+    if (
+      pairs.length >
+      STORAGE_MANIFEST_PRESIGNED_URL_PARTITIONED_LOOKUP_MAX_REQUESTS
+    ) {
       recordStorageManifestPrefetchDecision({
         observation: args.observation,
         decision: "over_unique_pair_limit",
@@ -870,48 +949,30 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
       return undefined;
     }
 
+    const useMixedLookup =
+      pairs.length <= STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS;
     recordStorageManifestPrefetchDecision({
       observation: args.observation,
-      decision: "mixed_lookup_selected",
+      decision: useMixedLookup
+        ? "mixed_lookup_selected"
+        : "partitioned_lookup_selected",
       requestedCount,
       logicalLookupCount: args.input.logicalLookupCount,
       uniquePairCount: pairs.length,
     });
 
-    const scopes = pairs.map((pair) => {
-      return pair.scope;
-    });
-    const cacheKeys = pairs.map((pair) => {
-      return pair.cacheKey;
-    });
-    const lookup = async () => {
-      return await args.db
-        .select({
-          scope: systemStoragePresignedUrlCache.scope,
-          cacheKey: systemStoragePresignedUrlCache.cacheKey,
-          presignedUrl: systemStoragePresignedUrlCache.presignedUrl,
-          expiresAt: systemStoragePresignedUrlCache.expiresAt,
-        })
-        .from(systemStoragePresignedUrlCache)
-        .innerJoin(
-          sql`unnest(
-            ${sql.param(scopes)}::varchar(64)[],
-            ${sql.param(cacheKeys)}::varchar(64)[]
-          ) AS requested(scope, cache_key)`,
-          and(
-            eq(systemStoragePresignedUrlCache.scope, sql`requested.scope`),
-            eq(
-              systemStoragePresignedUrlCache.cacheKey,
-              sql`requested.cache_key`,
-            ),
-          ),
-        );
-    };
+    const query = useMixedLookup
+      ? buildMixedStorageManifestPresignedUrlCacheQuery(args.db, pairs)
+      : buildPartitionedStorageManifestPresignedUrlCacheQuery(args.db, pairs);
     const rows = await measureApiDispatchTiming(
       args.observation?.timing,
-      "api_dispatch_prepare_storage_manifest_cache_mixed_lookup",
+      useMixedLookup
+        ? "api_dispatch_prepare_storage_manifest_cache_mixed_lookup"
+        : "api_dispatch_prepare_storage_manifest_cache_partitioned_lookup",
       "nested",
-      lookup,
+      async () => {
+        return await query;
+      },
       {
         storage_manifest_branch: args.observation?.branch ?? "unobserved",
         storage_manifest_cache_requested_count_bucket:
@@ -920,6 +981,10 @@ export function prefetchStorageManifestPresignedUrlCacheRows(args: {
           storageManifestCacheCountBucket(pairs.length),
         storage_manifest_cache_logical_lookup_count_bucket:
           storageManifestCacheCountBucket(args.input.logicalLookupCount),
+        storage_manifest_cache_prefetch_requested_count_bucket:
+          storageManifestPrefetchCountBucket(requestedCount),
+        storage_manifest_cache_prefetch_unique_pair_count_bucket:
+          storageManifestPrefetchCountBucket(pairs.length),
       },
     );
 
