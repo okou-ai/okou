@@ -20,6 +20,7 @@ import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
+import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
 import {
   readmitPiMemoryStage1CandidateFixture,
   readPiMemoryStage1CandidateFixture,
@@ -542,6 +543,13 @@ describe("shared native Pi route activation", () => {
     async (model) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       configureNativeCliArtifact();
+      if (model === "claude-opus-5-5") {
+        await stagePreAddabilityModelPolicyFixture({
+          orgId: requireOrgId(actor),
+          userId: actor.userId,
+          model,
+        });
+      }
       await configureBuiltInPiModel(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PiLoop]: true,
