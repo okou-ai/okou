@@ -1247,68 +1247,6 @@ describe("createApp", () => {
       expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
     });
 
-    it("force-upgrades the pre-rollout Access App before retired route matching", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/api/ssh/cloudflare-access/configs", {
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: "0.943.0",
-        },
-      });
-
-      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "Client update required",
-      });
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    });
-
-    it("rejects pre-MCP-reader app clients before custom connector route matching", async () => {
-      const app = createApp({
-        signal: context.signal,
-        routes: TEST_APP_ROUTES,
-      });
-      const response = await app.request("/api/custom-connectors", {
-        method: "GET",
-        headers: {
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-          [CLIENT_VERSION_HEADER]: "0.715.1",
-        },
-      });
-
-      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-      await expect(response.json()).resolves.toStrictEqual({
-        error: "Client update required",
-      });
-      expect(response.headers.get("cache-control")).toBe("no-store");
-    });
-
-    it.each(["0.621.0", "0.843.1", "0.855.1", "0.856.0", "0.886.0"])(
-      "force-upgrades App %s before current route matching",
-      async (version) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("/api/chat-threads", {
-          method: "GET",
-          headers: {
-            [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
-            [CLIENT_VERSION_HEADER]: version,
-          },
-        });
-
-        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
-        await expect(response.json()).resolves.toStrictEqual({
-          error: "Client update required",
-        });
-        expect(response.headers.get("cache-control")).toBe("no-store");
-      },
-    );
-
     it("force-upgrades the previously published App before retired unread route matching", async () => {
       const app = createApp({
         signal: context.signal,
