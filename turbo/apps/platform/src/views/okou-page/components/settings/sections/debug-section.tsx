@@ -88,7 +88,7 @@ export function DebugSection() {
   return (
     <div className="flex flex-col gap-6">
       <BuildInfoBlock />
-      {features[FeatureSwitchKey.WelcomeThread] && <WelcomeThreadCard />}
+      <WelcomeThreadCard />
       {/* Each trigger spends real platform budget, so the card stays behind the
           debug switch and the native pipeline's own switch together. */}
       {features[FeatureSwitchKey.OkouDebug] &&
