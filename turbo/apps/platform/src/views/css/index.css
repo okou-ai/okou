@@ -525,6 +525,21 @@ body {
     overflow-y: hidden;
   }
 
+  /* With #root no longer fixed, the document is the top scroll view and iOS
+     26+ draws its soft scroll-edge blur under the translucent status bar,
+     smearing the header. A fixed box touching the top edge makes WebKit extend
+     that box's colour instead. It comes first in #root, so any positioned
+     layer that reaches the edge, such as a fullscreen artifact, covers it. */
+  #root::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: var(--sat);
+    background-color: hsl(var(--background));
+  }
+
   #root::after {
     content: "";
     display: block;
