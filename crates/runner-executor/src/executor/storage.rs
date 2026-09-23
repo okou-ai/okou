@@ -209,11 +209,10 @@ fn storage_inputs(
     }
     // A split request alone cannot see conflicts with entries in another batch.
     drop(json);
-    // Batching does not increase the aggregate selected-file or mount budget.
-    drop(
-        storage_files::encode(&groups)
-            .map_err(|e| RunnerError::Internal(format!("storage files payload: {e}")))?,
-    );
+    // Validate the aggregate selected-file and mount budget without copying the
+    // complete payload. Each emitted batch is encoded and checked below.
+    storage_files::encoded_payload_len(&groups)
+        .map_err(|e| RunnerError::Internal(format!("storage files payload: {e}")))?;
     let files_by_mount = groups.into_iter().collect::<HashMap<_, _>>();
     let (decoded_storages, ordinary_storages) = std::mem::take(&mut manifest.storages)
         .into_iter()
