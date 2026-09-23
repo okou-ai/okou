@@ -7,9 +7,9 @@ import {
   generateTestEmail,
 } from "../lib/clerk-api";
 import { completeExploreOnboarding } from "../lib/onboarding";
-import { deriveAppUrl, STORAGE_STATE } from "../playwright.config";
+import { deriveAppUrl } from "../playwright.config";
 
-test("complete app onboarding to chat page", async ({ browser, page }) => {
+test("send a message and receive the assistant reply", async ({ page }) => {
   test.setTimeout(240_000);
 
   const email = generateTestEmail("playwright");
@@ -28,34 +28,19 @@ test("complete app onboarding to chat page", async ({ browser, page }) => {
     appUrl,
   });
 
-  // Verify: landed on chat page
   await page.waitForURL("**/agents/*/chat", {
     timeout: 120_000,
     waitUntil: "domcontentloaded",
   });
-  expect(page.url()).toMatch(/\/agents\/.*\/chat/);
 
-  // Save storageState for feature tests (use absolute path to match playwright.config.ts)
-  await page.context().storageState({ path: STORAGE_STATE });
+  const marker = `PRODUCT_CHAT_E2E_${Date.now()}`;
+  const composer = page.locator('[data-slot="chat-composer-card"]');
+  await composer
+    .getByRole("textbox", { name: "Message" })
+    .fill(`printf '%s' '${marker}'`);
+  await composer.getByRole("button", { name: "Send" }).click();
 
-  const verificationContext = await browser.newContext({
-    storageState: STORAGE_STATE,
-    ignoreHTTPSErrors: true,
-  });
-  try {
-    const verificationPage = await verificationContext.newPage();
-    await verificationPage.goto(`${appUrl}/agents`, {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(
-      verificationPage.getByRole("heading", { name: "Agents" }),
-    ).toBeVisible({ timeout: 20_000 });
-    await verificationPage.waitForFunction(
-      (organizationId) => window.Clerk?.organization?.id === organizationId,
-      orgId,
-      { timeout: 30_000 },
-    );
-  } finally {
-    await verificationContext.close();
-  }
+  await expect(
+    page.locator('[data-role="assistant"]').filter({ hasText: marker }).first(),
+  ).toContainText(marker, { timeout: 90_000 });
 });

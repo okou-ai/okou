@@ -23,6 +23,7 @@ export const chatAgentphoneContext = pgTable("chat_agentphone_context", {
   messageId: text("message_id"),
   rootMessageId: text("root_message_id"),
   conversationId: text("conversation_id"),
+  groupId: text("group_id"),
   channel: text("channel").$type<"imessage" | "sms" | "mms">(),
   isGroup: boolean("is_group"),
   phoneHandle: text("phone_handle"),

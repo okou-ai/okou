@@ -89,13 +89,13 @@ const ORG_SENTINEL_USER_ID = "__org__";
 
 const ONBOARDING_MODEL_POLICY_SEEDS = {
   codex: {
-    models: ["gpt-6-luna", "gpt-6-astra", "gpt-5.6-sol"],
-    defaultModel: "gpt-6-luna",
+    models: ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna"],
+    defaultModel: "gpt-6-sol",
     providerType: "codex-oauth-token",
   },
   claudeCode: {
-    models: ["claude-opus-5", "claude-fable-5-1", "claude-sonnet-5"],
-    defaultModel: "claude-opus-5",
+    models: ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5"],
+    defaultModel: "claude-opus-5-5",
     providerType: "claude-code-oauth-token",
   },
 } as const satisfies Record<

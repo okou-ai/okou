@@ -5,7 +5,7 @@ use serde_json::{json, to_value};
 fn runtime_installs_for_every_context() {
     let run_id = RunId::new_v4();
     let mut context = crate::test_fixtures::execution_context::execution_context_for_test(run_id);
-    let (proxy, _crash_rx) = crate::proxy::MitmProxy::noop();
+    let (proxy, _crash_rx) = runner_network::proxy::MitmProxy::noop();
     let runtime = Runtime::new(MitmUsageHandle::from(&proxy));
 
     context.pi_launch_config = Some(launch(json!({

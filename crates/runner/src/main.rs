@@ -7,7 +7,6 @@ mod duration;
 mod error;
 mod executor;
 mod group;
-mod guest_rpc;
 mod guest_timezone;
 mod helper_exec;
 mod http;
@@ -29,15 +28,12 @@ mod resource_budget;
 mod restored_session_identity;
 mod retry;
 mod run_resolution;
-mod run_usage;
 mod runtime_overrides;
-mod ssh;
 mod status;
 mod status_file;
 mod telemetry;
 #[cfg(test)]
 mod test_fixtures;
-mod vnc;
 mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;
@@ -45,6 +41,7 @@ mod workspace_promotion;
 use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
+use runner_remote::{guest_rpc, run_usage, ssh, vnc};
 use runner_storage::{r2_cache, storage_cache, storage_fingerprints, storage_plan};
 
 // Runner build.rs owns the embedded addon inventory and passes it to runner-network.

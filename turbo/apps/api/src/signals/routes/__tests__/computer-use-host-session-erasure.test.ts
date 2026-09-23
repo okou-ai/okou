@@ -242,7 +242,7 @@ describe("Computer Use host session account-erasure fence", () => {
         ...erasureFenceStatementKinds("write").filter((kind) => {
           return kind !== "FENCE DEADLINES";
         }),
-        "LOCKED HOST ROW BY TOKEN",
+        "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE",
         "HOST UPDATE",
         "COMMIT",
       ]);
@@ -252,7 +252,9 @@ describe("Computer Use host session account-erasure fence", () => {
       // deadlock against a closure that locks subjects first and rows after.
       const subjectLock = shape.indexOf("B1 SUBJECT LOCKS");
       const closedLookup = shape.indexOf("B1 CLOSED LOOKUP");
-      const lockedRow = shape.indexOf("LOCKED HOST ROW BY TOKEN");
+      const lockedRow = shape.indexOf(
+        "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE",
+      );
       expect(subjectLock).toBeGreaterThanOrEqual(0);
       expect(closedLookup).toBeGreaterThan(subjectLock);
       expect(lockedRow).toBeGreaterThan(closedLookup);
@@ -261,6 +263,80 @@ describe("Computer Use host session account-erasure fence", () => {
           return statement.includes("pg_advisory_xact_lock");
         }),
       ).toHaveLength(1);
+    },
+  );
+  it.each([
+    { route: "heartbeat", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
+    { route: "claim", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
+    { route: "completion", lock: "LOCKED HOST ROW BY TOKEN FOR NO KEY UPDATE" },
+    { route: "stop", lock: "LOCKED HOST ROW BY TOKEN FOR UPDATE" },
+  ] as const)(
+    "locks the host row for $route in its route mode after subject admission",
+    { timeout: CASE_TIMEOUT_MS },
+    async ({ route, lock }) => {
+      const actor = orgScoped(bdd.user());
+      const host = await startHost(actor);
+      const created = await computerUse.createComputerUseReadCommand(actor, {
+        kind: "apps.list",
+      });
+      if (route === "completion") {
+        await computerUse.claimNextComputerUseCommand(host.hostToken);
+      }
+      const runRoute = async () => {
+        switch (route) {
+          case "heartbeat": {
+            return await computerUse.heartbeatComputerUseHost(host.hostToken);
+          }
+          case "claim": {
+            return await computerUse.claimNextComputerUseCommand(
+              host.hostToken,
+            );
+          }
+          case "completion": {
+            return await computerUse.requestCompleteComputerUseCommand(
+              host.hostToken,
+              created.commandId,
+              { status: "succeeded", result: { apps: [] } },
+              [200],
+            );
+          }
+          case "stop": {
+            return await computerUse.stopComputerUseHost(host.hostToken);
+          }
+        }
+      };
+
+      // Completion's first transaction is the one that reaches COMMIT first.
+      const statements = await withComputerUseHostSessionBarrierFixture(
+        {
+          orgId: actor.orgId,
+          stopAt: "commit",
+          work: async (barrier) => {
+            const running = runRoute();
+            await barrier.entered;
+            const captured = barrier.statements();
+            barrier.release();
+            await running;
+            return captured;
+          },
+        },
+        context.signal,
+      );
+
+      const shape = statements.map(classifySql);
+      const lockedRows = shape.filter((kind) => {
+        return kind.startsWith("LOCKED HOST ROW BY TOKEN");
+      });
+      expect(lockedRows).toStrictEqual([lock]);
+      expect(shape.indexOf(lock)).toBeGreaterThan(
+        shape.indexOf("B1 CLOSED LOOKUP"),
+      );
+      expect(shape.indexOf("B1 CLOSED LOOKUP")).toBeGreaterThan(
+        shape.indexOf("B1 SUBJECT LOCKS"),
+      );
+      expect(shape.indexOf("B1 SUBJECT LOCKS")).toBeGreaterThan(
+        shape.indexOf("UNLOCKED HOST IDENTITY BY TOKEN"),
+      );
     },
   );
 });
