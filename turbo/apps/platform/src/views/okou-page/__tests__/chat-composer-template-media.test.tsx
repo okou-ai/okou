@@ -292,6 +292,59 @@ test("Preview and choose a video template", async () => {
   await expectInlineTemplate(template.title);
 });
 
+test("A touch preview starts on release and stays independent of selection", async () => {
+  mockTemplateChat();
+  const media = mockPlayableMedia();
+  const template = VIDEO_TEMPLATE_ITEMS[0];
+  if (!template) {
+    throw new Error("Video template fixture not found");
+  }
+  const user = userEvent.setup();
+
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+
+  const dialog = await openTemplatePicker(user, "Video");
+  const preview = within(dialog).getByLabelText(
+    `Play video template preview ${template.title}`,
+  );
+  const video = dialog.querySelector("video");
+  if (!video) {
+    throw new Error("Video preview not found");
+  }
+
+  await user.pointer({ target: preview, keys: "[TouchA>]" });
+  expect(video.paused).toBeTruthy();
+  expect(media.play).not.toHaveBeenCalled();
+
+  await user.pointer({ keys: "[/TouchA]" });
+  expect(video.paused).toBeFalsy();
+  expect(media.play).toHaveBeenCalledTimes(1);
+  expect(document.querySelector("[data-composer-inline-template]")).toBeNull();
+
+  // Once playback hides the overlay, a touch browser can emit a compatibility
+  // mouse exit. It must not reset the preview started by the tap.
+  const previewSurface = preview.closest("[data-video-template-preview]");
+  if (!previewSurface) {
+    throw new Error("Video preview surface not found");
+  }
+  fireEvent.playing(video);
+  fireEvent.mouseOut(previewSurface, { relatedTarget: document.body });
+  expect(video.paused).toBeFalsy();
+  expect(media.pause).not.toHaveBeenCalled();
+
+  await user.pointer({
+    target: within(dialog).getByLabelText(
+      `Select video template ${template.title}`,
+    ),
+    keys: "[TouchA]",
+  });
+  await expectInlineTemplate(template.title);
+});
+
 test("Open plans from a gated video template", async () => {
   mockTemplateChat({ tier: "limited-free-1" });
   const template = VIDEO_TEMPLATE_ITEMS[0];
