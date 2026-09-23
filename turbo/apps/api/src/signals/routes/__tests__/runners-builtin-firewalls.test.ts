@@ -23,6 +23,14 @@ const OPENAI_API_KEY_AUTH_HEADER = [
   "Bearer $",
   "{{ secrets.OPENAI_API_KEY }}",
 ].join("");
+const CHATGPT_ACCESS_TOKEN_AUTH_HEADER = [
+  "Bearer $",
+  "{{ secrets.CHATGPT_ACCESS_TOKEN }}",
+].join("");
+const CHATGPT_ACCOUNT_ID_AUTH_HEADER = [
+  "$",
+  "{{ secrets.CHATGPT_ACCOUNT_ID }}",
+].join("");
 const EXPECTED_RUNNER_FIREWALL_CATALOG = createRunnerRuntimeFirewallCatalog([
   ...API_TEST_CONNECTOR_FIREWALL_CONFIGS.map((firewall) => {
     return projectRunnerRuntimeFirewall(firewall);
@@ -143,6 +151,40 @@ describe("runner builtin firewall resolver", () => {
       },
       permissions: [],
     });
+  });
+
+  it("publishes the Codex OAuth backend API firewall to Runner", async () => {
+    const name = "model-provider:codex-oauth-token";
+    const response = await accept(
+      client().resolve({
+        headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
+        body: { names: [name] },
+      }),
+      [200],
+    );
+
+    expect(response.body.firewalls[name]?.apis).toStrictEqual([
+      {
+        base: "https://chatgpt.com/backend-api",
+        auth: {
+          headers: {
+            Authorization: CHATGPT_ACCESS_TOKEN_AUTH_HEADER,
+            "ChatGPT-Account-ID": CHATGPT_ACCOUNT_ID_AUTH_HEADER,
+          },
+        },
+        permissions: [
+          {
+            name: "codex:api",
+            rules: ["GET /{path*}", "POST /{path*}"],
+          },
+        ],
+      },
+      {
+        base: "https://auth.openai.com",
+        auth: { headers: {} },
+        permissions: [],
+      },
+    ]);
   });
 
   it("handles concurrent full generated builtin firewall catalog resolves", async () => {

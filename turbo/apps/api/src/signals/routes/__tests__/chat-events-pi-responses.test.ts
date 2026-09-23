@@ -12,6 +12,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { stagePreAddabilityModelPolicyFixture } from "../../../test-fixtures/org-model-policies";
 import {
   deletePiApiFirstTurnUsageEventsFixture,
   insertPiApiFirstTurnUsageEventsFixture,
@@ -206,6 +207,8 @@ describe("CHAT-02: model-first provider policies", () => {
         "deepseek-v4-flash",
         "deepseek-v4.1-flash",
         "deepseek-v4-pro",
+        "gpt-6-sol",
+        "gpt-6-luna",
         "gpt-5.6-terra",
       ] as const
     ).flatMap((selectedModel) => {
@@ -224,6 +227,13 @@ describe("CHAT-02: model-first provider policies", () => {
       }
       const { actor, agentId } = await entitledChatActor();
       const orgId = requireOrgId(actor);
+      if (selectedModel === "gpt-6-sol") {
+        await stagePreAddabilityModelPolicyFixture({
+          orgId,
+          userId: actor.userId,
+          model: selectedModel,
+        });
+      }
       const usagePricingResolution =
         await createPiApiFirstTurnUsagePricingResolution(selectedModel);
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
@@ -241,9 +251,12 @@ describe("CHAT-02: model-first provider policies", () => {
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const modelRequests: unknown[] = [];
-      const providerUrl = selectedModel.startsWith("deepseek")
-        ? "https://openrouter.ai/api/v1/responses"
-        : `https://${usRoutingEnabled ? "us." : ""}openrouter.ai/api/v1/responses`;
+      // The US endpoint is approved for Terra; the GPT 6 pair stays on the
+      // global OpenRouter endpoint even when the switch is enabled.
+      const providerUrl =
+        selectedModel === "gpt-5.6-terra" && usRoutingEnabled
+          ? "https://us.openrouter.ai/api/v1/responses"
+          : "https://openrouter.ai/api/v1/responses";
       server.use(
         http.post(providerUrl, async ({ request }) => {
           modelRequests.push(await request.json());

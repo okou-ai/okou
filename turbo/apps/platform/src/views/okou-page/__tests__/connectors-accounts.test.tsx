@@ -3,6 +3,7 @@ import {
   connectorAccountsContract,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
@@ -23,6 +24,7 @@ import {
   getConnectorSwitch,
   listAgent,
   mockConnectors,
+  mockConnectorOverviewAccountSummaries,
   mockGithubAccounts,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
@@ -115,6 +117,16 @@ test("Show account attention when agent access is unavailable", async () => {
       ],
     });
   });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [
+      {
+        target: account.target,
+        accountCount: 2,
+        attentionCount: 1,
+        defaultConnection: account,
+      },
+    ];
+  });
   context.mocks.data.agents([
     listAgent("c0000000-0000-4000-a000-000000000001", "Research"),
   ]);
@@ -160,6 +172,16 @@ test("Show when every connector account needs attention", async () => {
         },
       ],
     });
+  });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [
+      {
+        target: account.target,
+        accountCount: 2,
+        attentionCount: 2,
+        defaultConnection: account,
+      },
+    ];
   });
   await setupAccountsPage();
 
@@ -262,6 +284,12 @@ test("Distinguish unavailable account information from no accounts", async () =>
       });
     },
   );
+  context.mocks.api(connectorOverviewContract.overview, async ({ respond }) => {
+    await summariesReady.promise;
+    return respond(503, {
+      error: { message: "Connector overview unavailable", code: "UNAVAILABLE" },
+    });
+  });
   await setupAccountsPage();
 
   const ahrefs = await waitFor(() => {
@@ -471,6 +499,22 @@ test("Make another connector account the default", async () => {
         },
       ],
     });
+  });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    const defaultConnection = accounts().find((account) => {
+      return account.isDefault;
+    });
+    if (!defaultConnection) {
+      throw new Error("Expected default account");
+    }
+    return [
+      {
+        target: work.target,
+        accountCount: 2,
+        attentionCount: 0,
+        defaultConnection,
+      },
+    ];
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, { connections: accounts(), nextCursor: null });

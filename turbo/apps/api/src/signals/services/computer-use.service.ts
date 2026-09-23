@@ -1204,9 +1204,25 @@ function resolveComputerUseCommandTargets(params: {
   };
 }
 
+/**
+ * The host row lock a session route holds for the rest of its transaction.
+ *
+ * Every mode here is exclusive against other host writers, so one host still
+ * has at most one heartbeat, claim, completion or stop in flight, and the
+ * command claim keeps its one-running-command-per-host serialization.
+ * `no key update` is enough for routes that only write non-key host columns:
+ * unlike `update` it does not block the `KEY SHARE` lock a foreign-key check
+ * takes when another transaction inserts or updates a row referencing this
+ * host (a queued command, an audit event, a thread binding). Stop revokes or
+ * rotates the host's credentials and clears legacy thread bindings, so it
+ * keeps the full `update` lock.
+ */
+type ComputerUseHostSessionLock = "update" | "no key update";
+
 async function hostFromToken(
   tx: ComputerUseTx,
   hostToken: string,
+  lock: ComputerUseHostSessionLock,
   signal: AbortSignal,
 ): Promise<ComputerUseHostRow | null> {
   const [host] = await tx
@@ -1218,7 +1234,7 @@ async function hostFromToken(
         isNull(computerUseHosts.revokedAt),
       ),
     )
-    .for("update")
+    .for(lock)
     .limit(1);
   signal.throwIfAborted();
   return host ?? null;
@@ -1239,7 +1255,7 @@ class ComputerUseHostOwnershipChangedError extends Error {
  * The host's content-free identity, read without a row lock.
  *
  * These endpoints authenticate by token, so the subjects admission needs are
- * only known once the host row has been read. Reading it under `FOR UPDATE`
+ * only known once the host row has been read. Reading it under a row lock
  * first and taking the shared subject lock afterwards would invert the fence's
  * lock order — a business row before the subject lock — against a closure that
  * takes its exclusive subject lock first and business rows after. That is a
@@ -1276,8 +1292,8 @@ type AdmittedComputerUseHostSession =
 
 /**
  * Admission for the high-frequency host session endpoints: deadlines ->
- * unlocked host identity -> shared B1 admission -> the locked host row,
- * revalidated against the identity that was admitted.
+ * unlocked host identity -> shared B1 admission -> the host row locked in the
+ * route's `lock` mode, revalidated against the identity that was admitted.
  *
  * These are the most frequent Computer Use calls, so the fence pays only what
  * the write template costs — one deadline statement, one statement for every
@@ -1294,6 +1310,7 @@ type AdmittedComputerUseHostSession =
 async function admitComputerUseHostSession(
   tx: ComputerUseTx,
   hostToken: string,
+  lock: ComputerUseHostSessionLock,
   signal: AbortSignal,
 ): Promise<AdmittedComputerUseHostSession> {
   await setErasureFenceDeadlines(tx, {
@@ -1317,7 +1334,7 @@ async function admitComputerUseHostSession(
     throw admitted.error;
   }
   signal.throwIfAborted();
-  const host = await hostFromToken(tx, hostToken, signal);
+  const host = await hostFromToken(tx, hostToken, lock, signal);
   if (!host) {
     return { outcome: "invalid_token" };
   }
@@ -1484,6 +1501,7 @@ export const heartbeatComputerUseHost$ = command(
         const admitted = await admitComputerUseHostSession(
           tx,
           params.hostToken,
+          "no key update",
           signal,
         );
         if (admitted.outcome !== "admitted") {
@@ -1558,6 +1576,7 @@ export const stopComputerUseHost$ = command(
         const admitted = await admitComputerUseHostSession(
           tx,
           params.hostToken,
+          "update",
           signal,
         );
         if (admitted.outcome !== "admitted") {
@@ -2038,6 +2057,7 @@ export const claimNextComputerUseHostCommand$ = command(
       const admitted = await admitComputerUseHostSession(
         tx,
         params.hostToken,
+        "no key update",
         signal,
       );
       if (admitted.outcome !== "admitted") {
@@ -2162,6 +2182,7 @@ async function computerUseHostCommandCompletionState(
   const admitted = await admitComputerUseHostSession(
     tx,
     params.hostToken,
+    "no key update",
     signal,
   );
   if (admitted.outcome !== "admitted") {

@@ -16,6 +16,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -49,10 +50,12 @@ const READ_PERMISSIONS = [
 ] as const;
 
 interface PermissionEditorOptions {
+  readonly grouped?: boolean;
   readonly permissionDefault?: "allow" | "deny" | "ask";
   readonly unknownPolicy?: "allow" | "deny" | "ask";
   readonly grants?: readonly UserPermissionGrantResponse[];
   readonly appliedRequests?: ApplyUserPermissionGrantsRequest[];
+  readonly onApply?: () => Promise<void>;
 }
 
 function agentFixture(): AgentResponse {
@@ -89,11 +92,12 @@ function connectedSlackFixture(): BuiltinConnectorResponse {
 }
 
 function permissionMetadata({
+  grouped = true,
   permissionDefault = "allow",
   unknownPolicy = "deny",
 }: Pick<
   PermissionEditorOptions,
-  "permissionDefault" | "unknownPolicy"
+  "grouped" | "permissionDefault" | "unknownPolicy"
 >): PublicConnectorCatalogPermissionDetail {
   return {
     connectorSlug: "slack",
@@ -104,14 +108,16 @@ function permissionMetadata({
     },
     permissionCount: READ_PERMISSIONS.length,
     permissions: [...READ_PERMISSIONS],
-    categories: {
-      categories: Object.fromEntries(
-        READ_PERMISSIONS.map((permission) => {
-          return [permission.name, "Read"];
-        }),
-      ),
-      displayOrder: ["Read"],
-    },
+    categories: grouped
+      ? {
+          categories: Object.fromEntries(
+            READ_PERMISSIONS.map((permission) => {
+              return [permission.name, "Read"];
+            }),
+          ),
+          displayOrder: ["Read"],
+        }
+      : null,
     defaultPolicy: {
       permissionDefault,
       unknownPolicy,
@@ -170,10 +176,16 @@ function setupPermissionEditor(
     expect(query.agentId).toBe(AGENT_ID);
     return respond(200, grants);
   });
-  context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
-    options.appliedRequests?.push(body);
-    return respond(200, []);
-  });
+  context.mocks.api(
+    userPermissionGrantsContract.apply,
+    async ({ body, respond, withSignal }) => {
+      options.appliedRequests?.push(body);
+      if (options.onApply) {
+        await withSignal(options.onApply());
+      }
+      return respond(200, []);
+    },
+  );
 
   return setupPage({ context, path: `/agents/${AGENT_ID}` });
 }
@@ -230,7 +242,11 @@ async function openPermissionEditor(
   if (!drawer) {
     throw new Error("Slack permissions drawer not found");
   }
-  await waitForRoleElementByText("button", "Read (3)", drawer);
+  if (options.grouped === false) {
+    await within(drawer).findByText("bookmarks:read", { selector: "code" });
+  } else {
+    await waitForRoleElementByText("button", "Read (3)", drawer);
+  }
   return drawer;
 }
 
@@ -257,6 +273,15 @@ function unknownPermissionRow(drawer: HTMLElement): HTMLElement {
   const row = label.parentElement?.parentElement;
   if (!row) {
     throw new Error("Other endpoints row not found");
+  }
+  return row;
+}
+
+function allPermissionsRow(drawer: HTMLElement): HTMLElement {
+  const label = within(drawer).getByText("Select all (3)");
+  const row = label.parentElement;
+  if (!row) {
+    throw new Error("All permissions row not found");
   }
   return row;
 }
@@ -478,4 +503,193 @@ test("Unknown-permission policy can return to its saved value", async () => {
 
   expectPolicy(unknownRow, "Deny");
   expect(applyButton).toBeDisabled();
+});
+
+test.each(["click", "Enter", "Space"] as const)(
+  "Activating an already allowed bulk policy with %s also allows other endpoints only on Apply",
+  async (activation) => {
+    const user = userEvent.setup({ delay: null });
+    const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+    const drawer = await openPermissionEditor({
+      grouped: false,
+      unknownPolicy: "ask",
+      appliedRequests,
+    });
+    const all = allPermissionsRow(drawer);
+    const unknown = unknownPermissionRow(drawer);
+    const allow = roleElementByText("button", "Allow", all);
+    const apply = roleElementByText("button", "Apply", drawer);
+
+    expectPolicy(all, "Allow");
+    expect(roleElementByText("button", "Allow", unknown)).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(roleElementByText("button", "Deny", unknown)).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(apply).toBeDisabled();
+    allow.focus();
+    await user.keyboard("{ArrowRight}{Tab}");
+    expect(roleElementByText("button", "Deny", all)).toHaveFocus();
+    expect(apply).toBeDisabled();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(allow).toHaveFocus();
+
+    if (activation === "click") {
+      click(allow);
+    } else {
+      await user.keyboard(activation === "Enter" ? "{Enter}" : " ");
+    }
+
+    expectPolicy(all, "Allow");
+    expectPolicy(unknown, "Allow");
+    expect(apply).toBeEnabled();
+    expect(appliedRequests).toHaveLength(0);
+    click(apply);
+    await expect(
+      screen.findByText("Permissions updated"),
+    ).resolves.toBeInTheDocument();
+    expectSinglePatch(appliedRequests, [
+      { permission: UNKNOWN_PERMISSION_GRANT, action: "allow" },
+    ]);
+  },
+);
+
+test("Ask and mixed permissions remain distinct while group commands keep their scope", async () => {
+  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const drawer = await openPermissionEditor({
+    permissionDefault: "ask",
+    unknownPolicy: "ask",
+    appliedRequests,
+  });
+  await expandReadGroup(drawer);
+  const group = groupHeader(drawer);
+  const bookmark = permissionRow(drawer, "bookmarks:read");
+  const unknown = unknownPermissionRow(drawer);
+  expect(roleElementByText("button", "Allow", bookmark)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(roleElementByText("button", "Deny", bookmark)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(within(group).queryByText("Mixed")).not.toBeInTheDocument();
+
+  click(roleElementByText("button", "Allow", bookmark));
+  expect(within(group).getByText("Mixed")).toBeInTheDocument();
+  click(roleElementByText("button", "Allow", group));
+  expectPolicy(group, "Allow");
+  expect(within(group).queryByText("Mixed")).not.toBeInTheDocument();
+  await chooseDuration(drawer, "Read", "Allow for 7d");
+  expect(within(group).getByLabelText("Read allow options")).toHaveTextContent(
+    "7d",
+  );
+
+  click(roleElementByText("button", "Deny", group));
+  expectPolicy(group, "Deny");
+  expect(
+    within(group).queryByLabelText("Read allow options"),
+  ).not.toBeInTheDocument();
+  for (const permission of READ_PERMISSIONS) {
+    const row = permissionRow(drawer, permission.name);
+    expectPolicy(row, "Deny");
+    expect(
+      within(row).queryByLabelText(`${permission.name} allow options`),
+    ).not.toBeInTheDocument();
+  }
+  expect(roleElementByText("button", "Deny", unknown)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(roleElementByText("button", "Allow", unknown)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(appliedRequests).toHaveLength(0);
+  click(roleElementByText("button", "Apply", drawer));
+  await expect(
+    screen.findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+  expectSinglePatch(
+    appliedRequests,
+    READ_PERMISSIONS.map((permission) => {
+      return { permission: permission.name, action: "deny" };
+    }),
+  );
+});
+
+test("Denying other endpoints clears the staged expiration before Apply", async () => {
+  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const drawer = await openPermissionEditor({
+    unknownPolicy: "ask",
+    appliedRequests,
+  });
+  const unknown = unknownPermissionRow(drawer);
+  click(roleElementByText("button", "Allow", unknown));
+  await chooseDuration(drawer, UNKNOWN_PERMISSION_GRANT, "Allow for 7d");
+  expect(
+    within(unknown).getByLabelText(`${UNKNOWN_PERMISSION_GRANT} allow options`),
+  ).toHaveTextContent("7d");
+  click(roleElementByText("button", "Deny", unknown));
+
+  expectPolicy(unknown, "Deny");
+  expect(
+    within(unknown).queryByLabelText(
+      `${UNKNOWN_PERMISSION_GRANT} allow options`,
+    ),
+  ).not.toBeInTheDocument();
+  expect(appliedRequests).toHaveLength(0);
+  click(roleElementByText("button", "Apply", drawer));
+  await expect(
+    screen.findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+  expectSinglePatch(appliedRequests, [
+    { permission: UNKNOWN_PERMISSION_GRANT, action: "deny" },
+  ]);
+});
+
+test("Saving disables bulk, individual, and other-endpoint permission commands", async () => {
+  const save = context.mocks.deferred<void>();
+  const appliedRequests: ApplyUserPermissionGrantsRequest[] = [];
+  const drawer = await openPermissionEditor({
+    grouped: false,
+    permissionDefault: "deny",
+    appliedRequests,
+    onApply: () => {
+      return save.promise;
+    },
+  });
+  const all = allPermissionsRow(drawer);
+  click(roleElementByText("button", "Allow", all));
+  expectPolicy(all, "Allow");
+  click(roleElementByText("button", "Apply", drawer));
+  const saving = await waitForRoleElementByText("button", "Saving...", drawer);
+  expect(saving).toBeDisabled();
+  const rows = [
+    all,
+    ...READ_PERMISSIONS.map((permission) => {
+      return permissionRow(drawer, permission.name);
+    }),
+    unknownPermissionRow(drawer),
+  ];
+  for (const row of rows) {
+    expect(roleElementByText("button", "Allow", row)).toBeDisabled();
+    expect(roleElementByText("button", "Deny", row)).toBeDisabled();
+  }
+
+  click(roleElementByText("button", "Deny", all));
+  expectPolicy(all, "Allow");
+  save.resolve();
+  await expect(
+    screen.findByText("Permissions updated"),
+  ).resolves.toBeInTheDocument();
+  expectSinglePatch(appliedRequests, [
+    ...READ_PERMISSIONS.map((permission) => {
+      return { permission: permission.name, action: "allow" as const };
+    }),
+    { permission: UNKNOWN_PERMISSION_GRANT, action: "allow" },
+  ]);
 });

@@ -132,18 +132,7 @@ const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
 
 const ANTHROPIC_API_BASE = "https://api.anthropic.com";
 
-function isLegacySingleSecretProvider(
-  type: FirewallSupportedProvider,
-): type is LegacySingleSecretProvider {
-  return type !== "codex-oauth-token";
-}
-
-function getFirewallBaseUrl(type: FirewallSupportedProvider): string {
-  // codex-oauth-token targets ChatGPT's backend, not the public OpenAI API.
-  if (!isLegacySingleSecretProvider(type)) {
-    return "https://chatgpt.com/backend-api/codex";
-  }
-
+function getFirewallBaseUrl(type: LegacySingleSecretProvider): string {
   const config = MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS[type];
   if (config.firewallBaseUrl) {
     return config.firewallBaseUrl;
@@ -246,12 +235,12 @@ export const MODEL_PROVIDER_FIREWALL_CONFIGS = {
     { name: "Authorization", valuePrefix: "Bearer" },
     MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
   ),
-  // ChatGPT OAuth provider: multi-header injection plus unknown-policy auth.openai.com deny.
+  // ChatGPT OAuth BYOK provider: backend API GET/POST injection and auth.openai.com deny.
   "codex-oauth-token": {
     name: "model-provider:codex-oauth-token",
     apis: [
       {
-        base: "https://chatgpt.com/backend-api/codex",
+        base: "https://chatgpt.com/backend-api",
         auth: {
           headers: {
             Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
@@ -262,7 +251,7 @@ export const MODEL_PROVIDER_FIREWALL_CONFIGS = {
           {
             name: "codex:api",
             description:
-              "Access the ChatGPT Codex backend with GET and POST requests.",
+              "Access the ChatGPT backend API with GET and POST requests.",
             rules: ["GET /{path*}", "POST /{path*}"],
           },
         ],

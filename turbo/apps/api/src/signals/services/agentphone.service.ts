@@ -41,6 +41,7 @@ import {
 } from "../external/agentphone-client";
 import { bestEffort, safeUrlParse } from "../utils";
 import {
+  agentPhoneReplyDestination,
   describeAgentPhoneHandleShape,
   isAgentPhoneChannel,
   isValidAgentPhoneHandle,
@@ -124,6 +125,7 @@ export interface AgentPhoneMessageEvent {
   readonly channel: AgentPhoneChannel;
   readonly messageId: string;
   readonly conversationId: string | null;
+  readonly groupId: string | null;
   readonly isGroup: boolean;
   readonly mentioned: boolean;
   readonly agentphoneAgentId: string;
@@ -995,11 +997,11 @@ export async function sendAgentPhoneText(
   await sendAgentPhoneMessage(
     {
       agentphoneAgentId: event.agentphoneAgentId,
-      ...(event.channel === "imessage" && event.conversationId
-        ? {
-            conversationId: event.conversationId,
-          }
-        : { toNumber: event.fromNumber }),
+      toNumber: agentPhoneReplyDestination({
+        isGroup: isAgentPhoneGroupEvent(event),
+        groupId: event.groupId,
+        phoneHandle: event.fromNumber,
+      }),
       ...(event.channel === "imessage"
         ? { replyToMessageId: event.messageId }
         : {}),
@@ -1025,10 +1027,15 @@ async function refreshTypingIfSupported(
   event: AgentPhoneMessageEvent,
   signal: AbortSignal,
 ): Promise<void> {
-  if (event.channel !== "imessage" || !event.conversationId) {
+  if (event.channel !== "imessage") {
     return;
   }
-  const conversationId = event.conversationId;
+  const conversationId = isAgentPhoneGroupEvent(event)
+    ? event.groupId
+    : event.conversationId;
+  if (!conversationId) {
+    return;
+  }
 
   await bestEffort(
     sendAgentPhoneTypingIndicator({ conversationId }, signal),
@@ -1648,6 +1655,7 @@ const persistAgentPhoneChatMessage$ = command(
             messageId: args.event.messageId,
             rootMessageId: args.rootMessageId,
             conversationId: args.event.conversationId,
+            groupId: args.event.groupId,
             channel: args.event.channel,
             isGroup: isAgentPhoneGroupEvent(args.event),
             phoneHandle: args.event.fromNumber,

@@ -1,10 +1,9 @@
 [package]
 name = "runner"
-version = "0.213.2"
+version = "0.213.3"
 edition.workspace = true
 
 [dependencies]
-ably-subscriber = { workspace = true }
 api-contracts.workspace = true
 guest-contracts.workspace = true
 sandbox = { workspace = true }
@@ -47,22 +46,12 @@ sentry = { workspace = true, features = ["panic"] }
 which = { workspace = true, features = ["real-sys"] }
 zstd = { workspace = true, features = ["zstdmt"] }
 guest-control-proto = { workspace = true }
-runner-rpc-proto = { workspace = true }
 runner-host.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
+runner-remote.workspace = true
 runner-storage.workspace = true
 runner-types.workspace = true
-rfb-client = { workspace = true }
-russh = { workspace = true, features = ["ring", "rsa"] }
-pkcs8 = { workspace = true, features = ["encryption", "std"] }
-pkcs5 = { workspace = true, features = ["alloc", "pbes2"] }
-rsa = { workspace = true, features = ["encoding", "std"] }
-zeroize = { workspace = true, features = ["alloc"] }
-rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
-tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
-tokio-tungstenite = { workspace = true, features = ["handshake"] }
-webpki-roots = { workspace = true }
 
 [build-dependencies]
 serde = { workspace = true, features = ["derive", "std"] }
@@ -72,10 +61,10 @@ serde_json = { workspace = true, features = ["std"] }
 # cargo-workspace plugin includes dev-dependencies in its dependency graph,
 # so runner-rs gets auto-bumped when any guest crate version changes.
 [dev-dependencies]
+runner-rpc-proto = { workspace = true }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }
 guest-control-client = { workspace = true }
-png = { workspace = true }
 log = { workspace = true }
 tracing-log = { workspace = true, features = ["log-tracer", "std"] }
 # `test-util` feature exposes `with_test_defaults_v2()` on `aws_sdk_s3::Config`,
@@ -98,7 +87,6 @@ http-body = { workspace = true }
 sandbox-mock = { workspace = true }
 tokio = { workspace = true, features = ["process", "test-util"] }
 tracing-test-support.workspace = true
-rcgen = { workspace = true, features = ["crypto", "ring"] }
 
 [lints]
 workspace = true

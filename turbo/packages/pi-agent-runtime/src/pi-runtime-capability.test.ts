@@ -165,10 +165,10 @@ describe("pinned Pi runtime capability", () => {
     expect(disagreements).toStrictEqual([]);
   });
 
-  it("leaves Claude Opus 5.5 off the loop while the native catalog lacks it", () => {
+  it("resolves Claude Opus 5.5 through the native catalog", () => {
     expect(
       resolvesInRuntime({ provider: "anthropic", model: "claude-opus-5-5" }),
-    ).toBe(false);
+    ).toBe(true);
     for (const modelProviderType of getProvidersForModel("claude-opus-5-5")) {
       expect(
         isPiExecutionRoute({
@@ -178,12 +178,12 @@ describe("pinned Pi runtime capability", () => {
           codexServiceTier: undefined,
           piEnabled: true,
         }),
-      ).toBe(false);
+      ).toBe(modelProviderType !== "claude-code-oauth-token");
     }
   });
 
   it.each(["gpt-6-sol", "gpt-6-luna"])(
-    "keeps %s off Pi while the pinned catalog cannot resolve it",
+    "resolves %s through the pinned Pi catalog",
     (model) => {
       const identities: readonly PiRuntimeIdentity[] = [
         { provider: "openai", model },
@@ -191,7 +191,7 @@ describe("pinned Pi runtime capability", () => {
         { provider: "openrouter", model: `openai/${model}` },
       ];
       for (const identity of identities) {
-        expect(resolvesInRuntime(identity)).toBe(false);
+        expect(resolvesInRuntime(identity)).toBe(true);
       }
       for (const modelProviderType of getProvidersForModel(model)) {
         expect(
@@ -202,7 +202,7 @@ describe("pinned Pi runtime capability", () => {
             codexServiceTier: undefined,
             piEnabled: true,
           }),
-        ).toBe(false);
+        ).toBe(true);
       }
     },
   );

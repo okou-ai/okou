@@ -138,6 +138,7 @@ import {
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
+import { clearExistingChatThreadDraftRow } from "./chat-thread-draft-write.service";
 import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
@@ -2125,6 +2126,35 @@ interface AuthorizedChatThreadForEnqueue {
   readonly eventSequenceReservation?: ChatEventSequenceReservation;
 }
 
+/**
+ * Enter a send-clear transaction with the authorized parent's FOR UPDATE lock.
+ * PATCH retains KEY SHARE -> child -> parent; this strong lock makes either
+ * complete before the other reaches the child. The queue's FOR NO KEY UPDATE
+ * lock is compatible with KEY SHARE and cannot serve as this entry lock.
+ */
+async function lockAuthorizedThreadForDraftClear(
+  tx: ChatThreadEventTransaction,
+  threadId: string,
+  userId: string,
+  orgId?: string,
+): Promise<boolean> {
+  const [thread] = await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(
+      and(
+        eq(chatThreads.id, threadId),
+        eq(chatThreads.userId, userId),
+        ...(orgId === undefined
+          ? []
+          : [chatThreadOrganizationCondition(tx, orgId)]),
+      ),
+    )
+    .for("update", { of: chatThreads })
+    .limit(1);
+  return thread !== undefined;
+}
+
 function shouldReserveEventSequence(
   params: AppendUnassociatedUserMessageParams,
 ): boolean {
@@ -2140,6 +2170,18 @@ async function authorizeChatThreadForEnqueue(
   params: AppendUnassociatedUserMessageParams,
   reserveEventSequence: boolean,
 ): Promise<AuthorizedChatThreadForEnqueue | undefined> {
+  // This must precede the parent UPDATE and all child writes. MCP submission
+  // already holds FOR UPDATE; reacquiring it in the same transaction is safe.
+  if (
+    !(await lockAuthorizedThreadForDraftClear(
+      tx,
+      params.threadId,
+      params.userId,
+      params.orgId,
+    ))
+  ) {
+    return undefined;
+  }
   const [thread] = await tx
     .update(chatThreads)
     .set({
@@ -2165,6 +2207,7 @@ async function authorizeChatThreadForEnqueue(
   if (!thread) {
     return undefined;
   }
+  await clearExistingChatThreadDraftRow(tx, thread.id);
   return reserveEventSequence
     ? {
         eventSequenceReservation: {
@@ -2373,17 +2416,24 @@ function appendUnassociatedUserMessage(
 }
 
 async function clearThreadDraft(
-  tx: Pick<Db, "update">,
+  tx: ChatThreadEventTransaction,
   threadId: string,
   userId: string,
 ): Promise<void> {
-  await tx
+  if (!(await lockAuthorizedThreadForDraftClear(tx, threadId, userId))) {
+    return;
+  }
+  const [thread] = await tx
     .update(chatThreads)
     .set({
       draftUserMessage: null,
       draftAttachments: null,
     })
-    .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)));
+    .where(and(eq(chatThreads.id, threadId), eq(chatThreads.userId, userId)))
+    .returning({ id: chatThreads.id });
+  if (thread) {
+    await clearExistingChatThreadDraftRow(tx, thread.id);
+  }
 }
 
 async function appendAssociatedUserMessage(params: {
@@ -3719,18 +3769,7 @@ async function appendInsufficientCreditsEvents(params: {
   const userCreatedAt = nowDate();
   const assistantCreatedAt = new Date(userCreatedAt.getTime() + 1);
   const result = await params.prepared.db.transaction(async (tx) => {
-    await tx
-      .update(chatThreads)
-      .set({
-        draftUserMessage: null,
-        draftAttachments: null,
-      })
-      .where(
-        and(
-          eq(chatThreads.id, params.prepared.thread.threadId),
-          eq(chatThreads.userId, params.userId),
-        ),
-      );
+    await clearThreadDraft(tx, params.prepared.thread.threadId, params.userId);
 
     const explicitId = params.body.clientEventId ?? undefined;
     const fileMetadata = params.prepared.attachFileMetadata;

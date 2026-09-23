@@ -90,6 +90,8 @@ import {
   TabsList,
   TabsTrigger,
   Textarea,
+  Toggle,
+  ToggleGroup,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -6478,46 +6480,35 @@ function WorkflowDayOfWeekPicker({
           return $.workflows.automations.schedule.dayOfWeek;
         })}
       </span>
-      <div className="flex flex-wrap gap-1">
+      <ToggleGroup
+        multiple
+        value={dayOfWeek.split(",").filter(Boolean)}
+        disabled={disabled}
+        aria-label={i18n.t(($) => {
+          return $.workflows.automations.schedule.dayOfWeek;
+        })}
+        className="flex flex-wrap gap-1"
+        onValueChange={(days) => {
+          if (days.length > 0) {
+            onChange(days.join(","));
+          }
+        }}
+      >
         {workflowDayOfWeekOptions().map(([value, label]) => {
-          const selected = dayOfWeek.split(",").includes(value);
           return (
-            <Button
+            <Toggle
               key={value}
+              value={value}
               type="button"
               size="sm"
-              variant={selected ? "default" : "outline"}
-              disabled={disabled}
-              aria-pressed={selected}
-              className={cn(
-                "min-w-10 px-2 text-xs disabled:opacity-60",
-                selected
-                  ? "border border-primary"
-                  : "border-border/60 text-muted-foreground",
-              )}
-              onClick={() => {
-                const current = dayOfWeek.split(",").filter(Boolean);
-                if (selected) {
-                  if (current.length <= 1) {
-                    return;
-                  }
-                  onChange(
-                    current
-                      .filter((day) => {
-                        return day !== value;
-                      })
-                      .join(","),
-                  );
-                  return;
-                }
-                onChange([...current, value].join(","));
-              }}
+              variant="primary"
+              className="min-w-10 px-2 text-xs disabled:opacity-60"
             >
               {label}
-            </Button>
+            </Toggle>
           );
         })}
-      </div>
+      </ToggleGroup>
     </div>
   );
 }

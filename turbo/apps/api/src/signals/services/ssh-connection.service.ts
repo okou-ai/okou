@@ -169,6 +169,11 @@ function toSshConnectionResponse(
   row: SshConnectionRow,
   credential: { readonly name: string; readonly username: string },
 ): SshConnectionResponse {
+  // The old management DTO equates a null Access ID with Direct. Until the
+  // scoped DTO is available, fail closed rather than mislabel a protected host.
+  if (row.needsRebind) {
+    throw new Error("SSH Cloudflare Access needs rebind");
+  }
   const hasAlgorithm = row.learnedHostKeyAlgorithm !== null;
   const hasFingerprint = row.learnedHostKeyFingerprint !== null;
   if (hasAlgorithm !== hasFingerprint) {

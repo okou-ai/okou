@@ -21,6 +21,13 @@ reels. `--stream` is available on collection
 commands. The source may return fewer results than requested, and a source
 limitation does not establish that all matching content was retrieved.
 
+Instagram comment collections include the provider's final `collectionStatus`
+and `stopReason` in `collection.providerOutcome`. A partial or unknown stop is
+reported as partial/provider-limited even when `hasMore` is false. An exhausted
+outcome means only that Instagram's available upstream pages ended; hidden
+comments and replies may still be missing. `commentCount` may be null or stale
+and does not prevent a safe cursor continuation.
+
 ## Live status
 
 `okou social status [platform] --json` calls authenticated

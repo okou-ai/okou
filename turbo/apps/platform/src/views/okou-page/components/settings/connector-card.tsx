@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { ChevronRight, CircleCheck, Loader2, Plus } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountSummary } from "@okouai/api-contracts/contracts/connector-accounts";
+import type { ConnectorAccountBriefSummary } from "@okouai/api-contracts/contracts/connector-overview";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../../../signals/connector-domain.ts";
 import { Button, surfaceVariants, cn } from "@okouai/ui";
@@ -31,6 +32,9 @@ type CatalogConnectorCardProps = {
 };
 
 export type ConnectorAccountSummaryStatus = "loading" | "unavailable" | "ready";
+export type ConnectorAccountDisplaySummary =
+  | ConnectorAccountSummary
+  | ConnectorAccountBriefSummary;
 
 export function connectorAccountSummaryStatus(
   state: LoadableState,
@@ -47,7 +51,7 @@ export function connectorAccountSummaryStatus(
 type AccountsConnectorCardProps = {
   readonly variant: "accounts";
   readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly summary: ConnectorAccountSummary | undefined;
+  readonly summary: ConnectorAccountDisplaySummary | undefined;
   readonly summaryStatus: ConnectorAccountSummaryStatus;
   readonly busy: boolean;
   readonly connect: ConnectorConnectHandlers;
@@ -401,7 +405,7 @@ export function ConnectorAccountSummaryText({
   status,
   className,
 }: {
-  readonly summary: ConnectorAccountSummary | undefined;
+  readonly summary: ConnectorAccountDisplaySummary | undefined;
   readonly status: ConnectorAccountSummaryStatus;
   readonly className?: string;
 }) {

@@ -207,9 +207,10 @@ pub struct CliFailureDiagnostic {
     /// High-level source of the event-derived failure detail.
     ///
     /// Values produced by [`execute_cli_with_active_input_for_config`] use
-    /// `ClaudeResult` for Claude Code terminal result events and `CodexJsonl`
-    /// for Codex compatibility JSONL failure events. The final run diagnostic
-    /// may still prefer stderr when this event message is generic.
+    /// `ClaudeResult` for Claude Code terminal result events, `PiResult` for Pi
+    /// terminal result events, and `CodexJsonl` for Codex compatibility JSONL
+    /// failure events. The final run diagnostic may select stderr for a generic
+    /// event message or use an exit-code fallback when no detail is available.
     pub source: FailureDetailSource,
 
     /// Optional structured failure reason parsed from supported CLI payloads.
@@ -232,6 +233,12 @@ pub struct CliExecutionResult {
     /// For Claude Code execution, this is the CLI process exit code. On Unix,
     /// signal termination is mapped to `128 + signal`, matching shell
     /// convention, so SIGKILL is reported as `137`.
+    ///
+    /// For Pi execution, this starts with the mapped CLI process exit code.
+    /// In RPC runs, a terminal JSONL `Error` result overrides it to `1`, even
+    /// when the child process exits with `0`; `cli_observed_exit` retains the
+    /// raw process exit observation. Non-RPC Pi runs keep the mapped process
+    /// exit code.
     ///
     /// For Codex app-server execution, completed turns map to `0`, while failed
     /// or interrupted turns and terminal non-retry errors map to `1`. These are
