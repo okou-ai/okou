@@ -20,4 +20,7 @@ pub mod state_file;
 #[cfg(test)]
 mod test_support;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_fixtures;
+
 pub use error::{HostError, HostResult};

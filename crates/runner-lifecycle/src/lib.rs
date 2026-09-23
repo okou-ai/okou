@@ -33,7 +33,7 @@ mod duration {
 #[cfg(any(test, feature = "test-support"))]
 mod test_fixtures {
     #[cfg(test)]
-    pub mod ignored_child;
+    pub use runner_host::test_fixtures::ignored_child;
 
     pub fn workspace_image_cache_key(reuse_key: &str, working_dir: &str) -> String {
         runner_host::paths::scoped_workspace_image_cache_key(

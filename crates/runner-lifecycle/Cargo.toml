@@ -5,7 +5,7 @@ edition.workspace = true
 description = "Runner idle sandbox, status, and workspace image lifecycle"
 
 [features]
-test-support = ["dep:sandbox-mock", "dep:tempfile"]
+test-support = ["dep:sandbox-mock", "dep:tempfile", "runner-host/test-support"]
 
 [dependencies]
 api-contracts.workspace = true
@@ -33,6 +33,7 @@ uuid = { workspace = true, features = ["serde", "std", "v4"] }
 
 [dev-dependencies]
 async-trait.workspace = true
+runner-host = { workspace = true, features = ["test-support"] }
 sandbox-mock.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["process", "test-util"] }

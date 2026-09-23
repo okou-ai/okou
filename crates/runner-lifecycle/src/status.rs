@@ -466,7 +466,7 @@ impl StatusTracker {
     /// Register an active run as running and flush the status file.
     ///
     /// This preserves the old helper semantics for tests and cleanup fixtures.
-    /// Freshly claimed new-sandbox jobs should use [`add_preparing_run`].
+    /// Freshly claimed new-sandbox jobs should use [`Self::add_preparing_run`].
     #[cfg(any(test, feature = "test-support"))]
     pub async fn add_run(&self, run_id: RunId, sandbox_id: SandboxId) -> StatusResult<()> {
         self.add_running_run(run_id, sandbox_id).await

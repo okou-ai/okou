@@ -22,8 +22,8 @@ pub use entry::{
 };
 pub use entry::{SpeculativeIdleSandbox, SpeculativeIdleUnparkResult};
 pub use park_transition::{
-    IdleParkActiveParts, IdleParkCandidate, IdleParkFailureParts, IdleParkRequest,
-    IdleParkRequestParts, SpeculativeReparkResult,
+    IdleParkActiveParts, IdleParkCandidate, IdleParkFailure, IdleParkFailureParts, IdleParkOutcome,
+    IdleParkRequest, IdleParkRequestParts, SpeculativeReparkResult,
 };
 pub use parking_gate::ParkingGate;
 #[cfg(any(test, feature = "test-support"))]
