@@ -396,10 +396,8 @@ export function SharedArtifactPage({
       </header>
       <main
         ref={containerRef}
-        // This element is the one handed to requestFullscreen, so it paints
-        // over the browser's black backdrop with nothing behind it. A
-        // translucent surface would let that backdrop through as an
-        // undefined grey, so fullscreen takes the opaque surface instead.
+        // The document owns native fullscreen so body portals stay visible.
+        // Keep the preview on an opaque surface in native and immersive modes.
         className={cn(
           "relative min-h-0 flex-1",
           fullscreen ? "bg-muted" : "bg-muted/30",

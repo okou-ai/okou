@@ -797,6 +797,14 @@ captures the current reading position, including scrolling done in fullscreen.
 Retaining a DOM node and its numeric `scrollTop` alone does not preserve a
 document's reading position when its line wrapping changes.
 
+The standalone artifact page uses the browser Fullscreen API instead of
+`FullscreenPanel`. Its native target is `documentElement`, which includes both
+the app root and body-level portals. Requesting fullscreen on only the preview
+would leave dialogs outside the browser's top layer, regardless of z-index.
+The page keeps its layout and iframe in place, hides its header, and owns the
+native request until exit or cancellation has released it. Route cleanup must
+also release a request that succeeds after the page has gone away.
+
 An anchored surface's collision boundary is the one safe-area decision CSS
 cannot reach, because Base UI's positioner is a JavaScript engine measuring
 against the raw viewport. `PopoverContent`, `SelectContent`,
