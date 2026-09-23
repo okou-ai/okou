@@ -197,6 +197,98 @@ describe("account erasure chat-thread snapshot object capture", () => {
     );
   });
 
+  it("refuses completion when storage acknowledges delete but the bytes survive", async () => {
+    const userId = `snapshot_erasure_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
+    const key = chatThreadSnapshotObjectKey({
+      userId,
+      orgId,
+      latestSeqId: null,
+      body: Buffer.from("surviving"),
+    });
+    let listCount = 0;
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      const input =
+        command instanceof Object && "input" in command
+          ? (command.input as Record<string, unknown>)
+          : {};
+      if (
+        command instanceof Object &&
+        command.constructor.name === "ListObjectsV2Command"
+      ) {
+        listCount += 1;
+        return Promise.resolve({
+          Contents:
+            String(input.Prefix) ===
+            chatThreadSnapshotObjectPrefix(userId, orgId)
+              ? [
+                  {
+                    Key: key,
+                    Size: 1,
+                    LastModified: new Date("2026-01-01T00:00:00Z"),
+                  },
+                ]
+              : [],
+          IsTruncated: false,
+        });
+      }
+      if (
+        command instanceof Object &&
+        command.constructor.name === "DeleteObjectsCommand"
+      ) {
+        return Promise.resolve({ Deleted: [{ Key: key }] });
+      }
+      return Promise.resolve({});
+    });
+    await db
+      .insert(chatThreadSnapshots)
+      .values({ userId, orgId, objectKey: key });
+    onTestFinished(async () => {
+      await db
+        .delete(chatThreadSnapshots)
+        .where(eq(chatThreadSnapshots.userId, userId));
+    });
+    const { job, handler } = await begin(userId);
+    const sealed = await sealErasureCapture(
+      db,
+      job.id,
+      job,
+      {
+        verify: () => {
+          return Promise.resolve({
+            jobId: job.id,
+            generation: job.generation,
+            captureRevision: job.captureRevision,
+            inventoryRevision: job.inventoryRevision,
+            reference: randomUUID(),
+          });
+        },
+      },
+      context.signal,
+    );
+    await db
+      .delete(chatThreadSnapshots)
+      .where(eq(chatThreadSnapshots.userId, userId));
+    const leases = await claimErasureWork(db, job.id, "verification", 2);
+    expect(leases).toHaveLength(2);
+    for (const lease of leases) {
+      await executeErasureWork(db, lease, handler, context.signal);
+    }
+    expect(listCount).toBeGreaterThan(1);
+    const remaining = await db
+      .select({ state: accountErasureWork.state })
+      .from(accountErasureWork)
+      .where(eq(accountErasureWork.jobId, job.id));
+    expect(
+      remaining.some((item) => {
+        return item.state === "retryable_failure";
+      }),
+    ).toBeTruthy();
+    await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
+      "account_erasure:work_unresolved",
+    );
+  });
+
   it("refuses a snapshot pointer outside the owner-derived prefix", async () => {
     const userId = `snapshot_erasure_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
