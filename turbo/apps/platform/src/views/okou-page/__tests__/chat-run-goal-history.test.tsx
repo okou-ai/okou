@@ -473,9 +473,7 @@ test("Keep a cancelled goal continuation beside its latest answer", async () => 
   const latestAnswer = screen.getByText(
     "The latest deployment evidence is preserved",
   );
-  const paused = screen.getByText(
-    "Paused mid-thought — pick it back up whenever.",
-  );
+  const paused = screen.getByText("Run paused — resume anytime.");
   const assistantGroup = latestAnswer.closest<HTMLElement>(
     '[data-role="assistant"]',
   );
@@ -508,7 +506,7 @@ test("Keep a cancelled goal continuation beside its latest answer", async () => 
     "Model changed to GPT 5.6 Luna",
     "The latest deployment evidence is preserved",
     "Model changed to GPT 5.6 Sol",
-    "Paused mid-thought — pick it back up whenever.",
+    "Run paused — resume anytime.",
   );
 });
 

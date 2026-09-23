@@ -48,6 +48,7 @@ const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
 const SKILLS_QUESTION = "Bring the skills you already wrote.";
 const SKILLS_ARRIVED_TITLE = "Your skills are in Okou";
 const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const PROFILE_TITLE = "Here's what we've learned about you";
 const CODEX_CARD = "Codex";
 const PROMPT_LABEL = "Skill import prompt";
 /** The prompt's own opening line, as the user's agent would read it. */
@@ -468,13 +469,6 @@ test.each([
     scenario: "full flow",
     expectedIndustry: "marketing",
   },
-  {
-    card: "Claude Code" as const,
-    provider: "claudeCode",
-    fromStart: false,
-    scenario: "resumed without an industry answer",
-    expectedIndustry: undefined,
-  },
 ])(
   "Finishing onboarding sends the selected $card model preference after a $scenario",
   async ({ card, provider, fromStart, expectedIndustry }) => {
@@ -500,6 +494,8 @@ test.each([
 
     await openSkillsStep(card, fromStart);
     click(getButtonByName("Continue"));
+    await screen.findByRole("heading", { name: PROFILE_TITLE });
+    click(getButtonByName("Continue"));
     await expect(
       screen.findByRole("heading", { name: SLACK_QUESTION }),
     ).resolves.toBeInTheDocument();
@@ -519,11 +515,23 @@ test.each([
   },
 );
 
+test("A resumed skills step without a work positioning returns to the first question", async () => {
+  mockAgentWorkflows();
+  await openSkillsStep();
+
+  click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", {
+    name: "What kind of work do you do?",
+  });
+  expect(pathname()).toBe(ROUTES.onboarding);
+});
+
 test("A skill the import writes appears without the step being asked again", async () => {
   const posthog = context.mocks.posthog();
   const agentWorkflows = mockAgentWorkflows();
 
-  await openSkillsStep();
+  await openSkillsStep(CODEX_CARD, true);
 
   await expect(
     screen.findByText(WAITING_FOR_SKILLS),
@@ -552,6 +560,9 @@ test("A skill the import writes appears without the step being asked again", asy
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_NAME);
   expect(JSON.stringify(posthog.events)).not.toContain(SKILL_DISPLAY_NAME);
 
+  click(getButtonByName("Continue"));
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
   click(getButtonByName("Continue"));
 
   await expect(
@@ -637,13 +648,16 @@ test("The step can be left with nothing imported", async () => {
   const posthog = context.mocks.posthog();
   mockAgentWorkflows();
 
-  await openSkillsStep();
+  await openSkillsStep(CODEX_CARD, true);
 
   await expect(
     screen.findByText(WAITING_FOR_SKILLS),
   ).resolves.toBeInTheDocument();
 
   click(getButtonByName("Skip for now"));
+
+  await screen.findByRole("heading", { name: PROFILE_TITLE });
+  click(getButtonByName("Continue"));
 
   await expect(
     screen.findByRole("heading", { name: SLACK_QUESTION }),

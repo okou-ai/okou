@@ -1,9 +1,5 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-import {
-  chatThreadMarkReadContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
 
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
@@ -16,7 +12,6 @@ import {
   queryWorkHistoryToggle,
   readyChat,
   RUN_PATH,
-  RUN_THREAD_ID,
 } from "./chat-run-test-fixtures.ts";
 
 const LEGACY_RUN = "a0000000-0000-4000-a000-000000000401";
@@ -158,42 +153,4 @@ test("keeps run work history off a delivery that has no Run", async () => {
   expect(runlessResponse).not.toBe(runResponse);
   expect(queryWorkHistoryToggle("collapsed", runResponse)).not.toBeNull();
   expect(queryWorkHistoryToggle("collapsed", runlessResponse)).toBeNull();
-});
-
-/**
- * The unread badge and the transcript have to name the same events: an event
- * that raises the badge must be reachable in the transcript. Here the server
- * watermark stands exactly on the runless delivery's own instant, so reading
- * the thread through that watermark is the client acting on that delivery —
- * and the same delivery has to be on screen.
- */
-test("agrees with unread accounting about a runless delivery", async () => {
-  const markedReadThreadIds: string[] = [];
-  installRunChat({ chatEvents: nativeDeliveryAfterRunHistory() });
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      agents: {},
-      threads: { [RUN_THREAD_ID]: "unread" },
-      unreadAt: { [RUN_THREAD_ID]: NATIVE_DELIVERED_AT },
-    });
-  });
-  context.mocks.api(
-    chatThreadMarkReadContract.markRead,
-    ({ params, respond }) => {
-      markedReadThreadIds.push(params.id);
-      return respond(200, {
-        lastReadAt: NATIVE_DELIVERED_AT,
-        unreads: [],
-      });
-    },
-  );
-  await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-
-  await expect(screen.findByText(NATIVE_BRIEF)).resolves.toBeInTheDocument();
-  // The read acknowledgement is the unread contract itself, so the request the
-  // client sends is the behavior under test rather than an incidental call.
-  await waitFor(() => {
-    expect(markedReadThreadIds).toContain(RUN_THREAD_ID);
-  });
 });

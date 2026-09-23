@@ -3,10 +3,6 @@ import { createHash } from "node:crypto";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
 import { agents } from "@okouai/db/schema/agent";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
-import {
-  chatEventTerminalPredicate,
-  chatEvents,
-} from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import {
@@ -19,7 +15,7 @@ import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
@@ -511,53 +507,6 @@ async function loadExistingDelivery(
 }
 
 /**
- * The instant this delivery commits, never earlier than what the thread has
- * already recorded.
- *
- * The clock is read only after every blocking lock is held, so a concurrent
- * Run terminal marker, another delivery or a mark-read that committed while
- * this transaction waited is already visible. It is still possible for that
- * commit to carry a later wall-clock timestamp than this sample, which would
- * hide the brief behind the read cursor and leave it permanently read. The
- * watermark and the read cursor the thread already holds are therefore the
- * floor: a delivery is always strictly newer than both.
- */
-async function monotonicDeliveryInstant(
-  tx: Tx,
-  chatThreadId: string,
-  at: Date,
-): Promise<Date> {
-  const [thread] = await tx
-    .select({ lastReadAt: chatThreads.lastReadAt })
-    .from(chatThreads)
-    .where(eq(chatThreads.id, chatThreadId))
-    .limit(1);
-  const [terminal] = await tx
-    .select({ createdAt: chatEvents.createdAt })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        chatEventTerminalPredicate(chatEvents.eventType),
-      ),
-    )
-    .orderBy(desc(chatEvents.createdAt))
-    .limit(1);
-  const [delivered] = await tx
-    .select({ deliveredAt: morningBriefDeliveries.deliveredAt })
-    .from(morningBriefDeliveries)
-    .where(eq(morningBriefDeliveries.chatThreadId, chatThreadId))
-    .orderBy(desc(morningBriefDeliveries.deliveredAt))
-    .limit(1);
-  const floor = Math.max(
-    thread?.lastReadAt?.getTime() ?? 0,
-    terminal?.createdAt.getTime() ?? 0,
-    delivered?.deliveredAt.getTime() ?? 0,
-  );
-  return at.getTime() > floor ? at : new Date(floor + 1);
-}
-
-/**
  * Resolve the destination thread, locking the thread before its binding.
  *
  * Thread deletion locks the thread row and then the automation binding, so
@@ -878,7 +827,6 @@ async function createNativeDestinationThread(
       agentId: schedule.agentId,
       title: "Morning Brief",
       provenance: ORDINARY_CHAT_THREAD_PROVENANCE,
-      lastReadAt: sql`NOW()`,
       modelProviderId: null,
       modelProviderType: null,
       modelProviderCredentialScope: null,
@@ -1060,11 +1008,6 @@ async function deliverInTransaction(
     throw new DeliveryRejected("owner-revoked");
   }
 
-  // The displayed instant may have to move past a marker that committed while
-  // this transaction waited, so the delivery cannot land behind the thread's
-  // own read cursor. It is deliberately not the acceptance deadline.
-  const at = await monotonicDeliveryInstant(tx, chatThreadId, acceptedAt);
-
   // Exactly the operation #34815 owns. The exclusion and the content it
   // describes commit together, so the brief can never feed tomorrow's.
   await excludeMorningBriefChatThread(tx, {
@@ -1076,7 +1019,7 @@ async function deliverInTransaction(
     chatThreadId,
     eventType: "output.message",
     content: result.markdown,
-    createdAt: at,
+    createdAt: acceptedAt,
   });
   if (!appended) {
     throw new Error("Morning Brief delivery event was not appended");
@@ -1086,7 +1029,7 @@ async function deliverInTransaction(
   // of their threads, so another thread's mutation can hold it. It is the last
   // wait in the transaction, and the acceptance deadline is therefore checked
   // once more after it rather than assumed still valid from before.
-  await touchChatThreadLastMessageAt(tx, chatThreadId, at, appended.id);
+  await touchChatThreadLastMessageAt(tx, chatThreadId, acceptedAt, appended.id);
   throwIfCancelled(signal);
   await loadDeliverableResult(tx, {
     ...owner,

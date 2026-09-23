@@ -50,6 +50,7 @@ export const SUPPORTED_USER_LOCALES = [
 ] as const;
 export const userLocaleSchema = z.enum(SUPPORTED_USER_LOCALES);
 export type UserLocale = z.infer<typeof userLocaleSchema>;
+export const DEFAULT_USER_LOCALE = "en-US" satisfies UserLocale;
 
 export const userPreferencesResponseSchema = z.object({
   timezone: z.string().nullable(),
@@ -69,6 +70,14 @@ export const userPreferencesResponseSchema = z.object({
 export type UserPreferencesResponse = z.infer<
   typeof userPreferencesResponseSchema
 >;
+
+export const USER_PREFERENCES_UNINITIALIZED =
+  "USER_PREFERENCES_UNINITIALIZED" as const;
+
+export type InitializedUserPreferencesResponse = Omit<
+  UserPreferencesResponse,
+  "timezone" | "locale"
+> & { readonly timezone: string; readonly locale: UserLocale };
 
 export const updateUserPreferencesRequestSchema = z
   .object({
@@ -117,15 +126,17 @@ export const userPreferencesContract = c.router({
     method: "POST",
     path: "/api/user-preferences/initialize",
     headers: authHeadersSchema,
-    body: z.object({ timezone: z.string().min(1).optional() }),
+    body: z.object({
+      timezone: z.string().min(1).optional(),
+      locale: userLocaleSchema.optional(),
+    }),
     responses: {
       200: userPreferencesResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
       500: apiErrorSchema,
     },
-    summary:
-      "Initialize missing member preferences and Morning Brief enrollment",
+    summary: "Initialize missing timezone and locale and enroll Morning Brief",
   },
   get: {
     method: "GET",
@@ -133,6 +144,12 @@ export const userPreferencesContract = c.router({
     headers: authHeadersSchema,
     responses: {
       200: userPreferencesResponseSchema,
+      409: z.object({
+        error: z.object({
+          code: z.literal(USER_PREFERENCES_UNINITIALIZED),
+          message: z.string(),
+        }),
+      }),
       401: apiErrorSchema,
       500: apiErrorSchema,
     },

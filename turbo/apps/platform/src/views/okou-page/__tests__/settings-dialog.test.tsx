@@ -73,7 +73,7 @@ function createPreferences(
   ],
 ): UserPreferencesResponse {
   return {
-    timezone: null,
+    timezone: "America/Los_Angeles",
     locale,
     supportedLocales,
     pinnedAgentIds: [],
@@ -84,6 +84,22 @@ function createPreferences(
     captureNetworkBodiesRemaining: 0,
     voiceInputModel: null,
   };
+}
+
+function mockMissingLocaleInitialization(
+  preferences: () => UserPreferencesResponse,
+  saveLocale: (locale: UserLocale) => void,
+): void {
+  context.mocks.api(userPreferencesContract.initialize, ({ body, respond }) => {
+    const current = preferences();
+    if (current.locale === null) {
+      const requested = body.locale ?? "en-US";
+      saveLocale(
+        current.supportedLocales.includes(requested) ? requested : "en-US",
+      );
+    }
+    return respond(200, preferences());
+  });
 }
 
 function connectorCatalogDisclosure(region: HTMLElement): {
@@ -261,6 +277,14 @@ test.each([
     context.mocks.api(userPreferencesContract.get, ({ respond }) => {
       return respond(200, createPreferences(serverLocale));
     });
+    mockMissingLocaleInitialization(
+      () => {
+        return createPreferences(serverLocale);
+      },
+      (locale) => {
+        serverLocale = locale;
+      },
+    );
     context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
       if (body.locale !== undefined) {
         serverLocale = body.locale;
@@ -300,6 +324,14 @@ test("Persist English when an initial locale hint is outside the API handshake",
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, createPreferences(serverLocale, supportedLocales));
   });
+  mockMissingLocaleInitialization(
+    () => {
+      return createPreferences(serverLocale, supportedLocales);
+    },
+    (locale) => {
+      serverLocale = locale;
+    },
+  );
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     if (body.locale !== undefined) {
       submittedLocales.push(body.locale);
@@ -330,6 +362,14 @@ test("Keep settings usable and persist English when automatic locale assets fail
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, createPreferences(serverLocale));
   });
+  mockMissingLocaleInitialization(
+    () => {
+      return createPreferences(serverLocale);
+    },
+    (locale) => {
+      serverLocale = locale;
+    },
+  );
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     if (body.locale !== undefined) {
       serverLocale = body.locale;
@@ -348,14 +388,14 @@ test("Keep settings usable and persist English when automatic locale assets fail
   expect(document.documentElement).toHaveAttribute("lang", "en-US");
   expect(consoleError).toHaveBeenCalledWith(
     "[E][Locale]",
-    "Failed to apply locale fallback fr-FR; falling back to en-US",
+    "Failed to initialize fr-FR; falling back to en-US",
     expect.any(Error),
   );
 });
 
 test("Select and persist a supported interface language", async () => {
   const submittedLocales: UserLocale[] = [];
-  let serverLocale: UserLocale | null = null;
+  let serverLocale: UserLocale | null = "en-US";
   const supportedLocales: UserLocale[] = ["en-US", "pt-BR", "de-DE"];
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, createPreferences(serverLocale, supportedLocales));
@@ -505,6 +545,7 @@ test("Use the saved workspace language ahead of locale hints", async () => {
 
 test("Reject a stale language that the workspace does not support", async () => {
   const submittedLocales: UserLocale[] = [];
+  let serverLocale: UserLocale | null = null;
   document.documentElement.lang = "fr-FR";
   context.signal.addEventListener(
     "abort",
@@ -514,16 +555,23 @@ test("Reject a stale language that the workspace does not support", async () => 
     { once: true },
   );
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    return respond(200, createPreferences(null, ["en-US", "pt-BR"]));
+    return respond(200, createPreferences(serverLocale, ["en-US", "pt-BR"]));
   });
+  mockMissingLocaleInitialization(
+    () => {
+      return createPreferences(serverLocale, ["en-US", "pt-BR"]);
+    },
+    (locale) => {
+      serverLocale = locale;
+      submittedLocales.push(locale);
+    },
+  );
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     if (body.locale !== undefined) {
+      serverLocale = body.locale;
       submittedLocales.push(body.locale);
     }
-    return respond(
-      200,
-      createPreferences(body.locale ?? null, ["en-US", "pt-BR"]),
-    );
+    return respond(200, createPreferences(serverLocale, ["en-US", "pt-BR"]));
   });
 
   await openDialog("admin", "preference");
