@@ -2653,11 +2653,6 @@ jobs:
 
           curl -fsS "${headers[@]}" -X PUT -d "$payload" "${E2E_API_URL}/api/model-policies" >/dev/null
           curl -fsS "${headers[@]}" -X PUT -d '{"selectedModel":null,"serviceTier":null}' "${E2E_API_URL}/api/user-model-preference" >/dev/null
-          curl -fsS "${headers[@]}" \
-            -X POST \
-            -d '{"switches":{"piLoop":false}}' \
-            "${E2E_API_URL}/api/feature-switches" \
-            | jq -e '.effectiveSwitches.piLoop == false' >/dev/null
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - name: Bootstrap runner mock model provider
@@ -2733,9 +2728,9 @@ jobs:
 
           curl -fsS "${headers[@]}" \
             -X POST \
-            -d '{"switches":{"_realAgentInPreview":true,"piLoop":false}}' \
+            -d '{"switches":{"_realAgentInPreview":true}}' \
             "${api_url}/api/feature-switches" \
-            | jq -e '.effectiveSwitches._realAgentInPreview == true and .effectiveSwitches.piLoop == false' \
+            | jq -e '.effectiveSwitches._realAgentInPreview == true' \
             >/dev/null
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -2763,12 +2758,12 @@ jobs:
             "${api_url}/api/model-policies" \
             >/dev/null
 
-          # Preserve Codex billing/fallback coverage without touching the Pi account.
+          # Keep this account's preview agent setting independent of the Pi account.
           curl -fsS "${headers[@]}" \
             -X POST \
-            -d '{"switches":{"_realAgentInPreview":true,"piLoop":false}}' \
+            -d '{"switches":{"_realAgentInPreview":true}}' \
             "${api_url}/api/feature-switches" \
-            | jq -e '.effectiveSwitches._realAgentInPreview == true and .effectiveSwitches.piLoop == false' \
+            | jq -e '.effectiveSwitches._realAgentInPreview == true' \
             >/dev/null
         env:
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

@@ -53,7 +53,7 @@ curl -fsS "${headers[@]}" \
 
 curl -fsS "${headers[@]}" \
     -X POST \
-    -d '{"switches":{"_realAgentInPreview":false,"piLoop":false}}' \
+    -d '{"switches":{"_realAgentInPreview":false}}' \
     "${api_url}/api/feature-switches" \
-    | jq -e '.effectiveSwitches._realAgentInPreview == false and .effectiveSwitches.piLoop == false' \
+    | jq -e '.effectiveSwitches._realAgentInPreview == false' \
     >/dev/null

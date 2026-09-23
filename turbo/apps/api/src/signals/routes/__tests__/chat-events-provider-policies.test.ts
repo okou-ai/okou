@@ -4,7 +4,6 @@ import {
   DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
   LIMITED_FREE1_DEFAULT_RUN_MODEL,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { CANONICAL_CODEX_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -37,20 +36,13 @@ import { holdAgentRunPiExecutionSnapshotFixture } from "../../../test-fixtures/t
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { overwriteModelProviderSecretForTests } from "./helpers/model-provider-state";
-import {
-  readRunLaunchSnapshotFixture,
-  readThreadSessionBinding,
-  seedBuiltInModelCandidateKeys,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
-  assistantEvent,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-  GPT_PI_BDD_MODELS,
   type PromptMessage,
   requireOrgId,
   expectPiApiUsage,
@@ -720,9 +712,7 @@ describe("CHAT-02: model-first provider policies", () => {
           modelProviderId: providerId,
         },
       ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       const gate = holdAgentRunPiExecutionSnapshotFixture({
         userId: actor.userId,
         orgId: requireOrgId(actor),
@@ -768,9 +758,7 @@ describe("CHAT-02: model-first provider policies", () => {
     async (boundary) => {
       const { actor, agentId } = await entitledChatActor();
       await configureBuiltInPiModel(actor, "deepseek-v4.1-flash");
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       if (boundary !== "effort") {
         mockEnv(
           "CLI_PKG_URL",
@@ -812,110 +800,6 @@ describe("CHAT-02: model-first provider policies", () => {
     90_000,
   );
 
-  it.each([...GPT_PI_BDD_MODELS, "deepseek-v4.1-flash"] as const)(
-    "keeps captured Pi admission after PiLoop turns off for %s",
-    async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await publishPendingPiInstructions(actor, agentId);
-      const orgId = requireOrgId(actor);
-      await configureBuiltInPiModel(actor, selectedModel);
-      mockPiResourceArchiveDownloads(true);
-      mockPiCheckpointObjectStore();
-      await api.heartbeatRunner(runnerGroup);
-
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: false },
-      );
-      const baseline = await sendChatRun(actor, {
-        agentId,
-        prompt: "establish the captured Codex session family",
-        model: selectedModel,
-      });
-      await flushWaitUntilForTest();
-      await expect(api.readRun(actor, baseline.runId)).resolves.toMatchObject({
-        status: "pending",
-      });
-      await expect(
-        readRunLaunchSnapshotFixture(context, baseline.runId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: "codex" },
-      });
-      const baselineClaim = await claimChatRun(runnerGroup, baseline.runId);
-      expect(baselineClaim.claim.cliAgentType).toBe("codex");
-      expect(baselineClaim.claim.piLaunchConfig).toBeUndefined();
-      const baselineBinding = await readThreadSessionBinding(
-        context,
-        baseline.threadId,
-      );
-      chatCallbacks.mockChatOutputEvents([
-        assistantEvent(0, "preserved Codex answer"),
-      ]);
-      await completeChatRunOk(baseline.runId, baselineClaim.sandboxHeaders, {
-        cliAgentType: "codex",
-        lastEventSequence: 0,
-      });
-      await flushWaitUntilForTest();
-
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
-      const enabledGate = holdAgentRunPiExecutionSnapshotFixture({
-        userId: actor.userId,
-        orgId,
-        signal: context.signal,
-      });
-      onTestFinished(enabledGate.release);
-      const enabledSend = sendChatRun(actor, {
-        agentId,
-        threadId: baseline.threadId,
-        prompt: "keep Pi after the switch turns off",
-        model: selectedModel,
-      });
-      const enabledSnapshot = await enabledGate.arrival;
-      expect(enabledSnapshot).toMatchObject({
-        chatThreadId: baseline.threadId,
-        piExecution: true,
-        threadSessionCliAgentType: "pi",
-      });
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: false },
-      );
-      enabledGate.release();
-      const enabled = await enabledSend;
-      await flushWaitUntilForTest();
-      const enabledClaim = await claimChatRun(runnerGroup, enabled.runId);
-      expect(enabledClaim.claim.cliAgentType).toBe("pi");
-      expect(enabledClaim.claim.piLaunchConfig).toBeDefined();
-      expect(enabledClaim.claim.resumeSession).toBeNull();
-      expect(enabledClaim.claim.appendSystemPrompt).toContain(
-        "establish the captured Codex session family",
-      );
-      expect(enabledClaim.claim.appendSystemPrompt).toContain(
-        "preserved Codex answer",
-      );
-      await expect(
-        readRunLaunchSnapshotFixture(context, enabled.runId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: "pi" },
-      });
-      const enabledBinding = await readThreadSessionBinding(
-        context,
-        enabled.threadId,
-      );
-      expect(enabledBinding.agent_session_id).not.toBe(
-        baselineBinding.agent_session_id,
-      );
-      await cancelChatRun(actor, enabled.runId, enabledClaim.sandboxHeaders);
-    },
-    90_000,
-  );
-
   it("exposes the owner's run trace URL after tracing is disabled", async () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
@@ -938,7 +822,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.LangfuseTrace]: true,
       },
     );
@@ -1031,7 +914,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.LangfuseTrace]: true,
       },
     );
@@ -1118,111 +1000,6 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
   });
-
-  it.each(GPT_PI_BDD_MODELS)(
-    "keeps captured Codex admission after PiLoop turns on for %s",
-    async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
-      const usagePricingResolution = await createGptUsagePricingResolution();
-      await configureBuiltInPiModel(actor, selectedModel);
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-      server.use(
-        http.post("https://api.openai.com/v1/responses", () => {
-          return new HttpResponse(piResponsesTextSse("baseline Pi answer", 0), {
-            headers: { "content-type": "text/event-stream" },
-          });
-        }),
-      );
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
-      const baseline = await sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt: "establish the captured Pi session family",
-          model: selectedModel,
-        },
-        usagePricingResolution,
-      );
-      await waitForRunStatus(actor, baseline.runId, "completed", 10_000);
-      await flushWaitUntilForTest();
-      await expect(
-        readRunLaunchSnapshotFixture(context, baseline.runId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: "pi" },
-      });
-      const baselineBinding = await readThreadSessionBinding(
-        context,
-        baseline.threadId,
-      );
-
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: false },
-      );
-      const disabledGate = holdAgentRunPiExecutionSnapshotFixture({
-        userId: actor.userId,
-        orgId,
-        signal: context.signal,
-      });
-      onTestFinished(disabledGate.release);
-      const disabledSend = sendChatRun(actor, {
-        agentId,
-        threadId: baseline.threadId,
-        prompt: "keep Codex after the switch turns on",
-        model: selectedModel,
-      });
-      const disabledSnapshot = await disabledGate.arrival;
-      expect(disabledSnapshot).toMatchObject({
-        chatThreadId: baseline.threadId,
-        piExecution: false,
-        threadSessionCliAgentType: "codex",
-      });
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
-      disabledGate.release();
-      const disabled = await disabledSend;
-      await flushWaitUntilForTest();
-      const disabledClaim = await claimChatRun(runnerGroup, disabled.runId);
-      expect(disabledClaim.claim.cliAgentType).toBe("codex");
-      expect(disabledClaim.claim.piLaunchConfig).toBeUndefined();
-      expect(
-        expectCanonicalStorageManifest(
-          disabledClaim.claim.storageManifest,
-        )?.storageMounts.filter((mount) => {
-          return mount.name === "memory";
-        }),
-      ).toStrictEqual([
-        expect.objectContaining({
-          mountPath: CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-          missingRootPolicy: "preserveParentVersion",
-        }),
-      ]);
-      await expect(
-        readRunLaunchSnapshotFixture(context, disabled.runId),
-      ).resolves.toMatchObject({
-        launch_snapshot: { framework: "codex" },
-      });
-      const disabledBinding = await readThreadSessionBinding(
-        context,
-        disabled.threadId,
-      );
-      expect(disabledBinding.agent_session_id).not.toBe(
-        baselineBinding.agent_session_id,
-      );
-      await cancelChatRun(actor, disabled.runId, disabledClaim.sandboxHeaders);
-    },
-    90_000,
-  );
 
   it("reuses a Codex session across DeepSeek V4 model switches", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -1866,7 +1643,6 @@ describe("CHAT-02: model-first provider policies", () => {
       await seedBuiltInModelCandidateKeys(context, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.OkouModels]: true,
-        [FeatureSwitchKey.PiLoop]: false,
       });
       await api.updateOrgModelPolicies(actor, [
         {
@@ -1933,7 +1709,6 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
         [FeatureSwitchKey.DeepSeekAlternativeRouting]:
           alternativeRoutingEnabled,
         [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
@@ -2009,7 +1784,6 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
         [FeatureSwitchKey.DeepSeekAlternativeRouting]: false,
         [FeatureSwitchKey.OpenRouterUsRouting]: true,
       });
@@ -2059,7 +1833,6 @@ describe("CHAT-02: model-first provider policies", () => {
         },
       ]);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
         [FeatureSwitchKey.DeepSeekAlternativeRouting]: true,
         [FeatureSwitchKey.OpenRouterUsRouting]: false,
       });
@@ -2112,7 +1885,6 @@ describe("CHAT-02: model-first provider policies", () => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const withRoute = await configureBuiltInPiModelOnOpenRouter(actor, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
         [FeatureSwitchKey.OpenRouterUsRouting]: enabled,
       });
       const run = await withRoute(() => {
@@ -2321,11 +2093,7 @@ describe("CHAT-02: model-first provider policies", () => {
       if (!actor.orgId) {
         throw new Error("Expected an organization-scoped chat actor");
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       await api.updateOrgModelPolicies(actor, [
         {
           model: "deepseek-v4-flash",

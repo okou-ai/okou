@@ -627,7 +627,6 @@ describe("okou workflow automation scheduler", () => {
       const misc = createMiscRoutesApi(context);
       await support.updateFeatureSwitches(scenario.actor, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PiLoop]: false,
       });
       const configured = await runsApi.createOrgModelProvider(scenario.actor, {
         type: "openai-api-key",
@@ -710,7 +709,6 @@ describe("okou workflow automation scheduler", () => {
       );
       await support.updateFeatureSwitches(member, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PiLoop]: false,
       });
       const owner = await connectOwner(member, "automation-owner");
       mocks.clerk.session(member.userId, scenario.orgId, "org:member");

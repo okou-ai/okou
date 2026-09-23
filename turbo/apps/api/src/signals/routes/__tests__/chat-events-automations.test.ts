@@ -49,7 +49,6 @@ const {
   api,
   chat,
   webhooks,
-  authDeviceSupport,
   runStateStore,
   entitledChatActor,
   seedBuiltInModelKey,
@@ -121,7 +120,6 @@ async function extractOwnedThreadPiMemory(
   mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
   await updateFeatureSwitchesForUser(context, scope, {
     [FeatureSwitchKey.PiMemory]: false,
-    [FeatureSwitchKey.PiLoop]: false,
   });
   const anchor = await sendChatRun(actor, {
     agentId,
@@ -131,7 +129,6 @@ async function extractOwnedThreadPiMemory(
   await flushWaitUntilForTest();
   await updateFeatureSwitchesForUser(context, scope, {
     [FeatureSwitchKey.PiMemory]: true,
-    [FeatureSwitchKey.PiLoop]: true,
   });
   const startup = await sendChatRun(actor, {
     agentId,
@@ -187,10 +184,8 @@ describe("thread-bound Pi Automation and Goal execution", () => {
   )(
     "rotates the $source $selectedModel Automation session into Pi and learns only from its user turns",
     async ({ source, selectedModel }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor(
-        {},
-        source === "event" ? "team" : "pro",
-      );
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor({}, source === "event" ? "team" : "pro");
       const orgId = requireOrgId(actor);
       const usagePricingResolution =
         await createPiApiFirstTurnUsagePricingResolution(selectedModel);
@@ -200,15 +195,28 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         name: `pi-source-${source}`,
       });
       if (source === "schedule") {
-        await configureBuiltInPiModel(actor, selectedModel);
+        await seedBuiltInModelKey("gpt-6-astra");
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: "gpt-6-astra",
+            isDefault: true,
+            defaultProviderType: "built-in",
+            credentialScope: "org",
+            modelProviderId: null,
+          },
+        ]);
+      } else {
+        await api.updateOrgModelPolicies(actor, [
+          {
+            model: "claude-fable-5-1",
+            isDefault: true,
+            defaultProviderType: "anthropic-api-key",
+            credentialScope: "org",
+            modelProviderId: providerId,
+          },
+        ]);
       }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.PiLoop]: false,
-        },
-      );
+
       const created = await accept(
         threadPiAutomationsClient().create({
           headers: sessionHeaders(actor),
@@ -276,7 +284,6 @@ describe("thread-bound Pi Automation and Goal execution", () => {
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -479,9 +486,7 @@ describe("CHAT effort: automation launches", () => {
   async function startAutomation() {
     const scenario = await entitledChatActor({}, "pro");
     const { actor, agentId, runnerGroup } = scenario;
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-    });
+
     const workflowId = await createWorkflowsBddApi(context).createWorkflow(
       actor,
       { agentId, name: "native-effort" },
@@ -558,7 +563,7 @@ describe("CHAT effort: automation launches", () => {
     await flushWaitUntilForTest();
     for (const route of [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         effort: "ultracode",
         pi: false,
         providerType: "anthropic-api-key",
@@ -585,9 +590,6 @@ describe("CHAT effort: automation launches", () => {
           modelProviderId: providerId,
         },
       ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: route.pi,
-      });
       await chat.updateThreadModelSelection(actor, threadId, route.model, {
         reasoningEffort: route.effort,
       });

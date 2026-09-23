@@ -2634,7 +2634,6 @@ describe("Stage 1 background credential availability", () => {
           modelProviderType: type,
           runtimeProviderType: type,
           codexServiceTier: undefined,
-          piEnabled: true,
         })
       );
     });
@@ -2747,7 +2746,6 @@ describe("Stage 1 background credential availability", () => {
       context,
       { orgId: storage.org_id, userId: storage.user_id },
       {
-        [FeatureSwitchKey.PiLoop]: false,
         [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       },

@@ -3037,12 +3037,7 @@ function resolveTimedThread(
                 ?.providerType ??
               resolved.runConfiguration.providerAdmission
                 .effectiveModelProvider,
-            piExecution: usesPi(
-              args,
-              resolved.thread,
-              resolved.runConfiguration,
-              featureSwitches,
-            ),
+            piExecution: usesPi(resolved.thread, resolved.runConfiguration),
           }),
         },
       };
@@ -3226,10 +3221,8 @@ async function persistTimedExplicitSelections(
 }
 
 function usesPi(
-  args: NormalSendArgs,
   thread: PreparedNormalSend["thread"],
   runConfiguration: PreparedNormalSend["runConfiguration"],
-  featureSwitches: NormalSendFeatureSwitches,
 ): boolean {
   return shouldUsePiExecution({
     chatThreadId: thread.threadId,
@@ -3238,7 +3231,6 @@ function usesPi(
     selectedModel: runConfiguration.modelPin.selectedModel ?? undefined,
     codexServiceTier: runConfiguration.codexServiceTier,
     builtInModelRuntimeRoute: runConfiguration.builtInModelRuntimeRoute,
-    featureSwitchContext: featureSwitches.featureSwitchContext,
   });
 }
 
@@ -3351,7 +3343,7 @@ const prepareNormalSend$ = command(
     const [attachFileMetadataResult] = await attachFileMetadataResultPromise;
     signal.throwIfAborted();
     const attachFileMetadata = unwrapSettledResult(attachFileMetadataResult);
-    const piExecution = usesPi(args, thread, runConfiguration, featureSwitches);
+    const piExecution = usesPi(thread, runConfiguration);
 
     return {
       db,

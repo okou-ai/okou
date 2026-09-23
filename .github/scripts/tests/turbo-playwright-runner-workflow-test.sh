@@ -578,9 +578,8 @@ built_in_codex_script = built_in_codex_step.fetch("run")
 end
 unless built_in_codex_script.include?('"defaultProviderType":"built-in"') &&
     built_in_codex_script.include?('"modelProviderId":null') &&
-    built_in_codex_script.include?('"_realAgentInPreview":true,"piLoop":false') &&
-    built_in_codex_script.include?('.effectiveSwitches.piLoop == false')
-  raise "built-in Luna must retain Codex execution in its isolated account"
+    built_in_codex_script.include?('"_realAgentInPreview":true')
+  raise "built-in Luna must retain its isolated account setup"
 end
 claude_step = bootstrap_steps.find do |step|
   step["name"] == "Bootstrap real Claude account"

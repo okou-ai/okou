@@ -50,7 +50,6 @@ describe("Pi capability gate", () => {
           modelProviderType,
           runtimeProviderType,
           codexServiceTier: undefined,
-          piEnabled: true,
         }),
       ).toBe(false);
     },
@@ -67,7 +66,6 @@ describe("Pi capability gate", () => {
               ? "anthropic-api-key"
               : "deepseek",
           codexServiceTier: undefined,
-          piEnabled: true,
         }),
       ).toBe(true);
     }

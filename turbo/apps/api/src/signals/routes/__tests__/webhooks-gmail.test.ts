@@ -16,7 +16,6 @@ import {
   workflowAutomationsContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -433,9 +432,7 @@ async function configureWorkspaceModelProvider(
 ): Promise<void> {
   // These Gmail queue cases assert the Runner claim path. The default model
   // gained a Pi route, so keep this fixture on its intended execution path.
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.PiLoop]: false,
-  });
+
   await configureBuiltInModelKey();
   const policies = await miscApi.listModelPolicies(actor);
   const workspacePolicy = policies.policies.find((policy) => {

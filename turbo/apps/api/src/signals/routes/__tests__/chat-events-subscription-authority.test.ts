@@ -108,9 +108,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: `preparation-subscription-${randomUUID()}`,
       });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
+
       const thread = await chat.createThread(actor, { agentId });
       const preparation = holdPiContextPreparationStagesFixture({
         userId: actor.userId,
@@ -212,9 +210,7 @@ describe("CHAT-02: run-level model overrides", () => {
       const captured = await configureSubscriptionPiModel(actor, {
         accountId: `retry-subscription-${randomUUID()}`,
       });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       server.use(
@@ -403,9 +399,7 @@ describe("CHAT-02: run-level model overrides", () => {
       await configureSubscriptionPiModel(actor, {
         accountId: `cancelled-subscription-${randomUUID()}`,
       });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
+
       const thread = await chat.createThread(actor, { agentId });
       const controller = new AbortController();
       const requestSignal = AbortSignal.any([

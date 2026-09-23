@@ -13162,11 +13162,7 @@ describe("Morning Brief legacy schedule claim journal", () => {
     if (!brief.actor.orgId) {
       throw new Error("Expected an organization-scoped brief owner");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...brief.actor, orgId: brief.actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const gate = holdAgentRunPiExecutionSnapshotFixture({
       userId: brief.actor.userId,
       orgId: brief.actor.orgId,

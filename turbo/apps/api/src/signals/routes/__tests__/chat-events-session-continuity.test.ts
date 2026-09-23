@@ -21,14 +21,12 @@ import { expectApiError } from "./helpers/api-bdd";
 import { mockCodexDeviceAuthProvider } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionBinding,
 } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
-  requireOrgId,
   createGptUsagePricingResolution,
   claimEnvironment,
   userMessages,
@@ -408,11 +406,7 @@ describe("CHAT-02: run-level model overrides", () => {
     "applies family compatibility when switching built-in $from to $to on $runtime",
     async ({ from, to, runtime, reuse }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: requireOrgId(actor) },
-        { [FeatureSwitchKey.PiLoop]: false },
-      );
+
       await seedBuiltInModelKey(from);
       await seedBuiltInModelKey(to);
       await api.updateOrgModelPolicies(actor, [
@@ -659,11 +653,7 @@ describe("CHAT-02: run-level model overrides", () => {
       let usagePricingResolution: UsagePricingFixture["resolution"] | undefined;
       if (framework === "pi") {
         await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-        await updateFeatureSwitchesForUser(
-          context,
-          { ...actor, orgId: actor.orgId },
-          { [FeatureSwitchKey.PiLoop]: true },
-        );
+
         usagePricingResolution = await createGptUsagePricingResolution();
         const instructions = await publishPendingPiInstructions(actor, agentId);
         // Only the external SDK can delay initialization across both admissions.
@@ -917,11 +907,7 @@ describe("CHAT-02: run-level model overrides", () => {
       let usagePricingResolution: UsagePricingFixture["resolution"] | undefined;
       if (framework === "pi") {
         await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-        await updateFeatureSwitchesForUser(
-          context,
-          { ...actor, orgId: actor.orgId },
-          { [FeatureSwitchKey.PiLoop]: true },
-        );
+
         usagePricingResolution = await createGptUsagePricingResolution();
         const instructions = await publishPendingPiInstructions(actor, agentId);
         sdk = await context.mocks.piSdk.controlInitialization(

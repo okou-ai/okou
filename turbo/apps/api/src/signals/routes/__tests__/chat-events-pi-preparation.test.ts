@@ -5,7 +5,6 @@ import {
   piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
 import { workflowsDetailContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   PI_AGENT_RUNTIME_VERSION,
   PI_SESSION_CONSTRUCTION_DIGEST,
@@ -30,7 +29,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   createChatEventsFixture,
   API_FIRST_TURN_OWNERSHIP_BUDGET_MS,
@@ -117,11 +115,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const orgId = requireOrgId(actor);
     await api.heartbeatRunner(runnerGroup);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
@@ -199,11 +193,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const usagePricingResolution = await createGptUsagePricingResolution();
     const thread = await chat.createThread(actor, { agentId });
     const preparation = holdPiContextPreparationStagesFixture({
@@ -264,11 +254,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId } = await entitledChatActor();
     const orgId = requireOrgId(actor);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const usagePricingResolution = await createGptUsagePricingResolution();
     const thread = await chat.createThread(actor, { agentId });
     const controller = new AbortController();
@@ -335,11 +321,7 @@ describe("CHAT-02: model-first provider policies", () => {
         });
       }
       await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: requireOrgId(actor) },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       const usagePricingResolution = await createGptUsagePricingResolution();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const instructions = await publishPendingPiInstructions(actor, agentId);
@@ -429,11 +411,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await api.heartbeatRunner(runnerGroup);
       await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: requireOrgId(actor) },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       const usagePricingResolution = await createGptUsagePricingResolution();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const instructions = await publishPendingPiInstructions(actor, agentId);
@@ -570,11 +548,7 @@ describe("CHAT-02: model-first provider policies", () => {
       model: "claude-sonnet-5",
     });
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: requireOrgId(actor) },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const usagePricingResolution = await createGptUsagePricingResolution();
     const checkpointObjects = mockPiCheckpointObjectStore();
     const instructions = await publishPendingPiInstructions(actor, agentId);
@@ -680,11 +654,7 @@ describe("CHAT-02: model-first provider policies", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await api.heartbeatRunner(runnerGroup);
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: requireOrgId(actor) },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const usagePricingResolution = await createGptUsagePricingResolution();
     const checkpointObjects = mockPiCheckpointObjectStore();
     const instructions = await publishPendingPiInstructions(actor, agentId);

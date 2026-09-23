@@ -153,15 +153,7 @@ async function entitledChatMemberActor(): Promise<EntitledChatActor> {
     orgId: adminFixture.actor.orgId,
     orgRole: "org:member",
   });
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: actor.userId,
-      orgId: adminFixture.actor.orgId,
-      orgRole: "org:member",
-    },
-    { [FeatureSwitchKey.PiLoop]: false },
-  );
+
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD member chat callback agent",
     description: "Exercises member-owned chat callback terminal processing.",

@@ -244,7 +244,6 @@ describe("CHAT-02: model-first provider policies", () => {
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
         },
       );
@@ -320,7 +319,6 @@ describe("CHAT-02: model-first provider policies", () => {
         { ...actor, orgId },
         {
           [FeatureSwitchKey.OkouModels]: true,
-          [FeatureSwitchKey.PiLoop]: true,
         },
       );
       const usagePricingResolution =
@@ -398,11 +396,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const usagePricingResolution =
         await createPiApiFirstTurnUsagePricingResolution(selectedModel);
       await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
 
@@ -505,11 +499,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const usagePricingResolution =
         await createPiApiFirstTurnUsagePricingResolution(selectedModel);
       await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
 
@@ -603,17 +593,12 @@ describe("CHAT-02: model-first provider policies", () => {
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
     const usagePricingResolution = await createGptUsagePricingResolution();
     const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
       actor,
       "gpt-5.6-terra",
     );
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
     const modelRequests: unknown[] = [];
@@ -777,19 +762,12 @@ describe("CHAT-02: model-first provider policies", () => {
     "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for %s",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
       const usagePricingResolution = await createGptUsagePricingResolution();
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
         actor,
         selectedModel,
       );
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.PiLoop]: true,
-        },
-      );
+
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const prompts = [
@@ -1052,19 +1030,12 @@ describe("CHAT-02: model-first provider policies", () => {
     "bills managed OpenRouter priority only from the observed terminal Responses tier %s",
     async (selectedModel) => {
       const { actor, agentId } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
       const usagePricingResolution = await createGptUsagePricingResolution();
       const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
         actor,
         selectedModel,
       );
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.PiLoop]: true,
-        },
-      );
+
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const cases = [
@@ -1144,7 +1115,6 @@ describe("CHAT-02: model-first provider policies", () => {
     "promotes queued fast %s through Pi API-first with priority",
     async (selectedModel) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
       const usagePricingResolution = await createGptUsagePricingResolution();
       const anchor = await sendChatRun(actor, {
         agentId,
@@ -1154,13 +1124,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
       await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.PiLoop]: true,
-        },
-      );
+
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const modelRequests: unknown[] = [];
@@ -1352,73 +1316,6 @@ describe("CHAT-02: model-first provider policies", () => {
 
     await cancelChatRun(actor, followUp.runId);
   });
-
-  it.each([
-    {
-      name: "DeepSeek",
-      model: "deepseek-v4-flash",
-      providerType: "deepseek",
-    },
-    {
-      name: "OpenRouter",
-      model: "gpt-5.6-terra",
-      providerType: "openrouter-codex",
-    },
-    {
-      name: "OpenAI",
-      model: "gpt-5.6-terra",
-      providerType: "openai-api-key",
-    },
-  ] as const)(
-    "keeps direct $name BYOK on Codex while PiLoop is disabled",
-    async ({ model, providerType }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
-      const orgId = requireOrgId(actor);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        { [FeatureSwitchKey.PiLoop]: false },
-      );
-      const { providerId } = await upsertOrgModelProvider(actor, {
-        type: providerType,
-        secret: `selected-${model}-pi-disabled-key`,
-      });
-      await api.updateOrgModelPolicies(actor, [
-        {
-          model,
-          isDefault: true,
-          defaultProviderType: providerType,
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ]);
-
-      const run = await sendChatRun(actor, {
-        agentId,
-        prompt: `keep direct ${model} on the standard runtime`,
-        model,
-      });
-      await flushWaitUntilForTest();
-      const claimed = await claimChatRun(runnerGroup, run.runId);
-      expect(claimed.claim.cliAgentType).toBe("codex");
-      expect(claimed.claim.piLaunchConfig).toBeUndefined();
-      if (providerType === "openrouter-codex") {
-        expect(claimed.claim.codexRuntimeConfig).toMatchObject({
-          providerId: "openrouter-codex",
-          baseUrl: "https://openrouter.ai/api/v1",
-          wireApi: "responses",
-          supportsWebsockets: false,
-        });
-        expect(claimed.claim.codexRuntimeConfig?.modelCatalog).toBeUndefined();
-      }
-      if (providerType === "openai-api-key") {
-        expect(claimed.claim.codexRuntimeConfig).toBeNull();
-      }
-      await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
-    },
-    30_000,
-  );
 
   it.each(
     GPT_API_KEY_BDD_ROUTES.flatMap((route) => {

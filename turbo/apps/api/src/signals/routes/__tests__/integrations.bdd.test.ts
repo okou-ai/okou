@@ -815,11 +815,7 @@ async function configureCanonicalSlackPiActor(
       modelProviderId: openaiProviderId,
     },
   ]);
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...actor, orgId },
-    { [FeatureSwitchKey.PiLoop]: false },
-  );
+
   await integrations.updateUserModelPreference(actor, "claude-sonnet-5");
   return { actor, orgId, runnerGroup, selectedModel };
 }
@@ -897,7 +893,6 @@ async function establishCanonicalSlackHistory(args: SlackPiActorSetup) {
     context,
     { ...args.actor, orgId: args.orgId },
     {
-      [FeatureSwitchKey.PiLoop]: true,
       [FeatureSwitchKey.PiMemory]: true,
     },
   );
@@ -5808,11 +5803,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       orgId: actor.orgId,
       orgRole: "org:member",
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor2.userId, orgId: actor.orgId, orgRole: "org:member" },
-      { [FeatureSwitchKey.PiLoop]: false },
-    );
+
     const slackUser2 = uniqueSlackUserId();
     await integrations.connectSlackUser(actor2, {
       workspaceId: teamId,

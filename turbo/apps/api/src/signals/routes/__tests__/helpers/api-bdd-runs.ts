@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 
 import type StripeSDK from "stripe";
 import type { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
@@ -90,7 +89,6 @@ import { runFixtureContract, runFixtureRoutes } from "../../test-run-fixture";
 import { testBillingReconciliationStateRoutes } from "../../test-billing-reconciliation-state";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
@@ -381,7 +379,6 @@ export function createRunsApi(
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
-        readonly preservePiLoopDefault?: boolean;
       } = {},
     ): Promise<{
       readonly customerId: string;
@@ -489,24 +486,6 @@ export function createRunsApi(
       if (completed.status !== 200) {
         throw new Error(
           `Expected paid onboarding completion, got ${completed.status}`,
-        );
-      }
-
-      // Most run fixtures exercise the legacy Runner protocol. Opt those
-      // users out through the public switch API; Pi fixtures can retain the
-      // global default or explicitly turn Pi back on for their route tests.
-      if (!options.preservePiLoopDefault) {
-        if (!actor.orgId) {
-          throw new Error("Expected an organization-scoped run fixture actor");
-        }
-        await updateFeatureSwitchesForUser(
-          context,
-          {
-            userId: actor.userId,
-            orgId: actor.orgId,
-            ...(actor.orgRole ? { orgRole: actor.orgRole } : {}),
-          },
-          { [FeatureSwitchKey.PiLoop]: false },
         );
       }
 

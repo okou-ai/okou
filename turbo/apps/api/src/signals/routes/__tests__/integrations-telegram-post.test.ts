@@ -6,7 +6,6 @@ import {
   integrationsTelegramContract,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { NATIVE_GPT_6_LUNA_HEADER } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   TestTelegramStateActionBody,
   TestTelegramStateActionResponse,
@@ -39,7 +38,6 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
@@ -282,11 +280,7 @@ async function seedTelegramPostFixture(
         ? fixture.telegram_user_id
         : undefined,
   };
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: seeded.userId, orgId: seeded.orgId, orgRole: "org:admin" },
-    { [FeatureSwitchKey.PiLoop]: false },
-  );
+
   return seeded;
 }
 

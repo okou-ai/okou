@@ -299,7 +299,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -442,7 +441,6 @@ describe("CHAT-02: model-first provider policies", () => {
           orgId: requireOrgId(actor),
         },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -599,14 +597,7 @@ describe("CHAT-02: model-first provider policies", () => {
     async (outcome) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-      await updateFeatureSwitchesForUser(
-        context,
-        {
-          ...actor,
-          orgId: requireOrgId(actor),
-        },
-        { [FeatureSwitchKey.PiLoop]: true },
-      );
+
       await bdd.updateAgentInstructions(
         actor,
         agentId,
@@ -717,7 +708,6 @@ describe("CHAT-02: model-first provider policies", () => {
         orgId: requireOrgId(actor),
       },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -998,7 +988,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1057,7 +1046,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1151,11 +1139,7 @@ describe("CHAT-02: model-first provider policies", () => {
     await seedReadyMemorySummaryProjection(context, actor, memory, summary);
     const usagePricingResolution = await createGptUsagePricingResolution();
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
     const requestBodies: string[] = [];
@@ -1250,7 +1234,7 @@ describe("CHAT-02: model-first provider policies", () => {
         { schemaVersion: 1, framework: "pi", runnerProfile: DEFAULT_PROFILE },
       ],
       [
-        "V2 Pi disabled with PiLoop enabled",
+        "V2 Pi memory disabled",
         {
           schemaVersion: 2,
           framework: "pi",
@@ -1311,7 +1295,6 @@ describe("CHAT-02: model-first provider policies", () => {
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -1346,7 +1329,6 @@ describe("CHAT-02: model-first provider policies", () => {
         context,
         { ...actor, orgId },
         {
-          [FeatureSwitchKey.PiLoop]: true,
           [FeatureSwitchKey.PiMemory]: true,
         },
       );
@@ -1582,7 +1564,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1750,7 +1731,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
@@ -1826,13 +1806,7 @@ describe("CHAT-02: model-first provider policies", () => {
         framework: "pi",
       },
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
-    );
+
     releaseFirstProvider.resolve(undefined);
     await waitForRunStatus(actor, first.runId, "completed", 10_000);
     await flushWaitUntilForTest();
@@ -1887,13 +1861,7 @@ describe("CHAT-02: model-first provider policies", () => {
       leaseToken: staleLeaseToken,
       leaseExpiresAt: new Date(now() + 60_000),
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
-    );
+
     const second = await sendChatRun(
       actor,
       {

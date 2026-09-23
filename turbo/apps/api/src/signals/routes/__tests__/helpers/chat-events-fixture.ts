@@ -81,7 +81,6 @@ import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 import {
   readRunLaunchSnapshotFixture,
@@ -758,9 +757,6 @@ export function createChatEventsFixture(context: TestContext) {
     route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
     secret: string,
   ): Promise<string> {
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: route.type,
       secret,
@@ -823,7 +819,6 @@ export function createChatEventsFixture(context: TestContext) {
   ) {
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.PiLoop]: true,
     });
     const oauth = mockCodexDeviceAuthProvider({
       tokenScope: "personal",
@@ -1817,11 +1812,7 @@ export function createChatEventsFixture(context: TestContext) {
     } else {
       await configureBuiltInPiModel(args.actor, selectedModel);
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...args.actor, orgId: args.actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(selectedModel);
     const run = await withModelRoute(async () => {

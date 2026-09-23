@@ -10,7 +10,6 @@ import type {
   TestTelegramStateResponse,
   TestTelegramStateSeedResponse,
 } from "@okouai/api-contracts/contracts/test-telegram-state";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -25,7 +24,6 @@ import { seedRun$ } from "./helpers/usage-state";
 import { createFixtureTracker } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const store = createStore();
@@ -281,15 +279,7 @@ async function dispatchTelegramMessage(args: {
     userId: args.fixture.userId,
     orgId: args.fixture.orgId,
   });
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: args.fixture.userId,
-      orgId: args.fixture.orgId,
-      orgRole: "org:admin",
-    },
-    { [FeatureSwitchKey.PiLoop]: false },
-  );
+
   const runs = createRunsApi(context);
   // Own the provider and initialize storage downloads so dispatch does not
   // depend on another test's shared model keys or mock teardown.

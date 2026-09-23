@@ -5962,9 +5962,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     const agentId = onboarding.defaultAgentId;
     // This entitlement case claims the Runner job. Pi admission is covered by
     // the dedicated route tests, so keep its execution path explicit.
-    await createConnectorBddApi(context).updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-    });
+    await createConnectorBddApi(context).updateFeatureSwitches(actor, {});
     await expect(api.readBillingStatus(actor)).resolves.toMatchObject({
       tier: "limited-free-1",
       credits: 1000,

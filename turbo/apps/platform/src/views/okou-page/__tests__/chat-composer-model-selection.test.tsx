@@ -1058,7 +1058,6 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -1074,7 +1073,7 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Low");
   });
-  for (const effort of ["Medium", "High", "Xhigh", "Max", "Ultra"]) {
+  for (const effort of ["Medium", "High", "Xhigh", "Max"]) {
     await user.keyboard("{ArrowRight}");
     await waitFor(() => {
       expect(slider).toHaveAttribute("aria-valuetext", effort);
@@ -1082,14 +1081,14 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   }
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
-  expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
+  expect(slider).toHaveAttribute("aria-valuetext", "Max");
   await user.click(composer);
   await fillComposer(composer, "Use this effort for the new task");
   click(await findButton("Send"));
   await waitFor(() => {
     expect(creates).toContainEqual(
       expect.objectContaining({
-        reasoningEffort: "ultra",
+        reasoningEffort: "max",
         serviceTier: "priority",
       }),
     );
@@ -1114,9 +1113,6 @@ test("Select the default effort on an existing thread without changing Fast", as
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.PiLoop]: false,
-    },
   });
   await readyChat();
   click(await findButton("GPT 5.6 Sol Fast"));
@@ -1156,7 +1152,6 @@ test("Keep independent effort selections when changing models", async () => {
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -1201,7 +1196,7 @@ test("Keep independent effort selections when changing models", async () => {
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
+    expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
   await user.keyboard("{Escape}");
   click(await findButton("GPT 5.6 Sol"));
@@ -1258,9 +1253,6 @@ test("Show the Pi fallback without overwriting a saved native preference", async
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.PiLoop]: true,
-    },
   });
   await readyChat();
   const settings = await openEffortPanel();
@@ -1293,7 +1285,6 @@ test("Save the preferred effort for future chats when Pi displays a fallback", a
     path: NEW_CHAT_PATH,
     featureSwitches: {
       [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.PiLoop]: true,
     },
   });
   const composer = await readyComposer();
@@ -1392,7 +1383,6 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
     context,
     path: NEW_CHAT_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.PiLoop]: false,
       [FeatureSwitchKey.ChatPreference]: true,
     },
   });
@@ -1406,23 +1396,23 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
   slider.focus();
   await user.keyboard("{End}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Ultra");
-  });
-  await user.keyboard("{ArrowLeft}");
-  await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Max");
   });
   await user.keyboard("{ArrowLeft}");
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   });
+  await user.keyboard("{ArrowLeft}");
+  await waitFor(() => {
+    expect(slider).toHaveAttribute("aria-valuetext", "High");
+  });
   click(screen.getByRole("switch", { name: "Fast" }));
   await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeVisible();
-  expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
+  expect(slider).toHaveAttribute("aria-valuetext", "High");
   slider.focus();
   await user.keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(slider).toHaveAttribute("aria-valuetext", "Max");
+    expect(slider).toHaveAttribute("aria-valuetext", "Xhigh");
   });
   expect(screen.getByRole("switch", { name: "Fast" })).toBeChecked();
   await user.keyboard("{Escape}");
@@ -1484,9 +1474,6 @@ test.each([
     await setupPage({
       context,
       path: RUN_PATH,
-      featureSwitches: {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
     });
     await readyChat();
     const label = getCanonicalModelDisplayName(model);

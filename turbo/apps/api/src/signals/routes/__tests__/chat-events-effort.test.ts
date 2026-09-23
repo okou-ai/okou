@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
@@ -14,7 +13,6 @@ const {
   api,
   chat,
   chatCallbacks,
-  authDeviceSupport,
   entitledChatActor,
   sendChatRun,
   claimChatRun,
@@ -193,7 +191,7 @@ describe("CHAT effort: thread configuration", () => {
       effectiveEffort: "high",
     },
     {
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       effort: "ultracode",
       pi: false,
       providerType: "anthropic-api-key",
@@ -216,9 +214,6 @@ describe("CHAT effort: thread configuration", () => {
           modelProviderId: providerId,
         },
       ]);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: pi,
-      });
       if (pi) {
         mockPiCheckpointObjectStore();
       }
@@ -291,10 +286,8 @@ describe("CHAT effort: thread configuration", () => {
       const { actor, agentId, providerId, runnerGroup } =
         await entitledChatActor();
       chatCallbacks.failIfChatCallbackRouteIsFetched();
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
-      const selectedModel = pi ? "gpt-5.6-sol" : "claude-opus-4-8";
+
+      const selectedModel = pi ? "gpt-5.6-sol" : "claude-fable-5-1";
       const targetProviderId = pi
         ? (
             await upsertOrgModelProvider(actor, {
@@ -305,7 +298,7 @@ describe("CHAT effort: thread configuration", () => {
         : providerId;
       await api.updateOrgModelPolicies(actor, [
         {
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           isDefault: true,
           defaultProviderType: "anthropic-api-key",
           credentialScope: "org",
@@ -327,7 +320,7 @@ describe("CHAT effort: thread configuration", () => {
       await chat.updateThreadModelSelection(
         actor,
         active.threadId,
-        "claude-sonnet-5",
+        "claude-fable-5-1",
         { reasoningEffort: "extra" },
       );
       const clientEventId = randomUUID();
@@ -363,9 +356,6 @@ describe("CHAT effort: thread configuration", () => {
         [201],
       );
       expect(retry.body).toStrictEqual(queued.body);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: pi,
-      });
       if (pi) {
         mockPiCheckpointObjectStore();
       }
@@ -409,7 +399,7 @@ describe("CHAT effort: thread configuration", () => {
       ).resolves.toMatchObject({
         selectedModel,
         modelSettings: {
-          "claude-sonnet-5": { effort: "extra" },
+          "claude-fable-5-1": { effort: "extra" },
           [selectedModel]: { effort: requestedEffort },
         },
       });

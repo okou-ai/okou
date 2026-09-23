@@ -301,9 +301,6 @@ describe("CHAT-02: run-level model overrides", () => {
       },
     ]);
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: false,
-    });
 
     const captured = await withModelRoutingQueryReceipt(() => {
       return sendChatRun(actor, {
@@ -392,7 +389,6 @@ describe("CHAT-02: run-level model overrides", () => {
       }
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
-        [FeatureSwitchKey.PiLoop]: true,
       });
 
       mockPiResourceArchiveDownloads();
@@ -754,7 +750,6 @@ describe("CHAT-02: run-level model overrides", () => {
       const refreshToken = `rt_${scenario.failureReason}_high_entropy`;
       await authDeviceSupport.updateFeatureSwitches(actor, {
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-        [FeatureSwitchKey.PiLoop]: true,
       });
       if (scenario.organizationApi) {
         mockCodexDeviceAuthProvider({
