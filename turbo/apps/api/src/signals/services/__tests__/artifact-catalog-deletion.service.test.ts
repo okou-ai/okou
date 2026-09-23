@@ -186,14 +186,16 @@ async function harness() {
       [
         { kind: "hosted-site" as const, entityId: site.id },
         { kind: "presentation" as const, entityId: presentation.id },
-      ].map((entry) => ({
-        ...entry,
-        orgId: `org_catalog_${suffix}`,
-        authorUserId: `user_catalog_${suffix}`,
-        logicalKey: `${entry.kind}:${suffix}`,
-        projectionCreatedAt: nowDate(),
-        title: suffix,
-      })),
+      ].map((entry) => {
+        return {
+          ...entry,
+          orgId: `org_catalog_${suffix}`,
+          authorUserId: `user_catalog_${suffix}`,
+          logicalKey: `${entry.kind}:${suffix}`,
+          projectionCreatedAt: nowDate(),
+          title: suffix,
+        };
+      }),
     );
     return { siteId: site.id, presentationId: presentation.id };
   }

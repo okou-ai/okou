@@ -68,9 +68,11 @@ binary still relies on trigger-owned catalog writes/deletes, chat event seq or
 snapshot cursor derivation, append-only rejection, or computer-host/browser
 normalization. An old API against the contracted schema is not supported.
 
-Before making that PR mergeable, confirm the explicit API paths from #36258,
-#36294, #36301, #36304 and this PR have deployed to **all** serving instances,
-close the API rollback floor below those changes, and record deployment/rollback
+Before making that PR mergeable, confirm the explicit production API paths from
+#36258, #36294, #36301 and #36304 have deployed to **all** serving instances.
+Any further production writer fixes discovered in this Draft PR must also ship
+before contraction; the migration cannot be its own expand release. Close the
+API rollback floor below the complete set of explicit writers, and record deployment/rollback
 evidence in the PR. Verify the migration and its permanent inventory against a
 replayed database, plus API no-trigger integration coverage for ordinary file
 writes and deletion cascades, hosted-site/presentation deletion, chat event and

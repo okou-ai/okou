@@ -1682,8 +1682,7 @@ async function clearWorkflowAutomationEventConnectorAsPreviousApi(
 }
 type CompatibilityFixtureAction =
   | AutonomyBudgetFixtureAction
-  | LegacyArtifactCatalogFileAction
-  | PreviousApiComputerAccessAction
+  | PendingArtifactCatalogFileAction
   | PreviousApiBrowserTabSnapshotAction
   | PreviousApiRunnerJobContextProfileAction
   | PreviousApiWorkflowAutomationEventConnectorAction
