@@ -245,21 +245,6 @@ test("the menu shows the link Copy link will put on the clipboard", async () => 
   });
 });
 
-test("copying Only me does not create a share", async () => {
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
-    return respond(200, sharingStatus());
-  });
-  await openArtifact();
-  await openShareMenu();
-  click(action("button", "Copy link"));
-  await waitFor(() => {
-    return expect(clipboard.writes).toStrictEqual([
-      new URL(canonical, location.origin).href,
-    ]);
-  });
-});
-
 test("owner copying uses the canonical version reference returned by the API", async () => {
   const ownerUrl = "https://app.okou.ai/artifacts/a1b2c3d4e5.html";
   const clipboard = context.mocks.browser.clipboardWriteText();

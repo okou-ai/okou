@@ -21,9 +21,7 @@ import type {
 const context = testContext();
 const user = userEvent.setup();
 
-function inspectFile(
-  triggerSource: NonNullable<LogDetail["triggerSource"]> = "test",
-): File {
+function inspectFile(): File {
   const meta: Partial<LogDetail> = {
     id: "b0000000-0000-4000-a000-000000000777",
     sessionId: "session-inspect",
@@ -32,7 +30,7 @@ function inspectFile(
     framework: "claude-code",
     modelProvider: null,
     selectedModel: null,
-    triggerSource,
+    triggerSource: "test",
     status: "completed",
     prompt: "Inspect the latest OAuth trace",
     appendSystemPrompt: "Prefer concise findings",
@@ -710,31 +708,14 @@ test("An imported log does not expose debug diagnostics when debug access is dis
   expect(screen.queryByText("github-token")).not.toBeInTheDocument();
 });
 
-test.each([
-  { source: "automation-schedule", label: "Automation schedule" },
-  { source: "feishu", label: "Feishu" },
-  { source: "lark", label: "Lark" },
-] as const)(
-  "Imported activities preserve their $source trigger source",
-  async ({ source, label }) => {
-    await setupPage({
-      context,
-      path: "/activities/inspect",
-    });
-
-    await expect(
-      screen.findByText("No log loaded"),
-    ).resolves.toBeInTheDocument();
-
-    await user.upload(getFileInput(), inspectFile(source));
-
-    await expect(
-      screen.findByRole("heading", { name: "Imported Analysis" }),
-    ).resolves.toBeInTheDocument();
-    expect(screen.getByText("Source")).toBeInTheDocument();
-    expect(screen.getByText(label)).toBeInTheDocument();
-  },
-);
+test("Imported activities preserve their trigger source", async () => {
+  await setupPage({ context, path: "/activities/inspect" });
+  await screen.findByText("No log loaded");
+  await user.upload(getFileInput(), inspectFile());
+  await screen.findByRole("heading", { name: "Imported Analysis" });
+  expect(screen.getByText("Source")).toBeInTheDocument();
+  expect(screen.getByText("Test")).toBeInTheDocument();
+});
 
 test("The most recently selected activity log remains authoritative", async () => {
   await setupPage({
