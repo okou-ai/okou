@@ -16,6 +16,21 @@ The writer cutover needs a separately verified App compatibility floor and a
 rollback target that understands R2 pointers. No production writer activation
 or App version floor change is part of this phase.
 
+## Chat thread snapshot R2 handoff, writer phase (2026-09-23)
+
+After the reader phase is deployed and the App compatibility floor and API
+rollback target are verified, the compaction job writes a compressed,
+content-addressed JSON snapshot to R2 and publishes its object key together
+with the event cursor. It stores an empty JSONB array instead of the retired
+projection. Rows without an object key remain readable through the legacy
+JSONB response until the job backfills them. A failed upload or a losing
+conditional database update leaves the prior snapshot and cursor intact.
+
+The hourly job also removes unreferenced snapshot objects older than seven
+days in bounded hash partitions. It retains objects referenced by a current
+snapshot or a user export. Rolling back to an API or App that only understands
+inline JSONB after this phase would leave R2-backed snapshots unreadable.
+
 ## Artifact catalog API handoff (2026-09-23)
 
 The API now enqueues file catalog work in the same transaction as its ordinary

@@ -25,6 +25,7 @@ import { testChatThreadSnapshotCompactionContract } from "@okouai/api-contracts/
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { stubTestTimezone } from "../../../__tests__/env-stub";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -133,7 +134,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const FORWARD_CLEANUP_CUTOFF_MS = Date.parse("2026-08-03T05:40:26.000Z");
 const FORWARD_CLEANUP_TEST_CREATED_AT = "2026-08-03T05:40:26.001Z";
 const PRE_FORWARD_CLEANUP_TEST_CREATED_AT = "2026-08-03T05:40:25.999Z";
-
 function chatThreadConnectorSelectionsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
     chatThreadConnectorSelectionContract,
@@ -158,30 +158,6 @@ type UserMessage = Extract<
 >;
 type AssistantMessage = Exclude<ChatEvent, UserMessage>;
 type RunnerClaim = Awaited<ReturnType<typeof api.claimRunnerJob>>;
-
-async function compactChatThreadSnapshots(
-  actor: ApiTestUser,
-  ...otherActors: readonly ApiTestUser[]
-) {
-  const client = setupApp({
-    context,
-    routes: testChatThreadSnapshotCompactionRoutes,
-  })(testChatThreadSnapshotCompactionContract);
-  const response = await accept(
-    client.compact({
-      body: {
-        scopes: [actor, ...otherActors].map((ownedActor) => {
-          if (!ownedActor.orgId) {
-            throw new Error("Expected an organization-scoped snapshot actor");
-          }
-          return { user_id: ownedActor.userId, org_id: ownedActor.orgId };
-        }),
-      },
-    }),
-    [200],
-  );
-  return response.body;
-}
 
 interface EntitledChatActor {
   readonly actor: ApiTestUser;
@@ -436,65 +412,6 @@ async function allThreadEvents(actor: ApiTestUser) {
   return (await threadEventPage(actor)).events;
 }
 
-async function createSnapshotCursorScenario(label: string) {
-  const actor = bdd.user();
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped chat actor");
-  }
-  const { providerId } = await api.ensureOrgModelProvider(actor);
-  const agent = await bdd.createAgent(actor, {
-    displayName: `${label} agent`,
-  });
-  const firstEventId = randomUUID();
-  const thread = await chat.createThread(actor, {
-    agentId: agent.agentId,
-    title: `${label} thread`,
-    eventId: firstEventId,
-  });
-  const markerEventId = randomUUID();
-  await chat.renameThread(actor, thread.id, `${label} marker`, markerEventId);
-
-  const events = await allThreadEvents(actor);
-  const firstEvent = events.find((event) => {
-    return event.id === firstEventId;
-  });
-  const markerEvent = events.find((event) => {
-    return event.id === markerEventId;
-  });
-  if (!firstEvent || !markerEvent) {
-    throw new Error("Expected snapshot cursor lifecycle events");
-  }
-
-  await compactChatThreadSnapshots(actor);
-  const snapshot = await chat.getThreadSnapshot(actor);
-  const { latestEventId, latestSeqId } = snapshot;
-  expect(latestEventId).toBe(markerEvent.id);
-  expect(latestSeqId).toBe(markerEvent.seqId);
-  if (latestEventId === null || latestSeqId === null) {
-    throw new Error("Expected a non-empty snapshot cursor");
-  }
-  return {
-    actor,
-    orgId: actor.orgId,
-    providerId,
-    agent,
-    thread,
-    firstEvent,
-    snapshot: { latestEventId, latestSeqId },
-  };
-}
-
-async function deleteSnapshotCursorMarker(
-  scenario: Awaited<ReturnType<typeof createSnapshotCursorScenario>>,
-): Promise<void> {
-  await deleteChatThreadEventMarkerFixture({
-    userId: scenario.actor.userId,
-    orgId: scenario.orgId,
-    eventId: scenario.snapshot.latestEventId,
-    seqId: scenario.snapshot.latestSeqId,
-  });
-}
-
 type ThreadArtifacts = Awaited<ReturnType<typeof chat.listThreadArtifacts>>;
 
 function expectDriveStatuses(
@@ -683,6 +600,152 @@ const malformedChatThreadIdRequests = [
 ] as const;
 
 describe("CHAT-01 thread detail, create, and delete cascades", () => {
+  async function createSnapshotCursorScenario(label: string) {
+    const actor = bdd.user();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped chat actor");
+    }
+    const { providerId } = await api.ensureOrgModelProvider(actor);
+    const agent = await bdd.createAgent(actor, {
+      displayName: `${label} agent`,
+    });
+    const firstEventId = randomUUID();
+    const thread = await chat.createThread(actor, {
+      agentId: agent.agentId,
+      title: `${label} thread`,
+      eventId: firstEventId,
+    });
+    const markerEventId = randomUUID();
+    await chat.renameThread(actor, thread.id, `${label} marker`, markerEventId);
+
+    const events = await allThreadEvents(actor);
+    const firstEvent = events.find((event) => {
+      return event.id === firstEventId;
+    });
+    const markerEvent = events.find((event) => {
+      return event.id === markerEventId;
+    });
+    if (!firstEvent || !markerEvent) {
+      throw new Error("Expected snapshot cursor lifecycle events");
+    }
+
+    await compactChatThreadSnapshots(actor);
+    const snapshot = await chat.getThreadSnapshot(actor);
+    const { latestEventId, latestSeqId } = snapshot;
+    expect(latestEventId).toBe(markerEvent.id);
+    expect(latestSeqId).toBe(markerEvent.seqId);
+    if (latestEventId === null || latestSeqId === null) {
+      throw new Error("Expected a non-empty snapshot cursor");
+    }
+    return {
+      actor,
+      orgId: actor.orgId,
+      providerId,
+      agent,
+      thread,
+      firstEvent,
+      snapshot: { latestEventId, latestSeqId },
+    };
+  }
+
+  async function deleteSnapshotCursorMarker(
+    scenario: Awaited<ReturnType<typeof createSnapshotCursorScenario>>,
+  ): Promise<void> {
+    await deleteChatThreadEventMarkerFixture({
+      userId: scenario.actor.userId,
+      orgId: scenario.orgId,
+      eventId: scenario.snapshot.latestEventId,
+      seqId: scenario.snapshot.latestSeqId,
+    });
+  }
+
+  const threadSnapshotObjects = new Map<string, Buffer>();
+
+  function mockThreadSnapshotStorage(): void {
+    const previousSend = context.mocks.s3.send.getMockImplementation();
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      const candidate = command as {
+        readonly constructor?: { readonly name?: string };
+        readonly input?: { readonly Key?: unknown; readonly Body?: unknown };
+      };
+      const key = candidate.input?.Key;
+      if (
+        typeof key === "string" &&
+        key.startsWith("chat-thread-snapshots/v1/")
+      ) {
+        if (candidate.constructor?.name === "PutObjectCommand") {
+          if (!Buffer.isBuffer(candidate.input?.Body)) {
+            throw new Error("Expected compressed thread snapshot bytes");
+          }
+          threadSnapshotObjects.set(key, candidate.input.Body);
+          return Promise.resolve({});
+        }
+        if (candidate.constructor?.name === "GetObjectCommand") {
+          const body = threadSnapshotObjects.get(key);
+          if (!body) {
+            throw new Error("Thread snapshot object missing from test storage");
+          }
+          return Promise.resolve({
+            Body: (async function* () {
+              yield body;
+            })(),
+            ContentLength: body.length,
+          });
+        }
+      }
+      return previousSend?.(command) ?? Promise.resolve({});
+    });
+    server.use(
+      http.get(
+        "https://r2.example.com/storage/archive.tar.gz",
+        ({ request }) => {
+          const object = new URL(request.url).searchParams.get("object");
+          const marker = "/chat-thread-snapshots/v1/";
+          const index = object?.indexOf(marker) ?? -1;
+          if (index < 0 || object === null) {
+            return undefined;
+          }
+          const key = object.slice(index + 1);
+          const body = threadSnapshotObjects.get(key);
+          if (!body) {
+            return HttpResponse.json({ error: "missing" }, { status: 404 });
+          }
+          return HttpResponse.json(
+            JSON.parse(gunzipSync(body).toString("utf8")),
+          );
+        },
+      ),
+    );
+    onTestFinished(() => {
+      threadSnapshotObjects.clear();
+    });
+  }
+
+  async function compactChatThreadSnapshots(
+    actor: ApiTestUser,
+    ...otherActors: readonly ApiTestUser[]
+  ) {
+    mockThreadSnapshotStorage();
+    const client = setupApp({
+      context,
+      routes: testChatThreadSnapshotCompactionRoutes,
+    })(testChatThreadSnapshotCompactionContract);
+    const response = await accept(
+      client.compact({
+        body: {
+          scopes: [actor, ...otherActors].map((ownedActor) => {
+            if (!ownedActor.orgId) {
+              throw new Error("Expected an organization-scoped snapshot actor");
+            }
+            return { user_id: ownedActor.userId, org_id: ownedActor.orgId };
+          }),
+        },
+      }),
+      [200],
+    );
+    return response.body;
+  }
+
   it("preserves model settings through snapshot compaction and patch replay", async () => {
     const { actor, providerId, thread } =
       await createSnapshotCursorScenario("Effort snapshot");
@@ -1616,7 +1679,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 
     mockNow(snapshotAt);
     const boundaryCompact = await compactChatThreadSnapshots(actor);
-    expect(boundaryCompact).toMatchObject({ scopes: 0, eventsPruned: 0 });
+    expect(boundaryCompact).toMatchObject({ scopes: 1, eventsPruned: 0 });
     await expect(
       readChatThreadEventIdsFixture({
         userId: actor.userId,
