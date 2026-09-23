@@ -46,6 +46,7 @@ async function openDraft(
   browser: (typeof appleBrowsers)[number],
   text: string,
   sentPrompts: string[],
+  coarsePointer = true,
 ): Promise<HTMLElement> {
   // restoreMocks resets the import-time spies before each test.
   vi.spyOn(navigator, "vendor", "get").mockReturnValue("Apple Computer, Inc.");
@@ -53,7 +54,10 @@ async function openDraft(
   context.mocks.browser.platform(browser.platform);
   context.mocks.browser.maxTouchPoints(5);
   context.mocks.browser.matchMedia((query) => {
-    return query === "(pointer: coarse)" || query === "(any-pointer: fine)";
+    return (
+      (coarsePointer && query === "(pointer: coarse)") ||
+      query === "(any-pointer: fine)"
+    );
   });
   context.mocks.data.userPreferences({ sendMode: "enter" });
   installMessageExperienceChat({
@@ -65,9 +69,21 @@ async function openDraft(
     context,
     path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
   });
+  await screen.findByTestId("start-cards");
   const editor = await findComposer();
   const user = userEvent.setup({ delay: null });
-  await user.click(editor);
+  const paragraph = editor.querySelector("p");
+  if (!paragraph) {
+    throw new Error("Expected an empty composer paragraph");
+  }
+  // Happy DOM has no caret hit-testing. A root click places the caret after
+  // the empty paragraph, so place this user click inside its first text line.
+  await user.pointer({
+    target: editor,
+    node: paragraph,
+    offset: 0,
+    keys: "[MouseLeft]",
+  });
   await user.keyboard(text);
   await waitFor(() => {
     expect(draftLines(editor)).toStrictEqual([text]);
@@ -166,12 +182,13 @@ describe.each(appleBrowsers)("$name", (browser) => {
     },
   );
 
-  it("hardware Enter respects the send preference", async () => {
+  it("fine-pointer Enter respects the send preference", async () => {
     const sentPrompts: string[] = [];
     const editor = await openDraft(
       browser,
       "Send from the keyboard",
       sentPrompts,
+      false,
     );
     await waitFor(() => {
       const send = queryAllByRoleFast("button").find((button) => {
