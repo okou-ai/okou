@@ -85,6 +85,7 @@ try {
     "1184_lovely_christian_walker.sql",
     "1196_dizzy_archangel.sql",
     "1197_puzzling_aaron_stack.sql",
+    "1207_smart_oracle.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -383,12 +384,45 @@ try {
     "UPDATE vnc_credentials SET revision=2147483647 WHERE id='00000000-0000-4000-8000-000000000001'",
   );
 
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000012','org','owner','Mac login','operator','apple_dh_username_password','apple-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,transport_type,ssh_connection_id,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000013','org','owner','Mac Screen Sharing','127.0.0.1','ssh','00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000012','apple_dh_username_password','apple_dh','none');
+  `);
+  for (const [assignment, constraint] of [
+    ["host='mac.example.com'", "chk_vnc_connections_profile"],
+    [
+      "transport_type='direct',ssh_connection_id=NULL",
+      "chk_vnc_connections_profile",
+    ],
+    ["x509_server_name='mac.example.com'", "chk_vnc_connections_profile"],
+    ["trust_mode='system'", "chk_vnc_connections_trust"],
+    ["ca_bundle='unexpected'", "chk_vnc_connections_trust"],
+    ["security_type='x509_plain'", "chk_vnc_connections_profile"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000013'`,
+      { code: "23514", constraint },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_credentials SET username=repeat('é',32) WHERE id='00000000-0000-4000-8000-000000000012'",
+    { code: "23514", constraint: "chk_vnc_credentials_auth" },
+  );
+  await client.query(
+    "UPDATE vnc_credentials SET username=repeat('x',63) WHERE id='00000000-0000-4000-8000-000000000012'",
+  );
+  await client.query(
+    "UPDATE vnc_connections SET host='::1' WHERE id='00000000-0000-4000-8000-000000000013'",
+  );
+
   await client.query("DELETE FROM vnc_connections");
   await client.query("DELETE FROM ssh_connections");
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 4 }],
+    [{ count: 5 }],
   );
   await client.query("DELETE FROM vnc_credentials");
   console.log("VNC preservation migrations and storage constraints passed");

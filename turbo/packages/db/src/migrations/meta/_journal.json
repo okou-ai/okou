@@ -908,8 +908,15 @@
     {
       "idx": 1207,
       "version": "7",
-      "when": 1790182317627,
-      "tag": "1207_account_erasure_blob_and_owner_attribution",
+      "when": 1790181675893,
+      "tag": "1207_smart_oracle",
+      "breakpoints": true
+    },
+    {
+      "idx": 1208,
+      "version": "7",
+      "when": 1790185039108,
+      "tag": "1208_account_erasure_blob_and_owner_attribution",
       "breakpoints": true
     }
   ]

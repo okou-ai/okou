@@ -59,6 +59,8 @@ impl From<rfb_client::Error> for Failure {
             Error::InvalidPassword
             | Error::InvalidPlainUsername
             | Error::InvalidPlainPassword
+            | Error::InvalidAppleDhUsername
+            | Error::InvalidAppleDhPassword
             | Error::InvalidTrustRoots
             | Error::InvalidServerName => Self::InvalidCredential,
             Error::AuthenticationFailed | Error::Tls(_) => Self::AuthenticationFailed,

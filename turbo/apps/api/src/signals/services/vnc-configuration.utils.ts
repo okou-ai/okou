@@ -34,6 +34,11 @@ const failures = {
     code: VNC_ERROR_CODES.INVALID_HOST,
     message: "Invalid VNC host",
   },
+  invalidAppleDhRoute: {
+    kind: "bad_request",
+    code: VNC_ERROR_CODES.INVALID_APPLE_DH_ROUTE,
+    message: "Apple DH requires saved SSH to the Mac's loopback VNC service",
+  },
   invalidServerName: {
     kind: "bad_request",
     code: VNC_ERROR_CODES.INVALID_SERVER_NAME,
@@ -230,10 +235,21 @@ export function prepareVncTransport(
 
 export function prepareVncSecurity(security: VncSecurity): VncResult<{
   readonly securityType: VncSecurity["type"];
-  readonly trustMode: "system" | "custom_ca";
+  readonly trustMode: "system" | "custom_ca" | "none";
   readonly caBundle: string | null;
   readonly x509ServerName: string | null;
 }> {
+  if (security.type === "apple_dh") {
+    return {
+      ok: true,
+      value: {
+        securityType: "apple_dh",
+        trustMode: "none",
+        caBundle: null,
+        x509ServerName: null,
+      },
+    };
+  }
   const trust = prepareVncTrust(security.trust);
   if (!trust.ok) {
     return trust;
@@ -261,8 +277,23 @@ export function isVncProfileCompatible(
 ): boolean {
   return (
     (authMethod === "vnc_password" && securityType === "x509_vnc") ||
-    (authMethod === "username_password" && securityType === "x509_plain")
+    (authMethod === "username_password" && securityType === "x509_plain") ||
+    (authMethod === "apple_dh_username_password" && securityType === "apple_dh")
   );
+}
+
+export function validateVncProfileRoute(
+  securityType: VncSecurity["type"],
+  host: string,
+  transportType: "direct" | "ssh",
+): VncResult<undefined> {
+  if (
+    securityType === "apple_dh" &&
+    (transportType !== "ssh" || (host !== "127.0.0.1" && host !== "::1"))
+  ) {
+    return vncFailure("invalidAppleDhRoute");
+  }
+  return { ok: true, value: undefined };
 }
 
 function prepareVncTrust(trust: VncTrust): VncResult<{

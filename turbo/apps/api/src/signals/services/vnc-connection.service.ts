@@ -18,6 +18,7 @@ import {
   isVncProfileCompatible,
   prepareVncSecurity,
   prepareVncTransport,
+  validateVncProfileRoute,
   vncFailure,
   type VncResult,
   type VncTransaction,
@@ -66,16 +67,41 @@ function ownedConnection(owner: VncOwner, connectionId: string) {
   return and(ownedConnections(owner), eq(vncConnections.id, connectionId));
 }
 
+function validateStoredTrust(row: Metadata): void {
+  if (
+    (row.securityType === "apple_dh" &&
+      (row.trustMode !== "none" ||
+        row.caBundle !== null ||
+        row.x509ServerName !== null)) ||
+    (row.securityType !== "apple_dh" &&
+      ((row.trustMode === "system" && row.caBundle !== null) ||
+        (row.trustMode === "custom_ca" && row.caBundle === null) ||
+        row.trustMode === "none"))
+  ) {
+    throw new Error("VNC connection has an invalid trust configuration");
+  }
+}
+
+function responseSecurity(row: Metadata): VncConnectionResponse["security"] {
+  const trust =
+    row.trustMode === "custom_ca" && row.caBundle !== null
+      ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
+      : ({ mode: "system" } as const);
+  if (row.securityType === "apple_dh") {
+    return { type: "apple_dh" };
+  }
+  return {
+    type: row.securityType,
+    trust,
+    ...(row.x509ServerName === null ? {} : { serverName: row.x509ServerName }),
+  };
+}
+
 function response(
   row: Metadata,
   credential: { readonly name: string },
 ): VncConnectionResponse {
-  if (
-    (row.trustMode === "system" && row.caBundle !== null) ||
-    (row.trustMode === "custom_ca" && row.caBundle === null)
-  ) {
-    throw new Error("VNC connection has an invalid trust configuration");
-  }
+  validateStoredTrust(row);
   if (!isVncProfileCompatible(row.authMethod, row.securityType)) {
     throw new Error("VNC connection has an invalid stored profile");
   }
@@ -85,26 +111,6 @@ function response(
   ) {
     throw new Error("VNC connection has an invalid stored transport");
   }
-  const trust =
-    row.trustMode === "custom_ca" && row.caBundle !== null
-      ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
-      : ({ mode: "system" } as const);
-  const security =
-    row.securityType === "x509_plain"
-      ? ({
-          type: "x509_plain",
-          trust,
-          ...(row.x509ServerName === null
-            ? {}
-            : { serverName: row.x509ServerName }),
-        } as const)
-      : ({
-          type: "x509_vnc",
-          trust,
-          ...(row.x509ServerName === null
-            ? {}
-            : { serverName: row.x509ServerName }),
-        } as const);
   return {
     ...(row.transportType === "ssh" && row.sshConnectionId !== null
       ? {
@@ -120,7 +126,7 @@ function response(
     port: row.port,
     credentialId: row.credentialId,
     credentialName: credential.name,
-    security,
+    security: responseSecurity(row),
     generation: row.generation,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -145,6 +151,37 @@ async function hasOwnedSshConnection(
     .limit(1)
     .for("key share");
   return row !== undefined;
+}
+
+async function hasReferencedSshConnection(
+  tx: VncTransaction,
+  owner: VncOwner,
+  connectionId: string | null,
+): Promise<boolean> {
+  return (
+    connectionId === null ||
+    (await hasOwnedSshConnection(tx, owner, connectionId))
+  );
+}
+
+async function lockVisibleAgentsForFirstHost(
+  tx: VncTransaction,
+  owner: VncOwner,
+): Promise<{ id: string }[]> {
+  if ((await summarizeVncConnections(tx, owner)).configuredCount !== 0) {
+    return [];
+  }
+  return await tx
+    .select({ id: agents.id })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.orgId, owner.orgId),
+        visibleJoinedAgentCondition(owner.userId),
+      ),
+    )
+    .orderBy(asc(agents.id))
+    .for("update");
 }
 
 export async function listVncConnections(
@@ -249,6 +286,14 @@ export async function createVncConnection(args: {
   if (!transport.ok) {
     return transport;
   }
+  const route = validateVncProfileRoute(
+    security.value.securityType,
+    host.value,
+    transport.value.transportType,
+  );
+  if (!route.ok) {
+    return route;
+  }
   if (
     "create" in args.body.credential &&
     !isVncProfileCompatible(
@@ -280,8 +325,11 @@ export async function createVncConnection(args: {
       return { ok: true as const, value: undefined };
     }
     if (
-      transport.value.sshConnectionId !== null &&
-      !(await hasOwnedSshConnection(tx, owner, transport.value.sshConnectionId))
+      !(await hasReferencedSshConnection(
+        tx,
+        owner,
+        transport.value.sshConnectionId,
+      ))
     ) {
       return vncFailure("sshConnectionNotFound");
     }
@@ -299,21 +347,7 @@ export async function createVncConnection(args: {
     }
     // Match SSH's zero-to-one host transition, including re-adding after all
     // hosts were deleted. enterVncWrite serializes concurrent owner writes.
-    const firstHost =
-      (await summarizeVncConnections(tx, owner)).configuredCount === 0;
-    const visibleAgents = firstHost
-      ? await tx
-          .select({ id: agents.id })
-          .from(agents)
-          .where(
-            and(
-              eq(agents.orgId, owner.orgId),
-              visibleJoinedAgentCondition(owner.userId),
-            ),
-          )
-          .orderBy(asc(agents.id))
-          .for("update")
-      : [];
+    const visibleAgents = await lockVisibleAgentsForFirstHost(tx, owner);
     const [created] = await tx
       .insert(vncConnections)
       .values({
@@ -417,12 +451,23 @@ export async function updateVncConnection(args: {
       return transport;
     }
     if (
-      transport.value.sshConnectionId !== null &&
-      !(await hasOwnedSshConnection(tx, owner, transport.value.sshConnectionId))
+      !(await hasReferencedSshConnection(
+        tx,
+        owner,
+        transport.value.sshConnectionId,
+      ))
     ) {
       return vncFailure("sshConnectionNotFound");
     }
     const securityType = security?.value.securityType ?? current.securityType;
+    const route = validateVncProfileRoute(
+      securityType,
+      newHost,
+      transport.value.transportType,
+    );
+    if (!route.ok) {
+      return route;
+    }
     const credential = await selectUpdateVncCredential({
       tx,
       owner,

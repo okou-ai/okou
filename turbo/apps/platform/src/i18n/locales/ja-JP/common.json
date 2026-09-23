@@ -7072,6 +7072,8 @@
     "configured": "設定済み",
     "credential": {
       "add": "認証情報を追加",
+      "appleDhFieldHelp": "各項目は UTF-8 で 1～63 バイトです。NUL は使用できません。",
+      "appleDhMethod": "Apple DH のユーザー名とパスワード",
       "authentication": "認証方式",
       "createNew": "新しい認証情報を作成",
       "delete": "認証情報を削除",
@@ -7140,6 +7142,8 @@
     },
     "saving": "保存中…",
     "security": {
+      "appleDh": "Mac の画面共有 (Apple DH)",
+      "appleDhHelp": "保存済みの SSH 接続経由で macOS の画面共有を使用します。RFB の接続先はその Mac の 127.0.0.1 または ::1 に限られます。SSH が VNC セッション全体を保護します。管理下の Mac SSH ホストを使用してください。ホスト鍵だけでは先へのプロキシ転送を否定できません。",
       "caBundle": "CA 証明書（PEM）",
       "caHelp": "CA 証明書は最大 8 件、合計 64 KiB です。秘密鍵やサーバー証明書は貼り付けないでください。",
       "caHint": "サーバー証明書を発行した公開 CA 証明書を貼り付けてください",
@@ -7159,6 +7163,7 @@
     "summary_other": "設定済みホスト {{count}} 台",
     "title": "VNC リモートアクセス",
     "transport": {
+      "appleDhDestinationHelp": "Apple DH には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
       "destination": "RFB接続先",
       "destinationHelp": "SSHルートでは、このホストとポートへRunnerから直接ではなく、選択したSSHサーバーから接続します。",
       "direct": "Runnerから直接",

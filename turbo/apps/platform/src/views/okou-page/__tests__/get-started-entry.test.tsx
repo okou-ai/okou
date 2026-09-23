@@ -1177,35 +1177,36 @@ test("The quest entry leaves the connector catalog unread until the connector st
 
 test("A connector that needs a choice opens its connect dialog from its own catalog entry", async () => {
   configureQuestPage(context, "admin");
-  const oauth = catalogItem("notion", "Notion", "auth-code");
+  // The landing page can independently read a random workflow card's
+  // connectors. Use a fixture slug no other surface reads, so this count
+  // belongs only to the quest's choice flow.
+  const oauth = catalogItem("quest-choice", "Choice connector", "auth-code");
   const firstMethod = oauth.authMethods[0];
   if (!firstMethod) {
     throw new Error("Missing auth method");
   }
   // Two browser methods leave nothing to start in one press.
-  const notion: PublicConnectorCatalogStatusItem = {
+  const choice: PublicConnectorCatalogStatusItem = {
     ...oauth,
     authMethods: [
       firstMethod,
-      { ...firstMethod, id: "workspace-oauth", label: "Notion workspace" },
+      { ...firstMethod, id: "workspace-oauth", label: "Workspace OAuth" },
     ],
     singleAuthCodeAuthMethodId: null,
   };
   // The slug route would also match the catalog's static paths, so it is
   // installed before the one-click mock, which then takes precedence there.
-  // Other surfaces on the page (the start card) read their own slugs, so only
-  // Notion's entry is counted.
-  let notionReads = 0;
+  let choiceReads = 0;
   context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
-    if (params.connectorSlug !== notion.slug) {
+    if (params.connectorSlug !== choice.slug) {
       return respond(404, {
         error: { message: "Connector not found", code: "NOT_FOUND" },
       });
     }
-    notionReads += 1;
-    return respond(200, { connector: notion });
+    choiceReads += 1;
+    return respond(200, { connector: choice });
   });
-  mockOneClickCatalog([notion]);
+  mockOneClickCatalog([choice]);
   await setupPage({
     context,
     path: questChatPath(),
@@ -1217,13 +1218,15 @@ test("A connector that needs a choice opens its connect dialog from its own cata
 
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-connector"));
-  const tile = await screen.findByTestId("quest-connector-notion");
-  expect(notionReads).toBe(0);
+  const tile = await screen.findByTestId("quest-connector-quest-choice");
+  expect(choiceReads).toBe(0);
   click(tile);
 
   // The dialog offers both methods, which only the connector's own full entry
   // carries.
-  const dialog = await screen.findByRole("dialog", { name: "Notion" });
-  expect(within(dialog).getByText("Notion workspace")).toBeInTheDocument();
-  expect(notionReads).toBe(1);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Choice connector",
+  });
+  expect(within(dialog).getByText("Workspace OAuth")).toBeInTheDocument();
+  expect(choiceReads).toBe(1);
 });

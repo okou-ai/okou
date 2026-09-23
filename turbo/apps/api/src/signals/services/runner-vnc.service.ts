@@ -53,6 +53,20 @@ function hasTransportAuthority(
   return transport.type === "direct" || row.sshGrantAgentId !== null;
 }
 
+function hasValidAppleDhRoute(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+) {
+  return (
+    row.securityType !== "apple_dh" ||
+    (row.trustMode === "none" &&
+      row.caBundle === null &&
+      row.x509ServerName === null &&
+      transport.type === "ssh" &&
+      (row.host === "127.0.0.1" || row.host === "::1"))
+  );
+}
+
 function sameTransport(left: TransportSnapshot, right: TransportSnapshot) {
   return (
     left.type === right.type &&
@@ -143,6 +157,9 @@ export async function checkRunnerVnc(
   if (!hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
   }
+  if (!hasValidAppleDhRoute(row, transport)) {
+    return { outcome: "unavailable" };
+  }
   return {
     outcome:
       row.generation === input.expectedGeneration &&
@@ -150,6 +167,69 @@ export async function checkRunnerVnc(
         ? "valid"
         : "configuration_changed",
   };
+}
+
+function storedRunnerSecurity(
+  row: CurrentVncAuthority,
+  transport: TransportSnapshot,
+) {
+  if (
+    !hasValidAppleDhRoute(row, transport) ||
+    (row.securityType !== "apple_dh" &&
+      ((row.trustMode === "system" && row.caBundle !== null) ||
+        (row.trustMode === "custom_ca" && row.caBundle === null) ||
+        row.trustMode === "none"))
+  ) {
+    throw new Error("VNC connection has an invalid stored trust configuration");
+  }
+  const security = runnerVncSecuritySchema.safeParse({
+    type: row.securityType,
+    ...(row.securityType === "apple_dh"
+      ? {}
+      : {
+          trust:
+            row.trustMode === "system"
+              ? { mode: "system" }
+              : { mode: row.trustMode, caBundle: row.caBundle },
+        }),
+  });
+  if (!security.success) {
+    throw new Error("VNC connection has an invalid stored security profile");
+  }
+  return security.data;
+}
+
+async function decryptRunnerAuthentication(
+  row: CurrentVncAuthority,
+  signal: AbortSignal,
+) {
+  // No database transaction or row lock spans KMS. Never log this value or its validation issues.
+  const decrypted = await settle(
+    decryptStoredSecretValue(row.encryptedPassword),
+    signal,
+  );
+  if (!decrypted.ok) {
+    // Provider errors can contain arbitrary content; retain the failure without
+    // carrying a secret-bearing cause into the API's error observations.
+    throw new Error("VNC credential decryption failed");
+  }
+  signal.throwIfAborted();
+  const authentication = vncAuthenticationSchema.safeParse(
+    row.authMethod === "username_password" ||
+      row.authMethod === "apple_dh_username_password"
+      ? {
+          method: row.authMethod,
+          username: row.username,
+          password: decrypted.value,
+        }
+      : { method: row.authMethod, password: decrypted.value },
+  );
+  if (!authentication.success) {
+    throw new Error(
+      "VNC credential has an invalid stored authentication shape",
+    );
+  }
+  return authentication.data;
 }
 
 export async function resolveRunnerVnc(
@@ -177,47 +257,8 @@ export async function resolveRunnerVnc(
   if (!hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
   }
-  if (
-    (row.trustMode === "system" && row.caBundle !== null) ||
-    (row.trustMode === "custom_ca" && row.caBundle === null)
-  ) {
-    throw new Error("VNC connection has an invalid stored trust configuration");
-  }
-  const security = runnerVncSecuritySchema.safeParse({
-    type: row.securityType,
-    trust:
-      row.trustMode === "system"
-        ? { mode: "system" }
-        : { mode: row.trustMode, caBundle: row.caBundle },
-  });
-  if (!security.success) {
-    throw new Error("VNC connection has an invalid stored security profile");
-  }
-  // No database transaction or row lock spans KMS. Never log this value or its validation issues.
-  const decrypted = await settle(
-    decryptStoredSecretValue(row.encryptedPassword),
-    signal,
-  );
-  if (!decrypted.ok) {
-    // Provider errors can contain arbitrary content; retain the failure without
-    // carrying a secret-bearing cause into the API's error observations.
-    throw new Error("VNC credential decryption failed");
-  }
-  signal.throwIfAborted();
-  const authentication = vncAuthenticationSchema.safeParse(
-    row.authMethod === "username_password"
-      ? {
-          method: row.authMethod,
-          username: row.username,
-          password: decrypted.value,
-        }
-      : { method: row.authMethod, password: decrypted.value },
-  );
-  if (!authentication.success) {
-    throw new Error(
-      "VNC credential has an invalid stored authentication shape",
-    );
-  }
+  const security = storedRunnerSecurity(row, transport);
+  const authentication = await decryptRunnerAuthentication(row, signal);
   const current = await currentRunnerVncAuthority(db, input, signal);
   if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
     return { outcome: "unavailable" };
@@ -226,9 +267,25 @@ export async function resolveRunnerVnc(
     host: row.host,
     port: row.port,
     generation: row.generation,
-    security: security.data,
-    authentication: authentication.data,
+    security,
+    authentication,
   };
+  if (row.securityType === "apple_dh") {
+    if (
+      transport.type !== "ssh" ||
+      security.type !== "apple_dh" ||
+      authentication.method !== "apple_dh_username_password"
+    ) {
+      throw new Error("VNC Apple DH handoff has an invalid stored profile");
+    }
+    return {
+      outcome: "resolved_apple_dh",
+      ...resolved,
+      security,
+      authentication,
+      transport,
+    };
+  }
   if (capability.transportType === undefined) {
     return { outcome: "resolved", ...resolved };
   }

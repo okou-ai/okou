@@ -75,7 +75,10 @@ function response(
     updatedAt: row.updatedAt.toISOString(),
     hosts,
   };
-  if (row.authMethod === "username_password") {
+  if (
+    row.authMethod === "username_password" ||
+    row.authMethod === "apple_dh_username_password"
+  ) {
     if (row.username === null) {
       throw new Error("VNC username/password credential is missing a username");
     }
@@ -137,7 +140,8 @@ async function encryptAuthentication(
   return {
     authMethod: authentication.method,
     username:
-      authentication.method === "username_password"
+      authentication.method === "username_password" ||
+      authentication.method === "apple_dh_username_password"
         ? authentication.username
         : null,
     encryptedPassword: await encryptStoredSecretValue(

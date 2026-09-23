@@ -245,7 +245,8 @@ async fn run_case(password: bool, security: Security) {
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
                         {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
                         {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
-                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"}
+                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
+                        {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"}
                     ]
                 }));
             then.status(200).json_body(json!({
