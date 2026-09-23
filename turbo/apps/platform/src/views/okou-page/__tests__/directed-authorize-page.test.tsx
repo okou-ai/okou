@@ -290,7 +290,7 @@ test("Show an unavailable state for a deleted agent", async () => {
     queryAllByRoleFast("button").some((button) => {
       return button.textContent?.trim() === "Authorize Okou";
     }),
-  ).toBe(false);
+  ).toBeFalsy();
 });
 
 test("Connect a manual-token connector while authorizing an agent", async () => {
