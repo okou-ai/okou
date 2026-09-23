@@ -126,10 +126,11 @@ export function OnboardingStepLayout({
       </div>
       <main
         key={`${String(currentStep)}-${title}`}
-        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden"
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(0,calc(50%_-_1.75rem))_minmax(0,calc(50%_+_1.75rem))] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden"
       >
-        {/* Keep the explanation and answer sheet balanced on desktop. */}
-        <div className="w-full min-w-0 px-6 pt-8 pb-6 lg:flex-1 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
+        {/* The rail is 3.5rem wide, so account for half of it in each track:
+            the sheet begins at the viewport's actual midpoint. */}
+        <div className="w-full min-w-0 px-6 pt-8 pb-6 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
           <div className="lg:mx-auto lg:w-full lg:max-w-[480px]">
             <OnboardingStepProgress current={currentStep} total={totalSteps} />
             <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">

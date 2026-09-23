@@ -37,7 +37,7 @@ const MAKE_QUESTION = "What do you want to make first";
 const INDUSTRY_QUESTION = "What kind of work do you do?";
 const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
-const READY_TITLE = "Okou is ready for you";
+const READY_TITLE = "Start with a task that matters";
 const START_ACTION = "Start with Okou";
 const HANDOFF_PROMPT = "Draft the launch plan";
 
@@ -363,10 +363,10 @@ test("Connected account context replaces the static starting prompt", async () =
 
   await expect(
     screen.findByRole("heading", {
-      name: "Have you used Codex or Claude Code?",
+      name: "How would you like to start with Okou?",
     }),
   ).resolves.toBeInTheDocument();
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await expect(
@@ -430,9 +430,9 @@ test("The fallback budget starts with generation and a late result preserves edi
   // Time spent on the intervening step counts toward the same 12-second budget.
   mockNow(startedAt + 12_000, context.signal);
   await screen.findByRole("heading", {
-    name: "Have you used Codex or Claude Code?",
+    name: "How would you like to start with Okou?",
   });
-  click(fieldRadio("No, I’m new to this"));
+  click(fieldRadio("I'm new to AI agents"));
   click(getButtonByName("Continue"));
 
   await screen.findByRole("heading", { name: READY_TITLE });

@@ -34,7 +34,7 @@ const NOW = Date.parse("2026-09-21T10:00:00.000Z");
 const SLACK_INSTALL_URL = "https://slack.example.test/oauth/install";
 const TEAMS_CONNECT_URL = "/api/teams/oauth/connect?orgId=org_default";
 
-const SLACK_TITLE = "Give Okou a job without leaving Slack.";
+const SLACK_TITLE = "Keep work moving in Slack";
 const SLACK_CONNECTED_TITLE = "Slack is connected";
 const SLACK_ADD = "Add to Slack";
 const SLACK_CONNECTED_STATUS = "Added to your workspace";

@@ -44,10 +44,10 @@ const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
 } as const;
 
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
-const SKILLS_QUESTION = "Bring the skills you already wrote.";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
+const SKILLS_QUESTION = "Turn your skills into team workflows";
 const SKILLS_ARRIVED_TITLE = "Your skills are in Okou";
-const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const SLACK_QUESTION = "Keep work moving in Slack";
 const CODEX_CARD = "Codex";
 const PROMPT_LABEL = "Skill import prompt";
 /** The prompt's own opening line, as the user's agent would read it. */
@@ -275,7 +275,7 @@ async function openSkillsStep(
     });
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Bring the people who do this work with you.",
+      name: "Make Okou useful to your whole team",
     });
     click(getButtonByName("Not now"));
   }
@@ -401,7 +401,9 @@ test("The step hands over the prompt its session produced, and copies it whole",
 
   expect(screen.getByText("Run this in Codex")).toBeInTheDocument();
   expect(
-    screen.getByText("Run this prompt in Codex to import your skills."),
+    screen.getByText(
+      "Run this prompt in Codex to import what you've built, so your team can reuse it in Okou.",
+    ),
   ).toBeInTheDocument();
 
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
@@ -436,7 +438,9 @@ test("The skills step names Claude Code when it was selected", async () => {
 
   expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
   expect(
-    screen.getByText("Run this prompt in Claude Code to import your skills."),
+    screen.getByText(
+      "Run this prompt in Claude Code to import what you've built, so your team can reuse it in Okou.",
+    ),
   ).toBeInTheDocument();
 });
 
@@ -492,7 +496,7 @@ test.each([
     ).resolves.toBeInTheDocument();
     click(getButtonByName("Skip for now"));
     await expect(
-      screen.findByRole("heading", { name: "Okou is ready for you" }),
+      screen.findByRole("heading", { name: "Start with a task that matters" }),
     ).resolves.toBeInTheDocument();
     expect(context.store.get(draftStorage.get$)).not.toBeNull();
     click(getButtonByName("Start with Okou"));

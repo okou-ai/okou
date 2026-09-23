@@ -4250,11 +4250,11 @@
         "team": "Teammitglied einladen"
       },
       "experience": {
-        "copy": "Nutze deinen Codex- oder Claude-Code-Plan oder fahre ohne ihn fort.",
-        "no": "Nein, das ist neu für mich",
-        "noCopy": "Okou wählt eine erste Aufgabe für dich.",
-        "title": "Hast du schon mit Codex oder Claude Code gearbeitet?",
-        "trust": "Die Auswahl verbindet den Plan nicht. Du kannst ihn jetzt oder später verbinden."
+        "copy": "Lass dich beim Einstieg begleiten oder nutze deinen vorhandenen Codex- oder Claude-Code-Tarif.",
+        "no": "Ich bin neu bei KI-Agenten",
+        "noCopy": "Okou hilft dir, eine passende erste Aufgabe zu finden.",
+        "title": "Wie möchtest du mit Okou starten?",
+        "trust": "Deine Wahl bestimmt den nächsten Schritt. Einen Tarif kannst du jetzt oder später verbinden."
       },
       "industries": {
         "coaching": {
@@ -4303,13 +4303,13 @@
         }
       },
       "industry": {
-        "copy": "Wähle deinen Bereich, damit wir deine erste Aufgabe anpassen können.",
+        "copy": "So kann Okou passende Tools anzeigen und eine erste Aufgabe vorschlagen, die zu deiner Arbeit passt.",
         "title": "Welche Arbeit machst du?",
         "trust": "Dadurch wird kein Konto verbunden oder gelesen."
       },
       "skills": {
         "copied": "Kopiert",
-        "copy": "Führe diesen Prompt in {{provider}} aus, um deine Skills zu importieren.",
+        "copy": "Führe diesen Prompt in {{provider}} aus, um deine Skills zu importieren und im Team über Okou wiederzuverwenden.",
         "copyError": "Der Prompt konnte nicht kopiert werden.",
         "copyPrompt": "Prompt kopieren",
         "importedCopy": "Als Okou-Workflow importiert.",
@@ -4320,8 +4320,7 @@
         "promptLabel": "Prompt für den Skill-Import",
         "promptTitle": "Führe das in {{provider}} aus",
         "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
-        "title": "Bring die Skills mit, die du schon geschrieben hast.",
-        "trust": "Daten auf deinem Computer werden erst gelesen, wenn du den Prompt selbst ausführst.",
+        "title": "Mach aus deinen Skills Team-Workflows",
         "tryAgain": "Erneut versuchen",
         "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },
@@ -4333,7 +4332,7 @@
         "connectedCopy": "Öffne Slack und erwähne @Okou, um eine Aufgabe zu übergeben.",
         "connectedStatus": "Zu deinem Workspace hinzugefügt",
         "connectedTitle": "Slack ist verbunden",
-        "copy": "Erwähne @Okou in Slack, um eine Aufgabe zu geben.",
+        "copy": "Erwähne @Okou für eine Aufgabe; dein Team sieht das Ergebnis in derselben Unterhaltung.",
         "name": "Slack",
         "otherAdded": "Hinzugefügt",
         "otherImessage": "iMessage",
@@ -4362,14 +4361,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Funktioniert in jedem Kanal, in dem du es hinzufügst.",
         "rowTitle": "Okou for Slack",
-        "title": "Gib Okou eine Aufgabe, ohne Slack zu verlassen.",
-        "trust": "Slack ist optional. Du kannst es später hinzufügen."
+        "title": "Halte die Arbeit in Slack in Bewegung"
       },
       "sources": {
-        "copy": "Verbinde ein Tool für eine passende erste Aufgabe.",
-        "note": "Die Verbindung startet keine Agent-Aufgabe und gibt dem Agent keine Zugangsdaten preis.",
-        "permissions": "Agent-Berechtigungen sind anfangs begrenzt. Du kannst Aktionen und Zugriffsdauer anpassen.",
-        "readNotice": "Mit „Weiter“ werden wenige Daten aus verbundenen, unterstützten Quellen gelesen, um deine erste Aufgabe vorzuschlagen. Es werden keine Nachrichten gesendet oder Daten geändert.",
+        "copy": "Verbinde ein Arbeitstool, damit Okou eine erste Aufgabe aus deiner tatsächlichen Arbeit vorschlagen kann.",
+        "note": "Das Verbinden startet keine Aufgabe und gibt deine Zugangsdaten nicht an einen Agenten weiter.",
+        "permissions": "Agenten starten mit minimalen Berechtigungen. Du bestimmst Aktionen und Zugriffsdauer.",
+        "readNotice": "Mit Weiter liest Okou wenige Informationen aus verbundenen, unterstützten Quellen, um eine Aufgabe vorzuschlagen. Es werden keine Nachrichten gesendet oder Daten geändert.",
         "securityLink": "So schützt Okou deine Daten",
         "title": "Ein Arbeitstool verbinden"
       },
@@ -4709,7 +4707,7 @@
         "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
-        "copy": "Lade jemanden in diesen Arbeitsbereich ein.",
+        "copy": "Lade eine Person ein, damit ihr gemeinsame Workflows nutzen könnt.",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
@@ -4723,16 +4721,15 @@
           "workspace": "Sie treten demselben Arbeitsbereich bei."
         },
         "sending": "Wird gesendet…",
-        "title": "Hol die Leute dazu, die diese Arbeit machen.",
-        "trust": "Geteilte Workflows teilen keine persönlichen Konten oder Berechtigungen."
+        "title": "Mach Okou für dein ganzes Team nützlich",
+        "trust": "Ihr könnt Workflows teilen, während Konten und Berechtigungen persönlich bleiben."
       },
       "welcome": {
-        "copy": "Prüfe deine vorgeschlagene erste Aufgabe vor dem Start.",
+        "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",
         "offerTitle": "Die erste Beratungsstunde geht auf uns, dazu bis zu 100 Credits —",
         "promptLabel": "Dein Startprompt",
         "start": "Mit Okou starten",
-        "title": "Okou ist bereit für dich",
-        "trust": "Dies ist ein Entwurf. Du kannst ihn bearbeiten, bevor etwas gesendet wird."
+        "title": "Starte mit einer Aufgabe, die zählt"
       }
     },
     "templatePicker": {

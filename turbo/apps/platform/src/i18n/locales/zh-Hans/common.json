@@ -4236,11 +4236,11 @@
         "team": "邀请一位同事"
       },
       "experience": {
-        "copy": "使用已有的 Codex 或 Claude Code 套餐，也可以暂不连接。",
-        "no": "没有，我刚开始接触",
-        "noCopy": "Okou会帮你挑一个上手任务。",
-        "title": "你用过Codex或Claude Code吗？",
-        "trust": "选择套餐不会自动连接；现在或以后都可以连接。"
+        "copy": "可以从引导开始，也可以接入你已有的 Codex 或 Claude Code 订阅。",
+        "no": "我是 AI Agent 新手",
+        "noCopy": "Okou 会帮你找到合适的第一项任务。",
+        "title": "你想怎样开始使用 Okou？",
+        "trust": "你的选择决定接下来的引导；订阅可以现在连接，也可以以后连接。"
       },
       "industries": {
         "coaching": {
@@ -4289,13 +4289,13 @@
         }
       },
       "industry": {
-        "copy": "选择你的工作领域，定制第一个任务。",
+        "copy": "选择你的工作领域，Okou 会据此推荐相关工具和适合你的第一项任务。",
         "title": "你主要做哪类工作？",
         "trust": "此选择不会连接账号或读取数据。"
       },
       "skills": {
         "copied": "已复制",
-        "copy": "在 {{provider}} 中运行此提示词，导入你的技能。",
+        "copy": "在 {{provider}} 中运行这段提示词，导入你已写好的技能，让团队在 Okou 中复用。",
         "copyError": "无法复制提示词。",
         "copyPrompt": "复制提示词",
         "importedCopy": "已导入为Okou工作流。",
@@ -4306,8 +4306,7 @@
         "promptLabel": "技能导入提示词",
         "promptTitle": "在{{provider}}中运行",
         "startError": "无法打开导入会话。",
-        "title": "把你已经写好的技能带过来。",
-        "trust": "只有你亲自运行提示词后，才会读取电脑上的技能。",
+        "title": "把已有技能变成团队工作流",
         "tryAgain": "重试",
         "waiting": "导入的技能会在到达后显示在这里。"
       },
@@ -4319,7 +4318,7 @@
         "connectedCopy": "打开Slack，@Okou就能派任务。",
         "connectedStatus": "已添加到你的工作区",
         "connectedTitle": "Slack已连接",
-        "copy": "在 Slack 中 @Okou，就能交给它任务。",
+        "copy": "在对话中 @Okou 交代任务，团队可以在同一处看到结果。",
         "name": "Slack",
         "otherAdded": "已添加",
         "otherImessage": "iMessage",
@@ -4348,14 +4347,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "在你添加它的任何频道里都能用。",
         "rowTitle": "Okou for Slack",
-        "title": "不用离开Slack，就能给Okou派活。",
-        "trust": "Slack 可选，之后也能添加。"
+        "title": "在 Slack 中继续推进工作"
       },
       "sources": {
-        "copy": "连接一个工具，获得更贴合你的首个任务。",
-        "note": "连接不会自动启动 Agent 任务，也不会把凭据交给 Agent。",
-        "permissions": "Agent 默认只有有限权限；你可细调操作和授权时长。",
-        "readNotice": "点击「继续」会读取已连接且支持此功能的数据源的少量信息，用于推荐首个任务；不会发送消息或修改数据。",
+        "copy": "连接一个常用工作工具，让 Okou 根据你的实际工作推荐第一项任务。",
+        "note": "连接工具不会启动任务，也不会把登录凭据交给 Agent。",
+        "permissions": "Agent 默认只有最小权限；你可以控制可执行的操作和授权时长。",
+        "readNotice": "点击继续后，Okou 只会从已连接且支持此功能的数据源读取少量信息来推荐任务，不会发送消息或修改数据。",
         "securityLink": "了解 Okou 如何保护你的数据",
         "title": "连接一个工作工具"
       },
@@ -4695,7 +4693,7 @@
         "unconfirmedNote": "无法确认{{provider}}的连接状态。你可以重试，也可以先继续，稍后再连接。"
       },
       "team": {
-        "copy": "邀请同事加入这个工作空间。",
+        "copy": "邀请同事一起使用工作区里的共享工作流。",
         "invite": "发送邀请",
         "invited": "已邀请",
         "label": "同事的邮箱",
@@ -4709,16 +4707,15 @@
           "workspace": "他们会加入同一个工作空间。"
         },
         "sending": "发送中…",
-        "title": "把一起做这些事的同事带进来。",
-        "trust": "共享工作流不会共享个人账号或权限。"
+        "title": "让整个团队一起用好 Okou",
+        "trust": "团队可以共享工作流；每个人的账号和权限仍归自己所有。"
       },
       "welcome": {
-        "copy": "开始前先看看推荐给你的首个任务。",
+        "copy": "看看为你的工作推荐的任务，按目标调整，再让 Okou 开始执行。",
         "offerTitle": "首小时咨询免费，另赠最多100积分——",
         "promptLabel": "你的起始提示词",
         "start": "开始使用Okou",
-        "title": "Okou已经准备好了",
-        "trust": "这只是草稿；你可以编辑后再发送。"
+        "title": "从一项有价值的任务开始"
       }
     },
     "templatePicker": {

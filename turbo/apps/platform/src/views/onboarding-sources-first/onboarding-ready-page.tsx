@@ -231,11 +231,6 @@ export function OnboardingReadyPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.welcome.copy;
       })}
-      trustPoints={[
-        t(($) => {
-          return $.onboarding.sourcesFirst.welcome.trust;
-        }),
-      ]}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.welcome.start;
       })}
