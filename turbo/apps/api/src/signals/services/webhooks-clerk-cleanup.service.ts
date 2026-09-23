@@ -369,9 +369,11 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 async function deregisterOrgTelegramWebhooks(
   db: Db,
   orgId: string,
+  required: boolean,
 ): Promise<void> {
   const installations = await db
     .select({
+      telegramBotId: telegramInstallations.telegramBotId,
       encryptedBotToken: telegramInstallations.encryptedBotToken,
       ownerUserId: telegramInstallations.ownerUserId,
     })
@@ -379,12 +381,22 @@ async function deregisterOrgTelegramWebhooks(
     .where(eq(telegramInstallations.orgId, orgId));
 
   for (const installation of installations) {
-    await deleteWebhook(
+    const removal = deleteWebhook(
       await decryptPersistentSecretValue(
         installation.encryptedBotToken,
         await loadUserFeatureSwitchContext(db, orgId, installation.ownerUserId),
       ),
     );
+    if (required) {
+      await removal;
+    } else {
+      await tapError(removal, (error) => {
+        L.warn("failed to deregister telegram webhook", {
+          telegramBotId: installation.telegramBotId,
+          error,
+        });
+      });
+    }
   }
 }
 
@@ -493,11 +505,37 @@ const cleanupOrgExternalServices$ = command(
     { set },
     db: Db,
     orgId: string,
+    required: boolean,
     signal: AbortSignal,
   ): Promise<void> => {
-    await deregisterOrgTelegramWebhooks(db, orgId);
-    signal.throwIfAborted();
-    await set(revokeOrgConnectorTokens$, db, orgId, signal);
+    const steps: readonly {
+      readonly name: string;
+      readonly run: () => Promise<void>;
+    }[] = [
+      {
+        name: "telegram webhooks",
+        run: () => {
+          return deregisterOrgTelegramWebhooks(db, orgId, required);
+        },
+      },
+      {
+        name: "connector tokens",
+        run: () => {
+          return set(revokeOrgConnectorTokens$, db, orgId, signal);
+        },
+      },
+    ];
+
+    for (const step of steps) {
+      if (required) {
+        await step.run();
+      } else {
+        await tapError(step.run(), (error) => {
+          L.warn(`failed to cleanup ${step.name}`, { orgId, error });
+        });
+      }
+      signal.throwIfAborted();
+    }
   },
 );
 
@@ -922,7 +960,7 @@ export const cleanupClerkDeletedOrg$ = command(
       { kind: "organization", orgId },
       signal,
     );
-    await set(cleanupOrgExternalServices$, db, orgId, signal);
+    await set(cleanupOrgExternalServices$, db, orgId, false, signal);
     signal.throwIfAborted();
     await get(deleteOrgS3Data(db, orgId));
     signal.throwIfAborted();
@@ -994,7 +1032,7 @@ export const cleanupClerkDeletedUser$ = command(
       );
       await cancelStripeSubscriptionsForDeletedOrg(db, orgId);
       signal.throwIfAborted();
-      await set(cleanupOrgExternalServices$, db, orgId, signal);
+      await set(cleanupOrgExternalServices$, db, orgId, true, signal);
       signal.throwIfAborted();
     }
 
