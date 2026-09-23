@@ -14,18 +14,17 @@ import { SCROLL_FADE_Y_END_WHEN_OVERFLOWING } from "./scroll-fade.ts";
 /**
  * How tall the list is allowed to be, in whole rows.
  *
- * A card holds a 24px mark row, an 8px gap, its 20px title, the title's own 2px
- * offset and two 18px description lines: 90px of content, so at `p-3.5` the card
- * is 118. Rows repeat every 126px and the last one is 118, which puts three rows
- * at 3x118 + 2x8 = 370. Deriving it from the content is what keeps the second
- * description line off the card's own edge; a round number picked for the box
- * was 10px shorter than the text it had to hold.
+ * A card holds a 24px mark row, an 8px gap, its `text-sm` title's 20px line box,
+ * the title's own 2px offset and two `text-xs` description lines: 86px of
+ * content, so at `p-3.5` the card is 114. Deriving it from the content is what
+ * keeps the second description line off the card's own edge; a round number
+ * picked for the box was shorter than the text it had to hold.
  *
  * The viewport's own `pb-2` is added on top, so the window stops one grid gap
  * below the last row it can show and the fade only ever covers whitespace or a
  * row that starts exactly at the edge.
  */
-const CARD_H = 24 + 8 + 20 + 2 + 2 * 18 + 2 * 14;
+const CARD_H = 24 + 8 + 20 + 2 + 2 * 16 + 2 * 14;
 const GRID_GAP = 8;
 const VISIBLE_ROWS = 3;
 const LIST_MAX_H =
@@ -103,10 +102,10 @@ function WorkflowCard({
     >
       <WorkflowMarks connectors={item.connectors} />
       <span className="flex min-w-0 flex-col">
-        <span className="truncate text-sm font-medium leading-5 text-foreground">
+        <span className="truncate text-sm font-medium text-foreground">
           {copy.title}
         </span>
-        <span className="mt-0.5 line-clamp-2 text-[13px] leading-[18px] text-muted-foreground">
+        <span className="mt-0.5 line-clamp-2 text-xs leading-4 text-muted-foreground">
           {copy.description}
         </span>
       </span>
