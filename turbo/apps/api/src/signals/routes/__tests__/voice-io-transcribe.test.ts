@@ -74,6 +74,16 @@ function preferencesClient() {
   );
 }
 
+async function initializePreferences() {
+  await accept(
+    preferencesClient().initialize({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { timezone: "America/Los_Angeles", locale: "en-US" },
+    }),
+    [200],
+  );
+}
+
 async function selectGptAudio() {
   await accept(
     preferencesClient().update({
@@ -566,6 +576,7 @@ describe("voice input models and reference context", () => {
       mockOptionalEnv("OPENROUTER_API_KEY", undefined);
       const google = mockGoogleVoice();
       await voiceActor({ [FeatureSwitchKey.OpenRouterUsRouting]: true });
+      await initializePreferences();
       const headers = { authorization: "Bearer clerk-session" };
       await accept(
         preferencesClient().update({
@@ -715,6 +726,7 @@ describe("voice input models and reference context", () => {
   it("preserves a model through older preference writes, isolates users, and resets to the default", async () => {
     mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
     const actor = await voiceActor();
+    await initializePreferences();
     const headers = { authorization: "Bearer clerk-session" };
     await accept(
       preferencesClient().update({
@@ -731,6 +743,7 @@ describe("voice input models and reference context", () => {
     expect(preserved.body.voiceInputModel).toBe("google/gemini-3.8-flash");
     const other = createBddApi(context).user({ orgId: actor.orgId });
     mocks.clerk.session(other.userId, other.orgId, "org:member");
+    await initializePreferences();
     const isolated = await accept(preferencesClient().get({ headers }), [200]);
     expect(isolated.body.voiceInputModel).toBeNull();
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");

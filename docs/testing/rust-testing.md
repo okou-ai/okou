@@ -45,6 +45,10 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
 
+# Extracted Runner idle sandbox and workspace lifecycle owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-lifecycle -- --test-threads=1
+
 # Specific test by name
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -p shell-quote --lib tests::quoted_words_round_trip_through_posix_shell -- --exact

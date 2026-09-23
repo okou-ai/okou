@@ -509,7 +509,7 @@ async fn run_in_sandbox(
     let mount_result = ensure_workspace_drive_mounted(sandbox, sandbox.id()).await;
     timing.workspace_mount_ms = Some(t_mount.elapsed().as_millis());
     if let Err(e) = mount_result {
-        return (Err(e.error), timing);
+        return (Err(e.error.into()), timing);
     }
 
     let t_guest_restore = Instant::now();

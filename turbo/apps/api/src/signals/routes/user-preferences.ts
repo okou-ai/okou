@@ -1,13 +1,19 @@
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { isValidTimeZone } from "@okouai/core/timezone";
-import { and, eq, isNull } from "drizzle-orm";
-import { writeDb$ } from "../external/db";
+import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
+import { and, eq } from "drizzle-orm";
+import { writeDb$, type Db } from "../external/db";
 import {
   publishMorningBriefChangedSafely,
   publishUserPreferenceChangedForUserSafely,
 } from "../external/realtime";
 import { command, computed } from "ccstate";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import {
+  DEFAULT_USER_LOCALE,
+  USER_PREFERENCES_UNINITIALIZED,
+  userLocaleSchema,
+  userPreferencesContract,
+  type UserLocale,
+} from "@okouai/api-contracts/contracts/user-preferences";
 
 import { badRequestMessage } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -25,9 +31,14 @@ import {
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
+import { prepareMorningBriefEnrollment } from "../services/morning-brief-enrollment-retry.service";
 import { settle, tapError } from "../utils";
 
 const L = logger("user-preferences");
+
+function isValidUserLocale(locale: string | null): locale is UserLocale {
+  return locale !== null && userLocaleSchema.safeParse(locale).success;
+}
 
 const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
 
@@ -63,6 +74,21 @@ const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   const preferences = await get(
     userPreferences({ orgId: auth.orgId, userId: auth.userId }),
   );
+  if (
+    preferences.timezone === null ||
+    !isValidTimeZone(preferences.timezone) ||
+    !isValidUserLocale(preferences.locale)
+  ) {
+    return {
+      status: 409 as const,
+      body: {
+        error: {
+          code: USER_PREFERENCES_UNINITIALIZED,
+          message: "User preferences require timezone or locale initialization",
+        },
+      },
+    };
+  }
   return {
     status: 200 as const,
     body: preferences,
@@ -129,6 +155,62 @@ const updateUserPreferencesInner$ = command(
 const initializeUserPreferencesBody$ = bodyResultOf(
   userPreferencesContract.initialize,
 );
+async function fillMissingUserPreferenceFields(
+  db: Db,
+  identity: { readonly orgId: string; readonly userId: string },
+  existing:
+    | Pick<typeof orgMembersMetadata.$inferSelect, "timezone" | "locale">
+    | undefined,
+  requested: { readonly timezone?: string; readonly locale?: UserLocale },
+): Promise<
+  | {
+      readonly kind: "unchanged";
+      readonly timezone: string;
+      readonly locale: UserLocale;
+    }
+  | { readonly kind: "invalid-timezone" }
+  | { readonly kind: "written" }
+> {
+  const existingTimezone = existing?.timezone ?? null;
+  const existingLocale = existing?.locale ?? null;
+  if (
+    existingTimezone !== null &&
+    isValidTimeZone(existingTimezone) &&
+    isValidUserLocale(existingLocale)
+  ) {
+    return {
+      kind: "unchanged",
+      timezone: existingTimezone,
+      locale: existingLocale,
+    };
+  }
+  const timezoneMissing =
+    !existingTimezone || !isValidTimeZone(existingTimezone);
+  const localeMissing = !isValidUserLocale(existingLocale);
+  const timezone = requested.timezone ?? DEFAULT_USER_TIMEZONE;
+  // Old App -> new API: timezone-only initialize omits locale. Reassess the
+  // optional request after the client-version floor excludes that App; #36270.
+  const locale = requested.locale ?? DEFAULT_USER_LOCALE;
+  if (!isValidTimeZone(timezone)) {
+    return { kind: "invalid-timezone" };
+  }
+  await db
+    .insert(orgMembersMetadata)
+    .values({
+      ...identity,
+      timezone: timezoneMissing ? timezone : existingTimezone,
+      locale: localeMissing ? locale : existingLocale,
+    })
+    .onConflictDoUpdate({
+      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+      set: {
+        ...(timezoneMissing && { timezone }),
+        ...(localeMissing && { locale }),
+      },
+    });
+  return { kind: "written" };
+}
+
 const initializeUserPreferencesInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -137,24 +219,46 @@ const initializeUserPreferencesInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const timezone = body.data.timezone;
-    if (timezone !== undefined && !isValidTimeZone(timezone)) {
+    const identity = { orgId: auth.orgId, userId: auth.userId };
+    const db = set(writeDb$);
+    const [existing] = await db
+      .select({
+        timezone: orgMembersMetadata.timezone,
+        locale: orgMembersMetadata.locale,
+      })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, identity.orgId),
+          eq(orgMembersMetadata.userId, identity.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const writeOutcome = await fillMissingUserPreferenceFields(
+      db,
+      identity,
+      existing,
+      body.data,
+    );
+    signal.throwIfAborted();
+    if (writeOutcome.kind === "unchanged") {
+      const current = await get(userPreferences(identity));
+      signal.throwIfAborted();
+      return {
+        status: 200 as const,
+        body: {
+          ...current,
+          timezone: writeOutcome.timezone,
+          locale: writeOutcome.locale,
+        },
+      };
+    }
+    if (writeOutcome.kind === "invalid-timezone") {
       return badRequestMessage("Invalid timezone");
     }
-    const db = set(writeDb$);
-    if (timezone !== undefined) {
-      await db
-        .insert(orgMembersMetadata)
-        .values({ orgId: auth.orgId, userId: auth.userId, timezone })
-        .onConflictDoUpdate({
-          target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-          set: { timezone },
-          setWhere: isNull(orgMembersMetadata.timezone),
-        });
-    }
+    await prepareMorningBriefEnrollment(db, identity);
     signal.throwIfAborted();
-    // The enrollment is durable before external reads. A dependency outage must
-    // not fail timezone setup; the cron worker owns recovery after this attempt.
     const enrollment = await settle(
       set(
         ensureMorningBriefDefaultEnabled$,
@@ -167,8 +271,7 @@ const initializeUserPreferencesInner$ = command(
       signal,
     );
     const details = {
-      orgId: auth.orgId,
-      userId: auth.userId,
+      ...identity,
       outcome: enrollment.ok ? enrollment.value : "failed",
       ...(!enrollment.ok ? { error: enrollment.error } : {}),
     };
@@ -177,29 +280,31 @@ const initializeUserPreferencesInner$ = command(
     } else {
       L.info("Morning Brief initialization outcome", details);
     }
-    await publishMorningBriefChangedSafely({
-      orgId: auth.orgId,
-      userId: auth.userId,
-    });
+    await publishMorningBriefChangedSafely(identity);
     signal.throwIfAborted();
-    const [preferences] = await db
-      .select({ timezone: orgMembersMetadata.timezone })
+    const [stored] = await db
+      .select({
+        timezone: orgMembersMetadata.timezone,
+        locale: orgMembersMetadata.locale,
+      })
       .from(orgMembersMetadata)
       .where(
         and(
-          eq(orgMembersMetadata.orgId, auth.orgId),
-          eq(orgMembersMetadata.userId, auth.userId),
+          eq(orgMembersMetadata.orgId, identity.orgId),
+          eq(orgMembersMetadata.userId, identity.userId),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    const current = await get(
-      userPreferences({ orgId: auth.orgId, userId: auth.userId }),
-    );
+    const preferences = await get(userPreferences(identity));
     signal.throwIfAborted();
     return {
       status: 200 as const,
-      body: { ...current, timezone: preferences?.timezone ?? null },
+      body: {
+        ...preferences,
+        timezone: stored?.timezone ?? null,
+        locale: stored?.locale ?? null,
+      },
     };
   },
 );

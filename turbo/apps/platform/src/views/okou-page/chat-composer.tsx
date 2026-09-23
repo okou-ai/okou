@@ -934,11 +934,15 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
     <div
       data-video-template-preview=""
       className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
-      onMouseEnter={(event) => {
-        startVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "touch") {
+          startVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
-      onMouseLeave={(event) => {
-        resetVideoPreview(event.currentTarget.querySelector("video"));
+      onPointerLeave={(event) => {
+        if (event.pointerType !== "touch") {
+          resetVideoPreview(event.currentTarget.querySelector("video"));
+        }
       }}
     >
       <video
@@ -973,6 +977,7 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
       />
       <IconTooltipButton
         type="button"
+        data-template-preview-id={`video:${item.id}`}
         aria-label={t(
           ($) => {
             return $.artifacts.templates.playVideo;
@@ -983,8 +988,6 @@ function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
         )}
         className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/0 text-white opacity-100 transition-colors duration-200 hover:bg-black/25 focus-visible:bg-black/25 focus-visible:outline-none peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:!opacity-0"
         onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
           startVideoPreview(
             event.currentTarget.parentElement?.querySelector("video") ?? null,
           );
@@ -1018,6 +1021,7 @@ function VideoTemplateCard({
       <div
         className={cn(
           TEMPLATE_TILE_SELECTION_FRAME,
+          TEMPLATE_TILE_PREVIEW_FOCUS,
           selected && TEMPLATE_TILE_SELECTED,
         )}
       >

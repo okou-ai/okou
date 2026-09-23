@@ -70,6 +70,8 @@ export const morningBriefPreferenceResponseSchema = z.object({
    * rollout; a client that does not know the field ignores it.
    */
   lastRun: morningBriefLastRunSchema.nullable().optional(),
+  /** Most recent completed production delivery; null before the first delivery. */
+  lastDeliveredAt: z.string().datetime().nullable().optional(),
 });
 
 export type MorningBriefPreferenceResponse = z.infer<

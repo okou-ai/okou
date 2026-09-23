@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use sandbox::SandboxId;
 
-use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::workspace_image_cache::{
     WorkspaceCacheCheckoutResult, WorkspaceCacheTerminalStatus, WorkspaceImageCache,
@@ -42,7 +41,8 @@ pub(in crate::executor::tests) async fn seed_workspace_image_cache_with_sidecar(
     let run_id = RunId::new_v4();
     let reuse_key = context.reuse_key.as_deref().expect("workspace reuse key");
     let restored_session_identity =
-        RestoredSessionIdentity::from_context(context).expect("restored session identity");
+        crate::executor::session_restore::restored_session_identity_from_context(context)
+            .expect("restored session identity");
     let lease = cache
         .prepare(WorkspaceImagePrepareRequest {
             identity: WorkspaceImageLeaseIdentity {

@@ -343,7 +343,7 @@ const representativeSchemaValues: readonly unknown[] = [
   {
     threads: [],
     nextCursor: null,
-    unreadCoverage: "retained_terminal_events_and_native_deliveries",
+    unreadCoverage: "retained_terminal_events",
   },
   { messages: [], olderCursor: null, newerCursor: null },
   { matches: [], nextCursor: null, scanLimited: false },
@@ -6882,7 +6882,7 @@ describe("external MCP entry", () => {
           structuredContent: {
             threads: [],
             nextCursor: null,
-            unreadCoverage: "retained_terminal_events_and_native_deliveries",
+            unreadCoverage: "retained_terminal_events",
           },
           content: [{ type: "text" }],
         },
@@ -7499,9 +7499,7 @@ describe("external MCP entry", () => {
       }),
     ).toStrictEqual([first.id]);
     expect(next.nextCursor).toBeNull();
-    expect(next.unreadCoverage).toBe(
-      "retained_terminal_events_and_native_deliveries",
-    );
+    expect(next.unreadCoverage).toBe("retained_terminal_events");
 
     const current = await getThread(token, second.id);
     const instant = Date.parse(current.thread.lastMessageAt);

@@ -25,28 +25,28 @@ use runner_types::types::{ExecutionContext, ResumeSessionHistoryRefKind, Sandbox
 const CANONICAL_CLAUDE_WORKSPACE_SESSION_DIR: &str =
     "/home/user/.claude/projects/-home-user-workspace";
 
-impl RestoredSessionIdentity {
-    pub(crate) fn from_context(context: &ExecutionContext) -> Option<Self> {
-        validate_resume_session_id(context).ok()?;
-        let resume_session = context.resume_session.as_ref()?;
-        let history_ref = resume_session.history_ref()?;
-        let effective_framework = effective_cli_framework(&context.cli_agent_type);
-        let framework = SessionHistoryFramework::from(CliFramework::from(effective_framework));
-        let history_ref_kind = match history_ref.kind {
-            ResumeSessionHistoryRefKind::Blob => SessionHistoryRefKind::Blob,
-        };
-        let session_id = restored_session_identity_session_id(
-            effective_framework,
-            &resume_session.cli_agent_session_id,
-        )?;
-        Some(Self::new(
-            framework,
-            &session_id,
-            history_ref_kind,
-            history_ref.hash.clone(),
-            Some(history_ref.raw_size),
-        ))
-    }
+pub(super) fn restored_session_identity_from_context(
+    context: &ExecutionContext,
+) -> Option<RestoredSessionIdentity> {
+    validate_resume_session_id(context).ok()?;
+    let resume_session = context.resume_session.as_ref()?;
+    let history_ref = resume_session.history_ref()?;
+    let effective_framework = effective_cli_framework(&context.cli_agent_type);
+    let framework = SessionHistoryFramework::from(CliFramework::from(effective_framework));
+    let history_ref_kind = match history_ref.kind {
+        ResumeSessionHistoryRefKind::Blob => SessionHistoryRefKind::Blob,
+    };
+    let session_id = restored_session_identity_session_id(
+        effective_framework,
+        &resume_session.cli_agent_session_id,
+    )?;
+    Some(RestoredSessionIdentity::new(
+        framework,
+        &session_id,
+        history_ref_kind,
+        history_ref.hash.clone(),
+        Some(history_ref.raw_size),
+    ))
 }
 
 fn restored_session_identity_session_id(

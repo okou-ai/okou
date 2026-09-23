@@ -2,12 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { unreadThroughAt } from "../unread-through-at.ts";
 
-/**
- * The instant an open thread has to be read through.
- *
- * Preserve the Run marker when it is the latest unread event or the only
- * locally available marker. Native-only delivery is covered through the page.
- */
 describe("unread-through instant for an open thread", () => {
   it("keeps the Run terminal marker when it is the newer of the two", () => {
     expect(

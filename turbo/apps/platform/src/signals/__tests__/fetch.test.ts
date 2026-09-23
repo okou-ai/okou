@@ -1,5 +1,6 @@
 import { screen } from "@testing-library/react";
 import {
+  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
@@ -24,6 +25,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 interface ObservedClientHeaders {
+  readonly snapshotR2: string | null;
   readonly requestId: string | null;
   readonly sessionId: string | null;
   readonly type: string | null;
@@ -34,6 +36,7 @@ const context = testContext();
 
 function observedClientHeaders(request: Request): ObservedClientHeaders {
   return {
+    snapshotR2: request.headers.get(CHAT_THREAD_SNAPSHOT_R2_HEADER),
     requestId: request.headers.get(CLIENT_REQUEST_ID_HEADER),
     sessionId: request.headers.get(CLIENT_SESSION_ID_HEADER),
     type: request.headers.get(CLIENT_TYPE_HEADER),
@@ -86,6 +89,7 @@ test("Service requests carry stable client context and a unique trace", async ()
       sessionId: expect.stringMatching(UUID_PATTERN),
       type: "App",
       version: APP_VERSION,
+      snapshotR2: "1",
     }),
   );
   expect(secondRequest).toStrictEqual(
@@ -94,6 +98,7 @@ test("Service requests carry stable client context and a unique trace", async ()
       sessionId: contractRequest?.sessionId,
       type: "App",
       version: APP_VERSION,
+      snapshotR2: "1",
     }),
   );
   expect(secondRequest?.requestId).not.toBe(contractRequest?.requestId);

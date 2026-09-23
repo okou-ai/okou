@@ -80,7 +80,7 @@ test("Show one cancellation outcome for an interrupted run", async () => {
   const chat = await readyChat();
   expect(within(chat).getByText("I drafted the first section.")).toBeVisible();
   expect(
-    within(chat).getAllByText("Paused mid-thought — pick it back up whenever."),
+    within(chat).getAllByText("Run paused — resume anytime."),
   ).toHaveLength(1);
   expect(queryButton("Stop")).toBeNull();
 });
@@ -207,7 +207,7 @@ test("Manage work waiting in the queue", async () => {
   publishRunUpdate();
 
   await expect(
-    screen.findByText("Paused mid-thought — pick it back up whenever."),
+    screen.findByText("Run paused — resume anytime."),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(screen.queryByText("Include the receipts")).not.toBeInTheDocument();

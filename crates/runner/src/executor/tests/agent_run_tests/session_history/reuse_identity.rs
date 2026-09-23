@@ -718,7 +718,9 @@ async fn run_in_sandbox_restores_when_skip_verified_identity_mismatches_request(
             },
         },
     });
-    let idle_identity = RestoredSessionIdentity::from_context(&mismatched_ctx).expect("identity");
+    let idle_identity =
+        crate::executor::session_restore::restored_session_identity_from_context(&mismatched_ctx)
+            .expect("identity");
     sandbox.push_read_file_result(Ok(None));
     let mut telemetry = test_telemetry(&config, &ctx);
 

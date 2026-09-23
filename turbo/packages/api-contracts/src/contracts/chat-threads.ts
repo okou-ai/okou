@@ -361,6 +361,10 @@ const chatThreadSnapshotProjectionSchema = z.object({
   selectedImageModel: z.string().nullable().optional(),
 });
 
+export const chatThreadSnapshotArchiveSchema = z.object({
+  chatThreads: z.array(chatThreadSnapshotProjectionSchema),
+});
+
 const chatThreadEventSchema = z.object({
   id: chatThreadEventIdSchema,
   /** Server-assigned strict position within the user/org event stream. */
@@ -1279,11 +1283,19 @@ export const chatThreadsContract = c.router({
     path: "/api/chat-threads/snapshot",
     headers: authHeadersSchema,
     responses: {
-      200: z.object({
-        chatThreads: z.array(chatThreadSnapshotProjectionSchema),
-        latestEventId: chatThreadEventIdSchema.nullable(),
-        latestSeqId: z.number().int().positive().nullable(),
-      }),
+      200: z.union([
+        z.object({
+          url: z.string().url(),
+          expiresInSeconds: z.number().int().positive(),
+          latestEventId: chatThreadEventIdSchema.nullable(),
+          latestSeqId: z.number().int().positive().nullable(),
+        }),
+        z.object({
+          chatThreads: z.array(chatThreadSnapshotProjectionSchema),
+          latestEventId: chatThreadEventIdSchema.nullable(),
+          latestSeqId: z.number().int().positive().nullable(),
+        }),
+      ]),
       401: apiErrorSchema,
       403: apiErrorSchema,
     },

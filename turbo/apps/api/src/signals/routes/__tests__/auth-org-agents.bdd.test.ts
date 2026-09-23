@@ -219,6 +219,7 @@ describe("AUTH-03", () => {
 
     const preferences = await api.updatePreferences(admin, {
       timezone: "UTC",
+      locale: "en-US",
       pinnedAgentIds: [],
       sendMode: "cmd-enter",
       captureNetworkBodiesRemaining: 3,

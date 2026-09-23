@@ -17,6 +17,11 @@ and a deadline. The caller must validate its saved destination, profile and
 authorization before opening that stream. This crate never resolves a hostname
 or opens a second socket.
 
+`authenticate_apple_dh` is a separate engine-only entry point for Apple's
+legacy ARD security type 30. It is not currently selectable through saved
+connections, Runner capabilities, the CLI or owner UI. A later product change
+must supply an explicit protected-transport policy before admitting it.
+
 RFB 3.8 / VeNCrypt 0.2 supports only the caller-selected X509None (subtype 260),
 X509Vnc (261), or X509Plain (262) policy. TLS 1.2 or 1.3 verifies the certificate
 chain, validity and saved DNS name or IP SAN before any reusable credential is
@@ -47,10 +52,39 @@ SecurityResult. Product configuration may impose a tighter username limit.
 Success returns `Authenticated::into_stream()`, positioned immediately after
 SecurityResult. The caller sends ClientInit next; ServerInit and framebuffer data
 are not consumed. The returned object retains no client credentials and starts no
-task.
+task. Its owned transport is fixed at authentication: verified TLS for X509 or
+the caller-supplied raw stream for Apple DH. No fallback changes that variant.
+
+## Apple DH / ARD type 30 engine boundary
+
+The Apple-only entry point accepts the observed macOS `RFB 003.889` banner,
+responds as RFB 3.8 and selects security type 30 only when offered. It rejects
+other banners, unavailable type 30, unsupported Apple 33/36 and malformed
+negotiation before sending credentials. The selected method reads bounded DH
+parameters, derives an AES-128 key from MD5 of the padded shared secret, and
+sends the specified 128-byte AES-ECB username/password block followed by a
+fixed-width client public value. Username and password each require 1–63 exact
+UTF-8 bytes without NUL; neither is truncated. Classic VNC's eight-byte limit
+does not apply. Owned credentials and key material are redacted and erased where
+the Rust types permit it; no claim is made about compiler, kernel, or external
+library copies.
+
+The engine accepts only 2048–4096-bit, 16-byte-aligned declared DH lengths,
+small nontrivial generators, full-width odd moduli and in-range server public
+values. The independently exercised macOS 26.6.2 server used generator 5 and a
+stable 4096-bit modulus; other macOS versions/configurations are not thereby
+established. The implementation does not prove modulus primality. One absolute
+deadline, no longer than 30 seconds, covers the handshake. Failure or
+cancellation drops the owned stream and never falls back to another type.
+
+**Type 30 protects the credential exchange only.** It does not authenticate the
+server or encrypt later RFB framebuffer/input. Use a separately verified outer
+transport ending on the Mac for untrusted-network use; an SSH tunnel ending on
+an intermediate host cannot protect an onward plaintext hop. Engine support is
+not an owner permission, product rollout or production activation decision.
 
 The earlier of the caller deadline and 30 seconds bounds the whole handshake.
-RFB version exchange, security negotiation, TLS handshake and the selected inner
+RFB version exchange, security negotiation, any selected TLS handshake, and the
 authentication/result exchange all consume that same absolute deadline rather
 than receiving per-stage budgets.
 An authentication deadline error retains only the bounded local stage active at
@@ -82,8 +116,9 @@ server formats are validated before this
 normalization. Desktop names are bounded and discarded. Only ZRLE, CopyRect, Raw,
 Cursor and DesktopSize are advertised, in that preference order.
 
-The returned `FramebufferConnection` owns the TLS stream, framebuffer, exact
-per-pixel coverage, cursor shape and one persistent zlib inflater. Call
+The returned `FramebufferConnection` owns the selected post-authentication
+stream, framebuffer, exact per-pixel coverage, cursor shape and one persistent
+zlib inflater. Call
 `update(false, deadline)` for the initial full-frame request. A full request clears
 coverage; subsequent `update(true, deadline)` calls can accumulate partial updates.
 `pixels()` returns borrowed immutable RGBA only when every pixel is known. It never

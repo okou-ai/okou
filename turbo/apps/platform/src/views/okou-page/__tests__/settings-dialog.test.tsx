@@ -69,7 +69,7 @@ function createPreferences(
   ],
 ): UserPreferencesResponse {
   return {
-    timezone: null,
+    timezone: "America/Los_Angeles",
     locale,
     supportedLocales,
     pinnedAgentIds: [],
@@ -80,6 +80,22 @@ function createPreferences(
     captureNetworkBodiesRemaining: 0,
     voiceInputModel: null,
   };
+}
+
+function mockMissingLocaleInitialization(
+  preferences: () => UserPreferencesResponse,
+  saveLocale: (locale: UserLocale) => void,
+): void {
+  context.mocks.api(userPreferencesContract.initialize, ({ body, respond }) => {
+    const current = preferences();
+    if (current.locale === null) {
+      const requested = body.locale ?? "en-US";
+      saveLocale(
+        current.supportedLocales.includes(requested) ? requested : "en-US",
+      );
+    }
+    return respond(200, preferences());
+  });
 }
 
 function connectorCatalogDisclosure(region: HTMLElement): {
@@ -183,6 +199,14 @@ test("Persist the browser language when the workspace has no preference", async 
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, createPreferences(serverLocale));
   });
+  mockMissingLocaleInitialization(
+    () => {
+      return createPreferences(serverLocale);
+    },
+    (locale) => {
+      serverLocale = locale;
+    },
+  );
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
     if (body.locale !== undefined) {
       serverLocale = body.locale;
@@ -215,7 +239,7 @@ test("Persist the browser language when the workspace has no preference", async 
 
 test("Select and persist a supported interface language", async () => {
   const submittedLocales: UserLocale[] = [];
-  let serverLocale: UserLocale | null = null;
+  let serverLocale: UserLocale | null = "en-US";
   const supportedLocales: UserLocale[] = ["en-US", "pt-BR", "de-DE"];
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
     return respond(200, createPreferences(serverLocale, supportedLocales));

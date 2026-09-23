@@ -42,14 +42,12 @@ test("Match model-provider recovery guidance to the failure", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
-  click(await findButton("View details"));
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
+  const card = await screen.findByRole("status");
+  expect(card).toHaveTextContent("No model provider configured yet.");
   const configureProvider = await findButton(
     "Set one up in Workspace Settings",
   );
-  expect(configureProvider.parentElement).toHaveTextContent(
-    "No model provider configured yet.",
-  );
+  expect(card).toContainElement(configureProvider);
   click(configureProvider);
 
   const settings = await screen.findByRole("dialog", { name: "Settings" });

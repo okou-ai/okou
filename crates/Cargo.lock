@@ -3342,8 +3342,12 @@ dependencies = [
 name = "rfb-client"
 version = "0.11.0"
 dependencies = [
+ "aes",
+ "crypto-bigint",
  "des",
  "flate2",
+ "getrandom 0.3.4",
+ "md-5",
  "png",
  "rcgen",
  "rustls",
@@ -3483,6 +3487,7 @@ dependencies = [
  "nix",
  "reqwest",
  "runner-host",
+ "runner-lifecycle",
  "runner-network",
  "runner-provider",
  "runner-remote",
@@ -3537,6 +3542,37 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "runner-lifecycle"
+version = "0.1.0"
+dependencies = [
+ "api-contracts",
+ "async-trait",
+ "chrono",
+ "futures-util",
+ "guest-contracts",
+ "hex",
+ "libc",
+ "nix",
+ "runner-host",
+ "runner-storage",
+ "runner-types",
+ "sandbox",
+ "sandbox-mock",
+ "serde",
+ "serde_json",
+ "sha2",
+ "shell-quote",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "tracing-test-support",
  "uuid",
 ]
 
