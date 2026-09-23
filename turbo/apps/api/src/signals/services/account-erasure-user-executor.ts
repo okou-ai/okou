@@ -71,6 +71,10 @@ import {
   createStorageObjectErasureCollector,
 } from "./account-erasure-storage-object-collector";
 import { encryptErasureSelector } from "./account-erasure-selector";
+import {
+  SSH_REMOTE_ERASURE_COLLECTOR_VERSION,
+  createSshRemoteErasureCollector,
+} from "./account-erasure-ssh-remote-collector";
 
 const NAMESPACE = "929b9a52-05dc-44ea-b0b6-b3bce89968ef";
 const MAX_WORK_PER_INVOCATION = 64;
@@ -101,7 +105,8 @@ type SinkName =
   | "hosted_site"
   | "shared_blob"
   | "storage_object"
-  | "relational";
+  | "relational"
+  | "ssh_remote";
 
 const sinkSpecs: readonly {
   readonly name: SinkName;
@@ -162,6 +167,11 @@ const sinkSpecs: readonly {
     name: "relational",
     domain: "relational",
     version: RELATIONAL_ERASURE_COLLECTOR_VERSION,
+  },
+  {
+    name: "ssh_remote",
+    domain: "providers",
+    version: SSH_REMOTE_ERASURE_COLLECTOR_VERSION,
   },
 ];
 
@@ -259,6 +269,7 @@ async function handlers(db: Db) {
     shared_blob: createSharedBlobErasureCollector(db),
     storage_object: createStorageObjectErasureCollector(db),
     relational: createRelationalErasureCollector(db, plan),
+    ssh_remote: createSshRemoteErasureCollector(db),
   };
   return { plan, byName };
 }

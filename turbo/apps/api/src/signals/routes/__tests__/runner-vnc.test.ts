@@ -1,14 +1,19 @@
 import { randomUUID } from "node:crypto";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { projectErasureDecision } from "@okouai/db/operations/account-erasure";
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
-import { createDeferredPromise } from "../../utils";
+import { env } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
+import { createDeferredPromise, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { sshConnectionsRoutes } from "../ssh-connections";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -54,6 +59,12 @@ function check(
 }
 
 describe("private Runner VNC authority", () => {
+  const pool = new Pool({ connectionString: env("DATABASE_URL"), max: 2 });
+  const db = drizzle(pool);
+  afterAll(async () => {
+    await pool.end();
+  });
+
   it("requires an explicit VNC grant and preserves the exact secret only in the no-store handoff", async () => {
     const f = await api.fixture({ grant: false });
     const kms = useSecretKmsProbe();
@@ -892,6 +903,47 @@ describe("private Runner VNC authority", () => {
     await expect(api.resolved(f)).resolves.toMatchObject({
       authentication: { method: "vnc_password", password: "rotated" },
       generation: 2,
+    });
+  });
+
+  it("denies a VNC handoff when the user closes while KMS is pending", async () => {
+    const f = await api.fixture();
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<Uint8Array>(context.signal);
+    useSecretKmsProbe(undefined, (_request, call) => {
+      if (call === 1) {
+        entered.resolve(undefined);
+        return release.promise;
+      }
+      return undefined;
+    });
+    const pending = api.resolve(f);
+    await entered.promise;
+    const releaseKms = () => {
+      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+    };
+    await onRejection(
+      projectErasureDecision(db, {
+        subjectKind: "user",
+        subjectId: f.userId,
+        generation: 1,
+        authorityId: randomUUID(),
+        decisionRef: randomUUID(),
+        decisionSequence: 1n,
+        confirmationRef: randomUUID(),
+        previousDecisionRef: null,
+        dispositionVersion: 1,
+        requestedAt: nowDate(),
+        deadlineAt: new Date("2090-01-01T00:00:00Z"),
+      }),
+      () => {
+        releaseKms();
+      },
+    );
+    releaseKms();
+    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(check(f, 1)).resolves.toMatchObject({
+      body: { outcome: "unavailable" },
     });
   });
 });

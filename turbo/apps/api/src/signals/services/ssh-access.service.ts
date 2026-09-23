@@ -1,4 +1,5 @@
 import { sshHostSchema } from "@okouai/api-contracts/contracts/ssh-access";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
@@ -55,6 +56,10 @@ export async function updateAgentSshAccess(
   signal: AbortSignal,
 ) {
   const result = await db.transaction(async (tx) => {
+    await assertErasureSubjectWritable(tx, [
+      { subjectKind: "user", subjectId: owner.userId },
+      { subjectKind: "organization", subjectId: owner.orgId },
+    ]);
     const [agent] = await tx
       .select({ id: agents.id })
       .from(agents)

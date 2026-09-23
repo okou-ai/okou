@@ -4,7 +4,7 @@ import { command } from "ccstate";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   pinRunnerSsh,
@@ -53,7 +53,7 @@ const resolveSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const { runId } = get(pathParamsOf(runnerSshContract.resolve));
   const result = await resolveRunnerSsh(
-    get(db$),
+    set(writeDb$),
     {
       runId,
       ...body.data,
