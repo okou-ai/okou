@@ -1,5 +1,5 @@
 import { createStore } from "ccstate";
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 
 import { blobUploadIntents, blobs } from "@okouai/db/schema/blob";
@@ -25,6 +25,7 @@ export type BlobErasureResult =
         | "upload_intent"
         | "metadata_missing"
         | "verification_failed";
+      readonly retryAt?: Date;
     };
 
 const ENCODINGS = [
@@ -44,6 +45,7 @@ async function claimBlobErasure(db: Db, hash: string) {
         hash: blobs.hash,
         refCount: blobs.refCount,
         erasurePending: blobs.erasurePending,
+        erasureEligibleAt: blobs.erasureEligibleAt,
         eligible: sql`${blobs.erasureEligibleAt} <= clock_timestamp()`.mapWith(
           pgBooleanDecoder,
         ),
@@ -67,18 +69,22 @@ async function claimBlobErasure(db: Db, hash: string) {
         ),
       );
     const [pending] = await tx
-      .select({ intentId: blobUploadIntents.intentId })
+      .select({ expiresAt: blobUploadIntents.expiresAt })
       .from(blobUploadIntents)
       .where(eq(blobUploadIntents.hash, hash))
+      .orderBy(desc(blobUploadIntents.expiresAt))
       .limit(1);
     if (pending) {
-      return "upload_intent" as const;
+      return { reason: "upload_intent" as const, retryAt: pending.expiresAt };
     }
     if (blob.erasurePending) {
       return "claimed" as const;
     }
     if (!blob.eligible) {
-      return "eligible_at" as const;
+      return {
+        reason: "eligible_at" as const,
+        retryAt: blob.erasureEligibleAt,
+      };
     }
     await tx
       .update(blobs)
@@ -104,8 +110,8 @@ export async function eraseUnreferencedSharedBlob(
   if (claim === "shared") {
     return { outcome: "shared" };
   }
-  if (claim === "eligible_at" || claim === "upload_intent") {
-    return { outcome: "pending", reason: claim };
+  if (typeof claim === "object") {
+    return { outcome: "pending", ...claim };
   }
   const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const keys = ENCODINGS.map((encoding) => {

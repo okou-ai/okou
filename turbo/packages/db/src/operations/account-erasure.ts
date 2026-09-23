@@ -104,6 +104,9 @@ export interface ErasureUnresolved {
   readonly errorCode: NonNullable<Work["errorCode"]>;
   // Null means no new receipt; it must not erase an earlier submission locator.
   readonly requestRef: string | null;
+  /** A known future safety boundary may defer a pending item without consuming
+   * its bounded transient-failure budget. The job deadline still wins. */
+  readonly retryAt?: Date;
 }
 // B1 registers no implementations. References name restricted proof records,
 // never provider responses, selectors, credentials, or arbitrary diagnostics.
@@ -1238,11 +1241,21 @@ async function commitResult(
         ].includes(result.errorCode),
         "invalid_error_code",
       );
+      if (result.retryAt !== undefined) {
+        invariant(
+          result.outcome === "pending" &&
+            Number.isFinite(result.retryAt.getTime()),
+          "invalid_retry_time",
+        );
+      }
       await updateLease(tx, lease, {
         state: result.outcome,
         errorCode: result.errorCode,
         requestRef: result.requestRef ?? item.requestRef,
-        availableAt: sql`clock_timestamp() + interval '1 minute'`,
+        availableAt: result.retryAt
+          ? sql`greatest(clock_timestamp() + interval '1 minute', least(${result.retryAt}::timestamptz, ${job.deadlineAt}::timestamptz))`
+          : sql`clock_timestamp() + interval '1 minute'`,
+        attemptCount: result.retryAt ? 0 : item.attemptCount,
         leaseId: null,
         leaseExpiresAt: null,
       });

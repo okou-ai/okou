@@ -9,7 +9,10 @@ import { env } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 // The exact-hash PostgreSQL/S3 interleaving cannot be selected through a product endpoint.
 // eslint-disable-next-line no-restricted-imports
-import { reserveBlobUploadIntent } from "../blob-upload-intent.service";
+import {
+  pruneExpiredBlobUploadIntents,
+  reserveBlobUploadIntent,
+} from "../blob-upload-intent.service";
 // eslint-disable-next-line no-restricted-imports
 import { eraseUnreferencedSharedBlob } from "../shared-blob-erasure.service";
 
@@ -93,7 +96,7 @@ describe("content-addressed blob erasure coordination", () => {
     });
     await expect(
       eraseUnreferencedSharedBlob(db, value, context.signal),
-    ).resolves.toStrictEqual({ outcome: "pending", reason: "upload_intent" });
+    ).resolves.toMatchObject({ outcome: "pending", reason: "upload_intent" });
     expect(objects.live.has(key)).toBeTruthy();
     await pool.query(
       "UPDATE blob_upload_intents SET expires_at = clock_timestamp() - interval '1 second' WHERE hash = $1",
@@ -144,12 +147,30 @@ describe("content-addressed blob erasure coordination", () => {
       "SELECT erasure_pending FROM blobs WHERE hash = $1",
       [value],
     );
-    expect(pending.rows[0]?.erasure_pending).toBe(true);
+    expect(pending.rows[0]?.erasure_pending).toBeTruthy();
     expect(objects.live.has(key)).toBeTruthy();
     await expect(
       eraseUnreferencedSharedBlob(db, value, context.signal),
     ).resolves.toStrictEqual({ outcome: "erased" });
     expect(objects.live.has(key)).toBeFalsy();
+  });
+
+  it("prunes expired upload intents without removing active reservations", async () => {
+    const value = await blob(1);
+    await db.transaction(async (tx) => {
+      await reserveBlobUploadIntent(tx, { hash: value, runId: randomUUID() });
+      await reserveBlobUploadIntent(tx, { hash: value, runId: randomUUID() });
+    });
+    await pool.query(
+      "UPDATE blob_upload_intents SET expires_at = clock_timestamp() - interval '1 second' WHERE hash = $1 AND intent_id = (SELECT intent_id FROM blob_upload_intents WHERE hash = $1 ORDER BY intent_id LIMIT 1)",
+      [value],
+    );
+    await pruneExpiredBlobUploadIntents(db);
+    const remaining = await pool.query<{ count: string }>(
+      "SELECT count(*) AS count FROM blob_upload_intents WHERE hash = $1",
+      [value],
+    );
+    expect(remaining.rows[0]?.count).toBe("1");
   });
 
   it("serializes a new uploader with deletion and rejects its stale retain", async () => {
@@ -174,7 +195,7 @@ describe("content-addressed blob erasure coordination", () => {
       ).rejects.toThrow("Session history blob is being erased");
       await expect(
         pool.query("UPDATE blobs SET ref_count = 1 WHERE hash = $1", [value]),
-      ).rejects.toThrow();
+      ).rejects.toThrow(/blobs_erasure_pending_zero_refs/u);
     } finally {
       continueDelete.resolve();
     }

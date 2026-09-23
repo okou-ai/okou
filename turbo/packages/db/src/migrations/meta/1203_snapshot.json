@@ -5624,7 +5624,7 @@
         },
         "expires_at": {
           "name": "expires_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
         }
@@ -5719,7 +5719,7 @@
         },
         "erasure_eligible_at": {
           "name": "erasure_eligible_at",
-          "type": "timestamp",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
           "default": "now() + interval '49 hours'"

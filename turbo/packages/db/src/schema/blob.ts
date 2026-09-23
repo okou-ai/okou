@@ -35,7 +35,7 @@ export const blobs = pgTable(
     /** Exact-hash collector claim. Retainers must fail while bytes are being removed. */
     erasurePending: boolean("erasure_pending").notNull().default(false),
     /** Covers upload URLs issued before this coordination protocol was deployed. */
-    erasureEligibleAt: timestamp("erasure_eligible_at")
+    erasureEligibleAt: timestamp("erasure_eligible_at", { withTimezone: true })
       .notNull()
       .default(sql`now() + interval '49 hours'`),
     /** Timestamp when the blob was first uploaded */
@@ -63,9 +63,11 @@ export const blobUploadIntents = pgTable(
   {
     hash: varchar("hash", { length: 64 })
       .notNull()
-      .references(() => blobs.hash),
+      .references(() => {
+        return blobs.hash;
+      }),
     intentId: uuid("intent_id").notNull(),
-    expiresAt: timestamp("expires_at").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => {
     return [
