@@ -117,6 +117,13 @@ interface BrowserUseCdpCommand {
   readonly maxResponseBytes?: number;
 }
 
+class BrowserUseCdpCommandError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BrowserUseCdpCommandError";
+  }
+}
+
 const browserUseProfileSchema = z.object({
   id: z.uuid(),
   userId: z.string().nullable().optional(),
@@ -325,7 +332,7 @@ async function sendBrowserUseCdpCommand(
       continue;
     }
     if (response.data.error) {
-      throw new Error(response.data.error.message);
+      throw new BrowserUseCdpCommandError(response.data.error.message);
     }
     return response.data.result;
   }
@@ -609,19 +616,24 @@ function httpPageUrl(value: string): URL | null {
   return url.protocol === "http:" || url.protocol === "https:" ? url : null;
 }
 
-function safeControlInspection(value: unknown):
-  | (BrowserUseUserActionFingerprint & {
-      readonly connected: boolean;
-      readonly mainDocument: boolean;
-      readonly writable: boolean;
-    })
-  | null {
+interface BrowserUseControlInspection {
+  readonly tagName: string;
+  readonly inputType: string;
+  readonly connected: boolean;
+  readonly mainDocument: boolean;
+  readonly writable: boolean;
+}
+
+function safeControlInspection(
+  value: unknown,
+): BrowserUseControlInspection | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
   const candidate = value as Record<string, unknown>;
   if (
-    (candidate.tagName !== "INPUT" && candidate.tagName !== "TEXTAREA") ||
+    typeof candidate.tagName !== "string" ||
+    candidate.tagName.length > 64 ||
     typeof candidate.inputType !== "string" ||
     candidate.inputType.length > 64 ||
     typeof candidate.connected !== "boolean" ||
@@ -651,9 +663,9 @@ function browserUseControlInspectionFunction(): string {
       const supported =
         textarea || (input && supportedInputTypes.has(control.type));
       return {
-        tagName: control.tagName,
+        tagName: typeof control.tagName === "string" ? control.tagName : "",
         inputType: input ? control.type : textarea ? "textarea" : "",
-        connected: control.isConnected,
+        connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
         writable: supported && !control.readOnly && !control.disabled,
       };
@@ -713,7 +725,14 @@ async function inspectBrowserUseControls(
     ),
     { reportInput: true },
   );
-  return safeControlInspections(inspected.result.value, objectIds.length);
+  const inspections = safeControlInspections(
+    inspected.result.value,
+    objectIds.length,
+  );
+  if (!inspections) {
+    throw new Error("Browser Use CDP control inspection failed");
+  }
+  return inspections;
 }
 
 async function openBrowserUseValidationPage(
@@ -845,7 +864,8 @@ async function validateBrowserUseUserActionOnSocket(
       return (
         !inspection.connected ||
         !inspection.mainDocument ||
-        !inspection.writable
+        !inspection.writable ||
+        (inspection.tagName !== "INPUT" && inspection.tagName !== "TEXTAREA")
       );
     })
   ) {
@@ -853,7 +873,10 @@ async function validateBrowserUseUserActionOnSocket(
   }
   const fields = capturedControls.map((control, index) => {
     const inspection = inspections[index];
-    if (!inspection) {
+    if (
+      !inspection ||
+      (inspection.tagName !== "INPUT" && inspection.tagName !== "TEXTAREA")
+    ) {
       throw new BrowserUseUserActionValidationError("unsupported_control");
     }
     return {
@@ -901,11 +924,20 @@ export interface BrowserUseUserActionApplyField {
   readonly value?: string;
 }
 
-interface BrowserUseUserActionApplyTarget {
+export interface BrowserUseUserActionExactTarget {
   readonly pageTargetId: string;
   readonly documentLoaderId: string;
   readonly pageUrlHash: string;
   readonly fields: readonly BrowserUseUserActionApplyField[];
+}
+
+function isMissingBrowserUseNode(error: unknown): boolean {
+  return (
+    error instanceof BrowserUseCdpCommandError &&
+    /^(?:No node with given id found|Could not find node with given id|Node with given id does not belong to the document)/iu.test(
+      error.message,
+    )
+  );
 }
 
 interface ResolvedBrowserUseUserActionField {
@@ -920,7 +952,7 @@ interface WritableBrowserUseUserActionField {
 
 async function openBrowserUseApplyPage(
   socket: WebSocket,
-  target: BrowserUseUserActionApplyTarget,
+  target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
 ): Promise<AttachedBrowserUsePage | null> {
   const targets = browserUseCdpTargetsSchema.parse(
@@ -990,13 +1022,16 @@ async function resolveBrowserUseApplyFields(
       ),
     );
     if (!remoteResult.ok) {
-      return null;
+      if (isMissingBrowserUseNode(remoteResult.error)) {
+        return null;
+      }
+      throw remoteResult.error;
     }
     const remote = browserUseCdpRemoteObjectSchema.safeParse(
       remoteResult.value,
     );
     if (!remote.success) {
-      return null;
+      throw new Error("Browser Use CDP node resolution failed");
     }
     objectIds.push(remote.data.object.objectId);
     commandId += 1;
@@ -1033,6 +1068,28 @@ async function resolveBrowserUseApplyFields(
     });
   }
   return { fields: resolved, commandId };
+}
+
+/** Read the same sealed target as apply, without a Browser value write. */
+export async function preflightBrowserUseUserAction(
+  cdpUrl: string,
+  target: BrowserUseUserActionExactTarget,
+  signal: AbortSignal,
+): Promise<"valid" | "stale"> {
+  const cdpSignal = browserUseCdpSignal(signal);
+  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
+    const attached = await openBrowserUseApplyPage(socket, target, cdpSignal);
+    if (!attached) {
+      return "stale";
+    }
+    const resolved = await resolveBrowserUseApplyFields(
+      socket,
+      attached.sessionId,
+      target.fields,
+      cdpSignal,
+    );
+    return resolved ? "valid" : "stale";
+  });
 }
 
 function writableBrowserUseFields(
@@ -1151,7 +1208,7 @@ async function writeBrowserUseApplyFields(
 
 async function applyBrowserUseUserActionOnSocket(
   socket: WebSocket,
-  target: BrowserUseUserActionApplyTarget,
+  target: BrowserUseUserActionExactTarget,
   mutation: { writeStarted: boolean },
   signal: AbortSignal,
 ): Promise<"succeeded" | "stale"> {
@@ -1183,7 +1240,7 @@ async function applyBrowserUseUserActionOnSocket(
 
 export async function applyBrowserUseUserAction(
   cdpUrl: string,
-  target: BrowserUseUserActionApplyTarget,
+  target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
 ): Promise<"succeeded" | "stale"> {
   const mutation = { writeStarted: false };

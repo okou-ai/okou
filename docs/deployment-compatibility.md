@@ -3278,6 +3278,13 @@ capture no page or DOM metadata and have no open endpoint. The existing
 thread-scoped Browser card opens the current Browser and its normal viewer
 heartbeat owns Browser access and lease renewal.
 
+The native input preflight endpoint is additive under the same switch. Deploy
+the API before a Platform build that requires preflight to open the editable
+form. An older Platform on the newer API still relies on the unchanged submit
+validation. Preflight performs one bounded provider lookup and read-only CDP
+connection per explicit form entry. A confirmed target mismatch marks a pending
+request stale; transient provider failures leave it pending for retry.
+
 ## OOM containment proof chain removal (#36027)
 
 `OomEvidence.runtime_progress_at` is removed, together with the containment
