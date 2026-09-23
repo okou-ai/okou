@@ -3,22 +3,22 @@ const skeletonGlyphs = [
   {
     id: "o-orange",
     className: "w-[56px] motion-safe:[animation-delay:0ms]",
-    imageClassName: "[background-image:var(--app-skeleton-o-orange)]",
+    imageClassName: "w-[54px] [background-position:0_0]",
   },
   {
     id: "k-blue",
     className: "w-[51px] motion-safe:[animation-delay:170ms]",
-    imageClassName: "[background-image:var(--app-skeleton-k-blue)]",
+    imageClassName: "w-[49px] [background-position:-56px_0]",
   },
   {
     id: "o-green",
     className: "w-[49px] motion-safe:[animation-delay:340ms]",
-    imageClassName: "[background-image:var(--app-skeleton-o-green)]",
+    imageClassName: "w-[47px] [background-position:-107px_0]",
   },
   {
     id: "u-pink",
     className: "w-[56px] motion-safe:[animation-delay:510ms]",
-    imageClassName: "[background-image:var(--app-skeleton-u-pink)]",
+    imageClassName: "w-[55px] [background-position:-156px_0]",
   },
 ] as const;
 
@@ -35,7 +35,7 @@ function SkeletonWordmark() {
             className={`flex h-[66px] shrink-0 origin-[50%_55%] items-center justify-center motion-safe:animate-app-skeleton-bounce motion-safe:will-change-transform ${glyph.className}`}
           >
             <span
-              className={`block h-[54px] w-full bg-contain bg-center bg-no-repeat ${glyph.imageClassName}`}
+              className={`block h-[54px] shrink-0 bg-no-repeat [background-image:var(--app-skeleton-wordmark)] [background-size:211px_54px] ${glyph.imageClassName}`}
             />
           </span>
         );

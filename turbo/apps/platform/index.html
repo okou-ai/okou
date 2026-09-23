@@ -150,10 +150,7 @@
     </script>
     <style id="app-bootstrap-critical-styles">
       :root {
-        --app-skeleton-k-blue: url("./scripts/app-skeleton-assets/k-blue.webp?inline");
-        --app-skeleton-o-green: url("./scripts/app-skeleton-assets/o-green.webp?inline");
-        --app-skeleton-o-orange: url("./scripts/app-skeleton-assets/o-orange.webp?inline");
-        --app-skeleton-u-pink: url("./scripts/app-skeleton-assets/u-pink.webp?inline");
+        --app-skeleton-wordmark: url("./scripts/app-skeleton-assets/wordmark-sprite.webp?inline");
         --okou-viewport-height: 100dvh;
       }
 
@@ -268,31 +265,35 @@
 
       .app-bootstrap-skeleton__glyph {
         display: block;
-        width: 100%;
+        flex: none;
         height: 54px;
-        background-position: center;
+        background-image: var(--app-skeleton-wordmark);
         background-repeat: no-repeat;
-        background-size: contain;
+        background-size: 211px 54px;
       }
 
       .app-bootstrap-skeleton__letter:nth-child(1)
         .app-bootstrap-skeleton__glyph {
-        background-image: var(--app-skeleton-o-orange);
+        width: 54px;
+        background-position: 0 0;
       }
 
       .app-bootstrap-skeleton__letter:nth-child(2)
         .app-bootstrap-skeleton__glyph {
-        background-image: var(--app-skeleton-k-blue);
+        width: 49px;
+        background-position: -56px 0;
       }
 
       .app-bootstrap-skeleton__letter:nth-child(3)
         .app-bootstrap-skeleton__glyph {
-        background-image: var(--app-skeleton-o-green);
+        width: 47px;
+        background-position: -107px 0;
       }
 
       .app-bootstrap-skeleton__letter:nth-child(4)
         .app-bootstrap-skeleton__glyph {
-        background-image: var(--app-skeleton-u-pink);
+        width: 55px;
+        background-position: -156px 0;
       }
 
       @media (prefers-reduced-motion: reduce) {
