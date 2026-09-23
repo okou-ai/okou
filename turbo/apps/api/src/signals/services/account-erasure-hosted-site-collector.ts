@@ -323,6 +323,7 @@ async function inventoryPage(
  * must not outlive the catalog row that named them.
  */
 async function erasePrefix(
+  db: Db,
   lease: ErasureLease,
   signal: AbortSignal,
 ): Promise<{ readonly requestRef: string } | ErasureUnresolved> {
@@ -341,6 +342,7 @@ async function erasePrefix(
     pageNumber += 1
   ) {
     signal.throwIfAborted();
+    await renewErasureLease(db, lease);
     const page = await store.get(
       listHostedSitesObjectsPage(bucket, prefix, OBJECT_DELETE_PAGE_SIZE),
     );
@@ -474,7 +476,7 @@ export function createHostedSiteErasureCollector(db: Db): ErasureHandler {
       return await inventoryPage(db, lease, cursor);
     },
     erase: async (lease, signal) => {
-      return await erasePrefix(lease, signal);
+      return await erasePrefix(db, lease, signal);
     },
     verify: async (lease, producerBoundary) => {
       return await verifyPrefixAbsent(lease, producerBoundary);

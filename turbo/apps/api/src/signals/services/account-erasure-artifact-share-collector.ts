@@ -423,6 +423,7 @@ function requestReference(
 }
 
 async function eraseShare(
+  db: Db,
   lease: ErasureLease,
   signal: AbortSignal,
 ): Promise<{ readonly requestRef: string } | ErasureUnresolved> {
@@ -479,6 +480,7 @@ async function eraseShare(
       pageNumber += 1
     ) {
       signal.throwIfAborted();
+      await renewErasureLease(db, lease);
       const page = await store.get(
         listHostedSitesObjectsPage(
           bucket,
@@ -631,7 +633,7 @@ export function createArtifactShareErasureCollector(db: Db): ErasureHandler {
       return await inventoryPage(db, lease, cursor, signal);
     },
     erase: async (lease, signal) => {
-      return await eraseShare(lease, signal);
+      return await eraseShare(db, lease, signal);
     },
     verify: async (lease, boundary) => {
       return await verifyShareAbsent(lease, boundary);

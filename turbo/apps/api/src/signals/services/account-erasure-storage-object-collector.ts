@@ -358,6 +358,7 @@ async function inventoryPage(
  * version.
  */
 async function erasePrefix(
+  db: Db,
   lease: ErasureLease,
   signal: AbortSignal,
 ): Promise<{ readonly requestRef: string } | ErasureUnresolved> {
@@ -377,6 +378,7 @@ async function erasePrefix(
     pageNumber += 1
   ) {
     signal.throwIfAborted();
+    await renewErasureLease(db, lease);
     // Delete the first page, then list the first page again. A continuation
     // token would be invalid after removing the objects that preceded it.
     const page = await store.get(
@@ -511,7 +513,7 @@ export function createStorageObjectErasureCollector(db: Db): ErasureHandler {
       return await inventoryPage(db, lease, cursor);
     },
     erase: async (lease, signal) => {
-      return await erasePrefix(lease, signal);
+      return await erasePrefix(db, lease, signal);
     },
     verify: async (lease, producerBoundary) => {
       return await verifyPrefixAbsent(lease, producerBoundary);
