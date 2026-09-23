@@ -6215,7 +6215,7 @@
           "reconnectTitle": "Volver a conectar Claude",
           "signIn": "Inicia sesión con Claude",
           "submit": "Conectar",
-          "usageNotice": "Inicia sesión con tu suscripción a Claude para agentes basados en Claude Code."
+          "usageNotice": "Inicia sesión con tu suscripción a Claude para usar modelos Claude con agentes basados en Claude Code."
         },
         "codex": {
           "approvalOpened": "Página de aprobación abierta. Copia el código del dispositivo antes de aprobar.",
@@ -6281,9 +6281,9 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Activa",
         "addAccount": "Añadir cuenta",
-        "claudeDescription": "Inicia sesión con tu suscripción a Claude para agentes basados en Claude Code.",
+        "claudeDescription": "Inicia sesión con tu suscripción a Claude para usar modelos Claude con agentes basados en Claude Code.",
         "claudeTitle": "Claude",
-        "codexDescription": "Conecta tu cuenta mediante el inicio de sesión de dispositivo de Codex para usar rutas de modelos basadas en Codex.",
+        "codexDescription": "Conecta tu cuenta de ChatGPT para usar modelos GPT.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Solo se usa en tus ejecuciones y con tus propias credenciales.",
         "disconnectAccount": "Desconectar cuenta",

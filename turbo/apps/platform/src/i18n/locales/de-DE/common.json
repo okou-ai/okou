@@ -6155,7 +6155,7 @@
           "reconnectTitle": "Verbinden Sie Claude erneut",
           "signIn": "Melden Sie sich mit Claude an",
           "submit": "Verbinden",
-          "usageNotice": "Melden Sie sich mit Ihrem Claude-Abo für Claude Code-basierte Agenten an."
+          "usageNotice": "Melden Sie sich mit Ihrem Claude-Abo an, um Claude-Modelle mit Claude Code-basierten Agenten zu nutzen."
         },
         "codex": {
           "approvalOpened": "Genehmigungsseite geöffnet. Kopieren Sie den Gerätecode vor der Genehmigung.",
@@ -6221,9 +6221,9 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktiv",
         "addAccount": "Konto hinzufügen",
-        "claudeDescription": "Melden Sie sich mit Ihrem Claude-Abo für Claude Code-basierte Agenten an.",
+        "claudeDescription": "Melden Sie sich mit Ihrem Claude-Abo an, um Claude-Modelle mit Claude Code-basierten Agenten zu nutzen.",
         "claudeTitle": "Claude",
-        "codexDescription": "Stellen Sie eine Verbindung mit der Codex-Geräteanmeldung her, um von Codex unterstützte Modellrouten zu erhalten.",
+        "codexDescription": "Verbinden Sie Ihr ChatGPT-Konto, um GPT-Modelle zu nutzen.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "Wird nur bei Ihren Ausführungen mit Ihren eigenen Anmeldeinformationen verwendet.",
         "disconnectAccount": "Konto trennen",

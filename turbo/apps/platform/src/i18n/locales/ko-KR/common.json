@@ -6141,7 +6141,7 @@
           "reconnectTitle": "Claude 재연결",
           "signIn": "Claude로 로그인",
           "submit": "연결",
-          "usageNotice": "Claude Code 기반 에이전트를 사용하려면 Claude 구독으로 로그인하세요."
+          "usageNotice": "Claude 구독으로 로그인하여 Claude Code 기반 에이전트에서 Claude 모델을 사용하세요."
         },
         "codex": {
           "approvalOpened": "승인 페이지가 열렸습니다. 승인 전에 디바이스 코드를 복사하세요.",
@@ -6207,9 +6207,9 @@
         "actionForProvider": "{{provider}} {{action}}",
         "activeAccount": "활성",
         "addAccount": "계정 추가",
-        "claudeDescription": "Claude Code 기반 에이전트를 사용하려면 Claude 구독으로 로그인하세요.",
+        "claudeDescription": "Claude 구독으로 로그인하여 Claude Code 기반 에이전트에서 Claude 모델을 사용하세요.",
         "claudeTitle": "Claude",
-        "codexDescription": "Codex 지원 모델 경로를 위한 Codex 기기 로그인 연결",
+        "codexDescription": "ChatGPT 계정을 연결하여 GPT 모델을 사용하세요.",
         "codexTitle": "ChatGPT (Codex)",
         "description": "본인의 자격 증명으로 실행 시에만 사용됩니다.",
         "disconnectAccount": "계정 연결 해제",

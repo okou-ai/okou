@@ -338,7 +338,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   click(await findButton("Configure model"));
 
   const dialog = await screen.findByRole("dialog", {
-    name: "Connect Claude Code",
+    name: "Connect Claude",
   });
   const authorizationCode = await screen.findByLabelText("Authorization code");
 
@@ -477,7 +477,7 @@ test("Reconnect Claude Code for an existing chat", async () => {
   click(configureButton);
 
   const dialog = await screen.findByRole("dialog", {
-    name: "Re-connect Claude Code",
+    name: "Reconnect Claude",
   });
   expect(dialog).toBeVisible();
   await waitFor(() => {

@@ -6141,7 +6141,7 @@
           "reconnectTitle": "重新連線Claude",
           "signIn": "使用Claude登入",
           "submit": "連線",
-          "usageNotice": "使用你的Claude訂閱登入，供Claude Code驅動的智慧代理使用。"
+          "usageNotice": "使用你的 Claude 訂閱登入，透過 Claude Code 驅動的智慧代理使用 Claude 系列模型。"
         },
         "codex": {
           "approvalOpened": "授權頁面已開啟。請先複製裝置碼，再進行授權。",
@@ -6207,9 +6207,9 @@
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "新增帳號",
-        "claudeDescription": "使用你的Claude訂閱登入，供Claude Code驅動的智慧代理使用。",
+        "claudeDescription": "使用你的 Claude 訂閱登入，透過 Claude Code 驅動的智慧代理使用 Claude 系列模型。",
         "claudeTitle": "Claude",
-        "codexDescription": "用Codex裝置登入連線，供基於Codex的模型線路使用。",
+        "codexDescription": "連接你的 ChatGPT 帳號，使用 GPT 系列模型。",
         "codexTitle": "ChatGPT (Codex)",
         "description": "僅在你的執行中使用，走你自己的憑據。",
         "disconnectAccount": "斷開帳號連線",
