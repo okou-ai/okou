@@ -5033,13 +5033,76 @@ test("Offer a Team upgrade to a Pro workspace administrator", async () => {
   expect(buttonByText("Upgrade to Team")).toBeInTheDocument();
 });
 
+async function verifyWebhookFieldInteractions(
+  dialog: HTMLElement,
+  user: ReturnType<typeof userEvent.setup>,
+  clipboardWrites: readonly string[],
+) {
+  const fields = [
+    { label: "Webhook URL", value: webhookWorkflowAutomation().webhookUrl },
+    { label: "Signing secret", value: "webhook-secret" },
+  ];
+  const copyButtons = queryAllByRoleFast("button", dialog).filter((button) => {
+    return textFor(button) === "Copy";
+  });
+  expect(copyButtons).toHaveLength(3);
+  const expectedWrites: string[] = [];
+
+  for (const [index, { label, value }] of fields.entries()) {
+    const input = within(dialog).getByLabelText<HTMLInputElement>(label, {
+      exact: true,
+    });
+    expect(within(dialog).getByRole("textbox", { name: label })).toBe(input);
+    expect(input).toHaveValue(value);
+    expect(input).toHaveAttribute("readonly");
+
+    await user.click(within(dialog).getByText(label, { exact: true }));
+    expect(input).toHaveFocus();
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+
+    await user.keyboard("{Control>}a{/Control}");
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+    await user.keyboard("x");
+    expect(input).toHaveValue(value);
+
+    await user.keyboard("{Tab}");
+    const copyButton = copyButtons[index];
+    expect(copyButton).toHaveFocus();
+    expect(copyButton).toHaveAttribute("type", "button");
+    await user.keyboard("{Enter}");
+    expectedWrites.push(input.value);
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+    await user.keyboard(" ");
+    expectedWrites.push(input.value);
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+    await user.click(copyButton);
+    expectedWrites.push(input.value);
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+    await user.keyboard("{Tab}");
+    expect(
+      index === 0
+        ? within(dialog).getByLabelText("Signing secret", { exact: true })
+        : copyButtons[2],
+    ).toHaveFocus();
+  }
+
+  await user.keyboard("{Enter}");
+  expect(clipboardWrites).toHaveLength(7);
+  expect(clipboardWrites[6]).toContain(fields[0].value);
+  expect(clipboardWrites[6]).toContain(fields[1].value);
+}
+
 test("Allow webhook creation when the plan grants the capability", async () => {
+  const user = userEvent.setup();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
     role: "admin",
   });
   mockWorkflowApis([salesResearch()]);
+  mockCreateWorkflowAutomation(() => {});
   await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro", {
     workflowWebhookAutomationAllowed: true,
   });
@@ -5057,7 +5120,58 @@ test("Allow webhook creation when the plan grants the capability", async () => {
   expect(
     screen.queryByText("Upgrade for webhook automations"),
   ).not.toBeInTheDocument();
+
+  click(buttonByText("Create webhook"));
+  await expect(screen.findByLabelText("Webhook URL")).resolves.toHaveValue(
+    webhookWorkflowAutomation().webhookUrl,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Add webhook automation" });
+  await verifyWebhookFieldInteractions(dialog, user, clipboard.writes);
+  click(buttonByText("Done", dialog));
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
 });
+
+test.each([
+  { name: "URL only", hasUrl: true, hasSecret: false },
+  { name: "secret only", hasUrl: false, hasSecret: true },
+  { name: "neither value", hasUrl: false, hasSecret: false },
+])(
+  "Show only the available webhook fields after creation: $name",
+  async ({ hasUrl, hasSecret }) => {
+    mockWorkflowApis([salesResearch()]);
+    context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
+      return respond(201, {
+        ...webhookWorkflowAutomation(),
+        webhookUrl: hasUrl ? webhookWorkflowAutomation().webhookUrl : undefined,
+        webhookSecret: hasSecret ? "webhook-secret" : undefined,
+      });
+    });
+    await setupWorkflowDetailPage(workflowDetailPath("automations"));
+
+    click(await screen.findByText("Add automation"));
+    await screen.findByRole("dialog");
+    pickAutomation("Integrations", /^Webhook/u);
+    click(await screen.findByText("Create webhook"));
+    await screen.findByText("Done");
+    const dialog = screen.getByRole("dialog", {
+      name: "Add webhook automation",
+    });
+    expect(within(dialog).getByText("Webhook URL")).toBeInTheDocument();
+    const url =
+      within(dialog).queryByLabelText<HTMLInputElement>("Webhook URL");
+    expect(url?.value).toBe(
+      hasUrl ? webhookWorkflowAutomation().webhookUrl : undefined,
+    );
+    const secret =
+      within(dialog).queryByLabelText<HTMLInputElement>("Signing secret");
+    expect(secret?.value).toBe(hasSecret ? "webhook-secret" : undefined);
+    expect(within(dialog).queryByText("Signing secret")?.textContent).toBe(
+      hasSecret ? "Signing secret" : undefined,
+    );
+  },
+);
 
 test("Handle a plan restriction discovered while creating a webhook", async () => {
   context.mocks.data.org({
@@ -5159,6 +5273,8 @@ test("Explain a plan restriction when enabling an existing webhook", async () =>
 });
 
 test("Reveal an existing webhook secret on demand", async () => {
+  const user = userEvent.setup();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   const workflow = {
     ...salesResearch(),
     automations: [webhookWorkflowAutomation()],
@@ -5175,15 +5291,29 @@ test("Reveal an existing webhook secret on demand", async () => {
   ).not.toBeInTheDocument();
   click(buttonByText("More actions"));
   click(menuItemByText("View webhook secret"));
-  click(await screen.findByText("Reveal secret"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "View webhook secret",
+  });
+  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+  click(buttonByText("Reveal secret", dialog));
 
-  const webhookUrlField = await screen.findByDisplayValue(
-    webhookWorkflowAutomation().webhookUrl ?? "",
-  );
-  expect(webhookUrlField).toBeInTheDocument();
-  expect(screen.getByDisplayValue("webhook-secret")).toHaveValue(
-    "webhook-secret",
-  );
+  await expect(
+    within(dialog).findByLabelText("Webhook URL"),
+  ).resolves.toHaveValue(webhookWorkflowAutomation().webhookUrl);
+  await verifyWebhookFieldInteractions(dialog, user, clipboard.writes);
+  click(buttonByText("Done", dialog));
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+
+  click(buttonByText("More actions"));
+  click(menuItemByText("View webhook secret"));
+  const reopened = await screen.findByRole("dialog", {
+    name: "View webhook secret",
+  });
+  expect(within(reopened).queryByRole("textbox")).not.toBeInTheDocument();
+  expect(buttonByText("Reveal secret", reopened)).toBeEnabled();
+  expect(clipboard.writes).toHaveLength(7);
 });
 
 test("Create a daily schedule in the user's preferred time zone", async () => {
