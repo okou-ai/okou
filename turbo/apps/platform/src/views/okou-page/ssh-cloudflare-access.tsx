@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui";
+import type { ScopedCloudflareAccessConfig } from "@okouai/api-contracts/contracts/cloudflare-access";
 
 import {
   chooseSshAccessConfig$,
@@ -19,6 +20,55 @@ import {
   AccessFields,
   CloudflareAccessLoadError,
 } from "./cloudflare-access.tsx";
+
+function AccessConfigOptions({
+  personal,
+  organization,
+}: {
+  readonly personal: readonly ScopedCloudflareAccessConfig[];
+  readonly organization: readonly ScopedCloudflareAccessConfig[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <SelectGroup>
+        <SelectLabel>
+          {t(($) => {
+            return $.cloudflareAccess.personal;
+          })}
+        </SelectLabel>
+        {personal.map((config) => {
+          return (
+            <SelectItem key={config.id} value={config.id}>
+              {config.name}
+            </SelectItem>
+          );
+        })}
+        <SelectItem value="new">
+          {t(($) => {
+            return $.cloudflareAccess.createNew;
+          })}
+        </SelectItem>
+      </SelectGroup>
+      {organization.length > 0 && (
+        <SelectGroup>
+          <SelectLabel>
+            {t(($) => {
+              return $.cloudflareAccess.organization;
+            })}
+          </SelectLabel>
+          {organization.map((config) => {
+            return (
+              <SelectItem key={config.id} value={config.id}>
+                {config.name}
+              </SelectItem>
+            );
+          })}
+        </SelectGroup>
+      )}
+    </>
+  );
+}
 
 export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
   const { t } = useTranslation();
@@ -101,41 +151,10 @@ export function AccessSelection({ disabled }: { readonly disabled: boolean }) {
               />
             </SelectTrigger>
             <SelectContent>
-              <SelectGroup>
-                <SelectLabel>
-                  {t(($) => {
-                    return $.cloudflareAccess.personal;
-                  })}
-                </SelectLabel>
-                {personal.map((config) => {
-                  return (
-                    <SelectItem key={config.id} value={config.id}>
-                      {config.name}
-                    </SelectItem>
-                  );
-                })}
-                <SelectItem value="new">
-                  {t(($) => {
-                    return $.cloudflareAccess.createNew;
-                  })}
-                </SelectItem>
-              </SelectGroup>
-              {organization.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>
-                    {t(($) => {
-                      return $.cloudflareAccess.organization;
-                    })}
-                  </SelectLabel>
-                  {organization.map((config) => {
-                    return (
-                      <SelectItem key={config.id} value={config.id}>
-                        {config.name}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectGroup>
-              )}
+              <AccessConfigOptions
+                personal={personal}
+                organization={organization}
+              />
             </SelectContent>
           </Select>
           {editor.configId &&

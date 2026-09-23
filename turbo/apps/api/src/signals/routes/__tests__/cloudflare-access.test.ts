@@ -457,6 +457,8 @@ describe("organization Cloudflare Access", () => {
       }),
       [200],
     );
+    // Conversion is deferred to #36262, so only the test route can construct
+    // needsRebind before that production writer exists.
     const retained = await accept(
       state().action({
         body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
@@ -491,17 +493,17 @@ describe("organization Cloudflare Access", () => {
         },
       });
     };
-    expect((await accept(edit(), [400])).body.error.code).toBe(
-      "SSH_INVALID_INPUT",
-    );
-    expect(
-      (
-        await accept(
-          edit({ type: "cloudflare_access", configId: randomUUID() }),
-          [404],
-        )
-      ).body.error.code,
-    ).toBe("CLOUDFLARE_ACCESS_NOT_FOUND");
+    await expect(accept(edit(), [400])).resolves.toMatchObject({
+      body: { error: { code: "SSH_INVALID_INPUT" } },
+    });
+    await expect(
+      accept(
+        edit({ type: "cloudflare_access", configId: randomUUID() }),
+        [404],
+      ),
+    ).resolves.toMatchObject({
+      body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
+    });
     const rebound = await accept(
       edit({ type: "cloudflare_access", configId: shared.id }),
       [200],

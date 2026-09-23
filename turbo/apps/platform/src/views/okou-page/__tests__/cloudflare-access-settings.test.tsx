@@ -121,7 +121,7 @@ test("An admin can create a shared configuration from the single Add entry", asy
       screen.getByRole("combobox", { name: "Who can use this" }),
     ).toHaveTextContent("Organization");
   });
-  expect(dialog.isConnected).toBe(true);
+  expect(dialog.isConnected).toBeTruthy();
   await tokenFields(dialog, "Shared gateway");
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   expect(
@@ -137,6 +137,78 @@ test("An admin can create a shared configuration from the single Add entry", asy
     query: { view: "scoped" },
     body: { name: "Shared gateway", scope: "organization" },
   });
+});
+
+test("An admin can edit and delete a shared configuration through scoped mutations", async () => {
+  const shared: ScopedCloudflareAccessConfig = {
+    ...config,
+    name: "Shared gateway",
+    scope: "organization",
+  };
+  let configs: ScopedCloudflareAccessConfig[] = [shared];
+  const updates: unknown[] = [];
+  const deletes: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.update,
+    ({ body, query, respond }) => {
+      updates.push({ body, query });
+      const renamed = {
+        ...shared,
+        name: body.name ?? shared.name,
+        revision: 2,
+      };
+      configs = [renamed];
+      return respond(200, renamed);
+    },
+  );
+  context.mocks.api(
+    cloudflareAccessContract.delete,
+    ({ body, query, respond }) => {
+      deletes.push({ body, query });
+      configs = [];
+      return respond(204);
+    },
+  );
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  await within(organization).findByText("Shared gateway");
+  click(getAction("button", "Edit Cloudflare Access", organization));
+  const edit = await screen.findByRole("dialog");
+  await fill(within(edit).getByLabelText("Name"), "Updated gateway");
+  click(getAction("button", "Save", edit));
+  await waitFor(() => {
+    expect(updates).toHaveLength(1);
+  });
+  await screen.findByText("Updated gateway");
+  expect(updates).toStrictEqual([
+    {
+      query: { view: "scoped" },
+      body: { expectedRevision: 1, name: "Updated gateway" },
+    },
+  ]);
+  click(
+    getAction(
+      "button",
+      "Delete Cloudflare Access",
+      screen.getByRole("region", { name: "Organization" }),
+    ),
+  );
+  const deletion = await screen.findByRole("dialog");
+  click(getAction("button", "Delete Cloudflare Access", deletion));
+  await screen.findByText("0 Cloudflare Access configured");
+  expect(
+    within(screen.getByRole("region", { name: "Organization" })).getByText(
+      "No configurations here yet.",
+    ),
+  ).toBeInTheDocument();
+  expect(deletes).toStrictEqual([
+    { query: { view: "scoped" }, body: { expectedRevision: 2 } },
+  ]);
 });
 
 async function tokenFields(dialog: HTMLElement, name = config.name) {

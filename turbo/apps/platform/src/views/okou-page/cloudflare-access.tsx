@@ -471,6 +471,68 @@ function CloudflareAccessFormActions({
   );
 }
 
+function CloudflareAccessScopeSelect({
+  value,
+  disabled,
+}: {
+  readonly value: "personal" | "organization";
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const chooseScope = useSet(chooseCloudflareAccessScope$);
+  const signal = useGet(pageSignal$);
+  return (
+    <div className="grid gap-2">
+      <span id="cloudflare-access-scope-label">
+        {t(($) => {
+          return $.cloudflareAccess.scope;
+        })}
+      </span>
+      <Select
+        items={[
+          {
+            value: "personal",
+            label: t(($) => {
+              return $.cloudflareAccess.personal;
+            }),
+          },
+          {
+            value: "organization",
+            label: t(($) => {
+              return $.cloudflareAccess.organization;
+            }),
+          },
+        ]}
+        value={value}
+        disabled={disabled}
+        onValueChange={(scope, details) => {
+          if (scope !== "personal" && scope !== "organization") {
+            details.cancel();
+            return;
+          }
+          detach(chooseScope(scope, signal), Reason.DomCallback);
+        }}
+      >
+        <SelectTrigger aria-labelledby="cloudflare-access-scope-label">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="personal">
+            {t(($) => {
+              return $.cloudflareAccess.personal;
+            })}
+          </SelectItem>
+          <SelectItem value="organization">
+            {t(($) => {
+              return $.cloudflareAccess.organization;
+            })}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 export function CloudflareAccessDialog() {
   const { t } = useTranslation();
   const data = useLoadable(cloudflareAccessDialog$);
@@ -481,7 +543,6 @@ export function CloudflareAccessDialog() {
   const conflict = useGet(cloudflareAccessConflict$);
   const uncertain = useGet(cloudflareAccessSaveUncertain$);
   const admin = useLoadable(isOrgAdmin$);
-  const chooseScope = useSet(chooseCloudflareAccessScope$);
   const createScope = useGet(cloudflareAccessCreateScope$);
   const dialog = data.state === "hasData" ? data.data : null;
   const { title, description } = useCloudflareAccessDialogCopy(dialog?.kind);
@@ -524,54 +585,10 @@ export function CloudflareAccessDialog() {
             {dialog.kind === "create" &&
               admin.state === "hasData" &&
               admin.data && (
-                <div className="grid gap-2">
-                  <span id="cloudflare-access-scope-label">
-                    {t(($) => {
-                      return $.cloudflareAccess.scope;
-                    })}
-                  </span>
-                  <Select
-                    items={[
-                      {
-                        value: "personal",
-                        label: t(($) => {
-                          return $.cloudflareAccess.personal;
-                        }),
-                      },
-                      {
-                        value: "organization",
-                        label: t(($) => {
-                          return $.cloudflareAccess.organization;
-                        }),
-                      },
-                    ]}
-                    value={scope}
-                    disabled={isSaving || uncertain}
-                    onValueChange={(value, details) => {
-                      if (value !== "personal" && value !== "organization") {
-                        details.cancel();
-                        return;
-                      }
-                      detach(chooseScope(value, signal), Reason.DomCallback);
-                    }}
-                  >
-                    <SelectTrigger aria-labelledby="cloudflare-access-scope-label">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="personal">
-                        {t(($) => {
-                          return $.cloudflareAccess.personal;
-                        })}
-                      </SelectItem>
-                      <SelectItem value="organization">
-                        {t(($) => {
-                          return $.cloudflareAccess.organization;
-                        })}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <CloudflareAccessScopeSelect
+                  value={scope}
+                  disabled={isSaving || uncertain}
+                />
               )}
             {scope === "organization" && (
               <p className="text-sm text-muted-foreground">
