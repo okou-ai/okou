@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.950.1](https://github.com/okou-ai/okou/compare/app-v0.950.0...app-v0.950.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* unify chat transcript card surfaces ([#36388](https://github.com/okou-ai/okou/issues/36388)) ([3bef11d](https://github.com/okou-ai/okou/commit/3bef11d7cca80d3789304a66c85f663b08e811fa))
+
+
+### Performance Improvements
+
+* **api:** load connector catalog per slug for startup reads ([#36384](https://github.com/okou-ai/okou/issues/36384)) ([394946b](https://github.com/okou-ai/okou/commit/394946b57d1f65e8806972d8f74183fdb5cbb695))
+* **platform:** load composer template catalogs on selection ([#36383](https://github.com/okou-ai/okou/issues/36383)) ([4915855](https://github.com/okou-ai/okou/commit/491585562bb4c73ca50b61eb679599a0f8257440))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.498.1
+    * @okouai/connectors bumped to 3.15.2
+    * @okouai/core bumped to 8.704.1
+
 ## [0.950.0](https://github.com/okou-ai/okou/compare/app-v0.949.1...app-v0.950.0) (2026-09-23)
 
 
