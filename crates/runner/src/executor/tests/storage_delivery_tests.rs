@@ -257,6 +257,35 @@ async fn guest_apply_telemetry_attributes_one_and_three_batches() {
 }
 
 #[tokio::test]
+async fn guest_apply_telemetry_caps_large_batch_runs_and_retains_the_last_batch() {
+    let fixture = DeliveryFixture::new(18, 18, 35_000).await;
+    let sandbox = MockSandbox::new("storage-batch-attribution-cap");
+    let (manifest, files) = fixture.prepare(&sandbox).await;
+    let context = minimal_context();
+    let mut telemetry = test_telemetry(&fixture.config, &context);
+    download_storages_with_files(&sandbox, &context, manifest, &files, &mut telemetry)
+        .await
+        .unwrap();
+
+    assert_eq!(sandbox.storage_manifest_calls().len(), 18);
+    let observations = telemetry.pending_ops_with_outcome_snapshot();
+    assert!(observations.iter().any(|(action, success, outcome, _)| {
+        action == "runner_storage_manifest_batch_count"
+            && *success
+            && outcome.as_deref() == Some("seventeen_plus")
+    }));
+    let batches = observations
+        .iter()
+        .filter(|(action, _, _, _)| action == "runner_storage_manifest_batch_apply")
+        .collect::<Vec<_>>();
+    assert_eq!(batches.len(), 17);
+    assert_eq!(batches[0].2.as_deref(), Some("dedicated_first"));
+    assert_eq!(batches.last().unwrap().2.as_deref(), Some("dedicated_last"));
+    assert!(batches.iter().all(|batch| batch.1));
+    fixture.shutdown().await;
+}
+
+#[tokio::test]
 async fn high_fanout_storage_plans_deliver_ready_files_without_refilling_archives() {
     for (count, ready) in [(7, 5), (64, 31), (122, 46), (143, 52)] {
         let fixture = DeliveryFixture::new(count, ready, 604).await;
