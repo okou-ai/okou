@@ -32,7 +32,6 @@ import {
 import { readAvatarTemplateOptions } from "@okouai/core/avatar-template";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import type {
-  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
   SyntheticEvent,
@@ -772,7 +771,6 @@ function setVoiceCardPlaying(
 }
 
 function toggleVoicePreview(event: ReactMouseEvent<HTMLButtonElement>): void {
-  event.stopPropagation();
   const card = event.currentTarget.closest("[data-avatar-voice-card]");
   if (!(card instanceof HTMLElement)) {
     return;
@@ -833,7 +831,7 @@ function VoicePreviewControl({ voice }: { readonly voice: VoiceCardVoice }) {
         disabled={!voice.sampleUrl}
         onClick={toggleVoicePreview}
         className={cn(
-          "flex size-11 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-brand-text transition-all hover:scale-105 hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40",
+          "relative flex size-11 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-brand-text transition-all hover:scale-105 hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40",
           "group-data-[playing=true]/voice:bg-primary group-data-[playing=true]/voice:text-primary-foreground",
         )}
       >
@@ -901,39 +899,35 @@ function AvatarVoiceCard<T extends VoiceCardVoice>({
     <div
       {...VOICE_PREVIEW_CARD_PROPS}
       data-recommended={recommended ? "" : undefined}
-      role="button"
-      tabIndex={0}
-      aria-label={t(
-        ($) => {
-          return $.artifacts.templates.selectVoice;
-        },
-        { title: voice.name },
-      )}
-      aria-pressed={selected}
-      aria-describedby={recommended ? recommendedDescriptionId : undefined}
-      onClick={selectVoice}
-      onKeyDown={(event: ReactKeyboardEvent<HTMLDivElement>) => {
-        if (event.target !== event.currentTarget) {
-          return;
-        }
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          selectVoice();
-        }
-      }}
       className={cn(
         VOICE_PREVIEW_CARD_CLASS,
-        "flex cursor-pointer items-center gap-3 rounded-xl border bg-card p-3 transition-colors duration-200 hover:border-foreground/20 hover:bg-card-hover hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        AVATAR_CARD_SHADOW,
-        selected
-          ? "border-primary bg-primary/[0.04]"
-          : highlightRecommendation
-            ? "border-primary/40 bg-primary/[0.025]"
-            : "border-border",
+        "relative isolate flex items-center gap-3 rounded-xl border border-transparent p-3",
       )}
     >
+      <Button
+        type="button"
+        variant="ghost"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.templates.selectVoice;
+          },
+          { title: voice.name },
+        )}
+        aria-pressed={selected}
+        aria-describedby={recommended ? recommendedDescriptionId : undefined}
+        onClick={selectVoice}
+        className={cn(
+          "absolute -inset-px h-auto cursor-pointer rounded-xl border bg-card p-0 transition-colors duration-200 hover:border-foreground/20 hover:bg-card-hover hover:shadow-sm focus-visible:ring-inset focus-visible:ring-offset-0",
+          AVATAR_CARD_SHADOW,
+          selected
+            ? "border-primary bg-primary/[0.04]"
+            : highlightRecommendation
+              ? "border-primary/40 bg-primary/[0.025]"
+              : "border-border",
+        )}
+      />
       <VoicePreviewControl voice={voice} />
-      <div className="min-w-0 flex-1">
+      <div className="pointer-events-none relative min-w-0 flex-1">
         <div className="flex min-w-0 items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-foreground">
