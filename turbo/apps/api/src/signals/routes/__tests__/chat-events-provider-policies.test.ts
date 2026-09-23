@@ -1921,6 +1921,9 @@ describe("CHAT-02: model-first provider policies", () => {
             expect.objectContaining({ effort: reasoningEffort }),
           ],
           supports_reasoning_effort_updates: false,
+          context_window: 1_050_000,
+          max_context_window: 1_050_000,
+          effective_context_window_percent: 87,
         }),
       ]);
       expect(environment.OKOU_REASONING_EFFORT).toBeUndefined();

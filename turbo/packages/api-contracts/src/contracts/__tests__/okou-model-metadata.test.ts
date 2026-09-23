@@ -7,10 +7,11 @@ describe("Okou model metadata", () => {
     ["okou-1.0-pro", "gpt-6-sol", "@preset/okou-1-0-pro", "low", 2],
     ["okou-1.0-max", "gpt-6-sol", "@preset/okou-1-0-max", "high", 2],
   ] as const)(
-    "%s uses its backing model's runtime capabilities",
+    "%s projects its backing model's OpenRouter limits into both runtimes",
     (model, backingModel, presetModel, reasoningEffort, codexPriority) => {
       expect(OKOU_MODEL_METADATA[model]).toMatchObject({
         backingModel,
+        openRouterModelId: `openai/${backingModel}`,
         presetModel,
         reasoningEffort,
         pi: {
@@ -18,8 +19,9 @@ describe("Okou model metadata", () => {
           maxTokens: 128_000,
         },
         codex: {
-          contextWindow: 272_000,
-          maxContextWindow: 872_000,
+          contextWindow: 1_050_000,
+          maxContextWindow: 1_050_000,
+          effectiveContextWindowPercent: 87,
           priority: codexPriority,
         },
       });

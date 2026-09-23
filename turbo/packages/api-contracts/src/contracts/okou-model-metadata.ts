@@ -16,33 +16,35 @@ type PiRuntimeLimits = {
 type CodexRuntimeLimits = {
   readonly contextWindow: number;
   readonly maxContextWindow: number;
+  readonly effectiveContextWindowPercent: number;
 };
 
-// Pi reflects the OpenRouter model limits. Codex's context_window and
-// max_context_window follow the GPT-6 entries in Codex's own model catalog;
-// they are runtime-specific values, not contradictory limits on the model.
-const GPT_6_PI_LIMITS = {
-  contextWindow: 1_050_000,
-  maxTokens: 128_000,
-} as const satisfies PiRuntimeLimits;
+type OpenRouterModelLimits = {
+  readonly contextLength: number;
+  readonly maxCompletionTokens: number;
+};
 
-const GPT_6_CODEX_LIMITS = {
-  contextWindow: 272_000,
-  maxContextWindow: 872_000,
-} as const satisfies CodexRuntimeLimits;
-
+/** Snapshot of OpenRouter /api/v1/models for each exact backing-model ID. */
 const OKOU_BACKING_MODELS = {
   "gpt-6-luna": {
     displayName: "GPT-6 Luna",
-    pi: GPT_6_PI_LIMITS,
-    codex: GPT_6_CODEX_LIMITS,
+    openRouterModelId: "openai/gpt-6-luna",
+    contextLength: 1_050_000,
+    maxCompletionTokens: 128_000,
   },
   "gpt-6-sol": {
     displayName: "GPT-6 Sol",
-    pi: GPT_6_PI_LIMITS,
-    codex: GPT_6_CODEX_LIMITS,
+    openRouterModelId: "openai/gpt-6-sol",
+    contextLength: 1_050_000,
+    maxCompletionTokens: 128_000,
   },
-} as const;
+} as const satisfies Record<
+  string,
+  OpenRouterModelLimits & {
+    readonly displayName: string;
+    readonly openRouterModelId: string;
+  }
+>;
 
 type OkouBackingModel = keyof typeof OKOU_BACKING_MODELS;
 
@@ -54,6 +56,7 @@ type OkouModelMetadata = {
   readonly inputModalities: typeof OKOU_INPUT_MODALITIES;
   readonly pi: PiRuntimeLimits;
   readonly codex: CodexRuntimeLimits & { readonly priority: number };
+  readonly openRouterModelId: string;
 };
 
 type OkouModelDefinition = {
@@ -66,14 +69,30 @@ type OkouModelDefinition = {
 
 function defineOkouModel(definition: OkouModelDefinition): OkouModelMetadata {
   const backingModel = OKOU_BACKING_MODELS[definition.backingModel];
+  // Codex has no catalog field for max_completion_tokens. Its effective input
+  // window therefore reserves the OpenRouter output ceiling from the total
+  // context window, rounding down to avoid exceeding the provider's limit.
+  const effectiveContextWindowPercent = Math.floor(
+    ((backingModel.contextLength - backingModel.maxCompletionTokens) * 100) /
+      backingModel.contextLength,
+  );
   return {
     displayName: definition.displayName,
     backingModel: definition.backingModel,
     presetModel: definition.presetModel,
     reasoningEffort: definition.reasoningEffort,
     inputModalities: OKOU_INPUT_MODALITIES,
-    pi: backingModel.pi,
-    codex: { ...backingModel.codex, priority: definition.codexPriority },
+    openRouterModelId: backingModel.openRouterModelId,
+    pi: {
+      contextWindow: backingModel.contextLength,
+      maxTokens: backingModel.maxCompletionTokens,
+    },
+    codex: {
+      contextWindow: backingModel.contextLength,
+      maxContextWindow: backingModel.contextLength,
+      effectiveContextWindowPercent,
+      priority: definition.codexPriority,
+    },
   };
 }
 
@@ -159,6 +178,8 @@ export const OKOU_MODEL_CODEX_CATALOG = {
       priority: metadata.codex.priority,
       context_window: metadata.codex.contextWindow,
       max_context_window: metadata.codex.maxContextWindow,
+      effective_context_window_percent:
+        metadata.codex.effectiveContextWindowPercent,
       input_modalities: [...metadata.inputModalities],
     };
   }),
