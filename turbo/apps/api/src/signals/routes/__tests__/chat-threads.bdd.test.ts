@@ -201,6 +201,17 @@ async function entitledChatActorWithoutRunner(
   chatCallbacks.disableVapid();
   await api.grantProEntitlement(actor);
   const { providerId } = await api.ensureOrgModelProvider(actor);
+  // Thread lifecycle tests claim and complete a native-harness run. Fable is
+  // the permanently native Claude route now that Pi has no off switch.
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",

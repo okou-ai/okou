@@ -181,7 +181,7 @@ describe("POST /api/test/runtime-state/action", () => {
       bdd.acceptAgentStorageWrites();
       runs.acceptStorageDownloads();
       runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
+      runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: `BDD ${selectedModel} fallback catalog agent`,
@@ -210,20 +210,12 @@ describe("POST /api/test/runtime-state/action", () => {
         throw new Error(`Expected a ${selectedModel} run`);
       }
       const runId = sent.body.runId;
-      await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(runId);
+      // Pi-admitted DeepSeek models can complete or fail in API-first execution
+      // before a Runner claim exists. Verify the committed route on the run
+      // itself rather than asserting a retired Codex-specific claim shape.
       onTestFinished(async () => {
         await runs.requestCancelRun(actor, runId, [200, 400]);
       });
-
-      expect(claim.environment?.OPENAI_MODEL).toBe(fallback.upstream_model);
-      expect(claim.codexRuntimeConfig?.providerId).toBe("openrouter-codex");
-      expect(claim.codexRuntimeConfig?.modelCatalog?.models).toStrictEqual([
-        expect.objectContaining({
-          slug: fallback.upstream_model,
-          apply_patch_tool_type: null,
-        }),
-      ]);
       const detail = await reads.requestReadLogById(actor, runId, [200]);
       expect(detail.body).toMatchObject({
         modelProvider: "built-in",

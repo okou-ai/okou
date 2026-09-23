@@ -332,7 +332,7 @@ describe("custom model provider gateway routes", () => {
               authHeaderName: "Authorization",
               authHeaderTemplate: "Bearer {{secret}}",
               modelMappings: {
-                "claude-sonnet-5": "company-sonnet-production",
+                "claude-fable-5-1": "company-fable-production",
               },
             },
             {
@@ -341,7 +341,7 @@ describe("custom model provider gateway routes", () => {
               authHeaderName: "x-api-key",
               authHeaderTemplate: "{{secret}}",
               modelMappings: {
-                "gpt-5.6-sol": "company-gpt-production",
+                "gpt-6-astra": "company-gpt-production",
                 "deepseek-v4-flash": "deepseek-v4-flash-0731",
                 "deepseek-v4-pro": "company-deepseek-pro-production",
               },
@@ -362,7 +362,7 @@ describe("custom model provider gateway routes", () => {
     }
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         isDefault: true,
         defaultProviderType: "custom-anthropic-messages",
         credentialScope: "org",
@@ -377,7 +377,7 @@ describe("custom model provider gateway routes", () => {
         clientEventId: randomUUID(),
         agentId: agent.agentId,
         prompt: "exercise the custom gateway",
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
       },
       [201],
     );
@@ -394,7 +394,7 @@ describe("custom model provider gateway routes", () => {
     expect(claim.cliAgentType).toBe("claude-code");
     expect(claim.environment).toMatchObject({
       ANTHROPIC_BASE_URL: "https://gateway.example.com/anthropic",
-      ANTHROPIC_MODEL: "company-sonnet-production",
+      ANTHROPIC_MODEL: "company-fable-production",
     });
     const firewallName = `model-provider-surface:${messagesSurface.id}`;
     const firewall = claim.firewalls?.find((entry) => {
@@ -446,7 +446,7 @@ describe("custom model provider gateway routes", () => {
 
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "custom-openai-responses",
         credentialScope: "org",
@@ -460,7 +460,7 @@ describe("custom model provider gateway routes", () => {
         clientEventId: randomUUID(),
         agentId: agent.agentId,
         prompt: "exercise the custom Responses gateway",
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
       },
       [201],
     );

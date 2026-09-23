@@ -6,7 +6,6 @@ import {
   randomUUID,
   sign as signData,
 } from "node:crypto";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import {
   connectorAccountsContract,
   type ConnectorAccountMutationIntent,
@@ -72,7 +71,8 @@ const GMAIL_TOPIC_NAME = "projects/vm0-ai-488909/topics/gmail-events";
 const GMAIL_AUDIENCE = "https://api.okou.ai/api/webhooks/gmail";
 const GMAIL_PUSH_SERVICE_ACCOUNT =
   "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com";
-const GMAIL_WORKSPACE_MODEL = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+// Queue/claim fixtures deliberately use the permanently native Claude route.
+const GMAIL_WORKSPACE_MODEL = "claude-fable-5-1";
 const GOOGLE_OIDC_CERT_KID = "gmail-pubsub-test-key";
 const googleOidcKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const googleOidcPublicKeyPem = googleOidcKeyPair.publicKey.export({
@@ -617,6 +617,9 @@ async function setupFixture(
     displayName: "BDD Gmail Webhook Owner",
   });
   await grantVisibleCredits({ ...actor, orgId: actor.orgId });
+  // Fable's native Runner route requires the same Pro eligibility as other
+  // native-harness fixtures; keep the credit-purchase setup for billing checks.
+  await runsApi.grantProEntitlement(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "gmail-webhook-agent",
     visibility: "private",
