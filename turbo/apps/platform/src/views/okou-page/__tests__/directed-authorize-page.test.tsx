@@ -286,7 +286,11 @@ test("Show an unavailable state for a deleted agent", async () => {
       screen.getByRole("heading", { name: "Agent not found" }),
     ).toBeVisible();
   });
-  expect(screen.queryByRole("button", { name: "Authorize Okou" })).toBeNull();
+  expect(
+    queryAllByRoleFast("button").some((button) => {
+      return button.textContent?.trim() === "Authorize Okou";
+    }),
+  ).toBe(false);
 });
 
 test("Connect a manual-token connector while authorizing an agent", async () => {
