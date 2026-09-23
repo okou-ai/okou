@@ -147,16 +147,6 @@ impl ApiRequestBuilder {
         Ok(FinalizedApiRequest { request, context })
     }
 
-    pub(crate) fn native_gpt_6_reader(self) -> Self {
-        Self {
-            builder: self
-                .builder
-                .header("X-Native-Gpt-6-Sol", "1")
-                .header("X-Native-Gpt-6-Luna", "1"),
-            ..self
-        }
-    }
-
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {
@@ -981,19 +971,6 @@ mod tests {
             header_value(&request, CLIENT_REQUEST_ID_HEADER),
             "caller-request"
         );
-    }
-
-    #[test]
-    fn native_gpt_6_reader_advertises_both_model_capabilities() {
-        let http = http_client("https://api.vm0.dev/");
-        let request = http
-            .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
-            .native_gpt_6_reader()
-            .build()
-            .unwrap();
-
-        assert_eq!(header_value(&request, "X-Native-Gpt-6-Sol"), "1");
-        assert_eq!(header_value(&request, "X-Native-Gpt-6-Luna"), "1");
     }
 
     #[test]

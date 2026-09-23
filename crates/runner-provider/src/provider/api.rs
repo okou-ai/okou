@@ -4314,6 +4314,7 @@ mod tests {
                 when.method(POST)
                     .path(routes::runners::poll::POLL.path)
                     .header("X-Native-Gpt-6-Sol", "1")
+                    .header("X-Native-Gpt-6-Luna", "1")
                     .json_body(serde_json::json!({
                         "runnerId": "550e8400-e29b-41d4-a716-446655440000",
                         "group": "default",
@@ -5469,7 +5470,8 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(claim_path.as_str())
-                    .header("X-Native-Gpt-6-Sol", "1");
+                    .header("X-Native-Gpt-6-Sol", "1")
+                    .header("X-Native-Gpt-6-Luna", "1");
                 then.status(200)
                     .header("content-type", "application/json")
                     .body(RUNNER_CLAIM_RESPONSE_FIXTURE);
