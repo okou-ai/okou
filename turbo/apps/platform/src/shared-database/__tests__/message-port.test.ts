@@ -1054,6 +1054,7 @@ test("Keep indicators readable when message-triggered chat warming fails", async
   ).resolves.toStrictEqual({
     agents: {},
     threads: { [threadId]: "unread" },
+    unreadAt: {},
   });
 
   failCatchUp = false;
