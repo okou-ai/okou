@@ -347,6 +347,15 @@ remain available without hovering.
 
 ## Component contracts
 
+`PopoverContent` and `SelectContent` express their two-part shadow as an exact
+arbitrary utility. It is not Tailwind's `shadow-lg`: the second shadow uses 5%
+black. Callers can replace it through `className` (`shadow-none` for a bare
+positioning box), and focus rings compose with the default shadow. Popup
+`style` objects and Base UI state callbacks pass through unchanged and retain
+their inline precedence. `TooltipContent` likewise keeps the `--tooltip-bg`
+fallback and `--on-filled` foreground in overridable utilities. The switch
+thumb uses literal white, because the shared `white` token changes with theme.
+
 A component owns its own utilities. Reach for the component rather than
 restating its treatment. Call sites own layout and container-query context;
 app-wide stacking belongs to the shell, and floating-layer stacking belongs to
@@ -1403,6 +1412,12 @@ else. The `.wmde-markdown p` selector is a `third-party-dom-adapter` entry, one
 of the seven `.wmde-markdown` rules that declare a margin.
 
 ### Toast styling under an unlayered stylesheet
+
+The default warning SVG owns its literal amber utility. Toast font uses
+`font-family-sans` on the toast itself: Sonner declares its font on the parent
+toaster, so this direct declaration wins over inheritance without `!important`.
+Per-toast inline font overrides still win. Do not move that utility onto the
+toaster, where Sonner's unlayered declaration would override it.
 
 Sonner injects its stylesheet into `document.head` at module load, unlayered.
 Unlayered rules outrank every layer, so a `@layer utilities` declaration loses

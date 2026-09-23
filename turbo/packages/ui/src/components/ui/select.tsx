@@ -137,7 +137,6 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
       side = "bottom",
       sideOffset = 4,
       sticky,
-      style,
       viewportClassName,
       ...props
     },
@@ -163,24 +162,9 @@ const SelectContent = React.forwardRef<HTMLDivElement, SelectContentProps>(
             data-slot="select-content"
             className={cn(
               anchoredPopupTransitionClassName,
-              "relative max-h-[min(24rem,var(--available-height))] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden overflow-y-auto rounded-[12px] border border-[hsl(var(--gray-400))] bg-card text-foreground outline-none data-[side=none]:data-starting-style:opacity-100 data-[side=none]:data-starting-style:[transform:scale(1)] data-[side=none]:transition-none",
+              "relative max-h-[min(24rem,var(--available-height))] min-w-[max(8rem,var(--anchor-width))] overflow-x-hidden overflow-y-auto rounded-[12px] border border-[hsl(var(--gray-400))] bg-card text-foreground shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)] outline-none data-[side=none]:data-starting-style:opacity-100 data-[side=none]:data-starting-style:[transform:scale(1)] data-[side=none]:transition-none",
               className,
             )}
-            style={
-              typeof style === "function"
-                ? (state) => {
-                    return {
-                      boxShadow:
-                        "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                      ...style(state),
-                    };
-                  }
-                : {
-                    boxShadow:
-                      "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-                    ...style,
-                  }
-            }
             {...props}
           >
             {!hideScrollButtons && <SelectScrollUpButton />}
