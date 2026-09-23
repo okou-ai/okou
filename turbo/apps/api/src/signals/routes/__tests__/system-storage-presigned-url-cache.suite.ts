@@ -557,12 +557,12 @@ describe("system storage presigned URL cache", () => {
         archiveUrl: expectedPresignedUrl(systemObjectKey, 1),
       },
     ];
-    expect(
-      await createAndClaim("warm the mixed-scope storage URL cache"),
-    ).toStrictEqual(expected);
-    expect(
-      await createAndClaim("reuse the mixed-scope storage URL cache"),
-    ).toStrictEqual(expected);
+    await expect(
+      createAndClaim("warm the mixed-scope storage URL cache"),
+    ).resolves.toStrictEqual(expected);
+    await expect(
+      createAndClaim("reuse the mixed-scope storage URL cache"),
+    ).resolves.toStrictEqual(expected);
     expect(signedCount(readOnlyObjectKey)).toBe(1);
     expect(signedCount(systemObjectKey)).toBe(1);
   });
