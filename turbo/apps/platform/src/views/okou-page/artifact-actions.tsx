@@ -679,7 +679,7 @@ export function ArtifactImageNavigationControls({
           data-testid={`${testIdPrefix}-previous-image`}
           variant="quiet"
           size="icon-lg"
-          className="absolute left-4 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
+          className="absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
         >
           <ChevronLeft size={22} />
         </Button>
@@ -696,7 +696,7 @@ export function ArtifactImageNavigationControls({
           data-testid={`${testIdPrefix}-next-image`}
           variant="quiet"
           size="icon-lg"
-          className="absolute right-4 top-1/2 z-20 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
+          className="absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-lg backdrop-blur-sm [&_svg]:size-[22px]"
         >
           <ChevronRight size={22} />
         </Button>

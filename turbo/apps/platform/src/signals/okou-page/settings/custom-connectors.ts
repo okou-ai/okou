@@ -26,6 +26,10 @@ import { i18n } from "../../../i18n/index.ts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { agents$ } from "../../agent.ts";
+import {
+  connectorAgentAccess$,
+  reloadConnectorAgentAccess$,
+} from "./connector-agent-access.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { setAblyLoop$ } from "../../realtime.ts";
 import { waitForOperation, waitLoopUntil, withCleanup } from "../../utils.ts";
@@ -104,20 +108,32 @@ export const customConnectorAgentAuthorizations$ = computed(
       return [];
     }
 
-    const allAgents = await get(agents$);
-    const client = get(apiClient$)(agentCustomConnectorsContract);
-    const rows = await Promise.all(
-      allAgents.map(async (agent) => {
-        const result = await accept(
-          client.get({ params: { id: agent.agentId } }),
-          [200, 404],
-        );
-        return result.status === 404 ? null : { agent, access: result.body };
-      }),
-    );
-    return rows.filter((row): row is CustomConnectorAgentAuthorization => {
-      return row !== null;
-    });
+    const [allAgents, access] = await Promise.all([
+      get(agents$),
+      get(connectorAgentAccess$),
+    ]);
+    const grantsByAgent = new Map<
+      string,
+      AgentCustomConnectorGrants["grants"]
+    >();
+    const visibleAgentIds = new Set(access.visibleAgentIds);
+    for (const { agentId, connectorId, permissionNames } of access.custom) {
+      const grants = grantsByAgent.get(agentId) ?? [];
+      grantsByAgent.set(agentId, [
+        ...grants,
+        { customConnectorId: connectorId, permissionNames },
+      ]);
+    }
+    return allAgents
+      .filter((agent) => {
+        return visibleAgentIds.has(agent.agentId);
+      })
+      .map((agent) => {
+        return {
+          agent,
+          access: { grants: grantsByAgent.get(agent.agentId) ?? [] },
+        };
+      });
   },
 );
 
@@ -141,6 +157,7 @@ export const reloadCustomConnectorAuthorizedAgents$ = command(({ set }) => {
   set(internalAuthorizedAgentsReload$, (value) => {
     return value + 1;
   });
+  set(reloadConnectorAgentAccess$);
 });
 
 export const setCustomConnectorAgentAuthorization$ = command(

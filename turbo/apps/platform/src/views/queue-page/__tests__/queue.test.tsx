@@ -91,6 +91,28 @@ function button(container: ParentNode, name: string): HTMLElement {
   return result!;
 }
 
+test("The queue deep link opens a drawer that can be closed", async () => {
+  const user = userEvent.setup({ delay: null });
+  installQueuePageFixture(context, {
+    billing: billingStatus({}),
+    queue: queueResponse({
+      tier: "team",
+      limit: 10,
+      active: 10,
+      available: 0,
+      memberUsage: [],
+    }),
+  });
+
+  await setupPage({ context, path: openQueuePath() });
+
+  const drawer = await visibleQueueDrawer();
+  await user.click(button(drawer, "Close"));
+  await waitFor(() => {
+    expect(drawer).not.toBeInTheDocument();
+  });
+});
+
 test("Team and Custom administrators can buy additional concurrency without changing plans", async () => {
   const teamBilling = billingStatus({
     tier: "team",

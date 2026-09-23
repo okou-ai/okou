@@ -122,6 +122,12 @@ export const GPT_PI_BDD_MODELS = [
 
 export type PiGptBddModel = (typeof GPT_PI_BDD_MODELS)[number];
 
+const GPT_PI_USAGE_MODELS = [
+  ...GPT_PI_BDD_MODELS,
+  "gpt-6-sol",
+  "gpt-6-luna",
+] as const;
+
 export const GPT_API_KEY_BDD_ROUTES = GPT_PI_BDD_MODELS.flatMap(
   (selectedModel) => {
     return [
@@ -194,7 +200,7 @@ const GPT_USAGE_PRICING = [
   "tokens.cache_read.long_context.fast",
   "tokens.cache_creation.long_context.fast",
 ].flatMap((category) => {
-  return GPT_PI_BDD_MODELS.map((provider) => {
+  return GPT_PI_USAGE_MODELS.map((provider) => {
     return {
       kind: "model",
       provider,
@@ -213,7 +219,7 @@ export type PiApiFirstTurnUsageProvider =
   | "okou-1.0"
   | "okou-1.0-pro"
   | "okou-1.0-max"
-  | PiGptBddModel;
+  | (typeof GPT_PI_USAGE_MODELS)[number];
 
 type UserMessage = Extract<
   ChatEvent,
@@ -386,7 +392,7 @@ export async function createPiApiFirstTurnUsagePricingResolution(
   provider: PiApiFirstTurnUsageProvider,
 ): Promise<UsagePricingFixture["resolution"]> {
   if (
-    GPT_PI_BDD_MODELS.some((model) => {
+    GPT_PI_USAGE_MODELS.some((model) => {
       return model === provider;
     })
   ) {

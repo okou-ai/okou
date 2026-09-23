@@ -1,4 +1,3 @@
-import type { MouseEvent } from "react";
 import {
   useGet,
   useLastLoadable,
@@ -183,11 +182,6 @@ function ChatThreadListPaneIcon({
   );
 }
 
-function preventChatThreadMenuNavigation(e: MouseEvent) {
-  e.preventDefault();
-  e.stopPropagation();
-}
-
 function ChatThreadMarkUnreadMenuItem({
   signals,
 }: {
@@ -334,7 +328,6 @@ function ChatThreadMenu({
           render={
             <Button
               type="button"
-              onClick={preventChatThreadMenuNavigation}
               variant="quiet"
               size="icon-2xs"
               className={`group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${

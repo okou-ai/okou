@@ -1,4 +1,10 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
@@ -75,6 +81,51 @@ function requiredButtonNamed(name: string): HTMLElement {
     throw new Error(`Button not found: ${name}`);
   }
   return button;
+}
+
+function selectionActionButtons(): HTMLElement[] {
+  return queryAllByRoleFast("button").filter((button) => {
+    return ["c", "q", "f"].includes(
+      button.getAttribute("aria-keyshortcuts") ?? "",
+    );
+  });
+}
+
+function selectAnswerText(): void {
+  const answer = screen.getByText(ANSWER);
+  const range = document.createRange();
+  range.selectNodeContents(answer);
+  const rect = new DOMRect(24, 24, 200, 24);
+  Object.defineProperty(range, "getClientRects", {
+    value: () => {
+      return [rect];
+    },
+  });
+  const selection = window.getSelection();
+  if (!selection) {
+    throw new Error("Text selection is unavailable");
+  }
+  fireEvent.pointerDown(answer, {
+    button: 0,
+    isPrimary: true,
+    pointerId: 1,
+    pointerType: "mouse",
+  });
+  selection.removeAllRanges();
+  selection.addRange(range);
+  fireEvent(document, new Event("selectionchange"));
+  fireEvent.pointerUp(answer, {
+    button: 0,
+    isPrimary: true,
+    pointerId: 1,
+    pointerType: "mouse",
+  });
+  fireEvent.click(answer);
+}
+
+function clearAnswerSelection(): void {
+  window.getSelection()?.removeAllRanges();
+  fireEvent(document, new Event("selectionchange"));
 }
 
 function selectableGroupForText(text: string): HTMLElement {
@@ -293,6 +344,59 @@ test("Share selected message groups as a public conversation snapshot", async ()
   click(within(answerGroup).getByText("Deselect message group"));
   expect(within(answerGroup).getByRole("checkbox")).toBeChecked();
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
+});
+
+test("Hide passage actions throughout sharing and restore them afterward", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  mockConversation();
+  context.mocks.api(sharedThreadsContract.create, ({ respond }) => {
+    return respond(201, { id: SHARED_THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+  });
+  await screen.findByText(ANSWER);
+  selectAnswerText();
+  await waitFor(() => {
+    expect(selectionActionButtons()).toHaveLength(3);
+  });
+
+  click(requiredButtonNamed("Share messages"));
+  await screen.findAllByText("0 selected");
+  expect(selectionActionButtons()).toHaveLength(0);
+
+  clearAnswerSelection();
+  selectAnswerText();
+  expect(window.getSelection()?.toString()).toBe(ANSWER);
+  expect(selectionActionButtons()).toHaveLength(0);
+  const answerGroup = selectableGroupForText(ANSWER);
+  expect(within(answerGroup).getByRole("checkbox")).not.toBeChecked();
+  expect(requiredButtonNamed("Share")).toBeDisabled();
+
+  click(within(answerGroup).getByText("Select message group"));
+  await screen.findAllByText("1 selected");
+
+  click(requiredButtonNamed("Share"));
+  await screen.findByRole("textbox", { name: "Shared conversation link" });
+  expect(clipboard.writes).toStrictEqual([
+    `https://app.okou.ai/share/threads/${SHARED_THREAD_ID}`,
+  ]);
+  clearAnswerSelection();
+  selectAnswerText();
+  expect(selectionActionButtons()).toHaveLength(0);
+
+  click(requiredButtonNamed("Close"));
+  await waitFor(() => {
+    expect(buttonsNamed("Share messages").length).toBeGreaterThan(0);
+  });
+  expect(selectionActionButtons()).toHaveLength(0);
+  clearAnswerSelection();
+  selectAnswerText();
+  await waitFor(() => {
+    expect(selectionActionButtons()).toHaveLength(3);
+  });
 });
 
 // Back-to-back user messages are pulled together by a negative margin sized

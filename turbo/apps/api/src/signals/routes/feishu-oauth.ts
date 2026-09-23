@@ -19,6 +19,7 @@ import { testOverride } from "../../lib/singleton";
 import { queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import {
   fetchFeishuUserInfo,
   type FeishuUserInfo,
@@ -617,6 +618,12 @@ async function finishFeishuOAuthConnection(
     args.state.userId,
     signal,
   );
+  await publishUserSignal(
+    [args.state.userId],
+    "composerAgentConnectorsChanged",
+    { agentId: args.installation.defaultAgentId },
+  );
+  signal.throwIfAborted();
 
   await publishFeishuOrgChanged(
     args.db,

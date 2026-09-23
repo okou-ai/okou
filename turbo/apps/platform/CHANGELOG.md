@@ -11,6 +11,34 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.949.1](https://github.com/okou-ai/okou/compare/app-v0.949.0...app-v0.949.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **app:** use native labels for computer access rows ([#36237](https://github.com/okou-ai/okou/issues/36237)) ([191eb09](https://github.com/okou-ai/okou/commit/191eb0900d9f8cbf2b076a241d08a2097fe415e1))
+* **platform:** align the artifact catalog error icon with its message row ([#36228](https://github.com/okou-ai/okou/issues/36228)) ([1fbe9ee](https://github.com/okou-ai/okou/commit/1fbe9ee7001a1e5114cb62374bc6fdab3744d903))
+* **platform:** reveal template titles from preview controls ([#36229](https://github.com/okou-ai/okou/issues/36229)) ([dcde774](https://github.com/okou-ai/okou/commit/dcde7746a7f6bff26ab435d54c6456689ff71f49))
+* **platform:** simplify claude account copy ([#36275](https://github.com/okou-ai/okou/issues/36275)) ([1bfa2af](https://github.com/okou-ai/okou/commit/1bfa2affd51733a9e8142b95a00f25bc070b4a12))
+* **ui:** connect toast colors to the resolved app theme ([#36243](https://github.com/okou-ai/okou/issues/36243)) ([2be5c19](https://github.com/okou-ai/okou/commit/2be5c19040dfad45f1efbdc471743d08363881d6))
+
+
+### Refactoring
+
+* **app:** use native tabs for template categories ([#36124](https://github.com/okou-ai/okou/issues/36124)) ([a8c5e85](https://github.com/okou-ai/okou/commit/a8c5e856d826bea8130a64a35418c55866c4dd05))
+* **platform:** move static business styles into utilities ([#36242](https://github.com/okou-ai/okou/issues/36242)) ([2360109](https://github.com/okou-ai/okou/commit/23601090e43d0252745c94bb071df22504d8e296))
+* **platform:** separate captured body copy and disclosure actions ([#36290](https://github.com/okou-ai/okou/issues/36290)) ([591921b](https://github.com/okou-ai/okou/commit/591921b6db6b1195e522998e9a36ce024f61883d))
+* retire chat thread unreads get endpoint ([#36271](https://github.com/okou-ai/okou/issues/36271)) ([125f010](https://github.com/okou-ai/okou/commit/125f010e0c056b8051f04a5be40049dd5cafc2c6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.1
+    * @okouai/core bumped to 8.703.1
+    * @okouai/ui bumped to 1.11.9
+
 ## [0.949.0](https://github.com/okou-ai/okou/compare/app-v0.948.0...app-v0.949.0) (2026-09-23)
 
 

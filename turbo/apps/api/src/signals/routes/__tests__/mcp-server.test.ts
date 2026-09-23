@@ -152,6 +152,13 @@ const fullCatalogToolNames = [
 ] as const;
 
 type FullCatalogToolName = (typeof fullCatalogToolNames)[number];
+const directoryFlaggedInputFields = {
+  search_chat_messages: ["threadId", "agentId", "since", "before"],
+  list_chat_threads: ["since", "before"],
+  create_chat_thread: ["requestId", "agentId"],
+  update_chat_thread: ["requestId", "threadId"],
+  send_chat_message: ["threadId", "requestId"],
+} as const;
 type CatalogSchemaContract = {
   readonly input: StandardSchemaWithJSON;
   readonly output: StandardSchemaWithJSON;
@@ -224,85 +231,85 @@ const fullCatalogBudgets = {
     description: 517,
     inputSchema: 749,
     outputSchema: 2153,
-    annotations: 89,
-    total: 3597,
+    annotations: 118,
+    total: 3626,
   },
   search_chat_messages: {
     description: 627,
-    inputSchema: 1102,
-    outputSchema: 1994,
-    annotations: 89,
-    total: 3904,
+    inputSchema: 1543,
+    outputSchema: 2142,
+    annotations: 120,
+    total: 4524,
   },
   get_chat_status: {
     description: 1057,
-    inputSchema: 836,
-    outputSchema: 5355,
-    annotations: 89,
-    total: 7424,
+    inputSchema: 1173,
+    outputSchema: 6251,
+    annotations: 115,
+    total: 8683,
   },
   list_agents: {
     description: 321,
     inputSchema: 241,
     outputSchema: 832,
-    annotations: 89,
-    total: 1566,
+    annotations: 111,
+    total: 1588,
   },
   list_models: {
     description: 368,
     inputSchema: 119,
     outputSchema: 1026,
-    annotations: 89,
-    total: 1685,
+    annotations: 111,
+    total: 1707,
   },
   list_chat_threads: {
     description: 524,
-    inputSchema: 1060,
-    outputSchema: 2215,
-    annotations: 89,
-    total: 3977,
+    inputSchema: 1343,
+    outputSchema: 2908,
+    annotations: 117,
+    total: 4981,
   },
   get_chat_thread: {
     description: 421,
     inputSchema: 366,
-    outputSchema: 2121,
-    annotations: 89,
-    total: 3084,
+    outputSchema: 2814,
+    annotations: 115,
+    total: 3803,
   },
   create_chat_thread: {
     description: 701,
-    inputSchema: 649,
-    outputSchema: 2877,
-    annotations: 90,
-    total: 4407,
+    inputSchema: 797,
+    outputSchema: 5183,
+    annotations: 119,
+    total: 6890,
   },
   update_chat_thread: {
     description: 563,
-    inputSchema: 723,
-    outputSchema: 1666,
-    annotations: 91,
-    total: 3133,
+    inputSchema: 871,
+    outputSchema: 2359,
+    annotations: 120,
+    total: 4003,
   },
   send_chat_message: {
     description: 578,
-    inputSchema: 521,
-    outputSchema: 1688,
-    annotations: 90,
-    total: 2966,
+    inputSchema: 669,
+    outputSchema: 2843,
+    annotations: 118,
+    total: 4297,
   },
   revoke_queued_message: {
     description: 293,
-    inputSchema: 631,
-    outputSchema: 878,
-    annotations: 89,
-    total: 1984,
+    inputSchema: 779,
+    outputSchema: 1215,
+    annotations: 121,
+    total: 2501,
   },
   cancel_run: {
     description: 274,
     inputSchema: 360,
     outputSchema: 473,
-    annotations: 88,
-    total: 1277,
+    annotations: 109,
+    total: 1298,
   },
 } satisfies Record<FullCatalogToolName, CatalogBudget>;
 
@@ -501,6 +508,31 @@ function measureCatalogTool(tool: {
     annotations: jsonBytes(tool.annotations),
     total: jsonBytes(tool),
   };
+}
+
+function expectDirectoryFlaggedInputFields(tool: {
+  readonly name: string;
+  readonly inputSchema: Record<string, unknown>;
+}): void {
+  const fields =
+    directoryFlaggedInputFields[
+      tool.name as keyof typeof directoryFlaggedInputFields
+    ];
+  if (!fields) {
+    return;
+  }
+  const properties = tool.inputSchema.properties;
+  if (!isJsonObject(properties)) {
+    throw new Error(`${tool.name} must advertise input properties`);
+  }
+  for (const field of fields) {
+    expect(properties[field]).toMatchObject({ type: "string" });
+    if (field.endsWith("Id")) {
+      expect(properties[field]).toMatchObject({ format: "uuid" });
+    } else {
+      expect(properties[field]).toHaveProperty("allOf");
+    }
+  }
 }
 
 function catalogArrayOverhead(toolCount: number): number {
@@ -6714,6 +6746,9 @@ describe("external MCP entry", () => {
             throw new Error(`Missing catalog budget for ${tool.name}`);
           }
           const toolName = tool.name as FullCatalogToolName;
+          const title = z.string().min(2).parse(tool.annotations.title);
+          expect(title).toMatch(/^[A-Z][A-Za-z ]+$/u);
+          expectDirectoryFlaggedInputFields(tool);
           const measured = measureCatalogTool(tool);
           const budget = fullCatalogBudgets[toolName];
           for (const component of [
@@ -6743,13 +6778,10 @@ describe("external MCP entry", () => {
             ],
           ] as const) {
             expect(
-              jsonBytes(advertised),
-              `${toolName}.${schemaName} compaction must be byte-nonincreasing`,
-            ).toBeLessThanOrEqual(jsonBytes(canonical));
-            expect(
-              resolveLocalJsonSchema(advertised),
-              `${toolName}.${schemaName} must preserve the canonical contract`,
+              advertised,
+              `${toolName}.${schemaName} must inline the canonical contract`,
             ).toStrictEqual(resolveLocalJsonSchema(canonical));
+            expect(JSON.stringify(advertised)).not.toMatch(/"\$(?:ref|defs)"/u);
             const advertisedValidator = schemaValidator.getValidator(
               advertised as JsonSchemaType,
             );
@@ -6772,7 +6804,6 @@ describe("external MCP entry", () => {
             );
           }, 0);
         expect(jsonBytes(listedTools)).toBeLessThanOrEqual(catalogBudget);
-        expect(JSON.stringify(listedTools)).toContain('"$ref":"#/$defs/');
         const safetyTerms = {
           get_chat_messages: [
             /nextContentCursor/iu,

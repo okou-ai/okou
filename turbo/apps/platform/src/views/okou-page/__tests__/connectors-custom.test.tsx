@@ -40,6 +40,7 @@ import {
   listAgent,
   mcpCustomConnector,
   mockCustomConnectorStory,
+  mockConnectorOverviewAccountSummaries,
   mockOAuthCompletions,
   queryConnectorAction,
 } from "./connector-page-test-helpers.ts";
@@ -99,27 +100,29 @@ function customAccount(
 function mockCustomAccountSummary(
   readConnector: () => CustomConnectorResponse | null,
 ): void {
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+  const summaries = () => {
     const connector = readConnector();
     if (!connector?.connected) {
-      return respond(200, { summaries: [] });
+      return [];
     }
     const account = customAccount(
       connector.id,
       "66666666-6666-4666-8666-666666666666",
       { authMethod: connector.authMode === "manual" ? "manual" : "oauth" },
     );
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        },
-      ],
-    });
+    return [
+      {
+        target: account.target,
+        accountCount: 1,
+        attentionCount: 0,
+        defaultConnection: account,
+      },
+    ];
+  };
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, { summaries: summaries() });
   });
+  mockConnectorOverviewAccountSummaries(context, summaries);
 }
 
 function accountAction(container: ParentNode): HTMLElement {
@@ -213,6 +216,16 @@ test("Add and optionally name a custom connector account", async () => {
           defaultConnection: account,
         };
       }),
+    });
+  });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [...accounts.values()].map((account) => {
+      return {
+        target: account.target,
+        accountCount: 1,
+        attentionCount: 0,
+        defaultConnection: account,
+      };
     });
   });
   context.mocks.api(
@@ -344,6 +357,16 @@ test.each(["http", "mcp-manual", "mcp-automatic"] as const)(
           },
         ],
       });
+    });
+    mockConnectorOverviewAccountSummaries(context, () => {
+      return [
+        {
+          target: existing.target,
+          accountCount: accounts.length,
+          attentionCount: 0,
+          defaultConnection: existing,
+        },
+      ];
     });
     context.mocks.api(
       connectorAccountsContract.connection,
@@ -479,6 +502,17 @@ test("Enable custom connector access when an account becomes available", async (
       });
     },
   );
+  mockConnectorOverviewAccountSummaries(context, async () => {
+    await summariesReady.promise;
+    return [
+      {
+        target: { kind: "custom", customConnectorId: connector.id },
+        accountCount: 1,
+        attentionCount: 0,
+        defaultConnection: null,
+      },
+    ];
+  });
   await setupCustomPage();
   click(
     await waitFor(() => {
@@ -595,6 +629,8 @@ test("Custom connector access rows keep independent save progress", async () => 
 });
 
 test("Manage agent access and permissions for a custom connector", async () => {
+  const user = userEvent.setup({ delay: null });
+  const save = context.mocks.deferred<void>();
   const connector = customConnector({
     connected: true,
     missingRequiredFields: [],
@@ -643,8 +679,9 @@ test("Manage agent access and permissions for a custom connector", async () => {
   );
   context.mocks.api(
     agentCustomConnectorsContract.update,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond, withSignal }) => {
       updates.push({ agentId: params.id, body });
+      await withSignal(save.promise);
       const next = body.operation === "remove" ? [] : body.grants;
       const grants = { grants: next };
       access.set(params.id, grants);
@@ -677,7 +714,19 @@ test("Manage agent access and permissions for a custom connector", async () => {
   });
   expect(within(drawer).getByText("messages:send-as-user")).toBeInTheDocument();
   click(getConnectorAction("button", "Allow", drawer));
+  expect(getConnectorAction("button", "Allow", drawer)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(updates).toHaveLength(0);
   click(getConnectorAction("button", "Apply", drawer));
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Saving...", drawer)).toBeDisabled();
+  });
+  expect(getConnectorAction("button", "Allow", drawer)).toBeDisabled();
+  expect(getConnectorAction("button", "Deny", drawer)).toBeDisabled();
+  expect(getConnectorAction("button", "Cancel", drawer)).toBeDisabled();
+  save.resolve();
   await waitFor(() => {
     expect(
       getConnectorSwitch("Revoke Acme Search access for Support", dialog),
@@ -687,6 +736,15 @@ test("Manage agent access and permissions for a custom connector", async () => {
         "connector-card-agent-access",
       ),
     ).toHaveTextContent("Used by Support");
+  });
+  expect(updates.at(-1)?.body).toStrictEqual({
+    grants: [
+      {
+        customConnectorId: connector.id,
+        permissionNames: ["messages:send-as-user"],
+      },
+    ],
+    operation: "add",
   });
 
   click(
@@ -704,7 +762,18 @@ test("Manage agent access and permissions for a custom connector", async () => {
   expect(
     within(editedDrawer).getByText("messages:send-as-user"),
   ).toBeInTheDocument();
-  click(getConnectorAction("button", "Deny", editedDrawer));
+  const allow = getConnectorAction("button", "Allow", editedDrawer);
+  allow.focus();
+  await user.keyboard("{Enter}{Tab}");
+  expect(getConnectorAction("button", "Deny", editedDrawer)).toHaveFocus();
+  expect(getConnectorAction("button", "Apply", editedDrawer)).toBeDisabled();
+  await user.keyboard(" ");
+  expect(getConnectorAction("button", "Deny", editedDrawer)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(getConnectorAction("button", "Apply", editedDrawer)).toBeEnabled();
+  expect(updates).toHaveLength(1);
   click(getConnectorAction("button", "Apply", editedDrawer));
   await waitFor(() => {
     expect(updates.at(-1)?.body).toStrictEqual({
@@ -1659,6 +1728,17 @@ test.each([
         ],
       });
     });
+    mockConnectorOverviewAccountSummaries(context, () => {
+      return [
+        {
+          target: work.target,
+          accountCount: 2,
+          attentionCount:
+            personal.connectionStatus === "reconnect-required" ? 1 : 0,
+          defaultConnection: work,
+        },
+      ];
+    });
     context.mocks.api(
       connectorAccountsContract.connection,
       ({ params, respond }) => {
@@ -1953,6 +2033,18 @@ test("Add and optionally name a custom OAuth account", async () => {
         : [],
     });
   });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return account
+      ? [
+          {
+            target: account.target,
+            accountCount: 1,
+            attentionCount: 0,
+            defaultConnection: account,
+          },
+        ]
+      : [];
+  });
   context.mocks.api(
     customConnectorOAuth2Contract.start,
     ({ body, respond }) => {
@@ -2243,6 +2335,16 @@ test("Validate new and reconnecting custom accounts appropriately", async () => 
         },
       ],
     });
+  });
+  mockConnectorOverviewAccountSummaries(context, () => {
+    return [
+      {
+        target: existing.target,
+        accountCount: 1,
+        attentionCount: 0,
+        defaultConnection: existing,
+      },
+    ];
   });
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, { connections: [existing], nextCursor: null });

@@ -1,4 +1,8 @@
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -26,6 +30,73 @@ function connectorIcon(trigger: HTMLElement, slug: ConnectorSlug) {
     `img[src="https://icons.example.test/${slug}.svg"]`,
   );
 }
+
+test("Read composer summaries without fetching the connector directory or old authorization endpoints", async () => {
+  installComposerConnectorFixture({
+    catalog: [builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" })],
+    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
+  });
+  const reads = { discovery: 0, custom: 0, builtinGrants: 0, customGrants: 0 };
+  context.mocks.api(connectorCatalogContract.discovery, ({ respond }) => {
+    reads.discovery += 1;
+    return respond(503, {
+      error: { code: "PROVIDER_UNAVAILABLE", message: "Directory unavailable" },
+    });
+  });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    reads.custom += 1;
+    return respond(500, {
+      error: { code: "INTERNAL_ERROR", message: "Directory unavailable" },
+    });
+  });
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+    reads.builtinGrants += 1;
+    return respond(200, { enabledConnectorSlugs: [] });
+  });
+  context.mocks.api(agentCustomConnectorsContract.get, ({ respond }) => {
+    reads.customGrants += 1;
+    return respond(200, { grants: [] });
+  });
+
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  const trigger = await findFastControl("button", "Connectors");
+  await waitFor(() => {
+    expect(connectorIcon(trigger, GITHUB_SLUG)).toBeInTheDocument();
+  });
+  expect(reads).toStrictEqual({
+    discovery: 0,
+    custom: 0,
+    builtinGrants: 0,
+    customGrants: 0,
+  });
+});
+
+test("Show connected connectors while an older API is still serving", async () => {
+  const github = builtinConnector({ slug: GITHUB_SLUG, label: "GitHub" });
+  installComposerConnectorFixture({
+    catalog: [github],
+    builtinAuthorizations: { [SCOUT_AGENT_ID]: [GITHUB_SLUG] },
+  });
+  context.mocks.api(connectorOverviewContract.overview, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Route unavailable" },
+    });
+  });
+  context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Route unavailable" },
+    });
+  });
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, { connectors: [github] });
+  });
+
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  const trigger = await findFastControl("button", "Connectors");
+  await waitFor(() => {
+    expect(connectorIcon(trigger, GITHUB_SLUG)).toBeInTheDocument();
+  });
+});
 
 test("Show connected connector icons without opening the menu", async () => {
   const authorization = context.mocks.deferred<void>();
@@ -152,8 +223,8 @@ test("Allow authorization retry after a rejected save", async () => {
   context.mocks.api(userBuiltinConnectorsContract.update, ({ respond }) => {
     return respond(200, { enabledConnectorSlugs: [] });
   });
-  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
-    return respond(200, { enabledConnectorSlugs: [] });
+  context.mocks.api(connectorOverviewContract.agent, ({ respond }) => {
+    return respond(200, { enabledConnectorSlugs: [], customConnectorIds: [] });
   });
   click(screen.getByLabelText("Remove GitHub"));
   await expect(screen.findByLabelText("Add GitHub")).resolves.toBeVisible();

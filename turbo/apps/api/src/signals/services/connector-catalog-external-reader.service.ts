@@ -17,6 +17,7 @@ import type {
   PublicConnectorCatalogStatusItem,
   PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import {
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
@@ -661,8 +662,12 @@ function featureSwitchHidesAuthMethod(
 function effectiveConnectors(args: {
   readonly catalog: AcceptedConnectorCatalogSnapshot;
   readonly featureStates: ConnectorFeatureStates;
+  readonly connectorSlugs?: ReadonlySet<string>;
 }): readonly EffectiveConnector[] {
   return args.catalog.artifact.connectors.flatMap((connector) => {
+    if (args.connectorSlugs && !args.connectorSlugs.has(connector.slug)) {
+      return [];
+    }
     const authMethods = connector.authMethods.filter((method) => {
       if (
         args.catalog.filteredMethodKeys.has(
@@ -1275,6 +1280,32 @@ export async function getExternalPublicConnectorCatalogStatus(
     featureStates: args.featureStates,
     connection: connection ?? null,
     popularityIndex: createConnectorPopularityIndex(),
+  });
+}
+
+/** Only materialize the connected cards needed by the composer. */
+export async function listExternalConnectedConnectorBriefs(
+  args: ExternalCatalogReadArgs & {
+    readonly connectorSlugs: readonly string[];
+  },
+): Promise<readonly BuiltinConnectorBrief[]> {
+  const connectedSlugs = new Set(args.connectorSlugs);
+  if (connectedSlugs.size === 0) {
+    return [];
+  }
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
+  return effectiveConnectors({
+    catalog,
+    featureStates: args.featureStates,
+    connectorSlugs: connectedSlugs,
+  }).map((entry) => {
+    return {
+      slug: entry.connector.slug,
+      label: entry.connector.label,
+      icon: iconForCatalog(entry.connector),
+      hasPermissions: permissionSummaryForCatalog(entry.connector)
+        .hasPermissions,
+    };
   });
 }
 

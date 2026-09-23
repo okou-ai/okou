@@ -191,7 +191,7 @@ import {
   runGroupVisualWindowStartIndex,
 } from "./run-group-visual-window.ts";
 import { selectedComputerUseHostId } from "../okou-page/computer-use-hosts.ts";
-import { computerUseHostsFromWorker$ } from "../shared-database.ts";
+import { connectorOverview$ } from "../okou-page/connector-overview.ts";
 import { isCodexFastModeAvailableForSelection } from "../okou-page/model-default-selection.ts";
 import { createPersonalModelProviderAuthSignals } from "../okou-page/personal-model-provider-auth.ts";
 import type {
@@ -3851,7 +3851,7 @@ function createThreadSubmitMessageSignal(
     ): Promise<boolean> => {
       const explicit = get(computerUseHostSelection.computerUseHostIdExplicit$);
       const storedHostId = get(computerUseHostSelection.computerUseHostId$);
-      const hosts = await get(computerUseHostsFromWorker$);
+      const hosts = (await get(connectorOverview$)).computerUseHosts;
       signal.throwIfAborted();
       const computerUseHostId = selectedComputerUseHostId(hosts, storedHostId);
       const cloudBrowserEnabled = get(
@@ -4134,6 +4134,7 @@ export function createChatPanelSignals(
     threadId,
     messages.scroll,
     messagePipeline.allChatGroups$,
+    feedback.close$,
   );
   const locator = createChatConversationLocatorSignals({
     threadId,

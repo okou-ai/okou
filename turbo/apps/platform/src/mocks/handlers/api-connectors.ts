@@ -31,6 +31,7 @@ import {
   type ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
+import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
@@ -414,6 +415,42 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
 }
 
 export const apiConnectorsHandlers = [
+  mockApi(connectorOverviewContract.overview, ({ respond }) => {
+    const connected = mockConnectorCatalogStatus().filter((connector) => {
+      return connector.connected;
+    });
+    return respond(200, {
+      builtinConnectors: connected.map((connector) => {
+        return {
+          slug: connector.slug,
+          label: connector.label,
+          icon: connector.icon,
+          hasPermissions: connector.permissionSummary.hasPermissions,
+        };
+      }),
+      customConnectors: [],
+      accountSummaries: mockConnectors.map((connector) => {
+        const account = mockAccountForConnector(connector);
+        return {
+          target: account.target,
+          accountCount: 1,
+          attentionCount:
+            account.connectionStatus === "reconnect-required" ? 1 : 0,
+          defaultConnection: {
+            id: account.id,
+            authMethod: account.authMethod,
+            displayName: account.displayName,
+            externalId: account.externalId,
+            externalUsername: account.externalUsername,
+            externalEmail: account.externalEmail,
+            connectionStatus: account.connectionStatus,
+          },
+        };
+      }),
+      computerUseHosts: [],
+      cloudBrowserEnabledByDefault: true,
+    });
+  }),
   mockApi(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, { connections: [] });
   }),

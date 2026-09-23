@@ -8,6 +8,7 @@ import {
   socialKitRequestSchema,
   socialKitCollectionProviderLimitedReasonSchema,
   socialKitCollectionUncertaintySchema,
+  socialKitInstagramCommentsOutcomeSchema,
   type SocialKitRequest,
 } from "@okouai/api-contracts/contracts/social";
 import { socialPlatformSchema } from "@okouai/api-contracts/contracts/social-discovery";
@@ -47,6 +48,7 @@ const pageSchema = z.discriminatedUnion("state", [
     state: z.literal("more"),
     itemsReturned: count,
     reportedTotal: count.optional(),
+    providerOutcome: socialKitInstagramCommentsOutcomeSchema.optional(),
     nextInput: z.union([
       z.strictObject({ cursor: z.string().min(1) }),
       z.strictObject({ page: count.positive() }),
@@ -56,11 +58,13 @@ const pageSchema = z.discriminatedUnion("state", [
     state: z.literal("complete"),
     itemsReturned: count,
     reportedTotal: count.optional(),
+    providerOutcome: socialKitInstagramCommentsOutcomeSchema.optional(),
   }),
   z.strictObject({
     state: z.literal("provider_limited"),
     itemsReturned: count,
     reportedTotal: count.optional(),
+    providerOutcome: socialKitInstagramCommentsOutcomeSchema.optional(),
     reason: socialKitCollectionProviderLimitedReasonSchema.optional(),
     uncertainty: socialKitCollectionUncertaintySchema.optional(),
     sourceLimit: z

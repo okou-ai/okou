@@ -5479,6 +5479,122 @@ test("Edit a schedule in the user's preferred time zone", async () => {
   });
 });
 
+test("Edit weekly days with keyboard navigation and keep the draft until Save", async () => {
+  const user = userEvent.setup();
+  const updateGate = context.mocks.deferred<void>();
+  const updateBodies: WorkflowAutomationUpdateRequest[] = [];
+  context.mocks.data.userPreferences({ timezone: "UTC" });
+  const automation: WorkflowScheduleAutomationSummary = {
+    ...weekdayWorkflowAutomation(),
+    schedule: {
+      type: "cron",
+      cronExpression: "0 9 * * 1",
+      timezone: "UTC",
+    },
+  };
+  const workflow: WorkflowDetailResponse = {
+    ...salesResearch(),
+    automations: [automation],
+  };
+  mockWorkflowApis([workflow]);
+  context.mocks.api(
+    workflowAutomationsContract.update,
+    async ({ body, params, respond, withSignal }) => {
+      if (!("schedule" in body)) {
+        return respond(400, {
+          error: { code: "BAD_REQUEST", message: "Expected schedule update" },
+        });
+      }
+      updateBodies.push(body);
+      await withSignal(updateGate.promise);
+      const updated = {
+        ...automation,
+        id: params.id,
+        schedule: body.schedule,
+      };
+      workflow.automations[0] = updated;
+      return respond(200, updated);
+    },
+  );
+
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await expect(
+    screen.findByText("Every week on Mon at 9:00 AM"),
+  ).resolves.toBeInTheDocument();
+  click(buttonByText("Edit automation"));
+  const form = await screen.findByRole("form", {
+    name: "Update schedule automation",
+  });
+  const days = within(form).getByRole("group", { name: "Day of week" });
+  const monday = buttonByText("Mon", days);
+  const tuesday = buttonByText("Tue", days);
+  const wednesday = buttonByText("Wed", days);
+  const friday = buttonByText("Fri", days);
+
+  await user.click(monday);
+  expect(monday).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard("{ArrowRight}");
+  expect(tuesday).toHaveFocus();
+  expect(tuesday).toHaveAttribute("aria-pressed", "false");
+  expect(monday).toHaveAttribute("aria-pressed", "true");
+
+  await user.keyboard("{Tab}");
+  expect(within(form).getByRole("combobox", { name: "Hour" })).toHaveFocus();
+  await user.keyboard("{Shift>}{Tab}{/Shift}");
+  expect(tuesday).toHaveFocus();
+
+  await user.keyboard("{Enter}");
+  expect(tuesday).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard(" ");
+  expect(tuesday).toHaveAttribute("aria-pressed", "false");
+  await user.keyboard(" ");
+  expect(tuesday).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard("{ArrowRight}");
+  expect(wednesday).toHaveFocus();
+  expect(wednesday).toHaveAttribute("aria-pressed", "false");
+  await user.keyboard(" ");
+  expect(wednesday).toHaveAttribute("aria-pressed", "true");
+
+  click(monday);
+  expect(monday).toHaveAttribute("aria-pressed", "false");
+  click(tuesday);
+  expect(tuesday).toHaveAttribute("aria-pressed", "false");
+  await user.click(wednesday);
+  expect(wednesday).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard("{Enter}");
+  expect(wednesday).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard(" ");
+  expect(wednesday).toHaveAttribute("aria-pressed", "true");
+  click(friday);
+  expect(friday).toHaveAttribute("aria-pressed", "true");
+  expect(buttonByText("Save schedule", form)).toBeEnabled();
+  expect(screen.getByText("Every week on Mon at 9:00 AM")).toBeInTheDocument();
+
+  click(buttonByText("Save schedule", form));
+  await waitFor(() => {
+    expect(buttonByText("Save schedule", form)).toBeDisabled();
+  });
+  for (const day of queryAllByRoleFast("button", days)) {
+    expect(day).toBeDisabled();
+  }
+  updateGate.resolve();
+  await expect(
+    screen.findByText("Every week on Wed, Fri at 9:00 AM"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("form", { name: "Update schedule automation" }),
+  ).not.toBeInTheDocument();
+  expect(updateBodies).toStrictEqual([
+    {
+      schedule: {
+        type: "cron",
+        cronExpression: "0 9 * * 3,5",
+        timezone: "UTC",
+      },
+    },
+  ]);
+});
+
 test("Edit an interval automation", async () => {
   const updateBodies: {
     readonly automationId: string;

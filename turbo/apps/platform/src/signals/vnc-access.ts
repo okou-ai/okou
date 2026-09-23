@@ -31,6 +31,25 @@ export const currentAgentVncAccess$ = computed(async (get) => {
     : null;
 });
 
+export function vncAccessForAgent(agentId: string) {
+  return computed(async (get) => {
+    const [identity, summary] = await Promise.all([
+      get(vncIdentity$),
+      get(vncSummary$),
+    ]);
+    if (!identity || !summary || summary.configuredCount === 0) {
+      return null;
+    }
+    const result = await accept(
+      (await get(vncClients$)).access.get({ params: { agentId } }),
+      [200, 404],
+      undefined,
+      { showErrorToast: false },
+    );
+    return result.status === 200 ? { identity, agentId, ...result.body } : null;
+  });
+}
+
 export const updateAgentVncAccess$ = command(
   async (
     { get, set },
@@ -102,14 +121,6 @@ export const vncAgentAccessRows$ = computed(async (get) => {
   return rows.filter((row) => {
     return row !== null;
   });
-});
-
-export const vncAgentAccessSnapshot$ = computed(async (get) => {
-  const [identity, rows] = await Promise.all([
-    get(vncIdentity$),
-    get(vncAgentAccessRows$),
-  ]);
-  return { identity, rows };
 });
 
 const accessManagementIdentity$ = state<string | null>(null);

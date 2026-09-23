@@ -1,8 +1,8 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index b66ebcb..ee60f92 100644
+index 5620ac3..a29400f 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
-@@ -354,6 +354,8 @@ export declare class AgentSession {
+@@ -376,6 +376,8 @@ export declare class AgentSession {
      private _normalizePromptSnippet;
      private _normalizePromptGuidelines;
      private _rebuildSystemPrompt;
@@ -12,10 +12,10 @@ index b66ebcb..ee60f92 100644
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index 638646d..7a6b893 100644
+index 36fdb31..5b1900a 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
-@@ -857,6 +857,47 @@ export class AgentSession {
+@@ -1075,6 +1075,47 @@ export class AgentSession {
      // =========================================================================
      // Prompting
      // =========================================================================
@@ -63,7 +63,7 @@ index 638646d..7a6b893 100644
      async _runAgentPrompt(messages) {
          this._agentRunAbortRequested = false;
          this._isAgentRunActive = true;
-@@ -1156,8 +1197,6 @@ export class AgentSession {
+@@ -1430,8 +1471,6 @@ export class AgentSession {
       * Internal: Queue a steering message (already expanded, no extension command check).
       */
      async _queueSteer(text, images) {
@@ -72,7 +72,7 @@ index 638646d..7a6b893 100644
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1167,13 +1206,13 @@ export class AgentSession {
+@@ -1441,18 +1480,20 @@ export class AgentSession {
              content,
              timestamp: Date.now(),
          });
@@ -88,16 +88,14 @@ index 638646d..7a6b893 100644
          const content = [{ type: "text", text }];
          if (images) {
              content.push(...images);
-@@ -1183,6 +1222,8 @@ export class AgentSession {
-             content,
-             timestamp: Date.now(),
-         });
+         }
+         this.agent.followUp({ role: "user", content, timestamp: Date.now() });
 +        this._followUpMessages.push(text);
 +        this._emitQueueUpdate();
      }
      /**
       * Throw an error if the text is an extension command.
-@@ -1342,10 +1383,10 @@ export class AgentSession {
+@@ -1618,10 +1659,10 @@ export class AgentSession {
          await this.waitForIdle();
      }
      async waitForIdle() {

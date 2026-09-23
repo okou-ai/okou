@@ -50,14 +50,15 @@ test("SSH connection failures do not add Chat-only indicators or change order or
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
   const trigger = await findFastControl("button", "Connectors");
+  expect(within(trigger).queryByRole("img", { name: "SSH" })).toBeNull();
+  click(trigger);
+  await screen.findByLabelText("Remove SSH");
   await within(trigger).findByRole("img", { name: "SSH" });
   expect(within(trigger).queryByRole("status")).toBeNull();
   expect(triggerIcons(trigger)).toStrictEqual([
     "https://icons.example.test/github.svg",
     "SSH",
   ]);
-  click(trigger);
-  await screen.findByLabelText("Remove SSH");
   const row = within(screen.getByRole("list", { name: "Connectors" }))
     .getAllByRole("listitem")
     .at(-1);
@@ -73,6 +74,13 @@ function triggerIcons(trigger: HTMLElement) {
   return [...trigger.querySelectorAll('img, svg[role="img"]')].map((icon) => {
     return icon.getAttribute("src") ?? icon.getAttribute("aria-label");
   });
+}
+
+async function loadSshAccess(trigger: HTMLElement): Promise<void> {
+  click(trigger);
+  await screen.findByLabelText("Remove SSH");
+  await within(trigger).findByRole("img", { name: "SSH" });
+  click(trigger);
 }
 
 test("Opening services retains SSH while refreshing and applies the confirmed grant", async () => {
@@ -97,10 +105,11 @@ test("Opening services retains SSH while refreshing and applies the confirmed gr
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
   const trigger = await findFastControl("button", "Connectors");
-  await within(trigger).findByRole("img", { name: "SSH" });
+  await loadSshAccess(trigger);
   const expected = ["https://icons.example.test/github.svg", "SSH"];
   expect(triggerIcons(trigger)).toStrictEqual(expected);
   refreshing = true;
+  context.mocks.ably.trigger("ssh:changed", { orgId: "org_default" });
   click(trigger);
   await waitFor(() => {
     expect(screen.getByLabelText("Remove SSH")).toHaveAttribute(
@@ -195,7 +204,7 @@ test("Switching Agents does not retain the previous Agent's enabled SSH icon", a
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
   const trigger = await findFastControl("button", "Connectors");
-  await within(trigger).findByRole("img", { name: "SSH" });
+  await loadSshAccess(trigger);
   click(await findFastControl("link", "Other Agent"));
   await waitFor(() => {
     expect(window.location.pathname).toBe(`/agents/${OTHER_AGENT_ID}/chat`);
@@ -225,7 +234,7 @@ test("Changing user clears retained SSH presentation while the new owner loads",
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
   const trigger = await findFastControl("button", "Connectors");
-  await within(trigger).findByRole("img", { name: "SSH" });
+  await loadSshAccess(trigger);
   changing = true;
   act(() => {
     clerk.user(
@@ -257,7 +266,7 @@ test("Changing workspace reloads the chat page before using the new SSH owner", 
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
   });
   const trigger = await findFastControl("button", "Connectors");
-  await within(trigger).findByRole("img", { name: "SSH" });
+  await loadSshAccess(trigger);
 
   const clerk = context.mocks.clerk();
   act(() => {

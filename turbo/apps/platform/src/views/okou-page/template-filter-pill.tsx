@@ -1,5 +1,5 @@
 import type { Ref } from "react";
-import { cn } from "@okouai/ui";
+import { cn, Toggle, ToggleGroup } from "@okouai/ui";
 
 import {
   SCROLLBAR_HIDDEN,
@@ -44,9 +44,12 @@ export function TemplateFilterPillRow({
   readonly onSelect: (id: string) => void;
 }) {
   return (
-    <div
+    <ToggleGroup
       ref={scrollerRef}
-      role={label === undefined ? undefined : "group"}
+      value={[active]}
+      onValueChange={(value) => {
+        onSelect(value[0] ?? active);
+      }}
       aria-label={label}
       data-fade={fade === "none" ? undefined : fade}
       className={cn(
@@ -58,26 +61,12 @@ export function TemplateFilterPillRow({
       )}
     >
       {pills.map((pill) => {
-        const isActive = active === pill.id;
         return (
-          <button
-            key={pill.id}
-            type="button"
-            aria-pressed={isActive}
-            className={cn(
-              "h-7 shrink-0 cursor-pointer rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
-              isActive
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-            )}
-            onClick={() => {
-              onSelect(pill.id);
-            }}
-          >
+          <Toggle key={pill.id} value={pill.id} variant="filter">
             {pill.label}
-          </button>
+          </Toggle>
         );
       })}
-    </div>
+    </ToggleGroup>
   );
 }
