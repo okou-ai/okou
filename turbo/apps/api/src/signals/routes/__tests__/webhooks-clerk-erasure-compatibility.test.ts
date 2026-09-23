@@ -10,11 +10,12 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
+import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import { sql } from "drizzle-orm";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { nowDate } from "../../../lib/time";
-import { mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import {
@@ -31,6 +32,10 @@ import {
 import { holdUserConnectorMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-connectors";
 import { holdUserPermissionGrantMutationBeforeAdmissionFixture } from "../../../test-fixtures/user-permission-grants";
 import {
+  clerkUserDeletionJobFixture,
+  readyClerkUserDeletionJobFixture,
+} from "../../../test-fixtures/clerk-user-deletion-job";
+import {
   holdChatThreadConnectorSelectionBeforeAgentLockFixture,
   holdChatThreadConnectorSelectionBeforeErasureAdmissionFixture,
   holdClerkAgentLifecycleAfterInstructionsStorageLocksFixture,
@@ -44,6 +49,7 @@ import {
 } from "../../../test-fixtures/pi-stable-context-source-writers";
 import { agentsRoutes } from "../agents";
 import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { cronProcessBackgroundJobsRoutes } from "../cron-process-background-jobs";
 import { userPermissionGrantsRoutes } from "../user-permission-grants";
 import { workflowsRoutes } from "../workflows";
 import { chatThreadConnectorSelectionRoutes } from "../chat-threads-connector-selections";
@@ -248,16 +254,41 @@ test.each(["list", "delete"] as const)(
 
     await deleteUserWithSignedWebhook(userId, `preserve-locators-${failure}`);
     expect(failed).toBeTruthy();
+    await expect(clerkUserDeletionJobFixture(userId)).resolves.toMatchObject({
+      status: "pending",
+      failureCount: 1,
+      checkpoint: { emptyOrgIds: expect.any(Array) },
+    });
     await expect(storages.listStorages(actor, "user")).resolves.toContainEqual(
       expect.objectContaining({ name: storageName }),
     );
 
-    await deleteUserWithSignedWebhook(userId, `retry-locators-${failure}`);
+    await readyClerkUserDeletionJobFixture(userId);
+    const cronSecret = `test-clerk-deletion-${randomUUID()}`;
+    mockEnv("CRON_SECRET", cronSecret);
+    await accept(
+      setupApp({ context, routes: cronProcessBackgroundJobsRoutes })(
+        cronProcessBackgroundJobsContract,
+      ).process({
+        headers: { authorization: `Bearer ${cronSecret}` },
+      }),
+      [200],
+    );
     expect(deleted).toBeTruthy();
+    const completed = await clerkUserDeletionJobFixture(userId);
+    expect(completed).toMatchObject({
+      status: "completed",
+      failureCount: 1,
+    });
     await expect(
       storages.listStorages(actor, "user"),
     ).resolves.not.toContainEqual(
       expect.objectContaining({ name: storageName }),
+    );
+
+    await deleteUserWithSignedWebhook(userId, `duplicate-${failure}`);
+    await expect(clerkUserDeletionJobFixture(userId)).resolves.toStrictEqual(
+      completed,
     );
   },
 );

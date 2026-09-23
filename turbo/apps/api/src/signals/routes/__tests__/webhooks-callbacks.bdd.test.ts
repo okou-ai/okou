@@ -689,8 +689,10 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       type: "user.deleted",
       data: {},
     });
-    const missingUserId = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(missingUserId.body).toBe("OK");
+    const missingUserId = await api.requestClerkWebhook("{}", {}, [503]);
+    expect(missingUserId.body).toMatchObject({
+      error: "User deletion is missing an ID",
+    });
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.deleted",
