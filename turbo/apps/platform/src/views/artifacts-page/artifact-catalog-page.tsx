@@ -437,9 +437,14 @@ export function ArtifactCatalogError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
     <Alert variant="destructive">
-      <AlertTriangle size={16} aria-hidden />
+      {/* The icon rides the message line rather than the Alert's absolute slot:
+          that slot is anchored for a single line of text, and the button in
+          this description makes the row taller than the anchor accounts for.
+          Inline also keeps the icon with the text once the sidebar narrows
+          enough to wrap the button onto its own line. */}
       <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-        <span>
+        <span className="flex items-center gap-3">
+          <AlertTriangle size={16} className="shrink-0" aria-hidden />
           {t(($) => {
             return $.artifacts.catalog.error;
           })}
