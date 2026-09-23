@@ -4134,6 +4134,7 @@ export function createChatPanelSignals(
     threadId,
     messages.scroll,
     messagePipeline.allChatGroups$,
+    feedback.close$,
   );
   const locator = createChatConversationLocatorSignals({
     threadId,
