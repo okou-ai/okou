@@ -76,15 +76,18 @@ describe("dormant hosted-site object erasure", () => {
       const input = commandInput(command);
       if (commandName(command) === "ListObjectsV2Command") {
         const prefix = typeof input.Prefix === "string" ? input.Prefix : "";
+        const maxKeys =
+          typeof input.MaxKeys === "number" ? input.MaxKeys : 1000;
+        const matching = [...live]
+          .filter((key) => {
+            return key.startsWith(prefix);
+          })
+          .sort();
         return Promise.resolve({
-          Contents: [...live]
-            .filter((key) => {
-              return key.startsWith(prefix);
-            })
-            .sort()
-            .map((key) => {
-              return { Key: key, Size: 1, LastModified: nowDate() };
-            }),
+          Contents: matching.slice(0, maxKeys).map((key) => {
+            return { Key: key, Size: 1, LastModified: nowDate() };
+          }),
+          IsTruncated: matching.length > maxKeys,
         });
       }
       if (commandName(command) === "DeleteObjectsCommand") {
@@ -366,6 +369,47 @@ describe("dormant hosted-site object erasure", () => {
         return batch.length;
       }),
     ).toStrictEqual([1000, 1000, 500]);
+  });
+
+  it("replays a deployment beyond the bounded lease before finalization", async () => {
+    const userId = account("large-replay");
+    const orgId = `org_hosted_${randomUUID().replaceAll("-", "")}`;
+    const prefix = `sites/${randomUUID()}`;
+    const siteId = await createSite(userId, orgId);
+    onTestFinished(async () => {
+      await db.execute(
+        sql`DELETE FROM hosted_deployments WHERE site_id = ${siteId}`,
+      );
+      await db.execute(sql`DELETE FROM hosted_sites WHERE id = ${siteId}`);
+    });
+    await createDeployment({
+      userId,
+      orgId,
+      siteId,
+      prefix,
+      private: false,
+    });
+    const bucket = bucketWithObjects(
+      Array.from({ length: 10005 }, (_value, index) => {
+        return `${prefix}/file-${index.toString().padStart(5, "0")}`;
+      }),
+    );
+    const captured = await capture(userId);
+    await runVerification(captured.job.id, captured.handler);
+    expect(bucket.live.size).toBe(5);
+    expect(bucket.deleteBatches).toHaveLength(10);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).rejects.toThrow("account_erasure:work_unresolved");
+
+    await db.execute(sql`UPDATE account_erasure_work
+      SET available_at = clock_timestamp() - interval '1 second'
+      WHERE job_id = ${captured.job.id} AND state = 'pending'`);
+    await runVerification(captured.job.id, captured.handler);
+    expect(bucket.live.size).toBe(0);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).resolves.toMatchObject({ state: "verified_erased" });
   });
 
   it("refuses to verify while an object remains under the captured prefix", async () => {

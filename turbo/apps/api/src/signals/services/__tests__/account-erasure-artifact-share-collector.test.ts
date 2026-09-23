@@ -71,14 +71,18 @@ describe("artifact share policy, alias and snapshot erasure", () => {
         }
         case "ListObjectsV2Command": {
           const prefix = String(input.Prefix ?? "");
+          const maxKeys =
+            typeof input.MaxKeys === "number" ? input.MaxKeys : 1000;
+          const matching = [...live]
+            .filter((key) => {
+              return key.startsWith(prefix);
+            })
+            .sort();
           return Promise.resolve({
-            Contents: [...live]
-              .filter((key) => {
-                return key.startsWith(prefix);
-              })
-              .map((Key) => {
-                return { Key, Size: 1, LastModified: nowDate() };
-              }),
+            Contents: matching.slice(0, maxKeys).map((Key) => {
+              return { Key, Size: 1, LastModified: nowDate() };
+            }),
+            IsTruncated: matching.length > maxKeys,
           });
         }
         case "DeleteObjectsCommand": {
@@ -256,6 +260,78 @@ describe("artifact share policy, alias and snapshot erasure", () => {
     await expect(
       finalizeErasureJob(db, captured.job.id, captured.sealed),
     ).rejects.toThrow("account_erasure:work_unresolved");
+  });
+
+  it("replays a large selected snapshot without completing its work early", async () => {
+    const userId = `user_share_${randomUUID()}`;
+    const deploymentId = randomUUID();
+    const siteId = randomUUID();
+    const snapshotId = randomUUID();
+    const share = await shareRow(userId, "html", deploymentId);
+    const policyKey = `artifact-shares/vm0/${share.id}.json`;
+    const prefix = `shared-artifacts/vm0/${snapshotId}/${deploymentId}`;
+    const policy = {
+      version: 1,
+      revision: randomUUID(),
+      shareId: share.id,
+      ownerId: userId,
+      orgId: share.orgId,
+      publicBrand: "vm0",
+      delivery: "artifact-registry-v1",
+      audience: "organization",
+      status: "active",
+      publicToken: null,
+      target: {
+        kind: "html",
+        id: deploymentId,
+        siteId,
+        snapshotId,
+        deploymentVersion: 1,
+        manifest: {
+          version: 1,
+          access: "owner-private-v1",
+          publicBrand: "vm0",
+          deploymentId,
+          siteId,
+          publicSlug: "large-snapshot",
+          createdAt: nowDate().toISOString(),
+          spaFallback: false,
+          files: {},
+        },
+      },
+    };
+    const bucket = bucketWithObjects(
+      [
+        policyKey,
+        ...Array.from({ length: 10005 }, (_value, index) => {
+          return `${prefix}/file-${index.toString().padStart(5, "0")}`;
+        }),
+      ],
+      new Map([[policyKey, JSON.stringify(policy)]]),
+    );
+    const captured = await capture(userId);
+    await pool.query("DELETE FROM artifact_shares WHERE id = $1", [share.id]);
+    await erase(captured.job.id, captured.handler);
+    expect(bucket.live.size).toBe(5);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).rejects.toThrow("account_erasure:work_unresolved");
+
+    await pool.query(
+      "UPDATE account_erasure_work SET available_at = clock_timestamp() - interval '1 second' WHERE job_id = $1 AND state = 'pending'",
+      [captured.job.id],
+    );
+    await erase(captured.job.id, captured.handler);
+    expect(bucket.live.size).toBe(0);
+    const result = await pool.query<{ state: string }>(
+      "SELECT state FROM account_erasure_work WHERE job_id = $1 AND kind = 'erase' ORDER BY state",
+      [captured.job.id],
+    );
+    expect(
+      result.rows.map((row) => {
+        return row.state;
+      }),
+    ).toStrictEqual(["capability_unresolved", "verified_erased"]);
   });
 
   it("removes a private file snapshot and its public file alias after row deletion", async () => {

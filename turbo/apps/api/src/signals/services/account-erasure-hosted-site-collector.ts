@@ -24,7 +24,7 @@ import { nowDate } from "../../lib/time";
 import { safeJsonParse } from "../utils";
 import {
   deleteArtifactSnapshotObjects,
-  listHostedSitesObjectsUnderPrefix,
+  listHostedSitesObjectsPage,
 } from "../external/s3";
 import {
   decryptErasureSelector,
@@ -54,6 +54,8 @@ const DEPLOYMENT_SOURCES = [
 ] as const;
 
 const MAX_INVENTORY_PAGE = 100;
+const OBJECT_DELETE_PAGE_SIZE = 1000;
+const MAX_OBJECT_DELETE_PAGES_PER_LEASE = 10;
 
 // Immutable v1 namespace. Names are JSON tuples, never concatenation, so two
 // different reference inputs cannot collide on one string.
@@ -333,25 +335,43 @@ async function erasePrefix(
     return unresolved("selector_missing");
   }
   const store = createStore();
-  const objects = await store.get(
-    listHostedSitesObjectsUnderPrefix(bucket, prefix),
-  );
-  if (objects.length === 0) {
-    return { requestRef: requestReference(lease, "empty") };
+  for (
+    let pageNumber = 0;
+    pageNumber < MAX_OBJECT_DELETE_PAGES_PER_LEASE;
+    pageNumber += 1
+  ) {
+    signal.throwIfAborted();
+    const page = await store.get(
+      listHostedSitesObjectsPage(bucket, prefix, OBJECT_DELETE_PAGE_SIZE),
+    );
+    if (page.objects.length === 0) {
+      return {
+        requestRef:
+          lease.item.requestRef === requestReference(lease, "erased")
+            ? requestReference(lease, "erased")
+            : requestReference(lease, "empty"),
+      };
+    }
+    await store.get(
+      deleteArtifactSnapshotObjects(
+        bucket,
+        page.objects.map((object) => {
+          return object.key;
+        }),
+        true,
+        signal,
+      ),
+    );
+    if (!page.isTruncated) {
+      return { requestRef: requestReference(lease, "erased") };
+    }
   }
-  // Batching belongs to `deleteArtifactSnapshotObjects`, which already caps a
-  // request at `S3_DELETE_OBJECTS_LIMIT` and stops at the first failed batch.
-  await store.get(
-    deleteArtifactSnapshotObjects(
-      bucket,
-      objects.map((object) => {
-        return object.key;
-      }),
-      true,
-      signal,
-    ),
-  );
-  return { requestRef: requestReference(lease, "erased") };
+  return {
+    outcome: "pending",
+    errorCode: "boundary_unproven",
+    requestRef: requestReference(lease, "erased"),
+    retryAt: new Date(nowDate().getTime() + 60_000),
+  };
 }
 
 /** Absence, read back from the provider rather than inferred from the delete.
@@ -391,9 +411,9 @@ async function verifyPrefixAbsent(
     }
   } else {
     const remaining = await createStore().get(
-      listHostedSitesObjectsUnderPrefix(bucket, prefix),
+      listHostedSitesObjectsPage(bucket, prefix, 1),
     );
-    if (remaining.length > 0) {
+    if (remaining.objects.length > 0 || remaining.isTruncated) {
       return unresolved("verification_failed", "retryable_failure");
     }
   }

@@ -29,7 +29,7 @@ import {
   deleteS3Objects,
   hostedSitesObjectExists,
   isS3NotFoundError,
-  listHostedSitesObjectsUnderPrefix,
+  listHostedSitesObjectsPage,
   readArtifactSharePolicyObject,
   s3ObjectExists,
 } from "../external/s3";
@@ -47,6 +47,8 @@ type ShareRow = Pick<
 type Policy = z.infer<typeof artifactSharePolicySchema>;
 
 const PAGE_SIZE = 20;
+const SNAPSHOT_DELETE_PAGE_SIZE = 1000;
+const MAX_SNAPSHOT_DELETE_PAGES_PER_LEASE = 10;
 const NAMESPACE = "2cd6e1b4-583b-4abf-8520-b8936b2bd311";
 export const ARTIFACT_SHARE_ERASURE_COLLECTOR_VERSION =
   "a87f7dc9-36ab-4284-901c-1b0fc0593818";
@@ -469,22 +471,47 @@ async function eraseShare(
   if (keys.length > 0) {
     await store.get(deleteArtifactSnapshotObjects(bucket, keys, true, signal));
   }
-  const objects = share.snapshotPrefix
-    ? await store.get(
-        listHostedSitesObjectsUnderPrefix(bucket, share.snapshotPrefix),
-      )
-    : [];
-  if (objects.length > 0) {
-    await store.get(
-      deleteArtifactSnapshotObjects(
-        bucket,
-        objects.map((object) => {
-          return object.key;
-        }),
-        true,
-        signal,
-      ),
-    );
+  let snapshotDeleted = false;
+  if (share.snapshotPrefix) {
+    for (
+      let pageNumber = 0;
+      pageNumber < MAX_SNAPSHOT_DELETE_PAGES_PER_LEASE;
+      pageNumber += 1
+    ) {
+      signal.throwIfAborted();
+      const page = await store.get(
+        listHostedSitesObjectsPage(
+          bucket,
+          share.snapshotPrefix,
+          SNAPSHOT_DELETE_PAGE_SIZE,
+        ),
+      );
+      if (page.objects.length === 0) {
+        break;
+      }
+      await store.get(
+        deleteArtifactSnapshotObjects(
+          bucket,
+          page.objects.map((object) => {
+            return object.key;
+          }),
+          true,
+          signal,
+        ),
+      );
+      snapshotDeleted = true;
+      if (!page.isTruncated) {
+        break;
+      }
+      if (pageNumber === MAX_SNAPSHOT_DELETE_PAGES_PER_LEASE - 1) {
+        return {
+          outcome: "pending",
+          errorCode: "boundary_unproven",
+          requestRef: requestReference(lease, "erased"),
+          retryAt: new Date(nowDate().getTime() + 60_000),
+        };
+      }
+    }
   }
   let privateObject = false;
   if (share.privateKey) {
@@ -504,7 +531,10 @@ async function eraseShare(
   return {
     requestRef: requestReference(
       lease,
-      keys.length > 0 || objects.length > 0 || privateObject
+      keys.length > 0 ||
+        snapshotDeleted ||
+        privateObject ||
+        lease.item.requestRef === requestReference(lease, "erased")
         ? "erased"
         : "empty",
     ),
@@ -538,9 +568,9 @@ async function verifyShareAbsent(
     );
     const copy = share.snapshotPrefix
       ? await store.get(
-          listHostedSitesObjectsUnderPrefix(bucket, share.snapshotPrefix),
+          listHostedSitesObjectsPage(bucket, share.snapshotPrefix, 1),
         )
-      : [];
+      : null;
     const privateBucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
     if (share.privateKey && !privateBucket) {
       return unresolved("permission_missing");
@@ -549,7 +579,11 @@ async function verifyShareAbsent(
       share.privateKey && privateBucket
         ? await store.get(s3ObjectExists(privateBucket, share.privateKey))
         : false;
-    if (remaining.includes(true) || copy.length > 0 || privateObject) {
+    if (
+      remaining.includes(true) ||
+      (copy && (copy.objects.length > 0 || copy.isTruncated)) ||
+      privateObject
+    ) {
       return unresolved("verification_failed", "retryable_failure");
     }
   } else if (!(await leaseSubject(lease))) {
