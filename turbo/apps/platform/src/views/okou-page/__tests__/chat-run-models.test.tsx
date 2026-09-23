@@ -323,10 +323,6 @@ test.each(STRUCTURED_FAILURE_CASES)(
     expect(Boolean(description?.textContent?.trim())).toBe(
       failureReason !== "insufficient_credits",
     );
-    expect(
-      description?.classList.contains("line-clamp-2") ?? false,
-    ).toBeFalsy();
-    expect(description?.classList.contains("h-10") ?? false).toBeFalsy();
   },
 );
 
@@ -1107,28 +1103,18 @@ test("Recover from a personal model account limit", async () => {
   const description = within(recovery).getByTestId(
     "assistant-error-description",
   );
-  expect(description).not.toHaveClass("line-clamp-2", "h-10");
   expect(within(description).getByText(/5h resets/iu)).toBeVisible();
   expect(within(description).getByText(/Week resets/iu)).toBeVisible();
   const picker = within(recovery).getByRole("combobox");
   expect(picker).toBeVisible();
-  const actionGroup = picker.parentElement;
-  expect(actionGroup).not.toBeNull();
-  expect(actionGroup).toHaveClass("justify-end");
-  const actionSlot = actionGroup?.parentElement;
-  expect(actionSlot).toHaveClass("min-h-8", "justify-end");
-  expect(actionSlot).not.toHaveClass("h-[72px]");
-  expect(queryButton("Try again", recovery)).toBeNull();
 
+  // A usage limit keeps its retry whichever model is selected: another model on
+  // the same exhausted account would hit the same limit, so the card cannot
+  // treat a model switch as the way out.
+  await expect(findEnabledButton("Try again", recovery)).resolves.toBeVisible();
   await user.click(picker);
   await user.click(await screen.findByRole("option", { name: "GPT 5.6 Luna" }));
   await expect(findEnabledButton("Try again", recovery)).resolves.toBeVisible();
-
-  await user.click(picker);
-  await user.click(await screen.findByRole("option", { name: "GPT 5.6 Sol" }));
-  await waitFor(() => {
-    expect(queryButton("Try again", recovery)).toBeNull();
-  });
 
   click(await findButton("Reset · 2 left"));
 

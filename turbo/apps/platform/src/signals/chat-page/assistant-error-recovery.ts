@@ -22,7 +22,6 @@ import {
 } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { resetPersonalCodexAccountSubscriptionUsage$ } from "../okou-page/settings/personal-model-providers.ts";
-import { now } from "../../lib/time.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
 import type { ChatEventGroup, EnrichedChatEvent } from "./chat-event.ts";
 import type { ChatEventSignals } from "./chat-event-signals.ts";
@@ -659,17 +658,19 @@ function recoveryForExactAccount(
     resetWindows,
     limitWindow:
       resetWindows.length === 1
-        ? (resetWindows[0]?.limitWindow ?? classified.limitWindow)
+        ? resetWindows[0].limitWindow
         : classified.limitWindow,
     resetAndTryAgain,
   };
 }
 
 /**
- * Permanent failures never offer a blind retry. An unsupported model, and an
- * exhausted account with a known future reset, become retryable only after the
- * thread points at another model. The command reads that same thread selection,
- * so the card cannot immediately spend another run on the unchanged route.
+ * Permanent failures never offer a blind retry. An unsupported model becomes
+ * retryable only after the thread points at another model. The command reads
+ * that same thread selection, so the card cannot immediately spend another run
+ * on the unchanged route. A usage limit keeps its retry: the card shows when
+ * each window resets, and whether another model avoids the limit depends on the
+ * account the run routes through, which the card cannot decide.
  */
 function tryAgainAction(
   classified: ClassifiedAssistantError,
@@ -686,12 +687,7 @@ function tryAgainAction(
     return null;
   }
 
-  const waitsForAnotherRoute =
-    classified.kind === "model-unavailable" ||
-    (classified.kind === "usage-limit" &&
-      retryAt !== null &&
-      new Date(retryAt).getTime() > now());
-  if (!waitsForAnotherRoute) {
+  if (classified.kind !== "model-unavailable") {
     return { notBefore: retryAt };
   }
 
