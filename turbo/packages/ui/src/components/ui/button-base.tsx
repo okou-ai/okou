@@ -68,7 +68,7 @@ export const ButtonBase = React.forwardRef<HTMLElement, ButtonBaseProps>(
     );
 
     return (
-      <TooltipProvider delayDuration={200}>
+      <TooltipProvider delay={200}>
         <Tooltip>
           <TooltipTrigger render={trigger} />
           <TooltipContent>

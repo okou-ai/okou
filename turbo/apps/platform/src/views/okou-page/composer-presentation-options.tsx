@@ -24,8 +24,37 @@ export function ComposerPresentationOptions({
     return null;
   }
 
+  const items = PRESENTATION_SLIDE_COUNTS.map((value) => {
+    return {
+      value,
+      label:
+        value === "auto"
+          ? t(($) => {
+              return $.chat.composer.create.slideCountAuto;
+            })
+          : t(
+              ($) => {
+                return $.chat.composer.create.slideCountRange;
+              },
+              {
+                range: value.replace("-", "–"),
+              },
+            ),
+    };
+  });
+
   return (
-    <Select value={slideCount} onValueChange={setSlideCount}>
+    <Select
+      items={items}
+      value={slideCount}
+      onValueChange={(value, details) => {
+        if (value === null) {
+          details.cancel();
+          return;
+        }
+        setSlideCount(value);
+      }}
+    >
       <SelectTrigger
         aria-label={t(($) => {
           return $.chat.composer.create.slideCount;
@@ -35,19 +64,10 @@ export function ComposerPresentationOptions({
         <SelectValue />
       </SelectTrigger>
       <SelectContent side="top" align="start">
-        {PRESENTATION_SLIDE_COUNTS.map((option) => {
+        {items.map((item) => {
           return (
-            <SelectItem key={option} value={option}>
-              {option === "auto"
-                ? t(($) => {
-                    return $.chat.composer.create.slideCountAuto;
-                  })
-                : t(
-                    ($) => {
-                      return $.chat.composer.create.slideCountRange;
-                    },
-                    { range: option.replace("-", "–") },
-                  )}
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
             </SelectItem>
           );
         })}

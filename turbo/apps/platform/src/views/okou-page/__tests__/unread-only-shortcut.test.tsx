@@ -1,9 +1,10 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import {
+  buttonByText,
   context,
   createThread,
   EXISTING_THREAD_ID,
@@ -60,13 +61,8 @@ function unreadShortcutEvent({
   });
 }
 
-function chatListTitleRow(list: HTMLElement): HTMLElement {
-  const menuButton = within(list).getByLabelText("Open chat list menu");
-  const titleRow = menuButton.parentElement?.parentElement;
-  if (!(titleRow instanceof HTMLElement)) {
-    throw new Error("Chat list title row not found");
-  }
-  return titleRow;
+function chatListCollapseToggle(list: HTMLElement): HTMLElement {
+  return buttonByText("Chats with Okou", list);
 }
 
 function unreadOnlyMenuItem(): HTMLElement {
@@ -82,23 +78,28 @@ function unreadOnlyMenuItem(): HTMLElement {
   return item;
 }
 
-function preparePage(userAgent: string, enabled: boolean): Promise<void> {
+function preparePage(userAgent: string, unread = false): Promise<void> {
   context.mocks.browser.userAgent(userAgent);
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+  if (unread) {
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        agents: {},
+        threads: { [EXISTING_THREAD_ID]: "unread" },
+      });
+    });
+  }
   return setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatUnreadOnlyShortcut]: enabled,
-    },
   });
 }
 
 test.each(platforms)(
   "Toggle unread-only chats and expose the shortcut on $name",
   async ({ ctrlKey, helpParts, label, metaKey, userAgent }) => {
-    await preparePage(userAgent, true);
+    await preparePage(userAgent);
 
     const list = await screen.findByTestId("chat-list-column");
     await expect(
@@ -140,7 +141,7 @@ test.each(platforms)(
       expect(within(list).getByText("Release plan")).toBeInTheDocument();
     }
 
-    click(chatListTitleRow(list));
+    click(chatListCollapseToggle(list));
     await waitFor(() => {
       expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
     });
@@ -177,8 +178,35 @@ test.each(platforms)(
   },
 );
 
-test("Show all chats from the empty unread state", async () => {
+test("Keep Show all chats after the unread rows", async () => {
   await preparePage(platforms[0].userAgent, true);
+
+  const list = await screen.findByTestId("chat-list-column");
+  await expect(
+    within(list).findByText("Release plan"),
+  ).resolves.toBeInTheDocument();
+
+  openChatListMenu();
+  click(unreadOnlyMenuItem());
+  const title = await within(list).findByText("Release plan");
+  const showAll = within(list).getByText("Show all chats");
+  const showAllRow = showAll.closest(
+    '[data-testid="sidebar-chat-show-all-row"]',
+  );
+  if (!(showAllRow instanceof HTMLElement)) {
+    throw new Error("Show all chats row not found");
+  }
+  expect(showAllRow.previousElementSibling).toContainElement(title);
+
+  click(showAll);
+  await waitFor(() => {
+    expect(within(list).queryByText("Show all chats")).not.toBeInTheDocument();
+  });
+  expect(within(list).getByText("Release plan")).toBeInTheDocument();
+});
+
+test("Show all chats from the empty unread state", async () => {
+  await preparePage(platforms[0].userAgent);
 
   const list = await screen.findByTestId("chat-list-column");
   await expect(
@@ -198,39 +226,9 @@ test("Show all chats from the empty unread state", async () => {
   expect(within(list).queryByText("No unread chats")).not.toBeInTheDocument();
 });
 
-test("Leave the browser shortcut and hints untouched when the rollout is off", async () => {
-  const { userAgent, metaKey, ctrlKey, label } = platforms[0];
-  await preparePage(userAgent, false);
-
-  const list = await screen.findByTestId("chat-list-column");
-  await expect(
-    within(list).findByText("Release plan"),
-  ).resolves.toBeInTheDocument();
-
-  openChatListMenu();
-  const menuItem = unreadOnlyMenuItem();
-  expect(menuItem).not.toHaveAttribute("aria-keyshortcuts");
-  expect(menuItem).not.toHaveTextContent(label);
-  fireEvent.keyDown(menuItem, { key: "Escape" });
-
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  composer.focus();
-  const event = unreadShortcutEvent({ ctrlKey, metaKey });
-  composer.dispatchEvent(event);
-  expect(event.defaultPrevented).toBeFalsy();
-  expect(within(list).getByText("Release plan")).toBeInTheDocument();
-
-  fireEvent.keyDown(document.body, { key: "?", shiftKey: true });
-  const dialog = await screen.findByRole("dialog", {
-    name: "Keyboard Shortcuts",
-  });
-  expect(within(dialog).queryByText("Unread")).not.toBeInTheDocument();
-});
-
 test("Preserve Linux Unicode input while allowing the shortcut outside editors", async () => {
   await preparePage(
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/152.0.0.0 Safari/537.36",
-    true,
   );
 
   const list = await screen.findByTestId("chat-list-column");

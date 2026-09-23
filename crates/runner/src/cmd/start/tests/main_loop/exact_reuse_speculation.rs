@@ -17,7 +17,7 @@ use tracing_test_support::CapturedEvents;
 
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
-use crate::provider::{ActiveRunnerPreference, JobCandidate, RunnerPreferenceTier};
+use runner_provider::{ActiveRunnerPreference, JobCandidate, RunnerPreferenceTier};
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 fn exact_generation_candidate(
@@ -28,7 +28,7 @@ fn exact_generation_candidate(
     JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(reuse_key.to_owned()))
         .with_history_generation_run_id(Some(history_generation_run_id))
-        .with_runner_preference_for_test(ActiveRunnerPreference::ranked_for_test(
+        .with_runner_preference(ActiveRunnerPreference::new(
             test_runner_identity(),
             RunnerPreferenceTier::ExactSandbox,
             std::time::Instant::now() + Duration::from_secs(30),

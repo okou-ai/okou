@@ -12,7 +12,7 @@ use tracing::warn;
 
 use crate::archive_connection_attempt::ArchiveConnectionAttempt;
 use crate::duration::duration_ms;
-use crate::error::{ApiFailureKind, RunnerError};
+use crate::error::ApiFailureKind;
 use crate::http::HttpClient;
 use crate::resource_budget::ResourceBudget;
 use runner_types::ids::RunId;
@@ -58,9 +58,11 @@ enum OomEvidenceUploadFailure {
 }
 
 impl OomEvidenceUploadFailure {
-    fn from_request_error(error: &RunnerError) -> Self {
+    fn from_request_error(error: &crate::error::RunnerError) -> Self {
         match error {
-            RunnerError::ApiTransport(error) => Self::from_api_failure_kind(error.failure_kind),
+            crate::error::RunnerError::ApiTransport(error) => {
+                Self::from_api_failure_kind(error.failure_kind)
+            }
             _ => Self::Transport,
         }
     }
@@ -1015,7 +1017,7 @@ async fn send_telemetry(
             warn!(run_id = %run_id, status = %resp.status(), "telemetry flush rejected");
         }
         Err(error) => match &error {
-            RunnerError::ApiTransport(api_error) => warn!(
+            crate::error::RunnerError::ApiTransport(api_error) => warn!(
                 run_id = %run_id,
                 error = %error,
                 endpoint = api_error.request.endpoint_label,

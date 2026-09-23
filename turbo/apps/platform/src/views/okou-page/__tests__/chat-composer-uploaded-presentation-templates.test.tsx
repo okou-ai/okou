@@ -994,3 +994,68 @@ test("A second rename cannot overtake the one already sent", async () => {
     expect(renameField()).toHaveValue("Board Review FY27");
   });
 });
+
+test.each(["{Enter}", " "])(
+  "Imported visibility saves once on %s and closes even on the current value",
+  async (key) => {
+    mockTemplateChat();
+    const uploaded = createUploadedTemplate({
+      id: UPLOADED_TEMPLATE_ID,
+      title: "Visibility keyboard review",
+      visibility: "private",
+      canManage: true,
+    });
+    const library = mockPresentationTemplateLibrary([uploaded]);
+    trackTemplatePreviewImagePreloads();
+    const user = userEvent.setup();
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+      host: "app.okou.ai",
+    });
+    await openTemplatePicker(user, "Presentation");
+    click(
+      await waitFor(() => {
+        return buttonNamed(`Preview ${uploaded.title} at current slide`);
+      }),
+    );
+    const trigger = await screen.findByLabelText("Change template visibility");
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    const menu = await screen.findByRole("menu");
+    const workspace = queryAllByRoleFast("menuitemradio", menu).find(
+      (option) => {
+        return option.getAttribute("aria-label") === "Workspace";
+      },
+    )!;
+    await user.keyboard("{Home}{ArrowDown}");
+    expect(workspace).toHaveFocus();
+    expect(workspace).toHaveAttribute("aria-checked", "false");
+    expect(library.requests.updates).toHaveLength(0);
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(trigger).toHaveFocus();
+    });
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await user.keyboard("{Home}{ArrowDown}");
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(trigger).toBeEnabled();
+    });
+    expect(library.requests.updates).toStrictEqual([
+      { templateId: uploaded.id, body: { visibility: "public" } },
+    ]);
+    click(trigger);
+    await screen.findByRole("menu");
+    await user.keyboard("{Home}{ArrowDown}");
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    expect(library.requests.updates).toHaveLength(1);
+  },
+);

@@ -537,6 +537,9 @@ function AddTelegramBotAgentField({
   onAgentChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
+  const agentItems = agents.map((agent) => {
+    return { value: agent.agentId, label: agentLabel(agent, defaultAgent) };
+  });
   return (
     <div className="min-w-0">
       <label
@@ -548,18 +551,32 @@ function AddTelegramBotAgentField({
         })}
       </label>
       <Select
+        items={agentItems}
         value={agentId ?? ""}
         disabled={disabled || agents.length === 0}
-        onValueChange={onAgentChange}
+        onValueChange={(value, details) => {
+          if (
+            value === null ||
+            !agentItems.some((item) => {
+              return item.value === value;
+            })
+          ) {
+            details.cancel();
+            return;
+          }
+          if (value !== agentId) {
+            onAgentChange(value);
+          }
+        }}
       >
         <SelectTrigger id="telegram-new-bot-agent">
           <SelectValue placeholder={selectedAgentLabel} />
         </SelectTrigger>
         <SelectContent>
-          {agents.map((agent) => {
+          {agentItems.map((item) => {
             return (
-              <SelectItem key={agent.agentId} value={agent.agentId}>
-                {agentLabel(agent, defaultAgent)}
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
               </SelectItem>
             );
           })}
@@ -1431,29 +1448,51 @@ function TelegramBotAgentSelect({
   const { t } = useTranslation();
   const setSavingBotId = useSet(setTelegramSavingBotId$);
   const pageSignal = useGet(pageSignal$);
-  const [, updateBotAgent] = useLoadableSet(updateTelegramBotAgent$);
+  const [updateLoadable, updateBotAgent] = useLoadableSet(
+    updateTelegramBotAgent$,
+  );
   const isOfficial = isOfficialTelegramBot(bot);
   const selectedValue = bot.agent?.id ?? "";
+  const agentItems = options.map((agent) => {
+    return { value: agent.agentId, label: agentLabel(agent, defaultAgent) };
+  });
+  const changeAgent = onDomEventFn(async (nextAgentId: string) => {
+    if (
+      nextAgentId === selectedValue ||
+      disabled ||
+      updateLoadable.state === "loading"
+    ) {
+      return;
+    }
+    setSavingBotId(bot.id);
+    await bestEffort(
+      updateBotAgent(
+        isOfficial
+          ? { botId: bot.id, selectedAgentId: nextAgentId }
+          : { botId: bot.id, defaultAgentId: nextAgentId },
+        pageSignal,
+      ),
+    );
+    setSavingBotId(null);
+  });
 
   return (
     <Select
+      items={agentItems}
       value={selectedValue}
       disabled={disabled || options.length === 0}
-      onValueChange={onDomEventFn(async (nextAgentId: string) => {
-        if (nextAgentId === selectedValue) {
+      onValueChange={(nextAgentId, details) => {
+        if (
+          nextAgentId === null ||
+          !agentItems.some((item) => {
+            return item.value === nextAgentId;
+          })
+        ) {
+          details.cancel();
           return;
         }
-        setSavingBotId(bot.id);
-        await bestEffort(
-          updateBotAgent(
-            isOfficial
-              ? { botId: bot.id, selectedAgentId: nextAgentId }
-              : { botId: bot.id, defaultAgentId: nextAgentId },
-            pageSignal,
-          ),
-        );
-        setSavingBotId(null);
-      })}
+        changeAgent(nextAgentId);
+      }}
     >
       <SelectTrigger
         aria-label={t(
@@ -1471,10 +1510,10 @@ function TelegramBotAgentSelect({
         />
       </SelectTrigger>
       <SelectContent>
-        {options.map((agent) => {
+        {agentItems.map((item) => {
           return (
-            <SelectItem key={agent.agentId} value={agent.agentId}>
-              {agentLabel(agent, defaultAgent)}
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
             </SelectItem>
           );
         })}

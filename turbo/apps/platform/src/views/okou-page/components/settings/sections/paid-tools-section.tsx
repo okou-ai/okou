@@ -25,6 +25,7 @@ import { currentOrgInfo$ } from "../../../../../signals/auth.ts";
 import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
+import { SettingsSectionHeading } from "../settings-section-heading.tsx";
 
 const TOOL_ICONS = {
   "web-search": Search,
@@ -187,4 +188,18 @@ export function PaidToolsSection() {
     );
   }
   return <PaidToolsContent key={settings.data.key} settings={settings.data} />;
+}
+
+export function ToolsSection() {
+  const { t } = useTranslation();
+  return (
+    <section className="flex flex-col gap-3">
+      <SettingsSectionHeading
+        title={t(($) => {
+          return $.settings.paidTools.title;
+        })}
+      />
+      <PaidToolsSection />
+    </section>
+  );
 }

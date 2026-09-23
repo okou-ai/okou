@@ -2,9 +2,15 @@ import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import {
   chatEventsContract,
+  chatThreadArtifactsContract,
   chatThreadDraftContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
+import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -44,6 +50,14 @@ async function sendComposerMessage(message: string): Promise<void> {
   click(fastButton("Send"));
 }
 
+function composerFileInput(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
+  if (!input) {
+    throw new Error("Composer file input was not mounted");
+  }
+  return input;
+}
+
 function installNewThreadDefaults(): void {
   installChatListAgent(context);
   installChatListModelPolicies(context);
@@ -58,18 +72,41 @@ function installNewThreadDefaults(): void {
   installActiveChatBoundaries(context);
 }
 
-async function openUnconfirmedConversation() {
+async function openUnconfirmedConversation(
+  options: { readonly headerActionsEnabled?: boolean } = {},
+) {
   const auth = chatListAuth(9);
   const confirmation = context.mocks.deferred<void>();
   const requests: {
     threadId: string | undefined;
+    eventId: string | undefined;
     model: string | undefined;
     draftRequested: boolean;
-  } = { threadId: undefined, model: undefined, draftRequested: false };
+  } = {
+    threadId: undefined,
+    eventId: undefined,
+    model: undefined,
+    draftRequested: false,
+  };
   installNewThreadDefaults();
-  installChatListStream(context, { caseId: 9, snapshot: [] });
+  const stream = installChatListStream(context, { caseId: 9, snapshot: [] });
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+  context.mocks.api(
+    workflowAutomationsContract.listForChatThread,
+    ({ respond }) => {
+      return respond(200, []);
+    },
+  );
   context.mocks.api(chatThreadsContract.create, async ({ body, respond }) => {
     requests.threadId = body.clientThreadId;
+    requests.eventId = body.eventId;
     requests.model = body.model;
     await confirmation.promise;
     return respond(201, {
@@ -101,8 +138,12 @@ async function openUnconfirmedConversation() {
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
+    featureSwitches: {
+      [FeatureSwitchKey.ChatThreadHeaderActions]:
+        options.headerActionsEnabled ?? false,
+    },
   });
-  return { confirmation, requests };
+  return { confirmation, requests, stream };
 }
 
 test("A new conversation appears before server confirmation", async () => {
@@ -122,6 +163,104 @@ test("A new conversation appears before server confirmation", async () => {
   expect(requests.draftRequested).toBeFalsy();
   expect(confirmation.settled()).toBeFalsy();
 });
+
+test("An optimistic QuickTime preview does not list artifacts before thread creation", async () => {
+  const fileId = "optimistic-recording";
+  context.mocks.upload.success({
+    id: fileId,
+    filename: "recording.mov",
+    contentType: "video/quicktime",
+    size: 24,
+    url: `http://localhost/api/web/download-file?file_id=${fileId}`,
+  });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(404, {
+      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
+    });
+  });
+  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
+    return respond(200, {
+      url: "https://private-files.example/recording.mov",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      publicUrl: null,
+      previewImageUrl: null,
+    });
+  });
+  const { confirmation, requests } = await openUnconfirmedConversation();
+  const user = userEvent.setup({ delay: null });
+  await user.click(fastButton("Attach"));
+  await user.upload(
+    composerFileInput(),
+    new File(["video fixture"], "recording.mov", {
+      type: "video/quicktime",
+    }),
+  );
+  await expect(fastButton("Remove recording.mov")).toBeVisible();
+
+  await user.click(fastButton("Send"));
+
+  await waitFor(() => {
+    expect(fastButton("Preview recording.mov")).toBeVisible();
+  });
+  await expect(
+    screen.findByTestId("chat-video-preview-fallback"),
+  ).resolves.toHaveAttribute(
+    "src",
+    "https://private-files.example/recording.mov#t=0.001",
+  );
+  expect(requests.threadId).toBeDefined();
+  expect(confirmation.settled()).toBeFalsy();
+  expect(
+    screen.queryAllByText("Chat thread not found").find((candidate) => {
+      return candidate.closest('[data-sonner-toast][data-visible="true"]');
+    }),
+  ).toBeUndefined();
+});
+
+test.each([true, false])(
+  "Thread actions wait for optimistic creation to settle (desktop: %s)",
+  async (desktop) => {
+    context.mocks.browser.matchMedia(desktop);
+    const { confirmation, requests, stream } =
+      await openUnconfirmedConversation({ headerActionsEnabled: true });
+
+    await sendComposerMessage("Create a thread before showing its actions");
+    await waitFor(() => {
+      expect(requests.threadId).toBeDefined();
+      expect(requests.eventId).toBeDefined();
+    });
+    expect(screen.queryByLabelText("Change icon")).toBeNull();
+    expect(screen.queryByLabelText("Pin chat")).toBeNull();
+    expect(screen.queryByLabelText("Share messages")).toBeNull();
+    expect(
+      screen.queryByLabelText(desktop ? "Open artifacts" : "More actions"),
+    ).toBeNull();
+    if (!requests.threadId || !requests.eventId) {
+      throw new Error("Expected optimistic thread identifiers");
+    }
+    confirmation.resolve();
+    stream.setEvents([
+      chatListEvent(9, 2, "created", requests.threadId, {
+        id: requests.eventId,
+        title: "Confirmed conversation",
+        selectedModel: requests.model ?? "gpt-5.6-luna",
+        createdAt: "2026-08-01T03:00:00.000Z",
+      }),
+    ]);
+    context.mocks.ably.trigger("threadListChanged");
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Change icon")).toBeVisible();
+      expect(screen.queryAllByLabelText("Pin chat")).toHaveLength(
+        desktop ? 1 : 0,
+      );
+      expect(screen.getByLabelText("Share messages")).toBeVisible();
+      expect(
+        screen.getByLabelText(desktop ? "Open artifacts" : "More actions"),
+      ).toBeVisible();
+    });
+  },
+);
 
 test("The changed model survives the first send before server confirmation", async () => {
   const { confirmation, requests } = await openUnconfirmedConversation();

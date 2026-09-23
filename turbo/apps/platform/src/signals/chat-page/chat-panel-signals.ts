@@ -141,6 +141,7 @@ export interface ChatPanelSignals {
   // -- Data signals ----------------------------------------------------------
   readonly threadDraft$: Computed<Promise<ChatThreadDraft | null>>;
   readonly threadMeta$: Computed<ThreadMeta | null>;
+  readonly optimisticCreateUnsettled$: Computed<boolean>;
   readonly threadTitle$: Computed<string | null>;
   readonly threadTitleEmoji$: Computed<string | null>;
   readonly threadTitleText$: Computed<string>;

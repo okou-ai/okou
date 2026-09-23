@@ -1,6 +1,7 @@
 //! Sandbox preparation, reuse, and post-run cleanup glue.
 
 use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::FutureExt;
@@ -40,7 +41,6 @@ use super::{
 use crate::dns::{DnsReadinessLogObservation, inspect_readiness_log_segment};
 use crate::duration::duration_ms;
 use crate::network_log_manager::NetworkLogSession;
-use crate::provider::ConnectorRuntimeSyncRegistration;
 use crate::proxy;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::storage_cache::PreparedStorage;
@@ -53,6 +53,7 @@ use crate::workspace_image_cache::{
 };
 use crate::workspace_mount::ensure_workspace_drive_mounted;
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
+use runner_provider::ConnectorRuntimeSyncRegistration;
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, WorkspaceReuseResult};
 
@@ -1827,7 +1828,7 @@ pub(super) async fn register_proxy(
             .register_run(ConnectorRuntimeSyncRegistration {
                 run_id: context.run_id,
                 source_ip,
-                registry: config.registry.clone(),
+                registry: Arc::new(config.registry.clone()),
                 targets: &context.connector_runtime_targets,
                 refreshes: context.network_policy_refreshes.as_ref(),
             })

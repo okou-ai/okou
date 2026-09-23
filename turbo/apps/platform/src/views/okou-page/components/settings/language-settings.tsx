@@ -1,3 +1,4 @@
+import type { Select as SelectPrimitive } from "@base-ui/react/select";
 import { useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Globe } from "lucide-react";
@@ -157,9 +158,21 @@ export function LanguageSettings() {
 
   const saving = updateLoadable.state === "loading";
 
-  const handleChange = (value: string) => {
+  const handleChange = (
+    value: string | null,
+    details: SelectPrimitive.Root.ChangeEventDetails,
+  ) => {
+    if (value === null || saving) {
+      details.cancel();
+      return;
+    }
     if (!isSupportedLocale(value) || !availableLocales.includes(value)) {
       throw new Error(`Unsupported locale: ${value}`);
+    }
+    // A replay of the displayed locale is not a new preference. Explicit
+    // item presses still reach the command, including failed-save retries.
+    if (value === locale && details.reason === "none") {
+      return;
     }
     detach(updateLocale(value, pageSignal), Reason.DomCallback);
   };

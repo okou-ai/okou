@@ -373,7 +373,7 @@ test("Search the full connector catalog", async () => {
   });
   await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
   await expect(
-    screen.findByText("Connect 1,235 services for your agents to use."),
+    screen.findByText("Connect 1,236 services for your agents to use."),
   ).resolves.toBeInTheDocument();
 
   await fill(screen.getByPlaceholderText("Find connectors"), "Slack");
@@ -384,7 +384,7 @@ test("Search the full connector catalog", async () => {
   });
   expect(keywords).toContain("Slack");
   await expect(
-    screen.findByText("Connect 1,235 services for your agents to use."),
+    screen.findByText("Connect 1,236 services for your agents to use."),
   ).resolves.toBeInTheDocument();
 });
 

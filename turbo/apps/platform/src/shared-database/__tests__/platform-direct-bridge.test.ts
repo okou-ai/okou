@@ -153,7 +153,6 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
 
 test("Show cached chat data before catching up live", async () => {
   const threadId = crypto.randomUUID();
-  const unreadThreadId = crypto.randomUUID();
   const cachedRow = row(threadId, 1);
   const caughtUpRow = row(threadId, 2);
   const realtimeRow = row(threadId, 3);
@@ -162,18 +161,13 @@ test("Show cached chat data before catching up live", async () => {
   const initialPage = context.mocks.deferred<void>();
   let availableRows: readonly ChatEventRow[] = [caughtUpRow];
   const requestedSeqIds: number[] = [];
-  const prewarmedThreadIds: string[] = [];
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      agents: {},
-      threads: { [unreadThreadId]: "unread" },
-    });
+    return respond(200, { agents: {}, threads: {} });
   });
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
     return respond(200, {
       events: Object.fromEntries(
         body.map(([threadId]) => {
-          prewarmedThreadIds.push(threadId);
           return [threadId, []];
         }),
       ),
@@ -220,10 +214,6 @@ test("Show cached chat data before catching up live", async () => {
       },
     },
   });
-  await vi.waitFor(() => {
-    expect(prewarmedThreadIds).toContain(unreadThreadId);
-  });
-
   const resetOwner$ = resetSignal();
   const ownerSignal = context.store.set(resetOwner$, context.signal);
   const signals = createChatEventSignals(threadId);
@@ -335,6 +325,15 @@ test("Cache incoming chat messages before the conversation is opened", async () 
   });
 
   await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasChannelSubscriptionOnChannel(realtimeChannel()),
+    ).toBeTruthy();
+  });
+  context.mocks.ably.triggerOnChannel(
+    realtimeChannel(),
+    `chatThreadMessageCreated:${unopenedThreadId}`,
+  );
+  await vi.waitFor(() => {
     expect(batchedThreadIds).toContain(unopenedThreadId);
   });
 
@@ -420,9 +419,6 @@ test("Preserve every message during a burst of realtime notifications", async ()
       },
     },
   });
-  await vi.waitFor(() => {
-    expect(prewarmedThreadIds).toContain(unopenedThreadId);
-  });
   const resetOwner$ = resetSignal();
   const ownerSignal = context.store.set(resetOwner$, context.signal);
   const signals = createChatEventSignals(threadId);
@@ -438,6 +434,9 @@ test("Preserve every message during a burst of realtime notifications", async ()
     `chatThreadMessageCreated:${threadId}`,
   );
   await catchUpStarted.promise;
+  await vi.waitFor(() => {
+    expect(prewarmedThreadIds).toContain(unopenedThreadId);
+  });
   context.mocks.ably.triggerOnChannel(
     realtimeChannel(),
     `chatThreadMessageCreated:${threadId}`,

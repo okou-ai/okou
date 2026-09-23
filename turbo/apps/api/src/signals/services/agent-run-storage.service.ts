@@ -33,6 +33,7 @@ import { now, nowDate } from "../../lib/time";
 import { joinAll, settle } from "../utils";
 import {
   READ_ONLY_STORAGE_PRESIGNED_URL_TTL_SECONDS,
+  prefetchStorageManifestPresignedUrlCacheRows,
   readOnlyStoragePresignedUrlCacheKey,
   resolveReadOnlyStoragePresignedUrls,
   resolveWorkflowSkillStoragePresignedUrls,
@@ -48,6 +49,7 @@ import {
   type StorageManifestCacheBranch,
   type StorageManifestCacheEntryKind,
   type StorageManifestCacheObservationContext,
+  type StorageManifestPresignedUrlCacheSnapshot,
   type StoragePresignedUrlResult,
   type WorkflowSkillStoragePresignedUrlCacheStatus,
   type WorkflowSkillStoragePresignedUrlRequest,
@@ -2024,6 +2026,50 @@ function readOnlyStoragePresignedUrlRequest(args: {
   };
 }
 
+interface StorageManifestPresignedUrlRequests {
+  readonly systemRequests: readonly SystemStoragePresignedUrlRequest[];
+  readonly workflowSkillRequests: readonly WorkflowSkillStoragePresignedUrlRequest[];
+  readonly readOnlyRequests: readonly ReadOnlyStoragePresignedUrlRequest[];
+}
+
+function storageManifestPresignedUrlRequests(args: {
+  readonly bucket: string;
+  readonly plans: readonly ResolvedManifestStoragePlan[];
+}): StorageManifestPresignedUrlRequests {
+  return {
+    systemRequests: args.plans.filter(isSystemOwnedStoragePlan).map((plan) => {
+      return systemStoragePresignedUrlRequest({
+        bucket: args.bucket,
+        plan,
+      });
+    }),
+    workflowSkillRequests: args.plans
+      .filter((plan) => {
+        return (
+          !isSystemOwnedStoragePlan(plan) && isWorkflowSkillStoragePlan(plan)
+        );
+      })
+      .map((plan) => {
+        return workflowSkillStoragePresignedUrlRequest({
+          bucket: args.bucket,
+          plan,
+        });
+      }),
+    readOnlyRequests: args.plans
+      .filter((plan) => {
+        return (
+          !isSystemOwnedStoragePlan(plan) && !isWorkflowSkillStoragePlan(plan)
+        );
+      })
+      .map((plan) => {
+        return readOnlyStoragePresignedUrlRequest({
+          bucket: args.bucket,
+          resolved: plan.resolved,
+        });
+      }),
+  };
+}
+
 function readOnlyStorageEntryMetadata(args: {
   readonly plan: ResolvedManifestStoragePlan;
 }): PreparedReadOnlyStorageEntry<StorageMountMetadata> {
@@ -2185,6 +2231,8 @@ function buildStorageEntriesFromPlans(args: {
   readonly db: Db;
   readonly bucket: string;
   readonly plans: readonly ResolvedManifestStoragePlan[];
+  readonly requests: StorageManifestPresignedUrlRequests;
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot | undefined;
   readonly timing?: ApiDispatchTimingCollector;
   readonly branch: StorageManifestCacheBranch;
   readonly entryKind: Extract<
@@ -2207,50 +2255,24 @@ function buildStorageEntriesFromPlans(args: {
       resolveSystemStoragePresignedUrls({
         db: args.db,
         observation,
-        requests: systemPlans.map((plan) => {
-          return systemStoragePresignedUrlRequest({
-            bucket: args.bucket,
-            plan,
-          });
-        }),
+        requests: args.requests.systemRequests,
+        prefetchedRows: args.prefetchedRows,
       }),
     );
     const workflowSkillUrlsByCacheKeyPromise = get(
       resolveWorkflowSkillStoragePresignedUrls({
         db: args.db,
         observation,
-        requests: args.plans
-          .filter((plan) => {
-            return (
-              !isSystemOwnedStoragePlan(plan) &&
-              isWorkflowSkillStoragePlan(plan)
-            );
-          })
-          .map((plan) => {
-            return workflowSkillStoragePresignedUrlRequest({
-              bucket: args.bucket,
-              plan,
-            });
-          }),
+        requests: args.requests.workflowSkillRequests,
+        prefetchedRows: args.prefetchedRows,
       }),
     );
     const readOnlyUrlsByCacheKeyPromise = get(
       resolveReadOnlyStoragePresignedUrls({
         db: args.db,
         observation,
-        requests: args.plans
-          .filter((plan) => {
-            return (
-              !isSystemOwnedStoragePlan(plan) &&
-              !isWorkflowSkillStoragePlan(plan)
-            );
-          })
-          .map((plan) => {
-            return readOnlyStoragePresignedUrlRequest({
-              bucket: args.bucket,
-              resolved: plan.resolved,
-            });
-          }),
+        requests: args.requests.readOnlyRequests,
+        prefetchedRows: args.prefetchedRows,
       }),
     );
 
@@ -2767,6 +2789,108 @@ async function resolveStorageManifestEntryPlans(args: {
   };
 }
 
+interface PrefetchedStorageManifestPresignedUrls {
+  readonly composeRequests: StorageManifestPresignedUrlRequests;
+  readonly additionalRequests: StorageManifestPresignedUrlRequests;
+  readonly artifactRequests: readonly ReadOnlyStoragePresignedUrlRequest[];
+  readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot | undefined;
+}
+
+function finalStorageManifestPlans(
+  resolved: ResolvedStorageManifestEntryPlans,
+): {
+  readonly composePlans: readonly ResolvedManifestStoragePlan[];
+  readonly additionalPlans: readonly ResolvedManifestStoragePlan[];
+} {
+  const plans = mergeStorageEntries({
+    composeEntries: resolved.composePlans,
+    additionalEntries: resolved.additionalPlans,
+    mountPath(plan) {
+      return plan.mountPath;
+    },
+  });
+  return {
+    composePlans: plans.filter((plan) => {
+      return plan.entryKind === "compose";
+    }),
+    additionalPlans: plans.filter((plan) => {
+      return plan.entryKind === "additional";
+    }),
+  };
+}
+
+function prefetchStorageManifestPresignedUrlsForPlans(args: {
+  readonly db: Db;
+  readonly bucket: string;
+  readonly timing: ApiDispatchTimingCollector | undefined;
+  readonly branch: StorageManifestCacheBranch;
+  readonly composePlans: readonly ResolvedManifestStoragePlan[];
+  readonly additionalPlans: readonly ResolvedManifestStoragePlan[];
+  readonly artifactInputs: readonly ResolvedManifestArtifactInput[];
+}): Computed<Promise<PrefetchedStorageManifestPresignedUrls>> {
+  return computed(async (get) => {
+    const composeRequests = storageManifestPresignedUrlRequests({
+      bucket: args.bucket,
+      plans: args.composePlans,
+    });
+    const additionalRequests = storageManifestPresignedUrlRequests({
+      bucket: args.bucket,
+      plans: args.additionalPlans,
+    });
+    const artifactRequests = args.artifactInputs.flatMap((input) => {
+      return input.resolved.fileCount === 0
+        ? []
+        : [
+            readOnlyStoragePresignedUrlRequest({
+              bucket: args.bucket,
+              resolved: input.resolved,
+            }),
+          ];
+    });
+    const logicalLookupCount = [
+      composeRequests.systemRequests,
+      composeRequests.workflowSkillRequests,
+      composeRequests.readOnlyRequests,
+      additionalRequests.systemRequests,
+      additionalRequests.workflowSkillRequests,
+      additionalRequests.readOnlyRequests,
+      artifactRequests,
+    ].filter((requests) => {
+      return requests.length > 0;
+    }).length;
+    const prefetchedRows = await get(
+      prefetchStorageManifestPresignedUrlCacheRows({
+        db: args.db,
+        input: {
+          systemRequests: [
+            ...composeRequests.systemRequests,
+            ...additionalRequests.systemRequests,
+          ],
+          workflowSkillRequests: [
+            ...composeRequests.workflowSkillRequests,
+            ...additionalRequests.workflowSkillRequests,
+          ],
+          readOnlyRequests: [
+            ...composeRequests.readOnlyRequests,
+            ...additionalRequests.readOnlyRequests,
+            ...artifactRequests,
+          ],
+          logicalLookupCount,
+        },
+        observation: args.timing
+          ? { timing: args.timing, branch: args.branch }
+          : undefined,
+      }),
+    );
+    return {
+      composeRequests,
+      additionalRequests,
+      artifactRequests,
+      prefetchedRows,
+    };
+  });
+}
+
 function generatePreparedStorageEntriesFromPlans(args: {
   readonly input: BuildStorageManifestEntriesArgs;
   readonly branch: StorageManifestCacheBranch;
@@ -2774,19 +2898,26 @@ function generatePreparedStorageEntriesFromPlans(args: {
   readonly resolved: ResolvedStorageManifestEntryPlans;
 }): Computed<Promise<PreparedStorageEntries>> {
   return computed(async (get) => {
-    const finalStoragePlans = mergeStorageEntries({
-      composeEntries: args.resolved.composePlans,
-      additionalEntries: args.resolved.additionalPlans,
-      mountPath(plan) {
-        return plan.mountPath;
-      },
-    });
-    const finalComposePlans = finalStoragePlans.filter((plan) => {
-      return plan.entryKind === "compose";
-    });
-    const finalAdditionalPlans = finalStoragePlans.filter((plan) => {
-      return plan.entryKind === "additional";
-    });
+    const {
+      composePlans: finalComposePlans,
+      additionalPlans: finalAdditionalPlans,
+    } = finalStorageManifestPlans(args.resolved);
+    const {
+      composeRequests,
+      additionalRequests,
+      artifactRequests,
+      prefetchedRows,
+    } = await get(
+      prefetchStorageManifestPresignedUrlsForPlans({
+        db: args.input.db,
+        bucket: args.input.bucket,
+        timing: args.input.timing,
+        branch: args.branch,
+        composePlans: finalComposePlans,
+        additionalPlans: finalAdditionalPlans,
+        artifactInputs: args.resolved.artifactInputs,
+      }),
+    );
 
     const [composeEntries, additionalEntries, writebackEntries] = await joinAll(
       [
@@ -2796,6 +2927,8 @@ function generatePreparedStorageEntriesFromPlans(args: {
               db: args.input.db,
               bucket: args.input.bucket,
               plans: finalComposePlans,
+              requests: composeRequests,
+              prefetchedRows,
               timing: args.input.timing,
               branch: args.branch,
               entryKind: "compose",
@@ -2809,6 +2942,8 @@ function generatePreparedStorageEntriesFromPlans(args: {
               db: args.input.db,
               bucket: args.input.bucket,
               plans: finalAdditionalPlans,
+              requests: additionalRequests,
+              prefetchedRows,
               timing: args.input.timing,
               branch: args.branch,
               entryKind: "additional",
@@ -2817,20 +2952,11 @@ function generatePreparedStorageEntriesFromPlans(args: {
           );
         }),
         args.phaseTimings.artifact.measureGenerate(async () => {
-          const requests = args.resolved.artifactInputs.flatMap((input) => {
-            return input.resolved.fileCount === 0
-              ? []
-              : [
-                  readOnlyStoragePresignedUrlRequest({
-                    bucket: args.input.bucket,
-                    resolved: input.resolved,
-                  }),
-                ];
-          });
           const urlsByCacheKey = await get(
             resolveReadOnlyStoragePresignedUrls({
               db: args.input.db,
-              requests,
+              requests: artifactRequests,
+              prefetchedRows,
               observation: storageManifestCacheObservation({
                 timing: args.input.timing,
                 branch: args.branch,

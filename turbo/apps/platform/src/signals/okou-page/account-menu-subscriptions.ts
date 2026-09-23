@@ -101,14 +101,16 @@ function accountMenuSubscriptionUsageRows(
       {
         type: definition.type,
         usage,
-        resetCredits:
-          provider.type === "codex-oauth-token"
-            ? (provider.subscriptionResetCredits ?? null)
-            : undefined,
-        resetCreditsNextExpiresAt:
-          provider.type === "codex-oauth-token"
-            ? (provider.subscriptionResetCreditsNextExpiresAt ?? null)
-            : undefined,
+        // Only a provider whose upstream reports redeemable resets carries
+        // these fields, so their presence is what offers the reset action
+        // rather than a per-provider allowlist repeated in the view.
+        ...(provider.subscriptionResetCredits === undefined
+          ? {}
+          : {
+              resetCredits: provider.subscriptionResetCredits,
+              resetCreditsNextExpiresAt:
+                provider.subscriptionResetCreditsNextExpiresAt ?? null,
+            }),
       },
     ];
   });

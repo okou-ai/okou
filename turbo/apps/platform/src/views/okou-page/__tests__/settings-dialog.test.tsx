@@ -385,6 +385,49 @@ test("Select and persist a supported interface language", async () => {
   });
 });
 
+test("Retry saving the same language after the interface changed but the API rejected it", async () => {
+  let serverLocale: UserLocale = "en-US";
+  let failSave = true;
+  const submittedLocales: UserLocale[] = [];
+  const supportedLocales: UserLocale[] = ["en-US", "de-DE"];
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, createPreferences(serverLocale, supportedLocales));
+  });
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+    if (body.locale !== undefined) {
+      submittedLocales.push(body.locale);
+      if (failSave) {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Language could not be saved",
+          },
+        });
+      }
+      serverLocale = body.locale;
+    }
+    return respond(200, createPreferences(serverLocale, supportedLocales));
+  });
+  await openDialog("admin", "preference");
+  click(screen.getByRole("combobox", { name: "Language" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await waitFor(() => {
+    expect(submittedLocales).toStrictEqual(["de-DE"]);
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+  });
+  expect(document.documentElement.lang).toBe("de-DE");
+  expect(serverLocale).toBe("en-US");
+
+  failSave = false;
+  click(screen.getByRole("combobox", { name: "Sprache" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+    expect(serverLocale).toBe("de-DE");
+  });
+  expect(submittedLocales).toStrictEqual(["de-DE", "de-DE"]);
+});
+
 test("Keep the selected language visible during a preference refresh", async () => {
   const preferenceReloadStarted = context.mocks.deferred<void>();
   const preferenceReloadCompleted = context.mocks.deferred<void>();

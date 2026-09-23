@@ -281,7 +281,7 @@ test("Keep the main recording alive when a simultaneous forward transcription is
 describe.each(targets)(
   "reuse an unfinished $target recording in the forward dialog without replacing it",
   ({ name, path }) => {
-    async function prepareScenario() {
+    async function prepareRecording() {
       const resetInitialPage$ = resetSignal();
       const initialPageSignal = context.store.set(
         resetInitialPage$,
@@ -313,6 +313,25 @@ describe.each(targets)(
       click(await findEnabledButton("Stop recording"));
       await findEnabledButton("Retry");
       const saved = await recordings();
+      return {
+        resetInitialPage$,
+        saved,
+        get successful() {
+          return successful;
+        },
+        set successful(next: typeof successful) {
+          successful = next;
+        },
+        uploads,
+      };
+    }
+    let preparedRecording: Awaited<ReturnType<typeof prepareRecording>>;
+    beforeEach(async () => {
+      preparedRecording = await prepareRecording();
+    });
+
+    async function openRestoredRecording() {
+      const { resetInitialPage$ } = preparedRecording;
       context.store.set(resetInitialPage$);
       releasePageDom();
       await setupPage({
@@ -325,29 +344,19 @@ describe.each(targets)(
       });
       const dialog = await openForwardComposer(name);
       await findEnabledButton("Retry", dialog);
-      return {
-        saved,
-        originalComposer,
-        dialog,
-        get successful() {
-          return successful;
-        },
-        set successful(next: typeof successful) {
-          successful = next;
-        },
-        uploads,
-      };
+      return { dialog, originalComposer };
     }
     it("offers the restored recording for retry without replacing its saved audio", async () => {
-      const { dialog, saved } = await prepareScenario();
+      const { saved } = preparedRecording;
+      const { dialog } = await openRestoredRecording();
       expect(queryButton("Voice input", dialog)).toBeNull();
       await expect(recordings()).resolves.toStrictEqual(saved);
     });
 
     it("recovers the restored audio into the forward dialog without changing the original composer", async () => {
-      const preparedScenario = await prepareScenario();
-      const { dialog, originalComposer, uploads } = preparedScenario;
-      preparedScenario.successful = true;
+      const { uploads } = preparedRecording;
+      const { dialog, originalComposer } = await openRestoredRecording();
+      preparedRecording.successful = true;
       click(await findEnabledButton("Retry", dialog));
       await findEnabledButton("Voice input", dialog);
       expect(

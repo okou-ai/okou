@@ -147,7 +147,13 @@ export function HomeTaskRecommendations({
   return (
     <section
       data-testid="home-task-recommendations"
-      className="flex w-full flex-col gap-2"
+      // `order-1` keeps the mobile column greeting, recommendations, starting
+      // points, composer: the composer's own `order-3` is what holds it at the
+      // bottom within thumb reach, so this section takes the step above the
+      // chips rather than sharing theirs. It rides the section and not a
+      // wrapper in the page, so that returning null above leaves no flex item
+      // behind for the column's `gap` to charge for.
+      className="order-1 flex w-full flex-col gap-2 sm:order-none"
     >
       <h3 className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Sparkles className="size-3.5" aria-hidden />

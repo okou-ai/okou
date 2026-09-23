@@ -249,7 +249,7 @@ export function OnboardingMakePage() {
     >
       <div
         className="grid grid-cols-1 gap-3 pb-12 sm:grid-cols-2 sm:pb-0"
-        role="radiogroup"
+        role="group"
         aria-label={t(($) => {
           return $.onboarding.make.projectTypeLabel;
         })}
@@ -260,8 +260,6 @@ export function OnboardingMakePage() {
             <button
               key={option.id}
               type="button"
-              role="radio"
-              aria-checked={selected}
               onClick={() => {
                 handleChoice(option.id);
               }}
@@ -269,7 +267,7 @@ export function OnboardingMakePage() {
               aria-busy={selected && completeLoadable.state === "loading"}
               className={cn(
                 "flex min-h-[72px] items-center gap-3 rounded-xl border bg-background px-4 py-3.5 text-left shadow-[var(--okou-card-shadow)] transition-colors sm:px-6 sm:py-[15px]",
-                "hover:border-primary/55",
+                "hover:border-primary/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                 selected ? "border-primary" : "border-border",
                 option.id === "explore" && "sm:col-span-2",
               )}

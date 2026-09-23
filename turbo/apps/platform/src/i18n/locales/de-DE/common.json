@@ -1559,7 +1559,6 @@
         "enteredChat": "{{userName}} hat den Chat betreten.",
         "goodToSeeYou": "Schön, Sie zu sehen, {{userName}}.",
         "knewYouWouldCome": "Ich wusste, dass Sie zurückkommen, {{userName}}.",
-        "letsRoll": "{{agentName}} ist bereit, {{userName}}. Legen wir los.",
         "makeTodayCount": "Machen wir das Beste aus dem Tag, {{userName}}.",
         "newIdeas": "Heute neue Ideen, {{userName}}?",
         "readyToBuild": "Bereit, etwas aufzubauen, {{userName}}?",
@@ -1736,6 +1735,11 @@
       "upgradeToRun": "Auf Pro upgraden, um {{assistantName}} auszuführen",
       "upgradeWorkspace": "Arbeitsbereich upgraden"
     },
+    "browserAction": {
+      "documentTitle": "Browseraktion",
+      "loading": "Browseranfrage wird geladen",
+      "unavailableDescription": "Diese Browseranfrage ist ungültig oder nicht mehr verfügbar."
+    },
     "browserInput": {
       "applyFailed": "Die Informationen konnten nicht hinzugefügt werden. Ihre Eingaben sind noch vorhanden. Versuchen Sie es erneut.",
       "applying": "Informationen werden hinzugefügt",
@@ -1753,12 +1757,10 @@
       "delivered": "Agent benachrichtigt",
       "deliveredDescription": "Der Agent kann jetzt fortfahren.",
       "description": "Geben Sie die für diese Website angeforderten Informationen ein.",
-      "documentTitle": "Browsereingabe",
       "expired": "Anfrage abgelaufen",
       "expiredDescription": "Der Browser wurde geschlossen oder diese Anfrage ist nicht mehr aktiv.",
       "loadFailed": "Diese Anfrage konnte nicht geladen werden",
       "loadFailedDescription": "Versuchen Sie es gleich noch einmal.",
-      "loading": "Browsereingabe wird geladen",
       "loadingDescription": "Anfrage wird geprüft…",
       "open": "Informationen eingeben",
       "optional": "(Optional)",
@@ -1771,9 +1773,33 @@
       "submitting": "Wird hinzugefügt…",
       "title": "Informationen im Browser eingeben",
       "unavailable": "Anfrage nicht verfügbar",
-      "unavailableDescription": "Diese Browsereingabe-Anfrage ist ungültig oder nicht mehr verfügbar.",
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
+    },
+    "browserInteraction": {
+      "applying": "Browserinteraktion wird abgeschlossen",
+      "applyingDescription": "Der Browser schließt diese Anfrage ab.",
+      "callbackFailed": "Der Agent wurde nicht benachrichtigt. Versuchen Sie „Weiter“ erneut.",
+      "cancel": "Abbrechen",
+      "cancelFailed": "Diese Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
+      "cancelled": "Anfrage abgebrochen",
+      "cancelledDescription": "Die Browserübergabe wurde abgebrochen. Fahren Sie fort, um den Agenten zu benachrichtigen.",
+      "cancelling": "Wird abgebrochen…",
+      "completed": "Browserinteraktion abgeschlossen",
+      "completedDescription": "Ihre Browserinteraktion wurde erfasst. Fahren Sie fort, um den Agenten zu benachrichtigen.",
+      "completeFailed": "Diese Anfrage konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
+      "completing": "Wird abgeschlossen…",
+      "continue": "Weiter",
+      "continuing": "Wird fortgesetzt…",
+      "delivered": "Agent benachrichtigt",
+      "deliveredDescription": "Der Agent kann jetzt fortfahren.",
+      "description": "Öffnen Sie den Browser, schließen Sie diesen Schritt ab und wählen Sie dann „Fertig“.",
+      "done": "Fertig",
+      "stale": "Browser nicht mehr verfügbar",
+      "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
+      "title": "Browser übernehmen",
+      "uncertain": "Browser prüfen",
+      "uncertainDescription": "Die Interaktion wurde möglicherweise abgeschlossen. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
     },
     "cards": {
       "viewDetails": "Details ansehen"
@@ -2919,6 +2945,50 @@
       "named": "Workflow {{title}}",
       "open": "Workflow öffnen {{title}}"
     }
+  },
+  "cloudflareAccess": {
+    "add": "Cloudflare Access hinzufügen",
+    "cancel": "Abbrechen",
+    "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Prüfen Sie vor dem Speichern die neuesten Einstellungen.",
+    "clientId": "Client-ID des Service-Tokens",
+    "clientIdPlaceholder": "Client-ID des Service-Tokens einfügen",
+    "clientSecret": "Client-Secret des Service-Tokens",
+    "clientSecretPlaceholder": "Client-Secret des Service-Tokens einfügen",
+    "configuration": "Cloudflare Access",
+    "createNew": "Neuen Cloudflare Access erstellen",
+    "delete": "Cloudflare Access löschen",
+    "deleteHelp": "Diesen ungenutzten Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden.",
+    "description": "Greifen Sie mit Cloudflare Access Service-Tokens auf geschützte Anwendungen zu.",
+    "edit": "Cloudflare Access bearbeiten",
+    "empty": "Noch kein Cloudflare Access. Fügen Sie ein Service-Token hinzu, um auf geschützte Anwendungen zuzugreifen.",
+    "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
+    "inUse": "Dieser Cloudflare Access wird von einem Host verwendet. Prüfen Sie die betroffenen Hosts und ändern Sie zuerst deren Zuordnung oder löschen Sie sie.",
+    "inUseHelp": "Wählen Sie für diese Hosts einen anderen Cloudflare Access, wechseln Sie ausdrücklich zu Direkt oder löschen Sie die Hosts, bevor Sie diesen löschen.",
+    "invalidInput": "Einige Cloudflare-Access-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
+    "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
+    "latest": "Zuletzt gespeicherte Einstellungen",
+    "loadFailed": "Cloudflare Access konnte nicht geladen werden. Versuchen Sie es erneut.",
+    "loading": "Cloudflare Access wird geladen…",
+    "manage": "Cloudflare Access verwalten",
+    "missing": "Dieser Cloudflare Access ist nicht mehr verfügbar. Wählen oder erstellen Sie einen anderen.",
+    "name": "Name",
+    "namePlaceholder": "z. B. Produktionszugriff",
+    "replace": "Service-Token ersetzen",
+    "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
+    "retry": "Erneut versuchen",
+    "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
+    "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue.",
+    "save": "Speichern",
+    "saveUncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Wiederholen Sie denselben Speichervorgang, oder schließen Sie das Formular und prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen.",
+    "select": "Cloudflare Access auswählen",
+    "summary_one": "{{count}} Cloudflare Access eingerichtet",
+    "summary_other": "{{count}} Cloudflare Access eingerichtet",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Greifen Sie mit Cloudflare Access Service-Tokens auf geschützte Anwendungen zu.",
+    "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar.",
+    "unused": "Von keinem Host verwendet",
+    "usedBy_one": "Von {{count}} Host verwendet:",
+    "usedBy_other": "Von {{count}} Hosts verwendet:"
   },
   "connectors": {
     "access": {
@@ -5994,6 +6064,9 @@
           "description": "Personalisieren Sie das Aussehen und Verhalten der App.",
           "title": "Einstellungen"
         },
+        "tools": {
+          "title": "Tools"
+        },
         "usage": {
           "balanceDescription": "Was deinem Team noch zum Ausgeben bleibt.",
           "balanceTitle": "Credit-Guthaben",
@@ -6274,7 +6347,7 @@
         "workspaceDescription": "Verfügbar für alle in diesem Arbeitsbereich."
       },
       "reset": {
-        "confirmDescription": "Verwenden Sie einen Codex-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
+        "confirmDescription": "Verwenden Sie einen {{provider}}-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
         "progress": "Zurücksetzen...",
         "remaining_one": "{{value}} Reset übrig",
         "remaining_other": "{{value}} Resets übrig",
@@ -6282,7 +6355,7 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} Reset übrig · läuft {{expiry}} ab",
         "remainingWithExpiry_other": "{{value}} Resets übrig · laufen {{expiry}} ab",
-        "title": "Codex-Nutzung zurücksetzen?"
+        "title": "{{provider}}-Nutzung zurücksetzen?"
       },
       "stale": {
         "claudeExpired": "Ihre Claude Code-Sitzung ist abgelaufen. Stellen Sie die Verbindung erneut her, um fortzufahren.",
@@ -6299,9 +6372,9 @@
         "accountSwitched": "Aktives Konto gewechselt",
         "disconnected": "{{provider}} getrennt",
         "policiesUpdated": "Modellanbietereinstellungen aktualisiert",
-        "reset": "Codex-Nutzung zurückgesetzt",
-        "resetUnavailable": "Es sind keine Codex-Nutzungs-Resets verfügbar",
-        "resetUnneeded": "Die Codex-Nutzung muss derzeit nicht zurückgesetzt werden"
+        "reset": "{{provider}}-Nutzung zurückgesetzt",
+        "resetUnavailable": "Es sind keine {{provider}}-Nutzungs-Resets verfügbar",
+        "resetUnneeded": "Die {{provider}}-Nutzung muss derzeit nicht zurückgesetzt werden"
       },
       "usage": {
         "inDays": "in {{days}} T.",
@@ -6788,38 +6861,15 @@
     "chooseFile": "Datei auswählen",
     "choosePrivateKeyFile": "Datei mit privatem Schlüssel auswählen",
     "cloudflare": {
-      "add": "Cloudflare Access hinzufügen",
-      "changed": "Dieser Cloudflare Access wurde während der Bearbeitung geändert. Prüfen Sie vor dem Speichern die neuesten Einstellungen.",
-      "clientId": "Client-ID des Service-Tokens",
-      "clientSecret": "Client-Secret des Service-Tokens",
-      "configuration": "Cloudflare Access",
-      "createNew": "Neuen Cloudflare Access erstellen",
-      "delete": "Cloudflare Access löschen",
-      "deleteHelp": "Diesen ungenutzten Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden.",
       "direct": "Direkt",
-      "edit": "Cloudflare Access bearbeiten",
-      "empty": "Noch kein Cloudflare Access. Fügen Sie ein Service-Token hinzu, um geschützte SSH-Hosts zu verbinden.",
-      "inUse": "Dieser Cloudflare Access wird von einem Host verwendet. Prüfen Sie die betroffenen Hosts und ändern Sie zuerst deren Zuordnung oder löschen Sie sie.",
-      "inUseHelp": "Wählen Sie für diese Hosts einen anderen Cloudflare Access, wechseln Sie ausdrücklich zu Direkt oder löschen Sie die Hosts, bevor Sie diesen löschen.",
       "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
       "latest": "Zuletzt gespeicherte Einstellungen",
-      "loadFailed": "Cloudflare Access konnte nicht geladen werden. Versuchen Sie es erneut.",
-      "loading": "Cloudflare Access wird geladen…",
-      "missing": "Dieser Cloudflare Access ist nicht mehr verfügbar. Wählen oder erstellen Sie einen anderen.",
       "mode": "Verbindung",
-      "name": "Name",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Veröffentlichter Hostname",
-      "replace": "Service-Token ersetzen",
       "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
-      "select": "Cloudflare Access auswählen",
-      "summary_one": "{{count}} Cloudflare Access eingerichtet",
-      "summary_other": "{{count}} Cloudflare Access eingerichtet",
       "title": "Cloudflare Access",
-      "tokenHelp": "Verwenden Sie ein Service-Token, das die Service-Auth-Richtlinie Ihrer SSH-Anwendung zulässt. Es ist unabhängig von Ihrer SSH-Anmeldung.",
-      "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar.",
-      "usedBy_one": "Von {{count}} Host verwendet:",
-      "usedBy_other": "Von {{count}} Hosts verwendet:"
+      "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar."
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access hat keinen SSH-Tunnel hergestellt. Prüfen Sie den veröffentlichten Hostnamen und das Tunnel-Routing.",
@@ -6877,6 +6927,7 @@
       "credentialInUse": "Diese Zugangsdaten werden verwendet. Weisen Sie den Hosts andere zu oder löschen Sie die Hosts zuerst.",
       "credentialUnavailable": "Diese SSH-Zugangsdaten sind nicht mehr verfügbar. Wählen oder erstellen Sie andere Zugangsdaten.",
       "failed": "Die SSH-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
+      "hostInUse": "Dieser SSH-Host wird von einer VNC-Route verwendet. Wähle für diese VNC-Routen einen anderen SSH-Host, stelle sie ausdrücklich auf Direkt um oder lösche sie, bevor du diesen Host löschst.",
       "hostUnavailable": "Dieser SSH-Host ist nicht mehr verfügbar. Kehre zur Hostliste zurück und wähle einen vorhandenen Host.",
       "invalidHost": "Gib einen Hostnamen oder eine IP-Adresse ohne URL-Schema, Pfad oder Leerzeichen ein.",
       "invalidInput": "Einige SSH-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
@@ -6897,9 +6948,6 @@
     "notLearned": "Noch kein Hostschlüssel gespeichert",
     "passphrase": "Passphrase (optional)",
     "placeholders": {
-      "accessName": "z. B. Produktionszugriff",
-      "clientId": "Client-ID des Service-Tokens einfügen",
-      "clientSecret": "Client-Secret des Service-Tokens einfügen",
       "credentialName": "z. B. Deployment-Zugang",
       "displayName": "z. B. Produktionsserver",
       "host": "z. B. ssh.example.com",
@@ -7095,6 +7143,9 @@
       "caHint": "Füge die öffentlichen CA-Zertifikate ein, die das Serverzertifikat ausgestellt haben",
       "custom": "Benutzerdefinierte Zertifizierungsstellen",
       "profileLabel": "Sicherheitsprofil",
+      "serverName": "TLS-Zertifikatsidentität",
+      "serverNameHelp": "Optional. Leer lassen, um das Zertifikat anhand des RFB-Zielhosts zu prüfen. Nur festlegen, wenn das Zertifikat einen anderen DNS-Namen verwendet.",
+      "serverNameHint": "z. B. desktop.internal.example.com",
       "system": "Zertifizierungsstellen des Systems",
       "title": "Vertrauen in Serverzertifikate",
       "x509Plain": "Verschlüsselter Benutzername und Passwort (X509Plain)",
@@ -7105,6 +7156,22 @@
     "summary_one": "{{count}} konfigurierter Host",
     "summary_other": "{{count}} konfigurierte Hosts",
     "title": "VNC-Fernzugriff",
+    "transport": {
+      "destination": "RFB-Ziel",
+      "destinationHelp": "Bei SSH-Routen werden dieser Host und Port vom ausgewählten SSH-Server aus erreicht, nicht direkt vom Runner.",
+      "direct": "Direkt vom Runner",
+      "empty": "Keine gespeicherten SSH-Hosts verfügbar. Füge zuerst einen in den SSH-Einstellungen hinzu.",
+      "loadFailed": "Gespeicherte SSH-Hosts konnten nicht geladen werden.",
+      "loading": "Gespeicherte SSH-Hosts werden geladen…",
+      "select": "Gespeicherten SSH-Host auswählen",
+      "selectionUnavailable": "Der ausgewählte SSH-Host ist nicht mehr verfügbar. Wähle einen anderen Host oder stelle ausdrücklich auf Direkt um.",
+      "ssh": "Über gespeicherten SSH-Host",
+      "sshConnection": "SSH-Host",
+      "sshHelp": "SSH schützt die Verbindung vom Runner zum SSH-Server. Dieser Server muss das RFB-Ziel erreichen können. Der Agent benötigt VNC- und SSH-Zugriff.",
+      "title": "Verbindungsroute",
+      "unavailable": "SSH-Einstellungen sind für dieses Konto nicht verfügbar.",
+      "via": "SSH-Host:"
+    },
     "unavailable": "VNC ist in diesem Workspace nicht verfügbar."
   },
   "workflows": {
