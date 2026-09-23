@@ -679,7 +679,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
   await readyChat();
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Continue")).toHaveLength(0);
+  expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
 test("A mounted transcript card rechecks callback delivery on page return", async () => {
@@ -701,13 +701,13 @@ test("A mounted transcript card rechecks callback delivery on page return", asyn
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
   await readyChat();
-  await findButton("Continue");
+  await findButton("Notify agent");
 
   delivered = true;
   window.dispatchEvent(new Event("focus"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Continue")).toHaveLength(0);
+  expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
 test("A freshly mounted direct-interaction card reads accepted cancellation delivery", async () => {
@@ -732,7 +732,7 @@ test("A freshly mounted direct-interaction card reads accepted cancellation deli
   await readyChat();
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Continue")).toHaveLength(0);
+  expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
 test("Share one action state across equivalent absolute and relative URLs", async () => {
