@@ -1740,6 +1740,60 @@ describe("workflow queue", () => {
     ).toContain(databaseSecond.id);
   });
 
+  it("uses the event ID to break equal-timestamp workflow queue ties", async () => {
+    const scenario = await setup();
+    const automation = await createWebhookAutomation(scenario);
+    const first = {
+      id: await admitWorkflowAutomationEventFixture({
+        automationId: automation.automationId,
+        chatThreadId: automation.threadId,
+        triggerBrief: "First tied automation event",
+      }),
+      brief: "First tied automation event",
+    };
+    const second = {
+      id: await admitWorkflowAutomationEventFixture({
+        automationId: automation.automationId,
+        chatThreadId: automation.threadId,
+        triggerBrief: "Second tied automation event",
+      }),
+      brief: "Second tied automation event",
+    };
+    const [earlier, later] =
+      first.id.localeCompare(second.id) < 0 ? [first, second] : [second, first];
+    await Promise.all(
+      [first.id, second.id].map((eventId) => {
+        return setWorkflowQueueEventCreatedAtFixture({
+          eventId,
+          createdAt: "2019-12-31 23:54:00.000100",
+        });
+      }),
+    );
+
+    expectAcceptedWithoutRun(
+      await postWorkflowWebhook(automation, "drain tied workflow queue"),
+    );
+    const [runId] = await workflowRunIds(automation.threadId);
+    if (!runId) {
+      throw new Error("Expected the first tied queue event to create a run");
+    }
+    const claimedEvent = (await wf.readThreadEvents(automation.threadId)).find(
+      (event) => {
+        return event.runId === runId && event.eventType === "input.prompt";
+      },
+    );
+    expect(
+      claimedEvent
+        ? chatEventAutomationPart(claimedEvent)?.automationBrief
+        : undefined,
+    ).toBe(earlier.brief);
+    expect(
+      (await pendingAutomationEvents(automation.threadId)).map((event) => {
+        return event.id;
+      }),
+    ).toContain(later.id);
+  });
+
   it("retries when an earlier automation event becomes queue head during launch", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);
