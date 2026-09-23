@@ -420,10 +420,10 @@ describe("GET /api/chat-threads/:id/metadata B1 closure fence", () => {
       "selectedVideoModel",
       "selectedImageModel",
     ]);
-    // This chosen complete fixture serializes to 425 UTF-8 bytes. Variable
+    // This chosen complete fixture serializes to 421 UTF-8 bytes. Variable
     // title, model and settings values make this evidence, not a payload bound;
     // transport headers and envelopes are outside the measurement.
-    expect(Buffer.byteLength(JSON.stringify(response.body))).toBe(425);
+    expect(Buffer.byteLength(JSON.stringify(response.body))).toBe(421);
   });
 
   it("keeps session, PAT and synthetic Okou capability credentials equivalent", async () => {

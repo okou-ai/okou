@@ -5966,14 +5966,14 @@ describe("RUN-02: model provider selection and built-in admission", () => {
       onboardingPaymentPending: false,
     });
     const modelPolicies = await misc.listModelPolicies(actor);
-    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-5.6-luna");
+    expect(modelPolicies.workspaceDefaultModel).toBe("gpt-6-luna");
     expect(
       modelPolicies.policies.find((policy) => {
-        return policy.model === "gpt-5.6-luna";
+        return policy.model === "gpt-6-luna";
       }),
     ).toMatchObject({ isDefault: true });
 
-    await seedBuiltInModelKey("gpt-5.6-luna");
+    await seedBuiltInModelKey("gpt-6-luna");
     const sent = await chat.requestSendEvent(
       actor,
       { agentId, prompt: "limited-free default model run" },
@@ -5985,9 +5985,9 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(sent.body.runId);
     expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-6-luna" });
     expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
-    expect(claim.modelUsageProvider).toBe("gpt-5.6-luna");
+    expect(claim.modelUsageProvider).toBe("gpt-6-luna");
     await api.requestCancelRun(actor, sent.body.runId, [200]);
 
     // Model access follows the configured route. A seeded Built-in route the
@@ -6054,7 +6054,7 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await api.heartbeatRunner(runnerGroup);
     const claim = await api.claimRunnerJob(run.runId);
     await expectBuiltInModelRunRuntimeRoute(run.runId, selectedModel);
-    expect(claim.environment).toMatchObject({ OPENAI_MODEL: "gpt-5.6-luna" });
+    expect(claim.environment).toMatchObject({ OPENAI_MODEL: selectedModel });
     expect(claim.environment).not.toHaveProperty("OPENAI_BASE_URL");
 
     expect(
