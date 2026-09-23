@@ -9,7 +9,10 @@ import {
   type ScopeDiffResponse,
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import { isOneClickConnectorGrantKind } from "@okouai/api-contracts/contracts/connector-catalog";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import {
+  connectorSlugSchema,
+  type ConnectorSlug,
+} from "@okouai/api-contracts/contracts/connector-identity";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import {
@@ -76,8 +79,10 @@ import {
 } from "./connector-catalog-reader.service";
 import {
   getConnectorRuntimeConnector,
+  loadConnectorRuntimeSelection,
   loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
+  type ConnectorRuntimeSelection,
   type ConnectorRuntimeSnapshot,
 } from "./connector-catalog-runtime.service";
 import {
@@ -278,6 +283,38 @@ export async function loadStoredBuiltinConnectorRuntimeSnapshot(
   return null;
 }
 
+/**
+ * Loads only the catalog entries for the given stored connectors from the
+ * per-connector runtime projection, instead of decoding the full catalog.
+ * Catalog unavailability follows the same null contract as
+ * `loadStoredBuiltinConnectorRuntimeSnapshot`.
+ */
+async function loadStoredBuiltinConnectorRuntimeSelection(
+  db: ReadonlyDb,
+  connectorSlugs: readonly string[],
+): Promise<ConnectorRuntimeSelection | null> {
+  const requestedConnectorSlugs = connectorSlugs.flatMap((connectorSlug) => {
+    const slug = connectorSlugSchema.safeParse(connectorSlug);
+    return slug.success ? [slug.data] : [];
+  });
+  if (requestedConnectorSlugs.length === 0) {
+    return null;
+  }
+  const result = await settle(
+    loadConnectorRuntimeSelection(db, { requestedConnectorSlugs }),
+  );
+  if (result.ok) {
+    return result.value;
+  }
+  if (!isConnectorCatalogUnavailableError(result.error)) {
+    throw result.error;
+  }
+  log.warn("Connector catalog unavailable while resolving stored connectors", {
+    error: result.error,
+  });
+  return null;
+}
+
 function parseOauthScopes(value: string | null): string[] | null {
   return value ? oauthScopesSchema.parse(JSON.parse(value)) : null;
 }
@@ -344,7 +381,7 @@ function storedBuiltinConnectorRowWithRuntimeMethod(args: {
   readonly connectorSlug: string;
   readonly now: Date;
   readonly row: StoredConnectorRow;
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
 }): BuiltinConnectorWithRuntimeMethod | null {
   const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({
     snapshot: args.snapshot,
@@ -556,7 +593,7 @@ function builtinConnectorListState(args: {
 }): Computed<Promise<BuiltinConnectorListState>> {
   return computed(async (get): Promise<BuiltinConnectorListState> => {
     const db = get(db$);
-    const storedRowsPromise = db
+    const storedRows = await db
       .select({
         id: connectors.id,
         connectorSlug: sql`${connectors.connectorSlug}`
@@ -587,10 +624,12 @@ function builtinConnectorListState(args: {
           eq(connectors.isDefault, true),
         ),
       );
-    const [storedRows, snapshot] = await Promise.all([
-      storedRowsPromise,
-      loadStoredBuiltinConnectorRuntimeSnapshot(db),
-    ]);
+    const snapshot = await loadStoredBuiltinConnectorRuntimeSelection(
+      db,
+      storedRows.map((row) => {
+        return row.connectorSlug;
+      }),
+    );
     const now = nowDate();
     const storedConnectors: BuiltinConnectorWithRuntimeMethod[] =
       snapshot === null
@@ -651,7 +690,7 @@ export function builtinConnectorCatalogConnectionList(args: {
 
 function builtinConnectorProvidedBindingsForStoredConnectors(
   storedConnectors: readonly BuiltinConnectorWithRuntimeMethod[],
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeSelection,
 ): ConnectorProvidedBinding[] {
   const provided: ConnectorProvidedBinding[] = [];
   for (const connector of storedConnectors) {
