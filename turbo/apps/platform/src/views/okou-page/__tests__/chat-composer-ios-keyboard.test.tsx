@@ -2,7 +2,10 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import {
   context,
   findComposer,
@@ -63,8 +66,12 @@ async function openDraft(
     path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
   });
   const editor = await findComposer();
-  await fill(editor, text);
-  expect(editor).toHaveTextContent(text);
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.keyboard(text);
+  await waitFor(() => {
+    expect(draftLines(editor)).toStrictEqual([text]);
+  });
   return editor;
 }
 
@@ -166,6 +173,12 @@ describe.each(appleBrowsers)("$name", (browser) => {
       "Send from the keyboard",
       sentPrompts,
     );
+    await waitFor(() => {
+      const send = queryAllByRoleFast("button").find((button) => {
+        return button.getAttribute("aria-label") === "Send";
+      });
+      expect(send).toBeEnabled();
+    });
 
     pressNativeEnter(editor);
 
