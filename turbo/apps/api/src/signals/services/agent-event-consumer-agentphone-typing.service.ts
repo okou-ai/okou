@@ -1,6 +1,7 @@
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 
 import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
 import { logger } from "../../lib/log";
@@ -58,10 +59,12 @@ async function agentPhoneTypingTargetsForRun(
       payload: agentRunCallbacks.payload,
     })
     .from(agentRunCallbacks)
+    .innerJoin(agentRuns, eq(agentRunCallbacks.runId, agentRuns.id))
     .where(
       and(
         eq(agentRunCallbacks.runId, runId),
         eq(agentRunCallbacks.status, "pending"),
+        inArray(agentRuns.status, ["queued", "pending", "running"]),
       ),
     );
   signal.throwIfAborted();
@@ -115,9 +118,10 @@ export const refreshAgentPhoneTypingEvents$ = command(
     const payload = get(eventConsumerPayload$);
     signal.throwIfAborted();
 
+    const backgroundSignal = new AbortController().signal;
     waitUntil(
       tapError(
-        set(refreshAgentPhoneTypingForRun$, payload.runId, signal),
+        set(refreshAgentPhoneTypingForRun$, payload.runId, backgroundSignal),
         (error) => {
           L.debug("Failed to refresh AgentPhone typing from events", {
             runId: payload.runId,

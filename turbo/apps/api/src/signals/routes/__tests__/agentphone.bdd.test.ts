@@ -698,6 +698,49 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     },
   );
 
+  it("keeps run progress alive when the typing provider fails", async () => {
+    const webhooks = createWebhookCallbackApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "check my inbox",
+      conversationId,
+      isGroup: false,
+    });
+    await waitForTyping(sends, [conversationId]);
+    const run = await claimDispatchedRun(runnerGroup);
+
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/conversations/:id/typing",
+        () => {
+          return HttpResponse.json(
+            { detail: "temporary failure" },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+    const heartbeat = await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    expect(heartbeat.body).toStrictEqual({
+      ok: true,
+      typingRefreshIntervalSeconds: 4,
+    });
+    await flushWaitUntilForTest();
+
+    const beforeCompletion = sends.messages.length;
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await waitForSendCount(sends, beforeCompletion + 1);
+    expect(lastSend(sends).toNumber).toBe(phone);
+  });
+
   it.each(["reuse", "reset"] as const)(
     "linked iMessage sessions support %s",
     async (scenario) => {

@@ -6,13 +6,18 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 
 import { computeHmacSignature } from "../../lib/event-consumer/hmac";
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { now } from "../../lib/time";
+import { waitUntil } from "../context/wait-until";
 import { db$ } from "../external/db";
+import { tapError } from "../utils";
 import { refreshAgentPhoneTypingForRun$ } from "./agent-event-consumer-agentphone-typing.service";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { handleChatInternalCallback$ } from "./internal-chat-run-callback.service";
 import { internalRunCallbackKindForRecord } from "./internal-run-callback";
+
+const L = logger("agent-run-callbacks");
 
 function resolveCallbackUrl(url: string): string {
   return env("ENV") === "development" && url.startsWith("https://tunnel-")
@@ -100,8 +105,21 @@ export const dispatchProgressCallbacks$ = command(
         return internalRunCallbackKindForRecord(callback) === "agentphone:chat";
       })
     ) {
-      await set(refreshAgentPhoneTypingForRun$, runId, signal);
-      signal.throwIfAborted();
+      // Like Slack thread status, typing is a best-effort progress side effect.
+      // The provider may reject it, and the request signal may end before the
+      // detached work completes; neither should stop other progress callbacks.
+      const backgroundSignal = new AbortController().signal;
+      waitUntil(
+        tapError(
+          set(refreshAgentPhoneTypingForRun$, runId, backgroundSignal),
+          (error) => {
+            L.debug("Failed to refresh AgentPhone typing from progress", {
+              runId,
+              error,
+            });
+          },
+        ),
+      );
     }
 
     await Promise.allSettled(
