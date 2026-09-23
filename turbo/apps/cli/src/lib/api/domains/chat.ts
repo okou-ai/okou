@@ -12,6 +12,7 @@ import {
   type ChatThreadServiceTier,
   type ChatThreadMetadata,
   type ChatThreadSnapshotProjection,
+  type Indicators,
   type ChatSearchResponse,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -27,11 +28,6 @@ export interface ChatThreadSnapshot {
   readonly chatThreads: readonly ChatThreadSnapshotProjection[];
   readonly latestEventId: string | null;
   readonly latestSeqId: number | null;
-}
-
-interface ChatThreadUnread {
-  readonly threadId: string;
-  readonly unreadAt: string;
 }
 
 export type ChatThreadEvent = ApiChatThreadEvent;
@@ -156,18 +152,48 @@ export async function listChatThreadEvents(options: {
   handleError(result, "Failed to list chat thread events");
 }
 
-export async function listChatThreadUnreads(options: {
-  agentId: string;
-}): Promise<readonly ChatThreadUnread[]> {
+export async function getChatIndicators(): Promise<
+  Indicators & { readonly unreadAt: Record<string, string> }
+> {
   const config = await getClientConfig();
   const client = initClient(chatThreadsContract, config);
-  const result = await client.unreads({
-    query: { agentId: options.agentId },
-  });
+  const result = await client.indicators();
   if (result.status === 200) {
-    return result.body.unreads;
+    if (result.body.unreadAt !== undefined) {
+      return { ...result.body, unreadAt: result.body.unreadAt };
+    }
+
+    // A new CLI can reach an older API retained for rollback. Remove this path
+    // after that API is no longer a serving or rollback target.
+    const agentIds = Object.entries(result.body.agents).flatMap(
+      ([agentId, indicator]) => {
+        return indicator === "unread" ? [agentId] : [];
+      },
+    );
+    const unreadAt: Record<string, string> = {};
+    let nextIndex = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(4, agentIds.length) }, async () => {
+        while (nextIndex < agentIds.length) {
+          const agentId = agentIds[nextIndex++];
+          if (agentId === undefined) {
+            throw new Error("Legacy unread agent ID is missing");
+          }
+          const unreads = await client.unreads({ query: { agentId } });
+          if (unreads.status !== 200) {
+            handleError(unreads, "Failed to list unread chat threads");
+          }
+          for (const unread of unreads.body.unreads) {
+            if (result.body.threads[unread.threadId] === "unread") {
+              unreadAt[unread.threadId] = unread.unreadAt;
+            }
+          }
+        }
+      }),
+    );
+    return { ...result.body, unreadAt };
   }
-  handleError(result, "Failed to list unread chat threads");
+  handleError(result, "Failed to get chat indicators");
 }
 
 export async function createChatThread(options: {

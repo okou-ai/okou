@@ -8,6 +8,25 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.662.0](https://github.com/okou-ai/okou/compare/api-v1.661.0...api-v1.662.0) (2026-09-23)
+
+
+### Features
+
+* **browser:** preflight native input before form entry ([#36193](https://github.com/okou-ai/okou/issues/36193)) ([3e07303](https://github.com/okou-ai/okou/commit/3e073031e7f3fa38be4178d14ce657db40ceef9c))
+* consolidate chat unread reads into indicators ([#36171](https://github.com/okou-ai/okou/issues/36171)) ([1ca25a4](https://github.com/okou-ai/okou/commit/1ca25a41379780bb0d6add1a086ea359251eea18))
+* **maps:** replace managed maps apis with grounded search ([#36118](https://github.com/okou-ai/okou/issues/36118)) ([098cc04](https://github.com/okou-ai/okou/commit/098cc049bbb8b5da84be38b1b829b4b8b8522273))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.496.0
+    * @okouai/core bumped to 8.702.1
+    * @okouai/db bumped to 1.289.0
+    * @okouai/pi-agent-runtime bumped to 1.39.1
+
 ## [1.661.0](https://github.com/okou-ai/okou/compare/api-v1.660.0...api-v1.661.0) (2026-09-23)
 
 

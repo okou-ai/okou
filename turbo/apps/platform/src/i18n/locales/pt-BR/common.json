@@ -1491,20 +1491,7 @@
             "title": "Trabalhe com o {{assistantName}} onde seu time já conversa"
           },
           "workflow": {
-            "browse": "Ver modelos",
-            "confirm": "Me mostra um",
             "description": "Transforme um trabalho que você repete num fluxo que o time pode rodar.",
-            "prompt": "Toda segunda de manhã, veja o que meus concorrentes publicaram na semana passada, agrupe por tema e me dê uma tabela comparativa.",
-            "promptConfirm": "Enviar para o {{assistantName}}",
-            "promptDescription": "Envie assim mesmo para o {{assistantName}} ou mude o texto antes.",
-            "promptOutcome": "Ele lê as fontes, agrupa o que encontra e responde com a tabela. Se o resultado ficar bom, ele oferece guardar essa execução como fluxo.",
-            "promptTitle": "Peça como pediria a um colega",
-            "stepRun": "Rode uma vez",
-            "stepRunDescription": "Você vê o trabalho pronto antes de se comprometer com qualquer coisa.",
-            "stepSave": "Salve e defina um horário",
-            "stepSaveDescription": "Ele roda sem ninguém pedir, e qualquer colega também pode rodar.",
-            "stepTemplate": "Comece por um modelo",
-            "stepTemplateDescription": "Escolha um próximo do seu trabalho em vez de uma página em branco.",
             "title": "Uma boa execução vira algo que o time guarda"
           }
         },
@@ -6095,6 +6082,7 @@
         "personal": "Pessoal",
         "workspace": "Espaço de trabalho"
       },
+      "sectionNavigation": "Seção de configurações",
       "sections": {
         "billing": {
           "description": "Gerencie seu plano e sua forma de pagamento.",
@@ -7829,6 +7817,7 @@
       },
       "notFound": "Fluxo de trabalho não encontrado.",
       "refineWith": "Refinar com {{agent}}",
+      "sectionNavigation": "Seção de detalhes do fluxo de trabalho",
       "shadow": {
         "end": "para você. Este fluxo de trabalho está oculto pela regra de prioridade de slug idêntico.",
         "resolvesTo": "atualmente resolve para"

@@ -81,6 +81,7 @@
       "description": "Agen “{{agentId}}” tidak ada atau Anda tidak memiliki akses ke sana.",
       "title": "Agen tidak ditemukan"
     },
+    "sectionNavigation": "Bagian detail agen",
     "tabs": {
       "authorization": "Otorisasi",
       "instructions": "Instruksi",

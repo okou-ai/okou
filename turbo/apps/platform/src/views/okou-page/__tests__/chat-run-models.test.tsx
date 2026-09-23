@@ -1147,7 +1147,6 @@ test.each([false, true])(
       path: RUN_PATH,
       featureSwitches: {
         [FeatureSwitchKey.OkouDebug]: false,
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
       },
     });

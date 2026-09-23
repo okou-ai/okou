@@ -5,7 +5,7 @@ use crate::storage_plan::ArchiveHandle;
 
 /// Bounded evidence from a rejected archive response, without object identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-pub(crate) struct ArchiveSizeMismatch {
+pub struct ArchiveSizeMismatch {
     #[serde(serialize_with = "serialize_byte_count")]
     expected_bytes: u64,
     /// Declared response body length; the rejected body has not been read.
@@ -17,7 +17,7 @@ pub(crate) struct ArchiveSizeMismatch {
 }
 
 impl ArchiveSizeMismatch {
-    pub(crate) fn new(
+    pub fn new(
         expected_bytes: u64,
         response_bytes: u64,
         representative: ArchiveHandle,

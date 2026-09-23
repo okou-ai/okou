@@ -847,7 +847,11 @@ test("Stop pending requests when the bridge lifecycle ends", async () => {
 
 function mockUnreadIndicators(threadId: string): void {
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: { [threadId]: "unread" } });
+    return respond(200, {
+      agents: {},
+      threads: { [threadId]: "unread" },
+      unreadAt: {},
+    });
   });
 }
 
@@ -1050,6 +1054,7 @@ test("Keep indicators readable when message-triggered chat warming fails", async
   ).resolves.toStrictEqual({
     agents: {},
     threads: { [threadId]: "unread" },
+    unreadAt: {},
   });
 
   failCatchUp = false;
@@ -1162,7 +1167,11 @@ test("Cancel waiting indicator reads when their Worker lifecycle ends", async ()
     if (refreshing && !refreshLoaded.settled()) {
       refreshLoaded.resolve();
     }
-    return respond(200, { agents: {}, threads: { [threadId]: "unread" } });
+    return respond(200, {
+      agents: {},
+      threads: { [threadId]: "unread" },
+      unreadAt: {},
+    });
   });
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
     return respond(200, {

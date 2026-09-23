@@ -48,68 +48,37 @@ describe("/api/feature-switches", () => {
     ).toBeTruthy();
   });
 
-  it("defaults subscription priority on for staff and applies overrides consistently across an organization", async () => {
+  it("applies an org-scoped override consistently across one organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
-    clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
-    const staff = await accept(client().get({ headers }), [200]);
-    expect(
-      staff.body.effectiveSwitches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
-    ).toBeTruthy();
     const orgId = `org_${randomUUID()}`;
     clerk.session(userId, orgId, "org:member");
-    const ordinary = await accept(client().get({ headers }), [200]);
+    const initial = await accept(client().get({ headers }), [200]);
     expect(
-      ordinary.body.effectiveSwitches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
+      initial.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
     ).toBeFalsy();
     await accept(
       client().update({
         headers,
-        body: {
-          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: true },
-        },
+        body: { switches: { [FeatureSwitchKey.LarkIntegration]: true } },
       }),
       [200],
     );
     clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(client().get({ headers }), [200]);
     expect(
-      peer.body.effectiveSwitches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
+      peer.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
     ).toBeTruthy();
-    await accept(
-      client().update({
-        headers,
-        body: {
-          switches: { [FeatureSwitchKey.PersonalSubscriptionPriority]: false },
-        },
-      }),
-      [200],
-    );
-    clerk.session(userId, orgId, "org:member");
-    const disabled = await accept(client().get({ headers }), [200]);
-    expect(
-      disabled.body.effectiveSwitches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
-    ).toBeFalsy();
     clerk.session(userId, `org_${randomUUID()}`, "org:member");
     const elsewhere = await accept(client().get({ headers }), [200]);
     expect(
-      elsewhere.body.effectiveSwitches[
-        FeatureSwitchKey.PersonalSubscriptionPriority
-      ],
+      elsewhere.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
     ).toBeFalsy();
   });
 
   it.each([true, false])(
-    "echoes and persists a stored override as %s for a non-staff org",
+    "echoes and persists a stored org-scoped override as %s",
     async (enabled) => {
       createRouteMocks(context).clerk.session(
         `user_${randomUUID()}`,
@@ -123,7 +92,7 @@ describe("/api/feature-switches", () => {
           headers,
           body: {
             switches: {
-              [FeatureSwitchKey.PersonalSubscriptionPriority]: enabled,
+              [FeatureSwitchKey.LarkIntegration]: enabled,
             },
           },
         }),
@@ -131,22 +100,18 @@ describe("/api/feature-switches", () => {
       );
 
       expect(updated.body.switches).toStrictEqual({
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: enabled,
+        [FeatureSwitchKey.LarkIntegration]: enabled,
       });
       expect(
-        updated.body.effectiveSwitches[
-          FeatureSwitchKey.PersonalSubscriptionPriority
-        ],
+        updated.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
       ).toBe(enabled);
 
       const current = await accept(client().get({ headers }), [200]);
       expect(current.body.switches).toStrictEqual({
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: enabled,
+        [FeatureSwitchKey.LarkIntegration]: enabled,
       });
       expect(
-        current.body.effectiveSwitches[
-          FeatureSwitchKey.PersonalSubscriptionPriority
-        ],
+        current.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
       ).toBe(enabled);
     },
   );

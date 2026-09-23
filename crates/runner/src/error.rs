@@ -67,6 +67,18 @@ impl From<runner_provider::ProviderError> for RunnerError {
     }
 }
 
+impl From<runner_storage::StorageError> for RunnerError {
+    fn from(error: runner_storage::StorageError) -> Self {
+        match error {
+            runner_storage::StorageError::Sandbox(error) => Self::Sandbox(error),
+            runner_storage::StorageError::Cancelled => Self::Cancelled,
+            runner_storage::StorageError::Config(message) => Self::Config(message),
+            runner_storage::StorageError::Internal(message) => Self::Internal(message),
+            runner_storage::StorageError::Io(error) => Self::Io(error),
+        }
+    }
+}
+
 /// Error returned by `service stop` / `service uninstall` when the target
 /// runner has active jobs and the user did not pass `--force`.
 #[derive(Debug)]

@@ -145,10 +145,13 @@ describe("Browser user-action route", () => {
     let currentLoaderId = "native-input-loader";
     let controlWritable = true;
     let controlConnected = true;
+    let controlTagName = "INPUT";
     let disconnectAfterNextWrite = false;
     let resolveNodeAvailable = true;
+    let malformedNodeResponse = false;
     let verificationMatches = true;
     let failNextProviderRead = false;
+    let providerStopped = false;
     let providerReadCount = 0;
     let providerReadBarrier:
       | {
@@ -186,6 +189,9 @@ describe("Browser user-action route", () => {
         };
       }
       if (command.method === "DOM.resolveNode") {
+        if (malformedNodeResponse) {
+          return {};
+        }
         return resolveNodeAvailable
           ? {
               object: {
@@ -194,7 +200,7 @@ describe("Browser user-action route", () => {
                 ),
               },
             }
-          : {};
+          : new Error("No node with given id found");
       }
       if (command.method === "Runtime.callFunctionOn") {
         const declaration =
@@ -229,7 +235,7 @@ describe("Browser user-action route", () => {
           result: {
             value: objectIds.map((objectId) => {
               return {
-                tagName: "INPUT",
+                tagName: controlTagName,
                 inputType:
                   objectId === "native-username-object"
                     ? "email"
@@ -286,7 +292,11 @@ describe("Browser user-action route", () => {
           barrier.entered.resolve(undefined);
           await barrier.release.promise;
         }
-        return HttpResponse.json(providerBrowser(String(params.id)));
+        return HttpResponse.json(
+          providerBrowser(String(params.id), {
+            status: providerStopped ? "stopped" : "active",
+          }),
+        );
       }),
       http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
         return HttpResponse.json(
@@ -449,6 +459,12 @@ describe("Browser user-action route", () => {
       status: 403,
       body: { error: { code: "FORBIDDEN" } },
     });
+    const disabledPreflight = await userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+      body: {},
+    });
+    expect(disabledPreflight.status).toBe(403);
     if (!otherUser.orgId) {
       throw new Error("Expected the second user to share the organization");
     }
@@ -465,7 +481,27 @@ describe("Browser user-action route", () => {
       status: 404,
       body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
     });
+    const foreignPreflight = await userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: created.body.action.requestToken },
+      body: {},
+    });
+    expect(foreignPreflight.status).toBe(404);
     routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const preflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: created.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(preflight.body.state).toBe("pending");
+    expect(preflight.body).not.toHaveProperty("pageTargetId");
+    expect(JSON.stringify(preflight.body)).not.toContain("backendNodeId");
+    expect(browserInputWrites()).toHaveLength(0);
+    expect(browserInputVerifications()).toHaveLength(0);
 
     const emptyRequired = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
@@ -507,9 +543,9 @@ describe("Browser user-action route", () => {
       [200],
     );
     expect(applied.body.state).toBe("succeeded");
-    expect(providerReadCount).toBe(2);
-    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(2);
-    expect(browserControlInspections()).toHaveLength(2);
+    expect(providerReadCount).toBe(3);
+    expect(context.mocks.browserUseCdp.connect).toHaveBeenCalledTimes(3);
+    expect(browserControlInspections()).toHaveLength(3);
     expect(browserInputWrites()).toHaveLength(1);
     expect(browserInputWrites()[0]?.[0].params.arguments).toStrictEqual([
       { value: "user@example.com" },
@@ -714,6 +750,49 @@ describe("Browser user-action route", () => {
       [201],
     );
     failNextProviderRead = true;
+    const failedPreflight = await userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: {
+        requestToken: providerRetryCandidate.body.action.requestToken,
+      },
+      body: {},
+    });
+    expect([502, 503]).toContain(failedPreflight.status);
+    const retriedPreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: {
+          requestToken: providerRetryCandidate.body.action.requestToken,
+        },
+        body: {},
+      }),
+      [200],
+    );
+    expect(retriedPreflight.body.state).toBe("pending");
+    malformedNodeResponse = true;
+    const malformedPreflight = await userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: {
+        requestToken: providerRetryCandidate.body.action.requestToken,
+      },
+      body: {},
+    });
+    malformedNodeResponse = false;
+    expect(malformedPreflight.status).toBe(502);
+    expect(
+      (
+        await accept(
+          userActionClient().get({
+            headers: { authorization: "Bearer clerk-session" },
+            params: {
+              requestToken: providerRetryCandidate.body.action.requestToken,
+            },
+          }),
+          [200],
+        )
+      ).body.state,
+    ).toBe("pending");
+    failNextProviderRead = true;
     const providerFailure = await userActionClient().apply({
       headers: { authorization: "Bearer clerk-session" },
       params: {
@@ -769,6 +848,15 @@ describe("Browser user-action route", () => {
       [201],
     );
     const writesBeforeStale = browserInputWrites().length;
+    const validBeforeNavigation = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: staleCandidate.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    expect(validBeforeNavigation.body.state).toBe("pending");
     currentLoaderId = "navigated-loader";
     const stale = await accept(
       userActionClient().apply({
@@ -780,6 +868,39 @@ describe("Browser user-action route", () => {
     );
     expect(stale.body.state).toBe("stale");
     currentLoaderId = "native-input-loader";
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+
+    const navigatedCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after preflight navigation",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              backendNodeId: 44,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    currentLoaderId = "new-document-loader";
+    const navigatedPreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: navigatedCandidate.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    currentLoaderId = "native-input-loader";
+    expect(navigatedPreflight.body.state).toBe("stale");
     expect(browserInputWrites()).toHaveLength(writesBeforeStale);
 
     const detachedCandidate = await accept(
@@ -804,15 +925,126 @@ describe("Browser user-action route", () => {
     );
     resolveNodeAvailable = false;
     const detached = await accept(
-      userActionClient().apply({
+      userActionClient().preflight({
         headers: { authorization: "Bearer clerk-session" },
         params: { requestToken: detachedCandidate.body.action.requestToken },
-        body: { values: [{ key: "code", value: "001234" }] },
+        body: {},
       }),
       [200],
     );
     resolveNodeAvailable = true;
     expect(detached.body.state).toBe("stale");
+    const detachedReadback = await accept(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: detachedCandidate.body.action.requestToken },
+      }),
+      [200],
+    );
+    expect(detachedReadback.body.state).toBe("stale");
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+
+    const unwritableCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after control replacement",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              backendNodeId: 44,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    controlWritable = false;
+    const unwritablePreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: unwritableCandidate.body.action.requestToken },
+        body: {},
+      }),
+      [200],
+    );
+    controlWritable = true;
+    expect(unwritablePreflight.body.state).toBe("stale");
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+
+    const replacedControlCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after control type change",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              backendNodeId: 44,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    controlTagName = "DIV";
+    const incompatiblePreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: {
+          requestToken: replacedControlCandidate.body.action.requestToken,
+        },
+        body: {},
+      }),
+      [200],
+    );
+    controlTagName = "INPUT";
+    expect(incompatiblePreflight.body.state).toBe("stale");
+    expect(browserInputWrites()).toHaveLength(writesBeforeStale);
+
+    const stoppedProviderCandidate = await accept(
+      userActionClient().create({
+        headers: current.claim.browserHeaders,
+        body: {
+          kind: "input",
+          callbackPrompt: "Continue after Browser closure",
+          pageTargetId: "native-input-target",
+          fields: [
+            {
+              key: "code",
+              label: "Code",
+              fieldKind: "one_time_code",
+              required: true,
+              backendNodeId: 44,
+            },
+          ],
+        },
+      }),
+      [201],
+    );
+    providerStopped = true;
+    const stoppedPreflight = await accept(
+      userActionClient().preflight({
+        headers: { authorization: "Bearer clerk-session" },
+        params: {
+          requestToken: stoppedProviderCandidate.body.action.requestToken,
+        },
+        body: {},
+      }),
+      [200],
+    );
+    providerStopped = false;
+    expect(stoppedPreflight.body.state).toBe("stale");
     expect(browserInputWrites()).toHaveLength(writesBeforeStale);
 
     const uncertainCandidate = await accept(
