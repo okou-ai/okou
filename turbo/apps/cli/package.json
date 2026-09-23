@@ -41,6 +41,7 @@
     "@okouai/connectors": "workspace:*",
     "@okouai/core": "workspace:*",
     "@okouai/eslint-config": "workspace:*",
+    "@okouai/eslint-rules": "workspace:*",
     "@okouai/pi-agent-runtime": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
     "ably": "^2.21.0",

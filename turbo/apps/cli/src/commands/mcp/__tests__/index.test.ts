@@ -59,7 +59,13 @@ async function waitForRequestAbort(request: Request): Promise<void> {
     return;
   }
   await new Promise<void>((resolve) => {
-    request.signal.addEventListener("abort", () => resolve(), { once: true });
+    request.signal.addEventListener(
+      "abort",
+      () => {
+        resolve();
+      },
+      { once: true },
+    );
   });
 }
 
