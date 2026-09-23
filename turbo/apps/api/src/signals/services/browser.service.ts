@@ -17,6 +17,7 @@ import {
   browserSessionTabSnapshots,
   browserSessions,
   browserThreadProfiles,
+  browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -84,6 +85,7 @@ import {
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { insertChatEvent } from "./chat-event.service";
 import type { Tx } from "../../lib/db-types";
+import { reconcileBrowserUserActions } from "./browser-user-actions.service";
 
 const RECONCILE_BATCH_SIZE = 20;
 const PROVIDER_CLEANUP_TIMEOUT_MS = 30_000;
@@ -3038,6 +3040,19 @@ async function claimExpiredInactiveBrowser(
                 ),
               ),
           ),
+          notExists(
+            tx
+              .select({
+                requestTokenHash: browserUserActionRequests.requestTokenHash,
+              })
+              .from(browserUserActionRequests)
+              .where(
+                eq(
+                  browserUserActionRequests.chatThreadId,
+                  browserSessions.chatThreadId,
+                ),
+              ),
+          ),
         ),
       )
       .returning({ chatThreadId: browserSessions.chatThreadId });
@@ -3249,6 +3264,19 @@ async function reconcileExpiredInactiveBrowsers(
               ),
             ),
         ),
+        notExists(
+          db
+            .select({
+              requestTokenHash: browserUserActionRequests.requestTokenHash,
+            })
+            .from(browserUserActionRequests)
+            .where(
+              eq(
+                browserUserActionRequests.chatThreadId,
+                browserSessions.chatThreadId,
+              ),
+            ),
+        ),
         chatThreadIds === null
           ? undefined
           : inArray(browserSessions.chatThreadId, chatThreadIds),
@@ -3304,6 +3332,19 @@ async function purgeExpiredStoppedBrowserInstances(
       and(
         eq(browserSessionInstances.status, "stopped"),
         lte(browserSessionInstances.finishedAt, cutoff),
+        notExists(
+          db
+            .select({
+              requestTokenHash: browserUserActionRequests.requestTokenHash,
+            })
+            .from(browserUserActionRequests)
+            .where(
+              eq(
+                browserUserActionRequests.providerSessionId,
+                browserSessionInstances.providerSessionId,
+              ),
+            ),
+        ),
         chatThreadIds === null
           ? undefined
           : inArray(browserSessionInstances.chatThreadId, chatThreadIds),
@@ -3321,6 +3362,19 @@ async function purgeExpiredStoppedBrowserInstances(
       and(
         eq(browserSessionInstances.status, "stopped"),
         lte(browserSessionInstances.finishedAt, cutoff),
+        notExists(
+          db
+            .select({
+              requestTokenHash: browserUserActionRequests.requestTokenHash,
+            })
+            .from(browserUserActionRequests)
+            .where(
+              eq(
+                browserUserActionRequests.providerSessionId,
+                browserSessionInstances.providerSessionId,
+              ),
+            ),
+        ),
         chatThreadIds === null
           ? undefined
           : inArray(browserSessionInstances.chatThreadId, chatThreadIds),
@@ -3597,6 +3651,12 @@ const reconcileBrowsersWithScope$ = command(
       chatThreadIds,
       signal,
     );
+    const checkedUserActions = await reconcileBrowserUserActions(
+      db,
+      RECONCILE_BATCH_SIZE,
+      chatThreadIds,
+      signal,
+    );
     const screenshotSchemaReady = await browserScreenshotSchemaAvailable(db);
     signal.throwIfAborted();
     const expiredBrowserCleanup = await reconcileExpiredInactiveBrowsers(
@@ -3631,6 +3691,7 @@ const reconcileBrowsersWithScope$ = command(
       checked:
         rows.length +
         releasedStarts +
+        checkedUserActions +
         expiredBrowserCleanup.checked +
         expiredInstanceCleanup.checked +
         profileCleanup.checked +
