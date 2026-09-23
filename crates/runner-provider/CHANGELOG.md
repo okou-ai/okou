@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.2.0...runner-provider-v0.3.0) (2026-09-23)
+
+
+### Features
+
+* **pi:** enable session-construction digest parity ([#36201](https://github.com/okou-ai/okou/issues/36201)) ([00b1434](https://github.com/okou-ai/okou/commit/00b14343e69073fdc87f42d378deab55e8c232ba)), closes [#35967](https://github.com/okou-ai/okou/issues/35967)
+
 ## [0.2.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.1.1...runner-provider-v0.2.0) (2026-09-23)
 
 
