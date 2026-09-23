@@ -7,12 +7,12 @@ import {
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { userPreferenceChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$, setAblyPayloadLoop$ } from "../realtime.ts";
+import { userPreferences$ } from "./settings/user-preferences.ts";
 
 const reloadVersion$ = state(0);
 export const invalidateConnectorOverview$ = command(({ set }) => {
@@ -55,7 +55,7 @@ export const connectorOverview$ = computed(async (get) => {
     accept(createClient(customConnectorsContract).list(), [200]),
     accept(createClient(connectorAccountsContract).summaries(), [200]),
     accept(createClient(computerUseHostsContract).list({}), [200, 403]),
-    accept(createClient(userPreferencesContract).get(), [200]),
+    get(userPreferences$),
   ]);
   const connectedBuiltin = catalog.body.connectors.filter((connector) => {
     return connector.connected;
@@ -127,7 +127,7 @@ export const connectorOverview$ = computed(async (get) => {
             };
           })
         : [],
-    cloudBrowserEnabledByDefault: preferences.body.cloudBrowserEnabledByDefault,
+    cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
   };
 });
 

@@ -300,7 +300,7 @@ test("Retain message selection and restore mobile actions after sharing", async 
   await screen.findAllByText("0 selected");
   expect(screen.queryByLabelText("Pin chat")).not.toBeInTheDocument();
   expect(screen.queryByLabelText("More actions")).not.toBeInTheDocument();
-  click(screen.getByText("Review the header layout"));
+  click(screen.getAllByText("Select message group")[0]!);
   await screen.findAllByText("1 selected");
   click(buttonNamed("Cancel"));
   await waitFor(() => {

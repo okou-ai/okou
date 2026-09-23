@@ -19,12 +19,52 @@ const VALID_RULE_METHODS = new Set([
   "ANY",
 ]);
 const AWS_RULE_SEPARATOR = " AWS ";
-const AWS_PREDICATE_VALUE_RE = /^[A-Za-z0-9._:-]+$/;
-const AWS_QUERY_KEY_RE = /^[A-Za-z0-9._~-]+$/;
-const AWS_QUERY_VALUE_RE = /^[A-Za-z0-9._~:{}-]+$/;
-const VALID_AWS_PREDICATE_KEYS = new Set(["sigv4", "action", "target"]);
+export const AWS_PREDICATE_VALUE_RE = /^[A-Za-z0-9._:-]+$/;
+export const AWS_QUERY_KEY_RE = /^[A-Za-z0-9._~-]+$/;
+export const AWS_QUERY_VALUE_RE = /^[A-Za-z0-9._~:{}-]+$/;
+const AWS_SENSITIVE_DIAGNOSTIC_QUERY_KEYS = new Set([
+  "x-amz-credential",
+  "x-amz-security-token",
+  "x-amz-signature",
+]);
 
-interface ParsedRuleRemainder {
+export function isSensitiveAwsDiagnosticQueryKey(key: string): boolean {
+  return AWS_SENSITIVE_DIAGNOSTIC_QUERY_KEYS.has(key.toLowerCase());
+}
+
+const VALID_AWS_PREDICATE_KEYS = new Set(["sigv4", "action", "target"]);
+export const AWS_S3_PERMISSION_HEADER_NAMES = [
+  "x-amz-copy-source",
+  "x-amz-bypass-governance-retention",
+  "x-amz-acl",
+  "x-amz-grant-full-control",
+  "x-amz-grant-read",
+  "x-amz-grant-read-acp",
+  "x-amz-grant-write",
+  "x-amz-grant-write-acp",
+  "x-amz-object-lock-legal-hold",
+  "x-amz-object-lock-mode",
+  "x-amz-object-lock-retain-until-date",
+  "x-amz-tagging",
+] as const;
+export const AWS_S3_PERMISSION_HEADER_QUERY_KEYS: Readonly<
+  Record<(typeof AWS_S3_PERMISSION_HEADER_NAMES)[number], readonly string[]>
+> = {
+  "x-amz-copy-source": [],
+  "x-amz-bypass-governance-retention": [],
+  "x-amz-acl": ["acl"],
+  "x-amz-grant-full-control": ["acl"],
+  "x-amz-grant-read": ["acl"],
+  "x-amz-grant-read-acp": ["acl"],
+  "x-amz-grant-write": ["acl"],
+  "x-amz-grant-write-acp": ["acl"],
+  "x-amz-object-lock-legal-hold": ["legal-hold"],
+  "x-amz-object-lock-mode": ["retention"],
+  "x-amz-object-lock-retain-until-date": ["retention"],
+  "x-amz-tagging": ["tagging"],
+};
+
+export interface ParsedRuleRemainder {
   readonly path: string;
   readonly queryRequirements?: readonly string[];
   readonly awsPredicates?: ReadonlyMap<string, string>;
@@ -186,7 +226,7 @@ function parseAwsQueryRequirements(
   return requirements;
 }
 
-function parseRuleRemainder(
+export function parseRuleRemainder(
   rest: string,
   rule: string,
   permName: string,

@@ -16,6 +16,7 @@ readonly ORG_MEMBER_MORNING_BRIEF_ELIGIBILITY_DROP_COMMIT=6e1abbb785dc1613d0f5cd
 readonly HOSTED_PUBLICATION_RUNTIME_COMMIT=f205ec54fc463f43b1106a3659e5d6a8c979cab8
 readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a24
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
+readonly CHAT_THREAD_SNAPSHOT_R2_READER_PATH=turbo/apps/api/src/signals/services/chat-thread-snapshot-object.ts
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
 readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
@@ -125,6 +126,18 @@ if [[ ! "$privacy_cleanup_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$privacy_cleanup_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates marketing privacy storage cleanup preparation: ${privacy_cleanup_reader_commit}."
+fi
+
+# Snapshot compaction retires the JSONB payload as soon as the R2-capable API
+# serves. Resolve the canonical main introduction so squash merging the reader
+# cannot leave a branch-only SHA as the permanent rollback floor.
+snapshot_r2_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHAT_THREAD_SNAPSHOT_R2_READER_PATH" | sed -n '1p')
+if [[ ! "$snapshot_r2_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged chat thread snapshot R2 reader on main."
+fi
+if ! git merge-base --is-ancestor "$snapshot_r2_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread snapshot R2 reader: ${snapshot_r2_reader_commit}."
 fi
 
 # Terminal presentation trusts the stored cause without repairing old records.

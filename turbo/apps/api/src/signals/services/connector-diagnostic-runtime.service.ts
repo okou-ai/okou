@@ -22,6 +22,7 @@ interface ConnectorDiagnosticExecutionTemplate {
 
 export interface ConnectorDiagnosticCatalogApi {
   readonly base: string;
+  readonly usesAwsSigv4: boolean;
   readonly routes: readonly FirewallRoutingRouteMetadata[];
   readonly environmentNames: readonly string[];
 }
@@ -38,6 +39,7 @@ export interface ConnectorDiagnosticBaseCandidate {
   readonly sourceBase: string;
   readonly decisionBase: string;
   readonly displayBase: string;
+  readonly usesAwsSigv4: boolean;
   readonly routes: readonly FirewallRoutingRouteMetadata[];
   readonly environmentNames: readonly string[] | null;
 }
@@ -153,6 +155,7 @@ export async function loadConnectorDiagnosticCatalogView(
     }
     apis.push({
       base: api.base,
+      usesAwsSigv4: api.usesAwsSigv4,
       routes: api.routes,
       environmentNames: api.environmentNames,
     });
@@ -401,6 +404,7 @@ export function buildConnectorDiagnosticBaseCandidates(
     sourceBaseByDecisionBase.set(decisionKey, api.base);
     candidates.push({
       ...resolution.candidate,
+      usesAwsSigv4: api.usesAwsSigv4,
       routes: api.routes,
       environmentNames: api.environmentNames,
     });

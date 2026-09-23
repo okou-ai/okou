@@ -1,6 +1,6 @@
 [package]
 name = "runner"
-version = "0.213.3"
+version = "0.213.5"
 edition.workspace = true
 
 [dependencies]
@@ -47,6 +47,7 @@ which = { workspace = true, features = ["real-sys"] }
 zstd = { workspace = true, features = ["zstdmt"] }
 guest-control-proto = { workspace = true }
 runner-host.workspace = true
+runner-lifecycle.workspace = true
 runner-network.workspace = true
 runner-provider.workspace = true
 runner-remote.workspace = true
@@ -61,6 +62,7 @@ serde_json = { workspace = true, features = ["std"] }
 # cargo-workspace plugin includes dev-dependencies in its dependency graph,
 # so runner-rs gets auto-bumped when any guest crate version changes.
 [dev-dependencies]
+runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-rpc-proto = { workspace = true }
 runner-network = { workspace = true, features = ["test-support"] }
 runner-storage = { workspace = true, features = ["test-support"] }

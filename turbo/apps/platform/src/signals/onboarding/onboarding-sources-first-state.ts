@@ -25,6 +25,7 @@ export type SourcesFirstStep =
   | "team"
   | "experience"
   | "skills"
+  | "profile"
   | "slack"
   | "ready";
 
@@ -145,12 +146,13 @@ function restoredDraft(
   if (saved === null) {
     return emptyDraft();
   }
+  // A page reload cannot resume a POST that never returned a job ID.
   const recommendationStatus: SourcesFirstRecommendationStatus =
     saved.recommendationJobId !== null
       ? "pending"
       : saved.recommendationStartedAt === null
         ? "idle"
-        : "starting";
+        : "failed";
   return {
     ...emptyDraft(),
     industry: saved.industry,
@@ -325,7 +327,8 @@ const MEMBER_BASE_STEPS = [
 
 /**
  * Step order for one run. Members skip invite and Slack; answering the AI
- * experience question with a selected plan adds the skills step before Slack.
+ * experience question with a selected plan adds the skills step before the
+ * profile. Both branches see their profile before Slack or their first task.
  */
 export function sourcesFirstSteps(
   flow: SourcesFirstFlow,
@@ -336,7 +339,7 @@ export function sourcesFirstSteps(
     provider === null ? [] : ["skills"];
   const slackStep: readonly SourcesFirstStep[] =
     flow === "owner" ? ["slack"] : [];
-  return [...base, ...skillSteps, ...slackStep, "ready"];
+  return [...base, ...skillSteps, "profile", ...slackStep, "ready"];
 }
 
 /** Progress markers: one per step of this run. */

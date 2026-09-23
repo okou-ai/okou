@@ -6,6 +6,7 @@ import {
   OnboardingSlackPage,
 } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
 import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboarding-ready-page.tsx";
+import { OnboardingProfilePage } from "../../views/onboarding-sources-first/onboarding-profile-page.tsx";
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
@@ -144,6 +145,10 @@ function createSourcesFirstPageSetup(
     set(setSourcesFirstFlow$, flow);
 
     const draft = get(sourcesFirstDraft$);
+    if (config.step === "profile" && draft.industry === null) {
+      set(redirectTo$, ROUTES.onboarding);
+      return;
+    }
     if (config.step !== "industry" && config.step !== "sources") {
       const { connectors } = await get(connectorCatalogStatus$);
       signal.throwIfAborted();
@@ -246,6 +251,16 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
   },
   Page: OnboardingSkillsPage,
   enter: enterSkillImport$,
+});
+
+export const setupOnboardingProfilePage$ = createSourcesFirstPageSetup({
+  step: "profile",
+  title: () => {
+    return i18n.t(($) => {
+      return $.onboarding.sourcesFirst.documentTitles.profile;
+    });
+  },
+  Page: OnboardingProfilePage,
 });
 
 /**

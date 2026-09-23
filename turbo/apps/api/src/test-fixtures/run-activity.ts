@@ -54,16 +54,6 @@ export async function holdRunActivityParentFixture(
   };
 }
 
-/** Expiry passage can precede the independently owned failure cooldown. */
-export async function expireRunActivityRetentionFixture(runId: string) {
-  await db()
-    .update(runActivitySnapshots)
-    .set({
-      expiresAt: sql`(statement_timestamp() AT TIME ZONE 'UTC') - interval '1 second'`,
-    })
-    .where(eq(runActivitySnapshots.runId, runId));
-}
-
 /** Maintenance deletion cannot be targeted through a production user API. */
 export async function deleteRunActivitySnapshotFixture(runId: string) {
   await db()

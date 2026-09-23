@@ -48,6 +48,8 @@ case "${1:-}" in
       [ "${MOCK_PREPARED_DOMAIN_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dddddddddddddddddddddddddddddddddddddddd" ]; then
       [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
+      [ "${MOCK_SNAPSHOT_R2_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
       [ "${MOCK_MORNING_BRIEF_ELIGIBILITY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "f205ec54fc463f43b1106a3659e5d6a8c979cab8" ]; then
@@ -73,7 +75,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   log)
-    printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
+    if [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
+      printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
+    else
+      printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
+    fi
     ;;
   show)
     printf '[package]\nversion = "1.2.3"\n'
@@ -167,6 +173,7 @@ run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor f205ec54fc463f43b1106a3659e5d6a8c979cab8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the hosted publication runtime floor"
 grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi launch-config version reader floor"
 grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
+grep -Fxq "git merge-base --is-ancestor eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread snapshot R2 reader floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -633,6 +640,23 @@ assert_failure "Rollback target predates marketing privacy storage cleanup prepa
 [ ! -s "${tmp_dir}/privacy-floor.output" ] || fail "old privacy cleanup must not publish outputs"
 if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "privacy floor must be checked before artifact resolution"
+fi
+
+for reader_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged chat thread snapshot R2 reader" \
+    run_resolver "${tmp_dir}/snapshot-r2-history.output" "MOCK_SNAPSHOT_R2_READER_COMMIT=${reader_commit}"
+  [ ! -s "${tmp_dir}/snapshot-r2-history.output" ] || fail "missing R2 reader history must not publish outputs"
+  if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "missing R2 reader history must fail before artifact resolution"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread snapshot R2 reader" \
+  run_resolver "${tmp_dir}/snapshot-r2-floor.output" MOCK_SNAPSHOT_R2_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/snapshot-r2-floor.output" ] || fail "old snapshot reader must not publish outputs"
+if grep -qE '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "snapshot R2 reader floor must be checked before artifact resolution"
 fi
 
 # Verify the real Git history boundary, including the cleanup file's later

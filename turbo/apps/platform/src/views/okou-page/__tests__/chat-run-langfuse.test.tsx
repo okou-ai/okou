@@ -175,10 +175,13 @@ test("Keep the response and Activity usable while run details are loading", asyn
   await expect(
     screen.findByText("Available response"),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByLabelText("View run logs")).toHaveAttribute(
-    "href",
-    `/activities/${FIRST_CAPABILITY_RUN_ID}`,
-  );
+  expect(screen.getAllByLabelText("View run logs")).toHaveLength(2);
+  for (const logs of screen.getAllByLabelText("View run logs")) {
+    expect(logs).toHaveAttribute(
+      "href",
+      `/activities/${FIRST_CAPABILITY_RUN_ID}`,
+    );
+  }
   expect(screen.getAllByLabelText("Copy message").length).toBeGreaterThan(0);
   expect(screen.queryByLabelText(TRACE_LABEL)).not.toBeInTheDocument();
 

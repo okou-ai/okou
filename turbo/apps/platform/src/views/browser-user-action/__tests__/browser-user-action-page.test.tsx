@@ -212,7 +212,7 @@ test("A fresh standalone action page reads accepted callback delivery", async ()
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(
     queryAllByRoleFast("button", document.body).some((candidate) => {
-      return candidate.textContent?.trim() === "Continue";
+      return candidate.textContent?.trim() === "Notify agent";
     }),
   ).toBeFalsy();
 });
@@ -243,7 +243,7 @@ test("An ambiguous callback response reconciles from the accepted event read", a
   });
 
   await screen.findByText("Information added");
-  click(button("Continue"));
+  click(button("Notify agent"));
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(reads).toBeGreaterThan(1);
 });
@@ -336,7 +336,7 @@ test("A terminal standalone action retries only its stable callback", async () =
   });
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Continue"));
+  click(button("Notify agent"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -435,10 +435,8 @@ test("A direct interaction serializes duplicate completion and retries only its 
   });
   completeResponse.resolve();
 
-  await expect(
-    screen.findByText("The agent wasn't notified. Try Continue again."),
-  ).resolves.toBeVisible();
-  click(button("Continue"));
+  await expect(screen.findByText("Agent not notified.")).resolves.toBeVisible();
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(completeCount).toBe(1);
@@ -503,13 +501,13 @@ test("A terminal standalone direct interaction retries only its stable callback"
   await expect(
     screen.findByText("Browser interaction complete"),
   ).resolves.toBeVisible();
-  click(button("Continue"));
+  click(button("Notify agent"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
   expect(callbackCount).toBe(1);
 });
 
-test("A failed Continue announces the error and remains retryable", async () => {
+test("A failed notification announces the error and remains retryable", async () => {
   let rejectCallback = true;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
     return respond(200, action("succeeded"));
@@ -535,13 +533,11 @@ test("A failed Continue announces the error and remains retryable", async () => 
   });
 
   await expect(screen.findByText("Information added")).resolves.toBeVisible();
-  click(button("Continue"));
+  click(button("Notify agent"));
   await waitFor(() => {
-    expect(
-      screen.getByText("The agent wasn't notified. Try Continue again."),
-    ).toBeVisible();
+    expect(screen.getByText("Agent not notified.")).toBeVisible();
   });
-  click(button("Continue"));
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
@@ -589,12 +585,10 @@ test("A failed callback retries without repeating the Browser mutation", async (
   click(button("Add to browser"));
 
   await waitFor(() => {
-    expect(
-      screen.getByText("The agent wasn't notified. Try Continue again."),
-    ).toBeVisible();
+    expect(screen.getByText("Agent not notified.")).toBeVisible();
   });
   expect(screen.queryByDisplayValue("owner@example.test")).toBeNull();
-  click(button("Continue"));
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });

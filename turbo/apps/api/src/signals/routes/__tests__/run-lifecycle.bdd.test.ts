@@ -13845,6 +13845,9 @@ describe("RUN-01: agent runner context, queue promotion, and skills", () => {
       "skip permissions already allowed",
       "Diagnose failed connector requests before attributing them to Okou permission policy",
       "okou connector check --url <FAILED_URL> --method <METHOD> [--connector <slug>]",
+      "For AWS SigV4 connector failures, run `okou connector check --help` before the URL check",
+      "URL and method alone may yield `unknown-endpoint`",
+      "use only observed, non-secret request details",
       "Only request access when the check reports a deny or ask outcome",
       "Request missing permissions",
       "exact `okou connector permission-request` command printed by the immediately preceding URL check",
@@ -15884,11 +15887,7 @@ describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () =
       }),
     ).toContain("Codex follow-up note");
     const codexThinking = afterCodex.events.filter((message) => {
-      return (
-        message.eventType === "output.thinking" &&
-        message.runId === runId &&
-        message.runEventId !== "thinking:initial"
-      );
+      return message.eventType === "output.thinking" && message.runId === runId;
     });
     expect(codexThinking).toStrictEqual([
       expect.objectContaining({

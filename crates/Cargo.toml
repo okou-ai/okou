@@ -22,6 +22,7 @@ members = [
     "nbd-cow",
     "runner",
     "runner-host",
+    "runner-lifecycle",
     "runner-network",
     "runner-provider",
     "runner-remote",
@@ -66,6 +67,7 @@ guest-workspace-mount = { path = "guest-workspace-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
 nbd-cow = { path = "nbd-cow" }
 runner-host = { path = "runner-host" }
+runner-lifecycle = { path = "runner-lifecycle" }
 runner-network = { path = "runner-network" }
 runner-provider = { path = "runner-provider" }
 runner-remote = { path = "runner-remote" }

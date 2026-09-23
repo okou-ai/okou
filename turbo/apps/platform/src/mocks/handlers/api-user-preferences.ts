@@ -1,4 +1,5 @@
 import {
+  DEFAULT_USER_LOCALE,
   type UserPreferencesResponse,
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -73,10 +74,19 @@ export const apiUserPreferencesHandlers = [
     mockPreferences = {
       ...mockPreferences,
       timezone: mockPreferences.timezone ?? body.timezone ?? null,
+      locale: mockPreferences.locale ?? body.locale ?? DEFAULT_USER_LOCALE,
     };
     return respond(200, mockPreferences);
   }),
   mockApi(userPreferencesContract.get, ({ respond }) => {
+    if (mockPreferences.timezone === null || mockPreferences.locale === null) {
+      return respond(409, {
+        error: {
+          code: "USER_PREFERENCES_UNINITIALIZED",
+          message: "User preferences require timezone or locale initialization",
+        },
+      });
+    }
     return respond(200, mockPreferences);
   }),
   mockApi(userPreferencesContract.update, ({ body, respond }) => {

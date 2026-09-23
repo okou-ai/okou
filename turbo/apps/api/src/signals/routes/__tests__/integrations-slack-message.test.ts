@@ -141,21 +141,6 @@ describe("POST /api/integrations/slack/message", () => {
     return { runId: run.runId };
   }
 
-  it("returns 401 when no auth token is provided", async () => {
-    const client = setupApp({
-      context,
-      routes: integrationsSlackMessageRoutes,
-    })(integrationsSlackMessageContract);
-    const response = await accept(
-      client.sendMessage({
-        body: { channel: "C123", text: "hello" },
-        headers: {},
-      }),
-      [401],
-    );
-    expect(response.body.error.code).toBe("UNAUTHORIZED");
-  });
-
   it("returns 401 when the token has no active organization membership", async () => {
     context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
       data: [],

@@ -113,7 +113,7 @@ test("Show one cancellation outcome for an interrupted run", async () => {
   const chat = await readyChat();
   expect(within(chat).getByText("I drafted the first section.")).toBeVisible();
   expect(
-    within(chat).getAllByText("Paused mid-thought — pick it back up whenever."),
+    within(chat).getAllByText("Run paused — resume anytime."),
   ).toHaveLength(1);
   expect(queryButton("Stop")).toBeNull();
 });
@@ -212,9 +212,7 @@ test("Explain queued work while a cancelled run is recovering", async () => {
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  expect(
-    screen.getByText("Paused mid-thought — pick it back up whenever."),
-  ).toBeVisible();
+  expect(screen.getByText("Run paused — resume anytime.")).toBeVisible();
   const pendingAutomation = await screen.findByRole("listitem", {
     name: "Pending automation event",
   });
@@ -350,7 +348,7 @@ test("Manage work waiting in the queue", async () => {
   publishRunUpdate();
 
   await expect(
-    screen.findByText("Paused mid-thought — pick it back up whenever."),
+    screen.findByText("Run paused — resume anytime."),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(screen.queryByText("Include the receipts")).not.toBeInTheDocument();
@@ -381,9 +379,7 @@ test("Show a cancelled run as paused", async () => {
 
   await readyChat();
   expect(screen.getByText("The first milestones are drafted.")).toBeVisible();
-  expect(
-    screen.getByText("Paused mid-thought — pick it back up whenever."),
-  ).toBeVisible();
+  expect(screen.getByText("Run paused — resume anytime.")).toBeVisible();
   expect(queryButton("Stop")).toBeNull();
 });
 

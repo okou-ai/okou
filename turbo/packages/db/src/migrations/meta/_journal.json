@@ -887,8 +887,15 @@
     {
       "idx": 1204,
       "version": "7",
-      "when": 1790162396162,
-      "tag": "1204_account_erasure_blob_and_owner_attribution",
+      "when": 1790160222955,
+      "tag": "1204_chat_thread_snapshot_r2_pointer",
+      "breakpoints": true
+    },
+    {
+      "idx": 1205,
+      "version": "7",
+      "when": 1790175390187,
+      "tag": "1205_account_erasure_blob_and_owner_attribution",
       "breakpoints": true
     }
   ]

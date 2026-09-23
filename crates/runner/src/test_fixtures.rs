@@ -1,6 +1,6 @@
 pub(crate) mod execution_context;
 pub(crate) mod http_body;
-pub(crate) mod ignored_child;
+pub(crate) use runner_host::test_fixtures::ignored_child;
 pub(crate) mod raw_http;
 pub(crate) mod session_history;
 

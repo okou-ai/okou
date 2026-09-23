@@ -1,5 +1,5 @@
 {
-  "id": "8ce8952f-c1e1-42da-8e49-118374e02556",
+  "id": "c704d5fd-ef51-4a12-a037-26ded0790cf3",
   "prevId": "e00b016f-5603-4eb0-856d-acf099b93310",
   "version": "7",
   "dialect": "postgresql",
@@ -5606,75 +5606,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.blob_upload_intents": {
-      "name": "blob_upload_intents",
-      "schema": "",
-      "columns": {
-        "hash": {
-          "name": "hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "intent_id": {
-          "name": "intent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "blob_upload_intents_expires_at": {
-          "name": "blob_upload_intents_expires_at",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "blob_upload_intents_hash_blobs_hash_fk": {
-          "name": "blob_upload_intents_hash_blobs_hash_fk",
-          "tableFrom": "blob_upload_intents",
-          "tableTo": "blobs",
-          "columnsFrom": [
-            "hash"
-          ],
-          "columnsTo": [
-            "hash"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "blob_upload_intents_hash_intent_id_pk": {
-          "name": "blob_upload_intents_hash_intent_id_pk",
-          "columns": [
-            "hash",
-            "intent_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.blobs": {
       "name": "blobs",
       "schema": "",
@@ -5710,20 +5641,6 @@
           "notNull": true,
           "default": 1
         },
-        "erasure_pending": {
-          "name": "erasure_pending",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "erasure_eligible_at": {
-          "name": "erasure_eligible_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now() + interval '49 hours'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -5753,12 +5670,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "blobs_erasure_pending_zero_refs": {
-          "name": "blobs_erasure_pending_zero_refs",
-          "value": "NOT \"blobs\".\"erasure_pending\" OR \"blobs\".\"ref_count\" = 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.browser_authorization_requests": {
@@ -9416,6 +9328,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'[]'::jsonb"
+        },
+        "object_key": {
+          "name": "object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -13543,12 +13461,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "provider_idempotency_key": {
           "name": "provider_idempotency_key",
           "type": "text",
@@ -13634,21 +13546,6 @@
           "columns": [
             {
               "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "email_outbox_owner_user_id_idx": {
-          "name": "email_outbox_owner_user_id_idx",
-          "columns": [
-            {
-              "expression": "owner_user_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -13939,18 +13836,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "sender_open_id": {
-          "name": "sender_open_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "owner_user_id": {
-          "name": "owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "public_brand": {
           "name": "public_brand",
           "type": "text",
@@ -14016,21 +13901,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "feishu_chat_ingress_owner_user_id_idx": {
-          "name": "feishu_chat_ingress_owner_user_id_idx",
-          "columns": [
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

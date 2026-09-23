@@ -99,32 +99,10 @@ export const syncLocalePreference$ = command(
     const preferences = await get(userPreferences$);
     signal.throwIfAborted();
     const supportedLocales = preferences.supportedLocales;
-    const preferredLocale =
-      preferences.locale ?? resolveInitialLocaleFallbackFromBrowser();
-    let locale = supportedLocales.includes(preferredLocale)
-      ? preferredLocale
+    const locale = supportedLocales.includes(preferences.locale)
+      ? preferences.locale
       : DEFAULT_LOCALE;
-
-    if (preferences.locale === null && locale !== DEFAULT_LOCALE) {
-      const fallbackResult = await settle(
-        set(applyLocalePreference$, locale, signal),
-        signal,
-      );
-      if (!fallbackResult.ok) {
-        L.error(
-          `Failed to apply locale fallback ${locale}; falling back to ${DEFAULT_LOCALE}`,
-          fallbackResult.error,
-        );
-        locale = DEFAULT_LOCALE;
-        await set(applyLocalePreference$, locale, signal);
-      }
-    } else {
-      await set(applyLocalePreference$, locale, signal);
-    }
-
-    if (preferences.locale === null) {
-      await set(updateUserPreference$, { locale }, signal);
-    }
+    await set(applyLocalePreference$, locale, signal);
   },
 );
 
