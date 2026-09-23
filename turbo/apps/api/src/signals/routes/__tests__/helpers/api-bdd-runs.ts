@@ -499,9 +499,15 @@ export function createRunsApi(
         if (!actor.orgId) {
           throw new Error("Expected an organization-scoped run fixture actor");
         }
-        await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.PiLoop]: false,
-        });
+        await updateFeatureSwitchesForUser(
+          context,
+          {
+            userId: actor.userId,
+            orgId: actor.orgId,
+            ...(actor.orgRole ? { orgRole: actor.orgRole } : {}),
+          },
+          { [FeatureSwitchKey.PiLoop]: false },
+        );
       }
 
       return { customerId, subscriptionId, invoiceId };

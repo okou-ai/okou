@@ -86,6 +86,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 import {
@@ -2462,6 +2463,14 @@ describe("CHAT-01 chat thread read state", () => {
     expect(orgless.body.error.code).toBe("UNAUTHORIZED");
 
     const peer = bdd.user({ orgId: owner.orgId });
+    if (!peer.orgId) {
+      throw new Error("Expected an organization-scoped peer");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: peer.userId, orgId: peer.orgId, orgRole: "org:admin" },
+      { [FeatureSwitchKey.PiLoop]: false },
+    );
     await api.ensureOrgModelProvider(peer);
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Unread peer agent",
