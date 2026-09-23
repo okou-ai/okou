@@ -90,7 +90,6 @@ export default defineConfig({
         "chat-loading-canvas.spec.ts",
         "composer-suggestion-positioning.spec.ts",
         "create-agent.spec.ts",
-        "floating-layers.spec.ts",
         "workflows.spec.ts",
       ],
       dependencies: ["setup"],
