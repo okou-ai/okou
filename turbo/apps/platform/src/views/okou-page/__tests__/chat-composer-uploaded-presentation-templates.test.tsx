@@ -453,9 +453,10 @@ test("A closed composer does not load uploaded template covers", async () => {
     host: "app.okou.ai",
   });
 
-  await waitFor(() => {
-    expect(library.requests.listCount).toBeGreaterThan(0);
-  });
+  // A ready composer resolves an uploaded template only when one is chosen,
+  // so neither the catalog nor its covers load before the picker opens.
+  await screen.findByLabelText("Template");
+  expect(library.requests.listCount).toBe(0);
   expect(
     document.querySelector(`img[src*="${uploaded.id}"]`),
   ).not.toBeInTheDocument();

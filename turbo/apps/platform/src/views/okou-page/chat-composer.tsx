@@ -58,7 +58,7 @@ import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
 import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import {
-  customTemplateCatalog$,
+  loadCustomTemplateCatalog$,
   resetCustomTemplatePicker$,
   resetCustomTemplatePickerView$,
 } from "../../signals/okou-page/custom-template-library.ts";
@@ -5213,20 +5213,6 @@ function ImportedPresentationTemplateLibraryStatus({
   );
 }
 
-/** The catalog behind a `custom` selection's chip. Empty until it loads. */
-function useCustomTemplateCatalog(): readonly UserTemplateCatalogEntry[] {
-  const loadable = useLoadable(customTemplateCatalog$);
-  return loadable.state === "hasData" ? loadable.data : [];
-}
-
-function useImportedPresentationTemplates(
-  signals: ComposerSignals,
-): readonly PresentationTemplateSummary[] {
-  return useImportedPresentationTemplatePickerItems(signals).map((item) => {
-    return item.template;
-  });
-}
-
 function ComposerPresentationSuggestion({
   title,
   children,
@@ -8774,24 +8760,54 @@ function useComposerTemplatePicker(
   signals: ComposerSignals,
 ): ComposerTemplatePicker {
   const insertTemplate = useSet(signals.template.insertTemplate$);
-  const importedTemplates = useImportedPresentationTemplates(signals);
-  const customTemplates = useCustomTemplateCatalog();
+  const loadImportedTemplates = useSet(
+    signals.template.loadImportedPresentationTemplates$,
+  );
+  const loadCustomTemplates = useSet(loadCustomTemplateCatalog$);
   const notifyDraftChanged = useComposerDraftChange(signals);
+  const rootSignal = useGet(rootSignal$);
+  const insert = (
+    value: GenerationTemplateRequest,
+    attachment: ComposerTemplateAttachment | undefined,
+  ) => {
+    if (!attachment) {
+      return;
+    }
+    insertTemplate(value, attachment);
+    notifyDraftChanged();
+  };
   return {
     onChange(value) {
       if (!value) {
         return;
       }
-      const attachment = selectedComposerTemplateAttachment(
-        value,
-        importedTemplates,
-        customTemplates,
-      );
-      if (!attachment) {
+      // Built-in templates resolve without a catalog. Uploaded and custom ones
+      // read theirs only now, so rendering the composer never requests them.
+      const builtIn = selectedComposerTemplateAttachment(value);
+      if (
+        builtIn ||
+        (value.type !== "custom" && value.type !== "presentation")
+      ) {
+        insert(value, builtIn);
         return;
       }
-      insertTemplate(value, attachment);
-      notifyDraftChanged();
+      detach(
+        (async () => {
+          const attachment =
+            value.type === "custom"
+              ? selectedComposerTemplateAttachment(
+                  value,
+                  [],
+                  await loadCustomTemplates(rootSignal),
+                )
+              : selectedComposerTemplateAttachment(
+                  value,
+                  await loadImportedTemplates(rootSignal),
+                );
+          insert(value, attachment);
+        })(),
+        Reason.DomCallback,
+      );
     },
   };
 }
