@@ -25,7 +25,7 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [exports, recommendations, deletions] = await Promise.all([
     set(executeDurableUserExportWork$, {}, workSignal),
     set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
-    set(executeClerkUserDeletionWork$, { maxJobs: 1 }, workSignal),
+    set(executeClerkUserDeletionWork$, {}, workSignal),
   ]);
   signal.throwIfAborted();
   return {

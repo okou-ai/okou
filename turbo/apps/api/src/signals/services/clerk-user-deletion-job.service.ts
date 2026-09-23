@@ -48,77 +48,69 @@ export const enqueueClerkUserDeletion$ = command(
 export const executeClerkUserDeletionWork$ = command(
   async (
     { set },
-    args: { readonly jobId?: string; readonly maxJobs?: number },
+    args: { readonly jobId?: string },
     signal: AbortSignal,
   ): Promise<{ readonly processed: number }> => {
     const db = set(writeDb$);
-    let processed = 0;
-    while (processed < (args.maxJobs ?? 1)) {
-      signal.throwIfAborted();
-      const job = await claimBackgroundJob(
-        db,
+    const job = await claimBackgroundJob(
+      db,
+      {
+        jobId: args.jobId,
+        kind: JOB_KIND,
+        handlerVersion: JOB_HANDLER_VERSION,
+      },
+      signal,
+    );
+    if (!job) {
+      return { processed: 0 };
+    }
+
+    // eslint-disable-next-line api/signal-check-await -- persist the outcome even when cleanup was aborted
+    const attempt = await settleIncludingAbort(async () => {
+      const { emptyOrgIds } = checkpointSchema.parse(job.checkpoint);
+      await set(
+        cleanupClerkDeletedUser$,
         {
-          jobId: args.jobId,
-          kind: JOB_KIND,
-          handlerVersion: JOB_HANDLER_VERSION,
+          userId: job.userId,
+          emptyOrgIds,
+          checkpointEmptyOrgIds: async (orgIds, checkpointSignal) => {
+            const saved = await checkpointBackgroundJob(
+              db,
+              { job, checkpoint: { emptyOrgIds: orgIds } },
+              checkpointSignal,
+            );
+            if (!saved) {
+              throw new Error("User deletion lost its job lease");
+            }
+          },
         },
         signal,
       );
-      if (!job) {
-        break;
-      }
-
-      // eslint-disable-next-line api/signal-check-await -- persist the outcome even when cleanup was aborted
-      const attempt = await settleIncludingAbort(async () => {
-        const { emptyOrgIds } = checkpointSchema.parse(job.checkpoint);
-        await set(
-          cleanupClerkDeletedUser$,
-          {
-            userId: job.userId,
-            emptyOrgIds,
-            checkpointEmptyOrgIds: async (orgIds, checkpointSignal) => {
-              const saved = await checkpointBackgroundJob(
-                db,
-                { job, checkpoint: { emptyOrgIds: orgIds } },
-                checkpointSignal,
-              );
-              if (!saved) {
-                throw new Error("User deletion lost its job lease");
-              }
-            },
-          },
-          signal,
-        );
+    });
+    // The request or cron budget may have expired during cleanup. Persist
+    // its outcome with a fresh, bounded signal so the lease can be released.
+    const persistenceSignal = AbortSignal.timeout(5000);
+    if (attempt.ok) {
+      await completeBackgroundJob(db, { job }, persistenceSignal);
+    } else {
+      L.error("user.deleted cleanup failed", {
+        userId: job.userId,
+        error: attempt.error,
       });
-      // The request or cron budget may have expired during cleanup. Persist
-      // its outcome with a fresh, bounded signal so the lease can be released.
-      const persistenceSignal = AbortSignal.timeout(5000);
-      if (attempt.ok) {
-        await completeBackgroundJob(db, { job }, persistenceSignal);
-      } else {
-        L.error("user.deleted cleanup failed", {
-          userId: job.userId,
-          error: attempt.error,
-        });
-        await retryBackgroundJob(
-          db,
-          {
-            job,
-            error:
-              attempt.error instanceof Error
-                ? attempt.error.message
-                : "User deletion cleanup failed",
-            availableAt: new Date(nowDate().getTime() + RETRY_DELAY_MS),
-          },
-          persistenceSignal,
-        );
-      }
-      persistenceSignal.throwIfAborted();
-      processed += 1;
-      if (args.jobId) {
-        break;
-      }
+      await retryBackgroundJob(
+        db,
+        {
+          job,
+          error:
+            attempt.error instanceof Error
+              ? attempt.error.message
+              : "User deletion cleanup failed",
+          availableAt: new Date(nowDate().getTime() + RETRY_DELAY_MS),
+        },
+        persistenceSignal,
+      );
     }
-    return { processed };
+    persistenceSignal.throwIfAborted();
+    return { processed: 1 };
   },
 );
