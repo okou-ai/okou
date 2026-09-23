@@ -1369,6 +1369,10 @@ prepared plan and adds no lookup or retained file contents. A missing compressed
 archive still selects its required fill; later plans perform their own positive
 lookup, so GC eviction cannot become a permanent warming exclusion. Unobserved
 positive entries retain the existing background checks.
+When one name/version group also contains an instruction or another archive-required
+target, eligible storage and fresh artifact mounts may still use decoded files.
+The archive continues through its normal delivery path for the other target and
+is not retired while that target requires it.
 
 Artifact decoded selection has the same fail-closed boundary as storage:
 missing, busy, rejected, conflicting or capacity-ineligible optional cache work

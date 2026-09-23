@@ -1689,7 +1689,7 @@ async fn prepare_decoded_storage(
             .iter()
             .map(|group| {
                 group.targets.first().and_then(|target| {
-                    is_decoded_download_group(group, plan)
+                    has_decoded_download_target(group, plan)
                         .then_some((target.name.as_str(), target.version.as_str()))
                 })
             })
@@ -1712,7 +1712,7 @@ async fn prepare_decoded_storage(
             if group
                 .targets
                 .iter()
-                .any(|target| target.handle.is_artifact())
+                .any(|target| target.handle.is_artifact() && !plan.has_decoded(target.handle))
                 && (!decoded_eligible || (group.decoded_ready_observed && !decoded_reused))
             {
                 telemetry.record(
@@ -1736,16 +1736,26 @@ fn reuse_decoded(
     let Some(files) = files else {
         return Ok(false);
     };
-    // Check mounts only on a ready hit. Misses keep ordinary delivery.
-    let Some(mounts) = group
+    // An archive may still be required by another target sharing this key,
+    // such as an instruction storage. Admit its ordinary targets without
+    // changing archive delivery for that other consumer.
+    let eligible = group
         .targets
+        .iter()
+        .filter(|target| plan.is_decoded_download(target.handle))
+        .collect::<Vec<_>>();
+    if eligible.is_empty() {
+        return Ok(false);
+    }
+    // Check mounts only on a ready hit. Misses keep ordinary delivery.
+    let Some(mounts) = eligible
         .iter()
         .map(|target| plan.decoded_mount(target.handle).map(str::to_owned))
         .collect::<Option<Vec<_>>>()
     else {
         return Ok(false);
     };
-    for target in &group.targets {
+    for target in &eligible {
         if !plan.decoded_entry_fits(target.handle)? {
             return Ok(false);
         }
@@ -2371,6 +2381,13 @@ fn is_decoded_download_group(group: &CacheTargetGroup, plan: &StoragePlan) -> bo
             .targets
             .iter()
             .all(|target| plan.is_decoded_download(target.handle))
+}
+
+fn has_decoded_download_target(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
+    group
+        .targets
+        .iter()
+        .any(|target| plan.is_decoded_download(target.handle))
 }
 
 fn group_has_decoded(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
@@ -3945,7 +3962,11 @@ fn apply_group_outcome(
     telemetry: &mut JobTelemetry,
 ) {
     for target in &group.targets {
-        apply_outcome(plan, target, outcome, telemetry);
+        if plan.has_decoded(target.handle) {
+            apply_outcome(plan, target, &TargetOutcome::Decoded, telemetry);
+        } else {
+            apply_outcome(plan, target, outcome, telemetry);
+        }
     }
 }
 

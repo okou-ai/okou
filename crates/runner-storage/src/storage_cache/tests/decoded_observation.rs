@@ -322,3 +322,115 @@ async fn same_key_storage_and_artifact_share_decoded_files_without_archive_fill(
     get.assert_calls_async(0).await;
     cache.shutdown().await;
 }
+
+#[tokio::test]
+async fn archive_required_instruction_does_not_exclude_same_key_decoded_targets() {
+    for use_fresh_delivery in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let home = home_at(&temp);
+        let cache = decoded::DecodedCache::new(home.clone());
+        warm_positive(&home, &cache).await;
+        let url = "https://storage.example/unused";
+        let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
+        instruction.instructions_target_filename = Some("AGENTS.md".into());
+        let mut plan = plan_from_entries(
+            vec![
+                instruction,
+                storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
+            ],
+            vec![artifact_entry(
+                "/mnt/artifact".into(),
+                url.into(),
+                NAME,
+                VERSION,
+            )],
+            None,
+        );
+        let mut telemetry = new_telemetry();
+        let mut fresh = if use_fresh_delivery {
+            Some(
+                prepare_fresh_archive_delivery(
+                    &mut plan,
+                    &home,
+                    &FreshArchiveDeliveryAdmission::new(),
+                    &CancellationToken::new(),
+                    &mut telemetry,
+                    Some(&cache),
+                )
+                .await
+                .unwrap(),
+            )
+        } else {
+            None
+        };
+        let deferred = populate_cache_with_fresh_delivery(
+            &mut plan,
+            &MockSandbox::new("mixed-key-instruction"),
+            &home,
+            &mut telemetry,
+            fresh.as_mut(),
+            Some(&cache),
+        )
+        .await
+        .unwrap();
+        assert!(deferred.is_none());
+        let ops = telemetry.pending_ops_snapshot();
+        assert_op(&ops, STORAGE_CACHE_ARTIFACT_DECODED, true);
+        assert!(ops.iter().all(|(action, _, _)| {
+            action != STORAGE_CACHE_ARTIFACT_ARCHIVE_HIT
+                && action != STORAGE_CACHE_ARTIFACT_DECODED_INELIGIBLE
+        }));
+        let files = plan.take_decoded();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].0, "/mnt/storage");
+        assert_eq!(files[1].0, "/mnt/artifact");
+        assert!(std::sync::Arc::ptr_eq(&files[0].1, &files[1].1));
+        let manifest = plan.into_guest_manifest();
+        assert!(
+            manifest.storages[0]
+                .archive_url
+                .as_deref()
+                .unwrap()
+                .starts_with("file://")
+        );
+        assert_eq!(manifest.storages[1].archive_url.as_deref(), Some(url));
+        assert_eq!(manifest.artifacts[0].archive_url.as_deref(), Some(url));
+        guest_contracts::storage_files::validate_bindings(
+            &manifest,
+            files.iter().map(|(mount, _)| mount.as_str()),
+        )
+        .unwrap();
+        cache.shutdown().await;
+    }
+}
+
+#[tokio::test]
+async fn mixed_key_does_not_hide_corrupt_decoded_files_from_eligible_targets() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    warm_positive(&home, &cache).await;
+    std::fs::write(positive_dir(&home).join("index.json"), b"{").unwrap();
+    let url = "https://storage.example/unused";
+    let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
+    instruction.instructions_target_filename = Some("AGENTS.md".into());
+    let mut plan = plan_from_entries(
+        vec![
+            instruction,
+            storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
+        ],
+        Vec::new(),
+        None,
+    );
+    let result = populate_cache_with_fresh_delivery(
+        &mut plan,
+        &MockSandbox::new("mixed-key-corrupt"),
+        &home,
+        &mut new_telemetry(),
+        None,
+        Some(&cache),
+    )
+    .await;
+    assert!(result.is_err());
+    cache.shutdown().await;
+}
