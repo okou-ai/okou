@@ -830,9 +830,11 @@ initialization and protocol errors. 2025 protocol traffic uses stateless Streama
 HTTP with SSE responses. The 2026-07-28 protocol uses the SDK's envelope and
 `MCP-Method`/`MCP-Name` headers with automatic JSON/SSE response selection. Clients
 should use a conforming SDK instead of implementing these envelopes themselves.
+
 The 12 advertised tools each include a human-readable `annotations.title`. Their
 input and output JSON Schemas inline local references, so the advertised schemas
 contain no `$ref` or `$defs`; field types and validation constraints are unchanged.
+
 No persistent MCP session, standalone event feed, subscription, or resumability
 is offered; stateless GET/DELETE requests return 405. POST bodies are limited to
 64 KiB. Transport/request cancellation stops reads or waiting for an admitted
