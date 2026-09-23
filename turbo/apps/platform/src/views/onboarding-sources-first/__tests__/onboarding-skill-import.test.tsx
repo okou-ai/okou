@@ -271,7 +271,7 @@ async function openSkillsStep(
     await waitForContinueEnabled();
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Okou is for you, and shared across your whole team.",
+      name: "Connect a work tool",
     });
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
@@ -401,9 +401,7 @@ test("The step hands over the prompt its session produced, and copies it whole",
 
   expect(screen.getByText("Run this in Codex")).toBeInTheDocument();
   expect(
-    screen.getByText(
-      "Paste this prompt into your own Codex session and it brings the skills on your machine into Okou.",
-    ),
+    screen.getByText("Run this prompt in Codex to import your skills."),
   ).toBeInTheDocument();
 
   const prompt = await screen.findByRole("region", { name: PROMPT_LABEL });
@@ -438,9 +436,7 @@ test("The skills step names Claude Code when it was selected", async () => {
 
   expect(screen.getByText("Run this in Claude Code")).toBeInTheDocument();
   expect(
-    screen.getByText(
-      "Paste this prompt into your own Claude Code session and it brings the skills on your machine into Okou.",
-    ),
+    screen.getByText("Run this prompt in Claude Code to import your skills."),
   ).toBeInTheDocument();
 });
 

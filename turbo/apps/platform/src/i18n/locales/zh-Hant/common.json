@@ -4236,10 +4236,11 @@
         "team": "邀請一位同事"
       },
       "experience": {
-        "copy": "連線你已經在付費的套餐，任務就在那邊執行，不消耗Okou積分。",
+        "copy": "使用現有的 Codex 或 Claude Code 方案，也可以暫不連接。",
         "no": "沒有，我剛開始接觸",
         "noCopy": "Okou會幫你挑一個上手任務。",
-        "title": "你用過Codex或Claude Code嗎？"
+        "title": "你用過Codex或Claude Code嗎？",
+        "trust": "選擇方案不會自動連接；現在或之後都可以連接。"
       },
       "industries": {
         "coaching": {
@@ -4288,12 +4289,13 @@
         }
       },
       "industry": {
-        "copy": "Okou會據此挑選你的第一個任務，以及從哪些資料來源開始。",
-        "title": "你主要做哪類工作？"
+        "copy": "選擇你的工作領域，訂製第一個任務。",
+        "title": "你主要做哪類工作？",
+        "trust": "此選擇不會連接帳號或讀取資料。"
       },
       "skills": {
         "copied": "已複製",
-        "copy": "將此提示詞貼到你的{{provider}}會話中，它會把你本機的技能匯入Okou。",
+        "copy": "在 {{provider}} 中執行此提示詞，匯入你的技能。",
         "copyError": "無法複製提示詞。",
         "copyPrompt": "複製提示詞",
         "importedCopy": "已匯入為Okou工作流。",
@@ -4305,6 +4307,7 @@
         "promptTitle": "在{{provider}}中執行",
         "startError": "無法開啟匯入會話。",
         "title": "把你已經寫好的技能帶過來。",
+        "trust": "只有你親自執行提示詞後，才會讀取電腦上的技能。",
         "tryAgain": "重試",
         "waiting": "匯入的技能會在到達後顯示在這裡。"
       },
@@ -4316,7 +4319,7 @@
         "connectedCopy": "開啟Slack，@Okou就能派任務。",
         "connectedStatus": "已新增到你的工作區",
         "connectedTitle": "Slack已連線",
-        "copy": "新增一次，之後在工作發生的地方@Okou就行。",
+        "copy": "在 Slack 中 @Okou，就能交給它任務。",
         "name": "Slack",
         "otherAdded": "已新增",
         "otherImessage": "iMessage",
@@ -4345,12 +4348,16 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "在你新增它的任何頻道里都能用。",
         "rowTitle": "Okou for Slack",
-        "title": "不用離開Slack，就能給Okou派活。"
+        "title": "不用離開Slack，就能給Okou派活。",
+        "trust": "Slack 可選，之後也能新增。"
       },
       "sources": {
-        "copy": "它在雲端執行，直接用你團隊已有的工具。產出提升10倍，協作更順，成本更低。先連線一個資料來源開始。",
-        "note": "連線哪些帳號，由你決定。",
-        "title": "Okou為你所用，也服務你的整個團隊。"
+        "copy": "連接一個工具，取得更貼合你的第一個任務。",
+        "note": "連接不會自動啟動 Agent 任務，也不會把憑據交給 Agent。",
+        "permissions": "Agent 預設只有有限權限；你可細調操作及授權時長。",
+        "readNotice": "點擊「繼續」會讀取已連接且支援此功能的資料來源中的少量資訊，用於推薦第一個任務；不會傳送訊息或修改資料。",
+        "securityLink": "瞭解 Okou 如何保護你的資料",
+        "title": "連接一個工作工具"
       },
       "startingPrompt": {
         "exact": {
@@ -4684,11 +4691,11 @@
         "connecting": "連線中…",
         "failedNote": "無法連線{{provider}}。你可以重試，也可以先繼續，稍後再連線。",
         "retry": "重試",
-        "rowCopy": "用你自己的套餐執行，不消耗Okou積分。",
+        "rowCopy": "連接後可使用你的方案執行，不消耗 Okou 點數。",
         "unconfirmedNote": "無法確認{{provider}}的連線狀態。你可以重試，也可以先繼續，稍後再連線。"
       },
       "team": {
-        "copy": "現在就邀請同事，也可以稍後從工作區選單邀請。",
+        "copy": "邀請同事加入這個工作空間。",
         "invite": "傳送邀請",
         "invited": "已邀請",
         "label": "同事的郵箱",
@@ -4699,17 +4706,19 @@
         "points": {
           "accounts": "他們連線的帳號仍歸自己所有——未經他們同意不會共享任何內容。",
           "workflows": "這裡的每個人都能執行工作區裡已有的工作流。",
-          "workspace": "他們會直接進入這個工作區，用上你剛剛連線的資料來源。"
+          "workspace": "他們會加入同一個工作空間。"
         },
         "sending": "傳送中…",
-        "title": "把一起做這些事的同事帶進來。"
+        "title": "把一起做這些事的同事帶進來。",
+        "trust": "共用工作流程不會共用個人帳號或權限。"
       },
       "welcome": {
-        "copy": "從第一個任務開始，它是照著你剛連線的工作內容挑的。",
+        "copy": "開始前先查看推薦給你的第一個任務。",
         "offerTitle": "首小時諮詢免費，另贈最多100積分——",
         "promptLabel": "你的起始提示詞",
         "start": "開始使用Okou",
-        "title": "Okou已經準備好了"
+        "title": "Okou已經準備好了",
+        "trust": "這只是草稿；你可以編輯後再傳送。"
       }
     },
     "templatePicker": {

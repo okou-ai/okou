@@ -313,6 +313,11 @@ export function OnboardingSkillsPage() {
         },
         { provider: providerName },
       )}
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.sourcesFirst.skills.trust;
+        }),
+      ]}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -969,6 +974,11 @@ export function OnboardingSlackPage() {
               return $.onboarding.sourcesFirst.slack.copy;
             })
       }
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.sourcesFirst.slack.trust;
+        }),
+      ]}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.finish;
       })}

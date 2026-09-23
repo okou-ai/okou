@@ -4306,10 +4306,11 @@
         "team": "Inviter un collègue"
       },
       "experience": {
-        "copy": "Connectez l'offre que vous payez déjà : le travail s'exécute là-bas, pas sur vos crédits Okou.",
+        "copy": "Utilisez votre forfait Codex ou Claude Code, ou continuez sans forfait.",
         "no": "Non, c'est nouveau pour moi",
         "noCopy": "Okou choisit une première tâche pour vous.",
-        "title": "Avez-vous déjà utilisé Codex ou Claude Code ?"
+        "title": "Avez-vous déjà utilisé Codex ou Claude Code ?",
+        "trust": "Choisir un forfait ne le connecte pas. Vous pouvez le connecter maintenant ou plus tard."
       },
       "industries": {
         "coaching": {
@@ -4358,12 +4359,13 @@
         }
       },
       "industry": {
-        "copy": "Okou s'en sert pour choisir votre première tâche et les sources dont elle part.",
-        "title": "Quel type de travail faites-vous ?"
+        "copy": "Choisissez votre domaine pour adapter votre première tâche.",
+        "title": "Quel type de travail faites-vous ?",
+        "trust": "Ce choix ne connecte ni ne lit aucun compte."
       },
       "skills": {
         "copied": "Copié",
-        "copy": "Collez ce prompt dans votre propre session {{provider}} : il amène dans Okou les skills présentes sur votre machine.",
+        "copy": "Exécutez ce prompt dans {{provider}} pour importer vos skills.",
         "copyError": "Le prompt n’a pas pu être copié.",
         "copyPrompt": "Copier le prompt",
         "importedCopy": "Importé comme workflow Okou.",
@@ -4375,6 +4377,7 @@
         "promptTitle": "Lancez ceci dans {{provider}}",
         "startError": "La session d’import n’a pas pu être ouverte.",
         "title": "Amenez les skills que vous avez déjà écrites.",
+        "trust": "Rien sur votre ordinateur n’est lu tant que vous n’exécutez pas vous-même le prompt.",
         "tryAgain": "Réessayer",
         "waiting": "Les skills importées apparaissent ici au fur et à mesure."
       },
@@ -4386,7 +4389,7 @@
         "connectedCopy": "Ouvrez Slack et mentionnez @Okou pour lui confier une tâche.",
         "connectedStatus": "Ajouté à votre espace de travail",
         "connectedTitle": "Slack est connecté",
-        "copy": "Ajoutez-le une fois, puis mentionnez @Okou là où le travail se fait déjà.",
+        "copy": "Mentionnez @Okou dans Slack pour lui confier une tâche.",
         "name": "Slack",
         "otherAdded": "Ajouté",
         "otherImessage": "iMessage",
@@ -4415,12 +4418,16 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Fonctionne dans chaque canal où vous l'ajoutez.",
         "rowTitle": "Okou for Slack",
-        "title": "Confiez un travail à Okou sans quitter Slack."
+        "title": "Confiez un travail à Okou sans quitter Slack.",
+        "trust": "Slack est facultatif. Vous pourrez l’ajouter plus tard."
       },
       "sources": {
-        "copy": "Il travaille dans le cloud, depuis les outils que votre équipe utilise déjà. 10 fois plus de résultats, moins de friction, un coût plus bas. Connectez une source pour commencer.",
-        "note": "Vous choisissez les comptes à connecter.",
-        "title": "Okou est à vous, et partagé avec toute votre équipe."
+        "copy": "Connectez un outil pour obtenir une première tâche utile.",
+        "note": "La connexion ne lance aucune tâche et ne révèle pas vos identifiants à l’agent.",
+        "permissions": "Les autorisations de l’agent sont limitées au départ. Vous pouvez régler les actions et la durée d’accès.",
+        "readNotice": "Continuer lit un petit échantillon des sources compatibles connectées pour suggérer votre première tâche. Aucun message n’est envoyé et aucune donnée n’est modifiée.",
+        "securityLink": "Comment Okou protège vos données",
+        "title": "Connecter un outil de travail"
       },
       "startingPrompt": {
         "exact": {
@@ -4754,11 +4761,11 @@
         "connecting": "Connexion…",
         "failedNote": "Nous n'avons pas pu connecter {{provider}}. Vous pouvez réessayer ou le connecter plus tard.",
         "retry": "Réessayer",
-        "rowCopy": "S'exécute sur votre offre, pas sur vos crédits Okou.",
+        "rowCopy": "Connectez-le pour utiliser votre forfait plutôt que des crédits Okou.",
         "unconfirmedNote": "Nous n'avons pas pu vérifier votre connexion à {{provider}}. Vous pouvez réessayer ou le connecter plus tard."
       },
       "team": {
-        "copy": "Invitez un collègue maintenant, ou plus tard depuis le menu de l'espace de travail.",
+        "copy": "Invitez un collègue dans cet espace de travail.",
         "invite": "Envoyer l'invitation",
         "invited": "Invité",
         "label": "E-mail du collègue",
@@ -4769,17 +4776,19 @@
         "points": {
           "accounts": "Les comptes qu'ils connectent restent les leurs : rien n'est partagé sans eux.",
           "workflows": "Tout le monde ici peut lancer les workflows déjà présents dans cet espace.",
-          "workspace": "Ils arrivent dans cet espace, avec les sources que vous venez de connecter."
+          "workspace": "Il rejoint le même espace de travail."
         },
         "sending": "Envoi…",
-        "title": "Amenez les personnes qui font ce travail avec vous."
+        "title": "Amenez les personnes qui font ce travail avec vous.",
+        "trust": "Les workflows partagés ne partagent ni comptes ni autorisations personnels."
       },
       "welcome": {
-        "copy": "Commencez par une première tâche, choisie pour le travail que vous venez de connecter.",
+        "copy": "Vérifiez la première tâche suggérée avant de commencer.",
         "offerTitle": "La première heure de conseil est offerte, plus jusqu'à 100 crédits —",
         "promptLabel": "Votre prompt de départ",
         "start": "Commencer avec Okou",
-        "title": "Okou est prêt pour vous"
+        "title": "Okou est prêt pour vous",
+        "trust": "Ceci est un brouillon. Vous pouvez le modifier avant tout envoi."
       }
     },
     "templatePicker": {

@@ -35,7 +35,7 @@ const SOURCES_FIRST_ON = {
 
 const MAKE_QUESTION = "What do you want to make first";
 const INDUSTRY_QUESTION = "What kind of work do you do?";
-const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
+const SOURCES_QUESTION = "Connect a work tool";
 const MARKETING_FIELD = "Marketing & content";
 const READY_TITLE = "Okou is ready for you";
 const START_ACTION = "Start with Okou";

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@okouai/ui";
 import { useSet } from "ccstate-react";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
@@ -63,6 +63,7 @@ export function OnboardingStepLayout({
   secondaryLabel,
   onSecondary,
   onBack,
+  trustPoints,
   footnote,
   children,
 }: {
@@ -77,6 +78,7 @@ export function OnboardingStepLayout({
   readonly secondaryLabel?: string;
   readonly onSecondary?: () => void;
   readonly onBack?: () => void;
+  readonly trustPoints?: readonly string[];
   /** A line under the action, for a step that carries an offer or a note. */
   readonly footnote?: ReactNode;
   readonly children: ReactNode;
@@ -96,12 +98,9 @@ export function OnboardingStepLayout({
         key={`${String(currentStep)}-${title}`}
         className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden"
       >
-        {/* The question stays on the rail's own surface, set down from the top
-            edge and anchored there, so neither the track nor the title moves as
-            a step's words run longer. The column takes the slack the narrower
-            sheet leaves, while its words keep one measure. */}
-        <div className="w-full min-w-0 px-6 pt-8 pb-6 lg:flex-1 lg:px-10 lg:pt-28 lg:pb-10">
-          <div className="lg:max-w-[380px]">
+        {/* Keep the explanation and answer sheet balanced on desktop. */}
+        <div className="w-full min-w-0 px-6 pt-8 pb-6 lg:flex-1 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
+          <div className="lg:mx-auto lg:w-full lg:max-w-[480px]">
             <OnboardingStepProgress current={currentStep} total={totalSteps} />
             <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
               {title}
@@ -109,6 +108,25 @@ export function OnboardingStepLayout({
             <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
               {description}
             </p>
+            {trustPoints && trustPoints.length > 0 ? (
+              <ul className="mt-10 space-y-4 border-t border-border/60 pt-6">
+                {trustPoints.map((point) => {
+                  return (
+                    <li
+                      key={point}
+                      className="flex items-start gap-3 text-sm leading-6 text-muted-foreground"
+                    >
+                      <Check
+                        size={16}
+                        className="mt-1 shrink-0 text-foreground"
+                        aria-hidden="true"
+                      />
+                      <span>{point}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
             {footnote ? (
               <p className="mt-4 text-xs leading-5 text-muted-foreground">
                 {footnote}
@@ -116,11 +134,8 @@ export function OnboardingStepLayout({
             ) : null}
           </div>
         </div>
-        {/* The answers sit on the app's own sheet: the same small margin,
-            radius and border as the workspace, held to one width so the answers
-            keep a readable measure, with the way back and the way on under a
-            rule at its foot. */}
-        <div className="m-2 mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:ml-0 lg:mt-2 lg:w-[760px] lg:flex-none">
+        {/* The answers sit on the app's own sheet, taking the other half. */}
+        <div className="m-2 mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background lg:ml-0 lg:mt-2">
           <div className="min-h-0 flex-1 overflow-y-auto p-6 lg:p-8">
             {/* Centred while it fits, scrolled from the top when it does
                 not. */}

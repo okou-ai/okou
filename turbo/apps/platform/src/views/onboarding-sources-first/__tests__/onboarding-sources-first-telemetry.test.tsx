@@ -31,7 +31,7 @@ const SOURCES_FIRST_ON = {
 } as const;
 
 const INDUSTRY_QUESTION = "What kind of work do you do?";
-const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
+const SOURCES_QUESTION = "Connect a work tool";
 const TEAM_QUESTION = "Bring the people who do this work with you.";
 const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
 const READY_TITLE = "Okou is ready for you";

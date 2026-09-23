@@ -26,8 +26,7 @@ const SOURCES_FIRST_ON = {
 const TEAM_QUESTION = "Bring the people who do this work with you.";
 const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
 /** Shown in place of the invite list while nothing has been sent. */
-const TEAM_POINT =
-  "They land in this workspace, with the sources you just connected.";
+const TEAM_POINT = "They join the same workspace.";
 const TEAMMATE = "rowan@company.com";
 
 /** One connected source, which every step after the source step requires. */

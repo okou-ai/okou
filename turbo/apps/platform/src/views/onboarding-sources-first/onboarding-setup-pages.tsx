@@ -76,6 +76,11 @@ export function OnboardingIndustryPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.industry.copy;
       })}
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.sourcesFirst.industry.trust;
+        }),
+      ]}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -288,6 +293,11 @@ export function OnboardingTeamPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.team.copy;
       })}
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.sourcesFirst.team.trust;
+        }),
+      ]}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -533,6 +543,11 @@ export function OnboardingExperiencePage() {
         description={t(($) => {
           return $.onboarding.sourcesFirst.experience.copy;
         })}
+        trustPoints={[
+          t(($) => {
+            return $.onboarding.sourcesFirst.experience.trust;
+          }),
+        ]}
         primaryLabel={t(($) => {
           return $.onboarding.sourcesFirst.common.continue;
         })}
