@@ -156,8 +156,7 @@ import {
   surfaceVariants,
   ElapsedTime,
   getShortcutLabel,
-  processShortcut,
-  type KeyboardEventLike,
+  matchShortcut,
 } from "@okouai/ui";
 import {
   bestEffort,
@@ -197,7 +196,6 @@ import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { computerUseIllustrationImg } from "./platform-assets.ts";
-import type { ComposerPasteEvent } from "./composer-input-types.ts";
 import {
   COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS,
   COMPOSER_VOICE_INPUT_SHORTCUT,
@@ -8682,22 +8680,22 @@ function toRestorableAttachments(
 }
 
 function restoreChatClipboardPayload({
-  event,
+  clipboardData,
   insertPromptMarkdown,
   insertUserMessage,
   restoreAttachments,
   onDraftChange,
 }: {
-  event: ComposerPasteEvent;
+  clipboardData: DataTransfer | null;
   insertPromptMarkdown: (value: string) => void;
   insertUserMessage: (value: UserMessageDocument) => void;
   restoreAttachments: (attachments: RestorableAttachment[]) => void;
   onDraftChange: (() => void) | undefined;
 }): boolean {
-  if (!event.clipboardData) {
+  if (!clipboardData) {
     return false;
   }
-  const payload = readChatMessageFromClipboard(event.clipboardData);
+  const payload = readChatMessageFromClipboard(clipboardData);
   if (!payload) {
     return false;
   }
@@ -8712,7 +8710,6 @@ function restoreChatClipboardPayload({
     return false;
   }
 
-  event.preventDefault();
   const hasInsertableUserMessagePart = userMessage?.parts.some((part) => {
     return (
       part.type === "text" ||
@@ -8936,10 +8933,10 @@ function ComposerInputSlot({
   const sendModeLoadable = useLastLoadable(sendMode$);
   const sendMode =
     sendModeLoadable.state === "hasData" ? sendModeLoadable.data : "enter";
-  const handlePaste = (event: ComposerPasteEvent) => {
+  const handlePaste = (clipboardData: DataTransfer | null): boolean => {
     if (
       restoreChatClipboardPayload({
-        event,
+        clipboardData,
         insertPromptMarkdown,
         insertUserMessage,
         restoreAttachments: (attachments) => {
@@ -8959,15 +8956,16 @@ function ComposerInputSlot({
         onDraftChange: notifyDraftChanged,
       })
     ) {
-      return;
+      return true;
     }
-    const items = event.clipboardData?.items;
+    const items = clipboardData?.items;
     if (!items) {
-      return;
+      return false;
     }
-    const plainText = event.clipboardData?.getData("text/plain") ?? "";
+    const plainText = clipboardData?.getData("text/plain") ?? "";
     let pastedPlainText = false;
     let uploaded = false;
+    let handledFile = false;
     const applyPlainText = () => {
       if (pastedPlainText || !plainText) {
         return;
@@ -8983,13 +8981,14 @@ function ComposerInputSlot({
       if (!file) {
         continue;
       }
-      event.preventDefault();
+      handledFile = true;
       applyPlainText();
       uploaded = uploadFile(file) || uploaded;
     }
     if (uploaded || pastedPlainText) {
       notifyDraftChanged();
     }
+    return handledFile;
   };
 
   const submit = () => {
@@ -9005,24 +9004,28 @@ function ComposerInputSlot({
     );
   };
 
-  const handleKeyDown = (event: KeyboardEventLike) => {
-    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
-    if (isMobileTextInputDevice()) {
-      processShortcut({ "mod+enter": submit }, event);
-      return;
+  const handleKeyDown = (event: KeyboardEvent): boolean => {
+    if (event.isComposing || event.keyCode === 229) {
+      return false;
     }
-    processShortcut(
-      {
-        ...(sendMode === "enter" ? { enter: submit } : { "mod+enter": submit }),
-        ...(isTouchDevice && sendMode === "enter"
-          ? { "mod+enter": submit }
-          : {}),
-        escape: () => {
-          (event.target as HTMLElement).blur();
-        },
-      },
-      event,
-    );
+    const isTouchDevice = window.matchMedia("(pointer: coarse)").matches;
+    const mobileTextInput = isMobileTextInputDevice();
+    const sendShortcut =
+      mobileTextInput || sendMode === "cmd-enter" ? "mod+enter" : "enter";
+    if (
+      matchShortcut(sendShortcut, event) ||
+      (isTouchDevice &&
+        sendMode === "enter" &&
+        matchShortcut("mod+enter", event))
+    ) {
+      submit();
+      return true;
+    }
+    if (!mobileTextInput && matchShortcut("escape", event)) {
+      signals.editor.editor.view.dom.blur();
+      return true;
+    }
+    return false;
   };
 
   return (
