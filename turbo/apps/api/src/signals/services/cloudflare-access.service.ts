@@ -26,6 +26,9 @@ interface Owner {
   readonly orgId: string;
   readonly userId: string;
 }
+// Old App -> new API: absent view=scoped retains the personal-only projection.
+// Remove this bridge after #36261 is live and #36262 verifies the minimum App
+// version excludes old builds.
 type ConfigView = "legacy" | "scoped";
 type AccessScope = "personal" | "organization";
 type ConfigResponse = CloudflareAccessConfig | ScopedCloudflareAccessConfig;
