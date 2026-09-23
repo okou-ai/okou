@@ -833,10 +833,13 @@ Compatibility is negotiated per run rather than by deployment order:
   installed manifest. It moves only when code that feeds the constructed
   session changes, in whichever package that code lives, whereas
   `piAgentRuntime` also moves on dependency-only release bumps and therefore
-  forced the `npx` launch after most releases. **The backend does not write it
-  yet**: the reader ships first, and the writer follows in its own release
-  with the reader commit as an API rollback floor, exactly as the runtime
-  version fields were staged above.
+  forced the `npx` launch after most releases. **The backend writes it now**:
+  the reader shipped first in `322efb6d72508e15b90dc788100a776da1485751`
+  (#36142, released as api 1.659.0 in
+  `3ffd0d5086a02cd8328cf60defab7a242b682273`), and the writer followed
+  after that API was promoted. The production rollback resolver enforces this
+  reader as an additional API floor so old strict readers cannot claim queued
+  runs carrying the digest. Retained Runner tags are unaffected.
 - The guest agent execs the installed CLI only on a parity match at or above
   the CLI floor. When the launch config carries
   `requiredPiSessionConstructionDigest`, parity means the installed manifest's
@@ -851,9 +854,10 @@ Compatibility is negotiated per run rather than by deployment order:
   field of the claim body. Older backends ignore it; the current backend records
   it in claim telemetry as `runner_installed_cli_version` and
   `runner_installed_pi_agent_runtime_version`. The optional
-  `piSessionConstructionDigest` member is accepted but not advertised yet;
-  runners send it once every serving backend accepts it, and the backend then
-  records it as `runner_installed_pi_session_construction_digest`.
+  `piSessionConstructionDigest` member is advertised when the installed
+  artifact has a digest. The backend records it as
+  `runner_installed_pi_session_construction_digest`; older installed artifacts
+  omit it.
 - The CLI restarts a pending-tool API-first handoff from H0 as `sandbox-first`
   when the required session-construction digest, or without one the required
   runtime version, differs from what it bundles. A settled-session continuation
