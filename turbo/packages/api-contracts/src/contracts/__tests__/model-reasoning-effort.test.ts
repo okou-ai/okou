@@ -48,6 +48,14 @@ describe("chat reasoning effort capabilities", () => {
       "max",
       "ultracode",
     ]);
+    expect(getModelReasoningEfforts("gpt-6-luna")).toStrictEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(defaultModelReasoningEffort("gpt-6-luna")).toBe("max");
     expect(defaultModelReasoningEffort("gpt-5.6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("gpt-6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("claude-opus-5-5")).toBe("medium");

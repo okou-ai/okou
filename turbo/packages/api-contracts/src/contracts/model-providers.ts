@@ -205,6 +205,7 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "deepseek-v4-pro": "DeepSeek V4 Pro",
   "gpt-6-astra": "GPT 6 Astra",
   "gpt-6-sol": "GPT 6 Sol",
+  "gpt-6-luna": "GPT 6 Luna",
   "gpt-5.6-sol": "GPT 5.6 Sol",
   "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",
@@ -282,6 +283,7 @@ export function isSupportedRunModel(
 export const CODEX_FAST_MODE_MODELS = [
   "gpt-6-astra",
   "gpt-6-sol",
+  "gpt-6-luna",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
@@ -478,6 +480,15 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
+  "gpt-6-luna": {
+    candidates: [
+      { concreteType: "openai-api-key" },
+      {
+        concreteType: "openrouter-codex",
+        apiModel: "openai/gpt-6-luna",
+      },
+    ],
+  },
   "gpt-5.6-sol": {
     candidates: [
       { concreteType: "openai-api-key" },
@@ -607,6 +618,8 @@ const IMAGE_INPUT_SUPPORTED_MODELS = new Set([
   "openai/gpt-6-astra",
   "gpt-6-sol",
   "openai/gpt-6-sol",
+  "gpt-6-luna",
+  "openai/gpt-6-luna",
   "deepseek-v4.1-flash",
   "deepseek/deepseek-v4.1-flash",
   "claude-fable-5-1",
@@ -834,6 +847,7 @@ export const MODEL_PROVIDER_TYPES = {
     models: [
       "openai/gpt-6-astra",
       "openai/gpt-6-sol",
+      "openai/gpt-6-luna",
       "openai/gpt-5.6-sol",
       "openai/gpt-5.6-terra",
       "openai/gpt-5.6-luna",
@@ -879,6 +893,7 @@ export const MODEL_PROVIDER_TYPES = {
     models: [
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -954,6 +969,7 @@ export const MODEL_PROVIDER_TYPES = {
     models: [
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -1153,6 +1169,12 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "codex-oauth-token",
     "openrouter-codex",
   ],
+  "gpt-6-luna": [
+    "built-in",
+    "openai-api-key",
+    "codex-oauth-token",
+    "openrouter-codex",
+  ],
   "gpt-5.6-sol": [
     "built-in",
     "openai-api-key",
@@ -1204,6 +1226,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
     "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
     "gpt-6-astra": "openai/gpt-6-astra",
     "gpt-6-sol": "openai/gpt-6-sol",
+    "gpt-6-luna": "openai/gpt-6-luna",
     "gpt-5.6-sol": "openai/gpt-5.6-sol",
     "gpt-5.6-terra": "openai/gpt-5.6-terra",
     "gpt-5.6-luna": "openai/gpt-5.6-luna",

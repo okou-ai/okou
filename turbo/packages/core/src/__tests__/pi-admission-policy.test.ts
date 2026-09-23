@@ -189,10 +189,10 @@ const EXPECTED_ADMITTED_ROUTES = [
 
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
- * does not shrink when admission narrows: all 282 combinations are still
+ * does not shrink when admission narrows: all 298 combinations are still
  * evaluated, and fewer of them are admitted.
  */
-const ENUMERATED_COMBINATIONS = 282;
+const ENUMERATED_COMBINATIONS = 298;
 
 interface Combination {
   readonly selectedModel: string;
@@ -269,6 +269,7 @@ describe("Pi admission policy table", () => {
       "claude-opus-5-5",
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
     ]);
     for (const [model, policy] of excluded) {
       expect(policy.pi, model).toBe(false);

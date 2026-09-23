@@ -65,7 +65,7 @@ export const READ_ONLY_STORAGE_PRESIGNED_URL_PRUNE_LIMIT = 256;
 const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
   "presentation-template-preview-url-v1";
 export const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
-export const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
+const STORAGE_MANIFEST_PRESIGNED_URL_MIXED_LOOKUP_MAX_PAIRS = 51;
 const deletedCacheRowSchema = z.object({ cacheKey: z.string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";

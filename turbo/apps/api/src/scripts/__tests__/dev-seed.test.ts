@@ -134,10 +134,10 @@ describe("usage pricing", () => {
         return [row.category, row.unitPrice, row.unitSize];
       }),
     ).toStrictEqual([
-      ["tokens.input", 4_000, 1_000_000],
+      ["tokens.input", 4000, 1_000_000],
       ["tokens.output", 20_000, 1_000_000],
       ["tokens.cache_read", 200, 1_000_000],
-      ["tokens.cache_creation", 5_000, 1_000_000],
+      ["tokens.cache_creation", 5000, 1_000_000],
     ]);
   });
 

@@ -1174,6 +1174,17 @@ protect late proxy usage. It remains unchanged, along with ordinary
 pending-usage/callback cleanup blockers, provider-result usage, lifecycle
 observation and private checkpoint validation.
 
+#### GPT 6 Luna native model readiness
+
+A Runner advertises `X-Native-Gpt-6-Luna: 1` only when its bundled Guest accepts
+native `gpt-6-luna` and `openai/gpt-6-luna` work. This capability is separate
+from `X-Native-Gpt-6-Sol`: a Sol-capable artifact predating Luna must leave Luna
+jobs pending. The API excludes unsupported Luna jobs before the bounded poll
+lookup and rejects an unsupported direct claim with `404`, without changing the
+queued job. New Runners send both headers, while older APIs ignore the new
+header. No organization default or stored selection changes; a new catalog row
+must be admitted separately before an organization can add the model.
+
 #### GPT 6 Sol native model readiness
 
 Poll and claim requests advertise `X-Native-Gpt-6-Sol: 1` only from Runner artifacts

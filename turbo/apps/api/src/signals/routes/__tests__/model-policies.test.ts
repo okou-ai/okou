@@ -283,11 +283,16 @@ describe("GET/PUT /api/model-policies", () => {
     expect(initial.body.modelsAvailableToAdd).toContain("gpt-5.6-sol");
     expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-sol");
     expect(initial.body.modelsAvailableToAdd).not.toContain("claude-opus-5-5");
+    expect(initial.body.modelsAvailableToAdd).not.toContain("gpt-6-luna");
     expect(initial.body.modelsAvailableToAdd).not.toContain(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
 
-    for (const stagedModel of ["gpt-6-sol", "claude-opus-5-5"] as const) {
+    for (const stagedModel of [
+      "gpt-6-sol",
+      "gpt-6-luna",
+      "claude-opus-5-5",
+    ] as const) {
       const rejected = await accept(
         client.update({
           headers: authHeaders(),

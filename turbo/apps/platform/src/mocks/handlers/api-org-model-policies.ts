@@ -62,6 +62,7 @@ function response(): OrgModelPoliciesResponse {
       return (
         model !== "gpt-6-sol" &&
         model !== "claude-opus-5-5" &&
+        model !== "gpt-6-luna" &&
         !configuredModels.has(model)
       );
     }),

@@ -27,7 +27,8 @@ import {
  * - `capability`: the pinned Pi runtime cannot resolve the model. The dynamic
  *   gate in `isPiRouteRuntimeCapable` does clear itself once the pinned SDK
  *   catalog carries the identity, but a model also pinned `pi: false` here for
- *   this reason — `claude-opus-5-5` and `gpt-6-sol` today — still needs a
+ *   this reason — currently `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna` —
+ *   still needs a
  *   human to flip the table.
  *   Keeping the static exclusion is deliberate: a model must not reach Pi
  *   without a recorded decision and a billing check.
@@ -86,6 +87,11 @@ export const PI_MODEL_POLICY = {
     exception: "capability",
     reason:
       "Pre-launch and absent from the pinned Pi SDK catalog on every route.",
+  },
+  "gpt-6-luna": {
+    pi: false,
+    exception: "capability",
+    reason: "Absent from the pinned Pi SDK catalog on every route.",
   },
   "gpt-5.6-sol": { pi: true, route: "gpt-codex" },
   "gpt-5.6-terra": { pi: true, route: "gpt-codex" },

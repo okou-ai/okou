@@ -15,8 +15,9 @@ const UNRESOLVABLE: PiRuntimeIdentity = {
  * The production interface cannot reach this state on its own: every model the
  * policy table admits has capability data, and `pi-runtime-capability.test.ts`
  * in `@okouai/pi-agent-runtime` keeps that true against the real resolver. The
- * capability-excluded `claude-opus-5-5` and `gpt-6-sol` models are refused one
- * layer earlier by the policy table, so neither exercises the gate. Substituting the capability
+ * capability-excluded `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`
+ * are refused one layer earlier by the policy table, so they never exercise
+ * the gate. Substituting the capability
  * lookup is the only way to prove the gate itself is load-bearing.
  */
 vi.mock("../pi-runtime-capability", async (importOriginal) => {

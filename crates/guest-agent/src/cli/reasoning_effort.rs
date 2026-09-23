@@ -25,7 +25,12 @@ pub(super) fn resolve(
         (framework, model, effort.as_str()),
         (
             Framework::Codex,
-            "gpt-6-astra" | "gpt-6-sol" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna",
+            "gpt-6-astra"
+                | "gpt-6-sol"
+                | "gpt-6-luna"
+                | "gpt-5.6-sol"
+                | "gpt-5.6-terra"
+                | "gpt-5.6-luna",
             "low" | "medium" | "high" | "xhigh" | "max",
         ) | (
             Framework::Codex,
@@ -77,6 +82,7 @@ mod tests {
             (Framework::Codex, "OPENAI_MODEL", "gpt-6-astra", "ultracode"),
             (Framework::Codex, "OPENAI_MODEL", "gpt-6-sol", "extra"),
             (Framework::Codex, "OPENAI_MODEL", "gpt-6-sol", "ultracode"),
+            (Framework::Codex, "OPENAI_MODEL", "gpt-6-luna", "ultra"),
             (
                 Framework::ClaudeCode,
                 "ANTHROPIC_MODEL",
