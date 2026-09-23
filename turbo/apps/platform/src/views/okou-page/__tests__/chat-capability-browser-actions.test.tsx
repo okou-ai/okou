@@ -959,7 +959,7 @@ test("Complete a direct Browser interaction before its stable callback", async (
   await expect(
     screen.findByText("Finish the visual challenge"),
   ).resolves.toBeVisible();
-  click(await findButton("Take over the browser"));
+  click(await findButton("View details"));
   await screen.findByRole("dialog", { name: "Take over the browser" });
   const browserCard = await findButton("Open Research browser");
   expect(browserCard).toHaveTextContent("Live");
@@ -967,7 +967,7 @@ test("Complete a direct Browser interaction before its stable callback", async (
   await expect(
     screen.findByRole("complementary", { name: "Live browser" }),
   ).resolves.toBeVisible();
-  click(await findButton("Take over the browser"));
+  click(await findButton("View details"));
   await screen.findByRole("dialog", { name: "Take over the browser" });
   click(await findButton("Done"));
 
@@ -1015,7 +1015,7 @@ test("Cancel a direct Browser interaction before its fixed callback", async () =
   });
   await readyChat();
   await screen.findByText("Finish the visual challenge");
-  click(await findButton("Take over the browser"));
+  click(await findButton("View details"));
   await screen.findByRole("dialog", { name: "Take over the browser" });
   click(await findButton("Cancel"));
 

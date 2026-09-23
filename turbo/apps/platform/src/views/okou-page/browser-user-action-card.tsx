@@ -46,8 +46,8 @@ function BrowserActionSurface({
       ref={resumeRef}
       className={
         variant === "standalone"
-          ? "w-full p-5 sm:p-6"
-          : "h-[136px] w-full p-3 sm:h-[88px]"
+          ? "@container/browser-action w-full p-5 sm:p-6"
+          : "@container/browser-action h-[136px] w-full max-w-2xl p-3 sm:h-[88px]"
       }
     >
       {children}
@@ -62,7 +62,7 @@ function ActionState({
   action,
   variant,
 }: {
-  readonly description: string;
+  readonly description?: string;
   readonly icon: ReactNode;
   readonly title: string;
   readonly action?: ReactNode;
@@ -71,37 +71,42 @@ function ActionState({
   return (
     <div
       className={cn(
-        "flex w-full gap-3",
-        variant === "inline"
-          ? "h-full flex-col justify-between sm:flex-row sm:items-center"
-          : "min-h-24 flex-col",
+        "flex w-full flex-col justify-center gap-2 @min-[480px]/browser-action:flex-row @min-[480px]/browser-action:items-center @min-[480px]/browser-action:justify-start @min-[480px]/browser-action:gap-4",
+        variant === "inline" ? "h-full" : "min-h-20",
       )}
       role="status"
     >
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+      <div className="flex min-w-0 max-w-full items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           {icon}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-sm">
           <div
             className={cn(
               "text-[0.9375rem] font-medium text-foreground",
-              variant === "inline" && "truncate",
+              variant === "inline" && "line-clamp-2",
             )}
           >
             {title}
           </div>
-          <p
-            className={cn(
-              "mt-1 text-sm leading-5 text-muted-foreground",
-              variant === "inline" && "line-clamp-2 sm:line-clamp-1",
-            )}
-          >
-            {description}
-          </p>
+          {description && (
+            <p
+              className={cn(
+                "mt-0.5 text-sm leading-5 text-muted-foreground",
+                variant === "inline" &&
+                  (action ? "line-clamp-1" : "line-clamp-2"),
+              )}
+            >
+              {description}
+            </p>
+          )}
         </div>
       </div>
-      {action && <div className="shrink-0 self-end">{action}</div>}
+      {action && (
+        <div className="shrink-0 self-start pl-12 @min-[480px]/browser-action:self-auto @min-[480px]/browser-action:pl-0">
+          {action}
+        </div>
+      )}
     </div>
   );
 }
@@ -132,9 +137,6 @@ function TerminalActionState({
         title={t(($) => {
           return $.chat.browserInput.delivered;
         })}
-        description={t(($) => {
-          return $.chat.browserInput.deliveredDescription;
-        })}
         variant={variant}
       />
     );
@@ -147,20 +149,13 @@ function TerminalActionState({
           ? $.chat.browserInput.cancelled
           : $.chat.browserInput.completed;
       })}
-      description={
-        callbackFailed
-          ? callbackFailureDescription
-          : t(($) => {
-              return cancelled
-                ? $.chat.browserInput.cancelledDescription
-                : $.chat.browserInput.completedDescription;
-            })
-      }
+      description={callbackFailed ? callbackFailureDescription : undefined}
       variant={variant}
       action={
         <Button
           type="button"
           size="sm"
+          variant="outline"
           disabled={continuing}
           onClick={onContinue}
         >
@@ -169,9 +164,13 @@ function TerminalActionState({
             ? t(($) => {
                 return $.chat.browserInput.continuing;
               })
-            : t(($) => {
-                return $.chat.browserInput.continue;
-              })}
+            : callbackFailed
+              ? t(($) => {
+                  return $.chat.browserInput.retry;
+                })
+              : t(($) => {
+                  return $.chat.browserInput.continue;
+                })}
         </Button>
       }
     />
@@ -330,24 +329,17 @@ function PendingFormHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex items-start gap-3">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+    <div className="flex min-w-0 max-w-full items-center gap-3">
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
         <Globe size={20} />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 max-w-sm">
         {showTitle && (
           <h2 className="text-[0.9375rem] font-medium text-foreground">
             {t(($) => {
               return $.chat.browserInput.title;
             })}
           </h2>
-        )}
-        {!compact && (
-          <p className="mt-1 text-sm leading-5 text-muted-foreground">
-            {t(($) => {
-              return $.chat.browserInput.description;
-            })}
-          </p>
         )}
         <div className="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
           <span className="shrink-0 font-medium text-foreground">
@@ -638,7 +630,7 @@ function PendingInlineAction({
   const beginEntry = useSet(signals.beginEntry$);
   const endEntry = useSet(signals.endEntry$);
   return (
-    <div className="flex h-full w-full flex-col justify-between gap-3 sm:flex-row sm:items-center">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @min-[480px]/browser-action:flex-row @min-[480px]/browser-action:items-center @min-[480px]/browser-action:justify-start @min-[480px]/browser-action:gap-4">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <ChatCardDetails
         title={t(($) => {
@@ -689,9 +681,6 @@ function DirectTerminalActionState({
         title={t(($) => {
           return $.chat.browserInteraction.delivered;
         })}
-        description={t(($) => {
-          return $.chat.browserInteraction.deliveredDescription;
-        })}
         variant={variant}
       />
     );
@@ -709,17 +698,14 @@ function DirectTerminalActionState({
           ? t(($) => {
               return $.chat.browserInteraction.callbackFailed;
             })
-          : t(($) => {
-              return cancelled
-                ? $.chat.browserInteraction.cancelledDescription
-                : $.chat.browserInteraction.completedDescription;
-            })
+          : undefined
       }
       variant={variant}
       action={
         <Button
           type="button"
           size="sm"
+          variant="outline"
           disabled={continuing}
           onClick={onContinue}
         >
@@ -728,9 +714,13 @@ function DirectTerminalActionState({
             ? t(($) => {
                 return $.chat.browserInteraction.continuing;
               })
-            : t(($) => {
-                return $.chat.browserInteraction.continue;
-              })}
+            : callbackFailed
+              ? t(($) => {
+                  return $.chat.browserInput.retry;
+                })
+              : t(($) => {
+                  return $.chat.browserInteraction.continue;
+                })}
         </Button>
       }
     />
@@ -840,7 +830,7 @@ function PendingDirectInteraction({
       className="flex w-full flex-col gap-4"
     >
       <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           <MousePointerClick size={20} />
         </div>
         <div className="min-w-0 flex-1">
@@ -929,12 +919,12 @@ function PendingInlineDirectInteraction({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full w-full flex-col justify-between gap-3 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
+    <div className="flex h-full w-full flex-col justify-center gap-2 @min-[480px]/browser-action:flex-row @min-[480px]/browser-action:items-center @min-[480px]/browser-action:justify-start @min-[480px]/browser-action:gap-4">
+      <div className="flex min-w-0 max-w-full items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           <MousePointerClick size={20} />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 max-w-sm">
           <div className="text-[0.9375rem] font-medium text-foreground">
             {t(($) => {
               return $.chat.browserInteraction.title;
@@ -947,9 +937,6 @@ function PendingInlineDirectInteraction({
       </div>
       <ChatCardDetails
         title={t(($) => {
-          return $.chat.browserInteraction.title;
-        })}
-        triggerLabel={t(($) => {
           return $.chat.browserInteraction.title;
         })}
       >
@@ -993,9 +980,6 @@ function BrowserUserActionCardContent({
         icon={<Loader2 size={20} className="animate-spin" />}
         title={t(($) => {
           return $.chat.browserAction.loading;
-        })}
-        description={t(($) => {
-          return $.chat.browserInput.loadingDescription;
         })}
         variant={variant}
       />
