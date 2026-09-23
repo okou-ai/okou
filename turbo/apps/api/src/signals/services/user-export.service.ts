@@ -372,6 +372,7 @@ export function userExportReadyEmail(
     });
 
     return {
+      ownerUserId: args.userId,
       fromAddress: buildFromAddress(),
       toAddresses: email,
       subject: DATA_EXPORT_READY_SUBJECT,

@@ -883,6 +883,13 @@
       "when": 1790152085535,
       "tag": "1203_faithful_shooting_star",
       "breakpoints": true
+    },
+    {
+      "idx": 1204,
+      "version": "7",
+      "when": 1790155775546,
+      "tag": "1204_slow_nightshade",
+      "breakpoints": true
     }
   ]
 }

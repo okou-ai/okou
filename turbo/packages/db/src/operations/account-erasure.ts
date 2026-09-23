@@ -904,6 +904,41 @@ export async function renewErasureLease(
   });
 }
 
+/** Return a partially captured page to the queue before the worker's own
+ * bounded invocation ends. A stale lease cannot release a successor's work.
+ */
+export async function yieldErasureLease(
+  db: Db,
+  lease: ErasureLease,
+): Promise<boolean> {
+  return await db.transaction(async (tx) => {
+    await lockJob(tx, lease.jobId);
+    const [item] = await tx
+      .select({
+        kind: work.kind,
+        cursorDigest: work.cursorDigest,
+        captureComplete: work.captureComplete,
+      })
+      .from(work)
+      .where(liveLease(lease))
+      .for("update");
+    if (!item) return false;
+    const capturedPage =
+      item.kind === "inventory" &&
+      (item.cursorDigest !== lease.item.cursorDigest || item.captureComplete);
+    const [released] = await tx
+      .update(work)
+      .set({
+        leaseId: null,
+        leaseExpiresAt: null,
+        ...(capturedPage ? { attemptCount: 0 } : {}),
+      })
+      .where(liveLease(lease))
+      .returning({ id: work.id });
+    return released !== undefined;
+  });
+}
+
 export async function commitErasureInventoryPage(
   db: Db,
   lease: ErasureLease,

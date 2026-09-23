@@ -57,6 +57,7 @@ const foreignKeySchema = z
     { error: "foreign key column lists are not positional pairs" },
   );
 const rowCountSchema = z.object({ rows: z.number().int().nonnegative() });
+const presenceSchema = z.object({ present: z.boolean() });
 const columnTypeSchema = z.object({
   table_name: z.string().min(1),
   column_name: z.string().min(1),
@@ -699,13 +700,39 @@ export async function planRelationalErasure(
       planned.has(key.parent)
     );
   });
+  // Additive attribution columns do not identify rows written before the new
+  // producers shipped. Neither a recipient address nor a Feishu installation
+  // alone proves account ownership. Until every legacy row is attributed or
+  // separately remediated, block all completion claims rather than allowing a
+  // root/descendant sweep to silently ignore its NULL owner key.
+  const [legacyEmail] = await executeRawRows(
+    db,
+    sql`SELECT EXISTS (
+      SELECT 1 FROM email_outbox WHERE owner_user_id IS NULL
+    ) AS present`,
+    presenceSchema,
+  );
+  const [legacyFeishu] = await executeRawRows(
+    db,
+    sql`SELECT EXISTS (
+      SELECT 1 FROM feishu_chat_ingress WHERE sender_open_id IS NULL
+    ) AS present`,
+    presenceSchema,
+  );
+  const legacyUnattributed = [
+    ...(legacyEmail?.present ? ["email_outbox"] : []),
+    ...(legacyFeishu?.present ? ["feishu_chat_ingress"] : []),
+  ];
   return {
     order: order.map((table) => {
       return { table, owners: ownership.get(table) ?? [] };
     }),
     descendants: sweep.ordered,
     unreachableDescendants: [...unreachable, ...sweep.cycles].sort(),
-    unattributableDescendants: unattributable.sort(),
+    unattributableDescendants: [
+      ...unattributable,
+      ...legacyUnattributed,
+    ].sort(),
     unreachableRoots: unreachableRoots.sort(),
     rewritingEdges,
     cycles,

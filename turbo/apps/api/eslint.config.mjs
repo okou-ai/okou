@@ -688,6 +688,10 @@ export default [
       // The dormant persistence boundary has no HTTP ingress. Real PostgreSQL
       // sessions exercise first closure, lease recovery, and selector retirement.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      // The signed webhook can start the B1 capture, but no API can expire a
+      // claimed worker lease or inspect whether a resumed page kept its exact
+      // capture revision. This focused test exercises those durable DB edges.
+      "src/signals/services/__tests__/account-erasure-user-executor.test.ts",
       // D2's ownership coverage guard reads a schema and returns a verdict. Its
       // negative cases describe schemas this repository does not have — a new
       // uncovered table, an account identity appearing on an account-free one —
@@ -943,6 +947,10 @@ export default [
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // No production endpoint can construct B1's dormant jobs or DB races.
       "src/signals/services/__tests__/account-erasure.service.test.ts",
+      "src/signals/services/__tests__/account-erasure-user-executor.test.ts",
+      // Immutable Feishu ownership must be measured across admission,
+      // disconnect and rebind commits, which HTTP cannot interleave.
+      "src/signals/services/__tests__/account-erasure-relational-collector.test.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",

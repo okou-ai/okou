@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -273,34 +274,46 @@ export const enqueueCreditLowBalanceAlert$ = command(
     signal.throwIfAborted();
     const billingUrl = billingCreditsUrl();
 
-    await db.insert(emailOutbox).values(
-      deliverableRecipients.map((recipient) => {
-        const unsubscribeUrl = buildUnsubscribeUrl(recipient.userId);
-        const template = {
-          template: "credit-low-balance",
-          props: {
-            orgName,
-            remainingCredits: args.remainingCredits,
-            thresholdCredits: args.thresholdCredits,
-            billingUrl,
-            unsubscribeUrl,
-          },
-        } satisfies EmailTemplate;
-        return {
-          fromAddress: buildTeamFromAddress(),
-          toAddresses: recipient.email,
-          ccAddresses: null,
-          subject: CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
-          publicBrand: EMAIL_PUBLIC_BRAND,
-          replyTo: null,
-          headers: buildUnsubscribeHeaders(
-            buildOneClickUnsubscribeUrl(recipient.userId),
-          ),
-          template,
-          status: "pending",
-          attempts: 0,
-        } as const;
-      }),
-    );
+    await db.transaction(async (tx) => {
+      // Keep the admission locks in stable order and through the whole enqueue.
+      // A deletion closure that wins first cannot get a new outbox row.
+      for (const recipient of [...deliverableRecipients].sort((left, right) => {
+        return left.userId.localeCompare(right.userId);
+      })) {
+        await assertErasureSubjectWritable(tx, [
+          { subjectKind: "user", subjectId: recipient.userId },
+        ]);
+      }
+      await tx.insert(emailOutbox).values(
+        deliverableRecipients.map((recipient) => {
+          const unsubscribeUrl = buildUnsubscribeUrl(recipient.userId);
+          const template = {
+            template: "credit-low-balance",
+            props: {
+              orgName,
+              remainingCredits: args.remainingCredits,
+              thresholdCredits: args.thresholdCredits,
+              billingUrl,
+              unsubscribeUrl,
+            },
+          } satisfies EmailTemplate;
+          return {
+            ownerUserId: recipient.userId,
+            fromAddress: buildTeamFromAddress(),
+            toAddresses: recipient.email,
+            ccAddresses: null,
+            subject: CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
+            publicBrand: EMAIL_PUBLIC_BRAND,
+            replyTo: null,
+            headers: buildUnsubscribeHeaders(
+              buildOneClickUnsubscribeUrl(recipient.userId),
+            ),
+            template,
+            status: "pending",
+            attempts: 0,
+          } as const;
+        }),
+      );
+    });
   },
 );

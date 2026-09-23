@@ -328,14 +328,11 @@ export const DESCENDANT_REACH: Readonly<
   ],
 };
 
-/** A descendant whose account attribution does not exist in the schema.
+/** A descendant whose persisted data cannot prove a stable account owner.
  *
- * This is not a relaxation. The rows hold account data, no column and no
- * reachable join identifies whose, and inventing one would either leave the
- * account's rows behind or delete another account's. Declaring the gap keeps
- * `assertRelationalSweepComplete` refusing a completion claim, names the
- * schema change that would close it, and stops the table from looking merely
- * forgotten.
+ * A provider identity alone can change account bindings after admission.
+ * Declaring the gap keeps `assertRelationalSweepComplete` refusing a completion
+ * claim rather than guessing whose payload to erase.
  */
 export interface UnattributableDescendant {
   readonly basis: string;
@@ -344,20 +341,7 @@ export interface UnattributableDescendant {
 
 export const UNATTRIBUTABLE_DESCENDANTS: Readonly<
   Record<string, UnattributableDescendant>
-> = {
-  email_outbox: {
-    basis:
-      "`source_run_id` and `source_workflow_automation_id` are the only producer references, they are nullable, and the check constraint makes them all-or-nothing. The credit low-balance alert, both user-export writers and the Morning Brief delivery writer set neither, so those rows carry a recipient address and a rendered message body with no reachable owner.",
-    remedy:
-      "An additive account column written by every producer. A join cannot substitute for it: a recipient address is not an account identity.",
-  },
-  feishu_chat_ingress: {
-    basis:
-      "The row is keyed by the organization installation and the provider event id, and the only account identity is the sender inside the opaque `payload` text. Sweeping by `installation_id` would delete every other member's ingress in the same installation.",
-    remedy:
-      "An additive sender or connection column written at admission, joinable to `feishu_org_connections` within the installation.",
-  },
-};
+> = {};
 
 /** Vocabulary columns that are deliberately not their table's sweep key.
  *
@@ -611,19 +595,15 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   desktop_auth_handoff_codes: { coverage: "user_root", ownership: ["user_id"] },
   device_codes: { coverage: "user_root", ownership: ["user_id"] },
-  // Declared unattributable below: no column names the account, and the two
-  // producer references are nullable. `morning_brief_deliveries` was listed as
-  // a parent while no column ever carried a delivery id; Morning Brief email
-  // is linked by `source_workflow_automation_id` like any other automation.
   email_outbox: {
-    coverage: "user_descendant",
-    parents: ["agent_runs", "workflow_automations"],
+    coverage: "user_root",
+    ownership: ["owner_user_id"],
   },
   email_suppressions: { coverage: "not_account_scoped" },
   export_jobs: { coverage: "user_root", ownership: ["user_id"] },
   feishu_chat_ingress: {
-    coverage: "user_descendant",
-    parents: ["feishu_org_connections"],
+    coverage: "user_root",
+    ownership: ["owner_user_id"],
   },
   feishu_chat_thread_routes: { coverage: "user_root", ownership: ["user_id"] },
   feishu_org_connections: { coverage: "user_root", ownership: ["user_id"] },

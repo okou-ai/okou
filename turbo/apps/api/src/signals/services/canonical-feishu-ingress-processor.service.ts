@@ -154,6 +154,8 @@ async function loadClaimedIngress(db: Db, ingressId: string) {
       ingressId: feishuChatIngress.id,
       installationId: feishuChatIngress.installationId,
       payload: feishuChatIngress.payload,
+      senderOpenId: feishuChatIngress.senderOpenId,
+      ingressOwnerUserId: feishuChatIngress.ownerUserId,
       reactionId: feishuChatIngress.reactionId,
       createdAt: feishuChatIngress.createdAt,
       orgId: feishuOrgInstallations.orgId,
@@ -197,7 +199,8 @@ function parseMatchingMessage(
   );
   if (
     message.installationId !== ingress.installationId ||
-    message.appId !== ingress.appId
+    message.appId !== ingress.appId ||
+    (ingress.senderOpenId !== null && message.openId !== ingress.senderOpenId)
   ) {
     throw new Error(
       "Canonical Feishu ingress payload does not match installation",
@@ -621,7 +624,13 @@ async function loadFeishuIngressDispatchContext(
     publicBrand,
   };
   await markFeishuMessageReceived({ db, installation, message }, signal);
-  const connection = await loadConnection(db, ingress.orgId, message);
+  const current = await loadConnection(db, ingress.orgId, message);
+  const connection =
+    ingress.senderOpenId === null ||
+    (ingress.ingressOwnerUserId !== null &&
+      current?.userId === ingress.ingressOwnerUserId)
+      ? current
+      : undefined;
   signal.throwIfAborted();
   return { ingress, message, installation, connection };
 }
@@ -650,6 +659,14 @@ const processClaimedIngress$ = command(
       return null;
     }
     if (!connection) {
+      if (ingress.ingressOwnerUserId !== null) {
+        // The sender disconnected or changed account after admission. Keep
+        // the original attribution, but never dispatch its queued payload
+        // under the new binding or send a reconnection prompt during erasure.
+        await markIngressProcessed(args.db, ingress.ingressId);
+        signal.throwIfAborted();
+        return null;
+      }
       await finishUnconnectedFeishuIngress(
         {
           db: args.db,

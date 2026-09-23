@@ -311,6 +311,7 @@ async function admitInboundFeishuMessage(
     installationId: args.message.installationId,
     eventId: args.message.eventId,
     payload: JSON.stringify(args.message),
+    senderOpenId: args.message.openId,
     publicBrand: args.publicBrand,
     currentTime: admittedAt,
   });

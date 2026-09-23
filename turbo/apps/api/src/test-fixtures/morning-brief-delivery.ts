@@ -241,6 +241,7 @@ export async function seedUnrelatedEmailIntent(
   const [row] = await db()
     .insert(emailOutbox)
     .values({
+      ownerUserId: "unrelated-email-fixture",
       fromAddress: "Okou <okou@mail.okou.test>",
       toAddresses: toAddress,
       subject: "unrelated",

@@ -317,13 +317,15 @@ describe("account erasure ownership coverage guard", () => {
         expect(ACCOUNT_OWNERSHIP_INVENTORY[parent]?.coverage).toBe("user_root");
       }
     }
-    // Mail arrives from a run and from an automation, and Morning Brief
-    // delivery is linked through the automation like any other: no column
-    // ever carried a delivery id, so listing one as a parent described a
-    // sweep that could not be written.
+    // Every current producer now persists the recipient account at enqueue.
+    // A recipient address or a source run is not a durable owner identity.
     expect(ACCOUNT_OWNERSHIP_INVENTORY.email_outbox).toStrictEqual({
-      coverage: "user_descendant",
-      parents: ["agent_runs", "workflow_automations"],
+      coverage: "user_root",
+      ownership: ["owner_user_id"],
+    });
+    expect(ACCOUNT_OWNERSHIP_INVENTORY.feishu_chat_ingress).toStrictEqual({
+      coverage: "user_root",
+      ownership: ["owner_user_id"],
     });
     // The thread composer draft now also lives in its own child row. It holds
     // account content and names no account, so it has to be reached through

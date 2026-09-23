@@ -6,6 +6,7 @@ import {
 import type { AgentRunOfficialWorkflowProvenance } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { officialAutomationResultEmailClaims } from "@okouai/db/schema/official-automation-result-email-claim";
 import { users } from "@okouai/db/schema/user";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
@@ -230,6 +231,9 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
     signal,
   );
   const enqueued = await db.transaction(async (tx) => {
+    await assertErasureSubjectWritable(tx, [
+      { subjectKind: "user", subjectId: run.userId },
+    ]);
     // Linearize the final preference decision with enqueue. Both explicit
     // unsubscribe and complaint handling upsert this same row, so their write
     // locks serialize with this lock before the durable source is claimed.
@@ -272,6 +276,7 @@ export async function handleWorkflowAutomationResultEmailInternalCallback(
 
     await tx.insert(emailOutbox).values({
       id: claim.emailOutboxId,
+      ownerUserId: run.userId,
       fromAddress: buildFromAddress(),
       toAddresses: userEmail,
       subject: resultEmailSubject(workflowLabel),

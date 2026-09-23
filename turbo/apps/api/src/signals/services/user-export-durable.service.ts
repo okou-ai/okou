@@ -10,6 +10,7 @@ import {
   userExportParts,
 } from "@okouai/db/schema/user-export-entry";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { assertErasureSubjectWritable } from "@okouai/db/operations/account-erasure";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { env } from "../../lib/env";
@@ -868,6 +869,9 @@ const notifyStep$ = command(
     );
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
+      await assertErasureSubjectWritable(tx, [
+        { subjectKind: "user", subjectId: job.userId },
+      ]);
       if (!(await completeBackgroundJob(tx, { job }, signal))) {
         return false;
       }
