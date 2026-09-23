@@ -56,17 +56,22 @@ export const connectorAgentAuthorizations$ = computed(
       get(connectorAgentAccess$),
     ]);
     const slugsByAgent = new Map<string, ConnectorSlug[]>();
+    const visibleAgentIds = new Set(access.visibleAgentIds);
     for (const { agentId, connectorSlug } of access.builtin) {
       const slugs = slugsByAgent.get(agentId) ?? [];
       slugs.push(connectorSlug);
       slugsByAgent.set(agentId, slugs);
     }
-    return allAgents.map((agent) => {
-      return {
-        agent,
-        enabledConnectorSlugs: slugsByAgent.get(agent.agentId) ?? [],
-      };
-    });
+    return allAgents
+      .filter((agent) => {
+        return visibleAgentIds.has(agent.agentId);
+      })
+      .map((agent) => {
+        return {
+          agent,
+          enabledConnectorSlugs: slugsByAgent.get(agent.agentId) ?? [],
+        };
+      });
   },
 );
 

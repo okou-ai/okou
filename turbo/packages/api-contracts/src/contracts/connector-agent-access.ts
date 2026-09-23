@@ -7,6 +7,7 @@ import { apiErrorSchema } from "./errors";
 const c = initContract();
 
 export const connectorAgentAccessSchema = z.object({
+  visibleAgentIds: z.array(z.uuid()),
   builtin: z.array(
     z.object({
       connectorSlug: connectorSlugSchema,

@@ -56,6 +56,7 @@ test("Toggle one agent with one write and one bulk refresh", async () => {
   context.mocks.api(connectorAgentAccessContract.get, ({ respond }) => {
     bulkReads += 1;
     return respond(200, {
+      visibleAgentIds: [researchId, supportId],
       builtin: [...authorized].map((agentId) => {
         return {
           agentId,

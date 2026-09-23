@@ -116,6 +116,7 @@ export const customConnectorAgentAuthorizations$ = computed(
       string,
       AgentCustomConnectorGrants["grants"]
     >();
+    const visibleAgentIds = new Set(access.visibleAgentIds);
     for (const { agentId, connectorId, permissionNames } of access.custom) {
       const grants = grantsByAgent.get(agentId) ?? [];
       grantsByAgent.set(agentId, [
@@ -123,12 +124,16 @@ export const customConnectorAgentAuthorizations$ = computed(
         { customConnectorId: connectorId, permissionNames },
       ]);
     }
-    return allAgents.map((agent) => {
-      return {
-        agent,
-        access: { grants: grantsByAgent.get(agent.agentId) ?? [] },
-      };
-    });
+    return allAgents
+      .filter((agent) => {
+        return visibleAgentIds.has(agent.agentId);
+      })
+      .map((agent) => {
+        return {
+          agent,
+          access: { grants: grantsByAgent.get(agent.agentId) ?? [] },
+        };
+      });
   },
 );
 

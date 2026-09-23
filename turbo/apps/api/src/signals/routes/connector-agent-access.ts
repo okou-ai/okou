@@ -35,7 +35,11 @@ const getConnectorAgentAccess$ = command(
       eq(agents.visibility, "public"),
       eq(agents.owner, auth.userId),
     );
-    const [builtinRows, customRows] = await Promise.all([
+    const [visibleAgents, builtinRows, customRows] = await Promise.all([
+      db
+        .select({ agentId: agents.id })
+        .from(agents)
+        .where(and(eq(agents.orgId, auth.orgId), visibleAgent)),
       query.customConnectorId
         ? Promise.resolve([])
         : db
@@ -129,6 +133,9 @@ const getConnectorAgentAccess$ = command(
     return {
       status: 200 as const,
       body: {
+        visibleAgentIds: visibleAgents.map((agent) => {
+          return agent.agentId;
+        }),
         builtin: builtinRows
           .filter((row) => {
             return availableSlugs.has(row.connectorSlug);

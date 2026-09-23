@@ -50,6 +50,13 @@ export const connectorAgentAccess$ = computed(
       }),
     );
     return {
+      visibleAgentIds: rows
+        .filter(({ builtin }) => {
+          return builtin.status === 200;
+        })
+        .map(({ agentId }) => {
+          return agentId;
+        }),
       builtin: rows.flatMap(({ agentId, builtin }) => {
         return builtin.status === 200
           ? builtin.body.enabledConnectorSlugs.map((connectorSlug) => {

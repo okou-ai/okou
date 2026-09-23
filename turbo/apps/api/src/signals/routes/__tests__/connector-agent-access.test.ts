@@ -46,6 +46,9 @@ describe("GET /api/connectors/agent-access", () => {
     );
 
     const all = await accept(access.get({ query: {}, headers }), [200]);
+    expect(new Set(all.body.visibleAgentIds)).toStrictEqual(
+      new Set([first.body.agentId, second.body.agentId]),
+    );
     expect(all.body.custom).toStrictEqual([]);
     expect(
       new Set(
@@ -88,6 +91,7 @@ describe("GET /api/connectors/agent-access", () => {
       access.get({ query: { builtinSlug: "github" }, headers }),
       [200],
     );
+    expect(visible.body.visibleAgentIds).toStrictEqual([first.body.agentId]);
     expect(visible.body.builtin).toStrictEqual([
       { connectorSlug: "github", agentId: first.body.agentId },
     ]);
