@@ -151,9 +151,9 @@ describe("isFeatureEnabled", () => {
         }),
       ).toBe(false);
     }
-    expect(getFeatureSwitchMetadata()[FeatureSwitchKey.PiLoop]?.rolloutStage).toBe(
-      "released",
-    );
+    expect(
+      getFeatureSwitchMetadata()[FeatureSwitchKey.PiLoop]?.rolloutStage,
+    ).toBe("released");
   });
 
   it("keeps chat thread archiving disabled by default and honors explicit overrides", () => {
