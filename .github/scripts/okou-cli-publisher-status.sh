@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Report whether the workflow that publishes a commit's CLI artifact can still
-# publish it. An absent or active run is not evidence that publication is over.
+# Report whether a commit's CLI artifact may still become available. A failed
+# job may have uploaded it, while only a skipped job proves its steps never ran.
 set -euo pipefail
 
 : "${ARTIFACT_SHA:?ARTIFACT_SHA is required}"

@@ -13,9 +13,10 @@
 #                         anything else emits found=false and exits 0, which
 #                         builds an image without an installed CLI (legacy npx
 #                         launch) for commits that publish no CLI artifact.
-#   CHECK_PUBLISHER_STATUS  "true" stops waiting early if the matching Turbo
-#                           or Staging deploy-cli job cannot publish. Requires
-#                           GH_TOKEN, GITHUB_REPOSITORY, GITHUB_EVENT_NAME.
+#   CHECK_PUBLISHER_STATUS  "true" stops waiting early when all matching Turbo
+#                           or Staging deploy-cli jobs were skipped or absent
+#                           from completed runs. Requires GH_TOKEN,
+#                           GITHUB_REPOSITORY, GITHUB_EVENT_NAME.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
