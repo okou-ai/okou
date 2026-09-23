@@ -22,6 +22,7 @@ jq -e '.provider.type == "claude-code-oauth-token"' \
 policies=$(curl -fsS "${headers[@]}" "${api_url}/api/model-policies")
 policy_payload=$(jq -c '
     {
+      revision,
       policies: (
         [.policies[] |
           select(.model != "claude-sonnet-4-6") |
@@ -52,7 +53,7 @@ curl -fsS "${headers[@]}" \
 
 curl -fsS "${headers[@]}" \
     -X POST \
-    -d '{"switches":{"_realAgentInPreview":false}}' \
+    -d '{"switches":{"_realAgentInPreview":false,"piLoop":false}}' \
     "${api_url}/api/feature-switches" \
-    | jq -e '.effectiveSwitches._realAgentInPreview == false' \
+    | jq -e '.effectiveSwitches._realAgentInPreview == false and .effectiveSwitches.piLoop == false' \
     >/dev/null

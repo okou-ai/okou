@@ -92,16 +92,13 @@ function Sparkles() {
         return (
           <div
             key={key}
-            className="absolute rounded-full opacity-0 motion-safe:animate-avatar-firework"
+            className="absolute left-1/2 top-[10%] rounded-full opacity-0 [transform:translate(-50%,-50%)_scale(1)] motion-safe:animate-avatar-firework"
             style={
               {
                 width: p.size,
                 height: p.size,
                 backgroundColor: p.color,
-                left: "50%",
-                top: "10%",
                 animationDelay: `${p.delay}s`,
-                transform: "translate(-50%, -50%) scale(1)",
                 "--fx": `${p.x}px`,
                 "--fy": `${p.y}px`,
               } as React.CSSProperties
@@ -219,7 +216,7 @@ function AvatarPreviewWithShuffle() {
         <AvatarSvgPreview config={config} size={96} />
         {previewRevision > 0 && <Sparkles />}
       </div>
-      <TooltipProvider delayDuration={800} skipDelayDuration={0}>
+      <TooltipProvider delay={800} timeout={0}>
         <Tooltip>
           <TooltipTrigger
             render={
@@ -476,7 +473,7 @@ export function AvatarMaker({
       {trigger ? (
         trigger(openMaker)
       ) : (
-        <TooltipProvider delayDuration={200}>
+        <TooltipProvider delay={200}>
           <Tooltip>
             <TooltipTrigger
               render={

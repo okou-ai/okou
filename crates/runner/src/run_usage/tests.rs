@@ -2,30 +2,18 @@ use super::*;
 use serde_json::{json, to_value};
 
 #[test]
-fn runtime_installs_only_for_a_captured_enabled_switch() {
+fn runtime_installs_for_every_context() {
     let run_id = RunId::new_v4();
     let mut context = crate::test_fixtures::execution_context::execution_context_for_test(run_id);
     let (proxy, _crash_rx) = crate::proxy::MitmProxy::noop();
     let runtime = Runtime::new(MitmUsageHandle::from(&proxy));
 
-    assert!(runtime.for_context(&context).is_none());
-    context.feature_flags = Some(std::collections::HashMap::from([(
-        FEATURE_SWITCH.to_owned(),
-        false,
-    )]));
-    assert!(runtime.for_context(&context).is_none());
-
-    context
-        .feature_flags
-        .as_mut()
-        .unwrap()
-        .insert(FEATURE_SWITCH.to_owned(), true);
     context.pi_launch_config = Some(launch(json!({
         "schemaVersion": 1,
         "state": "no-inference",
         "sampledAt": 0
     })));
-    let owner = runtime.for_context(&context).unwrap();
+    let owner = runtime.for_context(&context);
     assert_eq!(owner.run_id, run_id);
     assert_eq!(owner.api, ApiFirstTurnSource::NoInference { sampled_at: 0 });
 }

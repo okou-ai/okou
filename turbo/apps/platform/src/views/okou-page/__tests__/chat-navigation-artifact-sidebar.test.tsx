@@ -163,6 +163,13 @@ function expectOfficeViewerUrl(frame: HTMLElement, sourceUrl: string): void {
   expect(parsed.searchParams.get("src")).toBe(sourceUrl);
 }
 
+function expectOfficeViewerFocusable(frame: HTMLElement): void {
+  // JSDOM does not transfer focus into an iframe through keyboard or pointer
+  // simulation, so exercise the iframe's browser focus boundary directly.
+  frame.focus();
+  expect(frame).toHaveFocus();
+}
+
 warmMermaidParser();
 
 test("Keep attachment cards closed until the user selects one", async () => {
@@ -256,12 +263,14 @@ test("Preview a DOCX attachment in the dialog and split view", async () => {
   const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
   expect(dialogFrame).toBeVisible();
   expectOfficeViewerUrl(dialogFrame, url);
+  expectOfficeViewerFocusable(dialogFrame);
   click(buttonNamed("Open in split view", dialog));
 
   const splitView = await screen.findByTestId("artifact-sidebar");
   const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
   expect(splitFrame).toBeVisible();
   expectOfficeViewerUrl(splitFrame, url);
+  expectOfficeViewerFocusable(splitFrame);
 });
 
 test("Preview a PPTX attachment in the dialog and split view", async () => {
@@ -277,12 +286,14 @@ test("Preview a PPTX attachment in the dialog and split view", async () => {
   const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
   expect(dialogFrame).toBeVisible();
   expectOfficeViewerUrl(dialogFrame, url);
+  expectOfficeViewerFocusable(dialogFrame);
   click(buttonNamed("Open in split view", dialog));
 
   const splitView = await screen.findByTestId("artifact-sidebar");
   const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
   expect(splitFrame).toBeVisible();
   expectOfficeViewerUrl(splitFrame, url);
+  expectOfficeViewerFocusable(splitFrame);
 });
 
 test("Preview an XLSX attachment in the dialog and split view", async () => {

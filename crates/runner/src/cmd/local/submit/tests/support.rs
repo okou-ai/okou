@@ -4,8 +4,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use super::super::{SubmitArgs, SubmitQueueEntry, run_submit_with_home};
-use crate::local_queue::{self, JobRequest, JobResponse};
 use runner_host::paths::HomePaths;
+use runner_provider::local_queue::{self, JobRequest, JobResponse};
 use runner_types::ids::RunId;
 
 pub(super) const TEST_SUBMIT_RENDEZVOUS_TIMEOUT: Duration = Duration::from_secs(5);

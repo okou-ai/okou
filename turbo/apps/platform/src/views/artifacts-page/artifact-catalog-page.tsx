@@ -44,7 +44,8 @@ import {
 // Distance from the bottom of the scroll container at which the next page is
 // requested. The signal layer deduplicates repeated requests for one cursor.
 const ARTIFACT_AUTO_LOAD_VIEWPORT_COUNT = 2;
-const ARTIFACT_GRID_MIN_CARD_WIDTH_PX = 292;
+const ARTIFACT_GRID_CLASS_NAME =
+  "grid grid-cols-[repeat(auto-fit,minmax(min(100%,292px),1fr))] gap-3";
 
 const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "presentation",
@@ -146,15 +147,15 @@ function ArtifactCatalogFallbackPreview({
   const kindIconLabel = useArtifactKindIconLabel(artifact.kind);
   const showsFileFormat = artifact.kind === "file";
   return (
-    <div
+    <span
       className={cn(
         "relative flex h-full w-full items-center justify-center overflow-hidden bg-gradient-to-br p-6",
         getFilePreviewAccentClass(artifact.title),
       )}
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.45),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]" />
-      <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/10 to-transparent" />
-      <div
+      <span className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.45),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]" />
+      <span className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/10 to-transparent" />
+      <span
         role={showsFileFormat ? undefined : "img"}
         aria-label={showsFileFormat ? undefined : kindIconLabel}
         data-testid={
@@ -172,8 +173,8 @@ function ArtifactCatalogFallbackPreview({
         ) : (
           artifactKindIcon(artifact.kind, 30)
         )}
-      </div>
-    </div>
+      </span>
+    </span>
   );
 }
 
@@ -229,10 +230,9 @@ function ArtifactCatalogCard({
     sourceVideo === null &&
     (thumbnailUrl === null || thumbnailFailed);
   return (
-    <article
+    <button
       ref={scrollIntoView ? scrollArtifactCardIntoViewRef : undefined}
-      role="button"
-      tabIndex={0}
+      type="button"
       data-artifact-id={artifact.id}
       aria-label={t(
         ($) => {
@@ -245,16 +245,9 @@ function ArtifactCatalogCard({
       onClick={() => {
         onOpen(artifact.id);
       }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") {
-          return;
-        }
-        event.preventDefault();
-        onOpen(artifact.id);
-      }}
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card outline-none transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
-      <div
+      <span
         data-testid="artifact-catalog-card-preview"
         className="relative aspect-[16/10] w-full shrink-0 overflow-hidden bg-background"
       >
@@ -270,16 +263,16 @@ function ArtifactCatalogCard({
           fallbackPreview
         )}
         {kindCoverShown ? null : <ArtifactKindIcon kind={artifact.kind} />}
-      </div>
-      <div className="flex min-w-0 shrink-0 items-center border-t border-border p-3">
-        <h2
+      </span>
+      <span className="flex min-w-0 shrink-0 items-center border-t border-border p-3">
+        <span
           title={artifact.title}
           className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground"
         >
           {artifact.title}
-        </h2>
-      </div>
-    </article>
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -356,10 +349,7 @@ export function ArtifactCatalogGrid({
   return (
     <div
       data-testid="artifact-catalog-grid"
-      className="grid gap-3"
-      style={{
-        gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${String(ARTIFACT_GRID_MIN_CARD_WIDTH_PX)}px), 1fr))`,
-      }}
+      className={ARTIFACT_GRID_CLASS_NAME}
     >
       {artifacts.map((artifact) => {
         return (
@@ -404,13 +394,7 @@ export function ArtifactCatalogSkeleton({
     );
   }
   return (
-    <div
-      className="grid gap-3"
-      aria-label={loadingLabel}
-      style={{
-        gridTemplateColumns: `repeat(auto-fit, minmax(min(100%, ${String(ARTIFACT_GRID_MIN_CARD_WIDTH_PX)}px), 1fr))`,
-      }}
-    >
+    <div className={ARTIFACT_GRID_CLASS_NAME} aria-label={loadingLabel}>
       {Array.from({ length: 8 }, (_, index) => {
         return (
           <div
@@ -437,9 +421,14 @@ export function ArtifactCatalogError({ onRetry }: { onRetry: () => void }) {
   const { t } = useTranslation();
   return (
     <Alert variant="destructive">
-      <AlertTriangle size={16} aria-hidden />
+      {/* The icon rides the message line rather than the Alert's absolute slot:
+          that slot is anchored for a single line of text, and the button in
+          this description makes the row taller than the anchor accounts for.
+          Inline also keeps the icon with the text once the sidebar narrows
+          enough to wrap the button onto its own line. */}
       <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-        <span>
+        <span className="flex items-center gap-3">
+          <AlertTriangle size={16} className="shrink-0" aria-hidden />
           {t(($) => {
             return $.artifacts.catalog.error;
           })}

@@ -665,12 +665,22 @@ function OAuthDeviceAuthStartOptionsForm({
               {option.label}
             </label>
             <Select
+              items={option.options}
               value={
                 deviceAuthStartOptionValue(values, option.id) ??
                 option.defaultValue ??
-                undefined
+                null
               }
-              onValueChange={(value) => {
+              onValueChange={(value, details) => {
+                if (
+                  value === null ||
+                  !option.options.some((choice) => {
+                    return choice.value === value;
+                  })
+                ) {
+                  details.cancel();
+                  return;
+                }
                 setValue(option.id, value);
               }}
             >

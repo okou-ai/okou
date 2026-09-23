@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { ResetPersonalModelProviderSubscriptionUsageResponse } from "@okouai/api-contracts/contracts/personal-model-providers";
+
 import type { SubscriptionUsageMetadata } from "./model-provider-subscription-usage.types";
 
 const CLAUDE_CODE_API_BASE_URL = "https://api.anthropic.com";
@@ -7,6 +9,21 @@ const CLAUDE_CODE_OAUTH_BETA = "oauth-2025-04-20";
 const CLAUDE_CODE_USER_AGENT = "claude-code/2.1.161";
 const FIVE_HOUR_SECONDS = 5 * 60 * 60;
 const WEEK_SECONDS = 7 * 24 * 60 * 60;
+
+// Manual rate-limit resets are granted per program. `cedar_ember` is the grant
+// program the current Claude Code client redeems against; the usage endpoint
+// only returns its block when asked for it, so the reset-credit read is a
+// separate query rather than a field on the plain usage body.
+const CLAUDE_CODE_RESET_PROGRAM = "cedar_ember";
+const CLAUDE_CODE_RESET_USAGE_PATH =
+  "/api/oauth/usage?cedar_ember=1&skip_spend=1";
+// Upstream rejects identifiers outside these shapes, so a malformed grant is
+// dropped before it can spend the account's redeem attempt on a failed call.
+const CLAUDE_CODE_GRANT_ID_PATTERN = /^[a-z0-9_-]{1,40}$/;
+const CLAUDE_CODE_REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+type SubscriptionResetOutcome =
+  ResetPersonalModelProviderSubscriptionUsageResponse["outcome"];
 
 const usageWindowSchema = z
   .object({
@@ -33,9 +50,45 @@ const usageRateLimitsSchema = z
   })
   .passthrough();
 
+// Grants are validated one at a time: upstream may add a grant shape this
+// service does not model yet, and dropping that single row keeps the remaining
+// reset credits readable instead of failing the whole account's usage read.
+const resetGrantSchema = z
+  .object({
+    id: z.string(),
+    // Upstream always states the remaining count; a grant without it is
+    // malformed and is dropped rather than counted as spent.
+    resets_left: z.number().int().nonnegative(),
+    ends_at: z.string().nullable().optional(),
+    paused: z.boolean().nullable().optional(),
+  })
+  .passthrough();
+
+const resetProgramSchema = z
+  .object({
+    eligible: z.boolean().nullable().optional(),
+    grants: z.array(z.unknown()).nullable().optional(),
+    next_grant_id: z.string().nullable().optional(),
+  })
+  .passthrough();
+
 const usageResponseSchema = usageRateLimitsSchema
   .extend({
     rate_limits: usageRateLimitsSchema.nullable().optional(),
+    [CLAUDE_CODE_RESET_PROGRAM]: resetProgramSchema.nullable().optional(),
+  })
+  .passthrough();
+
+const resetResponseSchema = z
+  .object({
+    result: z.enum([
+      "reset",
+      "already_used",
+      "not_limited",
+      "cooldown",
+      "ineligible",
+      "unavailable",
+    ]),
   })
   .passthrough();
 
@@ -79,6 +132,16 @@ interface ClaudeCodeSubscriptionMetadata {
   readonly subscriptionResetPeriod?: string | null;
   readonly subscriptionNextResetAt?: Date | null;
   readonly subscriptionUsage?: SubscriptionUsageMetadata | null;
+  readonly subscriptionResetCredits?: number | null;
+  readonly subscriptionResetCreditsNextExpiresAt?: Date | null;
+}
+
+interface ClaudeCodeResetGrants {
+  /** Redeemable resets across every grant, or null when upstream said nothing. */
+  readonly credits: number | null;
+  readonly nextExpiresAt: Date | null;
+  /** The grant upstream wants redeemed next; only it may be sent to the API. */
+  readonly nextGrantId: string | null;
 }
 
 function nonEmptyString(value: string | null | undefined): string | null {
@@ -290,15 +353,60 @@ function resetMetadataFromUsage(
   return {};
 }
 
-async function fetchClaudeCodeJson(
+function resetGrantsFromUsage(usage: UsageResponse): ClaudeCodeResetGrants {
+  const program = usage[CLAUDE_CODE_RESET_PROGRAM];
+  if (!program) {
+    return { credits: null, nextExpiresAt: null, nextGrantId: null };
+  }
+
+  const grants = (program.grants ?? []).flatMap((candidate) => {
+    const parsed = resetGrantSchema.safeParse(candidate);
+    return parsed.success ? [parsed.data] : [];
+  });
+
+  // A paused grant still exists upstream but cannot be redeemed, so it is left
+  // out of the count the UI offers to spend.
+  const redeemable = grants.filter((grant) => {
+    return !grant.paused && grant.resets_left > 0;
+  });
+  const credits = redeemable.reduce((total, grant) => {
+    return total + grant.resets_left;
+  }, 0);
+
+  const expiries = redeemable
+    .flatMap((grant) => {
+      const expiresAt = nextResetAt(grant.ends_at);
+      return expiresAt ? [expiresAt.getTime()] : [];
+    })
+    .sort((left, right) => {
+      return left - right;
+    });
+
+  const nextGrantId = nonEmptyString(program.next_grant_id);
+  return {
+    credits,
+    nextExpiresAt: expiries[0] === undefined ? null : new Date(expiries[0]),
+    nextGrantId:
+      nextGrantId &&
+      CLAUDE_CODE_GRANT_ID_PATTERN.test(nextGrantId) &&
+      redeemable.some((grant) => {
+        return grant.id === nextGrantId;
+      })
+        ? nextGrantId
+        : null,
+  };
+}
+
+async function claudeCodeApiResponse(
   args: {
     readonly accessToken: string;
     readonly path: string;
+    readonly body?: unknown;
   },
   signal: AbortSignal,
-): Promise<unknown> {
+): Promise<Response> {
   const response = await fetch(`${CLAUDE_CODE_API_BASE_URL}${args.path}`, {
-    method: "GET",
+    method: args.body === undefined ? "GET" : "POST",
     headers: {
       accept: "application/json, text/plain, */*",
       authorization: `Bearer ${args.accessToken}`,
@@ -306,6 +414,7 @@ async function fetchClaudeCodeJson(
       "content-type": "application/json",
       "user-agent": CLAUDE_CODE_USER_AGENT,
     },
+    ...(args.body === undefined ? {} : { body: JSON.stringify(args.body) }),
     signal,
   });
 
@@ -315,6 +424,17 @@ async function fetchClaudeCodeJson(
     );
   }
 
+  return response;
+}
+
+async function fetchClaudeCodeJson(
+  args: {
+    readonly accessToken: string;
+    readonly path: string;
+  },
+  signal: AbortSignal,
+): Promise<unknown> {
+  const response = await claudeCodeApiResponse(args, signal);
   return await response.json();
 }
 
@@ -353,22 +473,20 @@ export async function fetchClaudeCodeProfileMetadata(
   };
 }
 
-async function fetchUsageMetadata(
+async function fetchUsageResponse(
   args: {
     readonly accessToken: string;
+    readonly includeResetGrants: boolean;
   },
   signal: AbortSignal,
-): Promise<
-  Pick<
-    ClaudeCodeSubscriptionMetadata,
-    "subscriptionResetPeriod" | "subscriptionNextResetAt" | "subscriptionUsage"
-  >
-> {
+): Promise<UsageResponse> {
   const parsed = usageResponseSchema.safeParse(
     await fetchClaudeCodeJson(
       {
         accessToken: args.accessToken,
-        path: "/api/oauth/usage",
+        path: args.includeResetGrants
+          ? CLAUDE_CODE_RESET_USAGE_PATH
+          : "/api/oauth/usage",
       },
       signal,
     ),
@@ -376,11 +494,137 @@ async function fetchUsageMetadata(
   if (!parsed.success) {
     throw new Error("Claude Code usage response shape unrecognized");
   }
-  const subscriptionUsage = subscriptionUsageFromClaudeUsage(parsed.data);
+  return parsed.data;
+}
+
+async function fetchUsageMetadata(
+  args: {
+    readonly accessToken: string;
+    readonly includeResetGrants: boolean;
+  },
+  signal: AbortSignal,
+): Promise<
+  Pick<
+    ClaudeCodeSubscriptionMetadata,
+    | "subscriptionResetPeriod"
+    | "subscriptionNextResetAt"
+    | "subscriptionUsage"
+    | "subscriptionResetCredits"
+    | "subscriptionResetCreditsNextExpiresAt"
+  >
+> {
+  const usage = await fetchUsageResponse(args, signal);
+  const subscriptionUsage = subscriptionUsageFromClaudeUsage(usage);
+  const grants = args.includeResetGrants
+    ? resetGrantsFromUsage(usage)
+    : undefined;
   return {
-    ...resetMetadataFromUsage(parsed.data),
+    ...resetMetadataFromUsage(usage),
     ...(subscriptionUsage ? { subscriptionUsage } : {}),
+    ...(grants
+      ? {
+          subscriptionResetCredits: grants.credits,
+          subscriptionResetCreditsNextExpiresAt: grants.nextExpiresAt,
+        }
+      : {}),
   };
+}
+
+async function fetchResetOrganizationUuid(
+  args: {
+    readonly accessToken: string;
+  },
+  signal: AbortSignal,
+): Promise<string | null> {
+  const parsed = profileResponseSchema.safeParse(
+    await fetchClaudeCodeJson(
+      {
+        accessToken: args.accessToken,
+        path: "/api/oauth/profile",
+      },
+      signal,
+    ),
+  );
+  if (!parsed.success) {
+    throw new Error("Claude Code profile response shape unrecognized");
+  }
+  return nonEmptyString(parsed.data.organization?.uuid);
+}
+
+function resetOutcome(
+  result: z.infer<typeof resetResponseSchema>["result"],
+): SubscriptionResetOutcome {
+  switch (result) {
+    case "reset": {
+      return "reset";
+    }
+    case "already_used": {
+      return "alreadyRedeemed";
+    }
+    case "not_limited": {
+      return "nothingToReset";
+    }
+    // A cooldown, a withdrawn grant, and an unavailable program all leave the
+    // account with nothing it can redeem right now, which is what the caller
+    // reports as having no credit.
+    case "cooldown":
+    case "ineligible":
+    case "unavailable": {
+      return "noCredit";
+    }
+  }
+}
+
+/**
+ * Redeem one manual rate-limit reset for a Claude Code subscription.
+ *
+ * The grant to redeem and the owning organization both come from upstream, so
+ * an account with no redeemable grant reports `noCredit` without issuing the
+ * request: the redeem attempt itself is the scarce resource.
+ */
+export async function consumeClaudeCodeSubscriptionReset(
+  args: {
+    readonly accessToken: string;
+    readonly idempotencyKey: string;
+  },
+  signal: AbortSignal,
+): Promise<{ readonly outcome: SubscriptionResetOutcome }> {
+  if (!CLAUDE_CODE_REQUEST_ID_PATTERN.test(args.idempotencyKey)) {
+    throw new Error("Claude Code reset request id shape unsupported");
+  }
+
+  const [usage, organizationUuid] = await Promise.all([
+    fetchUsageResponse(
+      { accessToken: args.accessToken, includeResetGrants: true },
+      signal,
+    ),
+    fetchResetOrganizationUuid(args, signal),
+  ]);
+  signal.throwIfAborted();
+
+  const grantId = resetGrantsFromUsage(usage).nextGrantId;
+  if (!grantId || !organizationUuid) {
+    return { outcome: "noCredit" };
+  }
+
+  const response = await claudeCodeApiResponse(
+    {
+      accessToken: args.accessToken,
+      path: `/api/organizations/${encodeURIComponent(organizationUuid)}/reset_rate_limits`,
+      body: {
+        program: CLAUDE_CODE_RESET_PROGRAM,
+        grant_id: grantId,
+        request_id: args.idempotencyKey,
+      },
+    },
+    signal,
+  );
+
+  const parsed = resetResponseSchema.safeParse(await response.json());
+  if (!parsed.success) {
+    throw new Error("Claude Code reset response shape unrecognized");
+  }
+  return { outcome: resetOutcome(parsed.data.result) };
 }
 
 function hasMetadata(metadata: ClaudeCodeSubscriptionMetadata): boolean {
@@ -392,6 +636,7 @@ function hasMetadata(metadata: ClaudeCodeSubscriptionMetadata): boolean {
 export async function fetchClaudeCodeSubscriptionMetadata(
   args: {
     readonly accessToken: string;
+    readonly includeResetGrants: boolean;
   },
   signal: AbortSignal,
 ): Promise<ClaudeCodeSubscriptionMetadata | undefined> {

@@ -408,7 +408,7 @@ function CreateAgentAvatarPreview() {
                 })}
                 className="h-16 w-16 rounded-full object-cover object-top"
               />
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -430,6 +430,89 @@ function CreateAgentAvatarPreview() {
           );
         }}
       />
+    </div>
+  );
+}
+
+function AgentVisibilitySelect({
+  visibility,
+  onVisibilityChange,
+  disabled,
+}: {
+  visibility: Visibility;
+  onVisibilityChange: (visibility: Visibility) => void;
+  disabled: boolean;
+}) {
+  const { t } = useTranslation("agents");
+  const visibilityItems = [
+    {
+      value: "private",
+      label: (
+        <>
+          {t(($) => {
+            return $.list.create.visibility.private.label;
+          })}{" "}
+          <span className="text-muted-foreground">
+            {t(($) => {
+              return $.list.create.visibility.private.description;
+            })}
+          </span>
+        </>
+      ),
+    },
+    {
+      value: "public",
+      label: (
+        <>
+          {t(($) => {
+            return $.list.create.visibility.public.label;
+          })}{" "}
+          <span className="text-muted-foreground">
+            {t(($) => {
+              return $.list.create.visibility.public.description;
+            })}
+          </span>
+        </>
+      ),
+    },
+  ];
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted-foreground">
+        {t(($) => {
+          return $.list.create.visibilityLabel;
+        })}
+      </span>
+      <Select
+        items={visibilityItems}
+        value={visibility}
+        onValueChange={(value, details) => {
+          if (value !== "public" && value !== "private") {
+            details.cancel();
+            return;
+          }
+          onVisibilityChange(value);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          className="h-9 w-full"
+          aria-label={t(($) => {
+            return $.list.create.visibilityLabel;
+          })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {visibilityItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -493,53 +576,11 @@ function CreateAgentFields({
           disabled={creating}
         />
       </div>
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-muted-foreground">
-          {t(($) => {
-            return $.list.create.visibilityLabel;
-          })}
-        </span>
-        <Select
-          value={visibility}
-          onValueChange={(value) => {
-            if (value === "public" || value === "private") {
-              onVisibilityChange(value);
-            }
-          }}
-          disabled={creating}
-        >
-          <SelectTrigger
-            className="h-9 w-full"
-            aria-label={t(($) => {
-              return $.list.create.visibilityLabel;
-            })}
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="private">
-              {t(($) => {
-                return $.list.create.visibility.private.label;
-              })}{" "}
-              <span className="text-muted-foreground">
-                {t(($) => {
-                  return $.list.create.visibility.private.description;
-                })}
-              </span>
-            </SelectItem>
-            <SelectItem value="public">
-              {t(($) => {
-                return $.list.create.visibility.public.label;
-              })}{" "}
-              <span className="text-muted-foreground">
-                {t(($) => {
-                  return $.list.create.visibility.public.description;
-                })}
-              </span>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <AgentVisibilitySelect
+        visibility={visibility}
+        onVisibilityChange={onVisibilityChange}
+        disabled={creating}
+      />
     </div>
   );
 }
@@ -735,7 +776,7 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
           </span>
           <div className="flex-1 min-w-0">
             {showCreator ? (
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -747,18 +788,8 @@ function AgentCard({ agent, creator, hasUnread, showCreator }: AgentProps) {
                   <TooltipContent
                     side="bottom"
                     align="start"
-                    className="w-64 rounded-lg border border-[hsl(var(--gray-400))] p-3 text-left font-normal"
-                    style={{
-                      backgroundColor: "hsl(var(--popover))",
-                      color: "hsl(var(--popover-foreground))",
-                      // The light value of --okou-card-shadow, spelled out.
-                      // The token is declared at :root and would resolve here;
-                      // adopting it is a visual change, because it carries a
-                      // gradient-palette override this literal does not.
-                      boxShadow:
-                        "0 2px 12px hsl(30 6% 45% / 0.05), 0 0 0 0.5px hsl(30 6% 45% / 0.025)",
-                      whiteSpace: "normal",
-                    }}
+                    // Preserve the literal shadow; the card token changes under palettes.
+                    className="w-64 rounded-lg border border-[hsl(var(--gray-400))] p-3 text-left font-normal bg-popover! text-popover-foreground! shadow-[0_2px_12px_hsl(30_6%_45%/0.05),0_0_0_0.5px_hsl(30_6%_45%/0.025)] whitespace-normal"
                   >
                     <span className="flex items-center gap-2">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full">

@@ -69,6 +69,15 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
             Some("ultra"),
         ),
         ("codex", &codex_mock, "gpt-6-sol", None, Some("max")),
+        ("codex", &codex_mock, "gpt-6-luna", Some("max"), Some("max")),
+        (
+            "codex",
+            &codex_mock,
+            "openai/gpt-6-luna",
+            Some("xhigh"),
+            Some("xhigh"),
+        ),
+        ("codex", &codex_mock, "gpt-6-luna", None, Some("max")),
         (
             "codex",
             &codex_mock,
@@ -92,6 +101,27 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
             "anthropic/claude-fable-5.1",
             Some("low"),
             Some("low"),
+        ),
+        (
+            "claude-code",
+            &claude_mock,
+            "claude-opus-5-5",
+            Some("low"),
+            Some("low"),
+        ),
+        (
+            "claude-code",
+            &claude_mock,
+            "anthropic/claude-opus-5.5",
+            Some("extra"),
+            Some("xhigh"),
+        ),
+        (
+            "claude-code",
+            &claude_mock,
+            "claude-opus-5-5",
+            None,
+            Some("medium"),
         ),
         (
             "claude-code",

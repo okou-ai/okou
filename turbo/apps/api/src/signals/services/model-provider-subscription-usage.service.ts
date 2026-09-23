@@ -3,7 +3,12 @@ import type {
   ModelProviderListResponse,
   ModelProviderResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import type { ResetPersonalModelProviderSubscriptionUsageResponse } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  type FeatureSwitchContext,
+  isFeatureEnabled,
+} from "@okouai/core/feature-switch";
 
 import {
   invalidateCodexResetCreditExpiry,
@@ -15,10 +20,14 @@ import { publishPersonalModelProvidersChangedSafely } from "../external/realtime
 import { notFound } from "../../lib/error";
 import { tapError } from "../utils";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
-import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
+import {
+  consumeClaudeCodeSubscriptionReset,
+  fetchClaudeCodeSubscriptionMetadata,
+} from "./claude-code-usage.service";
 import {
   consumeCodexRateLimitResetCredit,
   fetchCodexUsageMetadata,
+  isCodexUsageRequestError,
   type CodexRateLimitResetCreditOutcome,
 } from "./codex-usage.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
@@ -242,6 +251,10 @@ async function refreshClaudeCodeProvider(
   const metadata = await fetchClaudeCodeSubscriptionMetadata(
     {
       accessToken,
+      includeResetGrants: isFeatureEnabled(
+        FeatureSwitchKey.ClaudeCodeUsageReset,
+        args.featureSwitchContext,
+      ),
     },
     signal,
   );
@@ -310,18 +323,32 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
             ),
             (error) => {
               signal.throwIfAborted();
-              L.warn(
-                "failed to refresh personal model provider subscription usage",
-                {
-                  error,
-                  ...(provider.modelProviderId
-                    ? { modelProviderAccountId: provider.id }
-                    : {}),
-                  orgId: args.orgId,
-                  providerType: provider.type,
-                  userId: args.userId,
-                },
-              );
+              const providerFields = {
+                ...(provider.modelProviderId
+                  ? { modelProviderAccountId: provider.id }
+                  : {}),
+                orgId: args.orgId,
+                providerType: provider.type,
+                userId: args.userId,
+              };
+              // A 503 from the ChatGPT usage GET is an upstream outage this
+              // service already handles: the list response still carries the
+              // stored provider row, only without live usage. Record it so the
+              // degradation stays traceable, but not at a severity that reads
+              // as a fault here. Every other failure — including an
+              // authentication rejection, an unrecognized response, and any
+              // other provider's failure — keeps its existing severity.
+              if (isCodexUsageRequestError(error) && error.status === 503) {
+                L.info("codex usage unavailable upstream", {
+                  status: error.status,
+                  ...providerFields,
+                });
+              } else {
+                L.warn(
+                  "failed to refresh personal model provider subscription usage",
+                  { error, ...providerFields },
+                );
+              }
             },
           )) ?? provider
         );
@@ -422,6 +449,97 @@ export const consumePersonalCodexRateLimitResetCredit$ = command(
       },
       signal,
     ).finally(invalidateExpiry);
+    signal.throwIfAborted();
+    await publishPersonalModelProvidersChangedSafely(args.userId);
+    signal.throwIfAborted();
+    return result;
+  },
+);
+
+export const consumePersonalClaudeCodeSubscriptionReset$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly idempotencyKey: string;
+      readonly modelProviderAccountId: string;
+      readonly expectedAccountIdentity?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | {
+        readonly outcome: ResetPersonalModelProviderSubscriptionUsageResponse["outcome"];
+      }
+    | NotFoundResponse
+  > => {
+    const database = set(writeDb$);
+    const featureSwitchContext = await get(
+      userFeatureSwitchContext(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(
+        FeatureSwitchKey.ClaudeCodeUsageReset,
+        featureSwitchContext,
+      )
+    ) {
+      return notFound("Resource not found");
+    }
+
+    // The account is re-read here rather than trusted from the caller so a
+    // recovery flow cannot redeem against an account the user has since
+    // replaced; identity is what authorizes the redeem, not the row id.
+    if (args.expectedAccountIdentity) {
+      const account = await personalModelProviderAccountById({
+        db: database,
+        orgId: args.orgId,
+        userId: args.userId,
+        id: args.modelProviderAccountId,
+      });
+      signal.throwIfAborted();
+      if (
+        !account ||
+        personalSubscriptionAccountIdentity(account) !==
+          args.expectedAccountIdentity
+      ) {
+        return notFound("Resource not found");
+      }
+    }
+
+    const bundle = await resolveCurrentPersonalSubscriptionBundleForApi(
+      {
+        db: database,
+        orgId: args.orgId,
+        userId: args.userId,
+        key: CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
+        providerKey: "claude-code-oauth-token",
+        metadata: {
+          sourceType: "model-provider",
+          sourceUserId: args.userId,
+          sourceId: args.modelProviderAccountId,
+          metadataKey: "claude-code-oauth-token",
+        },
+        featureSwitchContext,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const accessToken =
+      bundle.status === "available"
+        ? bundle.values.get(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME)
+        : undefined;
+    if (!accessToken) {
+      return notFound("Resource not found");
+    }
+
+    const result = await consumeClaudeCodeSubscriptionReset(
+      {
+        accessToken,
+        idempotencyKey: args.idempotencyKey,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     await publishPersonalModelProvidersChangedSafely(args.userId);
     signal.throwIfAborted();

@@ -17,11 +17,6 @@ import {
   getModelProviderTypeForSurfaceProtocol,
   modelProviderSurfaceProtocolSchema,
 } from "@okouai/api-contracts/contracts/model-provider-gateways";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import {
@@ -32,7 +27,6 @@ import { secrets } from "@okouai/db/schema/secret";
 import { and, eq, exists, inArray, isNull } from "drizzle-orm";
 import type { Db } from "../external/db";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 
 const ORG_SENTINEL_USER_ID = "__org__";
 const PERSONAL_TYPES = [
@@ -59,7 +53,8 @@ interface PersonalCandidate {
 }
 
 export interface MemberModelRouteContext {
-  readonly priorityEnabled: boolean;
+  /** False only for the `__no_preference__` and `__org__` sentinel contexts. */
+  readonly memberScoped: boolean;
   readonly subscriptions: readonly PersonalCandidate[];
 }
 
@@ -75,7 +70,7 @@ interface LoadedPersonalModelRouteMetadata {
 export interface PreparedMemberModelRouteContext {
   readonly orgId: string;
   readonly userId: string;
-  readonly priorityEnabled: boolean;
+  readonly memberScoped: boolean;
   readonly personalMetadata:
     | { readonly kind: "not-applicable" }
     | {
@@ -102,44 +97,16 @@ function personalSecretNames(type: PersonalType): readonly string[] {
   return names;
 }
 
-function assertFeatureSwitchContextIdentity(
-  context: FeatureSwitchContext,
-  orgId: string,
-  userId: string,
-): void {
-  if (context.orgId !== orgId || context.userId !== userId) {
-    throw new Error("Captured feature-switch context has the wrong identity");
-  }
-}
-
-export async function prepareMemberModelRouteContext(
+export function prepareMemberModelRouteContext(
   db: Db,
   orgId: string,
   userId: string,
-  capturedFeatureSwitchContext?: FeatureSwitchContext,
-): Promise<PreparedMemberModelRouteContext> {
+): PreparedMemberModelRouteContext {
   if (userId === "__no_preference__" || userId === ORG_SENTINEL_USER_ID) {
     return Object.freeze({
       orgId,
       userId,
-      priorityEnabled: false,
-      personalMetadata: Object.freeze({ kind: "not-applicable" as const }),
-    });
-  }
-  const featureSwitchContext =
-    capturedFeatureSwitchContext ??
-    (await loadUserFeatureSwitchContext(db, orgId, userId));
-  assertFeatureSwitchContextIdentity(featureSwitchContext, orgId, userId);
-  if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PersonalSubscriptionPriority,
-      featureSwitchContext,
-    )
-  ) {
-    return Object.freeze({
-      orgId,
-      userId,
-      priorityEnabled: false,
+      memberScoped: false,
       personalMetadata: Object.freeze({ kind: "not-applicable" as const }),
     });
   }
@@ -169,7 +136,7 @@ export async function prepareMemberModelRouteContext(
   return Object.freeze({
     orgId,
     userId,
-    priorityEnabled: true,
+    memberScoped: true,
     personalMetadata,
   });
 }
@@ -179,13 +146,13 @@ export async function loadMemberModelRouteContext(
   orgId: string,
   userId: string,
 ): Promise<MemberModelRouteContext> {
-  const prepared = await prepareMemberModelRouteContext(db, orgId, userId);
+  const prepared = prepareMemberModelRouteContext(db, orgId, userId);
   if (prepared.personalMetadata.kind === "not-applicable") {
-    return { priorityEnabled: false, subscriptions: [] };
+    return { memberScoped: false, subscriptions: [] };
   }
   const loaded = await prepared.personalMetadata.load();
   return {
-    priorityEnabled: true,
+    memberScoped: true,
     subscriptions: loaded.subscriptions,
   };
 }
@@ -196,7 +163,7 @@ export async function loadMemberModelRouteContext(
  * Actual old writers can recreate a mirror (even only the first Claude write)
  * before updating the parent; canonical A capture owns importing that identity.
  * #34010 owns removal after the serving-writer/context/rollback gates close. */
-export async function loadPersonalModelRouteSubscriptions(
+async function loadPersonalModelRouteSubscriptions(
   db: Db,
   orgId: string,
   userId: string,
@@ -448,14 +415,14 @@ async function memberContextForPolicy(
     return member;
   }
   if (
-    !member.priorityEnabled ||
+    !member.memberScoped ||
     !policyCanUsePersonalMetadata({ policy, credentialScope }) ||
     member.personalMetadata.kind === "not-applicable"
   ) {
-    return { priorityEnabled: member.priorityEnabled, subscriptions: [] };
+    return { memberScoped: member.memberScoped, subscriptions: [] };
   }
   const loaded = await member.personalMetadata.load();
-  return { priorityEnabled: true, subscriptions: loaded.subscriptions };
+  return { memberScoped: true, subscriptions: loaded.subscriptions };
 }
 
 function policyRouteAllowedForPlan(args: {
@@ -505,7 +472,7 @@ export async function resolveEffectivePolicyRoute(params: {
   );
   // Organization Subscription policies keep their required member route under either switch state.
   // A missing nullable org FK is configuration loss, not malformed structure.
-  if (member.priorityEnabled && credentialScope === "org") {
+  if (member.memberScoped && credentialScope === "org") {
     const supported = getProvidersForModel(policy.model);
     const personal = member.subscriptions.find((candidate) => {
       return supported.includes(candidate.type);
@@ -585,7 +552,7 @@ export async function resolveEffectivePolicyRoute(params: {
     modelProviderType: providerType,
     modelProviderCredentialScope: credentialScope,
     selectedModel: policy.model,
-    ...(credentialScope === "member" && member.priorityEnabled
+    ...(credentialScope === "member" && member.memberScoped
       ? {
           personalConnectionState: legacyPersonal
             ? legacyPersonal.needsReconnect

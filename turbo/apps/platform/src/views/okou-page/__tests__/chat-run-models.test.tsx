@@ -1,3 +1,4 @@
+import { modelMenuOption } from "./chat-model-menu-test-helpers.ts";
 import {
   billingStatusContract,
   type BillingStatusResponse,
@@ -162,15 +163,13 @@ async function selectComposerModel(
   nextModelName: string,
 ): Promise<void> {
   await user.click(await composerModelTrigger(currentModelName));
-  const chatModels = await screen.findByRole("listbox", {
+  const chatModels = await screen.findByRole("menu", {
     name: "Chat models",
   });
   await user.click(
-    within(chatModels).getByRole("option", {
-      name: (name) => {
-        return name.includes(nextModelName);
-      },
-    }),
+    modelMenuOption((name) => {
+      return name.includes(nextModelName);
+    }, chatModels),
   );
 }
 
@@ -191,14 +190,14 @@ test.each([{ enabled: false }, { enabled: true }])(
 
     const user = userEvent.setup({ delay: null });
     await user.click(await composerModelTrigger("GPT 5.6 Luna"));
-    const chatModels = await screen.findByRole("listbox", {
+    const chatModels = await screen.findByRole("menu", {
       name: "Chat models",
     });
-    const optionNames = within(chatModels)
-      .getAllByRole("option")
-      .map((option) => {
+    const optionNames = queryAllByRoleFast("menuitemradio", chatModels).map(
+      (option) => {
         return option.textContent ?? "";
-      });
+      },
+    );
     expect(
       optionNames.filter((name) => {
         return name.includes("Okou 1.0");
@@ -1148,7 +1147,6 @@ test.each([false, true])(
       path: RUN_PATH,
       featureSwitches: {
         [FeatureSwitchKey.OkouDebug]: false,
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: accountsEnabled,
       },
     });

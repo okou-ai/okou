@@ -59,7 +59,7 @@ export function ConnectorPermissionRow({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {showManage ? (
-            <TooltipProvider delayDuration={200}>
+            <TooltipProvider delay={200}>
               <Tooltip>
                 <TooltipTrigger
                   render={

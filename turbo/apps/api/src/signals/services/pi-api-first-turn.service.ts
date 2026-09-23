@@ -12,7 +12,6 @@ import {
   type PiLangfuseParent,
   type PiResourceSnapshot,
   type SecretConnectorMetadata,
-  type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import { modelProviderTypeSchema } from "@okouai/api-contracts/contracts/model-providers";
 import type { PiApiHandoffUsage } from "@okouai/api-contracts/contracts/pi-inference-lifecycle";
@@ -37,7 +36,6 @@ import {
   executePreparedPiApiTurn,
   type PreparedPiApiTurn,
   measurePiPreparation,
-  measurePiPreparationSync,
   startPiPreparationObservation,
   type PiPreparationObserver,
   type PiApiFirstTurnOwnership,
@@ -63,7 +61,7 @@ import {
 } from "../../lib/pi-langfuse-tracing";
 import {
   decideApiFirstTurnCommit,
-  decideApiFirstTurnHistory,
+  decideApiFirstTurnEligibility,
   decideApiFirstTurnRecovery,
   decideApiFirstTurnTerminal,
   normalizedApiFirstTurnFailure,
@@ -113,16 +111,11 @@ import {
 } from "./agent-webhook-events.service";
 import { decryptPersistentSecretsMap } from "./crypto.utils";
 import {
-  gunzipSessionHistoryBufferWithMaxBytes,
-  unzstdSessionHistoryBufferWithMaxBytes,
-} from "./session-history-decompression";
-import {
   normalizeSessionHistoryBlobEncoding,
   resumeSessionHistoryBlobKey,
   resumeSessionHistoryRawBlobKey,
-  SESSION_HISTORY_ENCODING_GZIP,
   SESSION_HISTORY_ENCODING_IDENTITY,
-  SESSION_HISTORY_ENCODING_ZSTD,
+  type SessionHistoryBlobEncoding,
 } from "./session-history-blobs";
 import {
   PI_API_FIRST_TURN_API_OWNERSHIP_TIMEOUT_MS,
@@ -160,55 +153,64 @@ function sha256(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
 }
 
-async function decodeSessionHistory(args: {
-  readonly encoded: Buffer;
-  readonly encoding: string;
-  readonly key: string;
-}): Promise<Buffer> {
-  switch (args.encoding) {
-    case SESSION_HISTORY_ENCODING_GZIP: {
-      return await gunzipSessionHistoryBufferWithMaxBytes(
-        args.key,
-        args.encoded,
-        PI_API_FIRST_TURN_SESSION_MAX_BYTES,
-      );
-    }
-    case SESSION_HISTORY_ENCODING_ZSTD: {
-      return await unzstdSessionHistoryBufferWithMaxBytes(
-        args.key,
-        args.encoded,
-        PI_API_FIRST_TURN_SESSION_MAX_BYTES,
-      );
-    }
-    case SESSION_HISTORY_ENCODING_IDENTITY: {
-      return args.encoded;
-    }
-    default: {
-      throw piApiFirstTurnError(
-        "PI_H0_ENCODING_UNSUPPORTED",
-        "Pi H0 uses an unsupported encoding",
-      );
-    }
-  }
-}
-
-interface LoadedResumeSession {
-  readonly jsonl: string | undefined;
+interface ApiFirstTurnH0 {
+  readonly jsonl: string;
   readonly sha256: string | null;
 }
 
-function loadInlineResumeSession(sessionHistory: string): LoadedResumeSession {
-  const bytes = Buffer.from(sessionHistory, "utf8");
-  if (
-    bytes.length === 0 ||
-    bytes.length > PI_API_FIRST_TURN_SESSION_MAX_BYTES
-  ) {
+/**
+ * The H0 the API process can produce without reading the history blob: the
+ * synthesized empty session of a first turn, or the inline bytes the execution
+ * context already carries. Blob-backed history is Sandbox's to materialize.
+ */
+function apiFirstTurnLocalH0(args: {
+  readonly executionContext: ApiFirstTurnExecutionContext;
+  readonly sessionId: string;
+}): ApiFirstTurnH0 {
+  const resumeSession = args.executionContext.resumeSession;
+  if (resumeSession && "sessionHistory" in resumeSession) {
+    return {
+      jsonl: resumeSession.sessionHistory,
+      sha256: sha256(Buffer.from(resumeSession.sessionHistory, "utf8")),
+    };
+  }
+  if (resumeSession) {
     throw piApiFirstTurnError(
-      "PI_H0_TOO_LARGE",
-      "Pi H0 is empty or exceeds the API first-turn limit",
+      "PI_LAUNCH_CONFIG_INVALID",
+      "Pi blob-backed history is never materialized by the API process",
     );
   }
-  return { jsonl: sessionHistory, sha256: sha256(bytes) };
+  return {
+    jsonl: createPiSessionJsonl({
+      cwd: CANONICAL_WORKING_DIR,
+      sessionId: args.sessionId,
+      timestamp: new Date(args.executionContext.apiStartTime).toISOString(),
+    }),
+    sha256: null,
+  };
+}
+
+/** The launch checkpoint is the fork-protection contract for every route. */
+function validateApiFirstTurnBaseSession(args: {
+  readonly expectedBaseSession: {
+    readonly sessionId: string;
+    readonly sha256: string | null;
+  };
+  readonly resumeSessionId: string | undefined;
+  readonly sessionId: string;
+  readonly sha256: string | null;
+}): void {
+  if (
+    args.expectedBaseSession.sessionId !== args.sessionId ||
+    args.expectedBaseSession.sha256 !== args.sha256 ||
+    (args.resumeSessionId !== undefined &&
+      args.resumeSessionId !== args.sessionId)
+  ) {
+    throw piApiFirstTurnError(
+      "PI_H0_HASH_MISMATCH",
+      "Pi H0 does not match the launch base checkpoint",
+    );
+  }
 }
 
 async function readResumeSessionMetadata(
@@ -265,159 +267,6 @@ async function readResumeSessionMetadata(
     );
   }
   return { ...metadata, encoding };
-}
-
-const loadResumeSessionJsonl$ = command(async function loadResumeSessionJsonl(
-  { get },
-  args: {
-    readonly db: Db;
-    readonly resumeSession: StoredExecutionContext["resumeSession"];
-  },
-  signal: AbortSignal,
-): Promise<LoadedResumeSession> {
-  const resumeSession = args.resumeSession;
-  if (!resumeSession) {
-    return { jsonl: undefined, sha256: null };
-  }
-  if ("sessionHistory" in resumeSession) {
-    return loadInlineResumeSession(resumeSession.sessionHistory);
-  }
-
-  const hash = resumeSession.historyRef.hash;
-  const metadata = await readResumeSessionMetadata(
-    args.db,
-    resumeSession.historyRef,
-    signal,
-  );
-  if (
-    metadata.rawSize > PI_API_FIRST_TURN_SESSION_MAX_BYTES ||
-    metadata.encodedSize > PI_API_FIRST_TURN_SESSION_MAX_BYTES
-  ) {
-    throw piApiFirstTurnError(
-      "PI_H0_TOO_LARGE",
-      "Pi H0 exceeds the API first-turn limit",
-    );
-  }
-  const encoding = metadata.encoding;
-  const key = resumeSessionHistoryBlobKey(hash, encoding);
-  const downloaded = await settle(
-    get(
-      downloadS3BufferWithMaxBytes(
-        env("R2_USER_STORAGES_BUCKET_NAME"),
-        key,
-        metadata.encodedSize,
-        signal,
-      ),
-    ),
-    signal,
-  );
-  if (!downloaded.ok) {
-    throw piApiFirstTurnError(
-      "PI_H0_DOWNLOAD_FAILED",
-      "Pi H0 download failed",
-      downloaded.error,
-    );
-  }
-  const encoded = downloaded.value;
-  if (encoded.length !== metadata.encodedSize) {
-    throw piApiFirstTurnError(
-      "PI_H0_HASH_MISMATCH",
-      "Pi H0 encoded size does not match its metadata",
-    );
-  }
-  const decoded = await settle(
-    decodeSessionHistory({ encoded, encoding, key }),
-    signal,
-  );
-  if (!decoded.ok) {
-    if (decoded.error instanceof PiApiFirstTurnError) {
-      throw decoded.error;
-    }
-    throw piApiFirstTurnError(
-      "PI_H0_DECOMPRESSION_FAILED",
-      "Pi H0 decompression failed",
-      decoded.error,
-    );
-  }
-  const raw = decoded.value;
-  if (raw.length !== metadata.rawSize || sha256(raw) !== hash) {
-    throw piApiFirstTurnError(
-      "PI_H0_HASH_MISMATCH",
-      "Pi H0 failed its size or hash check",
-    );
-  }
-  const decodedJsonl = safeSync(() => {
-    return new TextDecoder("utf-8", { fatal: true }).decode(raw);
-  });
-  if ("error" in decodedJsonl) {
-    throw piApiFirstTurnError(
-      "PI_H0_JSONL_INVALID",
-      "Pi H0 is not valid UTF-8 JSONL",
-      decodedJsonl.error,
-    );
-  }
-  return { jsonl: decodedJsonl.ok, sha256: hash };
-});
-
-const loadApiFirstTurnH0$ = command(
-  async (
-    { set },
-    args: ApiFirstTurnContext,
-    signal: AbortSignal,
-  ): Promise<LoadedResumeSession> => {
-    const executionContext = args.activation.executionContext;
-    return await set(
-      loadResumeSessionJsonl$,
-      { db: args.db, resumeSession: executionContext.resumeSession ?? null },
-      signal,
-    );
-  },
-);
-
-function validateResumeSession(args: {
-  readonly loaded: LoadedResumeSession;
-  readonly expectedBaseSession: {
-    readonly sessionId: string;
-    readonly sha256: string | null;
-  };
-  readonly sessionId: string;
-}): void {
-  if (
-    args.expectedBaseSession.sessionId !== args.sessionId ||
-    args.expectedBaseSession.sha256 !== args.loaded.sha256
-  ) {
-    throw piApiFirstTurnError(
-      "PI_H0_HASH_MISMATCH",
-      "Pi H0 does not match the launch base checkpoint",
-    );
-  }
-  if (args.loaded.jsonl === undefined) {
-    return;
-  }
-  const parsed = safeSync(() => {
-    return inspectPiSessionJsonl(args.loaded.jsonl ?? "");
-  });
-  if ("error" in parsed) {
-    if (parsed.error instanceof UnsupportedPiSessionVersionError) {
-      throw piApiFirstTurnError(
-        "PI_H0_SESSION_UNSUPPORTED",
-        "Pi H0 uses an unsupported session version",
-        parsed.error,
-      );
-    }
-    throw piApiFirstTurnError(
-      "PI_H0_JSONL_INVALID",
-      "Pi H0 is not a valid native Pi session",
-      parsed.error,
-    );
-  }
-  const session = parsed.ok;
-  if (session.sessionId !== args.sessionId) {
-    throw piApiFirstTurnError(
-      "PI_H0_SESSION_MISMATCH",
-      "Pi H0 session id does not match the launch session",
-    );
-  }
 }
 
 interface ApiFirstTurnLifecycleState {
@@ -1587,6 +1436,41 @@ function ownershipTransferManifest(args: {
   };
 }
 
+/**
+ * Hand the stored checkpoint over by reference instead of by value.
+ *
+ * The original blob stays authoritative and Sandbox verifies its bytes, so the
+ * API never downloads, decodes or rehashes resume history to publish it.
+ */
+function resumeHistoryTransferManifest(args: {
+  readonly baseSession: PiApiFirstTurnManifest["baseSession"];
+  readonly session: {
+    readonly sessionId: string;
+    readonly sha256: string;
+    readonly rawSize: number;
+  };
+  readonly history: {
+    readonly url: string;
+    readonly encoding: SessionHistoryBlobEncoding;
+    readonly encodedSize: number;
+  };
+  readonly sandboxEventSequenceStart: number;
+  readonly langfuseParent?: PiLangfuseParent;
+  readonly apiUsage: PiApiHandoffUsage;
+}): PiApiFirstTurnManifest {
+  return {
+    schemaVersion: 4,
+    outcome: "ownership-transfer",
+    mode: "sandbox-first",
+    baseSession: args.baseSession,
+    session: args.session,
+    history: args.history,
+    sandboxEventSequenceStart: args.sandboxEventSequenceStart,
+    ...(args.langfuseParent ? { langfuseParent: args.langfuseParent } : {}),
+    apiUsage: args.apiUsage,
+  };
+}
+
 function noInferenceApiHandoffUsage(): PiApiHandoffUsage {
   return { schemaVersion: 1, state: "no-inference", sampledAt: now() };
 }
@@ -1605,7 +1489,7 @@ function observedApiHandoffUsage(
     : undefined;
 }
 
-function validateSandboxFallbackSession(
+function validateSandboxFirstSession(
   sessionJsonl: string,
   sessionId: string,
 ): { readonly bytes: Buffer; readonly hash: string } {
@@ -1616,85 +1500,137 @@ function validateSandboxFallbackSession(
   ) {
     throw piApiFirstTurnError(
       "PI_H0_TOO_LARGE",
-      "Pi sandbox fallback H0 is empty or exceeds the API first-turn limit",
+      "Pi sandbox-first H0 is empty or exceeds the v3 session limit",
     );
   }
   const inspected = safeSync(() => {
     return inspectPiSessionJsonl(sessionJsonl);
   });
   if ("error" in inspected) {
+    if (inspected.error instanceof UnsupportedPiSessionVersionError) {
+      throw piApiFirstTurnError(
+        "PI_H0_SESSION_UNSUPPORTED",
+        "Pi H0 uses an unsupported session version",
+        inspected.error,
+      );
+    }
     throw piApiFirstTurnError(
       "PI_H0_JSONL_INVALID",
-      "Pi sandbox fallback H0 is not a valid native Pi session",
+      "Pi sandbox-first H0 is not a valid native Pi session",
       inspected.error,
     );
   }
   if (inspected.ok.sessionId !== sessionId) {
     throw piApiFirstTurnError(
       "PI_H0_SESSION_MISMATCH",
-      "Pi sandbox fallback H0 session id does not match the launch session",
+      "Pi sandbox-first H0 session id does not match the launch session",
     );
   }
   return { bytes, hash: sha256(bytes) };
 }
 
-function materializeApiFirstTurnH0(args: {
-  readonly apiStartTime: number;
-  readonly loadedSession: LoadedResumeSession;
-  readonly sessionId: string;
-}): string {
-  return (
-    args.loadedSession.jsonl ??
-    createPiSessionJsonl({
-      cwd: CANONICAL_WORKING_DIR,
-      sessionId: args.sessionId,
-      timestamp: new Date(args.apiStartTime).toISOString(),
-    })
-  );
-}
+/**
+ * What Sandbox must continue from, resolved without loading history bytes.
+ *
+ * Blob-backed history keeps its stored object and travels as a reference;
+ * everything the API itself owns travels as the published session object.
+ */
+type SandboxFirstCheckpoint =
+  | { readonly kind: "session"; readonly h0: ApiFirstTurnH0 }
+  | {
+      readonly kind: "history-reference";
+      readonly hash: string;
+      readonly rawSize: number;
+      readonly encodedSize: number;
+      readonly encoding: SessionHistoryBlobEncoding;
+    };
+
+const resolveSandboxFirstCheckpoint$ = command(
+  async function resolveSandboxFirstCheckpoint(
+    _ctx,
+    args: ApiFirstTurnContext,
+    signal: AbortSignal,
+  ): Promise<SandboxFirstCheckpoint> {
+    const { executionContext, launchConfig, sessionId } =
+      validateApiFirstTurnLaunch(args);
+    const resumeSession = executionContext.resumeSession;
+    if (resumeSession && "historyRef" in resumeSession) {
+      const { historyRef } = resumeSession;
+      const metadata = await measurePiPreparation(
+        piPreparationObserver(args.activation.runId),
+        "h0_metadata_preflight",
+        () => {
+          return readResumeSessionMetadata(args.db, historyRef, signal);
+        },
+        signal,
+      );
+      validateApiFirstTurnBaseSession({
+        expectedBaseSession: launchConfig.baseSession,
+        resumeSessionId: resumeSession.sessionId,
+        sessionId,
+        sha256: historyRef.hash,
+      });
+      return { kind: "history-reference", hash: historyRef.hash, ...metadata };
+    }
+    const h0 = apiFirstTurnLocalH0({ executionContext, sessionId });
+    validateApiFirstTurnBaseSession({
+      expectedBaseSession: launchConfig.baseSession,
+      resumeSessionId: resumeSession?.sessionId,
+      sessionId,
+      sha256: h0.sha256,
+    });
+    return { kind: "session", h0 };
+  },
+);
+
+type PublishedSandboxFirstCheckpoint = {
+  readonly sha256: string;
+  readonly rawSize: number;
+  readonly history?: {
+    readonly url: string;
+    readonly encoding: SessionHistoryBlobEncoding;
+    readonly encodedSize: number;
+  };
+};
 
 /**
- * Runtime ownership recovery for pre-commit preparation, model or deadline
- * failure. Reconstruct validated H0; never publish a failed/partial API turn.
+ * Make the resolved checkpoint readable to Sandbox under the lifecycle lock.
+ *
+ * An API-owned session is written and read back before it can be announced; a
+ * stored blob is only signed, because its bytes were never ours to rewrite.
  */
-const publishSandboxFallback$ = command(async function publishSandboxFallback(
-  { get, set },
-  args: ApiFirstTurnContext,
-  reason: PiSandboxFirstReason,
-  apiUsage: PiApiHandoffUsage | undefined,
-  signal: AbortSignal,
-): Promise<void> {
-  const { executionContext, launchConfig, sessionId } =
-    validateApiFirstTurnLaunch(args);
-  const commitIdentity = apiFirstTurnCommitIdentity(args);
-  signal.throwIfAborted();
-  await withApiFirstTurnLifecycle(args, async (tx) => {
-    signal.throwIfAborted();
-    const state = validateApiFirstTurnHandoffCommit(
-      args,
-      await readApiFirstTurnLifecycleState(tx, args.activation.runId),
-      commitIdentity,
-      "Pi sandbox-first transfer lost commit eligibility",
-    );
-    if (reason === "active_input" && !state.activeDeliveryId) {
-      throw piApiFirstTurnError(
-        "PI_API_FIRST_TURN_NOT_COMMITTABLE",
-        "Pi active-input sandbox-first transfer lost its durable delivery",
-      );
-    }
-    const loadedSession = await set(loadApiFirstTurnH0$, args, signal);
-    validateResumeSession({
-      loaded: loadedSession,
-      expectedBaseSession: launchConfig.baseSession,
-      sessionId,
-    });
-    const sessionJsonl = materializeApiFirstTurnH0({
-      apiStartTime: executionContext.apiStartTime,
-      loadedSession,
-      sessionId,
-    });
-    const session = validateSandboxFallbackSession(sessionJsonl, sessionId);
+const publishSandboxFirstCheckpoint$ = command(
+  async function publishSandboxFirstCheckpoint(
+    { get },
+    args: ApiFirstTurnContext,
+    checkpoint: SandboxFirstCheckpoint,
+    signal: AbortSignal,
+  ): Promise<PublishedSandboxFirstCheckpoint> {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    if (checkpoint.kind === "history-reference") {
+      const url = await get(
+        generatePresignedGetUrl(
+          bucket,
+          resumeSessionHistoryBlobKey(checkpoint.hash, checkpoint.encoding),
+          undefined,
+          true,
+        ),
+      );
+      signal.throwIfAborted();
+      return {
+        sha256: checkpoint.hash,
+        rawSize: checkpoint.rawSize,
+        history: {
+          url,
+          encoding: checkpoint.encoding,
+          encodedSize: checkpoint.encodedSize,
+        },
+      };
+    }
+    const session = validateSandboxFirstSession(
+      checkpoint.h0.jsonl,
+      args.activation.executionContext.piSessionId,
+    );
     const sessionKey = piApiFirstTurnObjectKey(
       args.activation.runId,
       "session",
@@ -1727,34 +1663,112 @@ const publishSandboxFallback$ = command(async function publishSandboxFallback(
         "Pi sandbox fallback H0 failed read-after-write validation",
       );
     }
+    return { sha256: session.hash, rawSize: session.bytes.length };
+  },
+);
+
+function sandboxFirstManifest(args: {
+  readonly executionContext: ApiFirstTurnExecutionContext;
+  readonly launchConfig: ApiFirstTurnLaunchConfig;
+  readonly published: PublishedSandboxFirstCheckpoint;
+  readonly runId: string;
+  readonly sessionId: string;
+  readonly apiUsage?: PiApiHandoffUsage;
+}): PiApiFirstTurnManifest {
+  const shared = {
+    baseSession: args.launchConfig.baseSession,
+    session: {
+      sessionId: args.sessionId,
+      sha256: args.published.sha256,
+      rawSize: args.published.rawSize,
+    },
+    sandboxEventSequenceStart: args.launchConfig.sandboxEventSequenceStart,
+    langfuseParent: piLangfuseSandboxParent({
+      enabled: isPiLangfuseDebugRunEnvironment(
+        args.executionContext.platformEnvironment,
+      ),
+      runId: args.runId,
+      sessionId: args.sessionId,
+      sandboxWaitStartedAt: now(),
+    }),
+  };
+  return args.published.history
+    ? resumeHistoryTransferManifest({
+        ...shared,
+        history: args.published.history,
+        apiUsage: args.apiUsage ?? noInferenceApiHandoffUsage(),
+      })
+    : ownershipTransferManifest({
+        ...shared,
+        mode: "sandbox-first",
+        ...(args.apiUsage ? { apiUsage: args.apiUsage } : {}),
+      });
+}
+
+/**
+ * Runtime ownership recovery for pre-commit preparation, model or deadline
+ * failure. Publish the authoritative H0; never a failed/partial API turn.
+ */
+const publishSandboxFallback$ = command(async function publishSandboxFallback(
+  { set },
+  args: ApiFirstTurnContext,
+  publication: {
+    readonly reason: PiSandboxFirstReason;
+    readonly apiUsage?: PiApiHandoffUsage;
+    readonly commitProgress?: ApiFirstTurnCommitProgress;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  const { executionContext, launchConfig, sessionId } =
+    validateApiFirstTurnLaunch(args);
+  const commitIdentity = apiFirstTurnCommitIdentity(args);
+  signal.throwIfAborted();
+  // Recovery can still own a continuation whose transfer failed before commit.
+  const checkpoint = await set(resolveSandboxFirstCheckpoint$, args, signal);
+  signal.throwIfAborted();
+  await withApiFirstTurnLifecycle(args, async (tx) => {
+    signal.throwIfAborted();
+    const state = validateApiFirstTurnHandoffCommit(
+      args,
+      await readApiFirstTurnLifecycleState(tx, args.activation.runId),
+      commitIdentity,
+      "Pi sandbox-first transfer lost commit eligibility",
+    );
+    if (publication.reason === "active_input" && !state.activeDeliveryId) {
+      throw piApiFirstTurnError(
+        "PI_API_FIRST_TURN_NOT_COMMITTABLE",
+        "Pi active-input sandbox-first transfer lost its durable delivery",
+      );
+    }
+    const published = await set(
+      publishSandboxFirstCheckpoint$,
+      args,
+      checkpoint,
+      signal,
+    );
     validateApiFirstTurnHandoffCommit(
       args,
       state,
       commitIdentity,
       "Pi sandbox-first transfer lost commit eligibility before publication",
     );
-    const manifest = ownershipTransferManifest({
-      mode: "sandbox-first",
-      langfuseParent: piLangfuseSandboxParent({
-        enabled: isPiLangfuseDebugRunEnvironment(
-          executionContext.platformEnvironment,
-        ),
-        runId: args.activation.runId,
-        sessionId,
-        sandboxWaitStartedAt: now(),
-      }),
-      baseSession: launchConfig.baseSession,
-      session: {
-        sessionId,
-        sha256: session.hash,
-        rawSize: session.bytes.length,
-      },
-      sandboxEventSequenceStart: launchConfig.sandboxEventSequenceStart,
-      ...(apiUsage ? { apiUsage } : {}),
-    });
+    // A lost manifest response may still have transferred ownership.
+    if (publication.commitProgress) {
+      publication.commitProgress.started = true;
+    }
     await set(
       writeManifest$,
-      { runId: args.activation.runId, manifest },
+      {
+        runId: args.activation.runId,
+        manifest: sandboxFirstManifest({
+          executionContext,
+          launchConfig,
+          published,
+          runId: args.activation.runId,
+          sessionId,
+          ...(publication.apiUsage ? { apiUsage: publication.apiUsage } : {}),
+        }),
+      },
       signal,
     );
   });
@@ -1859,23 +1873,14 @@ const prepareApiFirstTurnInputs$ = command(
     const { executionContext, launchConfig, sessionId } =
       validateApiFirstTurnLaunch(args);
     signal.throwIfAborted();
-    const resumeSession = executionContext.resumeSession;
-    if (resumeSession && "historyRef" in resumeSession) {
-      const metadata = await measurePiPreparation(
-        piPreparationObserver(args.activation.runId),
-        "h0_metadata_preflight",
-        () => {
-          return readResumeSessionMetadata(
-            args.db,
-            resumeSession.historyRef,
-            signal,
-          );
-        },
-        signal,
-      );
-      if (decideApiFirstTurnHistory(metadata) !== "api") {
-        return { kind: "large-history" };
-      }
+    // Sandbox owns every continuation, so this route decision precedes all
+    // preparation IO: no resource, credential or history work starts for one.
+    if (
+      decideApiFirstTurnEligibility({
+        hasResumeSession: (executionContext.resumeSession ?? null) !== null,
+      }) === "sandbox"
+    ) {
+      return { kind: "resume-history-transfer" };
     }
     // The direct API model turn cannot run native input/skill expansion. Choose
     // AgentSession before API-only preparation; handoff must keep the input intact.
@@ -1919,31 +1924,14 @@ const prepareApiFirstTurnInputs$ = command(
         signal,
       );
     signal.throwIfAborted();
-    const loadedSession = await measurePiPreparation(
-      onPreparationTiming,
-      "h0_load",
-      () => {
-        return set(loadApiFirstTurnH0$, args, signal);
-      },
-      signal,
-    );
-    const sessionJsonl = measurePiPreparationSync(
-      onPreparationTiming,
-      "h0_validate_materialize",
-      () => {
-        validateResumeSession({
-          loaded: loadedSession,
-          expectedBaseSession: launchConfig.baseSession,
-          sessionId,
-        });
-        return materializeApiFirstTurnH0({
-          apiStartTime: executionContext.apiStartTime,
-          loadedSession,
-          sessionId,
-        });
-      },
-      signal,
-    );
+    const h0 = apiFirstTurnLocalH0({ executionContext, sessionId });
+    validateApiFirstTurnBaseSession({
+      expectedBaseSession: launchConfig.baseSession,
+      resumeSessionId: undefined,
+      sessionId,
+      sha256: h0.sha256,
+    });
+    const sessionJsonl = h0.jsonl;
     return await initializeApiFirstTurnRuntime(
       {
         cwd: CANONICAL_WORKING_DIR,
@@ -2283,117 +2271,6 @@ const commitApiFirstTurn$ = command(async function commitApiFirstTurn(
   );
 });
 
-// This is an execution-budget decision before API-first resource or history IO.
-// The original checkpoint remains authoritative; the sandbox validates its bytes.
-const publishLargeHistoryTransfer$ = command(
-  async function publishLargeHistoryTransfer(
-    { get, set },
-    args: ApiFirstTurnContext,
-    commitProgress: ApiFirstTurnCommitProgress,
-    signal: AbortSignal,
-  ): Promise<boolean> {
-    const { executionContext, launchConfig, sessionId } =
-      validateApiFirstTurnLaunch(args);
-    const resumeSession = executionContext.resumeSession;
-    if (!resumeSession || !("historyRef" in resumeSession)) {
-      return false;
-    }
-    const metadata = await measurePiPreparation(
-      piPreparationObserver(args.activation.runId),
-      "h0_metadata_preflight",
-      () => {
-        return readResumeSessionMetadata(
-          args.db,
-          resumeSession.historyRef,
-          signal,
-        );
-      },
-      signal,
-    );
-    if (decideApiFirstTurnHistory(metadata) === "api") {
-      return false;
-    }
-    const hash = resumeSession.historyRef.hash;
-    if (
-      resumeSession.sessionId !== sessionId ||
-      launchConfig.baseSession.sessionId !== sessionId ||
-      launchConfig.baseSession.sha256 !== hash
-    ) {
-      throw piApiFirstTurnError(
-        "PI_H0_HASH_MISMATCH",
-        "Pi H0 does not match the launch base checkpoint",
-      );
-    }
-    const commitIdentity = apiFirstTurnCommitIdentity(args);
-    return await withApiFirstTurnLifecycle(args, async (tx) => {
-      signal.throwIfAborted();
-      const state = validateApiFirstTurnHandoffCommit(
-        args,
-        await readApiFirstTurnLifecycleState(tx, args.activation.runId),
-        commitIdentity,
-        "Pi large-history transfer lost commit eligibility",
-      );
-      const url = await get(
-        generatePresignedGetUrl(
-          env("R2_USER_STORAGES_BUCKET_NAME"),
-          resumeSessionHistoryBlobKey(hash, metadata.encoding),
-          undefined,
-          true,
-        ),
-      );
-      signal.throwIfAborted();
-      validateApiFirstTurnHandoffCommit(
-        args,
-        state,
-        commitIdentity,
-        "Pi large-history transfer lost commit eligibility before publication",
-      );
-      // Publication may transfer ownership even if its response is lost.
-      commitProgress.started = true;
-      await set(
-        writeManifest$,
-        {
-          runId: args.activation.runId,
-          manifest: {
-            schemaVersion: 4,
-            outcome: "ownership-transfer",
-            mode: "sandbox-first",
-            langfuseParent: piLangfuseSandboxParent({
-              enabled: isPiLangfuseDebugRunEnvironment(
-                executionContext.platformEnvironment,
-              ),
-              runId: args.activation.runId,
-              sessionId,
-              sandboxWaitStartedAt: now(),
-            }),
-            baseSession: launchConfig.baseSession,
-            session: { sessionId, sha256: hash, rawSize: metadata.rawSize },
-            history: {
-              url,
-              encoding: metadata.encoding,
-              encodedSize: metadata.encodedSize,
-            },
-            sandboxEventSequenceStart: launchConfig.sandboxEventSequenceStart,
-            apiUsage: noInferenceApiHandoffUsage(),
-          },
-        },
-        signal,
-      );
-      L.debug("Pi API first-turn outcome", {
-        runId: args.activation.runId,
-        ...piApiFirstTurnOutcomeTelemetry(executionContext),
-        outcome: "ownership_transfer",
-        reason: "history_exceeds_api_budget",
-        handoffOwner: "sandbox",
-        ownershipStage: "pre-provider",
-        rawSize: metadata.rawSize,
-        encodedSize: metadata.encodedSize,
-      });
-      return true;
-    });
-  },
-);
-
 const executeApiFirstTurn$ = command(async function executeApiFirstTurn(
   { set },
   args: ApiFirstTurnContext,
@@ -2407,14 +2284,24 @@ const executeApiFirstTurn$ = command(async function executeApiFirstTurn(
   const { ownership, commitProgress, preparation } = attempt;
   const inputs = await preparation.take(args.activation, executionSignal);
   executionSignal.throwIfAborted();
-  if (inputs.kind === "large-history") {
+  if (inputs.kind === "resume-history-transfer") {
     await set(
-      publishLargeHistoryTransfer$,
+      publishSandboxFallback$,
       args,
-      commitProgress,
+      {
+        reason: "resume_history",
+        apiUsage: noInferenceApiHandoffUsage(),
+        commitProgress,
+      },
       executionSignal,
     );
     executionSignal.throwIfAborted();
+    logSandboxFirstPublication(
+      args.activation,
+      ownership,
+      "resume_history",
+      undefined,
+    );
     return { outcome: "transferred" };
   }
   const prepared = await set(
@@ -2557,6 +2444,12 @@ function sandboxFirstPublicationOutcome(reason: PiSandboxFirstReason): {
       return {
         outcome: "ownership_transfer",
         reason: "active_input_sandbox_first",
+      };
+    }
+    case "resume_history": {
+      return {
+        outcome: "ownership_transfer",
+        reason: "resume_history_sandbox_first",
       };
     }
     case "PI_API_COMPACTION_PREFLIGHT_REQUIRED": {
@@ -2753,14 +2646,17 @@ const runPiApiFirstTurnCore$ = command(
         set(
           publishSandboxFallback$,
           context,
-          decision.reason,
-          ownership.stage === "pre-provider"
-            ? noInferenceApiHandoffUsage()
-            : observedApiHandoffUsage(
-                executed.error instanceof PiApiFirstTurnModelFailureError
-                  ? executed.error.usageObservation
-                  : undefined,
-              ),
+          {
+            reason: decision.reason,
+            apiUsage:
+              ownership.stage === "pre-provider"
+                ? noInferenceApiHandoffUsage()
+                : observedApiHandoffUsage(
+                    executed.error instanceof PiApiFirstTurnModelFailureError
+                      ? executed.error.usageObservation
+                      : undefined,
+                  ),
+          },
           handoffSignal,
         ),
         handoffSignal,

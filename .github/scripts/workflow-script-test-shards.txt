@@ -39,6 +39,7 @@
 2 native-only-ci-test.sh
 2 normalize-github-app-private-key-test.sh
 2 okou-app-worker-test.sh
+2 okou-cli-publisher-status-test.sh
 2 okou-desktop-artifact-test.sh
 2 release-tool-downloads-test.sh
 2 resolve-desktop-version-change-test.sh

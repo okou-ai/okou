@@ -368,7 +368,11 @@ async function createRunUploadedFile(args: {
   readonly contentType: string;
   readonly privateUpload?: boolean;
   readonly size?: number;
-}): Promise<{ readonly url: string; readonly threadId: string }> {
+}): Promise<{
+  readonly fileId: string;
+  readonly url: string;
+  readonly threadId: string;
+}> {
   const run = await sendChatRun(args.owner.actor, {
     agentId: args.owner.agentId,
     prompt: args.prompt,
@@ -406,7 +410,7 @@ async function createRunUploadedFile(args: {
     throw new Error("Expected run upload completion to succeed");
   }
   await completeChatRunOk(run.runId, sandboxHeaders);
-  return { url: completed.body.url, threadId: run.threadId };
+  return { fileId, url: completed.body.url, threadId: run.threadId };
 }
 
 async function findCatalogArtifact(
@@ -491,6 +495,16 @@ describe("video Artifact previews", () => {
       );
       expect((await chat.listArtifactCatalog(actor)).artifacts).toHaveLength(1);
       expect(JSON.stringify(thread)).not.toContain(requests[0]!.slice(7));
+      const sourcePreview = await accept(
+        setupApp({ context, routes: webFileUrlRoutes })(
+          webFilesContract,
+        ).fileUrl({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { file_id: file.fileId },
+        }),
+        [200],
+      );
+      expect(sourcePreview.body.previewImageUrl).toBe(artifact?.thumbnail?.url);
       owner.objectStore.addObject({
         bucket: "test-private-artifacts",
         key: `private-artifacts/${reference.id}/poster-v2.jpg`,

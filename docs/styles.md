@@ -170,6 +170,14 @@ focus owns the ring. A ring on an element that has no selected state is not a
 selection ring and is unaffected — the account avatar's halo stays, because
 nothing about it changes when the user picks something.
 
+Template gallery artwork keeps its existing hairline and clipping box. A
+borderless frame carries an absolute, pointer-transparent pseudo-element with
+the constant emphasis border width: transparent at rest, `border-primary` when
+selected. The selected border covers the hairline without shrinking the image
+or changing the caption or grid metrics. Preview buttons draw their focus ring
+outside this frame; secondary Use buttons retain their own focus ring. Text-only
+workflow cards recolour their existing hairline instead.
+
 `border-0` stays available, and so does a literal `border-2` for geometry that is
 not a boundary at all — a dashed drop target, a spinner's ring, the inset that
 shapes a switch track. Those express a different decision rather than a competing
@@ -338,6 +346,15 @@ and preserves full-width tile layout. Visible labels and essential explanations
 remain available without hovering.
 
 ## Component contracts
+
+`PopoverContent` and `SelectContent` express their two-part shadow as an exact
+arbitrary utility. It is not Tailwind's `shadow-lg`: the second shadow uses 5%
+black. Callers can replace it through `className` (`shadow-none` for a bare
+positioning box), and focus rings compose with the default shadow. Popup
+`style` objects and Base UI state callbacks pass through unchanged and retain
+their inline precedence. `TooltipContent` likewise keeps the `--tooltip-bg`
+fallback and `--on-filled` foreground in overridable utilities. The switch
+thumb uses literal white, because the shared `white` token changes with theme.
 
 A component owns its own utilities. Reach for the component rather than
 restating its treatment. Call sites own layout and container-query context;
@@ -856,11 +873,9 @@ Existing z-index declarations are migration debt to audit under these ownership
 rules, including zero, negative values and values below 50; passing today's
 lint does not establish correct stacking.
 
-[Browser regression tests](../e2e/playwright/tests/floating-layers.spec.ts)
-check actual pointer hit targets over sidebar actions in fullscreen, nested
-dialog interaction and dismissal, a dialog above fullscreen content, and a
-select above its settings dialog.
-Class names and computed z-index values alone cannot verify these relationships.
+The routine Playwright gate covers chat send-and-reply rather than layout or
+pointer hit targets. Class names and computed z-index values alone cannot verify
+those relationships.
 Fullscreen state preservation also needs the shared primitive's state and
 scroll regression coverage. Standalone behavior still needs installed-PWA
 acceptance; desktop browser coverage does not establish iOS keyboard behavior.
@@ -1396,25 +1411,41 @@ of the seven `.wmde-markdown` rules that declare a margin.
 
 ### Toast styling under an unlayered stylesheet
 
-Sonner injects its stylesheet into `document.head` at module load, unlayered.
-Unlayered rules outrank every layer, so a `@layer utilities` declaration loses
-to `[data-sonner-toast][data-styled="true"]` no matter how specific the variant
-is. That is why the toast class string carries `!` on most of its utilities, and
-it is why the four that lack it — `bg-popover`, `text-foreground`,
-`border-border` and `shadow-lg` — have never applied: a dark toast computes
-white on `rgb(23, 23, 23)` while `--color-popover` is `hsl(20 2.9% 20.2%)`, so
-the panel stays light in Dark. The component also passes no `theme` prop, so
-Sonner itself is permanently in its `light` palette. The `description`,
-`actionButton` and `cancelButton` entries are inert for the same reason.
+The default warning SVG owns its literal amber utility. Toast font uses
+`font-family-sans` on the toast itself: Sonner declares its font on the parent
+toaster, so this direct declaration wins over inheritance without `!important`.
+Per-toast inline font overrides still win. Do not move that utility onto the
+toaster, where Sonner's unlayered declaration would override it.
 
-Restoring those declarations is a visual decision, not an equivalence repair,
-and it is tracked separately. Marking the four important does fix Dark, but it
-also moves the Light foreground, border and shadow, and — because `!important`
-beats Sonner's unlayered `:focus-visible` rule — it replaces the toast's focus
-ring with the resting shadow. Adopting Sonner's supported `theme` prop instead
-takes Sonner's palette rather than the App's popover tokens. Draining `toaster`
-is blocked behind that choice, because whichever repair wins rewrites the same
-class string.
+Sonner 2.0.7 injects its stylesheet into `document.head` at module load,
+unlayered. Normal utilities cannot override its surface, description or button
+rules, regardless of selector specificity.
+
+`AppToaster` subscribes to the application's resolved `theme$`, initialized
+before the first render from the shared cookie or system preference. The shared
+component accepts Sonner's `theme` prop without importing application signals.
+Its supported `--normal-bg`, `--normal-text` and `--normal-border` variables map
+to `popover`, `popover-foreground` and `border`. These shared values are HSL
+channels, so each mapping wraps them in `hsl()`. Variables inherit from the
+document through the body portal and follow palette changes without remounting.
+Caller `style` values override these defaults; Sonner's rich-color and inverted
+surface rules remain available.
+
+Action and cancel colors use Sonner's `actionButtonStyle` and
+`cancelButtonStyle` options with the primary and muted token pairs. Per-toast
+button styles retain upstream precedence, and caller `toastOptions` still
+replace the wrapper defaults. The description has no upstream color variable or
+style slot, so that slot alone needs important text utilities. Rich-color and
+inverted descriptions inherit their surface foreground instead of the muted
+token. This is a third-party cascade adapter, not a pattern for business UI.
+
+These colors intentionally change the visual result: Dark no longer displays a
+Light toast, and both themes use the application's foreground, border and
+button colors. The ineffective `shadow-lg` utility is removed; Sonner continues
+to own its existing resting shadow and keyboard focus shadows. Do not make a
+resting shadow important, because it would suppress the focus indicator.
+Geometry utilities keep their existing precedence and use Sonner's
+`data-sonner-toaster` attribute as the ancestor hook.
 
 ### The standalone PWA fixed cover
 
@@ -1526,14 +1557,11 @@ custom property threaded through an arbitrary or data-type-hinted utility. Bare
 fallback. The two `lucide` rules remain for the real `lucide-react` DOM,
 including the allowlisted `svg.lucide-ellipsis circle` entry.
 
-`toaster` in `components/ui/sonner.tsx` is the mirror case. Sonner neither
-defines nor requires that class; the component invents it, hands it to Sonner's
-`className` prop, and then anchors its own `group-[.toaster]:` variants on it.
 Sonner's actual contract is the `[data-sonner-toaster]` attribute it puts on its
-own list element. It and `wmde-markdown` in `markdown-frame.tsx` are the two
-`classDependencies` entries in `turbo/style-allowlist.json`, which is where a
-class carrying a third party's DOM contract belongs; neither is expected to go
-until its renderer does.
+own list element; the shared wrapper uses that attribute rather than inventing
+a `toaster` class. `wmde-markdown` in `markdown-frame.tsx` remains a
+`classDependencies` entry in `turbo/style-allowlist.json`, because the renderer's
+stylesheet requires that class.
 
 An entry authorizes a count in a file, not a class. A second use in the same
 file fails lint, any use in another file fails, and so does a count that has

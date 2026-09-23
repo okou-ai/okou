@@ -1,3 +1,4 @@
+import { findModelMenuOption } from "./chat-model-menu-test-helpers.ts";
 import {
   getCanonicalModelDisplayName,
   type ModelProviderType,
@@ -98,7 +99,7 @@ async function chooseModel(
   optionName: string | RegExp,
 ): Promise<void> {
   await user.click(await modelPicker(currentLabel));
-  await user.click(await screen.findByRole("option", { name: optionName }));
+  await user.click(await findModelMenuOption(optionName));
 }
 
 test("Edit only the model for an existing thread", async () => {

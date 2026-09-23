@@ -63,6 +63,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "8d8f3a3e14d23f7471e0773bd9acb988f59217af" ]; then
       [ "${MOCK_PI_LAUNCH_VERSIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "322efb6d72508e15b90dc788100a776da1485751" ]; then
+      [ "${MOCK_PI_SESSION_DIGEST_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -164,6 +166,7 @@ output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
 grep -Fxq "git merge-base --is-ancestor f205ec54fc463f43b1106a3659e5d6a8c979cab8 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the hosted publication runtime floor"
 grep -Fxq "git merge-base --is-ancestor 8d8f3a3e14d23f7471e0773bd9acb988f59217af ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi launch-config version reader floor"
+grep -Fxq "git merge-base --is-ancestor 322efb6d72508e15b90dc788100a776da1485751 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi session-construction digest reader floor"
 grep -Fxq "git merge-base --is-ancestor 8a5e1299b4d26bd114ccec017b84b7a83fb4a164 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible target must pass the accepted personal subscription floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -198,6 +201,15 @@ grep -Fq '8d8f3a3e14d23f7471e0773bd9acb988f59217af' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-launch-versions-floor.output" ] || fail "pre-reader API target must not publish outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "pre-reader API target must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Pi session-construction digest reader" \
+  run_resolver "${tmp_dir}/pi-session-digest-floor.output" MOCK_PI_SESSION_DIGEST_FLOOR_VALID=0
+grep -Fq '322efb6d72508e15b90dc788100a776da1485751' "${tmp_dir}/failure.err" || fail "Pi session-construction rejection must identify the reader commit"
+[ ! -s "${tmp_dir}/pi-session-digest-floor.output" ] || fail "pre-digest-reader API target must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "pre-digest-reader API target must fail before artifact or host access"
 fi
 
 : >"${tmp_dir}/boundaries.log"

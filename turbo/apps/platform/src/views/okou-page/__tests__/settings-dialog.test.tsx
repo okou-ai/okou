@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
@@ -385,6 +386,49 @@ test("Select and persist a supported interface language", async () => {
   });
 });
 
+test("Retry saving the same language after the interface changed but the API rejected it", async () => {
+  let serverLocale: UserLocale = "en-US";
+  let failSave = true;
+  const submittedLocales: UserLocale[] = [];
+  const supportedLocales: UserLocale[] = ["en-US", "de-DE"];
+  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    return respond(200, createPreferences(serverLocale, supportedLocales));
+  });
+  context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {
+    if (body.locale !== undefined) {
+      submittedLocales.push(body.locale);
+      if (failSave) {
+        return respond(500, {
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Language could not be saved",
+          },
+        });
+      }
+      serverLocale = body.locale;
+    }
+    return respond(200, createPreferences(serverLocale, supportedLocales));
+  });
+  await openDialog("admin", "preference");
+  click(screen.getByRole("combobox", { name: "Language" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await waitFor(() => {
+    expect(submittedLocales).toStrictEqual(["de-DE"]);
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+  });
+  expect(document.documentElement.lang).toBe("de-DE");
+  expect(serverLocale).toBe("en-US");
+
+  failSave = false;
+  click(screen.getByRole("combobox", { name: "Sprache" }));
+  click(screen.getByRole("option", { name: "Deutsch" }));
+  await waitFor(() => {
+    expect(screen.getByRole("combobox", { name: "Sprache" })).toBeEnabled();
+    expect(serverLocale).toBe("de-DE");
+  });
+  expect(submittedLocales).toStrictEqual(["de-DE", "de-DE"]);
+});
+
 test("Keep the selected language visible during a preference refresh", async () => {
   const preferenceReloadStarted = context.mocks.deferred<void>();
   const preferenceReloadCompleted = context.mocks.deferred<void>();
@@ -518,6 +562,45 @@ test("Navigate workspace settings without closing Settings", async () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "People" })).toBeInTheDocument();
   });
+});
+
+test("Navigate workspace settings with the named section select", async () => {
+  const user = userEvent.setup({ delay: null });
+  await openDialog("admin");
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  const section = within(dialog).getByRole("combobox", {
+    name: "Settings section",
+  });
+  expect(section).toHaveTextContent("General");
+
+  section.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "General", selected: true });
+  await user.keyboard("{ArrowDown}{Enter}");
+
+  await expect(
+    screen.findByRole("heading", { name: "People" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  expect(window.location.search).toBe("?settings=people");
+  const peopleSection = within(dialog).getByRole("combobox", {
+    name: "Settings section",
+  });
+  expect(peopleSection).toHaveTextContent("People");
+  await waitFor(() => {
+    expect(peopleSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "People", selected: true });
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(peopleSection).toHaveFocus();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+  expect(peopleSection).toHaveTextContent("People");
+  expect(window.location.search).toBe("?settings=people");
 });
 
 test("Route members away from administrator-only workspace settings", async () => {

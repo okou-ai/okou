@@ -17,6 +17,10 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createMapsBillingApi } from "./helpers/api-bdd-maps-billing";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  VERTEX_MAPS_URL,
+  vertexMapsResponse,
+} from "./helpers/google-maps-grounding";
 
 /*
 FILE-01 host APIs plus BILL-02/CHAIN-BILLING-MEDIA maps billing. Replaces the
@@ -36,31 +40,6 @@ legacy zero-host.test.ts and zero-maps.test.ts route tests:
 */
 
 const context = testContext();
-
-const GOOGLE_GEOCODING_URL =
-  "https://maps.googleapis.com/maps/api/geocode/json";
-const GOOGLE_DIRECTIONS_URL =
-  "https://maps.googleapis.com/maps/api/directions/json";
-const GOOGLE_PLACES_SEARCH_TEXT_URL =
-  "https://places.googleapis.com/v1/places:searchText";
-const GOOGLE_PLACE_DETAILS_URL =
-  "https://places.googleapis.com/v1/places/ChIJtest";
-const OPENSTREETMAP_OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-
-function geocodeOkHandler(requests: URL[]) {
-  return http.get(GOOGLE_GEOCODING_URL, ({ request }) => {
-    requests.push(new URL(request.url));
-    return HttpResponse.json({
-      status: "OK",
-      results: [
-        {
-          formatted_address: "1 Infinite Loop, Cupertino, CA",
-          geometry: { location: { lat: 37.3317, lng: -122.0301 } },
-        },
-      ],
-    });
-  });
-}
 
 describe("FILE-01: hosted-site deployments through host APIs", () => {
   it.each([false, true])(
@@ -657,7 +636,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(tooLong.body.error.message).toContain("96");
   });
 
-  it("charges marked-up Google Maps prices across geocode, directions, places, and details [MAPS-A]", async () => {
+  it("charges Gemini and Google Maps grounding cost with a 25% markup [MAPS-A]", async () => {
     const bdd = createBddApi(context);
     const billing = createMapsBillingApi(context);
     const runs = createRunsApi(context);
@@ -666,213 +645,182 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     await runs.grantProEntitlement(admin);
     billing.configureMapsProvider();
 
-    const geocodeRequests: URL[] = [];
-    const directionsRequests: URL[] = [];
-    const searchMasks: (string | null)[] = [];
-    const searchBodies: unknown[] = [];
-    const detailMasks: (string | null)[] = [];
+    let providerCalls = 0;
+    let providerAuthorization: string | null = null;
+    let providerBody: unknown;
+    const answer = "Café Central is open nearby.";
     server.use(
-      geocodeOkHandler(geocodeRequests),
-      http.get(GOOGLE_DIRECTIONS_URL, ({ request }) => {
-        directionsRequests.push(new URL(request.url));
-        return HttpResponse.json({
-          status: "OK",
-          routes: [{ legs: [], overview_polyline: { points: "encoded" } }],
-        });
-      }),
-      http.post(GOOGLE_PLACES_SEARCH_TEXT_URL, async ({ request }) => {
-        searchMasks.push(request.headers.get("x-goog-fieldmask"));
-        searchBodies.push(await request.json());
-        return HttpResponse.json({
-          places: [{ id: "ChIJtest", displayName: { text: "Coffee" } }],
-        });
-      }),
-      http.get(GOOGLE_PLACE_DETAILS_URL, ({ request }) => {
-        detailMasks.push(request.headers.get("x-goog-fieldmask"));
-        return HttpResponse.json({
-          id: "ChIJtest",
-          displayName: { text: "Coffee" },
-        });
+      http.post(VERTEX_MAPS_URL, async ({ request }) => {
+        providerCalls += 1;
+        providerAuthorization = request.headers.get("authorization");
+        providerBody = await request.json();
+        return vertexMapsResponse({ answer });
       }),
     );
 
     const before = await billing.readBillingStatus(admin);
-
-    const geocode = await billing.requestMapsGeocode(
-      admin,
-      { address: "1 Infinite Loop, Cupertino", region: "US" },
-      [200],
-    );
-    expect(geocode.body).toMatchObject({
-      operation: "geocode",
-      provider: "google-maps",
-      billingCategory: "geocoding",
-      billingQuantity: 1,
-      creditsCharged: 6,
-    });
-    const geocodeUrl = geocodeRequests.at(0);
-    expect(geocodeUrl?.searchParams.get("key")).toBe("test-google-maps-key");
-    expect(geocodeUrl?.searchParams.get("address")).toBe(
-      "1 Infinite Loop, Cupertino",
-    );
-    expect(geocodeUrl?.searchParams.get("region")).toBe("US");
-
-    const reverse = await billing.requestMapsReverseGeocode(
-      admin,
-      { lat: 37.7749, lng: -122.4194 },
-      [200],
-    );
-    expect(reverse.body).toMatchObject({
-      operation: "reverse-geocode",
-      billingCategory: "geocoding",
-      creditsCharged: 6,
-    });
-    expect(geocodeRequests.at(1)?.searchParams.get("latlng")).toBe(
-      "37.7749,-122.4194",
-    );
-
-    const advanced = await billing.requestMapsDirections(
+    const search = await billing.requestMapsSearch(
       admin,
       {
-        origin: "SFO",
-        destination: "Mountain View",
-        mode: "driving",
-        departureTime: "now",
+        query: "best café near me",
+        location: { latitude: 48.21, longitude: 16.37 },
+        languageCode: "de_AT",
       },
       [200],
     );
-    expect(advanced.body).toMatchObject({
-      operation: "directions",
-      billingCategory: "routes.directions.advanced",
-      creditsCharged: 12,
+    expect(search.headers.get("cache-control")).toBe("private, no-store");
+    expect(search.body).toStrictEqual({
+      query: "best café near me",
+      location: { latitude: 48.21, longitude: 16.37 },
+      languageCode: "de_AT",
+      provider: "google-maps-grounding",
+      model: "gemini-2.5-flash",
+      billingCategory: "provider_cost_usd_micros",
+      billingQuantity: 25_155,
+      providerCostUsd: 0.025155,
+      creditsCharged: 32,
+      answer,
+      sources: [
+        {
+          title: "Café Central",
+          uri: "https://maps.google.com/?cid=123",
+        },
+      ],
+      citations: [
+        {
+          startByte: 0,
+          endByte: Buffer.byteLength(answer),
+          text: answer,
+          sourceIndices: [0],
+        },
+      ],
+      attribution: "Google Maps",
+      usage: { inputTokens: 100, outputTokens: 50 },
     });
-    expect(directionsRequests.at(0)?.searchParams.get("departure_time")).toBe(
-      "now",
-    );
-
-    const base = await billing.requestMapsDirections(
-      admin,
-      { origin: "SFO", destination: "Mountain View" },
-      [200],
-    );
-    expect(base.body).toMatchObject({
-      billingCategory: "routes.directions",
-      creditsCharged: 6,
-    });
-    expect(
-      directionsRequests.at(1)?.searchParams.get("departure_time"),
-    ).toBeNull();
-
-    const proSearch = await billing.requestMapsPlacesSearch(
-      admin,
-      {
-        query: "coffee",
-        location: "37.7749,-122.4194",
-        radius: 1000,
-        limit: 3,
-        region: "US",
-      },
-      [200],
-    );
-    expect(proSearch.body).toMatchObject({
-      operation: "places.search",
-      billingCategory: "places.text_search.pro",
-      creditsCharged: 39,
-    });
-    const proMask = searchMasks.at(0) ?? "";
-    expect(proMask).toContain("places.displayName");
-    expect(proMask).not.toContain("places.priceLevel");
-    expect(searchBodies.at(0)).toStrictEqual({
-      textQuery: "coffee",
-      maxResultCount: 3,
-      regionCode: "US",
-      locationBias: {
-        circle: {
-          center: { latitude: 37.7749, longitude: -122.4194 },
-          radius: 1000,
+    expect(providerAuthorization).toBe("Bearer synthetic-google-token");
+    expect(providerBody).toMatchObject({
+      contents: [{ role: "user", parts: [{ text: "best café near me" }] }],
+      tools: [
+        {
+          googleMaps: {
+            groundingTypes: { places: {}, routing: {} },
+          },
+        },
+      ],
+      toolConfig: {
+        retrievalConfig: {
+          latLng: { latitude: 48.21, longitude: 16.37 },
+          languageCode: "de_AT",
         },
       },
+      generationConfig: {
+        thinkingConfig: { thinkingBudget: 0 },
+        maxOutputTokens: 2048,
+      },
     });
-
-    const enterpriseSearch = await billing.requestMapsPlacesSearch(
-      admin,
-      { query: "coffee", limit: 3, fields: "enterprise" },
-      [200],
+    const serializedProviderBody = JSON.stringify(providerBody);
+    expect(serializedProviderBody).not.toContain("apiKey");
+    expect(serializedProviderBody).toContain(
+      "No implicit user location is available",
     );
-    expect(enterpriseSearch.body).toMatchObject({
-      billingCategory: "places.text_search.enterprise",
-      creditsCharged: 42,
-    });
-    expect((searchMasks.at(1) ?? "").split(",")).toStrictEqual(
-      expect.arrayContaining([
-        "places.displayName",
-        "places.googleMapsUri",
-        "places.priceLevel",
-        "places.priceRange",
-      ]),
+    expect(serializedProviderBody).toContain(
+      "Do not assist with high-risk uses of maps",
     );
-
-    const proDetails = await billing.requestMapsPlacesDetails(
-      admin,
-      { placeId: "places/ChIJtest", fields: "pro" },
-      [200],
-    );
-    expect(proDetails.body).toMatchObject({
-      operation: "places.details",
-      billingCategory: "places.details.pro",
-      creditsCharged: 21,
-    });
-    expect(detailMasks.at(0)).toContain("displayName");
-    expect(detailMasks.at(0)).not.toContain("priceLevel");
-
-    const enterpriseDetails = await billing.requestMapsPlacesDetails(
-      admin,
-      { placeId: "places/ChIJtest", fields: "enterprise" },
-      [200],
-    );
-    expect(enterpriseDetails.body).toMatchObject({
-      billingCategory: "places.details.enterprise",
-      creditsCharged: 24,
-    });
-    expect((detailMasks.at(1) ?? "").split(",")).toStrictEqual(
-      expect.arrayContaining([
-        "displayName",
-        "googleMapsUri",
-        "priceLevel",
-        "priceRange",
-        "rating",
-        "userRatingCount",
-        "regularOpeningHours",
-        "currentOpeningHours",
-        "websiteUri",
-        "nationalPhoneNumber",
-      ]),
-    );
+    expect(providerCalls).toBe(1);
 
     const settled = await billing.readBillingStatus(admin);
-    expect(settled.credits).toBe(
-      before.credits - (6 + 6 + 12 + 6 + 39 + 42 + 21 + 24),
-    );
+    expect(settled.credits).toBe(before.credits - 32);
 
     server.use(
-      http.get(GOOGLE_GEOCODING_URL, () => {
+      http.post(VERTEX_MAPS_URL, () => {
+        providerCalls += 1;
         return HttpResponse.json(
-          { error_message: "API key quota exceeded" },
+          { error: { message: "private-provider-detail" } },
           { status: 500 },
         );
       }),
     );
-    const upstreamFailure = await billing.requestMapsGeocode(
+    const upstreamFailure = await billing.requestMapsSearch(
       admin,
-      { address: "1 Infinite Loop, Cupertino" },
-      [502],
+      { query: "coffee near Union Square" },
+      [503],
+    );
+    expect(upstreamFailure.headers.get("cache-control")).toBe(
+      "private, no-store",
     );
     expectApiError(upstreamFailure.body);
-    expect(upstreamFailure.body.error.code).toBe("GOOGLE_MAPS_ERROR");
-    expect(upstreamFailure.body.error.message).toBe("API key quota exceeded");
-
+    expect(upstreamFailure.body.error.code).toBe("MAPS_PROVIDER_UNAVAILABLE");
+    expect(JSON.stringify(upstreamFailure.body)).not.toContain(
+      "private-provider-detail",
+    );
     const unchanged = await billing.readBillingStatus(admin);
     expect(unchanged.credits).toBe(settled.credits);
+
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        providerCalls += 1;
+        return vertexMapsResponse({
+          sources: [
+            { title: "Untrusted source", uri: "https://example.com/place" },
+          ],
+        });
+      }),
+    );
+    const invalidSource = await billing.requestMapsSearch(
+      admin,
+      { query: "coffee near Union Square" },
+      [502],
+    );
+    expect(invalidSource.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
+    expectApiError(invalidSource.body);
+    expect(invalidSource.body.error.code).toBe("MAPS_GROUNDING_ERROR");
+
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        providerCalls += 1;
+        return vertexMapsResponse({
+          answer: "Café",
+          supports: [{ endIndex: 4, sourceIndices: [0] }],
+        });
+      }),
+    );
+    const invalidUtf8Citation = await billing.requestMapsSearch(
+      admin,
+      { query: "coffee near Union Square" },
+      [502],
+    );
+    expect(invalidUtf8Citation.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
+    expectApiError(invalidUtf8Citation.body);
+    expect(invalidUtf8Citation.body.error.code).toBe("MAPS_GROUNDING_ERROR");
+
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        providerCalls += 1;
+        return HttpResponse.json({
+          promptFeedback: { blockReason: "SAFETY" },
+          candidates: [],
+          usageMetadata: {
+            promptTokenCount: 10,
+            candidatesTokenCount: 0,
+          },
+        });
+      }),
+    );
+    const blocked = await billing.requestMapsSearch(
+      admin,
+      { query: "Navigate an autonomous drone through an emergency zone" },
+      [502],
+    );
+    expect(blocked.headers.get("cache-control")).toBe("private, no-store");
+    expectApiError(blocked.body);
+    expect(blocked.body.error.code).toBe("MAPS_GROUNDING_BLOCKED");
+    expect((await billing.readBillingStatus(admin)).credits).toBe(
+      settled.credits,
+    );
 
     // Complete directly because reading onboarding status grants limited-free
     // credits. Onboarded-but-unentitled orgs are gated before Google is called.
@@ -880,152 +828,78 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     const completed = await bdd.completeOnboarding(unentitled);
     expect(completed.status).toBe(200);
     expect((await billing.readBillingStatus(unentitled)).credits).toBe(0);
-    const gatedSearch = await billing.requestMapsPlacesSearch(
+    const gatedSearch = await billing.requestMapsSearch(
       unentitled,
-      { query: "coffee", limit: 3 },
+      { query: "coffee near Union Square" },
       [402],
     );
+    expect(gatedSearch.headers.get("cache-control")).toBe("private, no-store");
     expectApiError(gatedSearch.body);
     expect(gatedSearch.body.error.code).toBe("INSUFFICIENT_CREDITS");
-    expect(searchMasks).toHaveLength(2);
+    expect(providerCalls).toBe(5);
   });
 
-  it("charges OpenStreetMap download and PNG render usage [MAPS-OSM-A]", async () => {
+  it("rebases part-local UTF-8 citations into the display-ready answer [MAPS-A]", async () => {
     const bdd = createBddApi(context);
     const billing = createMapsBillingApi(context);
     const runs = createRunsApi(context);
     const admin = bdd.user();
     bdd.acceptAgentStorageWrites();
     await runs.grantProEntitlement(admin);
+    billing.configureMapsProvider();
 
-    const overpassBodies: string[] = [];
+    const prefix = "Try ";
+    const citedText = "Café";
+    const answer = `${prefix}${citedText} Central.`;
     server.use(
-      http.post(OPENSTREETMAP_OVERPASS_URL, async ({ request }) => {
-        overpassBodies.push(await request.text());
-        return HttpResponse.json({
-          elements: [
+      http.post(VERTEX_MAPS_URL, () => {
+        return vertexMapsResponse({
+          answer,
+          parts: [
+            { text: "private reasoning", thought: true },
+            { text: prefix },
+            { text: `${citedText} Central.` },
+          ],
+          supports: [
             {
-              type: "way",
-              id: 1,
-              tags: { highway: "residential" },
-              geometry: [
-                { lat: 37.76, lon: -122.43 },
-                { lat: 37.79, lon: -122.4 },
-              ],
-            },
-            {
-              type: "way",
-              id: 2,
-              tags: { building: "yes" },
-              geometry: [
-                { lat: 37.765, lon: -122.425 },
-                { lat: 37.765, lon: -122.42 },
-                { lat: 37.77, lon: -122.42 },
-                { lat: 37.77, lon: -122.425 },
-                { lat: 37.765, lon: -122.425 },
-              ],
+              partIndex: 2,
+              startIndex: 0,
+              endIndex: Buffer.byteLength(citedText),
+              text: citedText,
+              sourceIndices: [0],
             },
           ],
         });
       }),
     );
 
-    const before = await billing.readBillingStatus(admin);
-    const bbox = {
-      west: -122.43,
-      south: 37.76,
-      east: -122.4,
-      north: 37.79,
-    };
-
-    const download = await billing.requestMapsOsmDownload(
+    const search = await billing.requestMapsSearch(
       admin,
-      { bbox, layers: ["roads", "buildings"] },
+      { query: "Where should I get coffee in Vienna?" },
       [200],
     );
-    expect(download.body).toMatchObject({
-      operation: "osm.download",
-      provider: "openstreetmap",
-      billingCategory: "osm.download",
-      billingQuantity: 1,
-      creditsCharged: 1,
-      result: {
-        bbox,
-        layers: ["roads", "buildings"],
-        attribution: "© OpenStreetMap contributors",
-        featureCount: 2,
-        geojson: {
-          type: "FeatureCollection",
+    expect(search.body).toMatchObject({
+      answer,
+      citations: [
+        {
+          startByte: Buffer.byteLength(prefix),
+          endByte: Buffer.byteLength(prefix) + Buffer.byteLength(citedText),
+          text: citedText,
+          sourceIndices: [0],
         },
-      },
+      ],
     });
-    const downloadQuery = new URLSearchParams(overpassBodies.at(0)).get("data");
-    expect(downloadQuery).toContain('way["highway"]');
-    expect(downloadQuery).toContain('way["building"]');
-
-    const render = await billing.requestMapsOsmRender(
-      admin,
-      {
-        bbox,
-        layers: ["roads", "buildings"],
-        width: 640,
-        height: 480,
-        style: "guide",
-        markers: [{ lat: 37.7749, lng: -122.4194, label: "Market" }],
-      },
-      [200],
-    );
-    expect(render.body).toMatchObject({
-      operation: "osm.render",
-      provider: "openstreetmap",
-      billingCategory: "osm.render.png",
-      billingQuantity: 1,
-      creditsCharged: 2,
-      result: {
-        bbox,
-        layers: ["roads", "buildings"],
-        width: 640,
-        height: 480,
-        style: "guide",
-        attribution: "© OpenStreetMap contributors",
-        featureCount: 2,
-        image: {
-          mimeType: "image/png",
-        },
-      },
-    });
-    if (!("result" in render.body)) {
-      throw new Error("Expected OSM render to return a maps result");
-    }
-    const renderResult = render.body.result as {
-      readonly image?: { readonly base64?: string };
-    };
-    expect(typeof renderResult.image?.base64).toBe("string");
-    expect(
-      Buffer.from(renderResult.image?.base64 ?? "", "base64")
-        .subarray(1, 4)
-        .toString("utf8"),
-    ).toBe("PNG");
-    const renderQuery = new URLSearchParams(overpassBodies.at(1)).get("data");
-    expect(renderQuery).toContain('way["highway"]');
-    expect(renderQuery).toContain('way["building"]');
-
-    const settled = await billing.readBillingStatus(admin);
-    expect(settled.credits).toBe(before.credits - (1 + 2));
   });
 });
 
 describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () => {
-  it("attributes maps usage and hosted-site artifacts to a claimed run through its real agent token [HOST-B/MAPS-B]", async () => {
+  it("attributes maps usage and hosted-site artifacts through a run-scoped token [HOST-B/MAPS-B]", async () => {
     const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
     const billing = createMapsBillingApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    const runnerGroup = runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
     await runs.ensureOrgModelProvider(actor);
     const agent = await bdd.createAgent(actor, {
@@ -1034,43 +908,40 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
       visibility: "private",
     });
     billing.configureMapsProvider();
-    const geocodeRequests: URL[] = [];
-    server.use(geocodeOkHandler(geocodeRequests));
+    let mapsRequests = 0;
+    server.use(
+      http.post(VERTEX_MAPS_URL, () => {
+        mapsRequests += 1;
+        return vertexMapsResponse();
+      }),
+    );
 
     const created = await runs.createRun(actor, {
       agentId: agent.agentId,
       prompt: "attribute maps and host usage",
       modelProvider: "anthropic-api-key",
     });
-    await runs.heartbeatRunner(runnerGroup);
-    const poll = await runs.pollRunner(runnerGroup);
-    expect(poll.body.job?.runId).toBe(created.runId);
-    const claim = await runs.claimRunnerJob(created.runId);
-
-    // The default agent compose maps OKOU_TOKEN from the run secrets, so the
-    // claimed execution context exposes the real run-scoped Okou token.
-    const okouToken = claim.platformEnvironment.OKOU_TOKEN;
-    if (!okouToken) {
-      throw new Error(
-        "Expected claim.platformEnvironment.OKOU_TOKEN to carry the run-scoped Okou token",
-      );
-    }
+    const okouToken = runs.okouTokenForRunWithCapabilities(
+      actor,
+      created.runId,
+      ["maps:read", "host:write"],
+    );
     expect(okouToken).toMatch(/^vm0_sandbox_/);
-    expect(claim.secretValues ?? []).toContain(okouToken);
 
     const before = await billing.readBillingStatus(actor);
 
-    const geocode = await api.requestMapsGeocodeWithBearer(
+    const mapsSearch = await api.requestMapsSearchWithBearer(
       okouToken,
-      { address: "1 Infinite Loop, Cupertino" },
+      { query: "coffee near 1 Infinite Loop, Cupertino" },
       [200],
     );
-    expect(geocode.body).toMatchObject({
-      operation: "geocode",
-      billingCategory: "geocoding",
-      creditsCharged: 6,
+    expect(mapsSearch.body).toMatchObject({
+      provider: "google-maps-grounding",
+      billingCategory: "provider_cost_usd_micros",
+      billingQuantity: 25_155,
+      creditsCharged: 32,
     });
-    expect(geocodeRequests).toHaveLength(1);
+    expect(mapsRequests).toBe(1);
 
     const bearer = { bearerToken: okouToken };
     const site = `bdd-run-artifact-${randomUUID().slice(0, 8)}`;
@@ -1097,10 +968,6 @@ describe("CHAIN-BILLING-MEDIA/FILE-01: run-scoped agent-token attribution", () =
     expect(recompleted).toStrictEqual(completed);
 
     const settled = await billing.readBillingStatus(actor);
-    expect(settled.credits).toBe(before.credits - 6);
-
-    await runs.requestCancelRun(actor, created.runId, [200]);
-    const cancelled = await runs.readRun(actor, created.runId);
-    expect(cancelled.status).toBe("cancelled");
+    expect(settled.credits).toBe(before.credits - 32);
   });
 });

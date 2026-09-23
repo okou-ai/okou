@@ -3,6 +3,7 @@ import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
 import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
+import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as deviceCodesSchema from "./schema/device-codes";
@@ -96,6 +97,7 @@ import * as emailSuppressionSchema from "./schema/email-suppression";
 import * as skillSchema from "./schema/skill";
 import * as usagePricingSchema from "./schema/usage-pricing";
 import * as agentDraftSchema from "./schema/agent-draft";
+import * as chatThreadDraftSchema from "./schema/chat-thread-draft";
 import * as userPermissionGrantSchema from "./schema/user-permission-grant";
 import * as storageVersionLineageSchema from "./schema/storage-version-lineage";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
@@ -162,6 +164,7 @@ export const schema = {
   ...accountErasureSchema,
   ...accountErasureBridgeSchema,
   ...runActivitySnapshotSchema,
+  ...homeTaskRecommendationSchema,
   ...userSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
@@ -256,6 +259,7 @@ export const schema = {
   ...skillSchema,
   ...usagePricingSchema,
   ...agentDraftSchema,
+  ...chatThreadDraftSchema,
   ...userPermissionGrantSchema,
   ...storageVersionLineageSchema,
   ...runUploadedFileSchema,

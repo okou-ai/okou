@@ -443,6 +443,12 @@ function FeishuAgentSelect({
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
   const updateForm = useSet(updateFeishuSetupForm$);
+  const agentItems = agents.map((agent) => {
+    return {
+      value: agent.agentId,
+      label: agentLabel(agent, orgDefaultAgentId, orgDefaultAgentName),
+    };
+  });
   return (
     <div className="flex flex-col gap-2">
       <label htmlFor="feishu-default-agent" className="text-sm font-medium">
@@ -451,10 +457,24 @@ function FeishuAgentSelect({
         })}
       </label>
       <Select
+        items={agentItems}
         value={form.defaultAgentId}
         disabled={saving || readOnly}
-        onValueChange={(defaultAgentId) => {
-          updateForm({ defaultAgentId });
+        onValueChange={(defaultAgentId, details) => {
+          if (
+            defaultAgentId === null ||
+            saving ||
+            readOnly ||
+            !agentItems.some((item) => {
+              return item.value === defaultAgentId;
+            })
+          ) {
+            details.cancel();
+            return;
+          }
+          if (defaultAgentId !== form.defaultAgentId) {
+            updateForm({ defaultAgentId });
+          }
           onAgentChange?.(defaultAgentId);
         }}
       >
@@ -466,10 +486,10 @@ function FeishuAgentSelect({
           />
         </SelectTrigger>
         <SelectContent>
-          {agents.map((agent) => {
+          {agentItems.map((item) => {
             return (
-              <SelectItem key={agent.agentId} value={agent.agentId}>
-                {agentLabel(agent, orgDefaultAgentId, orgDefaultAgentName)}
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
               </SelectItem>
             );
           })}
@@ -775,7 +795,13 @@ function FeishuEventsStep({ data }: { data: FeishuDialogData | null }) {
         </div>
       </div>
       <div className="flex gap-2">
-        <Input value={data?.callbackUrl ?? ""} readOnly />
+        <Input
+          aria-label={t(($) => {
+            return $.connectors.providerSettings[platform].events.callbackLabel;
+          })}
+          value={data?.callbackUrl ?? ""}
+          readOnly
+        />
         {data?.callbackUrl ? (
           <CopyButton
             value={data.callbackUrl}
@@ -843,7 +869,13 @@ function FeishuRedirectStep({ data }: { data: FeishuDialogData | null }) {
         })}
       />
       <div className="flex gap-2">
-        <Input value={data?.oauthRedirectUrl ?? ""} readOnly />
+        <Input
+          aria-label={t(($) => {
+            return $.connectors.providerSettings[platform].redirect.label;
+          })}
+          value={data?.oauthRedirectUrl ?? ""}
+          readOnly
+        />
         {data?.oauthRedirectUrl ? (
           <CopyButton
             value={data.oauthRedirectUrl}
@@ -1057,7 +1089,11 @@ function FeishuPublishStep({
           saving={!data?.id || updateLoadable.state === "loading"}
           readOnly={readOnly}
           onAgentChange={(defaultAgentId) => {
-            if (!data?.id) {
+            if (
+              !data?.id ||
+              defaultAgentId === data.defaultAgentId ||
+              updateLoadable.state === "loading"
+            ) {
               return;
             }
             detach(
@@ -1514,12 +1550,30 @@ function FeishuBotAgentSelect({
     updateFeishuInstallationAgent$,
   );
   const signal = useGet(pageSignal$);
+  const agentItems = agents.map((agent) => {
+    return { value: agent.agentId, label: agent.displayName ?? agent.agentId };
+  });
   return (
     <Select
+      items={agentItems}
       value={bot.defaultAgentId}
       disabled={disabled || !bot.id || updateLoadable.state === "loading"}
-      onValueChange={(defaultAgentId) => {
-        if (!bot.id) {
+      onValueChange={(defaultAgentId, details) => {
+        if (
+          defaultAgentId === null ||
+          !agentItems.some((item) => {
+            return item.value === defaultAgentId;
+          })
+        ) {
+          details.cancel();
+          return;
+        }
+        if (
+          !bot.id ||
+          disabled ||
+          updateLoadable.state === "loading" ||
+          defaultAgentId === bot.defaultAgentId
+        ) {
           return;
         }
         detach(updateAgent(bot.id, defaultAgentId, signal), Reason.DomCallback);
@@ -1540,10 +1594,10 @@ function FeishuBotAgentSelect({
         />
       </SelectTrigger>
       <SelectContent>
-        {agents.map((agent) => {
+        {agentItems.map((item) => {
           return (
-            <SelectItem key={agent.agentId} value={agent.agentId}>
-              {agent.displayName ?? agent.agentId}
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
             </SelectItem>
           );
         })}

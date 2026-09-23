@@ -29,6 +29,7 @@ import {
 import {
   AGENTPHONE_BDD_AGENT_ID,
   AGENTPHONE_BDD_PHONE_NUMBER,
+  bddGroupId,
   createAgentPhoneBddApi,
   uniqueConversationId,
   uniquePhoneHandle,
@@ -141,9 +142,10 @@ async function modelSessionScenario({
     expect(lastSend(sends).body).toBe("Task completed successfully.");
     if (channel === "imessage") {
       expect(lastSend(sends)).toMatchObject({
-        conversationId,
+        toNumber: phone,
         replyToMessageId: messageId,
       });
+      expect(lastSend(sends).conversationId).toBeUndefined();
     } else {
       expect(lastSend(sends).toNumber).toBe(phone);
       expect(lastSend(sends).replyToMessageId).toBeUndefined();
@@ -420,10 +422,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
 
     expect(lastSend(sends)).toMatchObject({
-      conversationId,
+      toNumber: phone,
       replyToMessageId: inboundMessageId,
       body: expect.stringContaining("Your phone number is now connected"),
     });
+    expect(lastSend(sends).conversationId).toBeUndefined();
     await expect(
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
@@ -661,11 +664,15 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForTyping(sends, [conversationId, conversationId]);
 
       // Sandbox progress refreshes the typing indicator through the callback.
-      await webhooks.requestAgentHeartbeat(
+      const heartbeat = await webhooks.requestAgentHeartbeat(
         { runId: run1.runId },
         { authorization: `Bearer ${run1.sandboxToken}` },
         [200],
       );
+      expect(heartbeat.body).toStrictEqual({
+        ok: true,
+        typingRefreshIntervalSeconds: 4,
+      });
       await waitForTyping(sends, [
         conversationId,
         conversationId,
@@ -680,8 +687,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       });
       await waitForSendCount(sends, beforeCompletion + 1);
       const completionReply = lastSend(sends);
-      expect(completionReply.toNumber).toBeUndefined();
-      expect(completionReply.conversationId).toBe(conversationId);
+      expect(completionReply.toNumber).toBe(phone);
+      expect(completionReply.conversationId).toBeUndefined();
       expect(completionReply.replyToMessageId).toBe(messageId1);
       expect(completionReply.body).toContain(EXPECTED_PLAIN_RUN_OUTPUT);
       expect(completionReply.body).toContain(
@@ -690,6 +697,49 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(completionReply.body).not.toContain("Responded by");
     },
   );
+
+  it("keeps run progress alive when the typing provider fails", async () => {
+    const webhooks = createWebhookCallbackApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "check my inbox",
+      conversationId,
+      isGroup: false,
+    });
+    await waitForTyping(sends, [conversationId]);
+    const run = await claimDispatchedRun(runnerGroup);
+
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/conversations/:id/typing",
+        () => {
+          return HttpResponse.json(
+            { detail: "temporary failure" },
+            { status: 503 },
+          );
+        },
+      ),
+    );
+    const heartbeat = await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    expect(heartbeat.body).toStrictEqual({
+      ok: true,
+      typingRefreshIntervalSeconds: 4,
+    });
+    await flushWaitUntilForTest();
+
+    const beforeCompletion = sends.messages.length;
+    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await waitForSendCount(sends, beforeCompletion + 1);
+    expect(lastSend(sends).toNumber).toBe(phone);
+  });
 
   it.each(["reuse", "reset"] as const)(
     "linked iMessage sessions support %s",
@@ -1397,6 +1447,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         },
       ],
     });
+    await waitForTyping(sends, [bddGroupId(conversationId)]);
     const admittedGroup = await findAgentphoneChatEventByPromptFixture({
       userId: actor.userId,
       prompt: "@Okou summarize this thread",
@@ -1414,6 +1465,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       agentphoneThreadContext: expect.stringContaining("Earlier group context"),
       agentphoneMessageId: groupMessageId,
       agentphoneConversationId: conversationId,
+      agentphoneGroupId: bddGroupId(conversationId),
       agentphoneChannel: "imessage",
       agentphoneIsGroup: true,
       agentphonePhoneHandle: phone,
@@ -1464,14 +1516,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       groupThreadContext,
     );
 
-    // The completion replies into the conversation, not to a number.
+    // The provider requires the group id as to_number for a group reply.
     const beforeGroupCompletion = sends.messages.length;
     await completeSandboxRun(run1.sandboxToken, run1.runId, 0);
     await waitForSendCount(sends, beforeGroupCompletion + 1);
     const groupReply = lastSend(sends);
-    expect(groupReply.conversationId).toBe(conversationId);
+    expect(groupReply.conversationId).toBeUndefined();
     expect(groupReply.replyToMessageId).toBe(groupMessageId);
-    expect(groupReply.toNumber).toBeUndefined();
+    expect(groupReply.toNumber).toBe(bddGroupId(conversationId));
     expect(groupReply.body).toBe("Task completed successfully.");
     const groupSession = await waitForRunSessionIdPresent(actor, run1.runId);
 
@@ -1515,7 +1567,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     await waitForSendCount(sends, beforeBlockedCommand + 1);
     const blockedReply = lastSend(sends);
-    expect(blockedReply.conversationId).toBe(conversationId);
+    expect(blockedReply.toNumber).toBe(bddGroupId(conversationId));
     expect(blockedReply.body).toContain("Only the linked sender");
     expect(blockedReply.body).not.toContain("/agentphone/connect?");
     const stillLinked = await integrations.getAgentPhoneLinkStatus(actor);
@@ -1538,14 +1590,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       beforeStrangerPrompt,
       (send) => {
         return (
-          send.conversationId === strangerConversationId &&
+          send.toNumber === bddGroupId(strangerConversationId) &&
           (send.body?.includes("message this number directly") ?? false)
         );
       },
     );
-    expect(dmPrompt.conversationId).toBe(strangerConversationId);
+    expect(dmPrompt.toNumber).toBe(bddGroupId(strangerConversationId));
     expect(dmPrompt.replyToMessageId).toBe(strangerMessageId);
-    expect(dmPrompt.toNumber).toBeUndefined();
     expect(dmPrompt.body).toContain("message this number directly");
     expect(dmPrompt.body).not.toContain("/agentphone/connect?");
 
@@ -1561,7 +1612,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     await waitForSendMatching(sends, beforeStrangerCommand, (send) => {
       return (
-        send.conversationId === conversationId &&
+        send.toNumber === bddGroupId(conversationId) &&
         (send.body?.includes("Only the linked sender") ?? false)
       );
     });
@@ -1578,7 +1629,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     });
     await waitForSendMatching(sends, beforeSessionReset, (send) => {
       return (
-        send.conversationId === conversationId &&
+        send.toNumber === bddGroupId(conversationId) &&
         send.body === "New session started."
       );
     });
@@ -1596,7 +1647,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       beforeColdCutoverPrompt,
       (send) => {
         return (
-          send.conversationId === conversationId &&
+          send.toNumber === bddGroupId(conversationId) &&
           (send.body?.includes("message this number directly") ?? false)
         );
       },
@@ -1668,6 +1719,27 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       conversationId,
       isGroup: true,
     });
+    await runs.heartbeatRunner(runnerGroup);
+    const idle = await runs.pollRunner(runnerGroup);
+    expect(idle.body.job).toBeNull();
+  });
+
+  it("does not send a group reply to one member when the provider group id is missing", async () => {
+    const runs = createRunsApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const before = sends.messages.length;
+
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "@Okou check this group",
+      conversationId: uniqueConversationId(),
+      isGroup: true,
+      groupId: null,
+    });
+
+    expect(sends.messages).toHaveLength(before);
     await runs.heartbeatRunner(runnerGroup);
     const idle = await runs.pollRunner(runnerGroup);
     expect(idle.body.job).toBeNull();

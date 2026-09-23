@@ -1911,7 +1911,8 @@ test.each(["Cancel", "Close", "Escape", "backdrop"] as const)(
   },
 );
 
-test("Install an Official Workflow with typed Blueprint settings", async () => {
+test("Install an Official Workflow with typed Blueprint settings and closed-select typeahead", async () => {
+  const user = userEvent.setup();
   const definition = officialCatalogDetail();
   const {
     workflow: _workflow,
@@ -1973,12 +1974,19 @@ test("Install an Official Workflow with typed Blueprint settings", async () => {
     within(dialog).getByLabelText("interval-seconds (required)"),
     { target: { value: "7200" } },
   );
-  click(
-    within(dialog).getByRole("combobox", {
-      name: "include-weekends (required)",
-    }),
-  );
-  click(await screen.findByRole("option", { name: "Yes" }));
+  const includeWeekends = within(dialog).getByRole("combobox", {
+    name: "include-weekends (required)",
+  });
+  act(() => {
+    includeWeekends.focus();
+  });
+  expect(includeWeekends).toHaveFocus();
+  expect(includeWeekends).toHaveAttribute("aria-expanded", "false");
+  await user.keyboard("y");
+  await waitFor(() => {
+    expect(includeWeekends).toHaveTextContent("Yes");
+  });
+  expect(includeWeekends).toHaveAttribute("aria-expanded", "false");
   click(buttonByText("Install", dialog));
 
   await waitFor(() => {
@@ -3278,6 +3286,65 @@ test("Navigate between workflow detail tabs", async () => {
   expect(search()).toBe("");
 });
 
+test("Navigate workflow details with the named section select", async () => {
+  const user = userEvent.setup({ delay: null });
+  context.mocks.data.userPreferences({ timezone: "UTC" });
+  mockWorkflowApis([salesResearch()]);
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await screen.findByText("Every weekday at 9:00 AM");
+  const section = screen.getByRole("combobox", {
+    name: "Workflow details section",
+  });
+  expect(section).toHaveTextContent("Automations");
+
+  section.focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Automations", selected: true });
+  await user.keyboard("{End}{Enter}");
+
+  await expect(
+    screen.findByRole("form", { name: "Workflow metadata" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByText("Visibility").length).toBeGreaterThan(0);
+  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/info`);
+  expect(search()).toBe("");
+  const settingsSection = screen.getByRole("combobox", {
+    name: "Workflow details section",
+  });
+  expect(settingsSection).toHaveTextContent("Settings");
+  await waitFor(() => {
+    expect(settingsSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Settings", selected: true });
+  await user.keyboard("{Home}{ArrowDown}{Enter}");
+
+  await expect(
+    screen.findByText("Gather CRM context before outreach."),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/instructions`);
+  expect(search()).toBe("");
+  const instructionsSection = screen.getByRole("combobox", {
+    name: "Workflow details section",
+  });
+  expect(instructionsSection).toHaveTextContent("Instructions");
+  await waitFor(() => {
+    expect(instructionsSection).toHaveFocus();
+  });
+
+  await user.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Instructions", selected: true });
+  await user.keyboard("{Escape}");
+
+  await waitFor(() => {
+    expect(instructionsSection).toHaveFocus();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+  expect(pathname()).toBe(`/workflows/${SALES_WORKFLOW_ID}/instructions`);
+  expect(search()).toBe("");
+});
+
 test("Summarize Gmail automation match conditions", async () => {
   const workflow = {
     ...salesResearch(),
@@ -3383,6 +3450,71 @@ test("Create a Gmail new-message automation with match rules", async () => {
           from: { contains: "@acme.com" },
           subject: { doesNotContain: "newsletter" },
         },
+      },
+    });
+  });
+});
+
+test("Keep Gmail operator selection valid when its field changes", async () => {
+  const user = userEvent.setup();
+  const createBodies: WorkflowAutomationCreateRequest[] = [];
+  mockWorkflowApis([salesResearch()]);
+  mockCreateWorkflowAutomation((body) => {
+    createBodies.push(body);
+  });
+
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  const addAutomation = await waitFor(() => {
+    return buttonByText("Add automation");
+  });
+  click(addAutomation);
+  await screen.findByRole("dialog");
+  pickAutomation("Email", /^Gmail new message/);
+
+  const form = await screen.findByRole("form", {
+    name: "Add Gmail automation",
+  });
+  await waitFor(() => {
+    expect(
+      within(form).getByRole("combobox", { name: "Condition 1 field" }),
+    ).toHaveFocus();
+  });
+  expect(
+    within(form).getByRole("combobox", { name: "Condition 1 field" }),
+  ).toHaveTextContent("From");
+  expect(
+    within(form).getByRole("combobox", { name: "Condition 1 operator" }),
+  ).toHaveTextContent("Contains");
+
+  await user.click(
+    within(form).getByRole("combobox", { name: "Condition 1 field" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Thread ID" }));
+  expect(
+    within(form).getByRole("combobox", { name: "Condition 1 operator" }),
+  ).toHaveTextContent("Is");
+  expect(within(form).getByLabelText("Thread ID is")).toBeInTheDocument();
+
+  await user.click(
+    within(form).getByRole("combobox", { name: "Condition 1 field" }),
+  );
+  await user.click(screen.getByRole("option", { name: "Subject" }));
+  expect(
+    within(form).getByRole("combobox", { name: "Condition 1 operator" }),
+  ).toHaveTextContent("Contains");
+  const subject = within(form).getByLabelText("Subject contains");
+  await fill(subject, "release");
+  expect(subject).toHaveValue("release");
+  fireEvent.submit(form);
+
+  await waitFor(() => {
+    expect(createBodies.at(-1)).toStrictEqual({
+      kind: "event",
+      eventType: "gmail-new-message",
+      eventConfig: {
+        provider: "gmail",
+        event: "new_message",
+        match: { subject: { contains: "release" } },
       },
     });
   });
@@ -4901,13 +5033,76 @@ test("Offer a Team upgrade to a Pro workspace administrator", async () => {
   expect(buttonByText("Upgrade to Team")).toBeInTheDocument();
 });
 
+async function verifyWebhookFieldInteractions(
+  dialog: HTMLElement,
+  user: ReturnType<typeof userEvent.setup>,
+  clipboardWrites: readonly string[],
+) {
+  const fields = [
+    { label: "Webhook URL", value: webhookWorkflowAutomation().webhookUrl },
+    { label: "Signing secret", value: "webhook-secret" },
+  ];
+  const copyButtons = queryAllByRoleFast("button", dialog).filter((button) => {
+    return textFor(button) === "Copy";
+  });
+  expect(copyButtons).toHaveLength(3);
+  const expectedWrites: string[] = [];
+
+  for (const [index, { label, value }] of fields.entries()) {
+    const input = within(dialog).getByLabelText<HTMLInputElement>(label, {
+      exact: true,
+    });
+    expect(within(dialog).getByRole("textbox", { name: label })).toBe(input);
+    expect(input).toHaveValue(value);
+    expect(input).toHaveAttribute("readonly");
+
+    await user.click(within(dialog).getByText(label, { exact: true }));
+    expect(input).toHaveFocus();
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+
+    await user.keyboard("{Control>}a{/Control}");
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe(input.value.length);
+    await user.keyboard("x");
+    expect(input).toHaveValue(value);
+
+    await user.keyboard("{Tab}");
+    const copyButton = copyButtons[index];
+    expect(copyButton).toHaveFocus();
+    expect(copyButton).toHaveAttribute("type", "button");
+    await user.keyboard("{Enter}");
+    expectedWrites.push(input.value);
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+    await user.keyboard(" ");
+    expectedWrites.push(input.value);
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+    await user.click(copyButton);
+    expectedWrites.push(input.value);
+    expect(clipboardWrites).toStrictEqual(expectedWrites);
+    await user.keyboard("{Tab}");
+    expect(
+      index === 0
+        ? within(dialog).getByLabelText("Signing secret", { exact: true })
+        : copyButtons[2],
+    ).toHaveFocus();
+  }
+
+  await user.keyboard("{Enter}");
+  expect(clipboardWrites).toHaveLength(7);
+  expect(clipboardWrites[6]).toContain(fields[0].value);
+  expect(clipboardWrites[6]).toContain(fields[1].value);
+}
+
 test("Allow webhook creation when the plan grants the capability", async () => {
+  const user = userEvent.setup();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.data.org({
     id: "org_1",
     name: "Test Org",
     role: "admin",
   });
   mockWorkflowApis([salesResearch()]);
+  mockCreateWorkflowAutomation(() => {});
   await setupWorkflowDetailPage(workflowDetailPath("automations"), {}, "pro", {
     workflowWebhookAutomationAllowed: true,
   });
@@ -4925,7 +5120,58 @@ test("Allow webhook creation when the plan grants the capability", async () => {
   expect(
     screen.queryByText("Upgrade for webhook automations"),
   ).not.toBeInTheDocument();
+
+  click(buttonByText("Create webhook"));
+  await expect(screen.findByLabelText("Webhook URL")).resolves.toHaveValue(
+    webhookWorkflowAutomation().webhookUrl,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Add webhook automation" });
+  await verifyWebhookFieldInteractions(dialog, user, clipboard.writes);
+  click(buttonByText("Done", dialog));
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
 });
+
+test.each([
+  { name: "URL only", hasUrl: true, hasSecret: false },
+  { name: "secret only", hasUrl: false, hasSecret: true },
+  { name: "neither value", hasUrl: false, hasSecret: false },
+])(
+  "Show only the available webhook fields after creation: $name",
+  async ({ hasUrl, hasSecret }) => {
+    mockWorkflowApis([salesResearch()]);
+    context.mocks.api(workflowAutomationsContract.create, ({ respond }) => {
+      return respond(201, {
+        ...webhookWorkflowAutomation(),
+        webhookUrl: hasUrl ? webhookWorkflowAutomation().webhookUrl : undefined,
+        webhookSecret: hasSecret ? "webhook-secret" : undefined,
+      });
+    });
+    await setupWorkflowDetailPage(workflowDetailPath("automations"));
+
+    click(await screen.findByText("Add automation"));
+    await screen.findByRole("dialog");
+    pickAutomation("Integrations", /^Webhook/u);
+    click(await screen.findByText("Create webhook"));
+    await screen.findByText("Done");
+    const dialog = screen.getByRole("dialog", {
+      name: "Add webhook automation",
+    });
+    expect(within(dialog).getByText("Webhook URL")).toBeInTheDocument();
+    const url =
+      within(dialog).queryByLabelText<HTMLInputElement>("Webhook URL");
+    expect(url?.value).toBe(
+      hasUrl ? webhookWorkflowAutomation().webhookUrl : undefined,
+    );
+    const secret =
+      within(dialog).queryByLabelText<HTMLInputElement>("Signing secret");
+    expect(secret?.value).toBe(hasSecret ? "webhook-secret" : undefined);
+    expect(within(dialog).queryByText("Signing secret")?.textContent).toBe(
+      hasSecret ? "Signing secret" : undefined,
+    );
+  },
+);
 
 test("Handle a plan restriction discovered while creating a webhook", async () => {
   context.mocks.data.org({
@@ -5027,6 +5273,8 @@ test("Explain a plan restriction when enabling an existing webhook", async () =>
 });
 
 test("Reveal an existing webhook secret on demand", async () => {
+  const user = userEvent.setup();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   const workflow = {
     ...salesResearch(),
     automations: [webhookWorkflowAutomation()],
@@ -5043,15 +5291,29 @@ test("Reveal an existing webhook secret on demand", async () => {
   ).not.toBeInTheDocument();
   click(buttonByText("More actions"));
   click(menuItemByText("View webhook secret"));
-  click(await screen.findByText("Reveal secret"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "View webhook secret",
+  });
+  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+  click(buttonByText("Reveal secret", dialog));
 
-  const webhookUrlField = await screen.findByDisplayValue(
-    webhookWorkflowAutomation().webhookUrl ?? "",
-  );
-  expect(webhookUrlField).toBeInTheDocument();
-  expect(screen.getByDisplayValue("webhook-secret")).toHaveValue(
-    "webhook-secret",
-  );
+  await expect(
+    within(dialog).findByLabelText("Webhook URL"),
+  ).resolves.toHaveValue(webhookWorkflowAutomation().webhookUrl);
+  await verifyWebhookFieldInteractions(dialog, user, clipboard.writes);
+  click(buttonByText("Done", dialog));
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
+
+  click(buttonByText("More actions"));
+  click(menuItemByText("View webhook secret"));
+  const reopened = await screen.findByRole("dialog", {
+    name: "View webhook secret",
+  });
+  expect(within(reopened).queryByRole("textbox")).not.toBeInTheDocument();
+  expect(buttonByText("Reveal secret", reopened)).toBeEnabled();
+  expect(clipboard.writes).toHaveLength(7);
 });
 
 test("Create a daily schedule in the user's preferred time zone", async () => {
@@ -5262,6 +5524,48 @@ test("Edit an interval automation", async () => {
           type: "loop",
           intervalSeconds: 1800,
         },
+      },
+    });
+  });
+});
+
+test("Keep a custom interval when saving without opening its selector", async () => {
+  const updateBodies: {
+    readonly automationId: string;
+    readonly body: WorkflowAutomationUpdateRequest;
+  }[] = [];
+  const workflow = {
+    ...salesResearch(),
+    automations: [
+      {
+        ...weekdayWorkflowAutomation(),
+        schedule: { type: "loop", intervalSeconds: 2220 },
+        scheduleSummary: "Every 2220s",
+      } satisfies WorkflowScheduleAutomationSummary,
+    ],
+  };
+  mockWorkflowApis([workflow]);
+  mockUpdateWorkflowAutomation((automationId, body) => {
+    updateBodies.push({ automationId, body });
+  });
+
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await screen.findByText("Every 37 minutes");
+  click(buttonByText("Edit automation"));
+
+  const form = await screen.findByRole("form", {
+    name: "Update schedule automation",
+  });
+  const interval = within(form).getByRole("combobox", { name: "Every" });
+  expect(interval).toHaveTextContent("37 minutes");
+  expect(interval).toHaveAttribute("aria-expanded", "false");
+  click(buttonByText("Save schedule", form));
+
+  await waitFor(() => {
+    expect(updateBodies.at(-1)).toStrictEqual({
+      automationId: "workflow-automation-weekday-brief",
+      body: {
+        schedule: { type: "loop", intervalSeconds: 2220 },
       },
     });
   });

@@ -171,7 +171,22 @@ function MediaModelSelect<Model extends string>({
 }) {
   return (
     // Keep adjacent composer actions tappable while the model menu is open.
-    <Select value={value} onValueChange={onChange} modal={false}>
+    <Select
+      value={value}
+      onValueChange={(next, details) => {
+        if (next === null || !models.includes(next)) {
+          details.cancel();
+          return;
+        }
+        // A replay of the effective display value must not create a thread pin.
+        // Explicit item presses still reach persistence, including save retries.
+        if (next === value && details.reason === "none") {
+          return;
+        }
+        onChange(next);
+      }}
+      modal={false}
+    >
       <SelectTrigger
         aria-label={label}
         className="h-8 w-8 shrink-0 gap-1 border-transparent bg-transparent px-0 text-sm text-muted-foreground hover:bg-state-hover composer-wide:w-auto composer-wide:max-w-[11rem] composer-wide:px-2 [&>[data-slot=select-icon]]:hidden composer-wide:[&>[data-slot=select-icon]]:block"
@@ -276,7 +291,7 @@ export function ComposerCreateVideoModelPicker({
                 patch.duration !== resolved.duration) ||
               (patch.generateAudio !== undefined &&
                 patch.generateAudio !== resolved.generateAudio);
-            if (adjusted) {
+            if (next !== value && adjusted) {
               toast.info(
                 t(($) => {
                   return $.chat.composer.create.settingsAdjusted;

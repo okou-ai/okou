@@ -78,6 +78,7 @@ const {
   piS3Object,
   publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
+  completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
 async function expectPiApiFirstTurnUsage(
@@ -315,10 +316,7 @@ describe("CHAT-02: model-first provider policies", () => {
       const modelRequests: {
         readonly body: unknown;
       }[] = [];
-      const modelAnswers = [
-        `first API answer for ${selectedModel}`,
-        `second API answer for ${selectedModel}`,
-      ];
+      const modelAnswers = [`first API answer for ${selectedModel}`];
       const providerUrl = selectedModel.startsWith("gpt-")
         ? "https://api.openai.com/v1/responses"
         : "https://api.deepseek.com/responses";
@@ -446,12 +444,8 @@ describe("CHAT-02: model-first provider policies", () => {
         },
         usagePricingResolution,
       );
-      await waitForRunStatus(actor, second.runId, "completed");
       await flushWaitUntilForTest();
-      expect(modelRequests).toHaveLength(2);
-      expect(modelRequests[1]?.body).toMatchObject({
-        reasoning: { effort: "high" },
-      });
+      expect(modelRequests).toHaveLength(1);
       const metadata = await chat.readThreadMetadata(actor, first.threadId);
       if (selectedModel === "deepseek-v4.1-flash") {
         expect(metadata.modelSettings).not.toHaveProperty(selectedModel);
@@ -460,31 +454,33 @@ describe("CHAT-02: model-first provider policies", () => {
           [selectedModel]: { effort: "high" },
         });
       }
-      await expectPiApiUsage(second.runId, selectedModel, "", {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheCreation: 0,
-      });
-      const secondModelInput = JSON.stringify(modelRequests[1]?.body);
-      expect(occurrences(secondModelInput, firstPrompt)).toBe(1);
-      expect(occurrences(secondModelInput, modelAnswers[0] ?? "")).toBe(1);
-      expect(occurrences(secondModelInput, secondPrompt)).toBe(1);
-      expect(occurrences(secondModelInput, modelAnswers[1] ?? "")).toBe(0);
-      // Follow-up adds one H0 restore and one strict H1 promotion check.
-      expect(s3GetObjectCommandCalls()).toHaveLength(3);
+      // Blob-backed continuation transfers by reference without API H0 reads.
+      expect(s3GetObjectCommandCalls()).toHaveLength(1);
       const secondManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${second.runId}/manifest.json`;
-      expect(checkpointObjects.has(secondManifestKey)).toBeFalsy();
-      expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-        runId: second.runId,
-        mode: "hard",
+      const secondManifestBytes = checkpointObjects.get(secondManifestKey);
+      if (!secondManifestBytes) {
+        throw new Error("Expected referenced Pi resume manifest");
+      }
+      expect(
+        piApiFirstTurnManifestSchema.parse(
+          JSON.parse(secondManifestBytes.toString("utf8")),
+        ),
+      ).toMatchObject({
+        schemaVersion: 4,
+        mode: "sandbox-first",
+        baseSession: {
+          sessionId: first.threadId,
+          sha256: createHash("sha256").update(firstSessionBytes).digest("hex"),
+        },
       });
-      const secondClaim = await api.requestClaimRunnerJob(
-        true,
-        second.runId,
-        [404],
-      );
-      expect(secondClaim.status).toBe(404);
+      const secondClaim = await claimChatRun(runnerGroup, second.runId);
+      expect(secondClaim.claim).toMatchObject({
+        piSessionId: first.threadId,
+        piModelConfig: {
+          model: getProviderRuntimeModel("built-in", selectedModel),
+        },
+      });
+      await cancelChatRun(actor, second.runId, secondClaim.sandboxHeaders);
     },
     90_000,
   );
@@ -511,7 +507,7 @@ describe("CHAT-02: model-first provider policies", () => {
   ] as const)(
     "runs custom Responses gateway $selectedModel through Pi without built-in model billing",
     async ({ selectedModel, upstreamModel }) => {
-      const { actor, agentId } = await entitledChatActor();
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
       const usagePricingResolution = await createGptUsagePricingResolution();
       await configureCustomPiModel(actor, selectedModel, upstreamModel);
       if (selectedModel === "deepseek-v4-pro") {
@@ -524,7 +520,7 @@ describe("CHAT-02: model-first provider policies", () => {
         });
       }
       mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
+      const checkpointObjects = mockPiCheckpointObjectStore();
       const modelRequests: {
         readonly body: unknown;
         readonly authorization: string | null;
@@ -616,28 +612,29 @@ describe("CHAT-02: model-first provider policies", () => {
             usagePricingResolution,
           );
           await flushWaitUntilForTest();
-          await waitForRunStatus(actor, continuation.runId, "completed");
-          expect(modelRequests.at(-1)).toMatchObject({
-            body: {
-              model: upstreamModel,
-              reasoning: { effort: "max" },
-              store: false,
-            },
-            authorization: null,
-            apiKey: "Key custom-pi-gateway-secret",
+          expect(modelRequests).toHaveLength(1);
+          const claim = await claimChatRun(runnerGroup, continuation.runId);
+          expect(claim.claim.piModelConfig).toMatchObject({
+            model: upstreamModel,
+            thinkingLevel: "max",
           });
           if (tier === "fast") {
-            expect(modelRequests.at(-1)?.body).toMatchObject({
-              service_tier: "priority",
+            expect(claim.claim.piModelConfig).toMatchObject({
+              serviceTier: "priority",
             });
           } else {
-            expect(modelRequests.at(-1)?.body).not.toHaveProperty(
-              "service_tier",
-            );
+            expect(claim.claim.piModelConfig).not.toHaveProperty("serviceTier");
           }
-          expect(JSON.stringify(modelRequests.at(-1)?.body)).toContain(
-            `custom gateway answer for ${selectedModel}`,
-          );
+          await completeSandboxFirstPiRun({
+            actor,
+            run: continuation,
+            claim,
+            checkpointObjects,
+            prompt: `continue the custom session with ${tier ?? "standard"}`,
+            answer: `custom gateway sandbox answer for ${selectedModel}`,
+            responsesModel: { provider: "openai", model: upstreamModel },
+            usagePricingResolution,
+          });
           await expect(
             readThreadSessionConversation(context, run.threadId),
           ).resolves.toMatchObject({
@@ -645,14 +642,8 @@ describe("CHAT-02: model-first provider policies", () => {
             conversation_run_id: continuation.runId,
           });
           await expectNoBuiltInModelUsage(continuation.runId);
-          const claim = await api.requestClaimRunnerJob(
-            true,
-            continuation.runId,
-            [404],
-          );
-          expectApiError(claim.body);
         }
-        expect(modelRequests).toHaveLength(3);
+        expect(modelRequests).toHaveLength(1);
       }
     },
     90_000,

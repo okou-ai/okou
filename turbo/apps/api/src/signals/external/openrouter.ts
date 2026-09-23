@@ -19,6 +19,8 @@ import {
 
 export const OPENROUTER_CHAT_COMPLETIONS_URL =
   "https://openrouter.ai/api/v1/chat/completions";
+export const OPENROUTER_DECISIONS_URL =
+  "https://openrouter.ai/api/alpha/decisions";
 const OPENROUTER_ERROR_RESPONSE_MAX_BYTES = 64 * 1024;
 
 /**
@@ -70,8 +72,16 @@ export interface OpenRouterTokenDetails {
 export interface OpenRouterUsage {
   readonly prompt_tokens?: number;
   readonly completion_tokens?: number;
+  /** Decisions API names for the same two counters. */
+  readonly input_tokens?: number;
+  readonly output_tokens?: number;
   readonly prompt_tokens_details?: OpenRouterTokenDetails;
   readonly completion_tokens_details?: OpenRouterTokenDetails;
+}
+
+export interface OpenRouterDecisionsGeneration {
+  readonly value: Readonly<Record<string, unknown>>;
+  readonly usage?: OpenRouterUsage;
 }
 
 interface OpenRouterTextGeneration {
@@ -300,7 +310,9 @@ async function ensureOpenRouterResponseOk(
 export function openRouterTokenCounts(
   usage: OpenRouterUsage | undefined,
 ): OpenRouterTokenCounts {
-  const completionTokens = tokenCount(usage?.completion_tokens);
+  const completionTokens = tokenCount(
+    usage?.completion_tokens ?? usage?.output_tokens,
+  );
   const reasoningTokens = tokenCount(
     usage?.completion_tokens_details?.reasoning_tokens,
   );
@@ -472,6 +484,81 @@ export async function generateText(
     signal,
   );
   return generation?.text ?? null;
+}
+
+/**
+ * Submit one structured Decisions request through the same authenticated and
+ * classified OpenRouter boundary as text generation.
+ */
+export async function generateDecisions(
+  request: {
+    readonly model: string;
+    readonly state: unknown;
+    readonly questions: Readonly<Record<string, unknown>>;
+    readonly user?: string;
+  },
+  signal?: AbortSignal,
+): Promise<OpenRouterDecisionsGeneration | null> {
+  const apiKey = optionalEnv("OPENROUTER_API_KEY");
+  if (!apiKey) {
+    return null;
+  }
+
+  const response = await onRejection(
+    fetch(OPENROUTER_DECISIONS_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+      signal,
+    }),
+    recordOpenRouterTransportFailure,
+  );
+  await onRejection(
+    ensureOpenRouterResponseOk(response),
+    recordOpenRouterTransportFailure,
+  );
+  const body = await onRejection(
+    response.text(),
+    recordOpenRouterTransportFailure,
+  );
+  const parsed = safeSync(() => {
+    const data = safeJsonParse(body);
+    if (typeof data !== "object" || data === null || Array.isArray(data)) {
+      throw new Error("OpenRouter returned an invalid Decisions response");
+    }
+    if ("error" in data && data.error !== undefined) {
+      throw openRouterRequestError({
+        message: "OpenRouter Decisions request failed",
+        status: 502,
+        origin: "completion",
+        value: data,
+      });
+    }
+    if (!("answers" in data)) {
+      throw new Error("OpenRouter returned an invalid Decisions response");
+    }
+    const value = data as Record<string, unknown>;
+    const usage = value.usage;
+    return {
+      value,
+      ...(typeof usage === "object" && usage !== null && !Array.isArray(usage)
+        ? { usage: usage as OpenRouterUsage }
+        : {}),
+    };
+  });
+  if ("error" in parsed) {
+    if (
+      !(parsed.error instanceof OpenRouterRequestError) &&
+      openRouterFailureReason(parsed.error) === "unknown"
+    ) {
+      recordOpenRouterFailure(parsed.error, "invalid_output");
+    }
+    throw parsed.error;
+  }
+  return parsed.ok;
 }
 
 /**

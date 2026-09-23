@@ -18,6 +18,7 @@ import {
   type AgentPhoneDeliveryTarget,
 } from "./agentphone-chat-callback-payload";
 import {
+  agentPhoneReplyDestination,
   formatAgentPhoneAuditLink,
   markdownToImessagePlain,
   resolveAgentPhoneAuditLogsUrl,
@@ -234,14 +235,15 @@ async function sendAgentPhoneReply(
   },
   signal: AbortSignal,
 ): Promise<AgentPhoneSendResult> {
+  const toNumber = agentPhoneReplyDestination({
+    isGroup: args.target.isGroup,
+    groupId: args.target.groupId,
+    phoneHandle: args.target.phoneHandle,
+  });
   const result = await sendAgentPhoneMessage(
     {
       agentphoneAgentId: args.target.agentphoneAgentId,
-      ...(args.target.channel === "imessage" && args.target.conversationId
-        ? {
-            conversationId: args.target.conversationId,
-          }
-        : { toNumber: args.target.phoneHandle }),
+      toNumber,
       ...(args.target.channel === "imessage"
         ? { replyToMessageId: args.target.messageId }
         : {}),
@@ -307,7 +309,13 @@ async function recordAgentPhoneChatDelivery(args: {
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
     fromNumber: args.sent.fromNumber ?? args.target.toNumber,
-    toNumber: args.sent.toNumber ?? args.target.phoneHandle,
+    toNumber:
+      args.sent.toNumber ??
+      agentPhoneReplyDestination({
+        isGroup: args.target.isGroup,
+        groupId: args.target.groupId,
+        phoneHandle: args.target.phoneHandle,
+      }),
     body: args.body,
     channel: args.sent.channel,
     userChannel: args.target.channel,
@@ -474,7 +482,13 @@ export async function deliverAgentPhoneChatAdmissionFailure(
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
     fromNumber: sent.fromNumber ?? args.target.toNumber,
-    toNumber: sent.toNumber ?? args.target.phoneHandle,
+    toNumber:
+      sent.toNumber ??
+      agentPhoneReplyDestination({
+        isGroup: args.target.isGroup,
+        groupId: args.target.groupId,
+        phoneHandle: args.target.phoneHandle,
+      }),
     body,
     channel: sent.channel,
     userChannel: args.target.channel,

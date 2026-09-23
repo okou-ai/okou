@@ -128,7 +128,7 @@ function UsagePackSegmentBar({
 }) {
   const { t } = useTranslation();
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delay={100}>
       <div
         data-testid={`${testIdPrefix}-bar`}
         className="mt-4 flex h-2 w-full gap-[3px]"
@@ -164,11 +164,7 @@ function UsagePackSegmentBar({
               <TooltipContent
                 side="top"
                 sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="border shadow-md"
+                className="border shadow-md bg-popover! text-popover-foreground!"
               >
                 <div className="font-medium text-foreground">
                   {segment.label} — {formattedCredits}
@@ -476,7 +472,7 @@ function UsagePackMemberBalancesDialog({
         }
       }}
     >
-      <TooltipProvider delayDuration={100}>
+      <TooltipProvider delay={100}>
         <Tooltip>
           <TooltipTrigger
             render={

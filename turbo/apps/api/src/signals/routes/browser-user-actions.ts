@@ -13,6 +13,7 @@ import {
   cancelBrowserUserAction$,
   completeBrowserUserAction$,
   createBrowserUserAction$,
+  preflightBrowserUserAction$,
   readBrowserUserAction$,
   type BrowserUserActionServiceError,
 } from "../services/browser-user-actions.service";
@@ -58,6 +59,8 @@ const browserNativeInputEnabled$ = command(async ({ get }) => {
 
 const createBody$ = bodyResultOf(browserUserActionsContract.create);
 const getParams$ = pathParamsOf(browserUserActionsContract.get);
+const preflightParams$ = pathParamsOf(browserUserActionsContract.preflight);
+const preflightBody$ = bodyResultOf(browserUserActionsContract.preflight);
 const applyParams$ = pathParamsOf(browserUserActionsContract.apply);
 const applyBody$ = bodyResultOf(browserUserActionsContract.apply);
 const cancelParams$ = pathParamsOf(browserUserActionsContract.cancel);
@@ -143,6 +146,32 @@ const applyInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     : { status: 200 as const, body: result.value };
 });
 
+const preflightInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const auth = get(organizationAuthContext$);
+  const enabled = await set(browserNativeInputEnabled$);
+  signal.throwIfAborted();
+  if (!enabled) {
+    return disabled;
+  }
+  const body = await get(preflightBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await set(
+    preflightBrowserUserAction$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+      requestToken: get(preflightParams$).requestToken,
+    },
+    signal,
+  );
+  return result.kind === "error"
+    ? errorResponse(result)
+    : { status: 200 as const, body: result.value };
+});
+
 const cancelInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const enabled = await set(browserNativeInputEnabled$);
@@ -203,6 +232,10 @@ export const browserUserActionRoutes: readonly RouteEntry[] = [
   {
     route: browserUserActionsContract.get,
     handler: authRoute(authOptions, getInner$),
+  },
+  {
+    route: browserUserActionsContract.preflight,
+    handler: authRoute(authOptions, preflightInner$),
   },
   {
     route: browserUserActionsContract.apply,

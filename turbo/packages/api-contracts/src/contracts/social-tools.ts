@@ -413,7 +413,7 @@ const instagramStatsResultSchema = providerObject({
   publishedAt: z.string(),
   author: z.string(),
   authorLink: z.string(),
-  duration: z.string(),
+  duration: z.string().nullable(),
   thumbnail: z.string(),
   isVideo: z.boolean(),
   contentType: z.string(),

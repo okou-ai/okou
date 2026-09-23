@@ -15,10 +15,7 @@ import {
   type ModelProviderType,
   type ModelProviderWriteType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { upsertBuiltInNoSecretModelProviderIdentity } from "@okouai/db/operations/model-provider-built-in-identity";
 import { modelProviders as modelProvidersTable } from "@okouai/db/schema/model-provider";
 import { modelProviderConnections } from "@okouai/db/schema/model-provider-gateway";
@@ -37,7 +34,6 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 import { lockModelProviderState } from "./auth-state-lock.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   deletePersonalModelProviderAccount,
   isPersonalSubscriptionProviderType,
@@ -254,11 +250,7 @@ export const deleteUserModelProvider$ = command(
     signal.throwIfAborted();
     if (
       args.userId !== ORG_SENTINEL_USER_ID &&
-      isPersonalSubscriptionProviderType(args.type) &&
-      isFeatureEnabled(
-        FeatureSwitchKey.PersonalSubscriptionPriority,
-        featureSwitchContext,
-      )
+      isPersonalSubscriptionProviderType(args.type)
     ) {
       return await disconnectPersonalSubscriptionProvider(
         { db: writeDb, ...args, type: args.type, featureSwitchContext },

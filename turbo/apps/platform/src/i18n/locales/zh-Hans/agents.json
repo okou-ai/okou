@@ -81,6 +81,7 @@
       "description": "智能体「{{agentId}}」不存在，或者你没有访问权限。",
       "title": "找不到该智能体"
     },
+    "sectionNavigation": "智能体详情栏目",
     "tabs": {
       "authorization": "授权",
       "instructions": "指令",

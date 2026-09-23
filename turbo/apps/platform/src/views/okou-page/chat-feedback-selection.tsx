@@ -160,7 +160,7 @@ export function ChatFeedbackSelection({
             sideOffset={8}
             initialFocus={false}
             finalFocus={false}
-            className="w-auto rounded-xl border border-[hsl(var(--gray-400))] bg-[hsl(var(--card)/0.85)] p-1 text-foreground shadow-lg"
+            className="w-auto rounded-xl border border-[hsl(var(--gray-400))] bg-[hsl(var(--card)/0.85)] p-1 text-foreground"
           >
             <FeedbackToolbar
               onCopy={() => {

@@ -1491,20 +1491,7 @@
             "title": "Travaillez avec {{assistantName}} là où votre équipe parle déjà"
           },
           "workflow": {
-            "browse": "Voir les modèles",
-            "confirm": "Montrez-m'en un",
             "description": "Transformez une tâche récurrente en workflow que l'équipe peut lancer.",
-            "prompt": "Chaque lundi matin, regarde ce que mes concurrents ont publié la semaine dernière, regroupe-le par thème et donne-moi un tableau comparatif.",
-            "promptConfirm": "L'envoyer à {{assistantName}}",
-            "promptDescription": "Envoyez-le tel quel à {{assistantName}}, ou modifiez d'abord la formulation.",
-            "promptOutcome": "Il lit les sources, regroupe ce qu'il trouve et répond avec le tableau. Si le résultat convient, il propose de garder l'exécution comme workflow.",
-            "promptTitle": "Demandez comme vous le demanderiez à un collègue",
-            "stepRun": "Lancez-le une fois",
-            "stepRunDescription": "Vous voyez le travail terminé avant de vous engager.",
-            "stepSave": "Enregistrez-le, puis donnez-lui un horaire",
-            "stepSaveDescription": "Il tourne sans que personne le demande, et n'importe quel collègue peut le lancer.",
-            "stepTemplate": "Partez d'un modèle",
-            "stepTemplateDescription": "Prenez-en un proche de votre métier plutôt qu'une page blanche.",
             "title": "Une bonne exécution devient un acquis pour l'équipe"
           }
         },
@@ -1552,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} jours d’affilée",
-        "title": "Démarrer",
+        "title": "Obtenir plus de crédits",
         "toGo": "Encore {{amount}}",
         "workflow": {
           "action": "Créer",
@@ -1583,7 +1570,6 @@
         "enteredChat": "{{userName}} a rejoint la conversation.",
         "goodToSeeYou": "Content de te voir, {{userName}}.",
         "knewYouWouldCome": "Je savais que tu reviendrais, {{userName}}.",
-        "letsRoll": "{{agentName}} est prêt, {{userName}}. Allons-y.",
         "makeTodayCount": "Faisons en sorte que cette journée compte, {{userName}}.",
         "newIdeas": "De nouvelles idées aujourd'hui, {{userName}} ?",
         "readyToBuild": "Prêt à construire, {{userName}} ?",
@@ -1765,6 +1751,11 @@
       "upgradeToRun": "Passez à Pro pour exécuter {{assistantName}}",
       "upgradeWorkspace": "Mettez à niveau votre espace de travail"
     },
+    "browserAction": {
+      "documentTitle": "Action du navigateur",
+      "loading": "Chargement de la demande du navigateur",
+      "unavailableDescription": "Cette demande du navigateur n’est pas valide ou n’est plus disponible."
+    },
     "browserInput": {
       "applyFailed": "Impossible d’ajouter les informations. Vos saisies sont toujours présentes. Réessayez.",
       "applying": "Ajout des informations",
@@ -1782,12 +1773,10 @@
       "delivered": "Agent informé",
       "deliveredDescription": "L’agent peut maintenant continuer.",
       "description": "Saisissez les informations demandées pour ce site.",
-      "documentTitle": "Saisie dans le navigateur",
       "expired": "Demande expirée",
       "expiredDescription": "Le navigateur a été fermé ou cette demande n’est plus active.",
       "loadFailed": "Impossible de charger cette demande",
       "loadFailedDescription": "Réessayez dans un instant.",
-      "loading": "Chargement de la saisie navigateur",
       "loadingDescription": "Vérification de cette demande…",
       "open": "Saisir les informations",
       "optional": "(Facultatif)",
@@ -1800,9 +1789,33 @@
       "submitting": "Ajout…",
       "title": "Saisir des informations dans le navigateur",
       "unavailable": "Demande indisponible",
-      "unavailableDescription": "Cette demande de saisie navigateur est invalide ou n’est plus disponible.",
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier avant de réessayer."
+    },
+    "browserInteraction": {
+      "applying": "Finalisation de l’interaction avec le navigateur",
+      "applyingDescription": "Le navigateur finalise cette demande.",
+      "callbackFailed": "L’agent n’a pas été informé. Réessayez en cliquant sur Continuer.",
+      "cancel": "Annuler",
+      "cancelFailed": "Impossible d’annuler cette demande. Réessayez.",
+      "cancelled": "Demande annulée",
+      "cancelledDescription": "Le transfert du navigateur a été annulé. Continuez pour informer l’agent.",
+      "cancelling": "Annulation…",
+      "completed": "Interaction avec le navigateur terminée",
+      "completedDescription": "Votre interaction avec le navigateur a été enregistrée. Continuez pour informer l’agent.",
+      "completeFailed": "Impossible de terminer cette demande. Réessayez.",
+      "completing": "Finalisation…",
+      "continue": "Continuer",
+      "continuing": "Poursuite…",
+      "delivered": "Agent informé",
+      "deliveredDescription": "L’agent peut maintenant continuer.",
+      "description": "Ouvrez le navigateur, terminez cette étape, puis sélectionnez Terminé.",
+      "done": "Terminé",
+      "stale": "Navigateur indisponible",
+      "staleDescription": "Demandez à l’agent de créer une nouvelle demande.",
+      "title": "Prenez le contrôle du navigateur",
+      "uncertain": "Vérifiez le navigateur",
+      "uncertainDescription": "L’interaction est peut-être terminée. Demandez à l’agent de vérifier avant de réessayer."
     },
     "cards": {
       "viewDetails": "Voir les détails"
@@ -1850,14 +1863,10 @@
       "authorizationDescription": "Sélectionnez un hôte de bureau pour les futures exécutions dans ce fil.",
       "checkingCompatibility": "Vérification de la compatibilité",
       "cloudBrowser": "Navigateur cloud",
-      "connectHost": "Connecter {{hostName}}",
       "connectMyComputer": "Connecter mon ordinateur",
       "dialogDescription": "Ainsi, {{desktopProductName}} peut travailler dans votre navigateur et vos applications pour vous, même celles sans connecteur comme LinkedIn ou Reddit.",
       "dialogTitle": "Autoriser {{desktopProductName}} à utiliser votre ordinateur",
-      "disableCloudBrowser": "Désactiver le navigateur cloud",
-      "disconnectHost": "Déconnecter {{hostName}}",
       "downloadMacos": "Télécharger pour macOS",
-      "enableCloudBrowser": "Activer le navigateur cloud",
       "hosts": "Hôtes d'utilisation de l'ordinateur",
       "macosRequirement": "Nécessite un Mac Apple silicon avec macOS 14 ou version ultérieure. Les Mac Intel ne sont pas pris en charge.",
       "noOnlineComputers": "Aucun ordinateur en ligne",
@@ -2003,6 +2012,15 @@
       "sent": "Transfert réussi",
       "threads": "Chats",
       "title": "Transférer vers"
+    },
+    "homeTasks": {
+      "empty": "Aucune tâche suggérée pour le moment",
+      "existingThread": "Continuer le chat",
+      "exploreWorkflow": "Explorer un workflow",
+      "heading": "Repris de votre travail récent",
+      "newTasksAvailable": "De nouvelles tâches sont disponibles",
+      "newThread": "Nouveau chat",
+      "reload": "Recharger les tâches"
     },
     "mail": {
       "bcc": "bcc",
@@ -2961,6 +2979,52 @@
       "open": "Ouvrir le workflow {{title}}"
     }
   },
+  "cloudflareAccess": {
+    "add": "Ajouter Cloudflare Access",
+    "cancel": "Annuler",
+    "changed": "Ce Cloudflare Access a changé pendant la modification. Vérifiez les derniers paramètres avant d’enregistrer.",
+    "clientId": "ID client du Service Token",
+    "clientIdPlaceholder": "Collez le Client ID du Service Token",
+    "clientSecret": "Secret client du Service Token",
+    "clientSecretPlaceholder": "Collez le Client Secret du Service Token",
+    "configuration": "Cloudflare Access",
+    "createNew": "Créer un Cloudflare Access",
+    "delete": "Supprimer Cloudflare Access",
+    "deleteHelp": "Supprimer ce Cloudflare Access inutilisé ? Le Service Token enregistré ne pourra pas être récupéré.",
+    "description": "Accédez aux applications protégées avec des jetons de service Cloudflare Access.",
+    "edit": "Modifier Cloudflare Access",
+    "empty": "Aucun Cloudflare Access. Ajoutez un jeton de service pour accéder aux applications protégées.",
+    "failed": "Impossible d’enregistrer la modification Cloudflare Access. Réessayez.",
+    "inUse": "Un hôte utilise ce Cloudflare Access. Vérifiez les hôtes concernés et changez leur configuration ou supprimez-les d’abord.",
+    "inUseHelp": "Sélectionnez un autre Cloudflare Access pour ces hôtes, passez-les explicitement en connexion directe ou supprimez-les avant de supprimer celui-ci.",
+    "invalidInput": "Certains paramètres Cloudflare Access ne sont pas valides. Vérifiez les champs et réessayez.",
+    "keepChanges": "Appliquer mes modifications à cette version",
+    "latest": "Derniers paramètres enregistrés",
+    "loadFailed": "Impossible de charger Cloudflare Access. Réessayez.",
+    "loading": "Chargement de Cloudflare Access…",
+    "manage": "Gérer Cloudflare Access",
+    "missing": "Ce Cloudflare Access n’est plus disponible. Sélectionnez-en un autre ou créez-en un.",
+    "name": "Nom",
+    "namePlaceholder": "p. ex. Accès à la production",
+    "replace": "Remplacer le Service Token",
+    "resourceIdConflict": "Cet identifiant de ressource ne peut pas être utilisé. Fermez puis rouvrez le formulaire pour réessayer.",
+    "retry": "Réessayer",
+    "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
+    "revisionExhausted": "Cette configuration ne peut plus être mise à jour. Créez-en une nouvelle.",
+    "save": "Enregistrer",
+    "saveUncertain": "Nous n’avons pas pu confirmer si vos modifications ont été enregistrées. Réessayez le même enregistrement, ou fermez le formulaire et consultez la liste avant de les ajouter à nouveau.",
+    "select": "Sélectionner Cloudflare Access",
+    "summary_one": "{{count}} Cloudflare Access configuré",
+    "summary_many": "{{count}} Cloudflare Access configurés",
+    "summary_other": "{{count}} Cloudflare Access configurés",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Accédez aux applications protégées avec des jetons de service Cloudflare Access.",
+    "unavailable": "Cloudflare Access n’est pas disponible pour ce compte.",
+    "unused": "Aucun hôte ne les utilise",
+    "usedBy_one": "Utilisée par {{count}} hôte :",
+    "usedBy_many": "Utilisée par {{count}} hôtes :",
+    "usedBy_other": "Utilisée par {{count}} hôtes :"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{action}} l'accès à {{connector}} pour {{agent}}",
@@ -3188,12 +3252,19 @@
       "noConnectorsAlt": "Aucun connecteur",
       "otherCategory": "Autre",
       "remoteAccess": "Accès à distance",
+      "remoteControl": {
+        "connections": "Connexions",
+        "credentials": "Identifiants",
+        "type": "Type"
+      },
       "scope": {
         "aria": "Portée des connecteurs",
         "attention": "Nécessite votre attention",
         "connected": "Connecté",
         "custom": "Personnalisés",
         "discover": "Découvrir",
+        "privateNetwork": "Réseau privé",
+        "remoteControl": "Contrôle à distance",
         "searchConnected": "Trouver les connecteurs connectés",
         "searchCustom": "Trouver les connecteurs personnalisés"
       },
@@ -6018,6 +6089,7 @@
         "personal": "Personnel",
         "workspace": "Espace de travail"
       },
+      "sectionNavigation": "Rubrique des paramètres",
       "sections": {
         "billing": {
           "description": "Gérez votre abonnement et votre mode de paiement.",
@@ -6046,6 +6118,9 @@
         "preference": {
           "description": "Personnalisez l'apparence et le comportement de l'application.",
           "title": "Préférences"
+        },
+        "tools": {
+          "title": "Outils"
         },
         "usage": {
           "balanceDescription": "Ce qu'il reste à dépenser à votre équipe.",
@@ -6207,6 +6282,8 @@
       },
       "personal": {
         "accountFallback": "Compte {{number}}",
+        "accountsDescription": "Choisissez le compte que chaque fournisseur utilise pour les nouvelles exécutions.",
+        "accountsSectionTitle": "Comptes personnels",
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Actif",
         "addAccount": "Ajouter un compte",
@@ -6325,7 +6402,7 @@
         "workspaceDescription": "Disponible pour tous les membres de cet espace de travail."
       },
       "reset": {
-        "confirmDescription": "Utilisez une réinitialisation de Codex pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
+        "confirmDescription": "Utilisez une réinitialisation de {{provider}} pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
         "progress": "Réinitialisation en cours...",
         "remaining_one": "{{value}} réinitialisation restante",
         "remaining_many": "{{value}} réinitialisations restantes",
@@ -6335,7 +6412,7 @@
         "remainingWithExpiry_one": "{{value}} réinitialisation restante · expire {{expiry}}",
         "remainingWithExpiry_many": "{{value}} réinitialisations restantes · expirent {{expiry}}",
         "remainingWithExpiry_other": "{{value}} réinitialisations restantes · expirent {{expiry}}",
-        "title": "Réinitialiser l'utilisation de Codex ?"
+        "title": "Réinitialiser l'utilisation de {{provider}} ?"
       },
       "stale": {
         "claudeExpired": "Votre session Claude Code a expiré. Reconnectez-vous pour continuer.",
@@ -6352,9 +6429,9 @@
         "accountSwitched": "Compte actif changé",
         "disconnected": "{{provider}} déconnecté",
         "policiesUpdated": "Paramètres du fournisseur de modèle mis à jour",
-        "reset": "Utilisation de Codex réinitialisée",
-        "resetUnavailable": "Aucune réinitialisation d'utilisation de Codex disponible",
-        "resetUnneeded": "L'utilisation de Codex n'a pas besoin d'être réinitialisée pour le moment"
+        "reset": "Utilisation de {{provider}} réinitialisée",
+        "resetUnavailable": "Aucune réinitialisation d'utilisation de {{provider}} disponible",
+        "resetUnneeded": "L'utilisation de {{provider}} n'a pas besoin d'être réinitialisée pour le moment"
       },
       "usage": {
         "inDays": "dans {{days}}j",
@@ -6842,40 +6919,15 @@
     "chooseFile": "Choisir un fichier",
     "choosePrivateKeyFile": "Choisir un fichier de clé privée",
     "cloudflare": {
-      "add": "Ajouter Cloudflare Access",
-      "changed": "Ce Cloudflare Access a changé pendant la modification. Vérifiez les derniers paramètres avant d’enregistrer.",
-      "clientId": "ID client du Service Token",
-      "clientSecret": "Secret client du Service Token",
-      "configuration": "Cloudflare Access",
-      "createNew": "Créer un Cloudflare Access",
-      "delete": "Supprimer Cloudflare Access",
-      "deleteHelp": "Supprimer ce Cloudflare Access inutilisé ? Le Service Token enregistré ne pourra pas être récupéré.",
       "direct": "Directe",
-      "edit": "Modifier Cloudflare Access",
-      "empty": "Aucun Cloudflare Access. Ajoutez un Service Token pour vous connecter aux hôtes SSH protégés.",
-      "inUse": "Un hôte utilise ce Cloudflare Access. Vérifiez les hôtes concernés et changez leur configuration ou supprimez-les d’abord.",
-      "inUseHelp": "Sélectionnez un autre Cloudflare Access pour ces hôtes, passez-les explicitement en connexion directe ou supprimez-les avant de supprimer celui-ci.",
       "keepChanges": "Appliquer mes modifications à cette version",
       "latest": "Derniers paramètres enregistrés",
-      "loadFailed": "Impossible de charger Cloudflare Access. Réessayez.",
-      "loading": "Chargement de Cloudflare Access…",
-      "missing": "Ce Cloudflare Access n’est plus disponible. Sélectionnez-en un autre ou créez-en un.",
       "mode": "Connexion",
-      "name": "Nom",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nom d’hôte publié",
-      "replace": "Remplacer le Service Token",
       "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
-      "select": "Sélectionner Cloudflare Access",
-      "summary_one": "{{count}} Cloudflare Access configuré",
-      "summary_many": "{{count}} Cloudflare Access configurés",
-      "summary_other": "{{count}} Cloudflare Access configurés",
       "title": "Cloudflare Access",
-      "tokenHelp": "Utilisez un Service Token autorisé par la politique Service Auth de votre application SSH. Il est indépendant de votre connexion SSH.",
-      "unavailable": "Cloudflare Access n’est pas disponible pour ce compte.",
-      "usedBy_one": "Utilisée par {{count}} hôte :",
-      "usedBy_many": "Utilisée par {{count}} hôtes :",
-      "usedBy_other": "Utilisée par {{count}} hôtes :"
+      "unavailable": "Cloudflare Access n’est pas disponible pour ce compte."
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access n’a pas établi de tunnel SSH. Vérifiez le nom d’hôte publié et le routage du Tunnel.",
@@ -6936,6 +6988,7 @@
       "credentialInUse": "Ces identifiants sont utilisés. Réaffectez ou supprimez les hôtes concernés d’abord.",
       "credentialUnavailable": "Ces identifiants SSH ne sont plus disponibles. Sélectionnez-en d’autres ou créez-en de nouveaux.",
       "failed": "Impossible d’enregistrer la modification SSH. Réessayez.",
+      "hostInUse": "Cet hôte SSH est utilisé par une route VNC. Sélectionnez un autre hôte SSH pour ces routes VNC, passez-les explicitement en accès direct ou supprimez-les avant de supprimer cet hôte.",
       "hostUnavailable": "Cet hôte SSH n’est plus disponible. Revenez à la liste et choisissez un hôte existant.",
       "invalidHost": "Saisissez un nom d’hôte ou une adresse IP sans protocole d’URL, chemin ni espaces.",
       "invalidInput": "Certains paramètres SSH ne sont pas valides. Vérifiez les champs et réessayez.",
@@ -6956,9 +7009,6 @@
     "notLearned": "Aucune clé d’hôte mémorisée",
     "passphrase": "Phrase secrète (facultative)",
     "placeholders": {
-      "accessName": "p. ex. Accès à la production",
-      "clientId": "Collez le Client ID du Service Token",
-      "clientSecret": "Collez le Client Secret du Service Token",
       "credentialName": "p. ex. Accès de déploiement",
       "displayName": "p. ex. Serveur de production",
       "host": "p. ex. ssh.example.com",
@@ -7159,6 +7209,9 @@
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
       "custom": "Autorités de certification personnalisées",
       "profileLabel": "Profil de sécurité",
+      "serverName": "Identité du certificat TLS",
+      "serverNameHelp": "Facultatif. Laissez ce champ vide pour vérifier le certificat avec l’hôte de destination RFB. Ne le renseignez que si le certificat utilise un autre nom DNS.",
+      "serverNameHint": "p. ex. desktop.internal.example.com",
       "system": "Autorités de certification du système",
       "title": "Confiance dans le certificat du serveur",
       "x509Plain": "Nom d’utilisateur et mot de passe chiffrés (X509Plain)",
@@ -7170,6 +7223,22 @@
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",
     "title": "Accès à distance VNC",
+    "transport": {
+      "destination": "Destination RFB",
+      "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
+      "direct": "Direct depuis le Runner",
+      "empty": "Aucun hôte SSH enregistré n’est disponible. Ajoutez-en un dans les paramètres SSH avant d’utiliser cette route.",
+      "loadFailed": "Impossible de charger les hôtes SSH enregistrés.",
+      "loading": "Chargement des hôtes SSH enregistrés…",
+      "select": "Sélectionner un hôte SSH enregistré",
+      "selectionUnavailable": "L’hôte SSH sélectionné n’est plus disponible. Sélectionnez-en un autre ou passez explicitement en accès direct.",
+      "ssh": "Via un hôte SSH enregistré",
+      "sshConnection": "Hôte SSH",
+      "sshHelp": "SSH protège le trajet du Runner au serveur SSH. Ce serveur doit pouvoir joindre la destination RFB. L’Agent a besoin des accès VNC et SSH.",
+      "title": "Route de connexion",
+      "unavailable": "Les paramètres SSH ne sont pas disponibles pour ce compte.",
+      "via": "Hôte SSH :"
+    },
     "unavailable": "VNC n’est pas disponible dans cet espace de travail."
   },
   "workflows": {
@@ -7755,6 +7824,7 @@
       },
       "notFound": "Workflow introuvable.",
       "refineWith": "Affiner avec {{agent}}",
+      "sectionNavigation": "Rubrique des détails du workflow",
       "shadow": {
         "end": "pour vous. Ce workflow est masqué par la règle de priorité du même slug.",
         "resolvesTo": "résout actuellement à"

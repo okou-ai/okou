@@ -1,4 +1,8 @@
 import {
+  findModelMenuOption,
+  modelMenuOption,
+} from "./chat-model-menu-test-helpers.ts";
+import {
   billingStatusContract,
   type BillingStatusResponse,
 } from "@okouai/api-contracts/contracts/billing";
@@ -171,14 +175,18 @@ async function chooseModel(
   optionName: string | RegExp,
 ): Promise<void> {
   await user.click(await modelPicker(currentLabel));
-  await user.click(await screen.findByRole("option", { name: optionName }));
+  await user.click(await findModelMenuOption(optionName));
 }
 
 function buttonNamed(
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement {
-  const button = queryAllByRoleFast("button", container).find((candidate) => {
+  const button = [
+    ...queryAllByRoleFast("button", container),
+    ...queryAllByRoleFast("menuitem", container),
+    ...queryAllByRoleFast("menuitemradio", container),
+  ].find((candidate) => {
     return (
       candidate.getAttribute("aria-label") === name ||
       candidate.textContent?.replace(/\s+/gu, " ").trim() === name
@@ -535,16 +543,14 @@ test("Keep the model picker stable while settings refresh", async () => {
   await readyComposer();
   await user.click(await modelPicker("Claude Fable 5.1"));
   await expect(
-    screen.findByRole("option", { name: /^Claude Sonnet 4\.6/iu }),
+    findModelMenuOption(/^Claude Sonnet 4\.6/iu),
   ).resolves.toBeVisible();
 
   triggerAblyEvent("userPreferenceChanged", { kinds: ["defaultModel"] });
   await waitFor(() => {
     expect(preferenceRequestCount).toBeGreaterThan(1);
   });
-  expect(
-    screen.getByRole("option", { name: /^Claude Sonnet 4\.6/iu }),
-  ).toBeVisible();
+  expect(modelMenuOption(/^Claude Sonnet 4\.6/iu)).toBeVisible();
   await expect(modelPicker("Claude Fable 5.1")).resolves.toHaveAttribute(
     "aria-expanded",
     "true",
@@ -552,9 +558,7 @@ test("Keep the model picker stable while settings refresh", async () => {
 
   refreshGate.resolve(undefined);
   await waitFor(() => {
-    expect(
-      screen.getByRole("option", { name: /^Claude Sonnet 4\.6/iu }),
-    ).toBeVisible();
+    expect(modelMenuOption(/^Claude Sonnet 4\.6/iu)).toBeVisible();
   });
   await expect(modelPicker("Claude Fable 5.1")).resolves.toHaveAttribute(
     "aria-expanded",
@@ -608,22 +612,16 @@ test("Explain model availability by plan and provider", async () => {
   await readyComposer();
   await user.click(await modelPicker("DeepSeek V4 Flash"));
   await expect(
-    screen.findByRole("option", { name: /^DeepSeek V4 Flash/iu }),
+    findModelMenuOption(/^DeepSeek V4 Flash/iu),
   ).resolves.toBeVisible();
   // A row carries its cost glyphs and plan badge beside the model name, so it
   // is addressed by that name as a prefix.
-  expect(
-    screen.getByRole("option", { name: /^GPT 5\.6 Luna/iu }),
-  ).toBeVisible();
-  expect(
-    screen.getByRole("option", { name: /^GPT 6 Astra.*Pro/iu }),
-  ).toBeVisible();
+  expect(modelMenuOption(/^GPT 5\.6 Luna/iu)).toBeVisible();
+  expect(modelMenuOption(/^GPT 6 Astra.*Pro/iu)).toBeVisible();
   expect(screen.getAllByText("Pro")).toHaveLength(3);
   expect(screen.getByText("BYOK")).toBeVisible();
 
-  const byokOption = screen.getByRole("option", {
-    name: /^Claude Sonnet 4\.6/iu,
-  });
+  const byokOption = modelMenuOption(/^Claude Sonnet 4\.6/iu);
   expect(within(byokOption).queryByText("Pro")).toBeNull();
   await user.click(byokOption);
   await expect(modelPicker("Claude Sonnet 4.6")).resolves.toBeVisible();
@@ -632,9 +630,7 @@ test("Explain model availability by plan and provider", async () => {
   ).not.toBeInTheDocument();
 
   await user.click(await modelPicker("Claude Sonnet 4.6"));
-  await user.click(
-    screen.getByRole("option", { name: /^Claude Fable 5\.1/iu }),
-  );
+  await user.click(modelMenuOption(/^Claude Fable 5\.1/iu));
   const planDialog = await screen.findByRole("dialog", {
     name: "Choose a plan",
   });
@@ -678,6 +674,7 @@ test("Let an existing thread send while model availability is reconciling", asyn
     return respond(200, {
       revision: "revision-1",
       writePreconditionRequired: false,
+      modelsAvailableToAdd: [],
       policies: [],
       workspaceDefaultModel: null,
       workspaceDefaultPolicyId: null,
@@ -835,7 +832,10 @@ test("Keep unavailable routes disabled and open plan comparison from the compact
   const overview = await screen.findByRole("region", { name: "Models" });
   click(buttonNamed("Change Chat model, DeepSeek V4 Flash", overview));
   const list = await screen.findByRole("region", { name: "Chat models" });
-  expect(buttonNamed("GPT 5.6 Sol", list)).toBeDisabled();
+  expect(buttonNamed("GPT 5.6 Sol", list)).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   expect(buttonNamed("Claude Fable 5.1", list)).toHaveTextContent("Pro");
   click(buttonNamed("Claude Fable 5.1", list));
   const dialog = await screen.findByRole("dialog", { name: "Choose a plan" });
@@ -859,9 +859,24 @@ test("Navigate the compact menu by keyboard and retain Fast after dismissal", as
     path: NEW_CHAT_PATH,
   });
   const composer = await readyComposer();
-  click(await findButton("GPT 5.6 Sol"));
+  const trigger = await findButton("GPT 5.6 Sol");
+  trigger.focus();
+  await user.keyboard("{ArrowDown}");
   const overview = await screen.findByRole("region", { name: "Models" });
-  expect(buttonNamed("Change Chat model, GPT 5.6 Sol", overview)).toHaveFocus();
+  await waitFor(() => {
+    expect(
+      buttonNamed("Change Chat model, GPT 5.6 Sol", overview),
+    ).toHaveFocus();
+  });
+  await user.keyboard("{Enter}");
+  const models = await screen.findByRole("region", { name: "Chat models" });
+  expect(buttonNamed("GPT 5.6 Sol", models)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await user.keyboard("{Escape}");
+  await screen.findByRole("region", { name: "Models" });
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
   // The picker carries models only; effort and Fast are reached from the
   // composer, so the walk continues there.
   await user.keyboard("{Escape}");
@@ -895,22 +910,34 @@ test("Choose a model from the flyout without leaving the type list", async () =>
     path: NEW_CHAT_PATH,
   });
   await readyComposer();
-  click(await findButton("GPT 5.6 Sol"));
-  // One panel, no pages: every model is reachable without a drill-in step.
-  const list = await screen.findByRole("listbox", { name: "Chat models" });
-  expect(screen.queryByLabelText("Back to models")).not.toBeInTheDocument();
-  const current = within(list).getByRole("option", { name: /GPT 5.6 Sol/u });
-  expect(current).toHaveAttribute("aria-selected", "true");
-  expect(current).toHaveFocus();
+  const trigger = await findButton("GPT 5.6 Sol");
+  trigger.focus();
   await user.keyboard("{ArrowDown}");
-  const next = within(list).getByRole("option", { name: /GPT 5.6 Luna/u });
+  const rail = await screen.findByRole("menu", { name: "Models" });
+  await waitFor(() => {
+    const chat = queryAllByRoleFast("menuitem", rail).find((item) => {
+      return item.textContent?.startsWith("Chat");
+    });
+    expect(chat).toHaveFocus();
+  });
+  await user.keyboard("{ArrowRight}");
+  // One panel, no pages: every model is reachable without a drill-in step.
+  const list = await screen.findByRole("menu", { name: "Chat models" });
+  expect(screen.queryByLabelText("Back to models")).not.toBeInTheDocument();
+  const current = modelMenuOption(/GPT 5\.6 Sol/u, list);
+  expect(current).toHaveAttribute("aria-checked", "true");
+  await waitFor(() => {
+    expect(current).toHaveFocus();
+  });
+  await user.keyboard("{ArrowDown}");
+  const next = modelMenuOption(/GPT 5\.6 Luna/u, list);
   expect(next).toHaveFocus();
-  click(next);
+  await user.keyboard("{Enter}");
   await expect(findButton("GPT 5.6 Luna")).resolves.toBeVisible();
   // Picking a model finishes the task, so the panel leaves with it.
   await waitFor(() => {
     expect(
-      screen.queryByRole("listbox", { name: "Chat models" }),
+      screen.queryByRole("menu", { name: "Chat models" }),
     ).not.toBeInTheDocument();
   });
 });
@@ -1405,7 +1432,7 @@ test("Adjust effort and Fast with keyboard controls on a desktop layout", async 
   // The flyout is still reachable on its own.
   click(await findButton("GPT 5.6 Sol Fast"));
   await expect(
-    screen.findByRole("listbox", { name: "Chat models" }),
+    screen.findByRole("menu", { name: "Chat models" }),
   ).resolves.toBeVisible();
 });
 
@@ -1479,3 +1506,60 @@ test.each([
     });
   },
 );
+
+test("Browse unavailable models by keyboard and return through the native menu rail", async () => {
+  const user = userEvent.setup({ delay: null });
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(min-width: 640px)";
+  });
+  installNewChat(["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
+  context.mocks.data.orgModelPolicies([
+    modelPolicy("gpt-5.6-sol", 1, { default: true }),
+    {
+      ...modelPolicy("gpt-5.6-luna", 2),
+      routeStatus: "missing_provider",
+      routeStatusReason: "No provider available",
+    },
+  ]);
+  await setupPage({ context, path: NEW_CHAT_PATH });
+  await readyComposer();
+  const trigger = await findButton("GPT 5.6 Sol");
+  trigger.focus();
+  await user.keyboard("{ArrowDown}");
+  const rail = await screen.findByRole("menu", { name: "Models" });
+  await waitFor(() => {
+    const chat = queryAllByRoleFast("menuitem", rail).find((item) => {
+      return item.textContent?.startsWith("Chat");
+    });
+    expect(chat).toHaveFocus();
+  });
+  await user.keyboard("{ArrowRight}");
+  const unavailable = await findModelMenuOption(/GPT 5\.6 Luna/u);
+  await waitFor(() => {
+    expect(modelMenuOption(/GPT 5\.6 Sol/u)).toHaveFocus();
+  });
+  await user.keyboard("{End}");
+  expect(unavailable).toHaveFocus();
+  expect(unavailable).toHaveAttribute("aria-disabled", "true");
+  await user.keyboard("{Enter}");
+  expect(unavailable).toHaveAttribute("aria-checked", "false");
+  expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await user.keyboard("{ArrowLeft}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("menu", { name: "Chat models" }),
+    ).not.toBeInTheDocument();
+  });
+  const types = screen.getByRole("menu", { name: "Models" });
+  const chat = queryAllByRoleFast("menuitem", types).find((item) => {
+    return item.textContent?.startsWith("Chat");
+  });
+  expect(chat).toHaveFocus();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("menu", { name: "Models" }),
+    ).not.toBeInTheDocument();
+  });
+  expect(trigger).toHaveFocus();
+});

@@ -1,12 +1,13 @@
 import type { CSSProperties, ReactNode, UIEvent } from "react";
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import { ScrollBar } from "@okouai/ui";
+import { cn, ScrollBar } from "@okouai/ui";
 import { useSet } from "ccstate-react";
 import type { SidebarChatThreadScrollSignals } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 
 interface OverlayScrollAreaProps {
   readonly "aria-label"?: string;
   readonly className?: string;
+  readonly viewportClassName?: string;
   readonly contentClassName?: string;
   readonly children: ReactNode;
   readonly scrollSignals: SidebarChatThreadScrollSignals;
@@ -19,6 +20,7 @@ interface OverlayScrollAreaProps {
 export function OverlayScrollArea({
   "aria-label": ariaLabel,
   className,
+  viewportClassName,
   contentClassName,
   children,
   scrollSignals,
@@ -42,7 +44,10 @@ export function OverlayScrollArea({
       <ScrollArea.Viewport
         ref={setViewportRef}
         data-slot="scroll-area-viewport"
-        className="h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className={cn(
+          "h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          viewportClassName,
+        )}
         style={style}
         onScroll={handleScroll}
         tabIndex={tabIndex ?? -1}

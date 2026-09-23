@@ -157,14 +157,10 @@ function ZoomableArtifactImageElement({
       decoding="async"
       fetchPriority="high"
       draggable={false}
-      style={{
-        WebkitTouchCallout: "default",
-        pointerEvents: "auto",
-        userSelect: "none",
-        width: imageWidth,
-      }}
+      style={{ width: imageWidth }}
       className={cn(
-        "block h-auto max-w-none shrink-0 select-none object-contain",
+        // The zoom library disables image hit testing in an unlayered rule.
+        "pointer-events-auto! block h-auto max-w-none shrink-0 select-none object-contain [-webkit-touch-callout:default]",
         imageClassName,
       )}
     />
@@ -205,10 +201,9 @@ function ZoomableArtifactImageViewport({
 }) {
   return (
     <div
-      className="h-full min-h-0 w-full cursor-grab overscroll-contain active:cursor-grabbing"
+      className="h-full min-h-0 w-full cursor-grab touch-none overscroll-contain active:cursor-grabbing"
       data-testid={canvasTestId}
       data-zoomable-image-canvas="true"
-      style={{ touchAction: "none" }}
     >
       <TransformComponent
         contentStyle={{ height: "100%", width: "100%" }}

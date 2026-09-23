@@ -1,12 +1,8 @@
-mod active_input;
-mod archive_connection_attempt;
 mod axiom_layer;
 mod byte_size;
-mod ca;
 mod cmd;
 mod config;
 mod deps;
-mod dns;
 mod duration;
 mod error;
 mod executor;
@@ -20,35 +16,24 @@ mod idle_prune_control;
 mod idle_reuse_preparation;
 mod image_hash;
 mod io_limits;
-mod kmsg_log;
 mod lifecycle;
 mod live_runner_instances;
-mod local_queue;
-mod network_log_drain;
-mod network_log_manager;
-mod network_log_process;
-mod network_logs;
-mod object_download_policy;
-mod org_name;
+mod network_log_http_adapter;
+mod network_provider_adapter;
 mod pre_spawn_admission;
 mod prefetch;
 mod profile;
-mod provider;
-mod proxy;
-mod r2_cache;
+#[cfg(test)]
+mod provider_test_support;
 mod resource_budget;
 mod restored_session_identity;
 mod retry;
-mod run_cancellation;
 mod run_resolution;
 mod run_usage;
 mod runtime_overrides;
 mod ssh;
 mod status;
 mod status_file;
-mod storage_cache;
-mod storage_fingerprints;
-mod storage_plan;
 mod telemetry;
 #[cfg(test)]
 mod test_fixtures;
@@ -56,6 +41,59 @@ mod vnc;
 mod workspace_image_cache;
 mod workspace_mount;
 mod workspace_promotion;
+
+use runner_network::{
+    ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
+};
+use runner_storage::{r2_cache, storage_cache, storage_fingerprints, storage_plan};
+
+// Runner build.rs owns the embedded addon inventory and passes it to runner-network.
+include!(concat!(env!("OUT_DIR"), "/addon_files.rs"));
+
+#[cfg(test)]
+mod addon_inventory_tests {
+    use super::ADDON_FILES;
+
+    #[test]
+    fn generated_addon_inventory_matches_shipped_sources() {
+        fn collect(root: &std::path::Path, current: &std::path::Path, names: &mut Vec<String>) {
+            for entry in std::fs::read_dir(current).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    let name = path.file_name().unwrap().to_string_lossy();
+                    if name != "__pycache__" && !name.starts_with('.') {
+                        collect(root, &path, names);
+                    }
+                    continue;
+                }
+                let name = path.file_name().unwrap().to_string_lossy();
+                if path.extension().is_some_and(|extension| extension == "py")
+                    || ["LICENSE", "COPYING", "NOTICE"]
+                        .iter()
+                        .any(|prefix| name.starts_with(prefix))
+                {
+                    names.push(
+                        path.strip_prefix(root)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/"),
+                    );
+                }
+            }
+        }
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mitm-addon/src");
+        let mut expected = Vec::new();
+        collect(&root, &root, &mut expected);
+        expected.sort();
+        let actual = ADDON_FILES
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+        assert!(ADDON_FILES.iter().all(|(_, content)| !content.is_empty()));
+    }
+}
 
 // Source-observation API shared by the current-assignment usage composer.
 // (no-op Runner release marker refreshed for production delivery on 2026-09-21)

@@ -26,6 +26,7 @@ import { isPiNativeModel, isPiDeepSeekModel } from "@okouai/core/pi-execution";
 import { isCloudModelMappingValid } from "@okouai/api-contracts/contracts/cloud-model-mapping";
 import {
   PI_AGENT_RUNTIME_VERSION,
+  PI_SESSION_CONSTRUCTION_DIGEST,
   assertPiNativeCredential,
   materializePiExecutionRoute,
   normalizePiExecutionRoute,
@@ -248,7 +249,14 @@ import {
   resolvePiLangfuseDebugConfig,
 } from "../../lib/pi-langfuse-debug";
 import { generateOkouToken } from "../auth/tokens";
-import { joinAll, onRejection, safeSync, settle, tapError } from "../utils";
+import {
+  joinAll,
+  onRejection,
+  safeSync,
+  settle,
+  settleIncludingAbort,
+  tapError,
+} from "../utils";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -322,6 +330,7 @@ import {
   type PreparedPersonalSubscriptionAdmission,
   isPersonalSubscriptionProviderType,
   personalModelProviderAccountById,
+  type CapturedPersonalSubscriptionAccount,
 } from "./model-provider-account.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { lockPreparedLaunchAdmission } from "./prepared-launch-admission-lock.service";
@@ -388,6 +397,7 @@ import {
   checkOrgPlanRunAdmission,
   checkOrgCreditsForRunAdmission,
   checkResolvedOrgCreditsForRunAdmission,
+  isFreePlanForCreditAdmission,
   resolveOrgCreditAvailability,
 } from "./run-admission.service";
 import { activateUsageAllowanceWindowsForRun } from "./usage-allowance.service";
@@ -397,6 +407,10 @@ import {
   measureApiDispatchTiming,
   type ApiDispatchTimingDimensions,
 } from "./api-dispatch-timing.service";
+import {
+  AdmissionAttemptTiming,
+  type AdmissionAttemptOutcome,
+} from "./api-dispatch-admission-timing.service";
 import {
   isCompressedSessionHistoryBlobEncoding,
   normalizeSessionHistoryBlobEncoding,
@@ -946,7 +960,7 @@ export function isThreadSessionSnapshotStale(
 interface CommitPreparedLaunchArgs {
   readonly db: Db;
   readonly createArgs: CreateAgentRunArgs;
-  readonly creditAdmitted: boolean;
+  readonly enforceBuiltInCredits: boolean;
   readonly context: FinalizedPreparedRunContext;
   readonly identity: LaunchRunIdentity;
   readonly callbackRows: readonly AgentRunCallbackInsert[];
@@ -954,6 +968,7 @@ interface CommitPreparedLaunchArgs {
   readonly encryptedQueuedParams: string | undefined;
   readonly subscriptionAdmission: PreparedPersonalSubscriptionAdmission | null;
   readonly timing: ApiDispatchTimingCollector;
+  readonly commitInvocation: number;
 }
 
 interface HttpRunCallback {
@@ -1099,6 +1114,9 @@ export interface CreateAgentRunArgs {
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
+  /** Captured by the product entry point for this request only. This skips
+   * an identity lookup, never the fresh environment or admission checks. */
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly codexServiceTier?: "fast";
@@ -1137,6 +1155,7 @@ export interface CreateAgentRunArgs {
   readonly validateEnvironmentReferences?: boolean;
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueOnConcurrencyLimit?: boolean;
+  /** Require initial Built-in credits; this does not grant deficit continuation. */
   readonly enforceBuiltInCredits?: boolean;
   readonly dispatchFailedCallbacks?: DispatchFailedRunCallbacks;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
@@ -2707,6 +2726,7 @@ interface ResolveModelProviderEnvironmentArgs {
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
+  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly retainedRunId?: string;
@@ -2933,14 +2953,27 @@ async function resolveExactPersonalModelProviderAccount(
   if (!args.modelProviderId || args.modelProviderCredentialScope === "org") {
     return null;
   }
-  const account = await personalModelProviderAccountById({
-    db,
-    id: args.modelProviderId,
-    orgId: args.orgId,
-    userId: args.userId,
-    runId: args.retainedRunId,
-  });
-  if (!account || !isPersonalSubscriptionProviderType(account.type)) {
+  const captured = args.capturedPersonalSubscriptionAccount;
+  const capturedType =
+    !args.retainedRunId &&
+    captured?.id === args.modelProviderId &&
+    captured.orgId === args.orgId &&
+    captured.userId === args.userId &&
+    (args.modelProviderType === undefined ||
+      captured.type === args.modelProviderType)
+      ? captured.type
+      : undefined;
+  const account = capturedType
+    ? null
+    : await personalModelProviderAccountById({
+        db,
+        id: args.modelProviderId,
+        orgId: args.orgId,
+        userId: args.userId,
+        runId: args.retainedRunId,
+      });
+  const accountType = capturedType ?? account?.type;
+  if (!accountType || !isPersonalSubscriptionProviderType(accountType)) {
     return null;
   }
   // A deferred Run keeps the account its original request authorized. Snapshot
@@ -2948,6 +2981,9 @@ async function resolveExactPersonalModelProviderAccount(
   // owner's live credentials and skips accounts they have since disconnected,
   // so it can neither authorize nor observe a retained continuation.
   if (args.retainedRunId) {
+    if (!account) {
+      return null;
+    }
     const [provider] = await db
       .select({ selectedModel: modelProviders.selectedModel })
       .from(modelProviders)
@@ -2966,8 +3002,8 @@ async function resolveExactPersonalModelProviderAccount(
     db,
     orgId: args.orgId,
     userId: args.userId,
-    type: account.type,
-    sourceId: account.id,
+    type: accountType,
+    sourceId: args.modelProviderId,
     featureSwitchContext: args.featureSwitchContext,
   });
   if (!coordinated) {
@@ -7515,15 +7551,13 @@ function assemblePiLaunchResources(args: {
           args.apiStartTime + PI_API_FIRST_TURN_COORDINATION_TIMEOUT_MS,
         baseSession: piBaseSession(resumeSession, sessionId),
         sandboxEventSequenceStart: 1,
-        // The rootfs-installed CLI is used only for this exact runtime build;
-        // anything else launches the commit-addressed package (#35967). This
-        // launch config is persisted in the encrypted queue payload and decoded
-        // by whichever API instance serves the claim through the strict
-        // `piApiFirstTurnConfigSchema`, so the tolerant reader shipped first in
-        // 8d8f3a3e14d23f7471e0773bd9acb988f59217af (api 1.657.0), which the
-        // production rollback resolver now enforces as the API floor.
+        // The installed CLI must have this session construction and meet the
+        // CLI floor; otherwise the guest uses the commit-addressed package.
+        // The queued launch config is decoded by a strict API reader, so the
+        // production rollback floor includes the digest reader in 322efb6d.
         requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
         minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
+        requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
       },
       ...(memoryRecall === undefined ? {} : { memoryRecall }),
       ...(args.maintenance === undefined
@@ -8051,7 +8085,7 @@ function preparedLaunchRowsArgs(args: {
     officialWorkflowProvenance:
       args.commit.context.officialWorkflowRun?.provenance,
     error: undefined,
-    creditAdmitted: args.status === "pending" && args.commit.creditAdmitted,
+    creditAdmitted: false,
   };
 }
 
@@ -8075,6 +8109,7 @@ interface PreparedAtomicLaunchPersistence {
 
 interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
   readonly persistence: PreparedAtomicLaunchPersistence;
+  readonly admissionTiming: AdmissionAttemptTiming;
 }
 
 function prepareAtomicLaunchPersistence(
@@ -8176,7 +8211,10 @@ function launchThreadBindingCte(args: {
   );
 }
 
-function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
+function buildAtomicLaunchCteContext(
+  args: PersistAtomicLaunchRowsArgs,
+  creditAdmitted: boolean,
+) {
   const preparedRows = args.commit.persistence.rows[args.status];
   const { rowsArgs, metadata } = preparedRows;
   const createdAt = nowDate();
@@ -8200,6 +8238,7 @@ function buildAtomicLaunchCteContext(args: PersistAtomicLaunchRowsArgs) {
       .insert(agentRuns)
       .values({
         ...launchRunValues(rowsArgs, createdAt, metadata),
+        creditAdmitted,
         modelProviderAccountIdentity: args.validatedAccountIdentity,
         sessionId: insertedSession
           ? returnedCteId(insertedSession)
@@ -8415,7 +8454,17 @@ async function persistAtomicLaunchRows(
 async function persistAtomicLaunchRows(
   args: PersistAtomicLaunchRowsArgs,
 ): Promise<PersistedAtomicLaunchRows> {
-  const context = buildAtomicLaunchCteContext(args);
+  const capabilities =
+    args.status === "pending" && args.commit.enforceBuiltInCredits
+      ? await loadOrgPlanCapabilities(args.tx, args.commit.createArgs.orgId, {
+          forUpdate: true,
+        })
+      : null;
+  const creditAdmitted =
+    args.status === "pending" &&
+    args.commit.enforceBuiltInCredits &&
+    isFreePlanForCreditAdmission(capabilities?.planKey);
+  const context = buildAtomicLaunchCteContext(args, creditAdmitted);
   const persisted = await args.commit.timing.measure(
     "api_dispatch_persist_atomic_launch",
     "nested",
@@ -8704,21 +8753,23 @@ async function commitFailedLaunch(
 
 async function activatePreparedLaunchUsageAllowance(args: {
   readonly tx: DbTransaction;
-  readonly commit: CommitPreparedLaunchArgs;
+  readonly commit: PreparedCommitPreparedLaunchArgs;
   readonly run: RunRecord;
 }): Promise<void> {
   if (isBuiltInModelProviderType(args.commit.context.modelProvider?.type)) {
-    await args.commit.timing.measure(
-      "api_dispatch_activate_usage_allowance_windows",
-      "nested",
-      async () => {
-        await activateUsageAllowanceWindowsForRun(args.tx, {
-          orgId: args.commit.createArgs.orgId,
-          runId: args.run.id,
-          runCreatedAt: args.run.createdAt,
-        });
-      },
-    );
+    await args.commit.admissionTiming.measureLeaf("usage_allowance", () => {
+      return args.commit.timing.measure(
+        "api_dispatch_activate_usage_allowance_windows",
+        "nested",
+        async () => {
+          await activateUsageAllowanceWindowsForRun(args.tx, {
+            orgId: args.commit.createArgs.orgId,
+            runId: args.run.id,
+            runCreatedAt: args.run.createdAt,
+          });
+        },
+      );
+    });
   }
 }
 
@@ -8920,13 +8971,18 @@ async function commitQueuedPreparedLaunch(
     throw new Error("Missing encrypted queued runner job payload");
   }
 
-  const persisted = await persistAtomicLaunchRows({
-    tx,
-    commit: args,
-    status: "queued",
-    payload,
-    ...admission,
-  });
+  const persisted = await args.admissionTiming.measureLeaf(
+    "persistence",
+    () => {
+      return persistAtomicLaunchRows({
+        tx,
+        commit: args,
+        status: "queued",
+        payload,
+        ...admission,
+      });
+    },
+  );
   await bindPreparedPiMemoryPhase2MaintenanceRun(tx, args, persisted.run.id);
   await activatePreparedLaunchUsageAllowance({
     tx,
@@ -8948,13 +9004,18 @@ async function commitPendingPreparedLaunch(
   queueFirstClaim: QueueFirstRunClaimed | undefined,
   admission: ValidatedPreparedLaunchAdmission,
 ): Promise<Extract<AtomicLaunchCommitResult, { readonly kind: "pending" }>> {
-  const persisted = await persistAtomicLaunchRows({
-    tx,
-    commit: args,
-    status: "pending",
-    payload,
-    ...admission,
-  });
+  const persisted = await args.admissionTiming.measureLeaf(
+    "persistence",
+    () => {
+      return persistAtomicLaunchRows({
+        tx,
+        commit: args,
+        status: "pending",
+        payload,
+        ...admission,
+      });
+    },
+  );
   await bindPreparedPiMemoryPhase2MaintenanceRun(tx, args, persisted.run.id);
   await activatePreparedLaunchUsageAllowance({
     tx,
@@ -8971,30 +9032,32 @@ async function commitPendingPreparedLaunch(
 
 async function bindPreparedPiMemoryPhase2MaintenanceRun(
   tx: DbTransaction,
-  args: CommitPreparedLaunchArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   runId: string,
 ): Promise<void> {
   const maintenance = args.createArgs.piMemoryPhase2Maintenance;
   if (!maintenance) {
     return;
   }
-  await bindPiMemoryPhase2MaintenanceRun(tx, {
-    runId,
-    binding: {
-      memoryStorageId: maintenance.memoryStorageId,
-      orgId: args.createArgs.orgId,
-      userId: args.createArgs.userId,
-      leaseToken: maintenance.leaseToken,
-      claimedRevision: maintenance.claimedRevision,
-      claimedBaseVersionId: maintenance.claimedBaseVersionId,
-      selectionDigest: maintenance.selectionDigest,
-    },
+  await args.admissionTiming.measureLeaf("maintenance_binding", () => {
+    return bindPiMemoryPhase2MaintenanceRun(tx, {
+      runId,
+      binding: {
+        memoryStorageId: maintenance.memoryStorageId,
+        orgId: args.createArgs.orgId,
+        userId: args.createArgs.userId,
+        leaseToken: maintenance.leaseToken,
+        claimedRevision: maintenance.claimedRevision,
+        claimedBaseVersionId: maintenance.claimedBaseVersionId,
+        selectionDigest: maintenance.selectionDigest,
+      },
+    });
   });
 }
 
 async function validateCapturedSubscriptionAccount(
   tx: Tx,
-  args: CommitPreparedLaunchArgs,
+  args: PreparedCommitPreparedLaunchArgs,
   validatedThreadSession: ValidatedThreadSessionSnapshot | undefined,
 ) {
   const provider = args.context.modelProvider;
@@ -9003,46 +9066,48 @@ async function validateCapturedSubscriptionAccount(
     isPersonalSubscriptionProviderType(provider.type) &&
     provider.credentialOwner === "member"
   ) {
-    if (
-      !args.identity.shouldCreateSession &&
-      (!validatedThreadSession ||
-        args.createArgs.threadSessionResolution?.expected.sessionId !==
-          args.identity.sessionId)
-    ) {
-      // Unvalidated/session-only launches still acquire this FK lock when
-      // inserting the run. A completion can hold the session before cleanup,
-      // so acquire it before the provider lock too.
-      await tx
-        .select({ id: agentSessions.id })
-        .from(agentSessions)
-        .where(eq(agentSessions.id, args.identity.sessionId))
-        .for("key share");
-    }
     const type = provider.type;
-    const account = await args.timing.measure(
-      "api_dispatch_subscription_validate_admission",
-      "nested",
-      async () => {
-        return await validatePersonalSubscriptionAdmission(
-          {
-            db: tx,
-            orgId: args.createArgs.orgId,
-            userId: args.createArgs.userId,
-            type,
-            sourceId: provider.id ?? undefined,
-            featureSwitchContext: args.context.featureSwitchContext,
-          },
-          args.subscriptionAdmission,
-        );
-      },
-      { subscription_provider_type: type },
-    );
-    if (!account) {
-      return conflict(
-        "The selected subscription account was disconnected. Reconnect it before starting another run.",
+    return await args.admissionTiming.measureLeaf("subscription", async () => {
+      if (
+        !args.identity.shouldCreateSession &&
+        (!validatedThreadSession ||
+          args.createArgs.threadSessionResolution?.expected.sessionId !==
+            args.identity.sessionId)
+      ) {
+        // Unvalidated/session-only launches still acquire this FK lock when
+        // inserting the run. A completion can hold the session before cleanup,
+        // so acquire it before the provider lock too.
+        await tx
+          .select({ id: agentSessions.id })
+          .from(agentSessions)
+          .where(eq(agentSessions.id, args.identity.sessionId))
+          .for("key share");
+      }
+      const account = await args.timing.measure(
+        "api_dispatch_subscription_validate_admission",
+        "nested",
+        async () => {
+          return await validatePersonalSubscriptionAdmission(
+            {
+              db: tx,
+              orgId: args.createArgs.orgId,
+              userId: args.createArgs.userId,
+              type,
+              sourceId: provider.id ?? undefined,
+              featureSwitchContext: args.context.featureSwitchContext,
+            },
+            args.subscriptionAdmission,
+          );
+        },
+        { subscription_provider_type: type },
       );
-    }
-    return { identity: personalSubscriptionAccountIdentity(account) };
+      if (!account) {
+        return conflict(
+          "The selected subscription account was disconnected. Reconnect it before starting another run.",
+        );
+      }
+      return { identity: personalSubscriptionAccountIdentity(account) };
+    });
   }
   return undefined;
 }
@@ -9052,46 +9117,68 @@ async function commitPreparedLaunchUnderLock(
   args: PreparedCommitPreparedLaunchArgs,
   payload: RunnerJobPayload,
 ): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
-  const officialAdmissionFailure = await args.timing.measure(
-    "api_dispatch_validate_official_workflow_admission",
-    "nested",
-    async () => {
-      return await validateOfficialWorkflowRunForInsert(tx, {
-        observation: args.context.officialWorkflowRun,
-        orgId: args.createArgs.orgId,
-        userId: args.createArgs.userId,
-        agentId: args.context.resolved.agentId,
-        automationId: args.createArgs.agentRunMetadata?.workflowAutomationId,
-        runStorageMounts: args.launch.runStorageMounts,
-        allowMissingMountsForFailedRun: false,
-      });
-    },
-  );
+  const validateOfficialAdmission = () => {
+    return args.timing.measure(
+      "api_dispatch_validate_official_workflow_admission",
+      "nested",
+      async () => {
+        return await validateOfficialWorkflowRunForInsert(tx, {
+          observation: args.context.officialWorkflowRun,
+          orgId: args.createArgs.orgId,
+          userId: args.createArgs.userId,
+          agentId: args.context.resolved.agentId,
+          automationId: args.createArgs.agentRunMetadata?.workflowAutomationId,
+          runStorageMounts: args.launch.runStorageMounts,
+          allowMissingMountsForFailedRun: false,
+        });
+      },
+    );
+  };
+  const officialAdmissionFailure = args.context.officialWorkflowRun
+    ? await args.admissionTiming.measureLeaf(
+        "official_workflow",
+        validateOfficialAdmission,
+      )
+    : await validateOfficialAdmission();
   if (officialAdmissionFailure) {
     return conflict(officialAdmissionFailure.message);
   }
-  const threadSessionValidation = await validateThreadSessionSnapshot(tx, {
-    createArgs: args.createArgs,
-    identity: args.identity,
-    timing: args.timing,
-  });
-  const validComputeSession = await args.timing.measure(
-    "api_dispatch_validate_compute_session",
-    "nested",
-    async () => {
-      return await validateNewComputeSession(
-        tx,
-        {
-          userId: args.createArgs.userId,
-          orgId: args.createArgs.orgId,
-          agentId: args.context.resolved.agentId,
-          existingSessionId: args.identity.shouldCreateSession
-            ? undefined
-            : args.identity.sessionId,
+  const validateThreadSession = () => {
+    return validateThreadSessionSnapshot(tx, {
+      createArgs: args.createArgs,
+      identity: args.identity,
+      timing: args.timing,
+    });
+  };
+  const threadSessionValidation = args.createArgs.chatThreadId
+    ? await args.admissionTiming.measureLeaf(
+        "thread_session",
+        validateThreadSession,
+      )
+    : await validateThreadSession();
+  const validComputeSession = await args.admissionTiming.measureLeaf(
+    "compute_session",
+    () => {
+      return args.timing.measure(
+        "api_dispatch_validate_compute_session",
+        "nested",
+        async () => {
+          return await validateNewComputeSession(
+            tx,
+            {
+              userId: args.createArgs.userId,
+              orgId: args.createArgs.orgId,
+              agentId: args.context.resolved.agentId,
+              existingSessionId: args.identity.shouldCreateSession
+                ? undefined
+                : args.identity.sessionId,
+            },
+            threadSessionValidation?.kind ===
+              "validated-thread-session-snapshot"
+              ? threadSessionValidation.lockedSession
+              : undefined,
+          );
         },
-        threadSessionValidation?.kind === "validated-thread-session-snapshot"
-          ? threadSessionValidation.lockedSession
-          : undefined,
       );
     },
   );
@@ -9105,7 +9192,9 @@ async function commitPreparedLaunchUnderLock(
       if (!validate) {
         throw new Error("Private maintenance requires source admission");
       }
-      await validate(tx);
+      await args.admissionTiming.measureLeaf("maintenance", () => {
+        return validate(tx);
+      });
     }
     const failure = await validateCapturedSubscriptionAccount(
       tx,
@@ -9137,34 +9226,41 @@ async function commitValidatedPreparedLaunch(
   validatedAccountIdentity: string | null,
 ): Promise<AtomicLaunchCommitResult | CreateRunErrorResult> {
   if (threadSessionValidation?.kind === "thread-session-snapshot-stale") {
-    const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
-      tx,
-      createArgs: args.createArgs,
-      sessionSnapshotState: threadSessionValidation.reason,
-      threadAlreadyLocked: true,
-      timing: args.timing,
+    return await args.admissionTiming.measureLeaf("queue_first", async () => {
+      const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
+        tx,
+        createArgs: args.createArgs,
+        sessionSnapshotState: threadSessionValidation.reason,
+        threadAlreadyLocked: true,
+        timing: args.timing,
+      });
+      if (!queueFirstAdmission || queueFirstAdmission.kind === "idle") {
+        return threadSessionValidation;
+      }
+      const queueFirstClaim = await claimQueueFirstAssociationForLaunch({
+        tx,
+        admission: queueFirstAdmission,
+        createArgs: args.createArgs,
+        identity: args.identity,
+        timing: args.timing,
+      });
+      if (queueFirstClaim?.kind !== "lost") {
+        throw new Error("Blocked queue-first admission must lose its claim");
+      }
+      return { kind: "queue-first-claim-lost" };
     });
-    if (!queueFirstAdmission || queueFirstAdmission.kind === "idle") {
-      return threadSessionValidation;
-    }
-    const queueFirstClaim = await claimQueueFirstAssociationForLaunch({
-      tx,
-      admission: queueFirstAdmission,
-      createArgs: args.createArgs,
-      identity: args.identity,
-      timing: args.timing,
-    });
-    if (queueFirstClaim?.kind !== "lost") {
-      throw new Error("Blocked queue-first admission must lose its claim");
-    }
-    return { kind: "queue-first-claim-lost" };
   }
   const validatedThreadSession = threadSessionValidation;
-  const concurrency = await args.timing.measure(
-    "api_dispatch_check_concurrency_limit",
-    "nested",
-    async () => {
-      return await checkRunConcurrencyLimit(tx, args.createArgs.orgId);
+  const concurrency = await args.admissionTiming.measureLeaf(
+    "concurrency",
+    () => {
+      return args.timing.measure(
+        "api_dispatch_check_concurrency_limit",
+        "nested",
+        async () => {
+          return await checkRunConcurrencyLimit(tx, args.createArgs.orgId);
+        },
+      );
     },
   );
 
@@ -9175,20 +9271,28 @@ async function commitValidatedPreparedLaunch(
     if (!args.encryptedQueuedParams) {
       return { kind: "queue-payload-required" };
     }
-    const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
-      tx,
-      createArgs: args.createArgs,
-      sessionSnapshotState: validatedThreadSession ? "current" : "unvalidated",
-      ...(validatedThreadSession ? { threadAlreadyLocked: true } : {}),
-      timing: args.timing,
-    });
-    const queueFirstClaim = await claimQueueFirstAssociationForLaunch({
-      tx,
-      admission: queueFirstAdmission,
-      createArgs: args.createArgs,
-      identity: args.identity,
-      timing: args.timing,
-    });
+    const queueFirstClaim = args.createArgs.queueFirstAssociation
+      ? await args.admissionTiming.measureLeaf("queue_first", async () => {
+          const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch(
+            {
+              tx,
+              createArgs: args.createArgs,
+              sessionSnapshotState: validatedThreadSession
+                ? "current"
+                : "unvalidated",
+              ...(validatedThreadSession ? { threadAlreadyLocked: true } : {}),
+              timing: args.timing,
+            },
+          );
+          return await claimQueueFirstAssociationForLaunch({
+            tx,
+            admission: queueFirstAdmission,
+            createArgs: args.createArgs,
+            identity: args.identity,
+            timing: args.timing,
+          });
+        })
+      : undefined;
     if (queueFirstClaim?.kind === "lost") {
       return { kind: "queue-first-claim-lost" };
     }
@@ -9201,20 +9305,26 @@ async function commitValidatedPreparedLaunch(
     );
   }
 
-  const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
-    tx,
-    createArgs: args.createArgs,
-    sessionSnapshotState: validatedThreadSession ? "current" : "unvalidated",
-    ...(validatedThreadSession ? { threadAlreadyLocked: true } : {}),
-    timing: args.timing,
-  });
-  const queueFirstClaim = await claimQueueFirstAssociationForLaunch({
-    tx,
-    admission: queueFirstAdmission,
-    createArgs: args.createArgs,
-    identity: args.identity,
-    timing: args.timing,
-  });
+  const queueFirstClaim = args.createArgs.queueFirstAssociation
+    ? await args.admissionTiming.measureLeaf("queue_first", async () => {
+        const queueFirstAdmission = await resolveQueueFirstAdmissionForLaunch({
+          tx,
+          createArgs: args.createArgs,
+          sessionSnapshotState: validatedThreadSession
+            ? "current"
+            : "unvalidated",
+          ...(validatedThreadSession ? { threadAlreadyLocked: true } : {}),
+          timing: args.timing,
+        });
+        return await claimQueueFirstAssociationForLaunch({
+          tx,
+          admission: queueFirstAdmission,
+          createArgs: args.createArgs,
+          identity: args.identity,
+          timing: args.timing,
+        });
+      })
+    : undefined;
   if (queueFirstClaim?.kind === "lost") {
     return { kind: "queue-first-claim-lost" };
   }
@@ -9234,82 +9344,143 @@ async function commitPreparedLaunch(
       return Promise.resolve(prepareAtomicLaunchPersistence(args));
     },
   );
-  const preparedArgs: PreparedCommitPreparedLaunchArgs = {
+  const preparedArgs = {
     ...args,
     persistence,
   };
-  const committed = await withComputeOwnershipRetry(() => {
-    return preparedArgs.db.transaction(async (tx) => {
-      const admitted = await preparedArgs.timing.measure(
-        "api_dispatch_compute_erasure_admission",
-        "nested",
-        async () => {
-          return await admitNewComputeRun(tx, {
-            userId: preparedArgs.createArgs.userId,
-            orgId: preparedArgs.createArgs.orgId,
-            agentId: preparedArgs.context.resolved.agentId,
-            ownerUserId: preparedArgs.context.resolved.ownerUserId,
-            agentOrgId: preparedArgs.context.resolved.orgId,
-            maintenanceStorageId:
-              preparedArgs.createArgs.piMemoryPhase2Maintenance
-                ?.memoryStorageId,
-            existingSessionId: preparedArgs.identity.shouldCreateSession
-              ? undefined
-              : preparedArgs.identity.sessionId,
-          });
-        },
-      );
-      if (!admitted) {
-        return {
-          result: conflict("Run admission is unavailable"),
-          admissionLockHeldStartedAt: now(),
-        };
-      }
-      const payload = preparedArgs.persistence.payload;
-      await acquireOfficialWorkflowRunCatalogAdmissionLock(
-        tx,
-        preparedArgs.context.officialWorkflowRun,
-      );
-      await preparedArgs.timing.measure(
-        "api_dispatch_admission_lock_wait",
-        "nested",
-        async () => {
-          await lockPreparedLaunchAdmission(tx, preparedArgs.createArgs.orgId);
-        },
-      );
-      const admissionLockHeldStartedAt = now();
-      const result = await commitPreparedLaunchUnderLock(
-        tx,
-        preparedArgs,
-        payload,
-      );
-      if (
-        "kind" in result &&
-        (result.kind === "pending" || result.kind === "queued")
-      ) {
-        await requestPiMemoryStage1Day(tx, {
-          ...result.run,
-          userId: preparedArgs.createArgs.userId,
-          orgId: preparedArgs.createArgs.orgId,
-          chatThreadId: preparedArgs.createArgs.chatThreadId ?? null,
-          triggerSource: preparedArgs.context.body.triggerSource,
-          launchSnapshot: preparedArgs.context.launchSnapshot,
-          completedAt: null,
-        });
-      }
-      return { result, admissionLockHeldStartedAt };
+  let transactionAttempt = 0;
+  const committed = await withComputeOwnershipRetry(async () => {
+    transactionAttempt += 1;
+    const admissionTiming = new AdmissionAttemptTiming({
+      runId: preparedArgs.identity.runId,
+      runnerGroup: preparedArgs.launch.runnerJobPayload.runnerGroup,
+      profile: preparedArgs.launch.runnerJobPayload.profile,
+      dimensions: timingDimensionsForCreateArgs(preparedArgs.createArgs),
+      commitInvocation: preparedArgs.commitInvocation,
+      transactionAttempt,
+      ...(preparedArgs.context.body.triggerSource
+        ? { triggerSource: preparedArgs.context.body.triggerSource }
+        : {}),
     });
+    const settledTransaction = await settleIncludingAbort(
+      preparedArgs.db.transaction(async (tx) => {
+        admissionTiming.transactionStarted();
+        const attemptArgs: PreparedCommitPreparedLaunchArgs = {
+          ...preparedArgs,
+          admissionTiming,
+        };
+        return await (async () => {
+          const admitted = await preparedArgs.timing.measure(
+            "api_dispatch_compute_erasure_admission",
+            "nested",
+            async () => {
+              return await admitNewComputeRun(tx, {
+                userId: preparedArgs.createArgs.userId,
+                orgId: preparedArgs.createArgs.orgId,
+                agentId: preparedArgs.context.resolved.agentId,
+                ownerUserId: preparedArgs.context.resolved.ownerUserId,
+                agentOrgId: preparedArgs.context.resolved.orgId,
+                maintenanceStorageId:
+                  preparedArgs.createArgs.piMemoryPhase2Maintenance
+                    ?.memoryStorageId,
+                existingSessionId: preparedArgs.identity.shouldCreateSession
+                  ? undefined
+                  : preparedArgs.identity.sessionId,
+              });
+            },
+          );
+          if (!admitted) {
+            return {
+              result: conflict("Run admission is unavailable"),
+              admissionLockHeldStartedAt: now(),
+            };
+          }
+          const payload = preparedArgs.persistence.payload;
+          await acquireOfficialWorkflowRunCatalogAdmissionLock(
+            tx,
+            preparedArgs.context.officialWorkflowRun,
+          );
+          await preparedArgs.timing.measure(
+            "api_dispatch_admission_lock_wait",
+            "nested",
+            async () => {
+              await lockPreparedLaunchAdmission(
+                tx,
+                preparedArgs.createArgs.orgId,
+              );
+            },
+          );
+          const admissionLockHeldStartedAt = now();
+          admissionTiming.lockAcquired();
+          const result = await commitPreparedLaunchUnderLock(
+            tx,
+            attemptArgs,
+            payload,
+          );
+          if (
+            "kind" in result &&
+            (result.kind === "pending" || result.kind === "queued")
+          ) {
+            await admissionTiming.measureLeaf("pi_memory_schedule", () => {
+              return requestPiMemoryStage1Day(tx, {
+                ...result.run,
+                userId: preparedArgs.createArgs.userId,
+                orgId: preparedArgs.createArgs.orgId,
+                chatThreadId: preparedArgs.createArgs.chatThreadId ?? null,
+                triggerSource: preparedArgs.context.body.triggerSource,
+                launchSnapshot: preparedArgs.context.launchSnapshot,
+                completedAt: null,
+              });
+            });
+          }
+          return { result, admissionLockHeldStartedAt };
+        })().finally(() => {
+          admissionTiming.callbackFinished();
+        });
+      }),
+    );
+    const outcome: AdmissionAttemptOutcome = settledTransaction.ok
+      ? admissionAttemptOutcome(settledTransaction.value.result)
+      : "rolled_back";
+    const transactionReturnedAt = now();
+    if (settledTransaction.ok) {
+      args.timing.recordElapsed(
+        "api_dispatch_admission_lock_held",
+        "nested",
+        settledTransaction.value.admissionLockHeldStartedAt,
+        transactionReturnedAt,
+      );
+    }
+    await admissionTiming.finish(outcome);
+    if (!settledTransaction.ok) {
+      throw settledTransaction.error;
+    }
+    return {
+      result: settledTransaction.value.result,
+      transactionReturnedAt,
+    };
   });
-  const transactionReturnedAt = now();
-  args.timing.recordElapsed(
-    "api_dispatch_admission_lock_held",
-    "nested",
-    committed.admissionLockHeldStartedAt,
-  );
-  return {
-    result: committed.result,
-    transactionReturnedAt,
-  };
+  return committed;
+}
+
+function admissionAttemptOutcome(
+  result: AtomicLaunchCommitResult | CreateRunErrorResult,
+): AdmissionAttemptOutcome {
+  if ("kind" in result) {
+    if (result.kind === "pending" || result.kind === "queued") {
+      return result.kind;
+    }
+    if (result.kind === "thread-session-snapshot-stale") {
+      return "thread_session_snapshot_stale";
+    }
+    if (result.kind === "queue-first-claim-lost") {
+      return "queue_first_claim_lost";
+    }
+    if (result.kind === "queue-payload-required") {
+      return "queue_payload_required";
+    }
+  }
+  return "rejected";
 }
 
 function buildAtomicLaunchPayload(
@@ -9581,6 +9752,8 @@ async function resolveRunModelProvider(
         modelProviderId: args.modelProviderId,
         modelProviderCredentialScope: args.modelProviderCredentialScope,
         modelProviderType: args.modelProviderType,
+        capturedPersonalSubscriptionAccount:
+          args.capturedPersonalSubscriptionAccount,
         selectedModelOverride: args.selectedModelOverride,
         builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
         piExecution: args.piExecution,
@@ -11254,7 +11427,7 @@ export interface CreatorAuthorizedPiPreparation {
 interface AtomicLaunchRunInput {
   readonly db: Db;
   readonly args: CreateAgentRunArgs;
-  readonly creditAdmitted: boolean;
+  readonly enforceBuiltInCredits: boolean;
   readonly context: FinalizedPreparedRunContext;
   readonly timing: ApiDispatchTimingCollector;
   readonly phaseTiming: ApiDispatchPhaseCollector;
@@ -11441,10 +11614,12 @@ const commitAndActivateAtomicLaunch$ = command(
         : undefined;
     let transferred = false;
     let discardReason: PiPreparationDiscardReason = "admission-failed";
+    let commitInvocation = 0;
     return await (async () => {
       const commitLaunch: CommitAtomicLaunch = async (
         encryptedQueuedParams: string | undefined,
       ) => {
+        commitInvocation += 1;
         return await input.timing.measure(
           "api_dispatch_insert_run_with_concurrency",
           "top_level",
@@ -11452,7 +11627,7 @@ const commitAndActivateAtomicLaunch$ = command(
             return await commitPreparedLaunch({
               db: input.db,
               createArgs: input.args,
-              creditAdmitted: input.creditAdmitted,
+              enforceBuiltInCredits: input.enforceBuiltInCredits,
               context: input.context,
               identity,
               callbackRows,
@@ -11460,6 +11635,7 @@ const commitAndActivateAtomicLaunch$ = command(
               encryptedQueuedParams,
               subscriptionAdmission,
               timing: input.timing,
+              commitInvocation,
             });
           },
         );
@@ -11763,7 +11939,7 @@ export const completeAgentRun$ = command(
       context.modelProvider?.type ?? args.modelProviderType;
     const selectedModel =
       context.modelProvider?.selectedModel ?? args.selectedModelOverride;
-    const creditAdmitted =
+    const enforceBuiltInCredits =
       args.enforceBuiltInCredits === true &&
       isBuiltInModelProviderType(context.modelProvider?.type);
     const admissionGate = await timing.measure(
@@ -11777,7 +11953,7 @@ export const completeAgentRun$ = command(
             userId: args.userId,
             modelProviderType,
             selectedModel,
-            enforceBuiltInCredits: creditAdmitted,
+            enforceBuiltInCredits,
             timing,
           },
           signal,
@@ -11809,7 +11985,7 @@ export const completeAgentRun$ = command(
       {
         db,
         args,
-        creditAdmitted,
+        enforceBuiltInCredits,
         context: launchContext,
         timing,
         phaseTiming: input.prepared.phaseTiming,

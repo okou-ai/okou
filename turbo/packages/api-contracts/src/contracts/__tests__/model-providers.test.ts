@@ -60,7 +60,10 @@ import {
   modelProviderFrameworkSchema,
   type ModelProviderWriteType,
 } from "../model-providers";
-import { findMatchingPermissions } from "@okouai/connectors/firewall-rule-matcher";
+import {
+  findMatchingPermissions,
+  matchFirewallRequestDecision,
+} from "@okouai/connectors/firewall-rule-matcher";
 import { getModelProviderTypeForSurfaceProtocol } from "../model-provider-gateways";
 import { modelProvidersByTypeContract } from "../model-provider-routes";
 
@@ -69,6 +72,7 @@ describe("model-first canonical catalog", () => {
     expect(CODEX_FAST_MODE_MODELS).toEqual([
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -78,6 +82,8 @@ describe("model-first canonical catalog", () => {
     expect(isCodexFastModeModel("openai/gpt-6-astra")).toBe(true);
     expect(isCodexFastModeModel("gpt-6-sol")).toBe(true);
     expect(isCodexFastModeModel("openai/gpt-6-sol")).toBe(true);
+    expect(isCodexFastModeModel("gpt-6-luna")).toBe(true);
+    expect(isCodexFastModeModel("openai/gpt-6-luna")).toBe(true);
     expect(isCodexFastModeModel("openai/gpt-5.6-sol")).toBe(true);
     expect(isCodexFastModeModel("gpt-5.6-terra")).toBe(true);
     expect(isCodexFastModeModel("gpt-5.6-luna")).toBe(true);
@@ -114,12 +120,14 @@ describe("model-first canonical catalog", () => {
       "okou-1.0",
       "claude-fable-5-1",
       "claude-fable-5",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -136,6 +144,7 @@ describe("model-first canonical catalog", () => {
     );
     expect(supportedRunModelSchema.safeParse("gpt-6-astra").success).toBe(true);
     expect(supportedRunModelSchema.safeParse("gpt-6-sol").success).toBe(true);
+    expect(supportedRunModelSchema.safeParse("gpt-6-luna").success).toBe(true);
     expect(supportedRunModelSchema.safeParse("gpt-5.6-sol").success).toBe(true);
     expect(supportedRunModelSchema.safeParse("gpt-5.6-terra").success).toBe(
       true,
@@ -151,6 +160,9 @@ describe("model-first canonical catalog", () => {
       true,
     );
     expect(supportedRunModelSchema.safeParse("claude-fable-5").success).toBe(
+      true,
+    );
+    expect(supportedRunModelSchema.safeParse("claude-opus-5-5").success).toBe(
       true,
     );
     expect(supportedRunModelSchema.safeParse("claude-opus-5").success).toBe(
@@ -197,6 +209,8 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-astra")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("gpt-6-sol")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-sol")).toBe(true);
+    expect(isLimitedFree1RestrictedRunModel("gpt-6-luna")).toBe(false);
+    expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-luna")).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("gpt-5.6-sol")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-sol")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("gpt-5.6-terra")).toBe(true);
@@ -219,6 +233,10 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.5")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("claude-fable-5-1")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("anthropic/claude-fable-5.1")).toBe(
+      true,
+    );
+    expect(isLimitedFree1RestrictedRunModel("claude-opus-5-5")).toBe(true);
+    expect(isLimitedFree1RestrictedRunModel("anthropic/claude-opus-5.5")).toBe(
       true,
     );
     expect(isLimitedFree1RestrictedRunModel("claude-opus-5")).toBe(true);
@@ -252,6 +270,9 @@ describe("model-first canonical catalog", () => {
     expect(getCanonicalModelDisplayName("claude-fable-5-1")).toBe(
       "Claude Fable 5.1",
     );
+    expect(getCanonicalModelDisplayName("claude-opus-5-5")).toBe(
+      "Claude Opus 5.5",
+    );
     expect(getCanonicalModelDisplayName("claude-opus-5")).toBe("Claude Opus 5");
     expect(getCanonicalModelDisplayName("claude-opus-4-8")).toBe(
       "Claude Opus 4.8",
@@ -264,6 +285,7 @@ describe("model-first canonical catalog", () => {
     );
     expect(getCanonicalModelDisplayName("gpt-6-astra")).toBe("GPT 6 Astra");
     expect(getCanonicalModelDisplayName("gpt-6-sol")).toBe("GPT 6 Sol");
+    expect(getCanonicalModelDisplayName("gpt-6-luna")).toBe("GPT 6 Luna");
     expect(getCanonicalModelDisplayName("gpt-5.6-sol")).toBe("GPT 5.6 Sol");
     expect(getCanonicalModelDisplayName("gpt-5.6-terra")).toBe("GPT 5.6 Terra");
     expect(getCanonicalModelDisplayName("gpt-5.6-luna")).toBe("GPT 5.6 Luna");
@@ -287,6 +309,9 @@ describe("model-first canonical catalog", () => {
     expect(normalizeRunModelId("anthropic/claude-fable-5")).toBe(
       "claude-fable-5",
     );
+    expect(normalizeRunModelId("anthropic/claude-opus-5.5")).toBe(
+      "claude-opus-5-5",
+    );
     expect(normalizeRunModelId("anthropic/claude-opus-5")).toBe(
       "claude-opus-5",
     );
@@ -296,9 +321,11 @@ describe("model-first canonical catalog", () => {
     expect(normalizeRunModelId("custom/model")).toBe("custom/model");
     expect(isSupportedRunModel("claude-fable-5-1")).toBe(true);
     expect(isSupportedRunModel("claude-fable-5")).toBe(true);
+    expect(isSupportedRunModel("claude-opus-5-5")).toBe(true);
     expect(isSupportedRunModel("claude-opus-5")).toBe(true);
     expect(isSupportedRunModel("gpt-6-astra")).toBe(true);
     expect(isSupportedRunModel("gpt-6-sol")).toBe(true);
+    expect(isSupportedRunModel("gpt-6-luna")).toBe(true);
     expect(isSupportedRunModel("gpt-5.6-sol")).toBe(true);
     expect(isSupportedRunModel("openai/gpt-5.6-sol")).toBe(false);
     expect(isSupportedRunModel("deepseek-v4.1-flash")).toBe(true);
@@ -313,12 +340,14 @@ describe("model-first canonical catalog", () => {
       "okou-1.0",
       "claude-fable-5-1",
       "claude-fable-5",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -377,6 +406,24 @@ describe("model-first canonical catalog", () => {
       "azure-foundry",
       "aws-bedrock",
     ]);
+    expect(getProvidersForModel("claude-opus-5-5")).toEqual([
+      "built-in",
+      "claude-code-oauth-token",
+      "anthropic-api-key",
+      "openrouter-api-key",
+      "vercel-ai-gateway",
+      "azure-foundry",
+      "aws-bedrock",
+    ]);
+    expect(getProvidersForModel("anthropic/claude-opus-5.5")).toEqual([
+      "built-in",
+      "claude-code-oauth-token",
+      "anthropic-api-key",
+      "openrouter-api-key",
+      "vercel-ai-gateway",
+      "azure-foundry",
+      "aws-bedrock",
+    ]);
     expect(getProvidersForModel("claude-opus-5")).toEqual([
       "built-in",
       "claude-code-oauth-token",
@@ -420,6 +467,12 @@ describe("model-first canonical catalog", () => {
       "openrouter-codex",
     ]);
     expect(getProvidersForModel("gpt-6-sol")).toEqual([
+      "built-in",
+      "openai-api-key",
+      "codex-oauth-token",
+      "openrouter-codex",
+    ]);
+    expect(getProvidersForModel("gpt-6-luna")).toEqual([
       "built-in",
       "openai-api-key",
       "codex-oauth-token",
@@ -499,6 +552,19 @@ describe("model-first canonical catalog", () => {
     expect(
       isModelSupportedByProvider("gpt-6-sol", "vercel-ai-gateway-codex"),
     ).toBe(false);
+    expect(isModelSupportedByProvider("gpt-6-luna", "built-in")).toBe(true);
+    expect(isModelSupportedByProvider("gpt-6-luna", "openai-api-key")).toBe(
+      true,
+    );
+    expect(isModelSupportedByProvider("gpt-6-luna", "codex-oauth-token")).toBe(
+      true,
+    );
+    expect(isModelSupportedByProvider("gpt-6-luna", "openrouter-codex")).toBe(
+      true,
+    );
+    expect(
+      isModelSupportedByProvider("gpt-6-luna", "vercel-ai-gateway-codex"),
+    ).toBe(false);
     expect(isModelSupportedByProvider("gpt-5.6-sol", "built-in")).toBe(true);
     expect(isModelSupportedByProvider("gpt-5.6-sol", "openai-api-key")).toBe(
       true,
@@ -527,6 +593,9 @@ describe("model-first canonical catalog", () => {
     );
     expect(
       isModelSupportedByProvider("anthropic/claude-opus-4.8", "built-in"),
+    ).toBe(true);
+    expect(
+      isModelSupportedByProvider("anthropic/claude-opus-5.5", "built-in"),
     ).toBe(true);
     expect(
       isModelSupportedByProvider("anthropic/claude-opus-5", "built-in"),
@@ -564,6 +633,15 @@ describe("model-first canonical catalog", () => {
     expect(
       getProviderRuntimeModel("anthropic-api-key", "claude-opus-4-8"),
     ).toBe("claude-opus-4-8");
+    expect(
+      getProviderRuntimeModel("anthropic-api-key", "claude-opus-5-5"),
+    ).toBe("claude-opus-5-5");
+    expect(
+      getProviderRuntimeModel("openrouter-api-key", "claude-opus-5-5"),
+    ).toBe("anthropic/claude-opus-5.5");
+    expect(
+      getProviderRuntimeModel("vercel-ai-gateway", "claude-opus-5-5"),
+    ).toBe("anthropic/claude-opus-5.5");
     expect(getProviderRuntimeModel("anthropic-api-key", "claude-opus-5")).toBe(
       "claude-opus-5",
     );
@@ -625,6 +703,23 @@ describe("model-first canonical catalog", () => {
     );
   });
 
+  it("routes Claude Opus 5.5 through Anthropic with an OpenRouter fallback", () => {
+    expect(getBuiltInModelRouteCandidates("claude-opus-5-5")).toEqual([
+      {
+        selectedModel: "claude-opus-5-5",
+        providerType: "anthropic-api-key",
+        upstreamModel: "claude-opus-5-5",
+        vendor: "anthropic",
+      },
+      {
+        selectedModel: "claude-opus-5-5",
+        providerType: "openrouter-api-key",
+        upstreamModel: "anthropic/claude-opus-5.5",
+        vendor: "openrouter",
+      },
+    ]);
+  });
+
   it("routes GPT 6 Astra through OpenAI with an OpenRouter fallback", () => {
     expect(getBuiltInModelRouteCandidates("gpt-6-astra")).toEqual([
       {
@@ -651,6 +746,20 @@ describe("model-first canonical catalog", () => {
         selectedModel: "gpt-6-sol",
         providerType: "openrouter-codex",
         upstreamModel: "openai/gpt-6-sol",
+        vendor: "openrouter",
+      },
+    ]);
+    expect(getBuiltInModelRouteCandidates("gpt-6-luna")).toEqual([
+      {
+        selectedModel: "gpt-6-luna",
+        providerType: "openai-api-key",
+        upstreamModel: "gpt-6-luna",
+        vendor: "openai",
+      },
+      {
+        selectedModel: "gpt-6-luna",
+        providerType: "openrouter-codex",
+        upstreamModel: "openai/gpt-6-luna",
         vendor: "openrouter",
       },
     ]);
@@ -689,6 +798,7 @@ describe("model-first canonical catalog", () => {
 
   it.each([
     "claude-fable-5-1",
+    "claude-opus-5-5",
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-sonnet-5",
@@ -706,6 +816,7 @@ describe("model-first canonical catalog", () => {
   it("defines statically compilable built-in routes for every active model", () => {
     expect(Object.keys(BUILT_IN_MODEL_TO_PROVIDER)).toEqual([
       "claude-fable-5-1",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-opus-4-8",
       "claude-sonnet-5",
@@ -718,6 +829,7 @@ describe("model-first canonical catalog", () => {
       "deepseek-v4-pro",
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -823,10 +935,10 @@ describe("model-first canonical catalog", () => {
     expect(DEFAULT_ORG_MODEL_POLICY_MODELS).toEqual([
       "claude-fable-5-1",
       "gpt-6-astra",
-      "gpt-5.6-luna",
+      "gpt-6-luna",
     ]);
-    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-5.6-luna");
-    expect(LIMITED_FREE1_DEFAULT_RUN_MODEL).toBe("gpt-5.6-luna");
+    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-6-luna");
+    expect(LIMITED_FREE1_DEFAULT_RUN_MODEL).toBe("gpt-6-luna");
     expect(getDefaultModel("built-in")).toBe(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );
@@ -858,9 +970,11 @@ describe("model-first canonical catalog", () => {
         "okou-1.0": "$",
         "claude-fable-5-1": "$$$$",
         "claude-fable-5": "$$$$",
+        "claude-opus-5-5": "$$$",
         "claude-opus-5": "$$$",
         "gpt-6-astra": "$$$$",
         "gpt-6-sol": "$$$",
+        "gpt-6-luna": "$",
         "gpt-5.6-sol": "$$$",
         "gpt-5.6-terra": "$$",
         "gpt-5.6-luna": "$",
@@ -873,9 +987,11 @@ describe("model-first canonical catalog", () => {
     );
     expect(getBuiltInModelPriceTier("claude-fable-5-1")).toBe("$$$$");
     expect(getBuiltInModelPriceTier("claude-fable-5")).toBe("$$$$");
+    expect(getBuiltInModelPriceTier("claude-opus-5-5")).toBe("$$$");
     expect(getBuiltInModelPriceTier("claude-opus-5")).toBe("$$$");
     expect(getBuiltInModelPriceTier("gpt-6-astra")).toBe("$$$$");
     expect(getBuiltInModelPriceTier("gpt-6-sol")).toBe("$$$");
+    expect(getBuiltInModelPriceTier("gpt-6-luna")).toBe("$");
     expect(getBuiltInModelPriceTier("gpt-5.6-sol")).toBe("$$$");
     expect(getBuiltInModelPriceTier("gpt-5.6-terra")).toBe("$$");
     expect(getBuiltInModelPriceTier("gpt-5.6-luna")).toBe("$");
@@ -891,6 +1007,9 @@ describe("model-first canonical catalog", () => {
       272_001,
     );
     expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS["gpt-6-sol"]).toBe(
+      272_001,
+    );
+    expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS["gpt-6-luna"]).toBe(
       272_001,
     );
     expect(MODEL_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS).toEqual(
@@ -916,6 +1035,7 @@ describe("model selection for Anthropic-native providers", () => {
     (type) => {
       const models = getModels(type);
       expect(models).toContain("claude-fable-5-1");
+      expect(models).toContain("claude-opus-5-5");
       expect(models).toContain("claude-opus-5");
       expect(models).toContain("claude-sonnet-5");
       expect(models).toContain("claude-sonnet-4-6");
@@ -949,6 +1069,7 @@ describe("model selection for Claude-compatible gateway providers", () => {
   it("openrouter-api-key exposes current Claude models", () => {
     expect(getModels("openrouter-api-key")).toEqual([
       "anthropic/claude-fable-5.1",
+      "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
@@ -967,6 +1088,13 @@ describe("model selection for Claude-compatible gateway providers", () => {
       ).toBe(true);
       expect(getProviderRuntimeModel(type, "claude-fable-5-1")).toBe(
         "anthropic/claude-fable-5.1",
+      );
+      expect(getModels(type)).toContain("anthropic/claude-opus-5.5");
+      expect(
+        isModelSupportedByProvider("anthropic/claude-opus-5.5", type),
+      ).toBe(true);
+      expect(getProviderRuntimeModel(type, "claude-opus-5-5")).toBe(
+        "anthropic/claude-opus-5.5",
       );
       expect(getModels(type)).toContain("anthropic/claude-opus-5");
       expect(isModelSupportedByProvider("anthropic/claude-opus-5", type)).toBe(
@@ -1003,6 +1131,7 @@ describe("normalizeBuiltInModelId", () => {
   it.each([
     ["anthropic/claude-fable-5.1", "claude-fable-5-1"],
     ["anthropic/claude-fable-5", "claude-fable-5"],
+    ["anthropic/claude-opus-5.5", "claude-opus-5-5"],
     ["anthropic/claude-opus-5", "claude-opus-5"],
     ["anthropic/claude-opus-4.8", "claude-opus-4-8"],
     ["anthropic/claude-sonnet-5", "claude-sonnet-5"],
@@ -1042,10 +1171,14 @@ describe("model image input support", () => {
     "openai/gpt-6-astra",
     "gpt-6-sol",
     "openai/gpt-6-sol",
+    "gpt-6-luna",
+    "openai/gpt-6-luna",
     "deepseek-v4.1-flash",
     "deepseek/deepseek-v4.1-flash",
     "claude-fable-5-1",
     "anthropic/claude-fable-5.1",
+    "claude-opus-5-5",
+    "anthropic/claude-opus-5.5",
     "claude-opus-5",
     "anthropic/claude-opus-5",
     "claude-sonnet-4-6",
@@ -1238,6 +1371,7 @@ describe("openai-api-key codex provider", () => {
     expect(getModels("openai-api-key")).toEqual([
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -1457,6 +1591,7 @@ describe("codex-oauth-token codex provider", () => {
     expect(getModels("codex-oauth-token")).toEqual([
       "gpt-6-astra",
       "gpt-6-sol",
+      "gpt-6-luna",
       "gpt-5.6-sol",
       "gpt-5.6-terra",
       "gpt-5.6-luna",
@@ -1468,19 +1603,24 @@ describe("codex-oauth-token codex provider", () => {
     expect(hasModelSelection("codex-oauth-token")).toBe(true);
   });
 
-  it("firewall entry has both ChatGPT and auth.openai.com APIs", () => {
+  it("firewall includes Codex, workspace discovery, and auth denial APIs", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-    expect(config.apis).toHaveLength(2);
+    expect(config.apis).toHaveLength(3);
     expect(config.apis[0]!.base).toBe("https://chatgpt.com/backend-api/codex");
-    expect(config.apis[1]!.base).toBe("https://auth.openai.com");
+    expect(config.apis[1]!.base).toBe(
+      "https://chatgpt.com/backend-api/wham/accounts/check",
+    );
+    expect(config.apis[2]!.base).toBe("https://auth.openai.com");
   });
 
-  it("firewall injects Authorization and ChatGPT-Account-ID headers", () => {
+  it("firewall injects Authorization and ChatGPT-Account-ID for both Codex APIs", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-    expect(config.apis[0]!.auth.headers).toEqual({
-      Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
-      "ChatGPT-Account-ID": "${{ secrets.CHATGPT_ACCOUNT_ID }}",
-    });
+    for (const api of config.apis.slice(0, 2)) {
+      expect(api.auth.headers).toEqual({
+        Authorization: "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",
+        "ChatGPT-Account-ID": "${{ secrets.CHATGPT_ACCOUNT_ID }}",
+      });
+    }
   });
 
   it("firewall allows the entire ChatGPT Codex backend subtree under GET/POST", () => {
@@ -1523,12 +1663,47 @@ describe("codex-oauth-token codex provider", () => {
     },
   );
 
+  it("authenticates only the workspace discovery GET", () => {
+    const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
+    const policies = {
+      [config.name]: {
+        allow: ["codex:workspace-routing"],
+        deny: [],
+        ask: [],
+        unknownPolicy: "deny",
+      },
+    };
+    const decide = (method: string, path: string) => {
+      return matchFirewallRequestDecision(
+        [config],
+        method,
+        `https://chatgpt.com/backend-api/wham/${path}`,
+        policies,
+      );
+    };
+
+    expect(decide("GET", "accounts/check")).toMatchObject({
+      kind: "allow",
+      firewallName: config.name,
+      permission: "codex:workspace-routing",
+    });
+    expect(decide("POST", "accounts/check")).toMatchObject({
+      kind: "block",
+      reason: "unknown_endpoint",
+    });
+    expect(decide("GET", "accounts/check/extra")).toMatchObject({
+      kind: "block",
+      reason: "unknown_endpoint",
+    });
+    expect(decide("GET", "settings/user")).toEqual({ kind: "no_match" });
+  });
+
   it("firewall denies auth.openai.com via unknown endpoint policy", () => {
     const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
     expect(config.defaultPolicies).toEqual({
       unknownPolicy: "deny",
     });
-    expect(config.apis[1]!.permissions).toEqual([]);
+    expect(config.apis[2]!.permissions).toEqual([]);
   });
 
   it.each([
@@ -1540,11 +1715,11 @@ describe("codex-oauth-token codex provider", () => {
     (method, path) => {
       // auth.openai.com intentionally exposes no grantable permissions. The
       // deny is delivered by defaultPolicies.unknownPolicy: "deny", so traffic
-      // to auth.openai.com must NOT resolve to any permission name on apis[1].
-      // This pins behavior so a future edit to `apis[1].permissions` breaks the
+      // to auth.openai.com must NOT resolve to any permission name on apis[2].
+      // This pins behavior so a future edit to `apis[2].permissions` breaks the
       // test rather than silently widening auth.openai.com.
       const config = MODEL_PROVIDER_FIREWALL_CONFIGS["codex-oauth-token"];
-      const fwConfig = { name: config.name, apis: [config.apis[1]!] };
+      const fwConfig = { name: config.name, apis: [config.apis[2]!] };
       expect(findMatchingPermissions(method, path, fwConfig)).toEqual([]);
     },
   );
@@ -1630,6 +1805,7 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
           expect.arrayContaining([
             "openai/gpt-6-astra",
             "openai/gpt-6-sol",
+            "openai/gpt-6-luna",
             "deepseek/deepseek-v4.1-flash",
             "deepseek/deepseek-v4-flash",
             "deepseek/deepseek-v4-pro",
@@ -1639,6 +1815,7 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
       if (type === "vercel-ai-gateway-codex") {
         expect(getModels(type)).not.toContain("openai/gpt-6-astra");
         expect(getModels(type)).not.toContain("openai/gpt-6-sol");
+        expect(getModels(type)).not.toContain("openai/gpt-6-luna");
       }
       expect(getDefaultModel(type)).toBe("openai/gpt-5.6-luna");
     },
@@ -1656,6 +1833,9 @@ describe("codex-framework gateway providers (openrouter-codex, vercel-ai-gateway
     );
     expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-sol")).toBe(
       "openai/gpt-6-sol",
+    );
+    expect(getProviderRuntimeModel("openrouter-codex", "gpt-6-luna")).toBe(
+      "openai/gpt-6-luna",
     );
     expect(
       getProviderRuntimeModel("openrouter-codex", "deepseek-v4.1-flash"),

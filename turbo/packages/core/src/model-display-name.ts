@@ -14,6 +14,7 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   // Anthropic direct (claude-code-oauth-token, anthropic-api-key, built-in)
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
+  "claude-opus-5-5": "Claude Opus 5.5",
   "claude-opus-5": "Claude Opus 5",
   "claude-sonnet-5": "Claude Sonnet 5",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
@@ -22,6 +23,7 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   // Anthropic via OpenRouter / Vercel AI Gateway
   "anthropic/claude-fable-5.1": "Claude Fable 5.1",
   "anthropic/claude-fable-5": "Claude Fable 5",
+  "anthropic/claude-opus-5.5": "Claude Opus 5.5",
   "anthropic/claude-opus-5": "Claude Opus 5",
   "anthropic/claude-sonnet-5": "Claude Sonnet 5",
   "anthropic/claude-sonnet-4.6": "Claude Sonnet 4.6",
@@ -42,6 +44,8 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   "openai/gpt-6-astra": "GPT 6 Astra",
   "gpt-6-sol": "GPT 6 Sol",
   "openai/gpt-6-sol": "GPT 6 Sol",
+  "gpt-6-luna": "GPT 6 Luna",
+  "openai/gpt-6-luna": "GPT 6 Luna",
   "gpt-5.6-sol": "GPT 5.6 Sol",
   "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-luna": "GPT 5.6 Luna",

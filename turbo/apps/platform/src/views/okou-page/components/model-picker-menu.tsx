@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import {
   ArrowLeft,
@@ -7,15 +7,21 @@ import {
   Cpu,
   MessageCircle,
 } from "lucide-react";
-import { Button, cn } from "@okouai/ui";
+import {
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  cn,
+} from "@okouai/ui";
 import {
   getCanonicalModelDisplayName,
   type SupportedRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { useTranslation } from "react-i18next";
 import type { ModelPickerMenuSignals } from "../../../signals/okou-page/model-picker-menu.ts";
-import { pageSignal$ } from "../../../signals/page-signal.ts";
-import { detach, Reason } from "../../../signals/utils.ts";
 import { formatChatEffort, useChatEffort } from "./chat-effort-controls.tsx";
 import { PriceTierBadge } from "./model-picker-price-tier.tsx";
 import {
@@ -24,7 +30,6 @@ import {
 } from "./settings/provider-ui-config.ts";
 import { ProviderIcon } from "./settings/provider-icons.tsx";
 import type {
-  MediaModelCategoryId,
   MediaModelPanelState,
   ModelProviderSelection,
 } from "./model-provider-picker.tsx";
@@ -48,35 +53,26 @@ function MenuHeader({
   backLabel?: string;
 }) {
   return (
-    <div className="sticky top-0 z-10 flex h-7 items-center gap-1 bg-card px-2 text-xs text-muted-foreground">
+    <div
+      className={cn(
+        "sticky top-0 z-10 flex items-center gap-1 bg-card px-2 text-xs text-muted-foreground",
+        onBack ? "h-9" : "h-7",
+      )}
+    >
       {onBack && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="-ml-1 h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+        <DropdownMenuItem
+          closeOnClick={false}
+          className="-ml-1 w-7 shrink-0 justify-center px-0 text-muted-foreground hover:text-foreground data-highlighted:bg-transparent data-highlighted:hover:bg-state-hover data-highlighted:focus-visible:bg-state-hover"
           aria-label={backLabel}
           onClick={onBack}
         >
           <ArrowLeft size={14} aria-hidden="true" />
-        </Button>
+        </DropdownMenuItem>
       )}
       <span>{label}</span>
     </div>
   );
 }
-
-/**
- * Menu rows run the full width of their card, so a button's default ring lands
- * outside the row: 2px of ring plus its 2px offset. The options list is a
- * scroller, and `overflow-y-auto` clips the other axis too, so that band
- * disappears on the left and right and the focused row reads as two loose
- * horizontal lines; in the type rail there is no scroller, but the same band
- * covers the card's own `p-1` and paints over its hairline. Draw the ring
- * inside the row instead, on the rounded rect the hover background already
- * uses.
- */
-const MENU_FOCUS_RING_CLASS =
-  "[&_button:focus-visible]:ring-inset [&_button:focus-visible]:ring-offset-0";
 
 function CurrentModelRow({
   model,
@@ -94,9 +90,9 @@ function CurrentModelRow({
   const { t } = useTranslation();
   return (
     <div className="relative h-12 rounded-lg">
-      <Button
-        variant="ghost"
-        className="h-full w-full justify-start gap-2 px-2 pr-7 text-left font-normal text-foreground"
+      <DropdownMenuItem
+        closeOnClick={false}
+        className="min-h-12 w-full justify-start gap-2 px-2 pr-7 text-left font-normal text-foreground"
         aria-label={t(
           ($) => {
             return $.settings.models.picker.menu.changeModel;
@@ -120,36 +116,9 @@ function CurrentModelRow({
           aria-hidden="true"
           className="absolute right-2 text-muted-foreground"
         />
-      </Button>
+      </DropdownMenuItem>
     </div>
   );
-}
-
-/** Keep arrow navigation in the same order as the menu's tabbable controls. */
-function moveMenuFocus(event: KeyboardEvent<HTMLDivElement>): void {
-  if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-    return;
-  }
-  const controls = Array.from(
-    event.currentTarget.querySelectorAll<HTMLElement>(
-      'button:not(:disabled), [role="switch"]:not([data-disabled])',
-    ),
-  );
-  const current = controls.findIndex((button) => {
-    return button === event.target;
-  });
-  if (controls.length === 0 || current === -1) {
-    return;
-  }
-  event.preventDefault();
-  const next =
-    event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? controls.length - 1
-        : (current + (event.key === "ArrowDown" ? 1 : -1) + controls.length) %
-          controls.length;
-  controls[next]?.focus();
 }
 
 interface ModelPickerMenuContentProps {
@@ -159,8 +128,6 @@ interface ModelPickerMenuContentProps {
   options: readonly ModelPickerMenuOption[];
   mediaModelPanel: MediaModelPanelState | undefined;
   onChange: (selection: ModelProviderSelection) => void;
-  /** Only the flyout uses it: the menu's pages stay open after a selection. */
-  onSelected?: (() => void) | undefined;
 }
 
 function ModelPickerOverview({
@@ -277,7 +244,10 @@ function ChatModelList({
           return $.settings.models.picker.menu.backToModels;
         })}
       />
-      <div className="flex max-h-[284px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1">
+      <DropdownMenuRadioGroup
+        value={value?.selectedModel ?? null}
+        className="flex max-h-[284px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1"
+      >
         {options.length === 0 && (
           <p className="px-2 py-2 text-sm text-muted-foreground">
             {t(($) => {
@@ -287,12 +257,12 @@ function ChatModelList({
         )}
         {options.map((option) => {
           return (
-            <Button
+            <DropdownMenuRadioItem
               key={option.model}
-              variant="ghost"
-              className="relative h-9 w-full justify-start px-2 pr-8 text-left font-normal text-foreground"
+              value={option.model}
+              label={option.label}
+              className="w-full shrink-0 pr-8 text-left font-normal text-foreground"
               aria-label={option.label}
-              aria-pressed={value?.selectedModel === option.model}
               disabled={option.disabled}
               onClick={() => {
                 chooseChat(option);
@@ -306,10 +276,10 @@ function ChatModelList({
                   className="absolute right-2"
                 />
               )}
-            </Button>
+            </DropdownMenuRadioItem>
           );
         })}
-      </div>
+      </DropdownMenuRadioGroup>
     </>
   );
 }
@@ -340,16 +310,22 @@ function MediaModelList({
           return $.settings.models.picker.menu.backToModels;
         })}
       />
-      <div className="flex max-h-[284px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1">
+      <DropdownMenuRadioGroup
+        value={
+          category?.options.find((option) => {
+            return option.selected;
+          })?.key ?? null
+        }
+        className="flex max-h-[284px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1"
+      >
         {category?.options.map((option) => {
           return (
-            <Button
+            <DropdownMenuRadioItem
               key={option.key}
-              variant="ghost"
-              className="relative h-9 w-full justify-start gap-2 px-2 pr-8 text-left font-normal text-foreground"
+              value={option.key}
+              label={option.label}
+              className="w-full shrink-0 pr-8 text-left font-normal text-foreground"
               aria-label={option.label}
-              aria-pressed={option.selected}
-              aria-current={option.selected ? "true" : undefined}
               onClick={() => {
                 option.onSelect();
                 reset();
@@ -368,321 +344,113 @@ function MediaModelList({
                   className="absolute right-2"
                 />
               )}
-            </Button>
+            </DropdownMenuRadioItem>
           );
         })}
-      </div>
+      </DropdownMenuRadioGroup>
     </>
-  );
-}
-
-/**
- * The type rail is the popover surface itself. The flyout panel floats outside
- * that box, so it restates the same surface -- hairline, radius and the
- * popover's own drop shadow, which PopoverContent applies as an inline style
- * and `shadow-lg` reproduces exactly.
- */
-const FLYOUT_PANEL_CLASS =
-  "rounded-[12px] border border-[hsl(var(--gray-400))] bg-card p-1 text-foreground shadow-lg outline-none";
-
-/**
- * Flyout layout: model types on the left, that type's models in a panel beside
- * it. The two panels are separate cards -- joining them would make the root
- * resize whenever a longer list opened, and the type rows would move out from
- * under the pointer.
- */
-function ModelPickerFlyoutTypeRow({
-  icon,
-  label,
-  current,
-  active,
-  index,
-  total,
-  onActivate,
-  onHover,
-  onHoverEnd,
-}: {
-  icon: ReactNode;
-  label: string;
-  current: string;
-  active: boolean;
-  index: number;
-  total: number;
-  onActivate: () => void;
-  onHover: () => void;
-  onHoverEnd: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      role="tab"
-      aria-selected={active}
-      aria-posinset={index + 1}
-      aria-setsize={total}
-      tabIndex={active ? 0 : -1}
-      className={cn(
-        // shrink-0 keeps the row at its own height: a flex column with a
-        // max-height compresses its children before it will scroll.
-        "h-11 w-full shrink-0 justify-start gap-2 px-2 text-left font-normal",
-        active && "bg-state-hover",
-      )}
-      // Hover waits for the pointer to settle; a click or a keyboard move is
-      // deliberate and swaps the panel straight away.
-      onMouseEnter={onHover}
-      onMouseLeave={onHoverEnd}
-      onFocus={onActivate}
-      onClick={onActivate}
-    >
-      <span className="flex w-4 shrink-0 items-center justify-center text-muted-foreground">
-        {icon}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-px">
-        <span className="truncate text-[13px] leading-[17px] text-foreground">
-          {label}
-        </span>
-        <span className="truncate text-[11px] leading-[14px] text-muted-foreground">
-          {current}
-        </span>
-      </span>
-      <ChevronRight
-        size={13}
-        aria-hidden="true"
-        className="shrink-0 text-muted-foreground"
-      />
-    </Button>
-  );
-}
-
-function ModelPickerFlyoutOption({
-  content,
-  selected,
-  disabled,
-  index,
-  total,
-  onSelect,
-}: {
-  content: ReactNode;
-  selected: boolean;
-  disabled: boolean;
-  index: number;
-  total: number;
-  onSelect: () => void;
-}) {
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      role="option"
-      aria-selected={selected}
-      aria-posinset={index + 1}
-      aria-setsize={total}
-      // Unavailable routes stay in the list and stay reachable: a native
-      // disabled row is invisible to keyboard and screen reader users.
-      aria-disabled={disabled || undefined}
-      tabIndex={-1}
-      className={cn(
-        // shrink-0: without it a long list compresses every row instead of
-        // scrolling, so the same row is 36px in a short list and 26px in a
-        // long one.
-        "relative h-9 w-full shrink-0 justify-start gap-2 pl-2 pr-8 text-left",
-        "text-[13px] font-normal text-foreground",
-        disabled && "opacity-55 hover:bg-transparent active:bg-transparent",
-      )}
-      onClick={() => {
-        if (!disabled) {
-          onSelect();
-        }
-      }}
-    >
-      {content}
-      {selected && (
-        <Check size={15} aria-hidden="true" className="absolute right-2" />
-      )}
-    </Button>
   );
 }
 
 function ModelPickerFlyoutOptions({
   activeMedia,
-  options,
-  value,
-  onChange,
-  onSelected,
-}: {
-  activeMedia: MediaModelPanelState["categories"][number] | undefined;
-  options: readonly ModelPickerMenuOption[];
-  value: ModelProviderSelection | null;
-  onChange: (selection: ModelProviderSelection) => void;
-  onSelected: (() => void) | undefined;
-}) {
-  if (activeMedia) {
-    return activeMedia.options.map((option, index) => {
-      return (
-        <ModelPickerFlyoutOption
-          key={option.key}
-          content={
-            <>
-              {option.icon}
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
-              <PriceTierBadge
-                tier={option.priceTier}
-                description={getMediaModelPriceTierLabel(option.priceTier)}
-              />
-            </>
-          }
-          selected={option.selected}
-          disabled={false}
-          index={index}
-          total={activeMedia.options.length}
-          onSelect={() => {
-            option.onSelect();
-            onSelected?.();
-          }}
-        />
-      );
-    });
-  }
-  return options.map((option, index) => {
-    return (
-      <ModelPickerFlyoutOption
-        key={option.model}
-        content={option.content}
-        selected={value?.selectedModel === option.model}
-        disabled={option.disabled}
-        index={index}
-        total={options.length}
-        onSelect={() => {
-          onChange(
-            value?.selectedModel === option.model
-              ? value
-              : { selectedModel: option.model },
-          );
-          // Picking a model is the whole task: leave rather than making the
-          // user dismiss a panel that has nothing left to offer.
-          onSelected?.();
-        }}
-      />
-    );
-  });
-}
-
-function ModelPickerFlyoutPanel({
-  activeMedia,
-  panelLabel,
-  ...props
-}: ModelPickerMenuContentProps & {
-  activeMedia: MediaModelPanelState["categories"][number] | undefined;
-  panelLabel: string;
-}) {
-  const { t } = useTranslation();
-  const panelRef = useSet(props.signals.focusFlyoutPanelRef$);
-  return (
-    <>
-      <div
-        ref={panelRef}
-        role="listbox"
-        aria-label={panelLabel}
-        className={cn(
-          // Rows have to appear and disappear at the card's own edge. The card
-          // insets this box by `p-1`, which left a blank band where a row was
-          // cut short of the border, so pull the box back over that inset and
-          // restate it as scroll padding: the list still rests clear of the
-          // border at either end, but a row mid-scroll runs to the edge.
-          // The heights keep the visible area at 244px either way.
-          // Nothing follows the list, so the bottom reaches the card's edge too.
-          "-mt-1 -mb-1 flex max-h-[252px] flex-col gap-0.5 overflow-y-auto overscroll-contain pt-1 pb-1",
-        )}
-      >
-        <ModelPickerFlyoutOptions
-          {...props}
-          activeMedia={activeMedia}
-          onSelected={props.onSelected}
-        />
-        {props.options.length === 0 && !activeMedia && (
-          <p className="px-2 py-2 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.settings.models.picker.noConfiguredModels;
-            })}
-          </p>
-        )}
-      </div>
-    </>
-  );
-}
-
-interface ModelPickerFlyoutType {
-  readonly id: "chat" | MediaModelCategoryId;
-  readonly label: string;
-  readonly current: string;
-  readonly icon: ReactNode;
-}
-
-/**
- * The type rail owns hover intent for the whole flyout: a row opens its panel
- * on a settled pointer, and a pointer that leaves before then opens nothing.
- * Reaching the panel means crossing the rows between it and the pointer, and
- * without the dwell each of those rows would swap the panel on the way past.
- */
-function ModelPickerFlyoutTypeRail({
-  signals,
-  types,
-  activeType,
-}: {
-  signals: ModelPickerMenuSignals;
-  types: readonly ModelPickerFlyoutType[];
-  activeType: ModelPickerFlyoutType["id"];
-}) {
-  const { t } = useTranslation();
-  const setCategory = useSet(signals.setFlyoutCategory$);
-  const hoverCategory = useSet(signals.hoverFlyoutCategory$);
-  const cancelCategoryHover = useSet(signals.cancelFlyoutCategoryHover$);
-  const pageSignal = useGet(pageSignal$);
-  return (
-    <div
-      role="tablist"
-      aria-orientation="vertical"
-      aria-label={t(($) => {
-        return $.settings.models.picker.models;
-      })}
-      className="flex flex-col gap-0.5"
-    >
-      {types.map((type, index) => {
-        return (
-          <ModelPickerFlyoutTypeRow
-            key={type.id}
-            icon={type.icon}
-            label={type.label}
-            current={type.current}
-            active={type.id === activeType}
-            index={index}
-            total={types.length}
-            onActivate={() => {
-              setCategory(type.id);
-            }}
-            onHover={() => {
-              detach(hoverCategory(type.id, pageSignal), Reason.DomCallback);
-            }}
-            onHoverEnd={cancelCategoryHover}
-          />
-        );
-      })}
-    </div>
-  );
-}
-
-export function ModelPickerFlyoutContent({
-  signals,
-  value,
-  placeholder,
-  options,
   mediaModelPanel,
+  options,
+  value,
   onChange,
-  onSelected,
-}: ModelPickerMenuContentProps) {
+}: Pick<
+  ModelPickerMenuContentProps,
+  "mediaModelPanel" | "options" | "value" | "onChange"
+> & {
+  activeMedia?: MediaModelPanelState["categories"][number];
+}) {
   const { t } = useTranslation();
-  const category = useGet(signals.flyoutCategory$);
-  const side = useGet(signals.flyoutSide$);
+  return (
+    <DropdownMenuRadioGroup
+      value={
+        activeMedia
+          ? (activeMedia.options.find((option) => {
+              return option.selected;
+            })?.key ?? null)
+          : (value?.selectedModel ?? null)
+      }
+      className="-my-1 flex max-h-[252px] flex-col gap-0.5 overflow-y-auto overscroll-contain py-1"
+    >
+      {activeMedia
+        ? activeMedia.options.map((option) => {
+            return (
+              <DropdownMenuRadioItem
+                key={option.key}
+                value={option.key}
+                label={option.label}
+                closeOnClick
+                className="w-full shrink-0 pr-8 text-[13px] font-normal text-foreground"
+                onClick={() => {
+                  mediaModelPanel?.onActiveCategoryChange(activeMedia.id);
+                  option.onSelect();
+                }}
+              >
+                {option.icon}
+                <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                <PriceTierBadge
+                  tier={option.priceTier}
+                  description={getMediaModelPriceTierLabel(option.priceTier)}
+                />
+                {option.selected && (
+                  <Check
+                    size={15}
+                    aria-hidden="true"
+                    className="absolute right-2"
+                  />
+                )}
+              </DropdownMenuRadioItem>
+            );
+          })
+        : options.map((option) => {
+            return (
+              <DropdownMenuRadioItem
+                key={option.model}
+                value={option.model}
+                label={option.label}
+                disabled={option.disabled}
+                closeOnClick
+                className="w-full shrink-0 pr-8 text-[13px] font-normal text-foreground"
+                onClick={() => {
+                  mediaModelPanel?.onActiveCategoryChange(null);
+                  onChange(
+                    value?.selectedModel === option.model
+                      ? value
+                      : { selectedModel: option.model },
+                  );
+                }}
+              >
+                {option.content}
+                {value?.selectedModel === option.model && (
+                  <Check
+                    size={15}
+                    aria-hidden="true"
+                    className="absolute right-2"
+                  />
+                )}
+              </DropdownMenuRadioItem>
+            );
+          })}
+      {!activeMedia && options.length === 0 && (
+        <p className="px-2 py-2 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.settings.models.picker.noConfiguredModels;
+          })}
+        </p>
+      )}
+    </DropdownMenuRadioGroup>
+  );
+}
+
+/** Native submenus own hover intent, keyboard traversal and collision placement. */
+export function ModelPickerFlyoutContent(props: ModelPickerMenuContentProps) {
+  const { signals, value, placeholder, options, mediaModelPanel } = props;
+  const { t } = useTranslation();
+  const root = useGet(signals.flyoutRoot$);
   const rootRef = useSet(signals.flyoutRootRef$);
   const selectedOption = options.find((option) => {
     return option.model === value?.selectedModel;
@@ -690,143 +458,90 @@ export function ModelPickerFlyoutContent({
   const chatLabel =
     selectedOption?.label ??
     (value ? getCanonicalModelDisplayName(value.selectedModel) : placeholder);
+  const chatModelsLabel = t(($) => {
+    return $.settings.models.picker.chatModels;
+  });
+  if (!mediaModelPanel?.categories.length) {
+    return <ModelPickerFlyoutOptions {...props} />;
+  }
   const types = [
     {
-      id: "chat" as const,
+      id: "chat",
       label: t(($) => {
         return $.settings.models.picker.categoryChat;
       }),
+      panelLabel: chatModelsLabel,
       current: chatLabel,
       icon: <MessageCircle size={15} aria-hidden="true" />,
+      media: undefined,
     },
-    ...(mediaModelPanel?.categories ?? []).map((mediaCategory) => {
-      const selected = mediaCategory.options.find((option) => {
+    ...mediaModelPanel.categories.map((category) => {
+      const selected = category.options.find((option) => {
         return option.selected;
       });
       return {
-        id: mediaCategory.id,
-        label: mediaCategory.tabLabel,
-        current: selected?.label ?? mediaCategory.label,
-        icon: selected?.icon ?? null,
+        id: category.id,
+        label: category.tabLabel,
+        panelLabel: category.label,
+        current: selected?.label ?? category.label,
+        icon: selected?.icon,
+        media: category,
       };
     }),
   ];
-  const activeType = types.some((type) => {
-    return type.id === category;
-  })
-    ? category
-    : "chat";
-  const activeMedia = mediaModelPanel?.categories.find((mediaCategory) => {
-    return mediaCategory.id === activeType;
-  });
-  const panelLabel =
-    activeMedia?.label ??
-    t(($) => {
-      return $.settings.models.picker.chatModels;
-    });
   return (
-    <div
-      ref={rootRef}
-      className={cn("relative", MENU_FOCUS_RING_CLASS)}
-      onKeyDown={(event) => {
-        moveFlyoutFocus(event, types.length);
-      }}
-    >
-      {types.length > 1 && (
-        <ModelPickerFlyoutTypeRail
-          signals={signals}
-          types={types}
-          activeType={activeType}
-        />
-      )}
-      <div
-        className={cn(
-          "flex flex-col gap-0.5",
-          types.length > 1
-            ? cn(
-                // The two cards share a bottom edge. This box is anchored to
-                // the rail's content edge, which sits the popover's `p-1`
-                // (4px) plus the shared 0.5px hairline above the card's own
-                // bottom, so cancel both.
-                "absolute bottom-[-4.5px] w-[252px]",
-                FLYOUT_PANEL_CLASS,
-                side === "right"
-                  ? "left-[calc(100%+6px)]"
-                  : "right-[calc(100%+6px)]",
-              )
-            : "w-full",
-        )}
-      >
-        <ModelPickerFlyoutPanel
-          signals={signals}
-          placeholder={placeholder}
-          mediaModelPanel={mediaModelPanel}
-          activeMedia={activeMedia}
-          panelLabel={panelLabel}
-          options={options}
-          value={value}
-          onChange={onChange}
-          onSelected={onSelected}
-        />
-      </div>
+    <div ref={rootRef} className="flex flex-col gap-0.5">
+      {types.map((type) => {
+        return (
+          <DropdownMenuSub
+            key={type.id}
+            defaultOpen={type.id === "chat"}
+            closeParentOnEsc
+          >
+            <DropdownMenuSubTrigger
+              label={type.label}
+              delay={200}
+              className="min-h-11 w-full shrink-0 gap-2 text-left font-normal"
+            >
+              <span className="flex w-4 shrink-0 items-center justify-center text-muted-foreground">
+                {type.icon}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col gap-px">
+                <span className="truncate text-[13px] leading-[17px] text-foreground">
+                  {type.label}
+                </span>
+                <span className="truncate text-[11px] leading-[14px] text-muted-foreground">
+                  {type.current}
+                </span>
+              </span>
+              <ChevronRight
+                size={13}
+                aria-hidden="true"
+                className="shrink-0 text-muted-foreground"
+              />
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent
+              anchor={root}
+              side="right"
+              align="end"
+              alignOffset={-4}
+              sideOffset={6}
+              aria-labelledby={undefined}
+              aria-label={type.panelLabel}
+              className="w-[252px] max-w-[calc(100vw-16px)]"
+            >
+              <ModelPickerFlyoutOptions {...props} activeMedia={type.media} />
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        );
+      })}
     </div>
   );
-}
-
-/** Vertical tablist paired with a listbox: up/down inside each, arrows across. */
-function moveFlyoutFocus(
-  event: KeyboardEvent<HTMLDivElement>,
-  typeCount: number,
-): void {
-  const target = event.target as HTMLElement;
-  const root = event.currentTarget;
-  const onType = target.getAttribute("role") === "tab";
-  const onOption = target.getAttribute("role") === "option";
-  if (!onType && !onOption) {
-    return;
-  }
-  const options = Array.from(
-    root.querySelectorAll<HTMLElement>('[role="option"]'),
-  );
-  const tabs = Array.from(root.querySelectorAll<HTMLElement>('[role="tab"]'));
-  if (onType && (event.key === "ArrowRight" || event.key === "Enter")) {
-    event.preventDefault();
-    (
-      options.find((option) => {
-        return option.getAttribute("aria-selected") === "true";
-      }) ?? options[0]
-    )?.focus();
-    return;
-  }
-  if (!onType && event.key === "ArrowLeft" && typeCount > 1) {
-    event.preventDefault();
-    tabs
-      .find((tab) => {
-        return tab.getAttribute("aria-selected") === "true";
-      })
-      ?.focus();
-    return;
-  }
-  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
-    return;
-  }
-  const ring = onType ? tabs : options;
-  const current = ring.indexOf(target);
-  if (current === -1 || ring.length === 0) {
-    return;
-  }
-  event.preventDefault();
-  const next =
-    (current + (event.key === "ArrowDown" ? 1 : -1) + ring.length) %
-    ring.length;
-  ring[next]?.focus();
 }
 
 export function ModelPickerMenuContent(props: ModelPickerMenuContentProps) {
   const { t } = useTranslation();
   const page = useGet(props.signals.page$);
-  const back = useSet(props.signals.reset$);
-  const focusPanel = useSet(props.signals.focusPanelRef$);
   let content: ReactNode;
   let label: string;
   if (page.kind === "overview") {
@@ -851,22 +566,7 @@ export function ModelPickerMenuContent(props: ModelPickerMenuContentProps) {
     content = <MediaModelList {...props} categoryId={page.category} />;
   }
   return (
-    <div
-      key={page.kind === "models" ? page.category : page.kind}
-      ref={focusPanel}
-      role="region"
-      aria-label={label}
-      className={cn("motion-safe:duration-150", MENU_FOCUS_RING_CLASS)}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && page.kind !== "overview") {
-          event.preventDefault();
-          event.stopPropagation();
-          back();
-        } else {
-          moveMenuFocus(event);
-        }
-      }}
-    >
+    <div role="region" aria-label={label} className="motion-safe:duration-150">
       {content}
     </div>
   );

@@ -398,7 +398,7 @@ export function CreditAdditionTable({
           })}
         </span>
       </div>
-      <TooltipProvider delayDuration={100}>
+      <TooltipProvider delay={100}>
         {grants.map((grant) => {
           return (
             <Tooltip key={grant.id}>
@@ -424,11 +424,7 @@ export function CreditAdditionTable({
               <TooltipContent
                 side="top"
                 sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="border shadow-md"
+                className="border shadow-md bg-popover! text-popover-foreground!"
               >
                 <div className="font-medium text-foreground">{grant.label}</div>
                 <div className="mt-0.5 text-muted-foreground">
@@ -476,7 +472,7 @@ function CreditBreakdownBar({
     return null;
   }
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delay={100}>
       <div className="mt-4 flex h-2 w-full gap-[3px]">
         {segments.map((s) => {
           const color = colorForSegment(s);
@@ -497,11 +493,7 @@ function CreditBreakdownBar({
               <TooltipContent
                 side="top"
                 sideOffset={8}
-                style={{
-                  backgroundColor: "hsl(var(--popover))",
-                  color: "hsl(var(--popover-foreground))",
-                }}
-                className="border shadow-md"
+                className="border shadow-md bg-popover! text-popover-foreground!"
               >
                 <div className="font-medium text-foreground">
                   {labelForSegment(s)} — {formatLocalizedNumber(s.credits)}
@@ -700,7 +692,7 @@ export function MemberUsageTable({
   );
 
   return (
-    <TooltipProvider delayDuration={100}>
+    <TooltipProvider delay={100}>
       <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
         {/* Header */}
         <div className="grid grid-cols-[1fr_7rem] gap-x-4 items-center px-5 py-2.5 text-[13px] font-medium text-foreground">

@@ -290,6 +290,7 @@ const cronPruneStoragePresignedUrlsResponseSchema = z.object({
   workflowSkill: storagePresignedUrlPruneResultSchema,
   readOnly: storagePresignedUrlPruneResultSchema,
   presentationTemplatePreview: storagePresignedUrlPruneResultSchema,
+  privateArtifactPreview: storagePresignedUrlPruneResultSchema.optional(),
 });
 
 const cronMaterializeMemorySummariesResponseSchema = z.object({
@@ -363,6 +364,22 @@ export const cronCompactChatThreadSnapshotsContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Compact chat thread snapshots from lifecycle events",
+  },
+});
+
+export const cronReconcileArtifactCatalogContract = c.router({
+  reconcile: {
+    method: "GET",
+    path: "/api/cron/reconcile-artifact-catalog",
+    headers: authHeadersSchema,
+    responses: {
+      200: z.object({
+        processed: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Reconcile a bounded batch of pending artifact catalog files",
   },
 });
 
@@ -829,6 +846,33 @@ export {
   cronMaterializeMemorySummariesResponseSchema,
   cronExtractPiMemoryStage1ResponseSchema,
 };
+
+export const cronRefreshHomeTaskRecommendationsResponseSchema = z.object({
+  success: z.literal(true),
+  scanned: z.number().int().nonnegative(),
+  refreshed: z.number().int().nonnegative(),
+  unchanged: z.number().int().nonnegative(),
+  removed: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+});
+
+/** Refresh recently requested Agent home-task caches outside user requests. */
+export const cronRefreshHomeTaskRecommendationsContract = c.router({
+  refresh: {
+    method: "GET",
+    path: "/api/cron/refresh-home-task-recommendations",
+    headers: authHeadersSchema,
+    responses: {
+      200: cronRefreshHomeTaskRecommendationsResponseSchema,
+      401: apiErrorSchema,
+    },
+    summary: "Refresh due home-task recommendations",
+  },
+});
+
+export type CronRefreshHomeTaskRecommendationsContract =
+  typeof cronRefreshHomeTaskRecommendationsContract;
 
 /** Durable jobs are claimed with short leases; every invocation has a fixed work budget. */
 export const cronProcessBackgroundJobsContract = c.router({

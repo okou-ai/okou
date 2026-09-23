@@ -1,6 +1,7 @@
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -154,7 +155,8 @@ test("Inspect or copy an assistant response from history", async () => {
   });
 });
 
-test("Copy and paste a structured chat message without flattening it", async () => {
+test("Copy and paste a structured chat message from the keyboard without flattening it", async () => {
+  const user = userEvent.setup({ delay: null });
   const clipboard = context.mocks.browser.clipboardWrite();
   mockPrivateUrlSequence(context, {
     [STRUCTURED_FILE_ID]: [STRUCTURED_FILE_URL],
@@ -224,7 +226,11 @@ test("Copy and paste a structured chat message without flattening it", async () 
     throw new Error("Structured user message group was not available");
   }
 
-  click(buttonIn(userGroup, "Copy message"));
+  const copy = buttonIn(userGroup, "Copy message");
+  copy.focus();
+  expect(copy).toHaveFocus();
+  expect(copy).toHaveAccessibleName("Copy message");
+  await user.keyboard("{Enter}");
 
   const item = await readSingleRichClipboardWrite(clipboard);
   const plainText = await readClipboardItemText(item, "text/plain");

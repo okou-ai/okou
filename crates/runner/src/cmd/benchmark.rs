@@ -187,20 +187,25 @@ pub async fn run_benchmark(
     let t = Instant::now();
     let runner_paths = RunnerPaths::new(runner_config.base_dir.clone());
     // Benchmark runs a single short-lived sandbox; crash recovery is not needed.
-    let (mut mitm, _crash_rx) = proxy::MitmProxy::new(proxy::ProxyConfig {
-        mitmdump_bin: home.mitmdump_bin(MITMPROXY_VERSION),
-        ca_dir: runner_config.ca_dir.clone(),
-        ca_lock_path: home.ca_lock(),
-        addon_dir: runner_paths.mitm_addon_dir(),
-        registry_path: runner_paths.proxy_registry(),
-        registry_lock_path: runner_paths.proxy_registry_lock(),
-        builtin_firewall_catalog_cache_path: runner_paths.builtin_firewall_catalog_cache(),
-        runtime_dir: runner_paths.mitmdump_runtime_dir(),
-        runtime_lock_path: runner_paths.mitmdump_runtime_lock(),
-        api_url: runner_config.server.as_ref().map(|s| s.url.clone()),
-        client_session_id: uuid::Uuid::new_v4().to_string(),
-        runner_token: None,
-    })
+    let (mut mitm, _crash_rx) = proxy::MitmProxy::new(
+        proxy::ProxyConfig {
+            mitmdump_bin: home.mitmdump_bin(MITMPROXY_VERSION),
+            ca_dir: runner_config.ca_dir.clone(),
+            ca_lock_path: home.ca_lock(),
+            addon_dir: runner_paths.mitm_addon_dir(),
+            registry_path: runner_paths.proxy_registry(),
+            registry_lock_path: runner_paths.proxy_registry_lock(),
+            builtin_firewall_catalog_cache_path: runner_paths.builtin_firewall_catalog_cache(),
+            runtime_dir: runner_paths.mitmdump_runtime_dir(),
+            runtime_lock_path: runner_paths.mitmdump_runtime_lock(),
+            api_url: runner_config.server.as_ref().map(|s| s.url.clone()),
+            client_session_id: uuid::Uuid::new_v4().to_string(),
+            client_version: env!("CARGO_PKG_VERSION"),
+            system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
+            runner_token: None,
+        },
+        crate::ADDON_FILES,
+    )
     .await?;
     mitm.start().await?;
     let proxy_ms = t.elapsed().as_millis();
@@ -315,7 +320,10 @@ pub async fn run_benchmark(
                 "benchmark complete"
             );
         }
-        (Ok(_), Some(e)) | (Err(e), _) => {
+        (Ok(_), Some(e)) => {
+            info!(proxy_ms, factory_ms, boot_ms = ?boot_ms, workspace_mount_ms = ?workspace_mount_ms, guest_restore_ms = ?guest_restore_ms, exec_ms = ?exec_ms, total_ms, error = %e, "benchmark failed");
+        }
+        (Err(e), _) => {
             info!(proxy_ms, factory_ms, boot_ms = ?boot_ms, workspace_mount_ms = ?workspace_mount_ms, guest_restore_ms = ?guest_restore_ms, exec_ms = ?exec_ms, total_ms, error = %e, "benchmark failed");
         }
     }
@@ -801,22 +809,27 @@ mod tests {
         async fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
             let registry_path = dir.path().join("proxy-registry.json");
-            let (proxy, _crash_rx) = proxy::MitmProxy::new(proxy::ProxyConfig {
-                mitmdump_bin: dir.path().join("unused-mitmdump"),
-                ca_dir: dir.path().join("ca"),
-                ca_lock_path: dir.path().join("ca.lock"),
-                addon_dir: dir.path().join("addon"),
-                registry_path: registry_path.clone(),
-                registry_lock_path: dir.path().join("proxy-registry.json.lock"),
-                builtin_firewall_catalog_cache_path: dir
-                    .path()
-                    .join("builtin-firewall-catalog-cache.json"),
-                runtime_dir: dir.path().join("mitmdump-runtime"),
-                runtime_lock_path: dir.path().join("mitmdump-runtime.lock"),
-                api_url: None,
-                client_session_id: "benchmark-lifecycle-test".to_string(),
-                runner_token: None,
-            })
+            let (proxy, _crash_rx) = proxy::MitmProxy::new(
+                proxy::ProxyConfig {
+                    mitmdump_bin: dir.path().join("unused-mitmdump"),
+                    ca_dir: dir.path().join("ca"),
+                    ca_lock_path: dir.path().join("ca.lock"),
+                    addon_dir: dir.path().join("addon"),
+                    registry_path: registry_path.clone(),
+                    registry_lock_path: dir.path().join("proxy-registry.json.lock"),
+                    builtin_firewall_catalog_cache_path: dir
+                        .path()
+                        .join("builtin-firewall-catalog-cache.json"),
+                    runtime_dir: dir.path().join("mitmdump-runtime"),
+                    runtime_lock_path: dir.path().join("mitmdump-runtime.lock"),
+                    api_url: None,
+                    client_session_id: "benchmark-lifecycle-test".to_string(),
+                    client_version: env!("CARGO_PKG_VERSION"),
+                    system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
+                    runner_token: None,
+                },
+                crate::ADDON_FILES,
+            )
             .await
             .unwrap();
             Self {

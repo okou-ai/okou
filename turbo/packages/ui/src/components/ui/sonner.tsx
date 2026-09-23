@@ -31,7 +31,7 @@ const DEFAULT_WARNING_ICON = (
     fill="currentColor"
     height="20"
     width="20"
-    style={{ color: "#f59e0b" }}
+    className="text-[#f59e0b]"
   >
     <path
       fillRule="evenodd"
@@ -64,27 +64,38 @@ function Toaster({ onReady, ...props }: ToasterProps) {
       <Sonner
         // Let clicks pass through the list's empty space. Keep the toast rule
         // non-important so Sonner can still disable hidden toast interactions.
-        className="toaster group pointer-events-none !flex !flex-col !items-center [&>[data-sonner-toast]]:pointer-events-auto"
+        className="group pointer-events-none !flex !flex-col !items-center [&>[data-sonner-toast]]:pointer-events-auto"
         duration={3000}
         icons={{ warning: DEFAULT_WARNING_ICON, ...icons }}
         mobileOffset={mobileOffset}
         offset={offset}
-        style={{
-          ...style,
-          zIndex: 2147483647,
-        }}
+        style={
+          {
+            // Sonner's unlayered colors consume these supported variables. The
+            // shared tokens contain HSL channels, not complete CSS colors.
+            "--normal-bg": "hsl(var(--popover))",
+            "--normal-text": "hsl(var(--popover-foreground))",
+            "--normal-border": "hsl(var(--border))",
+            ...style,
+            zIndex: 2147483647,
+          } as React.CSSProperties
+        }
         toastOptions={{
           classNames: {
             toast:
-              "group toast group-[.toaster]:bg-popover group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg group-[.toaster]:!rounded-[10px] group-[.toaster]:!text-sm group-[.toaster]:!font-medium group-[.toaster]:!w-auto group-[.toaster]:!max-w-[calc(100dvw-2rem)] sm:group-[.toaster]:!max-w-none group-[.toaster]:!whitespace-normal sm:group-[.toaster]:!whitespace-nowrap group-[.toaster]:!left-auto group-[.toaster]:!top-auto group-[.toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
-            description: "group-[.toast]:text-muted-foreground",
-            actionButton:
-              "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
-            cancelButton:
-              "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+              "group/toast font-family-sans group-data-[sonner-toaster]:!rounded-[10px] group-data-[sonner-toaster]:!text-sm group-data-[sonner-toaster]:!font-medium group-data-[sonner-toaster]:!w-auto group-data-[sonner-toaster]:!max-w-[calc(100dvw-2rem)] sm:group-data-[sonner-toaster]:!max-w-none group-data-[sonner-toaster]:!whitespace-normal sm:group-data-[sonner-toaster]:!whitespace-nowrap group-data-[sonner-toaster]:!left-auto group-data-[sonner-toaster]:!top-auto group-data-[sonner-toaster]:!relative [&_[data-icon]]:text-green-600 [&[data-type=error]_[data-icon]]:text-red-500",
+            // Sonner has no description-color variable or style slot. Preserve
+            // its inherited foreground for rich-color and inverted surfaces.
+            description:
+              "!text-muted-foreground group-data-[rich-colors=true]/toast:!text-inherit group-data-[invert=true]/toast:!text-inherit",
           },
-          style: {
-            fontFamily: "var(--font-family-sans)",
+          actionButtonStyle: {
+            background: "hsl(var(--primary))",
+            color: "hsl(var(--primary-foreground))",
+          },
+          cancelButtonStyle: {
+            background: "hsl(var(--muted))",
+            color: "hsl(var(--muted-foreground))",
           },
         }}
         {...rest}

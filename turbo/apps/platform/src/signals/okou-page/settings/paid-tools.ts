@@ -81,13 +81,13 @@ function createPaidToolsSignals(
 const paidToolsAvailable$ = computed((get) => {
   const features = get(featureSwitch$);
   return (
-    (features[FeatureSwitchKey.ChatPreference] ?? false) &&
+    (features[FeatureSwitchKey.SettingsToolsTab] ?? false) &&
     (features[FeatureSwitchKey.PaidToolControls] ?? false)
   );
 });
 
 const paidToolsActive$ = computed((get) => {
-  return get(settingsActiveSection$) === "chat";
+  return get(settingsActiveSection$) === "tools";
 });
 
 /** One current identity and settings visit; same-identity refreshes retain it. */

@@ -1466,20 +1466,7 @@
             "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
           },
           "workflow": {
-            "browse": "템플릿 둘러보기",
-            "confirm": "하나 해보기",
             "description": "반복하는 일을 팀이 실행할 수 있는 워크플로로 만듭니다.",
-            "prompt": "매주 월요일 아침에 경쟁사가 지난주에 공개한 내용을 확인하고 주제별로 묶어 비교표로 만들어 주세요.",
-            "promptConfirm": "{{assistantName}}에게 보내기",
-            "promptDescription": "이대로 {{assistantName}}에게 보내거나, 문구를 고쳐서 보내세요.",
-            "promptOutcome": "자료를 읽고, 찾은 것을 묶어서 표로 답합니다. 결과가 괜찮으면 그 실행을 워크플로로 저장할지 물어봅니다.",
-            "promptTitle": "동료에게 부탁하듯 말하세요",
-            "stepRun": "한 번 실행해 보기",
-            "stepRunDescription": "무엇을 정하기 전에 완성된 결과물을 먼저 봅니다.",
-            "stepSave": "저장하고 일정을 정하기",
-            "stepSaveDescription": "아무도 시키지 않아도 실행되고, 팀원 누구나 실행할 수 있습니다.",
-            "stepTemplate": "템플릿에서 시작하기",
-            "stepTemplateDescription": "빈 화면 대신 내 업무에 가까운 것을 고르세요.",
             "title": "잘된 실행 한 번이 팀의 자산이 됩니다"
           }
         },
@@ -1527,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}}일 연속",
-        "title": "시작하기",
+        "title": "크레딧 더 받기",
         "toGo": "{{amount}} 남음",
         "workflow": {
           "action": "만들기",
@@ -1558,7 +1545,6 @@
         "enteredChat": "{{userName}}님이 채팅에 입장했습니다.",
         "goodToSeeYou": "만나서 반갑습니다, {{userName}}.",
         "knewYouWouldCome": "다시 오실 줄 알았어요, {{userName}}.",
-        "letsRoll": "{{agentName}}가 준비되었습니다, {{userName}}. 시작합시다.",
         "makeTodayCount": "오늘을 의미 있게 만듭시다, {{userName}}.",
         "newIdeas": "오늘 새로운 아이디어가 있나요, {{userName}}?",
         "readyToBuild": "준비되셨나요, {{userName}}?",
@@ -1733,6 +1719,11 @@
       "upgradeToRun": "{{assistantName}}를 실행하려면 Pro로 업그레이드하세요",
       "upgradeWorkspace": "워크스페이스 업그레이드"
     },
+    "browserAction": {
+      "documentTitle": "브라우저 작업",
+      "loading": "브라우저 요청을 불러오는 중",
+      "unavailableDescription": "이 브라우저 요청은 유효하지 않거나 더 이상 사용할 수 없습니다."
+    },
     "browserInput": {
       "applyFailed": "정보를 추가하지 못했습니다. 입력한 내용은 유지됩니다. 다시 시도하세요.",
       "applying": "정보 추가 중",
@@ -1750,12 +1741,10 @@
       "delivered": "에이전트에게 알림",
       "deliveredDescription": "이제 에이전트가 계속할 수 있습니다.",
       "description": "이 사이트에서 요청한 정보를 입력하세요.",
-      "documentTitle": "브라우저 입력",
       "expired": "요청이 만료됨",
       "expiredDescription": "브라우저가 닫혔거나 이 요청이 더 이상 활성 상태가 아닙니다.",
       "loadFailed": "이 요청을 불러오지 못했습니다",
       "loadFailedDescription": "잠시 후 다시 시도하세요.",
-      "loading": "브라우저 입력 불러오는 중",
       "loadingDescription": "요청을 확인하고 있습니다…",
       "open": "정보 입력",
       "optional": "(선택)",
@@ -1768,9 +1757,33 @@
       "submitting": "추가 중…",
       "title": "브라우저에 정보 입력",
       "unavailable": "요청을 사용할 수 없음",
-      "unavailableDescription": "이 브라우저 입력 요청은 유효하지 않거나 더 이상 사용할 수 없습니다.",
       "uncertain": "브라우저를 확인하세요",
       "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
+    },
+    "browserInteraction": {
+      "applying": "브라우저 상호작용 완료 중",
+      "applyingDescription": "브라우저에서 이 요청을 완료하고 있습니다.",
+      "callbackFailed": "에이전트에게 알리지 못했습니다. 계속을 다시 눌러 보세요.",
+      "cancel": "취소",
+      "cancelFailed": "이 요청을 취소하지 못했습니다. 다시 시도하세요.",
+      "cancelled": "요청이 취소됨",
+      "cancelledDescription": "브라우저 전달이 취소되었습니다. 에이전트에게 알리려면 계속하세요.",
+      "cancelling": "취소 중…",
+      "completed": "브라우저 상호작용 완료",
+      "completedDescription": "브라우저 상호작용이 기록되었습니다. 에이전트에게 알리려면 계속하세요.",
+      "completeFailed": "이 요청을 완료하지 못했습니다. 다시 시도하세요.",
+      "completing": "완료 중…",
+      "continue": "계속",
+      "continuing": "계속하는 중…",
+      "delivered": "에이전트에게 알림",
+      "deliveredDescription": "이제 에이전트가 계속할 수 있습니다.",
+      "description": "브라우저를 열고 이 단계를 완료한 다음 완료를 선택하세요.",
+      "done": "완료",
+      "stale": "브라우저를 더 이상 사용할 수 없음",
+      "staleDescription": "에이전트에게 새 요청을 만들어 달라고 하세요.",
+      "title": "브라우저 제어권 가져오기",
+      "uncertain": "브라우저를 확인하세요",
+      "uncertainDescription": "상호작용이 완료되었을 수 있습니다. 다시 시도하기 전에 에이전트에게 확인을 요청하세요."
     },
     "cards": {
       "viewDetails": "세부 정보 보기"
@@ -1818,14 +1831,10 @@
       "authorizationDescription": "이 스레드의 향후 실행을 위해 데스크톱 호스트를 선택하세요.",
       "checkingCompatibility": "호환성 확인 중",
       "cloudBrowser": "클라우드 브라우저",
-      "connectHost": "{{hostName}} 연결",
       "connectMyComputer": "내 컴퓨터 연결",
       "dialogDescription": "{{desktopProductName}}가 LinkedIn이나 Reddit 같은 커넥터가 없는 브라우저와 앱에서도 작업할 수 있도록 허용하세요.",
       "dialogTitle": "{{desktopProductName}}가 컴퓨터를 사용하도록 허용",
-      "disableCloudBrowser": "클라우드 브라우저 비활성화",
-      "disconnectHost": "{{hostName}} 연결 해제",
       "downloadMacos": "macOS용 다운로드",
-      "enableCloudBrowser": "클라우드 브라우저 활성화",
       "hosts": "컴퓨터 사용 호스트",
       "macosRequirement": "Apple 실리콘 Mac과 macOS 14 이상 필요합니다. 인텔 Mac은 지원하지 않습니다.",
       "noOnlineComputers": "온라인 컴퓨터가 없습니다",
@@ -1959,6 +1968,15 @@
       "sent": "전달했습니다",
       "threads": "채팅",
       "title": "전달 대상"
+    },
+    "homeTasks": {
+      "empty": "아직 추천 작업이 없습니다",
+      "existingThread": "채팅 계속하기",
+      "exploreWorkflow": "워크플로 살펴보기",
+      "heading": "최근 작업에서 이어갈 일",
+      "newTasksAvailable": "새 작업이 있습니다",
+      "newThread": "새 채팅",
+      "reload": "작업 새로고침"
     },
     "mail": {
       "bcc": "숨은 참조",
@@ -2907,6 +2925,48 @@
       "open": "워크플로 {{title}} 열기"
     }
   },
+  "cloudflareAccess": {
+    "add": "Cloudflare Access 추가",
+    "cancel": "취소",
+    "changed": "편집 중 이 Cloudflare Access가 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
+    "clientId": "Service Token 클라이언트 ID",
+    "clientIdPlaceholder": "Service Token의 Client ID 붙여넣기",
+    "clientSecret": "Service Token 클라이언트 시크릿",
+    "clientSecretPlaceholder": "Service Token의 Client Secret 붙여넣기",
+    "configuration": "Cloudflare Access",
+    "createNew": "새 Cloudflare Access 만들기",
+    "delete": "Cloudflare Access 삭제",
+    "deleteHelp": "사용하지 않는 이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
+    "description": "Cloudflare Access 서비스 토큰으로 보호된 애플리케이션에 액세스하세요.",
+    "edit": "Cloudflare Access 편집",
+    "empty": "아직 Cloudflare Access가 없습니다. 서비스 토큰을 추가하여 보호된 애플리케이션에 액세스하세요.",
+    "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
+    "inUse": "호스트가 이 Cloudflare Access를 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
+    "inUseHelp": "이 Cloudflare Access를 삭제하기 전에 해당 호스트에 다른 Cloudflare Access를 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
+    "invalidInput": "일부 Cloudflare Access 설정이 올바르지 않습니다. 입력 내용을 확인하고 다시 시도하세요.",
+    "keepChanges": "이 버전에 내 변경 사항 적용",
+    "latest": "최근 저장된 설정",
+    "loadFailed": "Cloudflare Access를 불러오지 못했습니다. 다시 시도하세요.",
+    "loading": "Cloudflare Access 불러오는 중…",
+    "manage": "Cloudflare Access 관리",
+    "missing": "이 Cloudflare Access는 더 이상 사용할 수 없습니다. 다른 항목을 선택하거나 새로 만드세요.",
+    "name": "이름",
+    "namePlaceholder": "예: 프로덕션 액세스",
+    "replace": "Service Token 교체",
+    "resourceIdConflict": "이 리소스 ID는 사용할 수 없습니다. 양식을 닫았다가 다시 열어 시도하세요.",
+    "retry": "다시 시도",
+    "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
+    "revisionExhausted": "더 이상 업데이트할 수 없습니다. 새로 만드세요.",
+    "save": "저장",
+    "saveUncertain": "변경 사항이 저장되었는지 확인하지 못했습니다. 같은 내용으로 저장을 다시 시도하거나, 닫고 목록을 확인한 후 다시 추가하세요.",
+    "select": "Cloudflare Access 선택",
+    "summary_other": "Cloudflare Access {{count}}개 설정됨",
+    "title": "Cloudflare Access",
+    "tokenHelp": "Cloudflare Access 서비스 토큰으로 보호된 애플리케이션에 액세스하세요.",
+    "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
+    "unused": "사용 중인 호스트 없음",
+    "usedBy_other": "호스트 {{count}}개에서 사용:"
+  },
   "connectors": {
     "access": {
       "accessFor": "{{agent}}에 대해 {{connector}} {{action}} 권한",
@@ -3126,12 +3186,19 @@
       "noConnectorsAlt": "커넥터 없음",
       "otherCategory": "기타",
       "remoteAccess": "원격 액세스",
+      "remoteControl": {
+        "connections": "연결",
+        "credentials": "자격 증명",
+        "type": "유형"
+      },
       "scope": {
         "aria": "커넥터 범위",
         "attention": "확인이 필요함",
         "connected": "연결됨",
         "custom": "사용자 지정",
         "discover": "둘러보기",
+        "privateNetwork": "비공개 네트워크",
+        "remoteControl": "원격 제어",
         "searchConnected": "연결된 커넥터 찾기",
         "searchCustom": "사용자 지정 커넥터 찾기"
       },
@@ -5948,6 +6015,7 @@
         "personal": "개인",
         "workspace": "워크스페이스"
       },
+      "sectionNavigation": "설정 섹션",
       "sections": {
         "billing": {
           "description": "플랜과 결제 수단을 관리하세요.",
@@ -5976,6 +6044,9 @@
         "preference": {
           "description": "앱의 외관과 동작 방식을 개인화하세요.",
           "title": "환경설정"
+        },
+        "tools": {
+          "title": "도구"
         },
         "usage": {
           "balanceDescription": "팀이 사용할 수 있는 잔액입니다.",
@@ -6137,6 +6208,8 @@
       },
       "personal": {
         "accountFallback": "계정 {{number}}",
+        "accountsDescription": "새 실행에 각 공급자가 사용할 계정을 선택하세요.",
+        "accountsSectionTitle": "개인 계정",
         "actionForProvider": "{{provider}} {{action}}",
         "activeAccount": "활성",
         "addAccount": "계정 추가",
@@ -6255,14 +6328,14 @@
         "workspaceDescription": "이 워크스페이스의 모든 사용자에게 제공됨."
       },
       "reset": {
-        "confirmDescription": "현재 사용량 창을 재설정하려면 Codex 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
+        "confirmDescription": "현재 사용량 창을 재설정하려면 {{provider}} 재설정 1회를 사용하세요. 남은 횟수: {{remaining}}.",
         "progress": "재설정 중...",
         "remaining_one": "{{value}}회 재설정 가능",
         "remaining_other": "{{value}}회 재설정 가능",
         "remainingUnavailable": "재설정 가능 횟수 없음",
         "remainingUnknown": "재설정 —",
         "remainingWithExpiry_other": "{{value}}회 재설정 가능 · {{expiry}} 만료",
-        "title": "Codex 사용량을 재설정하시겠습니까?"
+        "title": "{{provider}} 사용량을 재설정하시겠습니까?"
       },
       "stale": {
         "claudeExpired": "Claude Code 세션이 만료되었습니다. 계속하려면 다시 연결하세요.",
@@ -6279,9 +6352,9 @@
         "accountSwitched": "활성 계정이 변경되었습니다",
         "disconnected": "{{provider}} 연결 해제됨",
         "policiesUpdated": "모델 공급자 설정이 업데이트되었습니다.",
-        "reset": "Codex 사용량이 재설정되었습니다.",
-        "resetUnavailable": "사용 가능한 Codex 사용량 재설정이 없습니다.",
-        "resetUnneeded": "현재 Codex 사용량 재설정이 필요하지 않습니다."
+        "reset": "{{provider}} 사용량이 재설정되었습니다.",
+        "resetUnavailable": "사용 가능한 {{provider}} 사용량 재설정이 없습니다.",
+        "resetUnneeded": "현재 {{provider}} 사용량 재설정이 필요하지 않습니다."
       },
       "usage": {
         "inDays": "{{days}}일 후",
@@ -6768,36 +6841,15 @@
     "chooseFile": "파일 선택",
     "choosePrivateKeyFile": "개인 키 파일 선택",
     "cloudflare": {
-      "add": "Cloudflare Access 추가",
-      "changed": "편집 중 이 Cloudflare Access가 변경되었습니다. 저장하기 전에 최신 설정을 검토하세요.",
-      "clientId": "Service Token 클라이언트 ID",
-      "clientSecret": "Service Token 클라이언트 시크릿",
-      "configuration": "Cloudflare Access",
-      "createNew": "새 Cloudflare Access 만들기",
-      "delete": "Cloudflare Access 삭제",
-      "deleteHelp": "사용하지 않는 이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다.",
       "direct": "직접 연결",
-      "edit": "Cloudflare Access 편집",
-      "empty": "아직 Cloudflare Access가 없습니다. Service Token을 추가하여 보호된 SSH 호스트에 연결하세요.",
-      "inUse": "호스트가 이 Cloudflare Access를 사용 중입니다. 해당 호스트를 확인하고 먼저 다른 구성으로 변경하거나 삭제하세요.",
-      "inUseHelp": "이 Cloudflare Access를 삭제하기 전에 해당 호스트에 다른 Cloudflare Access를 선택하거나, 명시적으로 직접 연결로 전환하거나, 호스트를 삭제하세요.",
       "keepChanges": "이 버전에 내 변경 사항 적용",
       "latest": "최근 저장된 설정",
-      "loadFailed": "Cloudflare Access를 불러오지 못했습니다. 다시 시도하세요.",
-      "loading": "Cloudflare Access 불러오는 중…",
-      "missing": "이 Cloudflare Access는 더 이상 사용할 수 없습니다. 다른 항목을 선택하거나 새로 만드세요.",
       "mode": "연결",
-      "name": "이름",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "공개 호스트 이름",
-      "replace": "Service Token 교체",
       "reviewHelp": "초안이 보존되었습니다. 변경 사항을 적용하기 전에 최근 저장된 설정을 확인하세요.",
-      "select": "Cloudflare Access 선택",
-      "summary_other": "Cloudflare Access {{count}}개 설정됨",
       "title": "Cloudflare Access",
-      "tokenHelp": "SSH 애플리케이션의 Service Auth 정책에서 허용하는 Service Token을 사용하세요. SSH 로그인 정보와는 별개입니다.",
-      "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다.",
-      "usedBy_other": "호스트 {{count}}개에서 사용:"
+      "unavailable": "이 계정에서는 Cloudflare Access를 사용할 수 없습니다."
     },
     "connectionStatus": {
       "accessProtocolFailure": "Cloudflare Access가 SSH 터널을 설정하지 못했습니다. 게시된 호스트 이름과 Tunnel 라우팅을 확인하세요.",
@@ -6852,6 +6904,7 @@
       "credentialInUse": "이 자격 증명은 사용 중입니다. 호스트에 다른 자격 증명을 지정하거나 먼저 호스트를 삭제하세요.",
       "credentialUnavailable": "이 SSH 자격 증명을 더 이상 사용할 수 없습니다. 다른 자격 증명을 선택하거나 새로 만드세요.",
       "failed": "SSH 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
+      "hostInUse": "이 SSH 호스트는 VNC 경로에서 사용 중입니다. 이 호스트를 삭제하기 전에 해당 VNC 경로에서 다른 SSH 호스트를 선택하거나 명시적으로 직접 연결로 전환하거나 경로를 삭제하세요.",
       "hostUnavailable": "이 SSH 호스트는 더 이상 사용할 수 없습니다. 호스트 목록으로 돌아가 기존 호스트를 선택하세요.",
       "invalidHost": "URL 스킴, 경로 또는 공백 없이 호스트 이름이나 IP 주소를 입력하세요.",
       "invalidInput": "일부 SSH 설정이 올바르지 않습니다. 입력 내용을 확인하고 다시 시도하세요.",
@@ -6872,9 +6925,6 @@
     "notLearned": "아직 저장된 호스트 키 없음",
     "passphrase": "암호문구(선택 사항)",
     "placeholders": {
-      "accessName": "예: 프로덕션 액세스",
-      "clientId": "Service Token의 Client ID 붙여넣기",
-      "clientSecret": "Service Token의 Client Secret 붙여넣기",
       "credentialName": "예: 배포용 로그인",
       "displayName": "예: 프로덕션 서버",
       "host": "예: ssh.example.com",
@@ -7069,6 +7119,9 @@
       "caHint": "서버 인증서를 발급한 공개 CA 인증서를 붙여넣으세요",
       "custom": "사용자 지정 인증 기관",
       "profileLabel": "보안 프로필",
+      "serverName": "TLS 인증서 ID",
+      "serverNameHelp": "선택 사항입니다. 비워 두면 RFB 대상 호스트를 기준으로 인증서를 확인합니다. 인증서가 다른 DNS 이름을 사용하는 경우에만 설정하세요.",
+      "serverNameHint": "예: desktop.internal.example.com",
       "system": "시스템 인증 기관",
       "title": "서버 인증서 신뢰",
       "x509Plain": "암호화된 사용자 이름 및 비밀번호(X509Plain)",
@@ -7079,6 +7132,22 @@
     "summary_one": "설정된 호스트 {{count}}개",
     "summary_other": "설정된 호스트 {{count}}개",
     "title": "VNC 원격 액세스",
+    "transport": {
+      "destination": "RFB 대상",
+      "destinationHelp": "SSH 경로에서는 Runner가 직접 연결하지 않고 선택한 SSH 서버에서 이 호스트와 포트에 연결합니다.",
+      "direct": "Runner에서 직접",
+      "empty": "저장된 SSH 호스트가 없습니다. 이 경로를 사용하기 전에 SSH 설정에서 추가하세요.",
+      "loadFailed": "저장된 SSH 호스트를 불러오지 못했습니다.",
+      "loading": "저장된 SSH 호스트 불러오는 중…",
+      "select": "저장된 SSH 호스트 선택",
+      "selectionUnavailable": "선택한 SSH 호스트를 더 이상 사용할 수 없습니다. 다른 호스트를 선택하거나 명시적으로 직접 연결로 전환하세요.",
+      "ssh": "저장된 SSH 호스트를 통해",
+      "sshConnection": "SSH 호스트",
+      "sshHelp": "SSH는 Runner에서 SSH 서버까지의 구간을 보호합니다. 해당 서버에서 RFB 대상에 연결할 수 있어야 합니다. Agent에는 VNC와 SSH 액세스가 모두 필요합니다.",
+      "title": "연결 경로",
+      "unavailable": "이 계정에서는 SSH 설정을 사용할 수 없습니다.",
+      "via": "SSH 호스트:"
+    },
     "unavailable": "이 워크스페이스에서는 VNC를 사용할 수 없습니다."
   },
   "workflows": {
@@ -7660,6 +7729,7 @@
       },
       "notFound": "워크플로를 찾을 수 없습니다.",
       "refineWith": "{{agent}}와 함께 다듬기",
+      "sectionNavigation": "워크플로 상세 섹션",
       "shadow": {
         "end": "사용자용입니다. 이 워크플로는 동일 슬러그 우선순위 규칙에 의해 그림자 처리됩니다.",
         "resolvesTo": "현재 다음으로 해결됩니다"

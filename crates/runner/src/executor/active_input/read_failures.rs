@@ -8,8 +8,7 @@ use api_contracts::generated::types::runners::runs::active_inputs::reserve::{
 use tokio::time::Instant;
 use tracing::{Level, info};
 
-use crate::active_input::ActiveInputBatch;
-use crate::error::{ApiTransportCause, RunnerError};
+use runner_provider::{ActiveInputBatch, ApiTransportCause, ProviderError};
 use runner_types::ids::RunId;
 
 // An operational threshold on the same scale as the normal safety recheck,
@@ -28,7 +27,7 @@ struct ReadFailureEpisode {
 }
 
 impl ReadFailures {
-    pub(super) fn record(&mut self, run_id: RunId, error: &RunnerError) {
+    pub(super) fn record(&mut self, run_id: RunId, error: &ProviderError) {
         let episode = self.episode.get_or_insert_with(|| ReadFailureEpisode {
             started_at: Instant::now(),
             consecutive_failures: 0,
@@ -38,7 +37,7 @@ impl ReadFailures {
         let elapsed = episode.started_at.elapsed();
         let transient = matches!(
             error,
-            RunnerError::ApiTransport(error)
+            ProviderError::ApiTransport(error)
                 if matches!(error.failure_cause,
                     ApiTransportCause::Timeout | ApiTransportCause::ConnectionReset)
         );
@@ -51,7 +50,7 @@ impl ReadFailures {
         macro_rules! emit {
             ($level:expr, $message:literal) => {
                 match error {
-                    RunnerError::ApiTransport(api_error) => tracing::event!(
+                    ProviderError::ApiTransport(api_error) => tracing::event!(
                         target: "runner::executor::active_input",
                         $level,
                         run_id = %run_id,

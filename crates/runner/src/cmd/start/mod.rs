@@ -74,14 +74,9 @@ use crate::network_log_drain::{DrainableLineReaderExit, NetworkLogDrainCoordinat
 use crate::network_log_manager::NetworkLogManager;
 use crate::pre_spawn_admission::PreSpawnAdmission;
 use crate::prefetch;
-use crate::provider::{
-    ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
-    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
-};
 use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::retry::{RetryState, sleep_until_retry};
-use crate::run_cancellation::{RunCancellationRegistration, RunCancellationRegistry};
 use crate::status::{StatusTracker, remove_stale_status_file};
 use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceCacheWatcher, WorkspaceImageCache,
@@ -90,6 +85,11 @@ use runner_host::host;
 use runner_host::lock;
 use runner_host::paths::{HomePaths, LogPaths, RunnerPaths, touch_mtime};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_provider::{
+    ApiProvider, ApiProviderConfig, BuiltinFirewallCatalogCachePaths, ConnectorRuntimeSyncHandle,
+    JobCandidate, JobProvider, LocalProvider, RunnerPreferenceRemovalReason,
+};
+use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
 mod active_runs;
 mod blank_pool;
@@ -726,13 +726,13 @@ async fn run_start_with_home(
     let cancel_tokens = RunCancellationRegistry::new();
     let local_group_dir = if args.local {
         let group_dir = home.groups_dir().join(&group);
-        crate::local_queue::ensure_group_dir(&group_dir).map_err(|e| {
+        runner_provider::local_queue::ensure_group_dir(&group_dir).map_err(|e| {
             RunnerError::Config(format!("create group dir {}: {e}", group_dir.display()))
         })?;
         for profile in runner_config.profiles.keys() {
-            crate::local_queue::ensure_profile_jobs_dir(&group_dir, profile).map_err(|e| {
-                RunnerError::Config(format!("create job dir for profile {profile}: {e}"))
-            })?;
+            runner_provider::local_queue::ensure_profile_jobs_dir(&group_dir, profile).map_err(
+                |e| RunnerError::Config(format!("create job dir for profile {profile}: {e}")),
+            )?;
         }
         Some(group_dir)
     } else {
@@ -828,20 +828,25 @@ async fn run_start_with_home(
         .unwrap_or(1);
 
     // Start proxy before factory so proxy_port is available for netns pool.
-    let (mut mitm, mitm_crash_rx) = proxy::MitmProxy::new(proxy::ProxyConfig {
-        mitmdump_bin: home.mitmdump_bin(deps::MITMPROXY_VERSION),
-        ca_dir: runner_config.ca_dir.clone(),
-        ca_lock_path: home.ca_lock(),
-        addon_dir: paths.mitm_addon_dir(),
-        registry_path: paths.proxy_registry(),
-        registry_lock_path: paths.proxy_registry_lock(),
-        builtin_firewall_catalog_cache_path: paths.builtin_firewall_catalog_cache(),
-        runtime_dir: paths.mitmdump_runtime_dir(),
-        runtime_lock_path: paths.mitmdump_runtime_lock(),
-        api_url: Some(server.url.clone()),
-        client_session_id: runner_client_session_id,
-        runner_token: local_group_dir.is_none().then(|| server.token.clone()),
-    })
+    let (mut mitm, mitm_crash_rx) = proxy::MitmProxy::new(
+        proxy::ProxyConfig {
+            mitmdump_bin: home.mitmdump_bin(deps::MITMPROXY_VERSION),
+            ca_dir: runner_config.ca_dir.clone(),
+            ca_lock_path: home.ca_lock(),
+            addon_dir: paths.mitm_addon_dir(),
+            registry_path: paths.proxy_registry(),
+            registry_lock_path: paths.proxy_registry_lock(),
+            builtin_firewall_catalog_cache_path: paths.builtin_firewall_catalog_cache(),
+            runtime_dir: paths.mitmdump_runtime_dir(),
+            runtime_lock_path: paths.mitmdump_runtime_lock(),
+            api_url: Some(server.url.clone()),
+            client_session_id: runner_client_session_id,
+            client_version: env!("CARGO_PKG_VERSION"),
+            system_ca_bundle: deps::SYSTEM_CA_BUNDLE,
+            runner_token: local_group_dir.is_none().then(|| server.token.clone()),
+        },
+        crate::ADDON_FILES,
+    )
     .await?;
     mitm.start().await?;
     info!(port = mitm.port(), "proxy ready");
@@ -954,10 +959,12 @@ async fn run_start_with_home(
         let group_name = group.clone();
         let profiles: Vec<String> = runner_config.profiles.keys().cloned().collect();
         let provider = ApiProvider::new(
-            http.clone(),
+            runner_provider::ProviderHttpClient::new(http.clone()),
             server.token,
             ApiProviderConfig {
-                ssh: ssh.clone(),
+                ably_side_message_handler: ssh
+                    .clone()
+                    .map(|runtime| runtime as Arc<dyn runner_provider::AblySideMessageHandler>),
                 runner_identity,
                 runner_hostname: hostname.clone(),
                 group,
@@ -1881,7 +1888,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         if startup_readiness_cancelled {
             return Ok(());
         }
-        return Err(e);
+        return Err(e.into());
     }
 
     let mut factories = match start_factories(
@@ -2243,7 +2250,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
         let pending_finalizing_deadline = pending_finalizing_candidate
             .as_ref()
             .and_then(JobCandidate::runner_preference)
-            .map(crate::provider::ActiveRunnerPreference::deadline);
+            .map(runner_provider::ActiveRunnerPreference::deadline);
         tokio::select! {
             connection = prune_listener.accept() => {
                 match connection {
@@ -2843,7 +2850,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let phase = teardown.phase_start("dns_stop");
     if let Err(error) = dns_handle.stop().await {
         error!(%error, "DNS cleanup failed during shutdown");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("dns_stop", phase);
 
@@ -2871,7 +2878,7 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let phase = teardown.phase_start("kmsg_stop");
     if let Err(error) = kmsg_handle.stop().await {
         error!(%error, "kmsg cleanup failed during shutdown");
-        terminal_error.get_or_insert(error);
+        terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("kmsg_stop", phase);
     let phase = teardown.phase_start("memory_prefetch_drain");

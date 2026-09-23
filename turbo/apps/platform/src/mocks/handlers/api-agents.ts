@@ -236,7 +236,7 @@ export const apiAgentsHandlers = [
 
   // GET /api/indicators
   mockApi(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   }),
 
   // GET /api/chat-thread-drafts
@@ -330,11 +330,6 @@ export const apiAgentsHandlers = [
   // POST /api/chat-threads/:id/computer-use-host
   mockApi(chatThreadComputerUseHostContract.update, ({ respond }) => {
     return respond(204);
-  }),
-
-  // GET /api/chat-thread-unreads
-  mockApi(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, { unreads: [] });
   }),
 
   // POST /api/chat-thread-unreads/mark-read

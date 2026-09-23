@@ -6,11 +6,6 @@ use guest_contracts::active_input::{ACTIVE_INPUT_CLOSED_DIAGNOSTIC, encode_activ
 use tracing::Level;
 use tracing_subscriber::prelude::*;
 
-use crate::active_input::{
-    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, API_ACTIVE_INPUT_RECHECK_INTERVAL,
-    ActiveInputNotifications, ActiveInputSource, identified_active_input_payload_len,
-    local_active_input_delivery_id,
-};
 use crate::executor::active_input::{
     ACTIVE_INPUT_CONTROL_RETRY_INITIAL_INTERVAL, ACTIVE_INPUT_CONTROL_RETRY_MAX_INTERVAL,
 };
@@ -20,9 +15,14 @@ use crate::executor::tests::support::{
     minimal_context, sandbox_read_file_error, test_executor_config, test_telemetry,
 };
 use crate::http::{HttpClient, HttpClientConfig};
-use crate::local_queue::{self, ActiveInputEntry, LocalQueue};
-use crate::provider::ApiClient;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
+use runner_provider::ApiClient;
+use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
+use runner_provider::{
+    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, API_ACTIVE_INPUT_RECHECK_INTERVAL,
+    ActiveInputNotifications, ActiveInputSource, identified_active_input_payload_len,
+    local_active_input_delivery_id,
+};
 use runner_types::ids::RunId;
 use runner_types::types::SandboxReuseResult;
 
@@ -79,12 +79,14 @@ fn api_active_input_source(
 ) -> ActiveInputSource {
     ActiveInputSource::api(
         ApiClient::new(
-            HttpClient::new(HttpClientConfig {
-                api_url,
-                vercel_bypass: None,
-                client_session_id: client_session_id.to_string(),
-            })
-            .unwrap(),
+            runner_provider::ProviderHttpClient::new(
+                HttpClient::new(HttpClientConfig {
+                    api_url,
+                    vercel_bypass: None,
+                    client_session_id: client_session_id.to_string(),
+                })
+                .unwrap(),
+            ),
             "runner-token".to_string(),
         ),
         run_id,

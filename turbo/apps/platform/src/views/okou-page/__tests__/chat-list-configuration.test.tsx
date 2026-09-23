@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { expect, test } from "vitest";
 
@@ -36,18 +36,18 @@ const HOST_ID = "a7000000-0000-4000-a000-000000000001";
 async function openMediaCategory(
   name: "Image" | "Video",
 ): Promise<HTMLElement> {
-  if (!screen.queryByRole("tablist", { name: "Models" })) {
+  if (!screen.queryByRole("menu", { name: "Models" })) {
     click(await waitFor(composerModelTriggerOrThrow));
   }
-  const types = await screen.findByRole("tablist", { name: "Models" });
-  const type = queryAllByRoleFast("tab", types).find((candidate) => {
+  const types = await screen.findByRole("menu", { name: "Models" });
+  const type = queryAllByRoleFast("menuitem", types).find((candidate) => {
     return candidate.textContent?.startsWith(name);
   });
   if (!type) {
     throw new Error(`${name} models are not on the flyout's type rail`);
   }
   click(type);
-  return await screen.findByRole("listbox", { name: `${name} models` });
+  return await screen.findByRole("menu", { name: `${name} models` });
 }
 
 /**
@@ -55,15 +55,13 @@ async function openMediaCategory(
  * name so models with a shared prefix remain distinct.
  */
 function expectSelectedMediaModel(panel: HTMLElement, label: string): void {
-  const row = within(panel)
-    .getAllByRole("option")
-    .find((option) => {
-      return option.textContent?.replace(/\$+$/u, "").trim() === label;
-    });
+  const row = queryAllByRoleFast("menuitemradio", panel).find((option) => {
+    return option.textContent?.replace(/\$+$/u, "").trim() === label;
+  });
   if (!row) {
     throw new Error(`Expected a ${label} row in the open model panel`);
   }
-  expect(row).toHaveAttribute("aria-selected", "true");
+  expect(row).toHaveAttribute("aria-checked", "true");
 }
 
 function composerModelTriggerOrThrow(): HTMLElement {
@@ -148,22 +146,24 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
 
   await openComputerMenu();
   const selectedHost = await screen.findByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   expect(selectedHost).toBeChecked();
   expect(
-    screen.getByRole("switch", { name: "Enable Cloud browser" }),
+    screen.getByRole("switch", { name: "Cloud browser", checked: false }),
   ).not.toBeChecked();
   remote.resolve();
   await page.ready;
 
   await openComputerMenu();
   const enabledCloudBrowser = await screen.findByRole("switch", {
-    name: "Disable Cloud browser",
+    name: "Cloud browser",
+    checked: true,
   });
   expect(enabledCloudBrowser).toBeChecked();
   expect(
-    screen.getByRole("switch", { name: "Connect Studio Mac" }),
+    screen.getByRole("switch", { name: "Studio Mac", checked: false }),
   ).not.toBeChecked();
 });
 
@@ -222,7 +222,8 @@ test("Conversation configuration arriving before creation is retained", async ()
   await expectSelectedModel("GPT 5.6 Sol Fast");
   await openComputerMenu();
   const configuredHost = await screen.findByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   expect(configuredHost).toBeChecked();
 
@@ -308,7 +309,8 @@ test("Service tier and Computer Use settings update independently", async () => 
   await expectSelectedModel("GPT 5.6 Sol");
   await openComputerMenu();
   const disconnectedHost = await screen.findByRole("switch", {
-    name: "Connect Studio Mac",
+    name: "Studio Mac",
+    checked: false,
   });
   expect(disconnectedHost).not.toBeChecked();
   remote.resolve();
@@ -317,7 +319,8 @@ test("Service tier and Computer Use settings update independently", async () => 
   await expectSelectedModel("GPT 5.6 Sol Fast");
   await openComputerMenu();
   const connectedHost = await screen.findByRole("switch", {
-    name: "Disconnect Studio Mac",
+    name: "Studio Mac",
+    checked: true,
   });
   expect(connectedHost).toBeChecked();
   expect(sidebarThreadTitles()).toStrictEqual(order);

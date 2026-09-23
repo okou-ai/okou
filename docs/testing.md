@@ -60,6 +60,11 @@ remain part of the runtime contract.
   created resources for teardown through production APIs.
 - Avoid fake timers. Platform time overrides use `mockNow(value, context.signal)`.
   Wait for the observable result, not elapsed time or an internal cache update.
+- `ccstate/no-test-delay` detects real timer imports (including renamed Node
+  timer imports), Vitest fake-timer calls, and elapsed wall-clock assertions.
+  A deliberate exception must name one exact test file, the affected pattern
+  kinds, and a reason in that package's ESLint configuration. Keep exceptions
+  narrower than a whole test directory and remove them with the owning test.
 - Global teardown owns detached work. Do not manually call `clearAllDetached()`
   in a test body. Repair missing awaits, cancellation ownership, or observable
   synchronization when a test races its background work.
@@ -85,3 +90,12 @@ Select verification from the changed surface and consumers, as described in
 [the project guidelines](../CLAUDE.md#development-and-verification). Run one
 Vitest process at a time. Do not run unrelated suites or repeat passed checks
 without a new change, failure, or unresolved concern.
+
+## CI Duration Warning
+
+The root and Desktop Vitest CI reporters emit a GitHub warning when one test
+file spends 30 seconds or more executing tests. The budget measures accumulated test time
+inside the file, separate from environment and transform overhead. Investigate
+fixed sleeps, broad fixtures, and repeated real deadlines when a warning
+appears. Keep real database and process deadline tests when their timing is the
+contract under test; the warning does not fail the run.

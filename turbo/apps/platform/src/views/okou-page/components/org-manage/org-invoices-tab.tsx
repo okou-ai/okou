@@ -40,10 +40,6 @@ import { detach, Reason } from "../../../../signals/utils.ts";
 import { currentLocale } from "../../../../i18n/index.ts";
 import { formatUsd } from "../../../../i18n/format.ts";
 
-const cardBorder = {
-  border: "var(--border-width-surface) solid hsl(var(--gray-400))",
-} as const;
-
 const ROW_GRID = "grid grid-cols-[1fr_8rem_6rem_3rem] gap-x-6 items-center";
 
 function formatDate(unixTimestamp: number): string {
@@ -138,7 +134,18 @@ function ReceiptMonthSelect({
   return (
     <label className="grid gap-1.5 text-sm" htmlFor={id}>
       <span className="font-medium text-foreground">{label}</span>
-      <Select name={name} value={value} onValueChange={onValueChange}>
+      <Select
+        name={name}
+        items={months}
+        value={value}
+        onValueChange={(nextValue, details) => {
+          if (nextValue === null) {
+            details.cancel();
+            return;
+          }
+          onValueChange(nextValue);
+        }}
+      >
         <SelectTrigger
           id={id}
           aria-label={t(
@@ -325,10 +332,7 @@ export function OrgInvoicesTab() {
           <DownloadReceiptsDialog months={months} />
         </div>
       )}
-      <div
-        className="overflow-hidden rounded-[10px] bg-card"
-        style={cardBorder}
-      >
+      <div className="overflow-hidden rounded-[10px] bg-card border border-surface-border">
         <div
           className={cn(
             ROW_GRID,
@@ -381,7 +385,7 @@ export function OrgInvoicesTab() {
                 </div>
                 <div className="flex justify-end">
                   {inv.hostedInvoiceUrl ? (
-                    <TooltipProvider delayDuration={200}>
+                    <TooltipProvider delay={200}>
                       <Tooltip>
                         <TooltipTrigger
                           render={

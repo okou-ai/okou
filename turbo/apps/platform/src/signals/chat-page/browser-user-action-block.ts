@@ -17,7 +17,7 @@ import {
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef, onRejection } from "../utils.ts";
+import { onRef, onRejection, resetSignal, settle } from "../utils.ts";
 import {
   runChatActionCallback$,
   type ChatActionCallbackIds,
@@ -36,11 +36,18 @@ import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 const REQUEST_TOKEN_PATTERN = /^vm0_browser_user_action_[A-Za-z0-9_-]{43}$/u;
 export const BROWSER_INPUT_CANCELLATION_PROMPT =
   "The user cancelled the browser input request.";
+export const BROWSER_INTERACTION_CANCELLATION_PROMPT =
+  "The user cancelled the browser interaction request.";
 
 type BrowserInputAction = Extract<
   BrowserUserActionResponse,
   { readonly kind: "input" }
 >;
+type BrowserDirectInteractionAction = Extract<
+  BrowserUserActionResponse,
+  { readonly kind: "direct_interaction" }
+>;
+type BrowserUserAction = BrowserInputAction | BrowserDirectInteractionAction;
 
 export interface BrowserUserActionDescriptor {
   readonly requestToken: string;
@@ -51,7 +58,7 @@ export interface BrowserUserActionDescriptor {
 }
 
 export type BrowserUserActionRequestState =
-  | { readonly kind: "action"; readonly action: BrowserInputAction }
+  | { readonly kind: "action"; readonly action: BrowserUserAction }
   | { readonly kind: "expired" }
   | { readonly kind: "unavailable" };
 
@@ -61,10 +68,17 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly callbackDelivered$: Computed<boolean>;
   readonly callbackFailed$: Computed<boolean>;
   readonly busy$: Computed<boolean>;
+  readonly entryState$: Computed<"idle" | "checking" | "ready" | "unavailable">;
+  readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
+  readonly endEntry$: Command<void, []>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
   readonly clearDraft$: Command<void, []>;
   readonly clearDraftRef$: Command<
+    (() => void) | undefined,
+    [HTMLDivElement | null]
+  >;
+  readonly resumeRef$: Command<
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
@@ -73,8 +87,66 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     [HTMLFormElement | null]
   >;
   readonly submit$: Command<Promise<void>, [AbortSignal]>;
+  readonly complete$: Command<Promise<void>, [AbortSignal]>;
   readonly cancel$: Command<Promise<void>, [AbortSignal]>;
   readonly continue$: Command<Promise<void>, [AbortSignal]>;
+}
+
+function createEntrySignals(
+  descriptor: BrowserUserActionDescriptor,
+  refresh$: BrowserUserActionSignals["refresh$"],
+): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$" | "endEntry$"> {
+  const internalState$ = state<"idle" | "checking" | "ready" | "unavailable">(
+    "idle",
+  );
+  const resetEntrySignal$ = resetSignal();
+  const beginEntry$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const operationSignal = set(resetEntrySignal$, signal);
+    set(internalState$, "checking");
+    const checked = await settle(
+      accept(
+        get(apiClient$)(browserUserActionsContract).preflight({
+          params: { requestToken: descriptor.requestToken },
+          body: {},
+          fetchOptions: { signal: operationSignal },
+        }),
+        [200, 403, 404, 409, 410, 502, 503],
+        operationSignal,
+      ),
+      operationSignal,
+    );
+    signal.throwIfAborted();
+    operationSignal.throwIfAborted();
+    if (!checked.ok) {
+      set(internalState$, "unavailable");
+      return;
+    }
+    if (
+      checked.value.status === 200 &&
+      actionMatches(checked.value.body, descriptor) &&
+      checked.value.body.kind === "input" &&
+      checked.value.body.state === "pending"
+    ) {
+      set(internalState$, "ready");
+      return;
+    }
+    set(internalState$, "unavailable");
+    const status: number = checked.value.status;
+    if (status !== 502 && status !== 503) {
+      set(refresh$);
+    }
+  });
+  const endEntry$ = command(({ set }) => {
+    set(resetEntrySignal$);
+    set(internalState$, "idle");
+  });
+  return {
+    entryState$: computed((get) => {
+      return get(internalState$);
+    }),
+    beginEntry$,
+    endEntry$,
+  };
 }
 
 type BrowserUserActionCardSignalsRegistry = CardSignalsRegistry<
@@ -189,12 +261,11 @@ export function browserUserActionResourceKey(
   ]);
 }
 
-function inputActionMatches(
+function actionMatches(
   action: BrowserUserActionResponse,
   descriptor: BrowserUserActionDescriptor,
-): action is BrowserInputAction {
+): action is BrowserUserAction {
   return (
-    action.kind === "input" &&
     action.requestToken === descriptor.requestToken &&
     chatActionIdMatches(action.agentId, descriptor.agentId) &&
     chatActionIdMatches(action.threadId, descriptor.threadId)
@@ -219,7 +290,7 @@ function createRequestSignals(descriptor: BrowserUserActionDescriptor) {
       if (status === 410) {
         return { kind: "expired" };
       }
-      if (status !== 200 || !inputActionMatches(result.body, descriptor)) {
+      if (status !== 200 || !actionMatches(result.body, descriptor)) {
         return { kind: "unavailable" };
       }
       return { kind: "action", action: result.body };
@@ -352,7 +423,11 @@ function createSubmitSignal({
     if (get(activeMutation$)) {
       return;
     }
-    if (request.kind !== "action" || request.action.state !== "pending") {
+    if (
+      request.kind !== "action" ||
+      request.action.kind !== "input" ||
+      request.action.state !== "pending"
+    ) {
       return;
     }
     const draft = get(draft$);
@@ -387,7 +462,10 @@ function createSubmitSignal({
       set(refresh$);
       return;
     }
-    if (!inputActionMatches(result.body, descriptor)) {
+    if (
+      !actionMatches(result.body, descriptor) ||
+      result.body.kind !== "input"
+    ) {
       set(clearDraft$);
       set(refresh$);
       return;
@@ -396,6 +474,73 @@ function createSubmitSignal({
       set(clearDraft$);
     }
     if (result.body.state === "succeeded") {
+      set(activeMutation$, true);
+      await set(
+        deliverCallback$,
+        descriptor.callbackPrompt,
+        result.body.callbackIds.success,
+        signal,
+      ).finally(() => {
+        set(activeMutation$, false);
+        set(refresh$);
+      });
+      signal.throwIfAborted();
+      return;
+    }
+    set(refresh$);
+  });
+}
+
+function cancellationPrompt(action: BrowserUserAction): string {
+  return action.kind === "direct_interaction"
+    ? BROWSER_INTERACTION_CANCELLATION_PROMPT
+    : BROWSER_INPUT_CANCELLATION_PROMPT;
+}
+
+function createCompleteSignal({
+  descriptor,
+  request$,
+  refresh$,
+  activeMutation$,
+  deliverCallback$,
+}: BrowserUserActionMutationContext): BrowserUserActionSignals["complete$"] {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(activeMutation$)) {
+      return;
+    }
+    const request = await get(request$);
+    signal.throwIfAborted();
+    if (get(activeMutation$)) {
+      return;
+    }
+    if (
+      request.kind !== "action" ||
+      request.action.kind !== "direct_interaction" ||
+      request.action.state !== "pending"
+    ) {
+      return;
+    }
+
+    set(activeMutation$, true);
+    const result = await accept(
+      get(apiClient$)(browserUserActionsContract).complete({
+        params: { requestToken: descriptor.requestToken },
+        body: {},
+        fetchOptions: { signal },
+      }),
+      [200, 403, 404, 409, 410],
+      signal,
+    ).finally(() => {
+      set(activeMutation$, false);
+    });
+    signal.throwIfAborted();
+    const status: number = result.status;
+    if (
+      status === 200 &&
+      actionMatches(result.body, descriptor) &&
+      result.body.kind === "direct_interaction" &&
+      result.body.state === "succeeded"
+    ) {
       set(activeMutation$, true);
       await set(
         deliverCallback$,
@@ -450,13 +595,14 @@ function createCancelSignal({
     set(clearDraft$);
     if (
       status === 200 &&
-      inputActionMatches(result.body, descriptor) &&
+      actionMatches(result.body, descriptor) &&
+      result.body.kind === request.action.kind &&
       result.body.state === "cancelled"
     ) {
       set(activeMutation$, true);
       await set(
         deliverCallback$,
-        BROWSER_INPUT_CANCELLATION_PROMPT,
+        cancellationPrompt(result.body),
         result.body.callbackIds.cancellation,
         signal,
       ).finally(() => {
@@ -473,6 +619,7 @@ function createCancelSignal({
 function createContinueSignal({
   descriptor,
   request$,
+  refresh$,
   activeMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["continue$"] {
@@ -496,7 +643,7 @@ function createContinueSignal({
           }
         : request.action.state === "cancelled"
           ? {
-              prompt: BROWSER_INPUT_CANCELLATION_PROMPT,
+              prompt: cancellationPrompt(request.action),
               ids: request.action.callbackIds.cancellation,
             }
           : null;
@@ -504,11 +651,14 @@ function createContinueSignal({
       return;
     }
     set(activeMutation$, true);
-    await set(deliverCallback$, callback.prompt, callback.ids, signal).finally(
+    await onRejection(
+      set(deliverCallback$, callback.prompt, callback.ids, signal),
       () => {
-        set(activeMutation$, false);
+        set(refresh$);
       },
-    );
+    ).finally(() => {
+      set(activeMutation$, false);
+    });
   });
 }
 
@@ -524,6 +674,7 @@ function createMutationSignals(
   | "callbackFailed$"
   | "busy$"
   | "submit$"
+  | "complete$"
   | "cancel$"
   | "continue$"
 > {
@@ -573,6 +724,7 @@ function createMutationSignals(
       return get(activeMutation$);
     }),
     submit$: createSubmitSignal(context),
+    complete$: createCompleteSignal(context),
     cancel$: createCancelSignal(context),
     continue$: createContinueSignal(context),
   };
@@ -582,6 +734,24 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
+  const resumeRef$ = onRef(
+    command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      const refresh = () => {
+        set(requestSignals.refresh$);
+      };
+      window.addEventListener("focus", refresh, { signal });
+      document.addEventListener(
+        "visibilitychange",
+        () => {
+          if (document.visibilityState === "visible") {
+            refresh();
+          }
+        },
+        { signal },
+      );
+    }),
+  );
+  const entrySignals = createEntrySignals(descriptor, requestSignals.refresh$);
   const draftSignals = createDraftSignals();
   const mutationSignals = createMutationSignals(
     descriptor,
@@ -593,6 +763,8 @@ export function createBrowserUserActionSignals(
   return {
     ...descriptor,
     ...requestSignals,
+    resumeRef$,
+    ...entrySignals,
     ...draftSignals,
     ...mutationSignals,
   };

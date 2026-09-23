@@ -1,4 +1,7 @@
-import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
+import type {
+  ModelProviderResponse,
+  ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
 import {
   personalModelProvidersMainContract,
   personalModelProvidersByTypeContract,
@@ -6,6 +9,11 @@ import {
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { nowDate } from "../../lib/time.ts";
 import { mockApi } from "../msw-contract.ts";
+
+const RESETTABLE_PROVIDER_TYPES = new Set<ModelProviderType>([
+  "codex-oauth-token",
+  "claude-code-oauth-token",
+]);
 
 // Mock personal model providers data — empty by default
 let mockPersonalModelProviders: ModelProviderResponse[] = [];
@@ -103,7 +111,7 @@ export const apiPersonalModelProvidersHandlers = [
     },
   ),
 
-  // POST /api/me/model-providers/:type/subscription-reset - Reset Codex usage
+  // POST /api/me/model-providers/:type/subscription-reset - Reset subscription usage
   mockApi(
     personalModelProvidersByTypeContract.resetSubscriptionUsage,
     ({ params, respond }) => {
@@ -111,7 +119,7 @@ export const apiPersonalModelProvidersHandlers = [
         return p.type === params.type;
       });
 
-      if (!existing || params.type !== "codex-oauth-token") {
+      if (!existing || !RESETTABLE_PROVIDER_TYPES.has(params.type)) {
         return respond(404, {
           error: { message: "Model provider not found", code: "NOT_FOUND" },
         });
@@ -189,7 +197,7 @@ export const apiPersonalModelProvidersHandlers = [
       const selected = mockPersonalModelProviders.find((provider) => {
         return provider.id === params.id;
       });
-      if (!selected || selected.type !== "codex-oauth-token") {
+      if (!selected || !RESETTABLE_PROVIDER_TYPES.has(selected.type)) {
         return respond(404, {
           error: {
             message: "Model provider account not found",
@@ -209,7 +217,7 @@ export const apiPersonalModelProvidersHandlers = [
       const selected = mockPersonalModelProviders.find((provider) => {
         return provider.id === params.id;
       });
-      if (!selected || selected.type !== "codex-oauth-token") {
+      if (!selected || !RESETTABLE_PROVIDER_TYPES.has(selected.type)) {
         return respond(404, {
           error: {
             message: "Model provider account not found",

@@ -107,9 +107,9 @@ The number is a stable file identifier, not an execution order. Test titles
 should describe behavior without repeating the file identifier.
 
 The workflow prepares separate real Codex BYOK, real Codex built-in, and
-real Claude/Pi identities. Luna billing and fallback use the built-in Codex
-identity, whose bootstrap disables Pi so those tests retain Codex execution.
-The BYOK steering and Claude/Pi accounts keep their existing configurations.
+real Claude/Pi identities. Bootstrap disables Pi for the shared Runner, mock
+Claude, Codex BYOK, and Codex built-in identities so their tests retain Runner
+execution. The real Claude/Pi account enables Pi in its dedicated smoke test.
 The shared mock-runner identity starts with `UTC` as its timezone.
 Runner BATS must not mutate shared account-level preferences from parallel
 shards. Coverage that needs mutable account-level state requires a dedicated
@@ -128,7 +128,8 @@ to preserve their existing billing and provider test prerequisites.
 Runner preparation completes onboarding through
 the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.
-Only the dedicated paid-onboarding spec exercises the video onboarding UI.
+Platform Vitest covers the video onboarding UI and checkout return flow.
+The deployed Playwright suite covers one chat send-and-reply happy path.
 
 Runner account preparation reads Clerk's Backend API
 `GET /v1/instance/organization_settings` once before creating its five identities.
@@ -198,9 +199,9 @@ then explicitly adjust capacity or design resumable discovery. Repeated passes
 do not guarantee progress past that capacity limit. Do not delete skipped
 organizations or introduce blind retries to work around it.
 
-Playwright's setup project owns the feature account; unrelated lanes create no
-unused global account. Failed checkouts report HTTP status, request ID, and
-Retry-After, and product Playwright lanes retain traces on the first failure.
+The single Playwright chat smoke owns its account; no unused global account is
+created. Failed checkouts report HTTP status, request ID, and Retry-After for
+runner account preparation, and the chat smoke retains a trace on failure.
 
 Runner credential sign-in failures upload `runner-e2e-sign-in-diagnostics` for
 one day, separately from payment diagnostics and credentials. This upload is

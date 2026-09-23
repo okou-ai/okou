@@ -444,7 +444,7 @@ export function ActivityHeaderCard({
           </div>
           <div className="ml-auto flex items-center gap-1 shrink-0">
             {(logDetail || onDownload) && (
-              <TooltipProvider delayDuration={200}>
+              <TooltipProvider delay={200}>
                 <Tooltip>
                   <TooltipTrigger
                     render={

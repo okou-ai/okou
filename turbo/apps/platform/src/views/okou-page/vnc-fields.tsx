@@ -16,6 +16,7 @@ import {
   VNC_HOST_MAX_LENGTH,
   type VncConnectionResponse,
 } from "@okouai/api-contracts/contracts/vnc-connections";
+import type { SshConnectionResponse } from "@okouai/api-contracts/contracts/ssh-connections";
 import {
   VNC_DISPLAY_NAME_MAX_LENGTH,
   VNC_USERNAME_MAX_BYTES,
@@ -25,6 +26,8 @@ import {
 import {
   chooseVncCredential$,
   chooseVncProfile$,
+  chooseVncSshConnection$,
+  chooseVncTransport$,
   chooseVncTrust$,
   replaceVncAuthentication$,
   vncEditor$,
@@ -34,6 +37,7 @@ import {
   vncAuthMethodForProfile,
   vncCredentialMatchesProfile,
 } from "../../signals/vnc.ts";
+import { invalidateSsh$, sshConnections$ } from "../../signals/ssh.ts";
 
 export function VncEndpointFields({
   connection,
@@ -73,6 +77,7 @@ export function VncEndpointFields({
           placeholder={t(($) => {
             return $.vnc.hostHint;
           })}
+          aria-describedby="vnc-destination-help"
         />
       </label>
       <label className="grid gap-2 text-sm">
@@ -88,9 +93,276 @@ export function VncEndpointFields({
           min={1}
           max={65_535}
           defaultValue={connection?.port ?? 5900}
+          aria-describedby="vnc-destination-help"
         />
       </label>
+      <p id="vnc-destination-help" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.transport.destinationHelp;
+        })}
+      </p>
     </div>
+  );
+}
+
+function VncSecurityProfileField({
+  profile,
+  disabled,
+}: {
+  readonly profile: "x509_vnc" | "x509_plain";
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const chooseProfile = useSet(chooseVncProfile$);
+  const profileItems = [
+    {
+      value: "x509_vnc",
+      label: t(($) => {
+        return $.vnc.security.x509Vnc;
+      }),
+    },
+    {
+      value: "x509_plain",
+      label: t(($) => {
+        return $.vnc.security.x509Plain;
+      }),
+    },
+  ];
+  return (
+    <>
+      <label htmlFor="vnc-profile" className="text-sm">
+        {t(($) => {
+          return $.vnc.security.profileLabel;
+        })}
+      </label>
+      <Select
+        items={profileItems}
+        value={profile}
+        onValueChange={(value, details) => {
+          if (value !== "x509_vnc" && value !== "x509_plain") {
+            details.cancel();
+            return;
+          }
+          chooseProfile(value);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger id="vnc-profile">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {profileItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      <p className="text-sm text-muted-foreground">
+        {profile === "x509_vnc"
+          ? t(($) => {
+              return $.vnc.security.x509VncHelp;
+            })
+          : t(($) => {
+              return $.vnc.security.x509PlainHelp;
+            })}
+      </p>
+    </>
+  );
+}
+
+function SshConnectionLabel({
+  connection,
+}: {
+  readonly connection: SshConnectionResponse;
+}) {
+  return (
+    <span className="break-all">
+      {connection.displayName} · {connection.host}:{connection.port}
+    </span>
+  );
+}
+
+function VncSshConnectionFields({ disabled }: { readonly disabled: boolean }) {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const connections = useLoadable(sshConnections$);
+  const chooseConnection = useSet(chooseVncSshConnection$);
+  const retry = useSet(invalidateSsh$);
+  const connectionItems =
+    connections.state === "hasData" && connections.data !== null
+      ? connections.data.map((connection) => {
+          return {
+            value: connection.id,
+            label: `${connection.displayName} · ${connection.host}:${connection.port}`,
+          };
+        })
+      : [];
+  const selectedUnavailable =
+    editor.transport === "ssh" &&
+    editor.sshConnectionId !== "" &&
+    connections.state === "hasData" &&
+    connections.data !== null &&
+    !connections.data.some((connection) => {
+      return connection.id === editor.sshConnectionId;
+    });
+  return (
+    <div className="grid gap-3 rounded-lg border bg-muted/30 p-4">
+      <label htmlFor="vnc-ssh-connection" className="text-sm">
+        {t(($) => {
+          return $.vnc.transport.sshConnection;
+        })}
+      </label>
+      {connections.state === "hasError" ? (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 text-sm"
+        >
+          <p>
+            {t(($) => {
+              return $.vnc.transport.loadFailed;
+            })}
+          </p>
+          <Button type="button" variant="outline" onClick={retry}>
+            {t(($) => {
+              return $.vnc.retry;
+            })}
+          </Button>
+        </div>
+      ) : connections.state === "loading" ? (
+        <p role="status" className="text-sm">
+          {t(($) => {
+            return $.vnc.transport.loading;
+          })}
+        </p>
+      ) : connections.data === null ? (
+        <p role="alert" className="text-sm">
+          {t(($) => {
+            return $.vnc.transport.unavailable;
+          })}
+        </p>
+      ) : connections.data.length === 0 ? (
+        <p role="alert" className="text-sm">
+          {t(($) => {
+            return $.vnc.transport.empty;
+          })}
+        </p>
+      ) : (
+        <Select
+          items={connectionItems}
+          value={editor.sshConnectionId}
+          onValueChange={(value, details) => {
+            if (
+              !connectionItems.some((item) => {
+                return item.value === value;
+              })
+            ) {
+              details.cancel();
+              return;
+            }
+            chooseConnection(value);
+          }}
+          disabled={disabled}
+        >
+          <SelectTrigger id="vnc-ssh-connection" className="min-w-0">
+            <SelectValue
+              placeholder={t(($) => {
+                return $.vnc.transport.select;
+              })}
+            />
+          </SelectTrigger>
+          <SelectContent className="w-(--anchor-width)">
+            {connections.data.map((connection) => {
+              return (
+                <SelectItem key={connection.id} value={connection.id}>
+                  <SshConnectionLabel connection={connection} />
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
+      {selectedUnavailable && (
+        <p role="alert" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.vnc.transport.selectionUnavailable;
+          })}
+        </p>
+      )}
+      <p className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.transport.sshHelp;
+        })}
+      </p>
+    </div>
+  );
+}
+
+export function VncTransportFields({
+  disabled,
+}: {
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const editor = useGet(vncEditor$);
+  const chooseTransport = useSet(chooseVncTransport$);
+  const transportItems = [
+    {
+      value: "direct",
+      label: t(($) => {
+        return $.vnc.transport.direct;
+      }),
+    },
+    {
+      value: "ssh",
+      label: t(($) => {
+        return $.vnc.transport.ssh;
+      }),
+    },
+  ];
+  return (
+    <fieldset className="grid min-w-0 gap-3">
+      <legend className="mb-1 text-sm font-semibold">
+        {t(($) => {
+          return $.vnc.transport.title;
+        })}
+      </legend>
+      <Select
+        items={transportItems}
+        value={editor.transport}
+        onValueChange={(value, details) => {
+          if (value !== "direct" && value !== "ssh") {
+            details.cancel();
+            return;
+          }
+          chooseTransport(value);
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger
+          id="vnc-transport"
+          aria-label={t(($) => {
+            return $.vnc.transport.title;
+          })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {transportItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
+        </SelectContent>
+      </Select>
+      {editor.transport === "ssh" && (
+        <VncSshConnectionFields disabled={disabled} />
+      )}
+    </fieldset>
   );
 }
 
@@ -103,66 +375,73 @@ export function VncSecurityFields({
 }) {
   const { t } = useTranslation();
   const editor = useGet(vncEditor$);
-  const chooseProfile = useSet(chooseVncProfile$);
   const choose = useSet(chooseVncTrust$);
   const savedTrust = connection?.security.trust;
+  const trustItems = [
+    {
+      value: "system",
+      label: t(($) => {
+        return $.vnc.security.system;
+      }),
+    },
+    {
+      value: "custom_ca",
+      label: t(($) => {
+        return $.vnc.security.custom;
+      }),
+    },
+  ];
   return (
     <div className="grid gap-3">
-      <label htmlFor="vnc-profile" className="text-sm">
+      <VncSecurityProfileField profile={editor.profile} disabled={disabled} />
+      <label htmlFor="vnc-server-name" className="text-sm">
         {t(($) => {
-          return $.vnc.security.profileLabel;
+          return $.vnc.security.serverName;
         })}
       </label>
-      <Select
-        value={editor.profile}
-        onValueChange={chooseProfile}
-        disabled={disabled}
-      >
-        <SelectTrigger id="vnc-profile">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="x509_vnc">
-            {t(($) => {
-              return $.vnc.security.x509Vnc;
-            })}
-          </SelectItem>
-          <SelectItem value="x509_plain">
-            {t(($) => {
-              return $.vnc.security.x509Plain;
-            })}
-          </SelectItem>
-        </SelectContent>
-      </Select>
-      <p className="text-sm text-muted-foreground">
-        {editor.profile === "x509_vnc"
-          ? t(($) => {
-              return $.vnc.security.x509VncHelp;
-            })
-          : t(($) => {
-              return $.vnc.security.x509PlainHelp;
-            })}
+      <Input
+        id="vnc-server-name"
+        name="serverName"
+        maxLength={VNC_HOST_MAX_LENGTH}
+        defaultValue={connection?.security.serverName ?? ""}
+        placeholder={t(($) => {
+          return $.vnc.security.serverNameHint;
+        })}
+        aria-describedby="vnc-server-name-help"
+      />
+      <p id="vnc-server-name-help" className="text-sm text-muted-foreground">
+        {t(($) => {
+          return $.vnc.security.serverNameHelp;
+        })}
       </p>
       <label htmlFor="vnc-trust" className="text-sm">
         {t(($) => {
           return $.vnc.security.title;
         })}
       </label>
-      <Select value={editor.trust} onValueChange={choose} disabled={disabled}>
+      <Select
+        items={trustItems}
+        value={editor.trust}
+        onValueChange={(value, details) => {
+          if (value !== "system" && value !== "custom_ca") {
+            details.cancel();
+            return;
+          }
+          choose(value);
+        }}
+        disabled={disabled}
+      >
         <SelectTrigger id="vnc-trust">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="system">
-            {t(($) => {
-              return $.vnc.security.system;
-            })}
-          </SelectItem>
-          <SelectItem value="custom_ca">
-            {t(($) => {
-              return $.vnc.security.custom;
-            })}
-          </SelectItem>
+          {trustItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
       {editor.trust === "custom_ca" && (
@@ -206,6 +485,20 @@ function VncAuthenticationMethodSelector({
 }) {
   const { t } = useTranslation();
   const chooseProfile = useSet(chooseVncProfile$);
+  const profileItems = [
+    {
+      value: "x509_vnc",
+      label: t(($) => {
+        return $.vnc.credential.method;
+      }),
+    },
+    {
+      value: "x509_plain",
+      label: t(($) => {
+        return $.vnc.credential.usernamePasswordMethod;
+      }),
+    },
+  ];
   return (
     <div className="grid gap-2 text-sm">
       <label htmlFor="vnc-auth-method">
@@ -213,21 +506,29 @@ function VncAuthenticationMethodSelector({
           return $.vnc.credential.authentication;
         })}
       </label>
-      <Select value={profile} onValueChange={chooseProfile} disabled={disabled}>
+      <Select
+        items={profileItems}
+        value={profile}
+        onValueChange={(value, details) => {
+          if (value !== "x509_vnc" && value !== "x509_plain") {
+            details.cancel();
+            return;
+          }
+          chooseProfile(value);
+        }}
+        disabled={disabled}
+      >
         <SelectTrigger id="vnc-auth-method">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="x509_vnc">
-            {t(($) => {
-              return $.vnc.credential.method;
-            })}
-          </SelectItem>
-          <SelectItem value="x509_plain">
-            {t(($) => {
-              return $.vnc.credential.usernamePasswordMethod;
-            })}
-          </SelectItem>
+          {profileItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </div>
@@ -431,6 +732,34 @@ export function VncCredentialFields({
   );
 }
 
+function VncCredentialLoadError() {
+  const { t } = useTranslation();
+  const retry = useSet(invalidateVnc$);
+  return (
+    <div
+      role="alert"
+      className="flex items-center justify-between gap-3 text-sm"
+    >
+      <p>
+        {t(($) => {
+          return $.vnc.loadFailed;
+        })}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          retry();
+        }}
+      >
+        {t(($) => {
+          return $.vnc.retry;
+        })}
+      </Button>
+    </div>
+  );
+}
+
 export function VncCredentialSelection({
   disabled,
 }: {
@@ -440,13 +769,23 @@ export function VncCredentialSelection({
   const credentials = useLoadable(vncCredentials$);
   const editor = useGet(vncEditor$);
   const choose = useSet(chooseVncCredential$);
-  const retry = useSet(invalidateVnc$);
   const compatibleCredentials =
     credentials.state === "hasData" && credentials.data
       ? credentials.data.filter((credential) => {
           return vncCredentialMatchesProfile(credential, editor.profile);
         })
       : [];
+  const credentialItems = [
+    ...compatibleCredentials.map((credential) => {
+      return { value: credential.id, label: credential.name };
+    }),
+    {
+      value: "new",
+      label: t(($) => {
+        return $.vnc.credential.createNew;
+      }),
+    },
+  ];
   const selectedCredentialUnavailable =
     editor.selection !== "" &&
     editor.selection !== "new" &&
@@ -466,27 +805,7 @@ export function VncCredentialSelection({
       </legend>
       <div className="grid gap-2">
         {credentials.state === "hasError" ? (
-          <div
-            role="alert"
-            className="flex items-center justify-between gap-3 text-sm"
-          >
-            <p>
-              {t(($) => {
-                return $.vnc.loadFailed;
-              })}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                retry();
-              }}
-            >
-              {t(($) => {
-                return $.vnc.retry;
-              })}
-            </Button>
-          </div>
+          <VncCredentialLoadError />
         ) : credentials.state === "loading" ? (
           <p role="status" className="text-sm">
             {t(($) => {
@@ -501,8 +820,15 @@ export function VncCredentialSelection({
           </p>
         ) : (
           <Select
+            items={credentialItems}
             value={editor.selection}
-            onValueChange={choose}
+            onValueChange={(value, details) => {
+              if (value === null) {
+                details.cancel();
+                return;
+              }
+              choose(value);
+            }}
             disabled={disabled}
           >
             <SelectTrigger id="vnc-credential" className="min-w-0">
@@ -513,22 +839,17 @@ export function VncCredentialSelection({
               />
             </SelectTrigger>
             <SelectContent className="w-(--anchor-width)">
-              {compatibleCredentials.map((credential) => {
+              {credentialItems.map((item) => {
                 return (
                   <SelectItem
-                    key={credential.id}
-                    value={credential.id}
-                    className="break-all"
+                    key={item.value}
+                    value={item.value}
+                    className={item.value === "new" ? undefined : "break-all"}
                   >
-                    {credential.name}
+                    {item.label}
                   </SelectItem>
                 );
               })}
-              <SelectItem value="new">
-                {t(($) => {
-                  return $.vnc.credential.createNew;
-                })}
-              </SelectItem>
             </SelectContent>
           </Select>
         )}
