@@ -1453,7 +1453,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     mockNow(snapshotAt + DAY_MS + 1);
     const staleCompact = await compactChatThreadSnapshots(actor);
     expect(staleCompact.eventsApplied).toBe(0);
-    expect(staleCompact.removedDeletedAgentThreads).toBeGreaterThanOrEqual(1);
     await expect(chat.getThreadSnapshot(unrelatedActor)).resolves.toStrictEqual(
       {
         chatThreads: [],
@@ -1573,7 +1572,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       success: true,
       scopes: 1,
       eventsApplied: 1,
-      removedDeletedAgentThreads: 0,
       eventsPruned: 2,
     });
     for (const fixture of fixtures) {
@@ -2090,8 +2088,7 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     ).toContain(deletedAgentThread.id);
 
     mockNow(incrementalSnapshotAt + DAY_MS + 1);
-    const staleCompact = await compactChatThreadSnapshots(actor);
-    expect(staleCompact.removedDeletedAgentThreads).toBeGreaterThanOrEqual(1);
+    await compactChatThreadSnapshots(actor);
     const compactedSnapshot = await chat.getThreadSnapshot(actor);
     expect(compactedSnapshot.latestEventId).not.toBeNull();
     expect(compactedSnapshot.latestSeqId).not.toBeNull();
