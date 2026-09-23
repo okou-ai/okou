@@ -48,7 +48,7 @@ async function expectTitleHint(title: string): Promise<void> {
   });
 }
 
-test("A built-in template title is readable before keyboard preview or selection", async () => {
+test("Built-in title hints follow caption hover and keyboard navigation", async () => {
   mockTemplateChat();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   const nextTemplate = PRESENTATION_TEMPLATE_PICKER_ITEMS[1];
@@ -106,6 +106,29 @@ test("A built-in template title is readable before keyboard preview or selection
   expect(useTemplate).toHaveFocus();
   await user.keyboard("{Shift>}{Tab}{/Shift}");
   expect(preview).toHaveFocus();
+  await expectTitleHint(template.title);
+});
+
+test("A built-in title hint preserves keyboard preview and independent selection", async () => {
+  mockTemplateChat();
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+  if (!template) {
+    throw new Error("Expected a built-in presentation template");
+  }
+  mockPresentationHtml(template.embedUrl, ["Opening"]);
+  const user = userEvent.setup({ delay: null });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
+  });
+  const picker = await openTemplatePicker(user, "Presentation");
+  const previewLabel = `Preview ${template.title} at current slide`;
+  const preview = within(picker).getByLabelText(previewLabel);
+
+  await user.click(tabByText("Presentation"));
+  await tabTo(user, preview);
   await expectTitleHint(template.title);
 
   await user.keyboard("{Enter}");
