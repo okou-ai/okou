@@ -349,10 +349,14 @@ RUNNER_BINARY_CONTEXT_ROOT="$actual_context" \
   validate-workspace "$actual_context"
 [ -f "${actual_context}/crates/runner/src/main.rs" ] \
   || fail "actual context must contain runner source"
+[ -f "${actual_context}/crates/runner-executor/src/lib.rs" ] \
+  || fail "actual context must contain runner-executor source"
+[ -f "${actual_context}/crates/runner-executor/scripts/rootfs-usage.py" ] \
+  || fail "actual context must contain runner-executor diagnostic scripts"
 [ ! -e "${actual_context}/crates/runner/mitm-addon/tests" ] \
   || fail "actual context must exclude runner mitm tests"
-[ ! -e "${actual_context}/crates/runner/src/executor/tests" ] \
-  || fail "actual context must exclude nested runner tests"
+[ ! -e "${actual_context}/crates/runner-executor/src/executor/tests" ] \
+  || fail "actual context must exclude runner-executor owner tests"
 [ -f "${actual_context}/crates/sandbox-mock/src/lib.rs" ] \
   || fail "actual context must retain all workspace package entries"
 [ -f "${actual_context}/crates/sandbox-mock/src/call_records.rs" ] \
