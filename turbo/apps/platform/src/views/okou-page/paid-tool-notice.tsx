@@ -156,14 +156,11 @@ function ComposerPaidToolNoticeContent({
       {(row.discard || row.action) && (
         <div className="ml-auto flex shrink-0 items-center">
           {row.discard && (
-            // The tray is gray-50 and `secondary` is gray-100, one stop apart,
-            // so the fill steps to gray-200 to read as a button without a
-            // border. States layer above it rather than replacing it.
             <Button
               type="button"
               variant="secondary"
               size="xs"
-              className="bg-gray-200 text-xs font-medium hover:bg-gray-200 active:bg-gray-200 [&:active]:bg-state-pressed-overlay [&:hover]:bg-state-hover-overlay"
+              className="bg-transparent text-xs font-normal text-gray-700 hover:bg-state-hover active:bg-state-pressed"
               onClick={row.discard.run}
             >
               {row.discard.label}
