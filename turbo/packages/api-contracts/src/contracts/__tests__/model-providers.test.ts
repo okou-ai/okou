@@ -206,8 +206,8 @@ describe("model-first canonical catalog", () => {
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-astra")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("gpt-6-sol")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-sol")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("gpt-6-luna")).toBe(true);
-    expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-luna")).toBe(true);
+    expect(isLimitedFree1RestrictedRunModel("gpt-6-luna")).toBe(false);
+    expect(isLimitedFree1RestrictedRunModel("openai/gpt-6-luna")).toBe(false);
     expect(isLimitedFree1RestrictedRunModel("gpt-5.6-sol")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("openai/gpt-5.6-sol")).toBe(true);
     expect(isLimitedFree1RestrictedRunModel("gpt-5.6-terra")).toBe(true);
@@ -932,10 +932,10 @@ describe("model-first canonical catalog", () => {
     expect(DEFAULT_ORG_MODEL_POLICY_MODELS).toEqual([
       "claude-fable-5-1",
       "gpt-6-astra",
-      "gpt-5.6-luna",
+      "gpt-6-luna",
     ]);
-    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-5.6-luna");
-    expect(LIMITED_FREE1_DEFAULT_RUN_MODEL).toBe("gpt-5.6-luna");
+    expect(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL).toBe("gpt-6-luna");
+    expect(LIMITED_FREE1_DEFAULT_RUN_MODEL).toBe("gpt-6-luna");
     expect(getDefaultModel("built-in")).toBe(
       DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
     );

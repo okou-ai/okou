@@ -17,7 +17,55 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Browser user-action retention (2026-09-23)
+
+Browser user-action requests have no independent expiry. Their active lifetime
+continues to come from the exact `browser_session_instances` row: active status,
+absolute `timeout_at`, and renewable `idle_expires_at`. The existing Browser
+reconciliation worker now converts requests after actual closure, using the
+instance's persisted `finished_at`: `pending` becomes `stale`, `applying`
+becomes `uncertain`, and existing terminal outcomes remain unchanged. This
+database-only work runs independently of the `BrowserNativeInput` switch and
+does not call Browser Use or CDP.
+
+Terminal requests remain available for callback recovery for seven days. A row
+is cleanup-eligible only when both its `completed_at` and the Browser's
+`finished_at` are at least seven days old, which anchors retention to the later
+timestamp. Conversion and deletion each process at most 20 rows in ascending
+token-hash order per Browser reconciliation tick. Ordinary inactive-Browser and
+stopped-instance cleanup retains the instance while any associated action row
+remains, so `finished_at` cannot disappear between those phases. Thread
+deletion and explicit user or organization erasure remain immediate and are not
+delayed by callback retention.
+
+This rollout changes API queries and worker ordering only. It needs no schema
+migration or backfill, and new API code is compatible with the already-shipped
+action and Browser tables. During a mixed API rollout, older workers do not have
+the action-existence guards. Do not treat the retention invariant as active
+until the new API version is serving everywhere.
+
+Rolling the API back is schema-compatible but not lifecycle-safe for retained
+actions. An older worker can delete the only instance `finished_at` after its
+ordinary Browser retention window. A nonterminal action that was not yet
+converted can then no longer converge, and a terminal action whose later
+completion extended recovery can no longer be selected by the bounded cleanup.
+Those rows remain removable by thread/account erasure, but a later forward
+deploy cannot reconstruct the lost closure timestamp. Prefer a forward fix; if
+a rollback is unavoidable, restore the guarded worker before any affected
+instance reaches ordinary Browser cleanup.
+
 ## Onboarding model preference
+
+New organization seeds use GPT-6 Luna as the Built-in default for both Free and
+paid workspaces. Existing organizations keep their stored default, including
+GPT-5.6 Luna. The new API also recognizes an untouched GPT-5.6 Luna seed from
+an older API when completing a Codex or Claude Code onboarding choice. Migration
+`1199_gpt_6_luna_policy_admission` enables new GPT-6 Luna organization policies
+before the API starts serving the new default; it does not rewrite existing
+policies. The GPT-6 Luna runtime route and pricing must be available before this
+default is deployed. Remove the old-seed recognition after old API writers drain
+and no incomplete-onboarding organization retains the untouched old seed; #36167
+tracks the production inventory and removal.
 
 The source-first App sends its optional Codex or Claude Code choice as a query
 parameter on `POST /api/onboarding/complete`. An older API ignores that parameter
