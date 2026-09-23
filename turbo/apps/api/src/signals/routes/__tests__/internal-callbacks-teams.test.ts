@@ -719,7 +719,7 @@ describe("Teams chat callbacks", () => {
           teamsMessageFiles: [],
           teamsTenantName: teams.fixture.teamsTenantName,
           teamsTeamName: null,
-          teamsThreadId: `direct-message:${teams.defaultAgentId}:claude-sonnet-5`,
+          teamsThreadId: `direct-message:${teams.defaultAgentId}:claude-fable-5-1`,
           teamsServiceUrl: teams.fixture.serviceUrl,
           teamsAppId: teams.fixture.teamsAppId,
           teamsPublicBrand: "okou",

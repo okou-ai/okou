@@ -184,22 +184,24 @@ async function dispatchTeamsMessage(args: {
   // The dispatch probe observes a pending native Runner claim, not a Pi
   // API-first completion. Upgrade only this dispatch fixture; seeded free-tier
   // diagnostic tests still exercise their original plan separately.
-  const runs = createRunsApi(context);
-  const actor = createBddApi(context).user({
-    userId: args.fixture.userId,
-    orgId: args.fixture.orgId,
-  });
-  await runs.grantProEntitlement(actor);
-  const { providerId } = await runs.ensureOrgModelProvider(actor);
-  await runs.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-fable-5-1",
-      isDefault: true,
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: providerId,
-    },
-  ]);
+  if (args.fixture.connectionId && args.fixture.defaultAgentId) {
+    const runs = createRunsApi(context);
+    const actor = createBddApi(context).user({
+      userId: args.fixture.userId,
+      orgId: args.fixture.orgId,
+    });
+    await runs.grantProEntitlement(actor);
+    const { providerId } = await runs.ensureOrgModelProvider(actor);
+    await runs.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
+  }
   const response = await requestApp(TEAMS_DISPATCH_PROBE_ROUTE, {
     method: "POST",
     headers: { "content-type": "application/json" },
