@@ -486,13 +486,12 @@ jobs:
           grafana-cloud-api-key: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
           env-label: dev
 
-      # deploy-cli (turbo.yml) publishes okou-cli/<head sha>/ for the same
-      # commit in a separate workflow; the preview rootfs installs that bundle
-      # so the preview API and the preview sandbox run the same CLI build.
-      - name: Download Okou CLI artifact for this commit
+      # deploy-cli (turbo.yml) publishes the PR source head, not GitHub's
+      # synthetic PR merge commit used for the image manifest identity.
+      - name: Download Okou CLI artifact for this source commit
         id: okou-cli
         env:
-          ARTIFACT_SHA: ${{ needs.prepare.outputs.head-sha }}
+          ARTIFACT_SHA: ${{ needs.prepare.outputs.source-head-sha }}
           OUTPUT_DIR: okou-cli-artifact
           ARTIFACT_REQUIRED: "false"
           WAIT_SECONDS: "600"

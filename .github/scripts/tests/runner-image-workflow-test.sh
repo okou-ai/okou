@@ -328,6 +328,13 @@ jq -e '
   (.jobs.build.if | contains("needs.compile.result == '\''skipped'\''")) and
   (.jobs.build.if | contains("needs.compile.result == '\''success'\''")) and
   any(.jobs.build.steps[];
+    .id == "okou-cli" and
+    .run == ".github/scripts/download-okou-cli-artifact.sh" and
+    .env.ARTIFACT_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
+    .env.ARTIFACT_REQUIRED == "false" and
+    .env.WAIT_SECONDS == "600"
+  ) and
+  any(.jobs.build.steps[];
     .name == "Download cached runner binary from R2" and
     (.if | contains("runner-binary-hit-targets")) and
     .run == ".github/scripts/runner-binary-cache.sh download-reference" and
