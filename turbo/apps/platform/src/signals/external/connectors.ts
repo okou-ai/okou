@@ -100,6 +100,26 @@ export function connectorCatalogItemBySlug(
   });
 }
 
+/**
+ * The catalog entry for whichever connector `connectorSlug$` currently names.
+ * The per-slug lookup is rebuilt only when the slug changes, so a single-item
+ * surface loads the one entry it shows instead of the full catalog status.
+ */
+export function connectorCatalogItemForSlug(
+  connectorSlug$: Computed<ConnectorSlug | null>,
+): Computed<Promise<PlatformConnectorCatalogStatusItem | null>> {
+  const lookup$ = computed((get) => {
+    const connectorSlug = get(connectorSlug$);
+    return connectorSlug === null
+      ? null
+      : connectorCatalogItemBySlug(connectorSlug);
+  });
+  return computed(async (get) => {
+    const item$ = get(lookup$);
+    return item$ === null ? null : await get(item$);
+  });
+}
+
 export const loadConnectorCatalogItem$ = command(
   async (
     { get },

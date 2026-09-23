@@ -38,7 +38,7 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import {
   builtinConnectors$,
-  connectorCatalogItemBySlug,
+  connectorCatalogItemForSlug,
   relatedConnectorCatalog,
   reloadBuiltinConnectors$,
 } from "../../external/connectors.ts";
@@ -750,18 +750,9 @@ const connectorOAuthDeviceAuthStartOptionValues$ = state<
 export const selectedBuiltinConnectorSlug$ = computed((get) => {
   return get(internalSelectedConnectorSlug$);
 });
-// The lookup follows the selected slug, so a connect modal loads the one
-// connector it shows instead of the full catalog status.
-const selectedBuiltinConnectorCatalogLookup$ = computed((get) => {
-  const connectorSlug = get(internalSelectedConnectorSlug$);
-  return connectorSlug === null
-    ? null
-    : connectorCatalogItemBySlug(connectorSlug);
-});
-export const selectedBuiltinConnectorCatalogItem$ = computed(async (get) => {
-  const lookup$ = get(selectedBuiltinConnectorCatalogLookup$);
-  return lookup$ === null ? null : await get(lookup$);
-});
+export const selectedBuiltinConnectorCatalogItem$ = connectorCatalogItemForSlug(
+  selectedBuiltinConnectorSlug$,
+);
 export const setSelectedBuiltinConnectorSlug$ = command(
   ({ get, set }, connectorSlug: ConnectorSlug | null) => {
     if (connectorSlug) {
@@ -893,6 +884,14 @@ const internalScopeReviewSelection$ =
 export const builtinConnectorScopeReviewSelection$ = computed((get) => {
   return get(internalScopeReviewSelection$);
 });
+
+/** The catalog entry the scope review dialog names. */
+export const builtinConnectorScopeReviewCatalogItem$ =
+  connectorCatalogItemForSlug(
+    computed((get) => {
+      return get(internalScopeReviewSelection$)?.connectorSlug ?? null;
+    }),
+  );
 
 export const builtinConnectorScopeDiff$ = computed(async (get) => {
   const selection = get(internalScopeReviewSelection$);
