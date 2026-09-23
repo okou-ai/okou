@@ -5,6 +5,11 @@ import { testContext } from "../../__tests__/test-helpers.ts";
 import { deleteAccountLocalData$ } from "../account-erasure-local-data.ts";
 import { sourcesFirstDraftStorage } from "../../onboarding/onboarding-sources-first-state.ts";
 import {
+  ONBOARDING_CHECKOUT_STATE_PARAM,
+  readOnboardingCheckoutDraft$,
+  storeOnboardingCheckoutDraft$,
+} from "../../onboarding/onboarding-state.ts";
+import {
   appendVoiceDraftSamples,
   createVoiceDraftRecording,
   readVoiceDraftRecording,
@@ -111,4 +116,28 @@ test("an ambiguous legacy cache name cannot cause cross-account deletion", async
     return entry.name;
   });
   expect(names).toContain(ambiguous);
+});
+
+test("checkout draft belongs to one account and is purged only for that account", async () => {
+  const owner = `user_${crypto.randomUUID().replaceAll("-", "")}`;
+  const peer = `user_${crypto.randomUUID().replaceAll("-", "")}`;
+  const state = context.store.set(storeOnboardingCheckoutDraft$, {
+    userId: owner,
+    prompt: "private prompt",
+    note: "private note",
+  });
+  const searchParams = new URLSearchParams({
+    [ONBOARDING_CHECKOUT_STATE_PARAM]: state,
+  });
+  expect(
+    context.store.set(readOnboardingCheckoutDraft$, searchParams, peer),
+  ).toBeNull();
+  await context.store.set(deleteAccountLocalData$, peer, context.signal);
+  expect(
+    context.store.set(readOnboardingCheckoutDraft$, searchParams, owner),
+  ).toMatchObject({ prompt: "private prompt", note: "private note" });
+  await context.store.set(deleteAccountLocalData$, owner, context.signal);
+  expect(
+    context.store.set(readOnboardingCheckoutDraft$, searchParams, owner),
+  ).toBeNull();
 });

@@ -128,14 +128,15 @@ export const prepareOnboardingVideoRun$ = command(
       return "run";
     }
 
+    const { userId } = await get(authenticatedIdentity$);
+    signal.throwIfAborted();
     const checkoutState = set(storeOnboardingCheckoutDraft$, {
+      userId,
       prompt: input.prompt,
       note: input.note,
     });
     const successUrl = checkoutReturnUrl(input, "pro", checkoutState);
     const cancelUrl = checkoutReturnUrl(input, "canceled", checkoutState);
-    const { userId } = await get(authenticatedIdentity$);
-    signal.throwIfAborted();
     const client = get(apiClient$)(billingUsagePackCheckoutContract);
     const result = await accept(
       client.create({
