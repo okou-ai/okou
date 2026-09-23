@@ -1048,15 +1048,6 @@ export const sshAgentAccessRows$ = computed(async (get) => {
   });
 });
 
-// Keep the owner attached when views retain this read during a background refresh.
-export const sshAgentAccessSnapshot$ = computed(async (get) => {
-  const [identity, rows] = await Promise.all([
-    get(sshIdentity$),
-    get(sshAgentAccessRows$),
-  ]);
-  return { identity, rows };
-});
-
 const accessManagementIdentity$ = state<string | null>(null);
 const accessSearch$ = state("");
 export const sshAccessSearch$ = computed((get) => {

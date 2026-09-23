@@ -123,14 +123,6 @@ export const vncAgentAccessRows$ = computed(async (get) => {
   });
 });
 
-export const vncAgentAccessSnapshot$ = computed(async (get) => {
-  const [identity, rows] = await Promise.all([
-    get(vncIdentity$),
-    get(vncAgentAccessRows$),
-  ]);
-  return { identity, rows };
-});
-
 const accessManagementIdentity$ = state<string | null>(null);
 const accessSearch$ = state("");
 export const vncAccessSearch$ = computed((get) => {
