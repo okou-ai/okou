@@ -469,6 +469,104 @@ describe("system storage presigned URL cache", () => {
     ]);
   });
 
+  it("preserves a 52-mount manifest across mixed-scope cache reuse", async () => {
+    const fixture = createOwnedSystemStorageFixture("mixed-batch");
+    const versionId = createVersionId("mixed-batch");
+    await claimOwnedStorage(fixture);
+    registerOwnedStorageCleanup(fixture);
+    await seedOwnedStorageVersion({ fixture, versionId, archiveSize: 1024 });
+
+    const runFixture = await entitledDirectRunActor();
+    const storages = createStoragesBddApi(context);
+    storages.mockStorageObjectsExist(2048);
+    const storageName = `mixed-batch-${randomUUID()}`;
+    const file = storageTextFile("payload.txt", "mixed cache batch payload");
+    const prepared = await storages.prepareStorage(runFixture.actor, {
+      storageName,
+      storageOwner: "organization",
+      files: [file],
+    });
+    await storages.commitStorage(runFixture.actor, {
+      storageName,
+      storageOwner: "organization",
+      versionId: prepared.versionId,
+      files: [file],
+    });
+    const readOnlyObjectKey = prepared.uploads?.archive.key;
+    if (!readOnlyObjectKey) {
+      throw new Error("Expected an organization storage archive upload");
+    }
+    const systemObjectKey = storageArchiveKey(fixture, versionId);
+    const signedCount = mockUniquePresignedUrls();
+    const mountPaths = Array.from({ length: 51 }, (_, index) => {
+      return `/mixed-batch/${String(index)}`;
+    });
+    const api = createRunsApi(context);
+    const createAndClaim = async (prompt: string) => {
+      const run = await api.createDirectRun(runFixture.actor, {
+        agentId: runFixture.agentId,
+        prompt,
+        additionalVolumes: mountPaths.map((mountPath) => {
+          return {
+            name: storageName,
+            version: prepared.versionId,
+            mountPath,
+          };
+        }),
+        ownedSystemStorageMounts: [
+          { storageId: fixture.storageId, mountPath: fixture.mountPath },
+        ],
+      });
+      onTestFinished(async () => {
+        await api.requestCancelRun(runFixture.actor, run.runId, [200, 404]);
+      });
+      await api.heartbeatRunner(runFixture.runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const mounts =
+        expectCanonicalStorageManifest(
+          claim.storageManifest,
+        )?.storageMounts.filter((mount) => {
+          return (
+            mount.name === storageName || mount.name === fixture.storageName
+          );
+        }) ?? [];
+      await api.requestCancelRun(runFixture.actor, run.runId, [200]);
+      return mounts.map((mount) => {
+        return {
+          name: mount.name,
+          mountPath: mount.mountPath,
+          versionId: mount.versionId,
+          archiveUrl: mount.archiveUrl,
+        };
+      });
+    };
+
+    const expected = [
+      ...mountPaths.map((mountPath) => {
+        return {
+          name: storageName,
+          mountPath,
+          versionId: prepared.versionId,
+          archiveUrl: expectedPresignedUrl(readOnlyObjectKey, 1),
+        };
+      }),
+      {
+        name: fixture.storageName,
+        mountPath: fixture.mountPath,
+        versionId,
+        archiveUrl: expectedPresignedUrl(systemObjectKey, 1),
+      },
+    ];
+    await expect(
+      createAndClaim("warm the mixed-scope storage URL cache"),
+    ).resolves.toStrictEqual(expected);
+    await expect(
+      createAndClaim("reuse the mixed-scope storage URL cache"),
+    ).resolves.toStrictEqual(expected);
+    expect(signedCount(readOnlyObjectKey)).toBe(1);
+    expect(signedCount(systemObjectKey)).toBe(1);
+  });
+
   it("refreshes a hard-expired row with a new exact URL", async () => {
     const fixture = createOwnedSystemStorageFixture("hard-expired");
     const versionId = createVersionId("hard-expired");
