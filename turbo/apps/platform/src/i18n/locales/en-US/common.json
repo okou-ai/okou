@@ -7082,6 +7082,8 @@
     "configured": "Configured",
     "credential": {
       "add": "Add credential",
+      "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
+      "appleDhMethod": "Apple DH username and password",
       "authentication": "Authentication method",
       "createNew": "Create new credential",
       "delete": "Delete credential",
@@ -7151,6 +7153,8 @@
     },
     "saving": "Saving…",
     "security": {
+      "appleDh": "Mac Screen Sharing (Apple DH)",
+      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session.",
       "caBundle": "CA certificates (PEM)",
       "caHelp": "Up to 8 CA certificates, 64 KiB total. Do not paste a private key or a server certificate.",
       "caHint": "Paste the public CA certificates that issued the server certificate",
@@ -7170,6 +7174,7 @@
     "summary_other": "{{count}} hosts configured",
     "title": "VNC remote access",
     "transport": {
+      "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "RFB destination",
       "destinationHelp": "For SSH routes, this host and port are reached from the selected SSH server, not directly from the Runner.",
       "direct": "Direct from Runner",

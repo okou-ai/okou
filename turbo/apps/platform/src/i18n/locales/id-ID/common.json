@@ -7072,6 +7072,8 @@
     "configured": "Terkonfigurasi",
     "credential": {
       "add": "Tambah kredensial",
+      "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
+      "appleDhMethod": "Apple DH username and password",
       "authentication": "Metode autentikasi",
       "createNew": "Buat kredensial baru",
       "delete": "Hapus kredensial",
@@ -7140,6 +7142,8 @@
     },
     "saving": "Menyimpan…",
     "security": {
+      "appleDh": "Mac Screen Sharing (Apple DH)",
+      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session.",
       "caBundle": "Sertifikat CA (PEM)",
       "caHelp": "Maksimal 8 sertifikat CA, total 64 KiB. Jangan tempel kunci privat atau sertifikat server.",
       "caHint": "Tempel sertifikat CA publik yang menerbitkan sertifikat server",
@@ -7159,6 +7163,7 @@
     "summary_other": "{{count}} host terkonfigurasi",
     "title": "Akses jarak jauh VNC",
     "transport": {
+      "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "Tujuan RFB",
       "destinationHelp": "Untuk rute SSH, host dan port ini dijangkau dari server SSH yang dipilih, bukan langsung dari Runner.",
       "direct": "Langsung dari Runner",

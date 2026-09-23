@@ -7159,6 +7159,8 @@
     "configured": "Configuré",
     "credential": {
       "add": "Ajouter des identifiants",
+      "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
+      "appleDhMethod": "Apple DH username and password",
       "authentication": "Méthode d’authentification",
       "createNew": "Créer des identifiants",
       "delete": "Supprimer les identifiants",
@@ -7230,6 +7232,8 @@
     },
     "saving": "Enregistrement…",
     "security": {
+      "appleDh": "Mac Screen Sharing (Apple DH)",
+      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session.",
       "caBundle": "Certificats d’AC (PEM)",
       "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
@@ -7250,6 +7254,7 @@
     "summary_other": "{{count}} hôtes configurés",
     "title": "Accès à distance VNC",
     "transport": {
+      "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
       "direct": "Direct depuis le Runner",

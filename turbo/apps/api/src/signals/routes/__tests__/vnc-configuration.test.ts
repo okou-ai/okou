@@ -718,7 +718,9 @@ describe("VNC owner configuration", () => {
     );
     expect(created.body.host).toBe("2001:db8::1");
     expect(created.body.security.type).toBe("x509_vnc");
-    expect(created.body.security.trust.mode).toBe("custom_ca");
+    expect(created.body.security).toMatchObject({
+      trust: { mode: "custom_ca" },
+    });
   });
 
   it("isolates owners and rejects foreign creation IDs and credentials", async () => {
@@ -875,7 +877,9 @@ describe("VNC owner configuration", () => {
     expect(second.body.credentialId).not.toBe(first.body.credentialId);
     expect(second.body.host).toBe(first.body.host);
     expect(second.body.port).toBe(first.body.port);
-    expect(second.body.security.trust.mode).toBe("custom_ca");
+    expect(second.body.security).toMatchObject({
+      trust: { mode: "custom_ca" },
+    });
     expect(
       (await accept(connections().summary({ headers }), [200])).body,
     ).toStrictEqual({ configuredCount: 2 });

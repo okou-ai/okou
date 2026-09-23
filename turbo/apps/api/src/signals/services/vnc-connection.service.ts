@@ -18,6 +18,7 @@ import {
   isVncProfileCompatible,
   prepareVncSecurity,
   prepareVncTransport,
+  validateVncProfileRoute,
   vncFailure,
   type VncResult,
   type VncTransaction,
@@ -71,8 +72,14 @@ function response(
   credential: { readonly name: string },
 ): VncConnectionResponse {
   if (
-    (row.trustMode === "system" && row.caBundle !== null) ||
-    (row.trustMode === "custom_ca" && row.caBundle === null)
+    (row.securityType === "apple_dh" &&
+      (row.trustMode !== "none" ||
+        row.caBundle !== null ||
+        row.x509ServerName !== null)) ||
+    (row.securityType !== "apple_dh" &&
+      ((row.trustMode === "system" && row.caBundle !== null) ||
+        (row.trustMode === "custom_ca" && row.caBundle === null) ||
+        row.trustMode === "none"))
   ) {
     throw new Error("VNC connection has an invalid trust configuration");
   }
@@ -90,21 +97,23 @@ function response(
       ? ({ mode: "custom_ca", caBundle: row.caBundle } as const)
       : ({ mode: "system" } as const);
   const security =
-    row.securityType === "x509_plain"
-      ? ({
-          type: "x509_plain",
-          trust,
-          ...(row.x509ServerName === null
-            ? {}
-            : { serverName: row.x509ServerName }),
-        } as const)
-      : ({
-          type: "x509_vnc",
-          trust,
-          ...(row.x509ServerName === null
-            ? {}
-            : { serverName: row.x509ServerName }),
-        } as const);
+    row.securityType === "apple_dh"
+      ? ({ type: "apple_dh" } as const)
+      : row.securityType === "x509_plain"
+        ? ({
+            type: "x509_plain",
+            trust,
+            ...(row.x509ServerName === null
+              ? {}
+              : { serverName: row.x509ServerName }),
+          } as const)
+        : ({
+            type: "x509_vnc",
+            trust,
+            ...(row.x509ServerName === null
+              ? {}
+              : { serverName: row.x509ServerName }),
+          } as const);
   return {
     ...(row.transportType === "ssh" && row.sshConnectionId !== null
       ? {
@@ -248,6 +257,14 @@ export async function createVncConnection(args: {
   const transport = prepareVncTransport(args.body.transport, host.value);
   if (!transport.ok) {
     return transport;
+  }
+  const route = validateVncProfileRoute(
+    security.value.securityType,
+    host.value,
+    transport.value.transportType,
+  );
+  if (!route.ok) {
+    return route;
   }
   if (
     "create" in args.body.credential &&
@@ -423,6 +440,14 @@ export async function updateVncConnection(args: {
       return vncFailure("sshConnectionNotFound");
     }
     const securityType = security?.value.securityType ?? current.securityType;
+    const route = validateVncProfileRoute(
+      securityType,
+      newHost,
+      transport.value.transportType,
+    );
+    if (!route.ok) {
+      return route;
+    }
     const credential = await selectUpdateVncCredential({
       tx,
       owner,

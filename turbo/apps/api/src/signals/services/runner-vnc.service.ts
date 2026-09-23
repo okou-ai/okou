@@ -143,6 +143,16 @@ export async function checkRunnerVnc(
   if (!hasTransportAuthority(row, transport)) {
     return { outcome: "unavailable" };
   }
+  if (
+    row.securityType === "apple_dh" &&
+    (transport.type !== "ssh" ||
+      (row.host !== "127.0.0.1" && row.host !== "::1") ||
+      row.trustMode !== "none" ||
+      row.caBundle !== null ||
+      row.x509ServerName !== null)
+  ) {
+    return { outcome: "unavailable" };
+  }
   return {
     outcome:
       row.generation === input.expectedGeneration &&
@@ -178,17 +188,29 @@ export async function resolveRunnerVnc(
     return { outcome: "unavailable" };
   }
   if (
-    (row.trustMode === "system" && row.caBundle !== null) ||
-    (row.trustMode === "custom_ca" && row.caBundle === null)
+    (row.securityType === "apple_dh" &&
+      (row.trustMode !== "none" ||
+        row.caBundle !== null ||
+        row.x509ServerName !== null ||
+        transport.type !== "ssh" ||
+        (row.host !== "127.0.0.1" && row.host !== "::1"))) ||
+    (row.securityType !== "apple_dh" &&
+      ((row.trustMode === "system" && row.caBundle !== null) ||
+        (row.trustMode === "custom_ca" && row.caBundle === null) ||
+        row.trustMode === "none"))
   ) {
     throw new Error("VNC connection has an invalid stored trust configuration");
   }
   const security = runnerVncSecuritySchema.safeParse({
     type: row.securityType,
-    trust:
-      row.trustMode === "system"
-        ? { mode: "system" }
-        : { mode: row.trustMode, caBundle: row.caBundle },
+    ...(row.securityType === "apple_dh"
+      ? {}
+      : {
+          trust:
+            row.trustMode === "system"
+              ? { mode: "system" }
+              : { mode: row.trustMode, caBundle: row.caBundle },
+        }),
   });
   if (!security.success) {
     throw new Error("VNC connection has an invalid stored security profile");
@@ -205,7 +227,8 @@ export async function resolveRunnerVnc(
   }
   signal.throwIfAborted();
   const authentication = vncAuthenticationSchema.safeParse(
-    row.authMethod === "username_password"
+    row.authMethod === "username_password" ||
+      row.authMethod === "apple_dh_username_password"
       ? {
           method: row.authMethod,
           username: row.username,
@@ -229,6 +252,22 @@ export async function resolveRunnerVnc(
     security: security.data,
     authentication: authentication.data,
   };
+  if (row.securityType === "apple_dh") {
+    if (
+      transport.type !== "ssh" ||
+      security.data.type !== "apple_dh" ||
+      authentication.data.method !== "apple_dh_username_password"
+    ) {
+      throw new Error("VNC Apple DH handoff has an invalid stored profile");
+    }
+    return {
+      outcome: "resolved_apple_dh",
+      ...resolved,
+      security: security.data,
+      authentication: authentication.data,
+      transport,
+    };
+  }
   if (capability.transportType === undefined) {
     return { outcome: "resolved", ...resolved };
   }

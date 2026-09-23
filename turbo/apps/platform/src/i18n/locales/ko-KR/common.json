@@ -7072,6 +7072,8 @@
     "configured": "구성됨",
     "credential": {
       "add": "자격 증명 추가",
+      "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
+      "appleDhMethod": "Apple DH username and password",
       "authentication": "인증 방식",
       "createNew": "새 자격 증명 만들기",
       "delete": "자격 증명 삭제",
@@ -7140,6 +7142,8 @@
     },
     "saving": "저장 중…",
     "security": {
+      "appleDh": "Mac Screen Sharing (Apple DH)",
+      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session.",
       "caBundle": "CA 인증서 (PEM)",
       "caHelp": "최대 8개의 CA 인증서, 총 64 KiB까지 가능합니다. 개인 키나 서버 인증서를 붙여넣지 마세요.",
       "caHint": "서버 인증서를 발급한 공개 CA 인증서를 붙여넣으세요",
@@ -7159,6 +7163,7 @@
     "summary_other": "설정된 호스트 {{count}}개",
     "title": "VNC 원격 액세스",
     "transport": {
+      "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "RFB 대상",
       "destinationHelp": "SSH 경로에서는 Runner가 직접 연결하지 않고 선택한 SSH 서버에서 이 호스트와 포트에 연결합니다.",
       "direct": "Runner에서 직접",
