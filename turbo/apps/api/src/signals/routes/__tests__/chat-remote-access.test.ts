@@ -575,5 +575,18 @@ describe("chat remote access owner API", () => {
       }),
       [404],
     );
+    const current = await accept(
+      accessClient().listThreadAccess({
+        headers,
+        params: { threadId: owner.threadId },
+      }),
+      [200],
+    );
+    expect(current.body.vnc[0]).toMatchObject({
+      connectionId: created.body.id,
+      defaultEnabled: false,
+      overrideEnabled: null,
+      enabled: false,
+    });
   });
 });
