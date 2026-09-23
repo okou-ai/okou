@@ -152,7 +152,9 @@ export const setupAccountErasureLocalLifecycle$ = command(
       },
       { once: true },
     );
-    await sync();
+    // Session-token reads may wait on Clerk or Desktop IPC. Their completion
+    // must not hold public protocol pages or the application's first route.
+    detach(sync(), Reason.Daemon, "account erasure initial status sync");
     signal.throwIfAborted();
     setLoop(
       async () => {
