@@ -26,13 +26,30 @@ ruleTester.run("no-test-delay", rule, {
     {
       code: `await vi.waitFor(() => { expect(x).toBe(1); });`,
     },
-    // vi.advanceTimersByTimeAsync is fine (fake timers)
+    // The application clock is controlled without replacing timer scheduling.
+    { code: `mockNow(boundary, context.signal);` },
+    { code: `const elapsed = performance.now() - started; record(elapsed);` },
+    { code: `expect(now() - started).toBe(3000);` },
+    { code: `expect(Date.now()).toBe(boundary);` },
+    { code: `import { setImmediate } from "node:timers/promises";` },
     {
-      code: `await vi.advanceTimersByTimeAsync(3000);`,
+      code: `const elapsed = Date.now() - started; function check() { const elapsed = 1; expect(elapsed).toBe(1); }`,
     },
-    // window.setTimeout as member expression is not flagged
     {
-      code: `window.setTimeout(() => {}, 100);`,
+      code: `vi.useFakeTimers();`,
+      filename:
+        "/repo/apps/platform/src/lib/__tests__/visual-viewport-keyboard.test.ts",
+      options: [
+        {
+          allowed: [
+            {
+              file: "src/lib/__tests__/visual-viewport-keyboard.test.ts",
+              kinds: ["fakeTimer"],
+              reason: "Migration tracked by issue 35594",
+            },
+          ],
+        },
+      ],
     },
   ],
   invalid: [
@@ -60,6 +77,64 @@ ruleTester.run("no-test-delay", rule, {
     {
       code: `setInterval(() => {}, 1000);`,
       errors: [{ messageId: "noSetInterval" }],
+    },
+    {
+      code: `window.setTimeout(() => {}, 100);`,
+      errors: [{ messageId: "noSetTimeout" }],
+    },
+    {
+      code: `globalThis.setInterval(() => {}, 100);`,
+      errors: [{ messageId: "noSetInterval" }],
+    },
+    {
+      code: `import { setTimeout as delay } from "node:timers/promises";`,
+      errors: [{ messageId: "noDelayImport" }],
+    },
+    {
+      code: `import { setInterval as tick } from "node:timers";`,
+      errors: [{ messageId: "noDelayImport" }],
+    },
+    {
+      code: `import { delay as pause } from "signal-timers";`,
+      errors: [{ messageId: "noDelayImport" }],
+    },
+    {
+      code: `import { delay } from "msw";`,
+      filename:
+        "/repo/apps/platform/src/lib/__tests__/visual-viewport-keyboard.test.ts",
+      options: [
+        {
+          allowed: [
+            {
+              file: "src/lib/__tests__/visual-viewport-keyboard.test.ts",
+              kinds: ["fakeTimer"],
+              reason: "Migration tracked by issue 35594",
+            },
+          ],
+        },
+      ],
+      errors: [{ messageId: "noDelayImport" }],
+    },
+    ...[
+      "useFakeTimers",
+      "advanceTimersByTime",
+      "advanceTimersByTimeAsync",
+      "advanceTimersToNextTimer",
+      "setSystemTime",
+      "runAllTimers",
+      "runOnlyPendingTimers",
+      "runOnlyPendingTimersAsync",
+    ].map((method) => ({
+      code: `vi.${method}(3000);`,
+      errors: [{ messageId: "noFakeTimer" as const }],
+    })),
+    {
+      code: `expect(Date.now() - started).toBeGreaterThanOrEqual(3000);`,
+      errors: [{ messageId: "noElapsedTime" }],
+    },
+    {
+      code: `const elapsed = performance.now() - started; expect(elapsed).toBeLessThan(3000);`,
+      errors: [{ messageId: "noElapsedTime" }],
     },
   ],
 });

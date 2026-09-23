@@ -60,6 +60,11 @@ remain part of the runtime contract.
   created resources for teardown through production APIs.
 - Avoid fake timers. Platform time overrides use `mockNow(value, context.signal)`.
   Wait for the observable result, not elapsed time or an internal cache update.
+- `ccstate/no-test-delay` detects real timer imports (including renamed Node
+  timer imports), Vitest fake-timer calls, and elapsed wall-clock assertions.
+  A deliberate exception must name one exact test file, the affected pattern
+  kinds, and a reason in that package's ESLint configuration. Keep exceptions
+  narrower than a whole test directory and remove them with the owning test.
 - Global teardown owns detached work. Do not manually call `clearAllDetached()`
   in a test body. Repair missing awaits, cancellation ownership, or observable
   synchronization when a test races its background work.
