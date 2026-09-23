@@ -199,9 +199,9 @@ then explicitly adjust capacity or design resumable discovery. Repeated passes
 do not guarantee progress past that capacity limit. Do not delete skipped
 organizations or introduce blind retries to work around it.
 
-Playwright's setup project owns the feature account; unrelated lanes create no
-unused global account. Failed checkouts report HTTP status, request ID, and
-Retry-After, and product Playwright lanes retain traces on the first failure.
+The single Playwright chat smoke owns its account; no unused global account is
+created. Failed checkouts report HTTP status, request ID, and Retry-After for
+runner account preparation, and the chat smoke retains a trace on failure.
 
 Runner credential sign-in failures upload `runner-e2e-sign-in-diagnostics` for
 one day, separately from payment diagnostics and credentials. This upload is

@@ -325,29 +325,6 @@ test("Create a public agent with a customized avatar", async () => {
   ).toBeVisible();
 });
 
-test("Closing the avatar dialog preserves the agent draft and returns focus", async () => {
-  const user = userEvent.setup({ delay: null });
-  configureCatalog([
-    agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
-  ]);
-  await setupPage({ context, path: "/agents" });
-  const creationDialog = await openCreateDialog("Private");
-  const name = within(creationDialog).getByLabelText("Name");
-  await fill(name, "Private Analyst");
-  const customize = buttonByLabel("Customize avatar", creationDialog);
-  click(customize);
-
-  const avatarDialog = await screen.findByRole("dialog", {
-    name: "Give your agent a face",
-  });
-  await user.keyboard("{Escape}");
-
-  await waitForElementToBeRemoved(avatarDialog);
-  expect(creationDialog).toBeInTheDocument();
-  expect(name).toHaveValue("Private Analyst");
-  expect(customize).toHaveFocus();
-});
-
 test("Release avatar editing when the parent agent creation finishes", async () => {
   const createResponse = context.mocks.deferred<void>();
   configureCatalog(

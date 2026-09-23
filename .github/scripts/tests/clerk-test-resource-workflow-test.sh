@@ -289,7 +289,7 @@ playwright_cleanup = playwright.fetch("steps").find do |step|
   step["name"] == "Cleanup Playwright E2E accounts"
 end
 if playwright_cleanup
-  raise "Playwright matrix lanes must not reconcile their shared generation"
+  raise "Playwright smoke must not reconcile the entire shared generation"
 end
 
 playwright_finalizer = turbo_jobs.fetch("cli-e2e-02-playwright-finalize")
@@ -297,7 +297,7 @@ unless playwright_finalizer["continue-on-error"] == true
   raise "Playwright finalization must not fail the workflow"
 end
 unless Array(playwright_finalizer["needs"]).include?("cli-e2e-02-playwright")
-  raise "Playwright finalizer must wait for every matrix lane"
+  raise "Playwright finalizer must wait for the smoke job"
 end
 playwright_finalizer_condition = playwright_finalizer.fetch("if")
 unless playwright_finalizer_condition.include?("always()") &&
@@ -313,8 +313,8 @@ playwright_cleanup = playwright_steps.find do |step|
 end
 unless playwright_cleanup &&
     playwright_cleanup.fetch("if") == "always() && steps.playwright-tests.outcome != 'skipped'" &&
-    playwright_cleanup.fetch("run").include?("cleanup-recorded playwright,paid-onboarding")
-  raise "Playwright cleanup must use the lane's recorded current-generation resources"
+    playwright_cleanup.fetch("run").strip.end_with?("cleanup-recorded playwright")
+  raise "Playwright smoke cleanup must use only its recorded current-generation resources"
 end
 playwright_tests = playwright_steps.find { |step| step["id"] == "playwright-tests" }
 unless playwright_tests.dig("env", "E2E_CLERK_RESOURCE_DIR") ==
