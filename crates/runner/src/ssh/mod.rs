@@ -435,6 +435,12 @@ impl SshRuntime {
     }
 }
 
+impl runner_provider::AblySideMessageHandler for SshRuntime {
+    fn handle(&self, message: &ably_subscriber::Message) -> bool {
+        self.ably_message(message)
+    }
+}
+
 fn invalidates_access(failure: FailureReason) -> bool {
     matches!(
         failure,

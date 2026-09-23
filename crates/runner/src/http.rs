@@ -147,16 +147,6 @@ impl ApiRequestBuilder {
         Ok(FinalizedApiRequest { request, context })
     }
 
-    pub(crate) fn native_gpt_6_reader(self) -> Self {
-        Self {
-            builder: self
-                .builder
-                .header("X-Native-Gpt-6-Sol", "1")
-                .header("X-Native-Gpt-6-Luna", "1"),
-            ..self
-        }
-    }
-
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {
@@ -173,18 +163,6 @@ impl ApiRequestBuilder {
 }
 
 impl PreparedApiRequest {
-    pub(crate) fn query(mut self, pairs: &[(&str, &str)]) -> Self {
-        self.request
-            .url_mut()
-            .query_pairs_mut()
-            .extend_pairs(pairs.iter().copied());
-        self
-    }
-
-    pub(crate) fn url(&self) -> &url::Url {
-        self.request.url()
-    }
-
     pub(crate) fn context(&self) -> &ApiRequestContext {
         &self.context
     }
@@ -319,6 +297,81 @@ impl HttpClient {
             builder: req,
             client_headers: self.inner.client_headers.clone(),
         }
+    }
+}
+
+impl runner_provider::ProviderHttpTransport for HttpClient {
+    fn prepare(
+        &self,
+        request: runner_provider::ProviderHttpRequest,
+        endpoint_label: &'static str,
+    ) -> runner_provider::ProviderResult<runner_provider::PreparedProviderHttpRequest> {
+        let query = request.query().to_vec();
+        let url = format!("{}{}", self.inner.api_url, request.path());
+        let mut builder = self
+            .inner
+            .client
+            .request(reqwest_method(request.method()), url)
+            .bearer_auth(request.token());
+
+        if let Some(bypass) = &self.inner.vercel_bypass {
+            builder = builder.header(VERCEL_BYPASS_HEADER, bypass);
+        }
+        if let Some(body) = request.json_body() {
+            builder = builder
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(body.to_vec());
+        }
+        if let Some(timeout) = request.timeout() {
+            builder = builder.timeout(timeout);
+        }
+        if request.uses_native_gpt_6_reader() {
+            builder = builder
+                .header("X-Native-Gpt-6-Sol", "1")
+                .header("X-Native-Gpt-6-Luna", "1");
+        }
+
+        let mut request = builder.build().map_err(|error| {
+            runner_provider::ProviderError::Api(format!("build API request: {error}"))
+        })?;
+        if !query.is_empty() {
+            request
+                .url_mut()
+                .query_pairs_mut()
+                .extend_pairs(query.iter().map(|(name, value)| (name, value)));
+        }
+        let applied_headers = self
+            .inner
+            .client_headers
+            .apply(request.headers_mut())
+            .map_err(runner_error_to_provider)?;
+        let context = request_context(endpoint_label, &request, applied_headers);
+        let requested_url = request.url().clone();
+        let error_context = context.clone();
+        let client = self.inner.client.clone();
+
+        Ok(runner_provider::PreparedProviderHttpRequest::new(
+            requested_url,
+            context,
+            async move {
+                client.execute(request).await.map_err(|error| {
+                    runner_provider::provider_http_transport_error(error_context, error)
+                })
+            },
+        ))
+    }
+}
+
+fn runner_error_to_provider(error: RunnerError) -> runner_provider::ProviderError {
+    match error {
+        RunnerError::Api(message) => runner_provider::ProviderError::Api(message),
+        RunnerError::ApiStatus(error) => runner_provider::ProviderError::ApiStatus(error),
+        RunnerError::ApiTransport(error) => runner_provider::ProviderError::ApiTransport(error),
+        RunnerError::ApiBodyRead(error) => runner_provider::ProviderError::ApiBodyRead(error),
+        RunnerError::Config(message) => runner_provider::ProviderError::Config(message),
+        RunnerError::Internal(message) => runner_provider::ProviderError::Internal(message),
+        RunnerError::Io(error) => runner_provider::ProviderError::Io(error),
+        other => runner_provider::ProviderError::Internal(other.to_string()),
     }
 }
 
@@ -918,19 +971,6 @@ mod tests {
             header_value(&request, CLIENT_REQUEST_ID_HEADER),
             "caller-request"
         );
-    }
-
-    #[test]
-    fn native_gpt_6_reader_advertises_both_model_capabilities() {
-        let http = http_client("https://api.vm0.dev/");
-        let request = http
-            .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
-            .native_gpt_6_reader()
-            .build()
-            .unwrap();
-
-        assert_eq!(header_value(&request, "X-Native-Gpt-6-Sol"), "1");
-        assert_eq!(header_value(&request, "X-Native-Gpt-6-Luna"), "1");
     }
 
     #[test]
