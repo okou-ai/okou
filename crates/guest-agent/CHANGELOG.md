@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.98.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.3...guest-agent-v0.98.4) (2026-09-23)
+
+
+### Bug Fixes
+
+* prepare codex oauth workspace routing before cli upgrade ([#36402](https://github.com/okou-ai/okou/issues/36402)) ([422349a](https://github.com/okou-ai/okou/commit/422349af6b60adf89b7719a440b89ba76c10e25f))
+
+
+### Refactoring
+
+* **runner:** extract runner-executor crate ([#36407](https://github.com/okou-ai/okou/issues/36407)) ([c7f9671](https://github.com/okou-ai/okou/commit/c7f967101042e43b12b244cc1e5de5a15402dad3))
+
 ## [0.98.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.2...guest-agent-v0.98.3) (2026-09-23)
 
 

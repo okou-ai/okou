@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.705.0](https://github.com/okou-ai/okou/compare/core-v8.704.1...core-v8.705.0) (2026-09-23)
+
+
+### Features
+
+* add chat remote access defaults and override endpoints ([#36365](https://github.com/okou-ai/okou/issues/36365)) ([dc8cb0d](https://github.com/okou-ai/okou/commit/dc8cb0d6ad929c2a2a8d46271a95aa28a56174b9))
+
+
+### Refactoring
+
+* remove thread activity summary feature switch ([#36379](https://github.com/okou-ai/okou/issues/36379)) ([b9a889e](https://github.com/okou-ai/okou/commit/b9a889e992e335323bcabef36777a776efe0b8c6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.499.0
+
 ## [8.704.1](https://github.com/okou-ai/okou/compare/core-v8.704.0...core-v8.704.1) (2026-09-23)
 
 
