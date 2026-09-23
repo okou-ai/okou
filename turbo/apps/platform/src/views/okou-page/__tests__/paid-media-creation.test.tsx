@@ -60,7 +60,9 @@ test("Paid tool guidance remains available when Chat preferences are off", async
     userEvent.setup({ delay: null }),
     "Illustration",
   );
-  await within(dialog).findByText("Image generation is off for you");
+  await expect(
+    within(dialog).findByText("Image generation is off for you"),
+  ).resolves.toBeInTheDocument();
 });
 
 async function selectCreation() {
