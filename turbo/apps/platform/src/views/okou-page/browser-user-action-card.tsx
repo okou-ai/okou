@@ -46,8 +46,8 @@ function BrowserActionSurface({
       ref={resumeRef}
       className={
         variant === "standalone"
-          ? "@container/browser-action w-full p-5 sm:p-6"
-          : "@container/browser-action h-[136px] w-full max-w-2xl p-3 sm:h-[88px]"
+          ? "w-full p-5 sm:p-6"
+          : "h-[136px] w-full max-w-2xl p-3 sm:h-[88px]"
       }
     >
       {children}
@@ -71,7 +71,7 @@ function ActionState({
   return (
     <div
       className={cn(
-        "flex w-full flex-col justify-center gap-2 @min-[480px]/browser-action:flex-row @min-[480px]/browser-action:items-center @min-[480px]/browser-action:justify-start @min-[480px]/browser-action:gap-4",
+        "flex w-full flex-col justify-center gap-2 sm:flex-row sm:items-center sm:justify-start sm:gap-4",
         variant === "inline" ? "h-full" : "min-h-20",
       )}
       role="status"
@@ -103,7 +103,7 @@ function ActionState({
         </div>
       </div>
       {action && (
-        <div className="shrink-0 self-start pl-12 @min-[480px]/browser-action:self-auto @min-[480px]/browser-action:pl-0">
+        <div className="shrink-0 self-start pl-12 sm:self-auto sm:pl-0">
           {action}
         </div>
       )}
@@ -630,7 +630,7 @@ function PendingInlineAction({
   const beginEntry = useSet(signals.beginEntry$);
   const endEntry = useSet(signals.endEntry$);
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 @min-[480px]/browser-action:flex-row @min-[480px]/browser-action:items-center @min-[480px]/browser-action:justify-start @min-[480px]/browser-action:gap-4">
+    <div className="flex h-full w-full flex-col justify-center gap-2 sm:flex-row sm:items-center sm:justify-start sm:gap-4">
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <ChatCardDetails
         title={t(($) => {
@@ -919,7 +919,7 @@ function PendingInlineDirectInteraction({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex h-full w-full flex-col justify-center gap-2 @min-[480px]/browser-action:flex-row @min-[480px]/browser-action:items-center @min-[480px]/browser-action:justify-start @min-[480px]/browser-action:gap-4">
+    <div className="flex h-full w-full flex-col justify-center gap-2 sm:flex-row sm:items-center sm:justify-start sm:gap-4">
       <div className="flex min-w-0 max-w-full items-center gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40 text-muted-foreground">
           <MousePointerClick size={20} />
