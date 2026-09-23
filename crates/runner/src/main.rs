@@ -5,11 +5,10 @@ mod config;
 mod deps;
 mod duration;
 mod error;
-mod executor;
+use runner_executor::executor;
 mod group;
+use runner_executor::http;
 use runner_lifecycle::guest_timezone;
-use sandbox::helper_exec;
-mod http;
 use runner_lifecycle::idle_pool;
 #[cfg(test)]
 use runner_lifecycle::idle_reuse_preparation;
@@ -19,8 +18,8 @@ mod io_limits;
 use runner_lifecycle::lifecycle;
 mod live_runner_instances;
 mod network_log_http_adapter;
-mod network_provider_adapter;
-mod pre_spawn_admission;
+use runner_executor::network_provider_adapter;
+use runner_executor::pre_spawn_admission;
 mod prefetch;
 mod profile;
 #[cfg(test)]
@@ -32,9 +31,11 @@ mod run_resolution;
 mod runtime_overrides;
 use runner_lifecycle::status;
 mod status_file;
-mod telemetry;
+use runner_executor::telemetry;
 #[cfg(test)]
-mod test_fixtures;
+use runner_executor::test_fixtures;
+#[cfg(test)]
+mod test_fixtures_http_body;
 use runner_lifecycle::workspace_image_cache;
 use runner_lifecycle::workspace_mount;
 use runner_lifecycle::workspace_promotion;
@@ -43,7 +44,12 @@ use runner_network::{
     ca, dns, kmsg_log, network_log_drain, network_log_manager, network_logs, proxy,
 };
 use runner_remote::{guest_rpc, run_usage, ssh, vnc};
-use runner_storage::{r2_cache, storage_cache, storage_fingerprints, storage_plan};
+use runner_storage::{r2_cache, storage_cache, storage_fingerprints};
+
+#[cfg(test)]
+use runner_storage::storage_plan;
+#[cfg(test)]
+use sandbox::helper_exec;
 
 // Runner build.rs owns the embedded addon inventory and passes it to runner-network.
 include!(concat!(env!("OUT_DIR"), "/addon_files.rs"));

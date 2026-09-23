@@ -719,6 +719,7 @@ async fn run_start_with_home(
         api_url: server.url.clone(),
         vercel_bypass: std::env::var("VERCEL_AUTOMATION_BYPASS_SECRET").ok(),
         client_session_id: runner_client_session_id.clone(),
+        runner_version: env!("CARGO_PKG_VERSION"),
     })?;
     let background_fill = crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()?;
     let hostname = runner_config.hostname;
@@ -994,6 +995,9 @@ async fn run_start_with_home(
     let exec_config = Arc::new(ExecutorConfig {
         api_url: server.url,
         runner_hostname: hostname,
+        connector_runtime_registry: Arc::new(
+            crate::network_provider_adapter::ProviderRegistryAdapter(registry_handle.clone()),
+        ),
         registry: registry_handle,
         http,
         log_paths,

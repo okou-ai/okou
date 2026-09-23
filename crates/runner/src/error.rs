@@ -2,10 +2,7 @@ use std::time::Duration;
 
 use runner_types::ids::RunId;
 
-pub use runner_provider::{
-    ApiBodyReadError, ApiFailureKind, ApiRequestContext, ApiStatusError, ApiTransportCause,
-    ApiTransportError,
-};
+pub use runner_provider::{ApiBodyReadError, ApiStatusError, ApiTransportError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RunnerError {
@@ -41,6 +38,24 @@ pub enum RunnerError {
 
     #[error("{0}")]
     ActiveJobs(Box<ActiveJobsError>),
+}
+
+impl From<runner_executor::ExecutorError> for RunnerError {
+    fn from(error: runner_executor::ExecutorError) -> Self {
+        use runner_executor::ExecutorError;
+        match error {
+            ExecutorError::Api(message) => Self::Api(message),
+            ExecutorError::ApiStatus(error) => Self::ApiStatus(error),
+            ExecutorError::ApiTransport(error) => Self::ApiTransport(error),
+            ExecutorError::ApiBodyRead(error) => Self::ApiBodyRead(error),
+            ExecutorError::Sandbox(error) => Self::Sandbox(error),
+            ExecutorError::Config(message) => Self::Config(message),
+            ExecutorError::Cancelled => Self::Cancelled,
+            ExecutorError::Internal(message) => Self::Internal(message),
+            ExecutorError::Snapshot(error) => Self::Snapshot(error),
+            ExecutorError::Io(error) => Self::Io(error),
+        }
+    }
 }
 
 impl From<runner_host::HostError> for RunnerError {

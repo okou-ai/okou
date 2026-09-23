@@ -81,7 +81,7 @@
 //!   means the history exceeds the guest verification budget.
 //!
 //! The runner caller is `verify_restored_session_identity_for_reuse` in
-//! `crates/runner/src/executor/agent_run.rs`. It builds the typed fixed-helper
+//! `crates/runner-executor/src/executor/agent_run.rs`. It builds the typed fixed-helper
 //! request executed by `verify_final_identity_metadata`, and
 //! `session_history_identity_reason_from_helper_result` maps its exit status
 //! to runner reasons. Keep those source references in sync with the linked
@@ -204,7 +204,7 @@
 //! The fixed-role launcher is
 //! `crates/guest-control-server/src/agent_command.rs::spawn_codex_session_cleanup_with_pipes`.
 //! The runner invokes the operation only for an actually reused sandbox from
-//! `crates/runner/src/executor/session_restore/codex.rs::cleanup_existing_codex_session`
+//! `crates/runner-executor/src/executor/session_restore/codex.rs::cleanup_existing_codex_session`
 //! before writing replacement history, and independently validates the output in
 //! `parse_codex_cleanup_output`
 //! before using a returned path as the restore destination. Keep these source
