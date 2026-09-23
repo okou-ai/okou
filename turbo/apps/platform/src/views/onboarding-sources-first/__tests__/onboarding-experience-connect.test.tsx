@@ -129,6 +129,12 @@ function mockSlackNotInstalled(): void {
   });
 }
 
+async function waitForContinueEnabled(): Promise<void> {
+  await waitFor(() => {
+    expect(getButtonByName("Continue")).toBeEnabled();
+  });
+}
+
 async function openExperienceStep(fromStart = false): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
@@ -149,9 +155,7 @@ async function openExperienceStep(fromStart = false): Promise<void> {
       name: "What kind of work do you do?",
     });
     click(answerRadio("Marketing & content"));
-    await waitFor(() => {
-      expect(getButtonByName("Continue")).toBeEnabled();
-    });
+    await waitForContinueEnabled();
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
       name: "Okou is for you, and shared across your whole team.",
