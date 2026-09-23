@@ -15,6 +15,8 @@ import {
 
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
+import { nowDate } from "../../lib/time";
+import { settle } from "../utils";
 import { releaseDeletedConversationReferences } from "./conversation-history-deletion.service";
 import {
   ACCOUNT_OWNERSHIP_INVENTORY,
@@ -1374,7 +1376,7 @@ export function createRelationalErasureCollector(
         items: [item],
       };
     },
-    erase: async (lease) => {
+    erase: async (lease, signal) => {
       const subject = await leaseSubject(db, lease);
       if (!subject) {
         return unresolved("selector_missing");
@@ -1383,23 +1385,44 @@ export function createRelationalErasureCollector(
       if (boundary === null) {
         return unresolved("boundary_unproven");
       }
-      const deleted = await sweepRelationalErasure(
-        db,
-        subject,
-        {
-          jobId: lease.jobId,
-          generation: lease.generation,
-          captureRevision: lease.captureRevision,
-          inventoryRevision: lease.inventoryRevision,
-          producerBoundaryRef: boundary,
-          required: [
-            { sinkId: lease.item.sinkId, itemKey: lease.item.itemKey },
-          ],
-        },
-        plan,
+      const sweep = await settle(
+        sweepRelationalErasure(
+          db,
+          subject,
+          {
+            jobId: lease.jobId,
+            generation: lease.generation,
+            captureRevision: lease.captureRevision,
+            inventoryRevision: lease.inventoryRevision,
+            producerBoundaryRef: boundary,
+            required: [
+              { sinkId: lease.item.sinkId, itemKey: lease.item.itemKey },
+            ],
+          },
+          plan,
+        ),
+        signal,
       );
+      if (!sweep.ok) {
+        const { error } = sweep;
+        if (
+          error instanceof Error &&
+          error.message === "account_erasure_relational:export_work_unresolved"
+        ) {
+          return {
+            outcome: "pending",
+            errorCode: "boundary_unproven",
+            requestRef: null,
+            retryAt: new Date(nowDate().getTime() + 60_000),
+          };
+        }
+        throw error;
+      }
       return {
-        requestRef: requestReference(lease, deleted > 0 ? "erased" : "empty"),
+        requestRef: requestReference(
+          lease,
+          sweep.value > 0 ? "erased" : "empty",
+        ),
       };
     },
     verify: async (lease, producerBoundary) => {

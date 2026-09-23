@@ -697,15 +697,31 @@ describe("dormant relational sweep", () => {
       VALUES (${exportId}, 'user-export', 1, ${mine}, '', '{}'::jsonb)
     `);
     const plan = await planRelationalErasure(db);
-    await expect(
-      drive(mine, { ...plan, unattributableDescendants: [] }),
-    ).rejects.toThrow("account_erasure_relational:export_work_unresolved");
+    const { job, sealed } = await drive(mine, {
+      ...plan,
+      unattributableDescendants: [],
+    });
     const remaining = await db.execute(sql`
       SELECT
         (SELECT count(*)::int FROM users WHERE id = ${mine}) AS users,
         (SELECT count(*)::int FROM background_jobs WHERE id = ${exportId}) AS export_jobs
     `);
     expect(remaining.rows).toStrictEqual([{ users: 1, export_jobs: 1 }]);
+    const [pending] = (
+      await db.execute(sql`
+        SELECT state, error_code AS "errorCode", attempt_count AS "attemptCount"
+        FROM account_erasure_work
+        WHERE job_id = ${job.id} AND kind = 'erase'
+      `)
+    ).rows;
+    expect(pending).toMatchObject({
+      state: "pending",
+      errorCode: "boundary_unproven",
+      attemptCount: 0,
+    });
+    await expect(finalizeErasureJob(db, job.id, sealed)).rejects.toThrow(
+      "account_erasure:work_unresolved",
+    );
   });
 
   it("releases only deleted conversation and candidate blob retains", async () => {
