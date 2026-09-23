@@ -12,9 +12,10 @@ materialize that object before caching or replaying its paired event cursor.
 The global compaction cron writes R2 snapshots as soon as this API deploys.
 Production promotes the API before the App, and previously loaded App bundles
 can remain open. The API therefore reads the R2 archive and serves the legacy
-inline response to App versions before 0.949.0, CLI versions before 9.356.1,
-and callers without a recognized capable client version. The new App and CLI
-receive the short-lived R2 URL. This compatibility read does not access the
+inline response to clients that do not send `X-Chat-Thread-Snapshot-R2: 1`.
+The new App and CLI send that capability header and receive the short-lived R2
+URL. Package versions alone cannot identify the capability because older
+deployments use the same versions. This compatibility read does not access the
 retired JSONB payload.
 
 The compaction job writes a compressed,

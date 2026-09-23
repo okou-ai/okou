@@ -1,11 +1,6 @@
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
 import { CHAT_EVENT_SCHEMA_VERSION_HEADER } from "@okouai/api-contracts/contracts/chat-event-schema-version";
-import {
-  CLIENT_TYPE_APP,
-  CLIENT_TYPE_CLI,
-  CLIENT_TYPE_HEADER,
-  CLIENT_VERSION_HEADER,
-} from "@okouai/api-contracts/contracts/client-headers";
+import { CHAT_THREAD_SNAPSHOT_R2_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { command, computed } from "ccstate";
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
@@ -27,7 +22,6 @@ import { db$ } from "../external/db";
 import { downloadS3Buffer, generatePresignedGetUrl } from "../external/s3";
 import { notFound } from "../../lib/error";
 import { env } from "../../lib/env";
-import { isClientVersionAtLeast } from "../../lib/web-client-compatibility";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import {
   applyGoogleDriveArtifactSyncStatuses,
@@ -120,13 +114,8 @@ const getChatThreadSnapshotInner$ = computed(async (get) => {
     ) {
       throw new Error("Invalid chat thread snapshot object key");
     }
-    const clientType = get(request$).header(CLIENT_TYPE_HEADER);
-    const clientVersion = get(request$).header(CLIENT_VERSION_HEADER);
     const supportsR2Url =
-      (clientType === CLIENT_TYPE_APP &&
-        isClientVersionAtLeast(clientVersion, "0.949.0")) ||
-      (clientType === CLIENT_TYPE_CLI &&
-        isClientVersionAtLeast(clientVersion, "9.356.1"));
+      get(request$).header(CHAT_THREAD_SNAPSHOT_R2_HEADER) === "1";
     if (!supportsR2Url) {
       // Older loaded App bundles and CLI releases still require the inline
       // response. Read it from R2 without detoasting the retired JSONB column.

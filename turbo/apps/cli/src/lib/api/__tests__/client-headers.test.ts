@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { http, HttpResponse } from "msw";
 import {
+  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_CLI,
@@ -58,10 +59,12 @@ describe("CLI client headers", () => {
     expect(first.get(CLIENT_TYPE_HEADER)).toBe(CLIENT_TYPE_CLI);
     expect(first.get(CLIENT_SESSION_ID_HEADER)).toBe("session-id");
     expect(first.get(CLIENT_REQUEST_ID_HEADER)).toBe("request-id-1");
+    expect(first.get(CHAT_THREAD_SNAPSHOT_R2_HEADER)).toBe("1");
     expect(second.get(CLIENT_VERSION_HEADER)).toBe("1.2.3");
     expect(second.get(CLIENT_TYPE_HEADER)).toBe(CLIENT_TYPE_CLI);
     expect(second.get(CLIENT_SESSION_ID_HEADER)).toBe("session-id");
     expect(second.get(CLIENT_REQUEST_ID_HEADER)).toBe("request-id-2");
+    expect(second.get(CHAT_THREAD_SNAPSHOT_R2_HEADER)).toBe("1");
   });
 
   it("overrides spoofed headers after contract-client header merging", async () => {
