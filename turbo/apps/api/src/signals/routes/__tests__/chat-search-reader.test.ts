@@ -97,7 +97,9 @@ describe("GET /api/chat/search durable reader", () => {
 
     const search = await chat.searchChat(owner, keyword);
     expect(
-      search.results.map((result) => result.matchedMessage.seqId),
+      search.results.map((result) => {
+        return result.matchedMessage.seqId;
+      }),
     ).toStrictEqual([2]);
   });
 
