@@ -332,7 +332,9 @@ jq -e '
     .run == ".github/scripts/download-okou-cli-artifact.sh" and
     .env.ARTIFACT_SHA == "${{ needs.prepare.outputs.source-head-sha }}" and
     .env.ARTIFACT_REQUIRED == "false" and
-    .env.WAIT_SECONDS == "600"
+    .env.WAIT_SECONDS == "600" and
+    .env.CHECK_PUBLISHER_STATUS == "true" and
+    .env.GH_TOKEN == "${{ github.token }}"
   ) and
   any(.jobs.build.steps[];
     .name == "Download cached runner binary from R2" and
