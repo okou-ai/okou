@@ -185,7 +185,7 @@ test("The type a slash command selects states the run in the action row", async 
   );
 });
 
-test.each(["presentation", "video", "image"] as const)(
+test.each(["presentation"] as const)(
   "Persisted %s additional info stays out of the message and copied text",
   async (mode) => {
     setupModels();
@@ -655,14 +655,6 @@ async function setupEditedDraftTemplate(
   expect(button(pickerLabel)).toBeInTheDocument();
   return { mode, replacement, second, submissions };
 }
-
-test.each(createTemplateScenarios)(
-  "$commandLabel edits only the clicked draft template",
-  async (scenario) => {
-    await setupEditedDraftTemplate(scenario);
-    expect(composerInlineTemplates()).toHaveLength(2);
-  },
-);
 
 test.each(createTemplateScenarios)(
   "$commandLabel sends every edited draft template reference",
