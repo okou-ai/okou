@@ -2346,6 +2346,26 @@ function PresentationTemplateHtmlFrame({
   );
 }
 
+function PresentationTemplateTitleTooltip({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <TooltipProvider delay={300}>
+      <Tooltip>
+        {children}
+        {/* The preview button already includes the full title in its name. */}
+        <TooltipContent side="bottom" className="break-words" aria-hidden>
+          {title}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function TemplatePreview({
   item,
   onPreview,
@@ -2455,22 +2475,26 @@ function TemplatePreview({
           <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
         </div>
       ) : null}
-      <button
-        ref={restorePreviewTrigger}
-        data-template-preview-id={`built-in:${item.slug}`}
-        type="button"
-        aria-label={t(
-          ($) => {
-            return $.artifacts.templates.previewCurrentSlide;
-          },
-          {
-            title: item.title,
-          },
-        )}
-        className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
-        onClick={() => {
-          onPreview(item, slideIndex);
-        }}
+      <TooltipTrigger
+        render={
+          <button
+            ref={restorePreviewTrigger}
+            data-template-preview-id={`built-in:${item.slug}`}
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.previewCurrentSlide;
+              },
+              {
+                title: item.title,
+              },
+            )}
+            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
+            onClick={() => {
+              onPreview(item, slideIndex);
+            }}
+          />
+        }
       />
     </div>
   );
@@ -2744,9 +2768,9 @@ function TemplatePreviewPage({
             })}
           </div>
         </div>
-        <div className="flex flex-col lg:sticky lg:top-0">
+        <div className="flex min-h-0 min-w-0 flex-col lg:sticky lg:top-0 lg:overflow-y-auto">
           <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
-            <h3 className="text-xl font-semibold text-foreground">
+            <h3 className="break-words text-xl font-semibold text-foreground">
               {item.title}
             </h3>
             <div className="my-5 border-t border-border" />
@@ -2908,81 +2932,78 @@ function PptCard({
   );
 
   return (
-    <div className={TEMPLATE_TILE_WRAPPER}>
-      <div
-        className={cn(
-          TEMPLATE_TILE_SELECTION_FRAME,
-          TEMPLATE_TILE_PREVIEW_FOCUS,
-          selected && TEMPLATE_TILE_SELECTED,
-        )}
-      >
-        <div className={TEMPLATE_TILE_MEDIA}>
-          <TemplatePreview
-            item={item}
-            onPreview={onPreview}
-            signals={signals}
-            theme={selectedTheme}
+    <PresentationTemplateTitleTooltip title={item.title}>
+      <div className={TEMPLATE_TILE_WRAPPER}>
+        <div
+          className={cn(
+            TEMPLATE_TILE_SELECTION_FRAME,
+            TEMPLATE_TILE_PREVIEW_FOCUS,
+            selected && TEMPLATE_TILE_SELECTED,
+          )}
+        >
+          <div className={TEMPLATE_TILE_MEDIA}>
+            <TemplatePreview
+              item={item}
+              onPreview={onPreview}
+              signals={signals}
+              theme={selectedTheme}
+            />
+            <div className={TEMPLATE_TILE_SCRIM} />
+            {selected ? (
+              <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                <Check size={14} />
+              </span>
+            ) : null}
+            <button
+              type="button"
+              aria-label={t(
+                ($) => {
+                  return $.artifacts.templates.selectTemplate;
+                },
+                {
+                  title: item.title,
+                },
+              )}
+              aria-pressed={selected}
+              onClick={() => {
+                onSelect(
+                  item,
+                  presentationTemplateColorSystemId(selectedTheme.id),
+                );
+              }}
+              className={TEMPLATE_TILE_USE}
+            >
+              {t(($) => {
+                return $.artifacts.templates.use;
+              })}
+            </button>
+          </div>
+        </div>
+        <div className={TEMPLATE_TILE_CAPTION}>
+          <TooltipTrigger
+            render={
+              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+                {item.title}
+              </p>
+            }
           />
-          <div className={TEMPLATE_TILE_SCRIM} />
-          {selected ? (
-            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Check size={14} />
-            </span>
-          ) : null}
-          <button
-            type="button"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.selectTemplate;
-              },
-              {
-                title: item.title,
+          <span className="ml-auto flex shrink-0 items-center gap-1">
+            {presentationTemplateThemeAccentSwatches(item, selectedTheme).map(
+              (swatch) => {
+                return (
+                  <span
+                    key={swatch.id}
+                    aria-hidden
+                    className="h-3 w-3 rounded-full ring-1 ring-inset ring-black/10"
+                    style={{ backgroundColor: swatch.color }}
+                  />
+                );
               },
             )}
-            aria-pressed={selected}
-            onClick={() => {
-              onSelect(
-                item,
-                presentationTemplateColorSystemId(selectedTheme.id),
-              );
-            }}
-            className={TEMPLATE_TILE_USE}
-          >
-            {t(($) => {
-              return $.artifacts.templates.use;
-            })}
-          </button>
+          </span>
         </div>
       </div>
-      <div className={TEMPLATE_TILE_CAPTION}>
-        <TooltipProvider delay={300}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-                  {item.title}
-                </p>
-              }
-            />
-            <TooltipContent side="bottom">{item.title}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <span className="ml-auto flex shrink-0 items-center gap-1">
-          {presentationTemplateThemeAccentSwatches(item, selectedTheme).map(
-            (swatch) => {
-              return (
-                <span
-                  key={swatch.id}
-                  aria-hidden
-                  className="h-3 w-3 rounded-full ring-1 ring-inset ring-black/10"
-                  style={{ backgroundColor: swatch.color }}
-                />
-              );
-            },
-          )}
-        </span>
-      </div>
-    </div>
+    </PresentationTemplateTitleTooltip>
   );
 }
 
@@ -4013,18 +4034,22 @@ function ImportedPptCardMediaControls({
   const { t } = useTranslation();
   return (
     <>
-      <button
-        ref={previewRef}
-        data-template-preview-id={`imported:${template.id}`}
-        type="button"
-        aria-label={t(
-          ($) => {
-            return $.artifacts.templates.previewCurrentSlide;
-          },
-          { title: template.title },
-        )}
-        className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
-        onClick={onPreview}
+      <TooltipTrigger
+        render={
+          <button
+            ref={previewRef}
+            data-template-preview-id={`imported:${template.id}`}
+            type="button"
+            aria-label={t(
+              ($) => {
+                return $.artifacts.templates.previewCurrentSlide;
+              },
+              { title: template.title },
+            )}
+            className="absolute inset-0 z-10 cursor-zoom-in bg-transparent focus-visible:outline-none"
+            onClick={onPreview}
+          />
+        }
       />
       <div className={TEMPLATE_TILE_SCRIM} />
       {selected ? (
@@ -4325,18 +4350,13 @@ function ImportedPptCardCaption({
 }) {
   return (
     <div className={TEMPLATE_TILE_CAPTION}>
-      <TooltipProvider delay={300}>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
-                {template.title}
-              </p>
-            }
-          />
-          <TooltipContent side="bottom">{template.title}</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <TooltipTrigger
+        render={
+          <p className={cn(TEMPLATE_TILE_NAME, "cursor-default")}>
+            {template.title}
+          </p>
+        }
+      />
     </div>
   );
 }
@@ -4400,32 +4420,34 @@ function ImportedPptCard({
     setHover(index === null ? null : { templateId: template.id, index });
   };
   return (
-    <div
-      className={TEMPLATE_TILE_WRAPPER}
-      data-imported-presentation-template={template.id}
-    >
-      <ImportedPptCardMedia
-        previewRef={restorePreviewTrigger}
-        template={template}
-        selected={selected}
-        activeSlideIndex={activeSlideIndex}
-        slideCount={slideCount}
-        imageSignals={imageSignals}
-        loading={loading}
-        label={label}
-        onRequestDetail={() => {
-          requestDetail(template.id);
-        }}
-        onHover={setCardHover}
-        onPreview={() => {
-          onPreview(template.id, activeSlideIndex);
-        }}
-        onSelect={() => {
-          onSelect(template);
-        }}
-      />
-      <ImportedPptCardCaption template={template} />
-    </div>
+    <PresentationTemplateTitleTooltip title={template.title}>
+      <div
+        className={TEMPLATE_TILE_WRAPPER}
+        data-imported-presentation-template={template.id}
+      >
+        <ImportedPptCardMedia
+          previewRef={restorePreviewTrigger}
+          template={template}
+          selected={selected}
+          activeSlideIndex={activeSlideIndex}
+          slideCount={slideCount}
+          imageSignals={imageSignals}
+          loading={loading}
+          label={label}
+          onRequestDetail={() => {
+            requestDetail(template.id);
+          }}
+          onHover={setCardHover}
+          onPreview={() => {
+            onPreview(template.id, activeSlideIndex);
+          }}
+          onSelect={() => {
+            onSelect(template);
+          }}
+        />
+        <ImportedPptCardCaption template={template} />
+      </div>
+    </PresentationTemplateTitleTooltip>
   );
 }
 
@@ -4774,7 +4796,7 @@ function ImportedPresentationTemplateSidebar({
     detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
   };
   return (
-    <div className="flex flex-col lg:sticky lg:top-0">
+    <div className="flex min-h-0 min-w-0 flex-col lg:sticky lg:top-0 lg:overflow-y-auto">
       <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
         {activeTemplate.canManage ? (
           <ImportedPresentationTemplateRenameControl
@@ -4786,7 +4808,9 @@ function ImportedPresentationTemplateSidebar({
             }}
           />
         ) : (
-          <h3 className="text-xl font-semibold text-foreground">{title}</h3>
+          <h3 className="break-words text-xl font-semibold text-foreground">
+            {title}
+          </h3>
         )}
         <p className="mt-1 text-xs text-muted-foreground">
           {t(
