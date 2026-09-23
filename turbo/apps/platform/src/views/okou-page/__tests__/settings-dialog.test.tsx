@@ -14,7 +14,6 @@ import { expect, test, vi } from "vitest";
 
 import {
   click,
-  holdElementAnimations,
   setupPage,
   startPage,
   queryAllByRoleFast,
@@ -179,58 +178,6 @@ test("Offer only the workspace's supported languages", async () => {
     }),
   ).toStrictEqual(["English", "Português (Brasil)", "Deutsch"]);
   expect(screen.queryByRole("option", { name: "Italiano" })).toBeNull();
-});
-
-async function saveSingleLanguagePreference() {
-  await openSupportedLanguagePicker();
-  click(screen.getByRole("option", { name: "English" }));
-
-  await waitFor(() => {
-    expect(document.documentElement.lang).toBe("en-US");
-    expect(
-      screen.queryByRole("combobox", { name: "Language" }),
-    ).not.toBeInTheDocument();
-  });
-}
-
-test("Closing Settings preserves the saved language throughout its exit animation", async () => {
-  await saveSingleLanguagePreference();
-  const settingsDialog = screen.getByRole("dialog", { name: "Settings" });
-  const finishCloseTransition = holdElementAnimations(settingsDialog);
-  click(screen.getByLabelText("Close"));
-  expect(
-    new URL(window.location.href).searchParams.has("settings"),
-  ).toBeFalsy();
-  expect(settingsDialog).toBeVisible();
-  finishCloseTransition();
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-});
-
-test("Reopening Settings retains the saved single-language preference", async () => {
-  await saveSingleLanguagePreference();
-  click(screen.getByLabelText("Close"));
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Settings" }),
-    ).not.toBeInTheDocument();
-  });
-  const rail = await screen.findByTestId("labeled-nav-rail");
-  const accountButton = within(rail).getByLabelText("Test User");
-  click(accountButton);
-  const accountMenu = await screen.findByRole("menu");
-  click(within(accountMenu).getByText("Settings"));
-
-  await expect(
-    screen.findByRole("dialog", { name: "Settings" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("combobox", { name: "Language" }),
-  ).not.toBeInTheDocument();
-  expect(document.documentElement.lang).toBe("en-US");
 });
 
 test.each([

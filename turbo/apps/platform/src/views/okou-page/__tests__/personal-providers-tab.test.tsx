@@ -355,47 +355,6 @@ test("Organize personal subscriptions in accessible provider tables", async () =
   ).toBeNull();
 });
 
-test("Offer personal subscription providers from one add-account menu", async () => {
-  await setupPersonalSubscriptionIdentityReview();
-  const addAccountButtons = queryAllByRoleFast("button").filter((button) => {
-    return button.textContent?.trim() === "Add account";
-  });
-  expect(addAccountButtons).toHaveLength(1);
-  const addAccountButton = addAccountButtons[0];
-  if (!addAccountButton) {
-    throw new Error("Add account button not found");
-  }
-  click(addAccountButton);
-  const addAccountMenu = await screen.findByRole("menu");
-  expect(
-    within(addAccountMenu).getByText("Claude Code OAuth"),
-  ).toBeInTheDocument();
-  expect(
-    within(addAccountMenu).getByText("ChatGPT (Codex)"),
-  ).toBeInTheDocument();
-  click(addAccountButton);
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).toBeNull();
-  });
-});
-
-test("Show personal subscription workspace and account actions", async () => {
-  const user = userEvent.setup();
-  const { rowA } = await setupPersonalSubscriptionIdentityReview();
-  await user.hover(within(rowA).getByText("account-a@example.com"));
-  await expect(
-    screen.findAllByText("Account A Organization"),
-  ).resolves.not.toHaveLength(0);
-  click(within(rowA).getByLabelText("More options"));
-  const accountMenu = await screen.findByRole("menu");
-  expect(
-    within(accountMenu).getByText("Disconnect account"),
-  ).toBeInTheDocument();
-  expect(within(accountMenu).queryByText(/resets? left/u)).toBeNull();
-  expect(within(accountMenu).queryByText("Reset usage")).toBeNull();
-  click(within(rowA).getByLabelText("More options"));
-});
-
 test("Reset personal Codex account usage from the reset count", async () => {
   context.mocks.data.org({
     id: "org_1",

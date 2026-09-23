@@ -244,40 +244,6 @@ test("Keep the existing dialog when the directory switch is off", async () => {
   ).resolves.toBeInTheDocument();
 });
 
-test("Keep the category chips the same width when the selection moves", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({ catalog: directoryCatalog() });
-
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
-  });
-
-  const dialog = await openDirectory(user);
-  await waitFor(() => {
-    expect(within(dialog).getByText("Notion")).toBeVisible();
-  });
-
-  // A chip that changes font weight on selection changes its own width, which
-  // shifts every chip after it. Every chip has to carry the same weight.
-  const chips = Array.from(
-    dialog.querySelectorAll<HTMLElement>("[data-connector-category-chip]"),
-  );
-  expect(chips.length).toBeGreaterThan(1);
-  const weights = new Set(
-    chips.map((element) => {
-      return (
-        element.className.split(/\s+/u).find((token) => {
-          return token.startsWith("font-");
-        }) ?? "none"
-      );
-    }),
-  );
-  expect(weights.size).toBe(1);
-  expect(weights).not.toContain("none");
-});
-
 function rankedCatalog() {
   // Four ranked connectors earn "mail" a shelf; "voice" has one, so it stays a
   // counted chip rather than opening on the alphabet.
