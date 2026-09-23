@@ -96,7 +96,7 @@ function defineOkouModel(definition: OkouModelDefinition): OkouModelMetadata {
   };
 }
 
-/** Product-owned model facts shared by the Pi and Codex runtime projections. */
+/** Okou aliases and OpenRouter model facts shared by both runtime projections. */
 export const OKOU_MODEL_METADATA = {
   "okou-1.0": defineOkouModel({
     displayName: "Okou 1.0",
@@ -161,13 +161,14 @@ const CODEX_MODEL_DEFAULTS = {
 export const OKOU_MODEL_CODEX_CATALOG = {
   models: OKOU_RUN_MODELS.map((slug) => {
     const metadata = OKOU_MODEL_METADATA[slug];
+    const backingModel = OKOU_BACKING_MODELS[metadata.backingModel];
     return {
       ...CODEX_MODEL_DEFAULTS,
       slug,
       display_name: metadata.displayName,
       description: `OpenRouter preset backed by ${
-        OKOU_BACKING_MODELS[metadata.backingModel].displayName
-      }.`,
+        backingModel.displayName
+      } (${backingModel.openRouterModelId}).`,
       default_reasoning_level: metadata.reasoningEffort,
       supported_reasoning_levels: [
         {

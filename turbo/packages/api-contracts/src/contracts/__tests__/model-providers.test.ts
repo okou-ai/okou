@@ -932,24 +932,40 @@ describe("model-first canonical catalog", () => {
   );
 
   it.each([
-    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", "GPT-6 Luna", "max"],
-    [
-      "okou-1.0-pro",
-      "@preset/okou-1-0-pro",
-      "Okou 1.0 Pro",
-      "GPT-6 Sol",
-      "low",
-    ],
-    [
-      "okou-1.0-max",
-      "@preset/okou-1-0-max",
-      "Okou 1.0 Max",
-      "GPT-6 Sol",
-      "high",
-    ],
+    {
+      model: "okou-1.0",
+      preset: "@preset/okou-1-0",
+      displayName: "Okou 1.0",
+      sourceModel: "GPT-6 Luna",
+      sourceModelId: "openai/gpt-6-luna",
+      reasoningEffort: "max",
+    },
+    {
+      model: "okou-1.0-pro",
+      preset: "@preset/okou-1-0-pro",
+      displayName: "Okou 1.0 Pro",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "low",
+    },
+    {
+      model: "okou-1.0-max",
+      preset: "@preset/okou-1-0-max",
+      displayName: "Okou 1.0 Max",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "high",
+    },
   ] as const)(
-    "projects Codex metadata for Okou %s to its OpenRouter Preset",
-    (model, preset, displayName, sourceModel, reasoningEffort) => {
+    "projects Codex metadata for Okou $model to its OpenRouter Preset",
+    ({
+      model,
+      preset,
+      displayName,
+      sourceModel,
+      sourceModelId,
+      reasoningEffort,
+    }) => {
       const catalog = getModelProviderCodexCatalogForModel(
         model,
         preset,
@@ -961,7 +977,9 @@ describe("model-first canonical catalog", () => {
         expect.objectContaining({
           slug: preset,
           display_name: displayName,
-          description: expect.stringContaining(sourceModel),
+          description: expect.stringContaining(
+            `${sourceModel} (${sourceModelId})`,
+          ),
           default_reasoning_level: reasoningEffort,
           supported_reasoning_levels: [
             expect.objectContaining({ effort: reasoningEffort }),

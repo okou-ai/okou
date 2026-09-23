@@ -1856,24 +1856,40 @@ describe("CHAT-02: model-first provider policies", () => {
   }, 90_000);
 
   it.each([
-    ["okou-1.0", "@preset/okou-1-0", "Okou 1.0", "GPT-6 Luna", "max"],
-    [
-      "okou-1.0-pro",
-      "@preset/okou-1-0-pro",
-      "Okou 1.0 Pro",
-      "GPT-6 Sol",
-      "low",
-    ],
-    [
-      "okou-1.0-max",
-      "@preset/okou-1-0-max",
-      "Okou 1.0 Max",
-      "GPT-6 Sol",
-      "high",
-    ],
+    {
+      model: "okou-1.0",
+      preset: "@preset/okou-1-0",
+      displayName: "Okou 1.0",
+      sourceModel: "GPT-6 Luna",
+      sourceModelId: "openai/gpt-6-luna",
+      reasoningEffort: "max",
+    },
+    {
+      model: "okou-1.0-pro",
+      preset: "@preset/okou-1-0-pro",
+      displayName: "Okou 1.0 Pro",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "low",
+    },
+    {
+      model: "okou-1.0-max",
+      preset: "@preset/okou-1-0-max",
+      displayName: "Okou 1.0 Max",
+      sourceModel: "GPT-6 Sol",
+      sourceModelId: "openai/gpt-6-sol",
+      reasoningEffort: "high",
+    },
   ] as const)(
-    "routes built-in %s only through its OpenRouter Preset",
-    async (model, preset, displayName, sourceModel, reasoningEffort) => {
+    "routes built-in $model only through its OpenRouter Preset",
+    async ({
+      model,
+      preset,
+      displayName,
+      sourceModel,
+      sourceModelId,
+      reasoningEffort,
+    }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       await seedBuiltInModelCandidateKeys(context, model);
       await authDeviceSupport.updateFeatureSwitches(actor, {
@@ -1915,7 +1931,9 @@ describe("CHAT-02: model-first provider policies", () => {
         expect.objectContaining({
           slug: preset,
           display_name: displayName,
-          description: expect.stringContaining(sourceModel),
+          description: expect.stringContaining(
+            `${sourceModel} (${sourceModelId})`,
+          ),
           default_reasoning_level: reasoningEffort,
           supported_reasoning_levels: [
             expect.objectContaining({ effort: reasoningEffort }),
