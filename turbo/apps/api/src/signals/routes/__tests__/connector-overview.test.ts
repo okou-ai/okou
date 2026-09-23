@@ -5,6 +5,10 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import {
+  computerUseHeartbeatContract,
+  computerUseHostsContract,
+} from "@okouai/api-contracts/contracts/computer-use";
+import {
   customConnectorByIdContract,
   customConnectorProposalContract,
   customConnectorValuesContract,
@@ -19,6 +23,7 @@ import { agentsRoutes } from "../agents";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { builtinConnectorsRoutes } from "../connectors";
+import { computerUseRoutes } from "../computer-use";
 import { customConnectorsRoutes } from "../custom-connectors";
 import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
@@ -108,6 +113,7 @@ test("overview projects connected connector briefs and default accounts for one 
     ...customConnectorsValuesSetRoutes,
     ...customConnectorsDeleteRoutes,
     ...connectorAccountRoutes,
+    ...computerUseRoutes,
   ];
   const client = setupApp({ context, routes });
   const builtin = await accept(
@@ -191,6 +197,30 @@ test("overview projects connected connector briefs and default accounts for one 
       );
     }),
   );
+  const host = await accept(
+    client(computerUseHostsContract).start({
+      headers,
+      body: {
+        hostName: "Composer test desktop",
+        appVersion: "0.1.0",
+        osVersion: "macOS 15",
+        supportedCapabilities: [],
+        permissions: { accessibility: true, screenRecording: true },
+      },
+    }),
+    [200],
+  );
+  await trackCleanup(
+    Promise.resolve(async () => {
+      await accept(
+        client(computerUseHeartbeatContract).stop({
+          headers: { authorization: `Bearer ${host.body.hostToken}` },
+          body: {},
+        }),
+        [200],
+      );
+    }),
+  );
 
   const overview = await accept(
     client(connectorOverviewContract).overview({ headers }),
@@ -222,6 +252,13 @@ test("overview projects connected connector briefs and default accounts for one 
       }),
     }),
   );
+  expect(overview.body.computerUseHosts).toContainEqual(
+    expect.objectContaining({
+      id: host.body.hostId,
+      hostName: "Composer test desktop",
+      status: "online",
+    }),
+  );
   expect(overview.body.accountSummaries).toContainEqual(
     expect.objectContaining({
       target: { kind: "custom", customConnectorId: definition.body.id },
@@ -238,6 +275,7 @@ test("overview projects connected connector briefs and default accounts for one 
   expect(otherUser.body.builtinConnectors).toStrictEqual([]);
   expect(otherUser.body.customConnectors).toStrictEqual([]);
   expect(otherUser.body.accountSummaries).toStrictEqual([]);
+  expect(otherUser.body.computerUseHosts).toStrictEqual([]);
 });
 
 test("a saved custom connector proposal invalidates the Agent access snapshot", async () => {
