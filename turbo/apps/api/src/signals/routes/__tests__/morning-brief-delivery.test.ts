@@ -487,10 +487,9 @@ describe("Morning Brief native delivery", () => {
       },
     ]);
 
-    // Native-only unread state is visible through the canonical query, clears
-    // through the real single-thread endpoint, and also clears through the
-    // Agent-wide endpoint after an explicit re-mark. One delivery identity
-    // therefore contributes one unread watermark, not a synthetic Run.
+    // Native-only unread state remains available through the thread read-state
+    // API, but the Run-only indicators endpoint does not classify the delivery.
+    // The cursor still clears through both the single-thread and Agent routes.
     const unread = {
       threadId: response.body.delivery.chatThreadId,
       unreadAt: response.body.delivery.deliveredAt,
@@ -499,9 +498,9 @@ describe("Morning Brief native delivery", () => {
       chat.listThreadUnreads(actor, f.agentId),
     ).resolves.toStrictEqual([unread]);
     await expect(chat.listIndicators(actor)).resolves.toStrictEqual({
-      agents: { [f.agentId]: "unread" },
-      threads: { [unread.threadId]: "unread" },
-      unreadAt: { [unread.threadId]: unread.unreadAt },
+      agents: {},
+      threads: {},
+      unreadAt: {},
     });
     await expect(
       chat.markThreadRead(actor, response.body.delivery.chatThreadId),
