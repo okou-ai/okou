@@ -128,6 +128,7 @@ import { modelProvidersRoutes } from "./routes/model-providers";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
+import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgDeleteRoutes } from "./routes/org-delete";
 import { orgLogoRoutes } from "./routes/org-logo";
@@ -153,6 +154,7 @@ import { socialRoutes } from "./routes/social";
 import { socialDataRoutes } from "./routes/social-data";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
+import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
 import { vncAccessRoutes } from "./routes/vnc-access";
 import { runnerVncRoutes } from "./routes/runner-vnc";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
@@ -368,6 +370,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...socialDataRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
+  ...chatRemoteAccessRoutes,
   ...vncAccessRoutes,
   ...runnerVncRoutes,
   ...cloudflareAccessRoutes,
@@ -400,6 +403,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...onboardingCompleteRoutes,
   ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
+  ...onboardingSourcesRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,
   ...orgLogoRoutes,

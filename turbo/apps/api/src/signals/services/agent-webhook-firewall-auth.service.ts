@@ -77,7 +77,15 @@ import {
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
-import { and, eq, inArray, isNotNull, isNull, notExists, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { executeRawRows, pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";

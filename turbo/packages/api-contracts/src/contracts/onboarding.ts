@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { initContract, authHeadersSchema } from "./base";
 import { apiErrorSchema } from "./errors";
+import { publicConnectorCatalogConnectListResponseSchema } from "./connector-catalog";
 import { userLocaleSchema } from "./user-preferences";
 
 const c = initContract();
@@ -160,6 +161,25 @@ export const onboardingStatusContract = c.router({
       401: apiErrorSchema,
     },
     summary: "Get onboarding status for current user",
+  },
+});
+
+/**
+ * The onboarding sources, `ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS`, each with
+ * what its card draws and what connecting it from one click needs.
+ */
+export const onboardingSourcesContract = c.router({
+  list: {
+    method: "GET",
+    path: "/api/onboarding/sources",
+    headers: authHeadersSchema,
+    responses: {
+      200: publicConnectorCatalogConnectListResponseSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "List onboarding source connectors with connection status",
   },
 });
 

@@ -543,6 +543,14 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   },
   chat_thread_events: { coverage: "user_root", ownership: ["user_id"] },
   chat_thread_snapshots: { coverage: "user_root", ownership: ["user_id"] },
+  chat_thread_ssh_access_overrides: {
+    coverage: "user_descendant",
+    parents: ["chat_threads", "ssh_connections"],
+  },
+  chat_thread_vnc_access_overrides: {
+    coverage: "user_descendant",
+    parents: ["chat_threads", "vnc_connections"],
+  },
   chat_threads: { coverage: "user_root", ownership: ["user_id"] },
   checkpoints: { coverage: "user_descendant", parents: ["agent_runs"] },
   cli_tokens: { coverage: "user_root", ownership: ["user_id"] },

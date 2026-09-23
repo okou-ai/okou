@@ -179,6 +179,17 @@ function installDriveMocks(
       connectorProvidedBindings: [],
     });
   });
+  targetContext.mocks.api(
+    connectorCatalogContract.get,
+    ({ params, respond }) => {
+      return params.connectorSlug === "google-drive"
+        ? respond(200, { connector: googleDriveCatalogItem(connectionState) })
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Connector not found" },
+          });
+    },
+  );
+  // Registered after the slug route, which would otherwise also match it.
   targetContext.mocks.api(connectorCatalogContract.status, ({ respond }) => {
     return respond(200, {
       connectors: [googleDriveCatalogItem(connectionState)],

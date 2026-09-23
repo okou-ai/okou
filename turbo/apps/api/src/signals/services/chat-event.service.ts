@@ -1215,8 +1215,19 @@ export async function replaceLoadedChatEvent(
     replacementId,
     replacement,
   );
-  const seqId = await reserveChatEventSeqIds(tx, replacement.chatThreadId, 1);
+  // The replacement depends on the returned sequence, so PostgreSQL executes
+  // the reservation before the insert in one statement and transaction.
+  const reservedSequence = tx.$with("reserved_replacement_chat_event_seq").as(
+    tx
+      .update(chatThreads)
+      .set({
+        lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
+      })
+      .where(eq(chatThreads.id, replacement.chatThreadId))
+      .returning({ seqId: chatThreads.lastChatEventSeqId }),
+  );
   const rows = await tx
+    .with(reservedSequence)
     .insert(chatEvents)
     .values({
       ...canonicalChatEventValues(
@@ -1226,7 +1237,7 @@ export async function replaceLoadedChatEvent(
           ...contextPointer,
         },
       ),
-      seqId,
+      seqId: sql`(SELECT ${reservedSequence.seqId} FROM ${reservedSequence})`,
       revokesEventId: target.id,
     })
     .onConflictDoNothing()

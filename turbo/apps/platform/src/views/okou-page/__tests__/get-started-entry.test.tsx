@@ -7,6 +7,7 @@ import {
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   connectorCatalogContract,
+  isOneClickConnectorGrantKind,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -24,6 +25,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
 import { pathname } from "../../../signals/location.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
@@ -113,16 +115,35 @@ function catalogItem(
   };
 }
 
-function mockQuestCatalog(): void {
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+/**
+ * The one-click catalog the picker reads. Like the API, it only carries the
+ * connectors that connect in one browser step, projected to their connect
+ * items.
+ */
+function mockOneClickCatalog(
+  items: readonly PublicConnectorCatalogStatusItem[],
+  onRead?: () => void,
+): void {
+  context.mocks.api(connectorCatalogContract.oneClick, ({ respond }) => {
+    onRead?.();
     return respond(200, {
-      connectors: [
-        catalogItem("gmail", "Gmail", "auth-code"),
-        catalogItem("notion", "Notion", "auth-code"),
-        catalogItem("openai", "OpenAI", "manual"),
-      ],
+      connectors: items.flatMap((item) => {
+        return item.authMethods.some((method) => {
+          return isOneClickConnectorGrantKind(method.grantKind);
+        })
+          ? [connectorCatalogConnectItem(item)]
+          : [];
+      }),
     });
   });
+}
+
+function mockQuestCatalog(): void {
+  mockOneClickCatalog([
+    catalogItem("gmail", "Gmail", "auth-code"),
+    catalogItem("notion", "Notion", "auth-code"),
+    catalogItem("openai", "OpenAI", "manual"),
+  ]);
 }
 
 function configureQuestPage(
@@ -892,14 +913,10 @@ test("The dialog leads with the connectors the step can still be completed with"
   // Slack is the better-ranked connector and is already connected, so the
   // catalog order alone would put it first. The step can only be finished on
   // Notion, so Notion is what the reader meets first in spite of that rank.
-  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [
-        catalogItem("slack", "Slack", "auth-code", true, 1),
-        catalogItem("notion", "Notion", "auth-code", false, 2),
-      ],
-    });
-  });
+  mockOneClickCatalog([
+    catalogItem("slack", "Slack", "auth-code", true, 1),
+    catalogItem("notion", "Notion", "auth-code", false, 2),
+  ]);
   await setupPage({
     context,
     path: questChatPath(),
@@ -1120,4 +1137,93 @@ test("Checking in confirms the reward instead of closing silently", async () => 
       "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
     ),
   ).toBeInTheDocument();
+});
+
+test("The quest entry leaves the connector catalog unread until the connector step opens", async () => {
+  configureQuestPage(context, "admin");
+  let statusReads = 0;
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    statusReads += 1;
+    return respond(200, {
+      connectors: [catalogItem("gmail", "Gmail", "auth-code")],
+    });
+  });
+  let oneClickReads = 0;
+  mockOneClickCatalog([catalogItem("gmail", "Gmail", "auth-code")], () => {
+    oneClickReads += 1;
+  });
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  // The intro dialog and its connect flow are mounted beside the entry, but
+  // nothing is picked yet, so nothing asks for the catalog.
+  await openQuestPanel();
+  expect(oneClickReads).toBe(0);
+
+  click(screen.getByTestId("get-started-quest-connector"));
+  const picker = await screen.findByTestId("quest-connector-picker");
+  expect(within(picker).getByText("Gmail")).toBeInTheDocument();
+  expect(oneClickReads).toBe(1);
+  // The picker lists what the one-click catalog returns; the full catalog
+  // status is never read for it.
+  expect(statusReads).toBe(0);
+});
+
+test("A connector that needs a choice opens its connect dialog from its own catalog entry", async () => {
+  configureQuestPage(context, "admin");
+  const oauth = catalogItem("notion", "Notion", "auth-code");
+  const firstMethod = oauth.authMethods[0];
+  if (!firstMethod) {
+    throw new Error("Missing auth method");
+  }
+  // Two browser methods leave nothing to start in one press.
+  const notion: PublicConnectorCatalogStatusItem = {
+    ...oauth,
+    authMethods: [
+      firstMethod,
+      { ...firstMethod, id: "workspace-oauth", label: "Notion workspace" },
+    ],
+    singleAuthCodeAuthMethodId: null,
+  };
+  // The slug route would also match the catalog's static paths, so it is
+  // installed before the one-click mock, which then takes precedence there.
+  // Other surfaces on the page (the start card) read their own slugs, so only
+  // Notion's entry is counted.
+  let notionReads = 0;
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    if (params.connectorSlug !== notion.slug) {
+      return respond(404, {
+        error: { message: "Connector not found", code: "NOT_FOUND" },
+      });
+    }
+    notionReads += 1;
+    return respond(200, { connector: notion });
+  });
+  mockOneClickCatalog([notion]);
+  await setupPage({
+    context,
+    path: questChatPath(),
+    featureSwitches: {
+      [FeatureSwitchKey.GetStartedQuests]: true,
+      [FeatureSwitchKey.GetStartedQuestIntro]: true,
+    },
+  });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-connector"));
+  const tile = await screen.findByTestId("quest-connector-notion");
+  expect(notionReads).toBe(0);
+  click(tile);
+
+  // The dialog offers both methods, which only the connector's own full entry
+  // carries.
+  const dialog = await screen.findByRole("dialog", { name: "Notion" });
+  expect(within(dialog).getByText("Notion workspace")).toBeInTheDocument();
+  expect(notionReads).toBe(1);
 });

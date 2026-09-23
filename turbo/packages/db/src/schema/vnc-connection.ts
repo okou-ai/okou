@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  boolean,
   foreignKey,
   index,
   integer,
@@ -45,6 +46,9 @@ export const vncConnections = pgTable(
     }).notNull(),
     caBundle: text("ca_bundle"),
     generation: integer("generation").notNull().default(1),
+    defaultEnabledForChats: boolean("default_enabled_for_chats")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
