@@ -11,6 +11,28 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.948.0](https://github.com/okou-ai/okou/compare/app-v0.947.0...app-v0.948.0) (2026-09-23)
+
+
+### Features
+
+* **browser:** preflight native input before form entry ([#36193](https://github.com/okou-ai/okou/issues/36193)) ([3e07303](https://github.com/okou-ai/okou/commit/3e073031e7f3fa38be4178d14ce657db40ceef9c))
+* consolidate chat unread reads into indicators ([#36171](https://github.com/okou-ai/okou/issues/36171)) ([1ca25a4](https://github.com/okou-ai/okou/commit/1ca25a41379780bb0d6add1a086ea359251eea18))
+* **platform:** start the workflow quest from the recommendations ([#36192](https://github.com/okou-ai/okou/issues/36192)) ([192889f](https://github.com/okou-ai/okou/commit/192889f72db0c3669edeb101b8ec8784e78fc59c))
+
+
+### Bug Fixes
+
+* **platform:** name debug capture and feishu url controls ([#36131](https://github.com/okou-ai/okou/issues/36131)) ([f38e5f9](https://github.com/okou-ai/okou/commit/f38e5f9cf3aa5b5723d3afa1ee07b64dcc48eb6c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.496.0
+    * @okouai/core bumped to 8.702.1
+
 ## [0.947.0](https://github.com/okou-ai/okou/compare/app-v0.946.0...app-v0.947.0) (2026-09-23)
 
 
