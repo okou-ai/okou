@@ -252,6 +252,7 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_prepare_storage_manifest_resolve_artifact_versions"
   | "api_dispatch_prepare_storage_manifest_generate_artifact_urls"
   | "api_dispatch_prepare_storage_manifest_cache_prepare_requests"
+  | "api_dispatch_prepare_storage_manifest_cache_prefetch_decision"
   | "api_dispatch_prepare_storage_manifest_cache_mixed_lookup"
   | "api_dispatch_prepare_storage_manifest_cache_lookup"
   | "api_dispatch_prepare_storage_manifest_cache_classify"

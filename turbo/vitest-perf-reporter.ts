@@ -10,6 +10,28 @@
  */
 import type { Reporter, TestRunEndReason } from "vitest/node";
 import type { TestModule } from "vitest/node";
+import { relative } from "node:path";
+
+const FILE_DURATION_WARNING_MS = 30_000;
+
+/** Surface expensive test files in CI even when their syntax passes lint. */
+export class DurationGuardReporter implements Reporter {
+  onTestRunEnd(testModules: ReadonlyArray<TestModule>): void {
+    for (const mod of testModules) {
+      const duration = mod.diagnostic().duration;
+      if (duration < FILE_DURATION_WARNING_MS) {
+        continue;
+      }
+      const file = relative(
+        process.env.GITHUB_WORKSPACE ?? process.cwd(),
+        mod.moduleId,
+      ).replaceAll("\\", "/");
+      console.warn(
+        `::warning file=${file},title=Slow Vitest file::${file} spent ${fmtMs(duration)} running tests (30s budget). Review fixed waits or split the file.`,
+      );
+    }
+  }
+}
 
 interface FileStat {
   moduleId: string;

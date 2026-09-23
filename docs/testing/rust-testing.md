@@ -236,6 +236,17 @@ async fn downloads_and_extracts() {
 }
 ```
 
+For in-process timer behavior, use Tokio's paused clock instead of waiting for
+real time. `#[tokio::test(start_paused = true)]` and `tokio::time::advance(...)`
+let the test exercise the production timer while keeping the test fast. See
+`crates/runner-rpc-client/tests/helper.rs` and `tests/stream.rs` for examples.
+Advance only after the timed task is armed, then assert its observable result.
+For external processes and kernel I/O, wait for the observable completion under
+a bounded deadline; a paused Tokio clock does not control those systems. A
+completed `dd` followed by `sync` already supplies that completion boundary in
+`crates/nbd-cow/tests/integration.rs`, so an additional fixed sleep adds no
+signal.
+
 For sync-only logic, plain `#[test]` is fine:
 
 ```rust

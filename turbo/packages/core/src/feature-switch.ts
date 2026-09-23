@@ -444,13 +444,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.PersonalSubscriptionPriority]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Preserve personal subscription identities for admitted runs and gate the personal subscription priority rollout.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ClaudeCodeUsageReset]: {
     maintainer: "ethan@okou.ai",
     description:

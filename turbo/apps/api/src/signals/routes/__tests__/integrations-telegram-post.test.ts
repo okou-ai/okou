@@ -2037,7 +2037,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     });
   });
 
-  it("preserves group reply chains, forum delivery, fresh mentions, and callback idempotency", async () => {
+  async function runCanonicalTelegramForumScenario(
+    phase: "callback" | "reply-chain" | "fresh-chain",
+  ) {
     const runnerGroup = configureCanonicalTelegramRunner();
     const fixture = await trackFixture(
       seedTelegramPostFixture({ linkTelegramUser: true }),
@@ -2162,6 +2164,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     );
     await flushWaitUntilForTest();
     expect(telegramMocks.sentMessages).toHaveLength(1);
+    if (phase === "callback") {
+      return;
+    }
 
     const followUpPrompt = "continue canonical chain";
     const followUpPayload = {
@@ -2280,6 +2285,9 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         chatThreadId: firstState.agentRun?.chatThreadId,
       }),
     ]);
+    if (phase === "reply-chain") {
+      return;
+    }
 
     const freshPrompt = `@${botUsername} start another chain`;
     expect(
@@ -2315,6 +2323,21 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     expect(
       stateRecords((await readTelegramState(fixture.telegramBotId)).routes),
     ).toHaveLength(1);
+  }
+
+  it("preserves Telegram forum delivery and ignores duplicate completion callbacks", async () => {
+    expect.hasAssertions();
+    await runCanonicalTelegramForumScenario("callback");
+  });
+
+  it("preserves Telegram group reply chains and duplicate updates", async () => {
+    expect.hasAssertions();
+    await runCanonicalTelegramForumScenario("reply-chain");
+  });
+
+  it("starts a fresh Telegram group chain after a completed reply", async () => {
+    expect.hasAssertions();
+    await runCanonicalTelegramForumScenario("fresh-chain");
   });
 
   it("keeps Telegram callbacks typed when OKOU_API_BACKEND_URL is set", async () => {

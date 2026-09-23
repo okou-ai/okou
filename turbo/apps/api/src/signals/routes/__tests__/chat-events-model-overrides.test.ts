@@ -301,7 +301,6 @@ describe("CHAT-02: run-level model overrides", () => {
     ]);
     await misc.deleteOrgModelProvider(actor, "anthropic-api-key", [204]);
     await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PersonalSubscriptionPriority]: true,
       [FeatureSwitchKey.PiLoop]: false,
     });
 
@@ -391,7 +390,6 @@ describe("CHAT-02: run-level model overrides", () => {
         ]);
       }
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]: organizationApi,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: false,
         [FeatureSwitchKey.PiLoop]: true,
       });
@@ -746,8 +744,6 @@ describe("CHAT-02: run-level model overrides", () => {
       const externalAccountId = `chat-${scenario.failureReason}-account`;
       const refreshToken = `rt_${scenario.failureReason}_high_entropy`;
       await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PersonalSubscriptionPriority]:
-          scenario.organizationApi,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
         [FeatureSwitchKey.PiLoop]: true,
       });

@@ -11,6 +11,7 @@ import {
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { composerConnectorsContract } from "@okouai/api-contracts/contracts/composer-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -231,7 +232,7 @@ test("Timezone saves refresh Morning Brief when Clerk token refresh is unavailab
   await expect(
     within(card).findByText(`Next ${initialFormatted}`),
   ).resolves.toBeInTheDocument();
-  const timezone = getFastRole("combobox", /UTC/u);
+  const timezone = screen.getByRole("combobox", { name: "Time zone" });
   click(timezone);
   click(await screen.findByRole("option", { name: /Eastern Time \(ET\)$/u }));
 
@@ -244,6 +245,7 @@ test("Timezone saves refresh Morning Brief when Clerk token refresh is unavailab
     within(card).findByText(`Next ${formatted}`),
   ).resolves.toBeInTheDocument();
   expect(timezone).toHaveTextContent("Eastern Time (ET)");
+  expect(timezone).toHaveAccessibleName("Time zone");
   expect(timezone).toBeEnabled();
 });
 
@@ -881,14 +883,20 @@ test("A user can save message-send and time-zone preferences", async () => {
     "false",
   );
 
-  const timezone = getFastRole("combobox", /UTC/u);
-  click(timezone);
-  const eastern = await screen.findByRole("option", {
+  const timezone = screen.getByRole("combobox", { name: "Time zone" });
+  expect(timezone).toHaveTextContent("UTC");
+  timezone.focus();
+  expect(timezone).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("option", {
     name: /Eastern Time \(ET\)$/u,
   });
-  click(eastern);
+  await userEvent.keyboard("{Home}{ArrowDown}{Enter}");
 
   await waitFor(() => {
-    expect(updates).toContainEqual({ timezone: "America/New_York" });
+    expect(timezone).toHaveTextContent("Eastern Time (ET)");
+    expect(timezone).toBeEnabled();
   });
+  expect(timezone).toHaveAccessibleName("Time zone");
+  expect(updates).toContainEqual({ timezone: "America/New_York" });
 });

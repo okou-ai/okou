@@ -1479,11 +1479,15 @@ impl FreshArchiveDelivery {
     }
 }
 
-/// Cold cache work selected during storage planning but not yet started.
+/// Background cache work selected during cache population after guest staging
+/// outcomes are known, but not yet started. Depending on those outcomes, the
+/// selected actions may fill a missing archive, warm the extracted-file cache
+/// from an archive hit, or retire a redundant archive after an extracted-file hit.
 ///
-/// Before [`Self::start`], this value owns archive URLs but no HTTP client,
-/// task, cache lock, or file, so dropping it on a pre-spawn failure requires
-/// no asynchronous cleanup.
+/// Before [`Self::start`], this value holds selection data, including archive
+/// URLs and optional decoded-cache handles. Creating it does not start an HTTP
+/// request or task, acquire a cache lock, or open a file, so dropping it on a
+/// pre-spawn failure requires no asynchronous cleanup for this deferred work.
 #[must_use = "deferred storage cache fill must be started after agent spawn or explicitly dropped"]
 pub struct DeferredBackgroundFill {
     groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
@@ -2195,25 +2199,8 @@ async fn stage_joined_processed_group(
     Ok(())
 }
 
-/// Resolves eligible archive sources against the runner-side cache.
-///
-/// Warm hits are staged into the guest over vsock, and their sources in
-/// `plan` are rewritten to guest-local `file://` URLs before this function
-/// returns. Sources without a usable warm hit keep their original remote URLs
-/// for the current guest download. Eligible cold misses may be returned as
-/// deferred fill work for future runs; this function does not start those
-/// remote fill requests.
-///
-/// # Returns
-///
-/// Returns `Ok(Some(...))` when a [`DeferredBackgroundFill`] was selected. The
-/// caller must retain it through pre-spawn setup and call
-/// [`DeferredBackgroundFill::start`] only after the agent process has spawned;
-/// an earlier failure deliberately drops it without starting work. Returns
-/// `Ok(None)` when no deferred fill work was selected.
-///
-/// Reuse, repair, empty, instruction, cleanup, and guest-work semantics remain
-/// owned by [`StoragePlan`].
+/// Test-only wrapper for [`populate_cache_with_fresh_delivery`] without fresh
+/// delivery or a decoded cache.
 #[cfg(test)]
 pub async fn populate_cache(
     plan: &mut StoragePlan,
@@ -2224,6 +2211,25 @@ pub async fn populate_cache(
     populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None, None).await
 }
 
+/// Resolves eligible archive sources against the runner-side cache.
+///
+/// Warm hits are staged into the guest over vsock, and their sources in
+/// `plan` are rewritten to guest-local `file://` URLs before this function
+/// returns. Sources without a usable warm hit keep their original remote URLs
+/// for the current guest download. After classifying and staging outcomes, this
+/// function may select deferred archive fill, extracted-file cache warming, or
+/// redundant archive retirement; it does not start that work.
+///
+/// # Returns
+///
+/// Returns `Ok(Some(...))` when a [`DeferredBackgroundFill`] was selected. The
+/// caller must retain it through pre-spawn setup and call
+/// [`DeferredBackgroundFill::start`] only after the agent process has spawned;
+/// an earlier failure deliberately drops it without starting work. Returns
+/// `Ok(None)` when no deferred work was selected.
+///
+/// Reuse, repair, empty, instruction, cleanup, and guest-work semantics remain
+/// owned by [`StoragePlan`].
 pub async fn populate_cache_with_fresh_delivery(
     plan: &mut StoragePlan,
     sandbox: &dyn Sandbox,

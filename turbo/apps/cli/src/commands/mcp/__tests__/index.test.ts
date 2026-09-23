@@ -10,7 +10,7 @@ import {
   type Tool,
 } from "@modelcontextprotocol/client";
 import chalk from "chalk";
-import { delay, http, HttpResponse } from "msw";
+import { http, HttpResponse } from "msw";
 import {
   afterAll,
   afterEach,
@@ -50,7 +50,23 @@ interface McpServerOptions {
   readonly callResult?: CallToolResult;
   readonly callResponse?: (requestId: RequestId) => Response;
   readonly listResponse?: (requestId: RequestId) => Response;
-  readonly deleteResponse?: () => Response | Promise<Response>;
+  readonly deleteResponse?: (request: Request) => Response | Promise<Response>;
+}
+
+/** Keep a provider response pending until the command cancels that request. */
+async function waitForRequestAbort(request: Request): Promise<void> {
+  if (request.signal.aborted) {
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    request.signal.addEventListener(
+      "abort",
+      () => {
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 function processExit(): never {
@@ -78,7 +94,7 @@ function stubMcpServer(options: McpServerOptions): SeenMcpRequest[] {
       if (request.method === "DELETE") {
         seen.push({ httpMethod: request.method, intent });
         if (options.deleteResponse) {
-          return options.deleteResponse();
+          return options.deleteResponse(request);
         }
         return new HttpResponse(null, { status: 204 });
       }
@@ -867,8 +883,8 @@ describe("okou mcp command", () => {
     server.use(
       http.post(
         "http://localhost:3000/api/mcp-connectors/oauth2/reauthorize",
-        async () => {
-          await delay(2_000);
+        async ({ request }) => {
+          await waitForRequestAbort(request);
           return HttpResponse.json({
             kind: "oauth",
             authorizationUrl: "https://authorize.example.test/consent",
@@ -1442,8 +1458,8 @@ describe("okou mcp command", () => {
           },
         ],
       ],
-      deleteResponse: async () => {
-        await delay(2_000);
+      deleteResponse: async (request) => {
+        await waitForRequestAbort(request);
         return new HttpResponse(null, { status: 204 });
       },
     });
@@ -1602,8 +1618,8 @@ describe("okou mcp command", () => {
   it("uses one overall deadline", async () => {
     stubConnectorList();
     server.use(
-      http.post(MCP_ENDPOINT, async () => {
-        await delay(2_000);
+      http.post(MCP_ENDPOINT, async ({ request }) => {
+        await waitForRequestAbort(request);
         return HttpResponse.json({});
       }),
     );

@@ -1,3 +1,4 @@
+import { Combobox } from "@base-ui/react/combobox";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -137,6 +138,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@okouai/ui/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -3591,11 +3598,13 @@ function TemplatePickerCategoryNav({
   customTemplatesEnabled,
   videoPickersVisible,
   onChange,
+  onResetCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
   videoPickersVisible: boolean;
   onChange: (value: string) => void;
+  onResetCustom: () => void;
 }) {
   const { t } = useTranslation();
   // Custom leads the list and is separated by a rule, because it answers who
@@ -3732,82 +3741,49 @@ function TemplatePickerCategoryNav({
       <div className="hidden shrink-0 sm:flex">
         <div className="flex w-56 shrink-0 flex-col border-r border-border bg-card">
           <TemplatePickerHeader />
-          <nav
-            role="tablist"
+          <TabsList
+            activateOnFocus
             aria-label={t(($) => {
               return $.artifacts.templates.categories;
             })}
-            aria-orientation="vertical"
             data-template-picker-sidebar=""
-            className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-3 pb-3"
+            className="flex h-auto min-h-0 flex-1 flex-col items-stretch justify-start gap-0.5 overflow-y-auto rounded-none bg-transparent p-0 px-3 pb-3"
           >
-            {categoryOptions.flatMap(
-              ({ value, label, Icon }, categoryIndex) => {
-                const selected = value === selectedCategory;
-                return [
-                  <button
-                    key={value}
-                    type="button"
-                    role="tab"
-                    aria-selected={selected}
-                    tabIndex={selected ? 0 : -1}
-                    onClick={() => {
-                      onChange(value);
-                    }}
-                    onKeyDown={(event) => {
-                      let nextIndex: number | null = null;
-                      if (event.key === "ArrowDown") {
-                        nextIndex =
-                          (categoryIndex + 1) % categoryOptions.length;
-                      } else if (event.key === "ArrowUp") {
-                        nextIndex =
-                          (categoryIndex - 1 + categoryOptions.length) %
-                          categoryOptions.length;
-                      } else if (event.key === "Home") {
-                        nextIndex = 0;
-                      } else if (event.key === "End") {
-                        nextIndex = categoryOptions.length - 1;
-                      }
-                      if (nextIndex === null) {
-                        return;
-                      }
-                      event.preventDefault();
-                      const nextTab = event.currentTarget.parentElement
-                        ?.querySelectorAll<HTMLElement>("[role=tab]")
-                        .item(nextIndex);
-                      nextTab?.focus();
-                      onChange(categoryOptions[nextIndex]?.value ?? value);
-                    }}
+            {categoryOptions.flatMap(({ value, label, Icon }) => {
+              const selected = value === selectedCategory;
+              return [
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  // Reopening the active Custom category resets its filters.
+                  // Category selection and keyboard focus stay with Tabs.
+                  onClick={
+                    value === "custom" && selected ? onResetCustom : undefined
+                  }
+                  className="group h-9 w-full justify-start gap-2.5 rounded-lg px-2.5 text-left font-normal leading-5 text-gray-800 data-active:bg-gray-50 data-active:font-medium data-active:text-foreground data-active:shadow-none focus-visible:ring-inset"
+                >
+                  <Icon
                     className={cn(
-                      "group flex h-9 w-full shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-sm leading-5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      "h-4 w-4 shrink-0 transition-colors",
                       selected
-                        ? "bg-gray-50 font-medium text-foreground"
-                        : "text-gray-800 hover:bg-state-hover hover:text-foreground",
+                        ? "text-foreground"
+                        : "text-gray-700 group-hover:text-gray-800",
                     )}
-                  >
-                    <Icon
-                      className={cn(
-                        "h-4 w-4 shrink-0 transition-colors",
-                        selected
-                          ? "text-foreground"
-                          : "text-gray-700 group-hover:text-gray-800",
-                      )}
-                    />
-                    <span className="truncate">{label}</span>
-                  </button>,
-                  ...(value === "custom"
-                    ? [
-                        <div
-                          key={`${value}-rule`}
-                          role="presentation"
-                          className="my-2 shrink-0 border-t border-t-gray-400"
-                        />,
-                      ]
-                    : []),
-                ];
-              },
-            )}
-          </nav>
+                  />
+                  <span className="truncate">{label}</span>
+                </TabsTrigger>,
+                ...(value === "custom"
+                  ? [
+                      <div
+                        key={`${value}-rule`}
+                        role="presentation"
+                        className="my-2 shrink-0 border-t border-t-gray-400"
+                      />,
+                    ]
+                  : []),
+              ];
+            })}
+          </TabsList>
         </div>
       </div>
     </>
@@ -5726,14 +5702,29 @@ function TemplatePickerDialog({
                 })}
               </DialogTitle>
             </DialogHeader>
-            <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
+            <Tabs
+              value={selectedCategory}
+              onValueChange={(nextCategory) => {
+                if (typeof nextCategory === "string") {
+                  handleCategoryChange(nextCategory);
+                }
+              }}
+              orientation="vertical"
+              className="flex min-h-0 flex-1 flex-col sm:flex-row"
+            >
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
                 videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
+                onResetCustom={resetCustomTemplatePicker}
               />
-              <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {/* Keep the existing single active content tree and its category
+                  unmounting policy; signals retain search and scroll state. */}
+              <TabsContent
+                value={selectedCategory}
+                className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
                 <TemplatePaidToolNotice category={selectedCategory} />
                 {selectedCategory !== "custom" ? (
                   <div
@@ -5787,8 +5778,8 @@ function TemplatePickerDialog({
                   onSelectWorkflow={handleSelectWorkflow}
                   runtime={runtime}
                 />
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
           </div>
         ) : null}
         {previewItem ? (
@@ -7173,37 +7164,7 @@ function ComposerConnectorAccountMenu({
   );
 }
 
-function handleConnectorAccountRadioKeyDown(
-  event: ReactKeyboardEvent<HTMLDivElement>,
-): void {
-  const buttons = [
-    ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-      '[role="radio"]:not(:disabled)',
-    ),
-  ];
-  if (buttons.length === 0 || !(event.target instanceof HTMLButtonElement)) {
-    return;
-  }
-  const currentIndex = buttons.indexOf(event.target);
-  if (currentIndex === -1) {
-    return;
-  }
-  let nextIndex: number;
-  if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-    nextIndex = (currentIndex + 1) % buttons.length;
-  } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-    nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
-  } else if (event.key === "Home") {
-    nextIndex = 0;
-  } else if (event.key === "End") {
-    nextIndex = buttons.length - 1;
-  } else {
-    return;
-  }
-  event.preventDefault();
-  buttons[nextIndex]?.focus();
-  buttons[nextIndex]?.click();
-}
+const DEFAULT_CONNECTOR_ACCOUNT = "default";
 
 function ComposerConnectorAccountChoices({
   connectorLabel,
@@ -7215,8 +7176,6 @@ function ComposerConnectorAccountChoices({
   unavailable,
   noResults,
   loadingAccountCount,
-  onSelect,
-  onUseDefault,
 }: {
   readonly connectorLabel: string;
   readonly connections: readonly ConnectorAccountConnection[];
@@ -7227,12 +7186,10 @@ function ComposerConnectorAccountChoices({
   readonly unavailable: boolean;
   readonly noResults: boolean;
   readonly loadingAccountCount: number;
-  readonly onSelect: (connection: ConnectorAccountConnection) => void;
-  readonly onUseDefault: () => void;
 }) {
   const { t } = useTranslation();
   const choiceClassName = cn(
-    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-state-hover data-highlighted:bg-state-hover data-highlighted:ring-2 data-highlighted:ring-inset data-highlighted:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     saving && "cursor-default opacity-50",
   );
   const accountLabel = useConnectorAccountLabel();
@@ -7241,9 +7198,6 @@ function ComposerConnectorAccountChoices({
     : t(($) => {
         return $.chat.connectors.noUsableAccount;
       });
-  const hasCheckedConnection = connections.some((connection) => {
-    return selection?.connectionId === connection.id;
-  });
   const accountStatus = (connection: ConnectorAccountConnection): string => {
     if (connection.connectionStatus === "connected") {
       return t(($) => {
@@ -7272,20 +7226,16 @@ function ComposerConnectorAccountChoices({
   };
 
   return (
-    <div
-      className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto p-1"
-      role="radiogroup"
+    <Combobox.List
+      className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto p-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       aria-label={connectorLabel}
-      onKeyDown={handleConnectorAccountRadioKeyDown}
+      aria-busy={saving}
+      tabIndex={0}
     >
-      <button
-        type="button"
-        role="radio"
-        aria-checked={!selection}
-        tabIndex={!selection || !hasCheckedConnection ? 0 : -1}
+      <Combobox.Item
         disabled={saving}
+        value={DEFAULT_CONNECTOR_ACCOUNT}
         className={choiceClassName}
-        onClick={onUseDefault}
       >
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-brand-text">
           {!selection ? <Check size={15} strokeWidth={2.5} /> : null}
@@ -7305,7 +7255,7 @@ function ComposerConnectorAccountChoices({
               : ""}
           </span>
         </span>
-      </button>
+      </Combobox.Item>
       {loading ? (
         <>
           <div className="flex flex-col" aria-hidden="true">
@@ -7346,17 +7296,11 @@ function ComposerConnectorAccountChoices({
       {connections.map((connection) => {
         const checked = selection?.connectionId === connection.id;
         return (
-          <button
+          <Combobox.Item
             key={connection.id}
-            type="button"
-            role="radio"
-            aria-checked={checked}
-            tabIndex={checked ? 0 : -1}
             disabled={saving}
+            value={connection.id}
             className={choiceClassName}
-            onClick={() => {
-              onSelect(connection);
-            }}
           >
             <span className="flex h-4 w-4 shrink-0 items-center justify-center text-brand-text">
               {checked ? <Check size={15} strokeWidth={2.5} /> : null}
@@ -7369,7 +7313,7 @@ function ComposerConnectorAccountChoices({
                 {accountStatus(connection)}
               </span>
             </span>
-          </button>
+          </Combobox.Item>
         );
       })}
       {noResults ? (
@@ -7379,7 +7323,7 @@ function ComposerConnectorAccountChoices({
           })}
         </div>
       ) : null}
-    </div>
+    </Combobox.List>
   );
 }
 
@@ -7407,8 +7351,7 @@ function ComposerConnectorAccountMenuContent({
   const search = useGet(signals.connector.accounts.search$);
   const closeMenu = useSet(signals.connector.accounts.closeMenu$);
   const setSearch = useSet(signals.connector.accounts.setSearch$);
-  const selectAccount = actions.selectAccount;
-  const clearAccountSelection = actions.useDefaultAccount;
+  const commitSelection = actions.commitAccountSelection;
   const [loadMoreLoadable, loadMore] = useLoadableSet(
     signals.connector.accounts.loadMore$,
   );
@@ -7430,7 +7373,7 @@ function ComposerConnectorAccountMenuContent({
     summariesLoadable.state === "hasData"
       ? summariesLoadable.data.get(targetKey)
       : undefined;
-  const defaultConnection = summary?.defaultConnection ?? null;
+  const defaultConnection = summary ? summary.defaultConnection : null;
   const accountList =
     accountsLoadable.state === "hasData"
       ? accountsLoadable.data
@@ -7448,111 +7391,119 @@ function ComposerConnectorAccountMenuContent({
     (summary?.accountCount ?? 0) > CONNECTOR_ACCOUNT_SEARCH_THRESHOLD ||
     accountList.nextCursor !== null;
   const saving = actions.savingAccount;
-  const selectAndClose = (connection: ConnectorAccountConnection): void => {
-    detach(
-      (async () => {
-        await selectAccount(connection, signal);
-        closeMenu();
-      })(),
-      Reason.DomCallback,
-    );
-  };
-  const selectDefaultAndClose = (): void => {
-    detach(
-      (async () => {
-        await clearAccountSelection(target, signal);
-        closeMenu();
-      })(),
-      Reason.DomCallback,
-    );
-  };
-
   return (
-    <div
-      className={cn(
-        "flex max-h-[min(25rem,var(--available-height))] min-h-0 flex-col overflow-hidden",
-        showSearch && "h-[min(25rem,var(--available-height))]",
-      )}
-    >
-      <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 pl-1.5 pr-2 text-sm font-medium text-foreground">
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-xs"
-          aria-label={t(($) => {
-            return $.chat.connectors.back;
-          })}
-          onClick={closeMenu}
-        >
-          <ArrowLeft size={16} aria-hidden="true" />
-        </Button>
-        <span className="min-w-0 flex-1 truncate">
-          {t(($) => {
-            return $.chat.connectors.accountForThread;
-          })}
-        </span>
-      </div>
-      {showSearch ? (
-        <div className="shrink-0 border-b border-border/50 px-3 py-2">
-          <Input
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value, signal);
-            }}
-            placeholder={t(($) => {
-              return $.connectors.accounts.find;
-            })}
-            className="h-8"
-          />
-        </div>
-      ) : null}
-      <ComposerConnectorAccountChoices
-        connectorLabel={connectorLabel}
-        connections={connections}
-        selection={selection}
-        defaultConnection={defaultConnection}
-        saving={saving}
-        loading={accountsLoadable.state === "loading"}
-        unavailable={
-          accountsLoadable.state === "hasError" || !accountList.available
+    <Combobox.Root<string>
+      inline
+      open
+      readOnly={saving}
+      value={selection ? selection.connectionId : DEFAULT_CONNECTOR_ACCOUNT}
+      filter={null}
+      onValueChange={(value, details) => {
+        if (details.reason !== "item-press") {
+          return;
         }
-        noResults={connectorAccountSearchHasNoResults({
-          state: accountsLoadable.state,
-          available: accountList.available,
-          resultCount: accountList.connections.length,
-          search,
-        })}
-        loadingAccountCount={summary?.accountCount ?? 0}
-        onSelect={(connection) => {
-          selectAndClose(connection);
-        }}
-        onUseDefault={() => {
-          selectDefaultAndClose();
-        }}
-      />
-      {accountList.nextCursor ? (
-        <div className="shrink-0 border-t border-border/50 p-2">
+        // The server (or new-chat pending state) owns the accepted selection.
+        // Reject the immediate transition, including its automatic close.
+        details.cancel();
+        if (saving) {
+          return;
+        }
+        if (value === DEFAULT_CONNECTOR_ACCOUNT) {
+          detach(commitSelection(null, signal), Reason.DomCallback);
+          return;
+        }
+        const connection = connections.find((candidate) => {
+          return candidate.id === value;
+        });
+        if (connection) {
+          detach(commitSelection(connection, signal), Reason.DomCallback);
+        }
+      }}
+    >
+      <div
+        className={cn(
+          "flex max-h-[min(25rem,var(--available-height))] min-h-0 flex-col overflow-hidden",
+          showSearch && "h-[min(25rem,var(--available-height))]",
+        )}
+      >
+        <div className="flex h-12 shrink-0 items-center gap-0.5 border-b border-border/60 pl-1.5 pr-2 text-sm font-medium text-foreground">
           <Button
             type="button"
-            variant="outline"
-            size="sm"
-            className="w-full"
-            disabled={loadMoreLoadable.state === "loading"}
-            onClick={() => {
-              return detach(loadMore(signal), Reason.DomCallback);
-            }}
+            variant="quiet"
+            size="icon-xs"
+            aria-label={t(($) => {
+              return $.chat.connectors.back;
+            })}
+            onClick={closeMenu}
           >
-            {loadMoreLoadable.state === "loading"
-              ? t(($) => {
-                  return $.connectors.accounts.loadingMore;
-                })
-              : t(($) => {
-                  return $.connectors.accounts.loadMore;
-                })}
+            <ArrowLeft size={16} aria-hidden="true" />
           </Button>
+          <span className="min-w-0 flex-1 truncate">
+            {t(($) => {
+              return $.chat.connectors.accountForThread;
+            })}
+          </span>
         </div>
-      ) : null}
-    </div>
+        {showSearch ? (
+          <div className="shrink-0 border-b border-border/50 px-3 py-2">
+            <Input
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value, signal);
+              }}
+              readOnly={saving}
+              aria-label={t(($) => {
+                return $.connectors.accounts.find;
+              })}
+              placeholder={t(($) => {
+                return $.connectors.accounts.find;
+              })}
+              className="h-8"
+            />
+          </div>
+        ) : null}
+        <ComposerConnectorAccountChoices
+          connectorLabel={connectorLabel}
+          connections={connections}
+          selection={selection}
+          defaultConnection={defaultConnection}
+          saving={saving}
+          loading={accountsLoadable.state === "loading"}
+          unavailable={
+            accountsLoadable.state === "hasError" || !accountList.available
+          }
+          noResults={connectorAccountSearchHasNoResults({
+            state: accountsLoadable.state,
+            available: accountList.available,
+            resultCount: accountList.connections.length,
+            search,
+          })}
+          loadingAccountCount={summary?.accountCount ?? 0}
+        />
+        {accountList.nextCursor ? (
+          <div className="shrink-0 border-t border-border/50 p-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-full"
+              disabled={saving || loadMoreLoadable.state === "loading"}
+              onClick={() => {
+                return detach(loadMore(signal), Reason.DomCallback);
+              }}
+            >
+              {loadMoreLoadable.state === "loading"
+                ? t(($) => {
+                    return $.connectors.accounts.loadingMore;
+                  })
+                : t(($) => {
+                    return $.connectors.accounts.loadMore;
+                  })}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </Combobox.Root>
   );
 }
 

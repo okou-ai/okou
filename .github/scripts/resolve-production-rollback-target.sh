@@ -18,6 +18,7 @@ readonly PREPARED_DOMAIN_TRIGGER_RELEASE=eb2f211a9af41450d0d5dad10c0c8ad12fac0a2
 readonly MARKETING_PRIVACY_CLEANUP_READER_PATH=turbo/apps/api/src/signals/services/marketing-privacy-cleanup.service.ts
 readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b6
 readonly PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT=8d8f3a3e14d23f7471e0773bd9acb988f59217af
+readonly PI_SESSION_CONSTRUCTION_READER_COMMIT=322efb6d72508e15b90dc788100a776da1485751
 
 fail() {
   echo "::error::$*" >&2
@@ -139,6 +140,13 @@ fi
 # unknown launch-config fields.
 if ! git merge-base --is-ancestor "$PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi launch-config version reader: ${PI_LAUNCH_CONFIG_VERSIONS_READER_COMMIT}."
+fi
+
+# The API now writes a session-construction digest into the same strict queued
+# launch config. Only API targets with its reader can claim those runs; retained
+# Runner tags remain independent because the guest ignores unknown fields.
+if ! git merge-base --is-ancestor "$PI_SESSION_CONSTRUCTION_READER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Pi session-construction digest reader: ${PI_SESSION_CONSTRUCTION_READER_COMMIT}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

@@ -16,6 +16,7 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import { resetSignal, withCleanup } from "../utils.ts";
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
@@ -48,13 +49,10 @@ export interface ComposerConnectorAccountSignals {
   readonly loadMore$: ReturnType<
     typeof createConnectorAccountListSignals
   >["loadMore$"];
-  readonly selectAccount$: Command<
+  readonly saving$: Computed<boolean>;
+  readonly commitSelection$: Command<
     Promise<void>,
-    [ConnectorAccountConnection, AbortSignal]
-  >;
-  readonly useDefault$: Command<
-    Promise<void>,
-    [ConnectorAccountTarget, AbortSignal]
+    [ConnectorAccountConnection | null, AbortSignal]
   >;
   readonly reloadPreference$: Command<void, []>;
   readonly reload$: Command<void, []>;
@@ -87,7 +85,7 @@ function createConnectorAccountMutationSignals(args: {
   readonly pendingState$: State<ComposerConnectorAccountPreferenceState>;
   readonly preferenceState$: ComposerConnectorAccountSignals["preferenceState$"];
   readonly reload$: Command<void, []>;
-}): Pick<ComposerConnectorAccountSignals, "selectAccount$" | "useDefault$"> {
+}) {
   const selectAccount$ = command(
     async (
       { get, set },
@@ -179,6 +177,8 @@ export function createComposerConnectorAccountSignals(
   const summaryByTarget$ = createComposerAccountSummaryByTargetSignal();
   const menuTarget$ = state<ConnectorAccountTarget | null>(null);
   const menuOpen$ = state(false);
+  const activeSave$ = state<Promise<void> | null>(null);
+  const resetSaveSignal$ = resetSignal();
   const reloadVersion$ = state(0);
   const pendingState$ = state<ComposerConnectorAccountPreferenceState>(
     emptyPreferenceState(),
@@ -214,6 +214,10 @@ export function createComposerConnectorAccountSignals(
       signal: AbortSignal,
     ): void => {
       const currentTarget = get(menuTarget$);
+      set(resetSaveSignal$);
+      set(activeSave$, null);
+      // A dismissed write may have reached the server before cancellation.
+      set(reloadPreference$);
       set(menuTarget$, target);
       if (
         currentTarget &&
@@ -228,16 +232,42 @@ export function createComposerConnectorAccountSignals(
     },
   );
   const closeMenu$ = command(({ set }): void => {
+    set(resetSaveSignal$);
+    set(activeSave$, null);
     set(menuOpen$, false);
     set(list.resetSearch$);
   });
 
-  const { selectAccount$, useDefault$ } = createConnectorAccountMutationSignals(
-    {
-      threadId,
-      pendingState$,
-      preferenceState$,
-      reload$: reloadPreference$,
+  const mutations = createConnectorAccountMutationSignals({
+    threadId,
+    pendingState$,
+    preferenceState$,
+    reload$: reloadPreference$,
+  });
+
+  const commitSelection$ = command(
+    async (
+      { get, set },
+      connection: ConnectorAccountConnection | null,
+      parentSignal: AbortSignal,
+    ): Promise<void> => {
+      const target = get(menuTarget$);
+      if (!get(menuOpen$) || !target || get(activeSave$)) {
+        return;
+      }
+      const signal = set(resetSaveSignal$, parentSignal);
+      const pending = connection
+        ? set(mutations.selectAccount$, connection, signal)
+        : set(mutations.useDefault$, target, signal);
+      set(activeSave$, pending);
+      await withCleanup(pending, () => {
+        // A dismissed request must not reset a newer menu session's save.
+        if (get(activeSave$) === pending) {
+          set(activeSave$, null);
+        }
+      });
+      signal.throwIfAborted();
+      set(closeMenu$);
     },
   );
 
@@ -262,8 +292,10 @@ export function createComposerConnectorAccountSignals(
     closeMenu$,
     setSearch$: list.setSearch$,
     loadMore$: list.loadMore$,
-    selectAccount$,
-    useDefault$,
+    saving$: computed((get) => {
+      return get(activeSave$) !== null;
+    }),
+    commitSelection$,
     reloadPreference$,
     reload$,
     resetPendingSelections$,

@@ -51,6 +51,8 @@ use crate::error::{
 use crate::http::{ProviderHttpClient, ProviderHttpRequestBuilder};
 use crate::run_cancellation::RunCancellationRegistry;
 use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
+#[cfg(test)]
+use guest_contracts::okou_cli::{OkouCliInstalledPackage, OkouCliSessionConstruction};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{
@@ -75,7 +77,28 @@ struct ClaimRequestBody<'a> {
     /// Versions of the Okou CLI installed in this runner's rootfs. Older APIs
     /// strip the field; a runner without an installed CLI omits it.
     #[serde(skip_serializing_if = "Option::is_none")]
-    installed_versions: Option<&'a OkouCliVersions>,
+    installed_versions: Option<ClaimInstalledVersions<'a>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaimInstalledVersions<'a> {
+    #[serde(flatten)]
+    versions: &'a OkouCliVersions,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pi_session_construction_digest: Option<&'a str>,
+}
+
+impl<'a> From<&'a InstalledOkouCli> for ClaimInstalledVersions<'a> {
+    fn from(installed: &'a InstalledOkouCli) -> Self {
+        Self {
+            versions: &installed.versions,
+            pi_session_construction_digest: installed
+                .session_construction
+                .as_ref()
+                .map(|session| session.digest.as_str()),
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -829,9 +852,7 @@ impl JobProvider for ApiProvider {
                 &candidate,
                 &self.runner_identity,
                 self.runner_hostname.as_deref(),
-                self.installed_okou_cli
-                    .as_ref()
-                    .map(|installed| &installed.versions),
+                self.installed_okou_cli.as_ref(),
             )
             .await;
         let claim_request_elapsed = claim_request_started_at.elapsed();
@@ -1509,14 +1530,14 @@ impl ApiClient {
         candidate: &JobCandidate,
         runner_identity: &RunnerProcessIdentity,
         runner_hostname: Option<&str>,
-        installed_versions: Option<&OkouCliVersions>,
+        installed_okou_cli: Option<&InstalledOkouCli>,
     ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
         let run_id = candidate.run_id();
         let body = claim_request_body(
             candidate,
             runner_identity,
             runner_hostname,
-            installed_versions,
+            installed_okou_cli,
         );
         let run_id = run_id.to_string();
         let request = self.http.request_resolved_route(
@@ -1744,7 +1765,7 @@ fn claim_request_body<'a>(
     candidate: &JobCandidate,
     runner_identity: &'a RunnerProcessIdentity,
     runner_hostname: Option<&'a str>,
-    installed_versions: Option<&'a OkouCliVersions>,
+    installed_okou_cli: Option<&'a InstalledOkouCli>,
 ) -> ClaimRequestBody<'a> {
     let runner_preference_telemetry = candidate.runner_preference_claim_telemetry();
     let is_ably_candidate = candidate.discovery_source() == Some(JobDiscoverySource::Ably);
@@ -1775,7 +1796,7 @@ fn claim_request_body<'a>(
     ClaimRequestBody {
         runner_identity,
         runner_hostname,
-        installed_versions,
+        installed_versions: installed_okou_cli.map(ClaimInstalledVersions::from),
         capabilities: RunnerClaimCapabilities {
             pi_model_config_generations: [
                 PI_MODEL_CONFIG_LEGACY_GENERATION,
@@ -3456,16 +3477,25 @@ mod tests {
             "a runner without an installed CLI must omit installedVersions"
         );
 
-        let installed_versions = OkouCliVersions {
-            cli: "9.353.0".to_string(),
-            pi_agent_runtime: "1.36.0".to_string(),
-            pi_sdk: "0.86.1+okou.0123456789ab".to_string(),
+        let legacy_installed = InstalledOkouCli {
+            schema_version: 1,
+            versions: OkouCliVersions {
+                cli: "9.353.0".to_string(),
+                pi_agent_runtime: "1.36.0".to_string(),
+                pi_sdk: "0.86.1+okou.0123456789ab".to_string(),
+            },
+            package: OkouCliInstalledPackage {
+                sha256: "a".repeat(64),
+                size: 7,
+            },
+            entrypoint: InstalledOkouCli::entrypoint_for("9.353.0"),
+            session_construction: None,
         };
         let advertised = serde_json::to_value(claim_request_body(
             &candidate,
             &runner_identity,
             None,
-            Some(&installed_versions),
+            Some(&legacy_installed),
         ))
         .unwrap();
         assert_eq!(
@@ -3474,6 +3504,29 @@ mod tests {
                 "cli": "9.353.0",
                 "piAgentRuntime": "1.36.0",
                 "piSdk": "0.86.1+okou.0123456789ab"
+            })
+        );
+
+        let installed_with_digest = InstalledOkouCli {
+            session_construction: Some(OkouCliSessionConstruction {
+                digest: "d".repeat(64),
+            }),
+            ..legacy_installed
+        };
+        let advertised = serde_json::to_value(claim_request_body(
+            &candidate,
+            &runner_identity,
+            None,
+            Some(&installed_with_digest),
+        ))
+        .unwrap();
+        assert_eq!(
+            advertised["installedVersions"],
+            serde_json::json!({
+                "cli": "9.353.0",
+                "piAgentRuntime": "1.36.0",
+                "piSdk": "0.86.1+okou.0123456789ab",
+                "piSessionConstructionDigest": "d".repeat(64)
             })
         );
     }
