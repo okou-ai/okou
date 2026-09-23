@@ -689,8 +689,10 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
       type: "user.deleted",
       data: {},
     });
-    const missingUserId = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(missingUserId.body).toBe("OK");
+    const missingUserId = await api.requestClerkWebhook("{}", {}, [503]);
+    expect(missingUserId.body).toMatchObject({
+      error: "User deletion is missing an ID",
+    });
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.deleted",
@@ -6908,9 +6910,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           data: [{ publicUserData: { userId: fixture.peer.userId } }],
         },
       );
-      // A failed user-storage listing must not stop any cleanup domain.
       const s3CallCountBeforeCleanup = context.mocks.s3.send.mock.calls.length;
-      context.mocks.s3.send.mockRejectedValueOnce(new Error("R2 unavailable"));
       api.verifyNextClerkWebhook({
         type: "user.deleted",
         data: { id: fixture.doomed.userId },

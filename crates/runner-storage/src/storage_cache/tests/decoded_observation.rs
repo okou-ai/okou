@@ -280,6 +280,46 @@ async fn malformed_positive_metadata_still_fails_preparation() {
 }
 
 #[tokio::test]
+async fn null_archive_source_stays_absent_when_both_cache_formats_exist() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    warm_positive(&home, &cache).await;
+    let mount = temp.path().join("skipped-storage");
+    for use_decoded in [false, true] {
+        let mut plan = plan_from_entries(
+            vec![storage_entry(
+                mount.to_string_lossy().into_owned(),
+                "null".into(),
+                NAME,
+                VERSION,
+            )],
+            Vec::new(),
+            None,
+        );
+
+        let deferred = populate_cache_with_fresh_delivery(
+            &mut plan,
+            &MockSandbox::new("null-archive-source"),
+            &home,
+            &mut new_telemetry(),
+            None,
+            use_decoded.then_some(&cache),
+        )
+        .await
+        .unwrap();
+
+        assert!(deferred.is_none());
+        assert!(plan.take_decoded().is_empty());
+        assert_eq!(storage_archive_url(&plan, 0), Some("null"));
+        let guest_manifest = serde_json::to_vec(&plan.into_guest_manifest()).unwrap();
+        assert!(guest_storage_apply::run_manifest_bytes(&guest_manifest));
+        assert!(!mount.exists());
+    }
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn same_key_storage_and_artifact_share_decoded_files_without_archive_fill() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);

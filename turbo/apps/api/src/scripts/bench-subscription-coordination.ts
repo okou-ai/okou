@@ -37,11 +37,20 @@ import {
 const warmups = 50;
 const repetitions = 100;
 const inventorySize = process.argv.includes("--inventory=10") ? 10 : 1;
+const environmentStages = process.argv.includes("--captured-first")
+  ? ([
+      "environment-captured-fragment",
+      "environment-database-fragment",
+    ] as const)
+  : ([
+      "environment-database-fragment",
+      "environment-captured-fragment",
+    ] as const);
 const stages = [
   "capture-concrete",
   "capture-null-logical",
   "capture-explicit-logical",
-  "environment-database-fragment",
+  ...environmentStages,
   "prepare-fresh-proof",
   "validate-final-locked",
 ] as const;
@@ -213,6 +222,11 @@ async function operation(
     return account
       ? await readCoordinatedPersonalSubscriptionAccount(args, signal)
       : null;
+  }
+  if (stage === "environment-captured-fragment") {
+    // Capture already supplied this request's ID/type/owner. The production
+    // resolver also checks that those facts match before skipping the lookup.
+    return await readCoordinatedPersonalSubscriptionAccount(args, signal);
   }
   return await captureActivePersonalModelProviderAccount(
     {
@@ -476,6 +490,12 @@ async function reportEnvironment(pool: Pool) {
             import.meta.url,
           ),
         ),
+        resolverSha256: await digest(
+          new URL(
+            "../signals/services/agent-run-create.service.ts",
+            import.meta.url,
+          ),
+        ),
         harnessSha256: await digest(new URL(import.meta.url)),
         lockfileSha256: await digest(
           new URL("../../../../pnpm-lock.yaml", import.meta.url),
@@ -486,6 +506,7 @@ async function reportEnvironment(pool: Pool) {
         warmups,
         repetitions,
         inventorySize,
+        environmentStages,
         fixture:
           "one active connected account, optional nine inactive; identical active canonical/mirror cells; Claude 1 field, Codex 4 fields per account",
         limits:

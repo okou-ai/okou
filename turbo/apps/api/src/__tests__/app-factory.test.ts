@@ -1307,6 +1307,23 @@ describe("createApp", () => {
       },
     );
 
+    it("force-upgrades the previously published App before retired unread route matching", async () => {
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/api/chat-thread-unreads", {
+        method: "GET",
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+          [CLIENT_VERSION_HEADER]: "0.947.0",
+        },
+      });
+
+      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    });
+
     it.each([
       MINIMUM_WEB_CLIENT_VERSION,
       `${MINIMUM_WEB_CLIENT_VERSION}+build.1`,

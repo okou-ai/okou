@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.703.0](https://github.com/okou-ai/okou/compare/core-v8.702.1...core-v8.703.0) (2026-09-23)
+
+
+### Features
+
+* **core:** enable pi loop for all users ([#36194](https://github.com/okou-ai/okou/issues/36194)) ([9599f34](https://github.com/okou-ai/okou/commit/9599f34492d19160fa56a0885618bded47c9e2dd))
+* **core:** enable simple morning brief for staff org ([#36208](https://github.com/okou-ai/okou/issues/36208)) ([193e7e7](https://github.com/okou-ai/okou/commit/193e7e747dcc611e4bf2f3f1cb5dc00d51e53e6a))
+
+
+### Refactoring
+
+* remove internal prefixes from subscription switches ([#36246](https://github.com/okou-ai/okou/issues/36246)) ([0110bf6](https://github.com/okou-ai/okou/commit/0110bf61d79d2157cf89c2e75999bbc453d80f86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.0
+
 ## [8.702.1](https://github.com/okou-ai/okou/compare/core-v8.702.0...core-v8.702.1) (2026-09-23)
 
 
