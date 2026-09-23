@@ -456,6 +456,7 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     ownership: ["user_id"],
   },
   blobs: { coverage: "not_account_scoped" },
+  blob_upload_intents: { coverage: "not_account_scoped" },
   browser_authorization_requests: {
     coverage: "user_root",
     ownership: ["user_id"],

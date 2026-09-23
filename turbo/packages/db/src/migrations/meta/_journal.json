@@ -876,6 +876,13 @@
       "when": 1790147243462,
       "tag": "1202_wooden_william_stryker",
       "breakpoints": true
+    },
+    {
+      "idx": 1203,
+      "version": "7",
+      "when": 1790152085535,
+      "tag": "1203_faithful_shooting_star",
+      "breakpoints": true
     }
   ]
 }
