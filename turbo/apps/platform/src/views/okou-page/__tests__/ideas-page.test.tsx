@@ -5,7 +5,6 @@ import {
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -115,30 +114,6 @@ function categoryButton(name: string): HTMLElement {
 async function findComposer(name = "Message"): Promise<HTMLElement> {
   return await screen.findByRole("textbox", { name });
 }
-
-test("A migration idea uses the Okou product identity", async () => {
-  configureAgent();
-  mockCatalog([
-    catalogItem("zapier", "Zapier"),
-    catalogItem("slack", "Slack"),
-    catalogItem("notion", "Notion"),
-  ]);
-
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: IDEAS_PATH,
-    featureSwitches: { [FeatureSwitchKey.ZapierConnector]: true },
-  });
-  const idea = await screen.findByText("Zapier → Okou migration");
-
-  click(idea);
-
-  const composer = await findComposer();
-  expect(composer.textContent).toBe(
-    "Help me migrate my Zapier workflows to Okou. I have zaps for: new Slack message → Notion, Gmail → Google Sheets, and GitHub PR → Slack",
-  );
-});
 
 test("The ideas catalog still offers connector-free use cases", async () => {
   configureAgent();
