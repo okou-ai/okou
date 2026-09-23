@@ -338,14 +338,14 @@ test("Complete Claude Code login from a blocked message", async () => {
   click(await findButton("Configure model"));
 
   const dialog = await screen.findByRole("dialog", {
-    name: "Connect Claude Code",
+    name: "Connect Claude",
   });
   const authorizationCode = await screen.findByLabelText("Authorization code");
 
   click(buttonNamed("Connect", dialog));
 
   await expect(
-    screen.findByText("Paste the Claude Code authorization code to continue."),
+    screen.findByText("Paste the Claude authorization code to continue."),
   ).resolves.toBeVisible();
 
   click(buttonNamed("Open Claude approval page", dialog));
@@ -360,9 +360,7 @@ test("Complete Claude Code login from a blocked message", async () => {
   await fill(authorizationCode, "claude-valid-authorization-code");
   click(buttonNamed("Connect", dialog));
 
-  await expect(
-    screen.findByText("Claude Code connected"),
-  ).resolves.toBeVisible();
+  await expect(screen.findByText("Claude connected")).resolves.toBeVisible();
   await waitFor(() => {
     expect(queryButton("Configure model")).toBeNull();
   });
@@ -477,7 +475,7 @@ test("Reconnect Claude Code for an existing chat", async () => {
   click(configureButton);
 
   const dialog = await screen.findByRole("dialog", {
-    name: "Re-connect Claude Code",
+    name: "Reconnect Claude",
   });
   expect(dialog).toBeVisible();
   await waitFor(() => {

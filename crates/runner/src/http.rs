@@ -300,6 +300,20 @@ impl HttpClient {
     }
 }
 
+impl runner_remote::RemoteApiRequestFactory for HttpClient {
+    fn json_request(
+        &self,
+        route: ResolvedRoute,
+        token: &str,
+        body: &serde_json::Value,
+    ) -> Result<Request, runner_remote::RemoteRequestError> {
+        self.request_resolved_route(route, token)
+            .json(body)
+            .build()
+            .map_err(|_| runner_remote::RemoteRequestError)
+    }
+}
+
 impl runner_provider::ProviderHttpTransport for HttpClient {
     fn prepare(
         &self,
@@ -544,6 +558,7 @@ fn sanitize_api_error_summary(summary: String) -> String {
 mod tests {
     use api_contracts::generated::routes;
     use reqwest::header::AUTHORIZATION;
+    use runner_remote::RemoteApiRequestFactory;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpSocket};
 
@@ -676,6 +691,47 @@ mod tests {
             request.url().as_str(),
             "https://api.vm0.dev/api/runners/jobs/550e8400-e29b-41d4-a716-446655440000/claim"
         );
+    }
+
+    #[test]
+    fn remote_authority_adapter_keeps_runner_authentication_headers() {
+        let http = HttpClient::new(HttpClientConfig {
+            api_url: "https://api.vm0.dev/".into(),
+            vercel_bypass: Some("bypass-secret".into()),
+            client_session_id: "remote-session".into(),
+        })
+        .unwrap();
+        let route = routes::runners::runs::by_run_id::ssh::resolve::route(
+            routes::runners::runs::by_run_id::ssh::resolve::Params { run_id: "test-run" },
+        );
+        let request = http
+            .json_request(
+                route,
+                "fleet-secret",
+                &serde_json::json!({"connectionId":"id"}),
+            )
+            .unwrap();
+
+        assert_eq!(request.method(), reqwest::Method::POST);
+        assert_eq!(
+            header_value(&request, "authorization"),
+            "Bearer fleet-secret"
+        );
+        assert_eq!(
+            header_value(&request, VERCEL_BYPASS_HEADER),
+            "bypass-secret"
+        );
+        assert_eq!(
+            header_value(&request, CLIENT_SESSION_ID_HEADER),
+            "remote-session"
+        );
+        assert_eq!(
+            header_value(&request, CLIENT_TYPE_HEADER),
+            CLIENT_TYPE_RUNNER
+        );
+        assert!(!header_value(&request, CLIENT_VERSION_HEADER).is_empty());
+        assert!(Uuid::parse_str(&header_value(&request, CLIENT_REQUEST_ID_HEADER)).is_ok());
+        assert_eq!(header_value(&request, "content-type"), "application/json");
     }
 
     #[test]

@@ -48,7 +48,40 @@ async function expectTitleHint(title: string): Promise<void> {
   });
 }
 
-test("Built-in title hints follow caption hover and keyboard navigation", async () => {
+test("A built-in title hint follows caption hover", async () => {
+  mockTemplateChat();
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
+  if (!template) {
+    throw new Error("Expected a built-in presentation template");
+  }
+  mockPresentationHtml(template.embedUrl, ["Opening"]);
+  const user = userEvent.setup({ delay: null });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
+  });
+  const picker = await openTemplatePicker(user, "Presentation");
+  const caption = within(picker).getByText(template.title);
+
+  await user.hover(caption);
+  await expectTitleHint(template.title);
+  expect(composerInlineTemplates()).toHaveLength(0);
+  expect(
+    screen.queryByRole("group", { name: `${template.title} slide preview` }),
+  ).not.toBeInTheDocument();
+  await user.unhover(caption);
+  await waitFor(() => {
+    expect(
+      screen.queryByText(template.title, {
+        selector: '[data-slot="tooltip-content"]',
+      }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("Built-in title hints follow keyboard navigation", async () => {
   mockTemplateChat();
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0];
   const nextTemplate = PRESENTATION_TEMPLATE_PICKER_ITEMS[1];
@@ -69,22 +102,6 @@ test("Built-in title hints follow caption hover and keyboard navigation", async 
   const useTemplate = within(picker).getByLabelText(
     `Select template ${template.title}`,
   );
-  const caption = within(picker).getByText(template.title);
-
-  await user.hover(caption);
-  await expectTitleHint(template.title);
-  expect(composerInlineTemplates()).toHaveLength(0);
-  expect(
-    screen.queryByRole("group", { name: `${template.title} slide preview` }),
-  ).not.toBeInTheDocument();
-  await user.unhover(caption);
-  await waitFor(() => {
-    expect(
-      screen.queryByText(template.title, {
-        selector: '[data-slot="tooltip-content"]',
-      }),
-    ).not.toBeInTheDocument();
-  });
 
   await user.click(tabByText("Presentation"));
   await tabTo(user, preview);

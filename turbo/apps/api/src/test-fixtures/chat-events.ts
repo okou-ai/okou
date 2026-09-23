@@ -154,6 +154,7 @@ interface ChatEventContextFixture {
   readonly agentphoneMessageId: string | null;
   readonly agentphoneRootMessageId: string | null;
   readonly agentphoneConversationId: string | null;
+  readonly agentphoneGroupId: string | null;
   readonly agentphoneChannel: "imessage" | "sms" | "mms" | null;
   readonly agentphoneIsGroup: boolean | null;
   readonly agentphonePhoneHandle: string | null;
@@ -254,6 +255,7 @@ export async function readChatEventContextFixture(
       agentphoneMessageId: chatAgentphoneContext.messageId,
       agentphoneRootMessageId: chatAgentphoneContext.rootMessageId,
       agentphoneConversationId: chatAgentphoneContext.conversationId,
+      agentphoneGroupId: chatAgentphoneContext.groupId,
       agentphoneChannel: chatAgentphoneContext.channel,
       agentphoneIsGroup: chatAgentphoneContext.isGroup,
       agentphonePhoneHandle: chatAgentphoneContext.phoneHandle,

@@ -346,6 +346,29 @@ test("A named category still wins over the one the nav leads with", async () => 
   expect(tabByText("Custom")).toHaveAttribute("aria-selected", "false");
 });
 
+test("Keyboard navigation includes Custom across its category separator", async () => {
+  mockCustomTemplates([customTemplate()]);
+
+  const { user, dialog } = await openCustomPanel();
+  await within(dialog).findByText("Q3 board review");
+  await user.click(tabByText("Custom"));
+  await user.keyboard("{ArrowDown}");
+  expect(tabByText("Presentation")).toHaveFocus();
+  expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
+  await user.keyboard("{Home}");
+  const custom = tabByText("Custom");
+  expect(custom).toHaveFocus();
+  expect(custom).toHaveAttribute("aria-selected", "true");
+  const panel = await within(dialog).findByRole("tabpanel", {
+    name: "Custom",
+  });
+  expect(custom).toHaveAttribute("aria-controls", panel.id);
+  expect(panel).toHaveAttribute("aria-labelledby", custom.id);
+  await expect(
+    within(panel).findByText("Q3 board review"),
+  ).resolves.toBeInTheDocument();
+});
+
 test("The switch decides whether the catalog is requested at all", async () => {
   let listed = 0;
   context.mocks.api(userTemplatesContract.list, ({ respond }) => {
@@ -782,39 +805,48 @@ test("Kind filter keyboard navigation waits for activation and retains the curre
   expect(buttonByName("Import template", dialog)).toHaveFocus();
 });
 
-test("An empty kind hides filters and Custom reopens the available catalog", async () => {
-  mockCustomTemplates([customTemplate()]);
-  const { dialog } = await openCustomPanel();
-  const filters = await within(dialog).findByRole("group", {
-    name: "Template categories",
-  });
-  click(buttonByName("Image", filters)!);
-  await expect(
-    within(dialog).findByText("No images yet"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(dialog).queryByLabelText("Search templates"),
-  ).not.toBeInTheDocument();
-  expect(
-    within(dialog).queryByRole("group", { name: "Template categories" }),
-  ).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button", dialog).filter((button) => {
-      return button.textContent?.trim() === "Import template";
-    }),
-  ).toHaveLength(1);
-  click(tabByText("Custom"));
-  await expect(
-    within(dialog).findByText("Q3 board review"),
-  ).resolves.toBeInTheDocument();
-  const restoredFilters = within(dialog).getByRole("group", {
-    name: "Template categories",
-  });
-  expect(buttonByName("Presentation", restoredFilters)).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-});
+test.each(["click", "{Enter}", " "])(
+  "An empty kind hides filters and Custom reopens the available catalog with %s",
+  async (activation) => {
+    mockCustomTemplates([customTemplate()]);
+    const { user, dialog } = await openCustomPanel();
+    const filters = await within(dialog).findByRole("group", {
+      name: "Template categories",
+    });
+    click(buttonByName("Image", filters)!);
+    await expect(
+      within(dialog).findByText("No images yet"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      within(dialog).queryByLabelText("Search templates"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("group", { name: "Template categories" }),
+    ).not.toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("button", dialog).filter((button) => {
+        return button.textContent?.trim() === "Import template";
+      }),
+    ).toHaveLength(1);
+    const custom = tabByText("Custom");
+    if (activation === "click") {
+      click(custom);
+    } else {
+      custom.focus();
+      await user.keyboard(activation);
+    }
+    await expect(
+      within(dialog).findByText("Q3 board review"),
+    ).resolves.toBeInTheDocument();
+    const restoredFilters = within(dialog).getByRole("group", {
+      name: "Template categories",
+    });
+    expect(buttonByName("Presentation", restoredFilters)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  },
+);
 
 test("An empty catalog leads with the upload entry instead of showing no matches", async () => {
   mockCustomTemplates([]);

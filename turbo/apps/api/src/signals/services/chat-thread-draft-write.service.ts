@@ -3,7 +3,7 @@ import type {
   ChatThreadDraftUserMessage,
 } from "@okouai/db/jsonb-contracts/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 
@@ -34,13 +34,9 @@ export interface ChatThreadDraftWrite {
  * the transaction that wrote it, and `created_at` keeps the default from the
  * first write that touched the thread.
  *
- * The draft `PATCH` is the only writer here during this phase. The message-send
- * paths in `chat-events.command.ts` still clear the legacy columns alone: they
- * update the thread row first, to authorize the send and reserve its event
- * sequence in one statement, so adding a child write after it would take the
- * two row locks in the opposite order from this one and deadlock against a
- * concurrent draft save. Converting them belongs with the read cutover, which
- * is the point at which a stale child row would become visible.
+ * Draft PATCH keeps its B1 admission and child-before-parent write order.
+ * Send-coupled clears use the separate existing-row-only helper below after
+ * acquiring an authorized parent FOR UPDATE lock before any weaker row lock.
  */
 export async function persistChatThreadDraftRow(
   tx: Tx,
@@ -61,4 +57,24 @@ export async function persistChatThreadDraftRow(
         updatedAt: sql`now()`,
       },
     });
+}
+
+/**
+ * Clear a child row only after the caller's authorized parent UPDATE matched.
+ * Send transactions have no B1 producer admission, so they must never use the
+ * PATCH upsert above. A missing child is a normal no-op; retaining an existing
+ * row and its created_at prevents a later legacy fallback from reviving it.
+ */
+export async function clearExistingChatThreadDraftRow(
+  tx: Tx,
+  chatThreadId: string,
+): Promise<void> {
+  await tx
+    .update(chatThreadDrafts)
+    .set({
+      draftUserMessage: null,
+      draftAttachments: null,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(chatThreadDrafts.chatThreadId, chatThreadId));
 }

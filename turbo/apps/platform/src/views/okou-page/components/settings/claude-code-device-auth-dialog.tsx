@@ -242,7 +242,12 @@ function ClaudeCodeDeviceAuthPendingForm({
         onSubmit();
       }}
     >
-      <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+      <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+        <p>
+          {t(($) => {
+            return $.settings.models.deviceAuth.claude.usageNotice;
+          })}
+        </p>
         <p>
           {t(
             ($) => {

@@ -6,7 +6,7 @@ use super::{
     harness::{CONNECTION, Harness, PASSWORD, Reply, TOKEN},
     terminal, wait_for,
 };
-use crate::http::{HttpClient, HttpClientConfig};
+use crate::test_fixtures::http::{HttpClient, HttpClientConfig};
 use crate::vnc::{
     VncRuntime,
     tests::peer::{PLAIN_PASSWORD, PLAIN_USERNAME, Peer},
