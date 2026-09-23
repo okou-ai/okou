@@ -2,20 +2,23 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
-import type {
-  PublicConnectorCatalogAuthMethodDetail,
-  PublicConnectorCatalogAuthMethodSummary,
-  PublicConnectorCatalogConnection,
-  PublicConnectorCatalogConnectionStatus,
-  PublicConnectorCatalogDetail,
-  PublicConnectorCatalogDiscoveryResponse,
-  PublicConnectorCatalogIcon,
-  PublicConnectorCatalogItem,
-  PublicConnectorCatalogListResponse,
-  PublicConnectorCatalogPermissionDetail,
-  PublicConnectorCatalogPermissionSummary,
-  PublicConnectorCatalogStatusItem,
-  PublicConnectorCatalogStatusResponse,
+import {
+  isOneClickConnectorGrantKind,
+  type PublicConnectorCatalogAuthMethodDetail,
+  type PublicConnectorCatalogAuthMethodSummary,
+  type PublicConnectorCatalogConnectItem,
+  type PublicConnectorCatalogConnectListResponse,
+  type PublicConnectorCatalogConnection,
+  type PublicConnectorCatalogConnectionStatus,
+  type PublicConnectorCatalogDetail,
+  type PublicConnectorCatalogDiscoveryResponse,
+  type PublicConnectorCatalogIcon,
+  type PublicConnectorCatalogItem,
+  type PublicConnectorCatalogListResponse,
+  type PublicConnectorCatalogPermissionDetail,
+  type PublicConnectorCatalogPermissionSummary,
+  type PublicConnectorCatalogStatusItem,
+  type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import {
@@ -978,14 +981,53 @@ function connectionMethodForCatalogStatus(args: {
   });
 }
 
-function connectorCatalogStatusItem(args: {
+interface ConnectorCatalogStatusItemArgs {
   readonly catalog: AcceptedConnectorCatalogSnapshot;
   readonly effective: EffectiveConnector;
   readonly featureStates: ConnectorFeatureStates;
   readonly connection: ConnectorCatalogConnection | null;
   readonly popularityIndex: ReadonlyMap<string, number>;
-}): PublicConnectorCatalogStatusItem {
-  const detail = connectorCatalogDetail(args.effective, args.popularityIndex);
+}
+
+type ConnectorCatalogConnectionFields = Omit<
+  PublicConnectorCatalogStatusItem,
+  keyof PublicConnectorCatalogDetail
+>;
+
+function connectorCatalogStatusItem(
+  args: ConnectorCatalogStatusItemArgs,
+): PublicConnectorCatalogStatusItem {
+  return {
+    ...connectorCatalogDetail(args.effective, args.popularityIndex),
+    ...connectorCatalogConnectionFields(args),
+  };
+}
+
+/**
+ * The status item without the per-connector detail a list does not show. The
+ * permission summary is the costly part: it derives every firewall permission.
+ */
+function connectorCatalogConnectItem(
+  args: ConnectorCatalogStatusItemArgs,
+): PublicConnectorCatalogConnectItem {
+  const rank = connectorPopularityRank(
+    args.popularityIndex,
+    args.effective.connector.slug,
+  );
+  return {
+    slug: args.effective.connector.slug,
+    label: args.effective.connector.label,
+    description: args.effective.connector.description,
+    icon: iconForCatalog(args.effective.connector),
+    ...(rank === Number.MAX_SAFE_INTEGER ? {} : { popularityRank: rank }),
+    authMethods: args.effective.authMethods.map(authMethodDetailForCatalog),
+    ...connectorCatalogConnectionFields(args),
+  };
+}
+
+function connectorCatalogConnectionFields(
+  args: ConnectorCatalogStatusItemArgs,
+): ConnectorCatalogConnectionFields {
   const response = args.connection?.response ?? null;
   const connectionMethod = connectionMethodForCatalogStatus({
     effective: args.effective,
@@ -1019,7 +1061,6 @@ function connectorCatalogStatusItem(args: {
   const [singleMethod] = args.effective.authMethods;
 
   return {
-    ...detail,
     connection: connectionForCatalogStatus(connector),
     connected: connector !== null,
     connectionStatus,
@@ -1281,6 +1322,53 @@ export async function getExternalPublicConnectorCatalogStatus(
     connection: connection ?? null,
     popularityIndex: createConnectorPopularityIndex(),
   });
+}
+
+/**
+ * Connect items for the connectors a connect surface lists: a named set, or
+ * every connector that connects in one browser step.
+ */
+export async function listExternalConnectorCatalogConnectItems(
+  args: ExternalCatalogReadArgs & {
+    readonly connections: readonly ConnectorCatalogConnection[];
+    readonly filter:
+      | { readonly kind: "slugs"; readonly connectorSlugs: readonly string[] }
+      | { readonly kind: "one-click" };
+  },
+): Promise<PublicConnectorCatalogConnectListResponse> {
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
+  const filter = args.filter;
+  const effective = effectiveConnectors({
+    catalog,
+    featureStates: args.featureStates,
+    ...(filter.kind === "slugs"
+      ? { connectorSlugs: new Set(filter.connectorSlugs) }
+      : {}),
+  }).filter((entry) => {
+    return (
+      filter.kind === "slugs" ||
+      entry.authMethods.some((method) => {
+        return isOneClickConnectorGrantKind(method.grant.kind);
+      })
+    );
+  });
+  const connectionsBySlug = new Map(
+    args.connections.map((connection) => {
+      return [connection.response.slug, connection];
+    }),
+  );
+  const popularityIndex = createConnectorPopularityIndex();
+  return {
+    connectors: effective.map((entry) => {
+      return connectorCatalogConnectItem({
+        catalog,
+        effective: entry,
+        featureStates: args.featureStates,
+        connection: connectionsBySlug.get(entry.connector.slug) ?? null,
+        popularityIndex,
+      });
+    }),
+  };
 }
 
 /** Only materialize the connected cards needed by the composer. */

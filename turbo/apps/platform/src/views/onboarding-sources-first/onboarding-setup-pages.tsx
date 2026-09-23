@@ -4,10 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  connectorCatalogStatus$,
-  reloadBuiltinConnectors$,
-} from "../../signals/external/connectors.ts";
+import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
   sourcesFirstInviteSendable,
@@ -29,7 +26,10 @@ import {
   type SourcesFirstInvite,
   type SubscriptionProvider,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
-import { waitForSourcesFirstCatalog$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
+import {
+  onboardingSourceConnectors$,
+  waitForSourcesFirstCatalog$,
+} from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import {
   connectOnboardingSubscription$,
   onboardingSubscriptionStatus$,
@@ -51,7 +51,7 @@ import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 export function OnboardingIndustryPage() {
   const { t } = useTranslation();
   const updateDraft = useSet(updateSourcesFirstDraft$);
-  const catalog = useLastLoadable(connectorCatalogStatus$);
+  const catalog = useLastLoadable(onboardingSourceConnectors$);
   const pageSignal = useGet(pageSignal$);
   const [catalogWait, waitForCatalog] = useLoadableSet(
     waitForSourcesFirstCatalog$,

@@ -1,6 +1,7 @@
 import type { BuiltinConnectorSearchItem } from "@okouai/api-contracts/contracts/connectors";
 import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/connector-overview";
 import type {
+  PublicConnectorCatalogConnectListResponse,
   PublicConnectorCatalogListResponse,
   PublicConnectorCatalogDiscoveryResponse,
   PublicConnectorCatalogPermissionDetail,
@@ -16,6 +17,7 @@ import {
   ExternalConnectorCatalogUnavailableError,
   getExternalPublicConnectorCatalogStatus,
   getExternalPublicConnectorCatalogPermissionDetail,
+  listExternalConnectorCatalogConnectItems,
   listExternalPublicConnectorCatalog,
   listExternalPublicConnectorCatalogStatus,
   listExternalConnectedConnectorBriefs,
@@ -69,6 +71,17 @@ export async function listConnectedConnectorBriefs(
   },
 ): Promise<readonly BuiltinConnectorBrief[]> {
   return await listExternalConnectedConnectorBriefs(args);
+}
+
+export async function listConnectorCatalogConnectItems(
+  args: ConnectorCatalogReadArgs & {
+    readonly connections: readonly ConnectorCatalogConnection[];
+    readonly filter:
+      | { readonly kind: "slugs"; readonly connectorSlugs: readonly string[] }
+      | { readonly kind: "one-click" };
+  },
+): Promise<PublicConnectorCatalogConnectListResponse> {
+  return await listExternalConnectorCatalogConnectItems(args);
 }
 
 export async function discoverPublicConnectorCatalogStatus(

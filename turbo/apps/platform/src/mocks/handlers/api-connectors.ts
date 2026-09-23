@@ -11,12 +11,19 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
   connectorCatalogContract,
+  isOneClickConnectorGrantKind,
+  publicConnectorCatalogConnectItemSchema,
   type PublicConnectorCatalogAuthMethodDetail,
+  type PublicConnectorCatalogConnectItem,
   type PublicConnectorCatalogConnection,
   type PublicConnectorCatalogConnectionStatus,
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
+import {
+  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+  onboardingSourcesContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import {
   builtinConnectorExternalCodeSessionContract,
   builtinConnectorManualGrantContract,
@@ -414,6 +421,13 @@ function mockConnectorCatalogStatus(): PublicConnectorCatalogStatusItem[] {
   });
 }
 
+/** The connect-surface projection of a status item, as the API builds it. */
+export function connectorCatalogConnectItem(
+  connector: PublicConnectorCatalogStatusItem,
+): PublicConnectorCatalogConnectItem {
+  return publicConnectorCatalogConnectItemSchema.parse(connector);
+}
+
 export const apiConnectorsHandlers = [
   mockApi(connectorOverviewContract.overview, ({ respond }) => {
     const connected = mockConnectorCatalogStatus().filter((connector) => {
@@ -481,6 +495,31 @@ export const apiConnectorsHandlers = [
     return respond(200, {
       connectors,
       categoryMetadata: testConnectorCatalogCategoryMetadata,
+    });
+  }),
+
+  mockApi(connectorCatalogContract.oneClick, ({ respond }) => {
+    return respond(200, {
+      connectors: mockConnectorCatalogStatus().flatMap((connector) => {
+        return connector.authMethods.some((method) => {
+          return isOneClickConnectorGrantKind(method.grantKind);
+        })
+          ? [connectorCatalogConnectItem(connector)]
+          : [];
+      }),
+    });
+  }),
+
+  mockApi(onboardingSourcesContract.list, ({ respond }) => {
+    const onboardingSlugs = new Set<string>(
+      ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
+    );
+    return respond(200, {
+      connectors: mockConnectorCatalogStatus().flatMap((connector) => {
+        return onboardingSlugs.has(connector.slug)
+          ? [connectorCatalogConnectItem(connector)]
+          : [];
+      }),
     });
   }),
 

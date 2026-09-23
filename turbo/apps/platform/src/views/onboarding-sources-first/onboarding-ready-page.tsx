@@ -12,7 +12,7 @@ import {
   captureSourceOnboardingPromptEdited$,
   captureSourceOnboardingStartClicked$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { justConnectedBuiltinSlugs$ } from "../../signals/okou-page/settings/connectors.ts";
 import { completeOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import {
@@ -161,7 +161,7 @@ export function OnboardingReadyPage() {
   const updateDraft = useSet(updateSourcesFirstDraft$);
   const capturePromptEdited = useSet(captureSourceOnboardingPromptEdited$);
   const captureStartClicked = useSet(captureSourceOnboardingStartClicked$);
-  const catalogLoadable = useLastLoadable(connectorCatalogStatus$);
+  const catalogLoadable = useLastLoadable(onboardingSourceConnectors$);
   const justConnected = useGet(justConnectedBuiltinSlugs$);
   const pageSignal = useGet(pageSignal$);
   const searchParams = useGet(searchParams$);
@@ -170,7 +170,7 @@ export function OnboardingReadyPage() {
 
   const connected =
     catalogLoadable.state === "hasData"
-      ? catalogLoadable.data.connectors.filter((connector) => {
+      ? catalogLoadable.data.filter((connector) => {
           return (
             isOnboardingSourceSlug(connector.slug) &&
             (connector.connected || justConnected.has(connector.slug))

@@ -26,7 +26,7 @@ import {
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
-import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import type { PlatformConnectorCatalogConnectItem } from "../../signals/connector-domain.ts";
 import {
   selectedBuiltinConnectorCatalogItem$,
   selectedBuiltinConnectorSlug$,
@@ -287,7 +287,7 @@ function ConnectorIntro({
   onNeedsChoice,
 }: IntroProps & {
   readonly onNeedsChoice: (
-    connector: PlatformConnectorCatalogStatusItem,
+    connector: PlatformConnectorCatalogConnectItem,
   ) => void;
 }) {
   const { t } = useTranslation();
@@ -515,7 +515,7 @@ export function GetStartedQuestIntroDialog({
         })?.rewardAmount
       : undefined;
   const props: IntroProps = { onConfirm: confirm, onClose: close, reward };
-  const needsChoice = (connector: PlatformConnectorCatalogStatusItem) => {
+  const needsChoice = (connector: PlatformConnectorCatalogConnectItem) => {
     setSelectedSlug(connector.slug);
   };
 

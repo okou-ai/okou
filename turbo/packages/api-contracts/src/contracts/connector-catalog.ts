@@ -148,6 +148,34 @@ const publicConnectorCatalogStatusItemSchema =
     connectNotice: z.enum(["google-security-warning"]).nullable(),
   });
 
+/**
+ * A connector as a connect surface lists it: what draws its card and what
+ * starts a connection from the same click, since the provider window has to
+ * open inside that click. Detail that only one connector's page shows
+ * (permissions, MCP, tags) stays on `GET /api/connector-catalog/:slug`.
+ */
+export const publicConnectorCatalogConnectItemSchema =
+  publicConnectorCatalogStatusItemSchema.pick({
+    slug: true,
+    label: true,
+    description: true,
+    icon: true,
+    popularityRank: true,
+    authMethods: true,
+    connection: true,
+    connected: true,
+    connectionStatus: true,
+    scopeMismatch: true,
+    authMethodSupportsRefresh: true,
+    tokenExpiresAt: true,
+    singleAuthCodeAuthMethodId: true,
+    connectNotice: true,
+  });
+
+export const publicConnectorCatalogConnectListResponseSchema = z.object({
+  connectors: z.array(publicConnectorCatalogConnectItemSchema),
+});
+
 const publicConnectorCatalogDetailResponseSchema = z.object({
   connector: publicConnectorCatalogStatusItemSchema,
 });
@@ -275,6 +303,12 @@ export type PublicConnectorCatalogConnection = z.infer<
 export type PublicConnectorCatalogStatusItem = z.infer<
   typeof publicConnectorCatalogStatusItemSchema
 >;
+export type PublicConnectorCatalogConnectItem = z.infer<
+  typeof publicConnectorCatalogConnectItemSchema
+>;
+export type PublicConnectorCatalogConnectListResponse = z.infer<
+  typeof publicConnectorCatalogConnectListResponseSchema
+>;
 export type PublicConnectorCatalogStatusResponse = z.infer<
   typeof publicConnectorCatalogStatusResponseSchema
 >;
@@ -333,6 +367,19 @@ export const connectorCatalogContract = c.router({
       503: apiErrorSchema,
     },
     summary: "Browse featured connectors or search by slug and label",
+  },
+  oneClick: {
+    method: "GET",
+    path: "/api/connector-catalog/one-click",
+    headers: authHeadersSchema,
+    responses: {
+      200: publicConnectorCatalogConnectListResponseSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "List connectors that connect in one browser step, with connection status",
   },
   diagnostics: {
     method: "GET",
