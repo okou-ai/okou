@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -65,6 +66,26 @@ async function openDraft(
       sentPrompts.push(prompt);
     },
   });
+  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+    return respond(200, [
+      {
+        id: "c0000000-0000-4000-a000-000000000072",
+        agentId: MESSAGE_EXPERIENCE_AGENT_ID,
+        agentName: null,
+        agentDisplayName: "Message Agent",
+        name: "regression-workflow",
+        displayName: "Regression workflow",
+        description: "A selectable slash suggestion",
+        visibility: "public",
+        ownerUserId: "user-1",
+        createdAt: "2026-09-23T00:00:00.000Z",
+        canManage: true,
+        canPublish: false,
+        official: null,
+        shadowedBy: null,
+      },
+    ]);
+  });
   await setupPage({
     context,
     path: `/agents/${MESSAGE_EXPERIENCE_AGENT_ID}/chat`,
@@ -127,7 +148,8 @@ describe.each(appleBrowsers)("$name", (browser) => {
       const sentPrompts: string[] = [];
       const editor = await openDraft(browser, firstLine, sentPrompts);
       if (firstLine === "/") {
-        await screen.findByTestId("slash-workflow-menu");
+        const menu = await screen.findByTestId("slash-workflow-menu");
+        await within(menu).findByText("A selectable slash suggestion");
       }
 
       pressNativeEnter(editor, { shiftKey: true });
