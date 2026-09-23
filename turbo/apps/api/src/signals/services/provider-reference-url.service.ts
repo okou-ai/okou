@@ -7,10 +7,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import { env } from "../../lib/env";
 import { db$, type ReadonlyDb } from "../external/db";
-import {
-  generateHostedSitesPresignedGetUrl,
-  generatePresignedGetUrl,
-} from "../external/s3";
+import { resolveArtifactPresignedGet$ } from "./artifact-presigned-url-cache.service";
 import { safeUriComponentDecode, safeUrlParse } from "../utils";
 import { resolveOwnedPublicArtifactKey$ } from "./artifact-storage.service";
 import { resolveArtifactFileReference } from "./private-artifact-storage.service";
@@ -211,12 +208,20 @@ export const resolveProviderReferenceUrls$ = command(
             "Artifact reference is not available to the current user and organization",
           );
         }
-        resolved.push(
-          await get(
-            generatePresignedGetUrl(object.bucket, object.key, undefined, true),
-          ),
+        const signed = await set(
+          resolveArtifactPresignedGet$,
+          {
+            bucket: object.bucket,
+            key: object.key,
+            signer: "user-artifact",
+            objectVerified: true,
+          },
+          signal,
         );
-        signal.throwIfAborted();
+        if (!signed) {
+          return badRequestMessage("Artifact reference is unavailable");
+        }
+        resolved.push(signed.url);
         continue;
       }
       const artifactKey = await set(
@@ -225,17 +230,19 @@ export const resolveProviderReferenceUrls$ = command(
         signal,
       );
       if (artifactKey) {
-        resolved.push(
-          await get(
-            generatePresignedGetUrl(
-              env("R2_USER_ARTIFACTS_BUCKET_NAME"),
-              artifactKey,
-              undefined,
-              true,
-            ),
-          ),
+        const signed = await set(
+          resolveArtifactPresignedGet$,
+          {
+            bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
+            key: artifactKey,
+            signer: "user-artifact",
+          },
+          signal,
         );
-        signal.throwIfAborted();
+        if (!signed) {
+          return badRequestMessage("Artifact reference is unavailable");
+        }
+        resolved.push(signed.url);
         continue;
       }
 
@@ -255,16 +262,19 @@ export const resolveProviderReferenceUrls$ = command(
         resolved.push(url);
         continue;
       }
-      resolved.push(
-        await get(
-          generateHostedSitesPresignedGetUrl(
-            hostedBucket,
-            `${deployment.r2Prefix}${hostedTarget.path}`,
-            true,
-          ),
-        ),
+      const signed = await set(
+        resolveArtifactPresignedGet$,
+        {
+          bucket: hostedBucket,
+          key: `${deployment.r2Prefix}${hostedTarget.path}`,
+          signer: "hosted-sites",
+        },
+        signal,
       );
-      signal.throwIfAborted();
+      if (!signed) {
+        return badRequestMessage("Artifact reference is unavailable");
+      }
+      resolved.push(signed.url);
     }
     return resolved;
   },

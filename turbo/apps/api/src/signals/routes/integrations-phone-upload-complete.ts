@@ -14,7 +14,7 @@ import {
 } from "../external/agentphone-client";
 import {
   materializeUploadedArtifact$,
-  uploadedArtifactFetchUrl,
+  uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
 import { recordAgentPhoneUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
@@ -129,8 +129,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const mimetype = body.contentType ?? object.contentType;
-  const fetchUrl = await get(uploadedArtifactFetchUrl(object));
-  signal.throwIfAborted();
+  const fetchUrl = await set(uploadedArtifactFetchUrl$, object, signal);
   const sendResult = await settle(
     sendAgentPhoneMessage(
       {

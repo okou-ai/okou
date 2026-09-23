@@ -313,6 +313,10 @@ test.each([
       [200],
     );
     expect(own.body).toStrictEqual({ kind: "file", ...legacyRead.body });
+    const signedCount = context.mocks.s3.getSignedUrl.mock.calls.length;
+    const repeated = await download(actor, completed.body.url);
+    expect(repeated.body).toStrictEqual(own.body);
+    expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(signedCount);
     await accept(cloneReference(actor, completed.body.url), [404]);
 
     const target = { kind: "file" as const, id: prepared.body.id };
@@ -323,6 +327,11 @@ test.each([
       kind: "file",
       filename,
       contentType,
+    });
+    expect(context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1]).toMatchObject({
+      input: {
+        ResponseContentDisposition: `attachment; filename="${filename}"`,
+      },
     });
     if (publicDownload.body.kind !== "file") {
       throw new Error("Expected a single-file download");
@@ -347,6 +356,18 @@ test("legacy public sites are cloneable outside their originating organization",
   for (const slug of [site.publicSlug, `dpl-${site.deploymentId}`]) {
     const result = await host.readHostedSiteFiles(outsider, slug);
     expectCompleteSite(result, site.deploymentId);
+    const signedCount = context.mocks.s3.getSignedUrl.mock.calls.length;
+    const repeated = await host.readHostedSiteFiles(outsider, slug);
+    expect(
+      repeated.files.map((file) => {
+        return file.downloadUrl;
+      }),
+    ).toStrictEqual(
+      result.files.map((file) => {
+        return file.downloadUrl;
+      }),
+    );
+    expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(signedCount);
     for (const file of result.files) {
       expect(storageKey(file.downloadUrl)).toMatch(/^sites\//u);
     }

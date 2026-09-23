@@ -1,13 +1,8 @@
 import { command } from "ccstate";
 import type { ArtifactDownloadResponse } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
-import { nowDate } from "../../lib/time";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
-import {
-  generateArtifactPreviewUrl,
-  generateHostedSitesPresignedGetUrl,
-  s3ObjectHead,
-} from "../external/s3";
+import { resolveArtifactPresignedGet$ } from "./artifact-presigned-url-cache.service";
 import {
   artifactReferenceRecord,
   type SharedThreadArtifactReference,
@@ -64,17 +59,21 @@ const resolveSharedThreadArtifactDownload$ = command(
       if (args.expectedKind) {
         return null;
       }
-      const url = await get(
-        generateHostedSitesPresignedGetUrl(
-          sharedThreadArtifactsBucket(),
-          `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
-          true,
-        ),
+      const signed = await set(
+        resolveArtifactPresignedGet$,
+        {
+          bucket: sharedThreadArtifactsBucket(),
+          key: `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
+          signer: "hosted-sites",
+        },
+        signal,
       );
-      signal.throwIfAborted();
+      if (!signed) {
+        return null;
+      }
       return {
         kind: "file",
-        url,
+        url: signed.url,
         filename: file.path.slice(file.path.lastIndexOf("/") + 1),
         contentType: file.contentType,
       };
@@ -159,18 +158,14 @@ export const resolveArtifactDownload$ = command(
             signal,
           );
         }
-        // Match the viewer's support for older single-PUT upload clients.
-        const object = await get(s3ObjectHead(file.bucket, file.key));
-        signal.throwIfAborted();
-        if (object.kind === "missing") {
+        const preview = await set(
+          resolveArtifactPresignedGet$,
+          { bucket: file.bucket, key: file.key, signer: "user-artifact" },
+          signal,
+        );
+        if (!preview) {
           return null;
         }
-        const preview = await get(
-          generateArtifactPreviewUrl(file.bucket, file.key, {
-            signingDate: nowDate(),
-          }),
-        );
-        signal.throwIfAborted();
         return {
           kind: "file",
           url: preview.url,

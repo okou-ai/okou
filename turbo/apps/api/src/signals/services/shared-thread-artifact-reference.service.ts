@@ -4,17 +4,13 @@ import {
   sharedThreadArtifactPolicyKey,
   sharedThreadArtifactPolicySchema,
 } from "@okouai/api-contracts/contracts/shared-thread-artifacts";
-import { nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
-import {
-  generateArtifactPreviewUrl,
-  generateHostedSitesPresignedGetUrl,
-  readArtifactSharePolicyObject,
-} from "../external/s3";
+import { readArtifactSharePolicyObject } from "../external/s3";
 import { settle } from "../utils";
 import { sharedThreadHostedSnapshotFile } from "../../lib/shared-thread-artifact";
 import type { SharedThreadArtifactReference } from "./artifact-reference.service";
 import { createHostedPreviewGrant$ } from "./private-hosted-preview.service";
+import { resolveArtifactPresignedGet$ } from "./artifact-presigned-url-cache.service";
 import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import { sharedThreadArtifactsBucket } from "./shared-thread-artifact-snapshot.service";
 
@@ -103,21 +99,34 @@ export const resolveSharedThreadArtifactReference$ = command(
     }
     const { target, previewImageUrl } = snapshot;
     if (target.kind === "file") {
-      const signingDate = nowDate();
-      const [preview, download] = await Promise.all([
-        get(
-          generateArtifactPreviewUrl(privateArtifactsBucket(), target.key, {
-            signingDate,
-          }),
-        ),
-        get(
-          generateArtifactPreviewUrl(privateArtifactsBucket(), target.key, {
-            signingDate,
-            filename: target.filename,
-          }),
-        ),
-      ]);
-      signal.throwIfAborted();
+      const preview = await set(
+        resolveArtifactPresignedGet$,
+        {
+          bucket: privateArtifactsBucket(),
+          key: target.key,
+          signer: "user-artifact",
+        },
+        signal,
+      );
+      if (!preview) {
+        return null;
+      }
+      // The preview credential is verified on its cache miss; the attachment
+      // variant follows that same window without a second cold-cache HEAD.
+      const download = await set(
+        resolveArtifactPresignedGet$,
+        {
+          bucket: privateArtifactsBucket(),
+          key: target.key,
+          signer: "user-artifact",
+          filename: target.filename,
+          objectVerified: true,
+        },
+        signal,
+      );
+      if (!download) {
+        return null;
+      }
       return {
         ...preview,
         downloadUrl: download.url,
@@ -142,18 +151,22 @@ export const resolveSharedThreadArtifactReference$ = command(
       signal,
     );
     const filename = file.path.slice(file.path.lastIndexOf("/") + 1);
-    const downloadUrl = await get(
-      generateHostedSitesPresignedGetUrl(
-        sharedThreadArtifactsBucket(),
-        `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
-        true,
-        { signingDate: nowDate(), filename },
-      ),
+    const download = await set(
+      resolveArtifactPresignedGet$,
+      {
+        bucket: sharedThreadArtifactsBucket(),
+        key: `shared-artifacts/${reference.publicBrand}/${target.snapshotId}/${target.id}${file.path}`,
+        signer: "hosted-sites",
+        filename,
+      },
+      signal,
     );
-    signal.throwIfAborted();
+    if (!download) {
+      return null;
+    }
     return {
       ...preview,
-      downloadUrl,
+      downloadUrl: download.url,
       ...(reference.previewPath
         ? { url: new URL(reference.previewPath, preview.url).href }
         : {}),

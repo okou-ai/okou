@@ -2,12 +2,12 @@ import { command } from "ccstate";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
-import { generateHostedSitesPresignedGetUrl } from "../external/s3";
+import { resolveArtifactPresignedGet$ } from "./artifact-presigned-url-cache.service";
 
 /** Call only after authorizing this exact deployment or immutable share snapshot. */
 export const signHostedSiteFiles$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly metadata: Omit<
         HostedSiteFilesResponse,
@@ -31,15 +31,15 @@ export const signHostedSiteFiles$ = command(
     });
     const files = await Promise.all(
       manifestFiles.map(async (file) => {
-        const downloadUrl = await get(
-          generateHostedSitesPresignedGetUrl(
-            bucket,
-            `${args.prefix}${file.path}`,
-            true,
-          ),
+        const signed = await set(
+          resolveArtifactPresignedGet$,
+          { bucket, key: `${args.prefix}${file.path}`, signer: "hosted-sites" },
+          signal,
         );
-        signal.throwIfAborted();
-        return { ...file, downloadUrl };
+        if (!signed) {
+          throw new Error("Hosted artifact file is unavailable");
+        }
+        return { ...file, downloadUrl: signed.url };
       }),
     );
     signal.throwIfAborted();

@@ -21,11 +21,12 @@ type StoragePresignedUrlCacheScope =
   | "system_storage"
   | "workflow_skill_storage"
   | "readonly_storage"
-  | "presentation_template_preview";
+  | "presentation_template_preview"
+  | "artifact_read";
 
 export type StorageManifestPresignedUrlCacheScope = Exclude<
   StoragePresignedUrlCacheScope,
-  "presentation_template_preview"
+  "presentation_template_preview" | "artifact_read"
 >;
 
 export type StorageManifestCacheBranch =

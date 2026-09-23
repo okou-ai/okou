@@ -1,4 +1,3 @@
-import { nowDate } from "../../lib/time";
 import { command } from "ccstate";
 import {
   artifactReferencesContract,
@@ -9,7 +8,7 @@ import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { authorization$, setResHeader$ } from "../context/hono";
 import { pathParamsOf, queryOf } from "../context/request";
-import { generateArtifactPreviewUrl, s3ObjectHead } from "../external/s3";
+import { resolveArtifactPresignedGet$ } from "../services/artifact-presigned-url-cache.service";
 import { privateArtifactRecord } from "../services/private-artifact-storage.service";
 import {
   resolveArtifactShare$,
@@ -50,20 +49,16 @@ const resolveFileReference$ = command(
           ? { status: 200 as const, body: shared }
           : notFound("Artifact unavailable");
       }
-      // Older attachment composers do not call complete after a single PUT.
-      // Verify the owned object exists before signing its preview; multipart
-      // uploads remain unreadable until R2 publishes the completed object.
-      const object = await get(s3ObjectHead(file.bucket, file.key));
-      signal.throwIfAborted();
-      if (object.kind === "missing") {
+      // A cache miss verifies the object, including older single-PUT clients;
+      // a live credential proves it was present during this cache window.
+      const preview = await set(
+        resolveArtifactPresignedGet$,
+        { bucket: file.bucket, key: file.key, signer: "user-artifact" },
+        signal,
+      );
+      if (!preview) {
         return notFound("Artifact unavailable");
       }
-      const preview = await get(
-        generateArtifactPreviewUrl(file.bucket, file.key, {
-          signingDate: nowDate(),
-        }),
-      );
-      signal.throwIfAborted();
       return {
         status: 200 as const,
         body: {

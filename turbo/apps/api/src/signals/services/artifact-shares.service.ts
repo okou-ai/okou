@@ -1,5 +1,4 @@
 import { hostedSiteDeliveryManifest } from "./hosted-site-dependencies.service";
-import { nowDate } from "../../lib/time";
 import { randomBytes, randomUUID } from "node:crypto";
 import { artifactFilenameExtension } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { artifactShareReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
@@ -32,7 +31,6 @@ import {
   copyArtifactShareObject,
   readArtifactSharePolicyObject,
   writeArtifactSharePolicyObject,
-  generateArtifactPreviewUrl,
   putHostedSitesS3Object,
 } from "../external/s3";
 import {
@@ -40,6 +38,7 @@ import {
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
+import { resolveArtifactPresignedGet$ } from "./artifact-presigned-url-cache.service";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import { artifactDeliveryRecord } from "./artifact-delivery.service";
 import { resolveSharedThreadHostedDownload$ } from "./shared-thread-artifacts.service";
@@ -648,13 +647,19 @@ export const resolveArtifactShare$ = command(
     ) {
       return null;
     }
-    const preview = await get(
-      generateArtifactPreviewUrl(file.bucket, policy.target.key, {
-        signingDate: nowDate(),
+    const preview = await set(
+      resolveArtifactPresignedGet$,
+      {
+        bucket: file.bucket,
+        key: policy.target.key,
+        signer: "user-artifact",
         filename: file.filename,
-      }),
+      },
+      signal,
     );
-    signal.throwIfAborted();
+    if (!preview) {
+      return null;
+    }
     return {
       ...preview,
       filename: file.filename,
@@ -737,13 +742,19 @@ export const resolveArtifactShareDownload$ = command(
       if (!file) {
         return null;
       }
-      const preview = await get(
-        generateArtifactPreviewUrl(file.bucket, policy.target.key, {
-          signingDate: nowDate(),
+      const preview = await set(
+        resolveArtifactPresignedGet$,
+        {
+          bucket: file.bucket,
+          key: policy.target.key,
+          signer: "user-artifact",
           filename: policy.target.filename,
-        }),
+        },
+        signal,
       );
-      signal.throwIfAborted();
+      if (!preview) {
+        return null;
+      }
       return {
         kind: "file",
         url: preview.url,

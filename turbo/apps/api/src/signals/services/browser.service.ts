@@ -47,10 +47,7 @@ import {
 } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
-import {
-  generateArtifactPreviewUrl,
-  putImmutableS3Object,
-} from "../external/s3";
+import { putImmutableS3Object } from "../external/s3";
 import { settle, settleIncludingAbort } from "../utils";
 import {
   BrowserUseProviderError,
@@ -67,6 +64,7 @@ import {
   type BrowserUseSession,
 } from "./browser-use.service";
 import { allocateUploadedArtifact$ } from "./uploaded-artifact.service";
+import { resolveArtifactPresignedGet$ } from "./artifact-presigned-url-cache.service";
 import {
   resolveArtifactFileReference,
   completePrivateArtifact$,
@@ -377,7 +375,7 @@ async function loadBrowserScreen(
 
 const loadBrowserScreenshotUrl$ = command(
   async (
-    { get },
+    { get, set },
     db: Db,
     chatThreadId: string,
     signal: AbortSignal,
@@ -425,13 +423,12 @@ const loadBrowserScreenshotUrl$ = command(
     ) {
       return null;
     }
-    const preview = await get(
-      generateArtifactPreviewUrl(file.bucket, file.key, {
-        signingDate: nowDate(),
-      }),
+    const preview = await set(
+      resolveArtifactPresignedGet$,
+      { bucket: file.bucket, key: file.key, signer: "user-artifact" },
+      signal,
     );
-    signal.throwIfAborted();
-    return preview.url;
+    return preview?.url ?? null;
   },
 );
 

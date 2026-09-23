@@ -338,9 +338,31 @@ describe("private artifact uploads", () => {
     );
     expect(downloaded.headers.get("x-content-type-options")).toBe("nosniff");
 
+    const signatures = context.mocks.s3.getSignedUrl.mock.calls.length;
+    const heads = context.mocks.s3.send.mock.calls.filter(([command]) => {
+      return command instanceof HeadObjectCommand;
+    }).length;
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://private-r2.example/report.html?signature=two",
     );
+    mockNow(new Date("2026-09-10T11:59:59.000Z"));
+    const stable = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: { reference: new URL(url).pathname.split("/").at(-1)! },
+      }),
+      [200],
+    );
+    expect(stable.body.url).toBe(preview.body.url);
+    expect(stable.body.expiresAt).toBe(preview.body.expiresAt);
+    expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(signatures);
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof HeadObjectCommand;
+      }),
+    ).toHaveLength(heads);
+
+    mockNow(new Date("2026-09-10T12:00:00.000Z"));
     const refreshed = await accept(
       api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
       [200],
@@ -349,8 +371,167 @@ describe("private artifact uploads", () => {
       url: "https://private-r2.example/report.html?signature=two",
       publicUrl: null,
       previewImageUrl: null,
-      expiresAt: "2026-09-11T12:00:00.000Z",
+      expiresAt: "2026-09-12T12:00:00.000Z",
     });
+    expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(
+      signatures + 1,
+    );
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof HeadObjectCommand;
+      }),
+    ).toHaveLength(heads + 1);
+  });
+
+  it("does not reuse a URL signed with a previous storage credential", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    mockNow(new Date("2026-09-09T12:00:00.000Z"));
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://private-r2.example/report.html?signature=old-key",
+    );
+    const first = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", "rotated-test-key");
+    context.mocks.s3.getSignedUrl.mockResolvedValue(
+      "https://private-r2.example/report.html?signature=new-key",
+    );
+    const rotated = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(rotated.body.url).not.toBe(first.body.url);
+    expect(rotated.body.expiresAt).toBe(first.body.expiresAt);
+  });
+
+  it("uses an unexpired URL on transient refresh failure but not after hard expiry", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    mockNow(new Date("2026-09-09T12:00:00.000Z"));
+    const first = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    const original = context.mocks.s3.send.getMockImplementation()!;
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof HeadObjectCommand) {
+        return Promise.reject(new Error("Transient storage failure"));
+      }
+      return original(command);
+    });
+    mockNow(new Date("2026-09-10T12:00:00.000Z"));
+    const fallback = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    expect(fallback.body.url).toBe(first.body.url);
+    expect(fallback.body.expiresAt).toBe(first.body.expiresAt);
+    mockNow(new Date("2026-09-11T12:00:00.000Z"));
+    const expired = await accept(
+      api()(artifactReferencesContract).resolve({
+        headers,
+        params: {
+          reference: new URL(prepared.body.url).pathname.split("/").at(-1)!,
+        },
+      }),
+      [500],
+    );
+    expect(expired.body.error).toBe("Internal server error");
+  });
+
+  it("does not serve a cached URL after refresh confirms object deletion", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    mockNow(new Date("2026-09-09T12:00:00.000Z"));
+    await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [200],
+    );
+    const original = context.mocks.s3.send.getMockImplementation()!;
+    context.mocks.s3.send.mockImplementation((command) => {
+      if (command instanceof HeadObjectCommand) {
+        return Promise.reject(
+          Object.assign(new Error("Object deleted"), { name: "NotFound" }),
+        );
+      }
+      return original(command);
+    });
+    mockNow(new Date("2026-09-10T12:00:00.000Z"));
+    const missing = await accept(
+      api()(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: prepared.body.id },
+      }),
+      [404],
+    );
+    expect(missing.body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("coalesces concurrent cold reads across artifact and web-file routes", async () => {
+    await setPrivateArtifacts(true);
+    const prepared = await accept(
+      api()(uploadsContract).prepare({ headers, body }),
+      [200],
+    );
+    mockStoredFile(prepared.body.id);
+    mockNow(new Date("2026-09-09T12:00:00.000Z"));
+    const callsBefore = context.mocks.s3.getSignedUrl.mock.calls.length;
+    const reference = new URL(prepared.body.url).pathname.split("/").at(-1)!;
+    const [artifact, webFile] = await Promise.all([
+      accept(
+        api()(artifactReferencesContract).resolve({
+          headers,
+          params: { reference },
+        }),
+        [200],
+      ),
+      accept(
+        api()(webFilesContract).fileUrl({
+          headers,
+          query: { file_id: prepared.body.id },
+        }),
+        [200],
+      ),
+    ]);
+    expect(artifact.body.url).toBe(webFile.body.url);
+    expect(artifact.body.expiresAt).toBe(webFile.body.expiresAt);
+    expect(context.mocks.s3.getSignedUrl.mock.calls).toHaveLength(
+      callsBefore + 1,
+    );
+    expect(
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return command instanceof HeadObjectCommand;
+      }),
+    ).toHaveLength(1);
   });
 
   it("enforces owner and organization after the switch is disabled, including complete and multipart operations", async () => {

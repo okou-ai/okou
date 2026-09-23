@@ -2789,8 +2789,21 @@ proactive refresh or retry. The cron endpoint is now
 `/api/cron/prune-storage-presigned-urls` and only removes expired cache rows.
 Cache keys include the lifetime, so new code does not reuse the previous shorter
 policy. The database's required `refresh_after` and `last_requested_at` columns
-remain writable for deployment coexistence; new rows set `refresh_after` to their
-expiration and new code does not use either column to schedule renewal.
+remain writable for deployment coexistence. Storage-manifest and presentation
+preview rows set `refresh_after` to their expiration; no timer renews them.
+
+Artifact GET credentials reuse the same table under an `artifact_read` scope.
+Their `refresh_after` is half the two-day lifetime: an authorized read reuses
+the exact URL for the first day and the first subsequent read refreshes it on
+demand. The cache identity includes the object, signer credentials/endpoint and
+signed response variant (including attachment disposition). Owner, share and
+snapshot authorization still precedes the lookup. On a user-artifact cache miss
+or refresh, R2 HEAD confirms the object exists unless the caller already checked
+that exact object in the same request; a cache hit avoids the extra HEAD.
+Transient refresh failures may reuse an old URL until its hard expiration, but
+a confirmed missing object does not. The existing cron only prunes hard-expired
+rows. No migration or frontend wire change is required. Older API deployments
+continue signing directly and ignore this new cache scope.
 
 ## API-first usage handoff producer (#35413)
 
