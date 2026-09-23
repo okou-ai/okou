@@ -65,18 +65,21 @@ function browserInputAction(
         description: "The email used for this account",
         fieldKind: "username",
         required: true,
+        control: { tagName: "INPUT", inputType: "email" },
       },
       {
         key: "password",
         label: "Password",
         fieldKind: "password",
         required: true,
+        control: { tagName: "INPUT", inputType: "password" },
       },
       {
         key: "code",
         label: "Verification code",
         fieldKind: "one_time_code",
         required: false,
+        control: { tagName: "INPUT", inputType: "tel" },
       },
     ],
     callbackIds: {

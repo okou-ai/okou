@@ -1,10 +1,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import type {
-  BrowserUserActionApplyRequest,
-  BrowserUserActionCreateRequest,
-  BrowserUserActionResponse,
-  BrowserUserActionState,
+import {
+  browserUserActionDisplayFieldSchema,
+  type BrowserUserActionApplyRequest,
+  type BrowserUserActionCreateRequest,
+  type BrowserUserActionResponse,
+  type BrowserUserActionState,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/contracts/browser";
 import {
@@ -40,6 +41,7 @@ import { safeSync, settle, settleIncludingAbort } from "../utils";
 import {
   applyBrowserUseUserAction,
   BrowserUseProviderError,
+  type BrowserUseControlInspection,
   type BrowserUseUserActionValidation,
   BrowserUseUserActionValidationError,
   BrowserUseUserActionMutationError,
@@ -148,6 +150,7 @@ function publicRequest(
   row: RequestRow,
   requestToken: string,
   payload: BrowserUserActionPayload,
+  controls?: readonly BrowserUseControlInspection[],
 ): BrowserUserActionResponse {
   const common = {
     requestToken,
@@ -161,7 +164,8 @@ function publicRequest(
     ...common,
     kind: payload.kind,
     siteOrigin: payload.target.siteOrigin,
-    fields: payload.target.fields.map((field) => {
+    fields: payload.target.fields.map((field, index) => {
+      const observed = controls?.[index];
       return {
         key: field.key,
         label: field.label,
@@ -170,6 +174,23 @@ function publicRequest(
           : { description: field.description }),
         fieldKind: field.fieldKind,
         required: field.required,
+        control: browserUserActionDisplayFieldSchema.shape.control.parse({
+          ...field.fingerprint,
+          ...(observed === undefined
+            ? {}
+            : {
+                siteRequired: observed.siteRequired,
+                ...(observed.minLength === undefined
+                  ? {}
+                  : { minLength: observed.minLength }),
+                ...(observed.maxLength === undefined
+                  ? {}
+                  : { maxLength: observed.maxLength }),
+                ...(observed.pattern === undefined
+                  ? {}
+                  : { pattern: observed.pattern }),
+              }),
+        }),
       };
     }),
   };
@@ -1157,7 +1178,7 @@ export const preflightBrowserUserAction$ = command(
         if (!checked.ok) {
           return providerFailure(checked.error);
         }
-        if (checked.value === "stale") {
+        if (checked.value.kind === "stale") {
           const stale = await markPendingBrowserUserActionStale(
             operationDb,
             current,
@@ -1172,7 +1193,12 @@ export const preflightBrowserUserAction$ = command(
         }
         return {
           kind: "ok",
-          value: publicRequest(current, args.requestToken, payload),
+          value: publicRequest(
+            current,
+            args.requestToken,
+            payload,
+            checked.value.controls,
+          ),
         };
       },
       signal,
@@ -1322,6 +1348,13 @@ async function applyClaimedBrowserUserAction(
         }
         await restorePending(operationDb, current.requestTokenHash);
         return providerFailure(operation.error);
+      }
+      if (operation.value === "invalid") {
+        await restorePending(operationDb, current.requestTokenHash);
+        return conflict(
+          "Browser input does not meet the website control constraints",
+          "BROWSER_USER_ACTION_INVALID_VALUE",
+        );
       }
       const terminal = await finalize(
         operationDb,

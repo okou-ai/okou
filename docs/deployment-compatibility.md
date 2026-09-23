@@ -3589,12 +3589,14 @@ capture no page or DOM metadata and have no open endpoint. The existing
 thread-scoped Browser card opens the current Browser and its normal viewer
 heartbeat owns Browser access and lease renewal.
 
-The native input preflight endpoint is additive under the same switch. Deploy
-the API before a Platform build that requires preflight to open the editable
-form. An older Platform on the newer API still relies on the unchanged submit
-validation. Preflight performs one bounded provider lookup and read-only CDP
-connection per explicit form entry. A confirmed target mismatch marks a pending
-request stale; transient provider failures leave it pending for retry.
+The native input preflight endpoint uses the same team-only switch. It performs
+one bounded provider lookup and read-only CDP connection per explicit form
+entry, returning the verified control subtype and current applicable site
+constraints. A confirmed target mismatch marks a pending request stale;
+transient provider failures leave it pending for retry. The editable form uses
+that preflight response. Apply rechecks site constraints before any mutation.
+Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
+earlier Platform, API, or persisted-action shapes.
 
 The Browser action GET response can also report `callbackDelivered` for a
 terminal success or cancellation. It derives this fact from the matching
