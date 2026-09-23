@@ -40,6 +40,7 @@ import {
   listAgent,
   mcpCustomConnector,
   mockCustomConnectorStory,
+  mockConnectorOverviewAccountSummaries,
   mockOAuthCompletions,
   queryConnectorAction,
 } from "./connector-page-test-helpers.ts";
@@ -99,27 +100,27 @@ function customAccount(
 function mockCustomAccountSummary(
   readConnector: () => CustomConnectorResponse | null,
 ): void {
-  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+  const summaries = () => {
     const connector = readConnector();
     if (!connector?.connected) {
-      return respond(200, { summaries: [] });
+      return [];
     }
     const account = customAccount(
       connector.id,
       "66666666-6666-4666-8666-666666666666",
       { authMethod: connector.authMode === "manual" ? "manual" : "oauth" },
     );
-    return respond(200, {
-      summaries: [
-        {
-          target: account.target,
-          accountCount: 1,
-          attentionCount: 0,
-          defaultConnection: account,
-        },
-      ],
-    });
+    return [{
+      target: account.target,
+      accountCount: 1,
+      attentionCount: 0,
+      defaultConnection: account,
+    }];
+  };
+  context.mocks.api(connectorAccountsContract.summaries, ({ respond }) => {
+    return respond(200, { summaries: summaries() });
   });
+  mockConnectorOverviewAccountSummaries(context, summaries);
 }
 
 function accountAction(container: ParentNode): HTMLElement {
@@ -215,6 +216,14 @@ test("Add and optionally name a custom connector account", async () => {
       }),
     });
   });
+  mockConnectorOverviewAccountSummaries(context, () =>
+    [...accounts.values()].map((account) => ({
+      target: account.target,
+      accountCount: 1,
+      attentionCount: 0,
+      defaultConnection: account,
+    })),
+  );
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
@@ -345,6 +354,14 @@ test.each(["http", "mcp-manual", "mcp-automatic"] as const)(
         ],
       });
     });
+    mockConnectorOverviewAccountSummaries(context, () => [
+      {
+        target: existing.target,
+        accountCount: accounts.length,
+        attentionCount: 0,
+        defaultConnection: existing,
+      },
+    ]);
     context.mocks.api(
       connectorAccountsContract.connection,
       ({ params, respond }) => {
@@ -479,6 +496,17 @@ test("Enable custom connector access when an account becomes available", async (
       });
     },
   );
+  mockConnectorOverviewAccountSummaries(context, async () => {
+    await summariesReady.promise;
+    return [
+      {
+        target: { kind: "custom", customConnectorId: connector.id },
+        accountCount: 1,
+        attentionCount: 0,
+        defaultConnection: null,
+      },
+    ];
+  });
   await setupCustomPage();
   click(
     await waitFor(() => {
@@ -1659,6 +1687,15 @@ test.each([
         ],
       });
     });
+    mockConnectorOverviewAccountSummaries(context, () => [
+      {
+        target: work.target,
+        accountCount: 2,
+        attentionCount:
+          personal.connectionStatus === "reconnect-required" ? 1 : 0,
+        defaultConnection: work,
+      },
+    ]);
     context.mocks.api(
       connectorAccountsContract.connection,
       ({ params, respond }) => {
@@ -1953,6 +1990,18 @@ test("Add and optionally name a custom OAuth account", async () => {
         : [],
     });
   });
+  mockConnectorOverviewAccountSummaries(context, () =>
+    account
+      ? [
+          {
+            target: account.target,
+            accountCount: 1,
+            attentionCount: 0,
+            defaultConnection: account,
+          },
+        ]
+      : [],
+  );
   context.mocks.api(
     customConnectorOAuth2Contract.start,
     ({ body, respond }) => {
@@ -2244,6 +2293,14 @@ test("Validate new and reconnecting custom accounts appropriately", async () => 
       ],
     });
   });
+  mockConnectorOverviewAccountSummaries(context, () => [
+    {
+      target: existing.target,
+      accountCount: 1,
+      attentionCount: 0,
+      defaultConnection: existing,
+    },
+  ]);
   context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
     return respond(200, { connections: [existing], nextCursor: null });
   });

@@ -89,7 +89,7 @@ export type ComposerAgentConnectors = z.infer<
 export const composerConnectorsContract = c.router({
   overview: {
     method: "GET",
-    path: "/api/composer/connectors",
+    path: "/api/connectors/overview",
     headers: authHeadersSchema,
     responses: {
       200: composerConnectorOverviewSchema,
@@ -97,11 +97,11 @@ export const composerConnectorsContract = c.router({
       403: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Get connected connectors and computer access for the composer",
+    summary: "Get the user's connected connectors and computer access",
   },
   agent: {
     method: "GET",
-    path: "/api/agents/:id/composer-connectors",
+    path: "/api/agents/:id/connector-access",
     headers: authHeadersSchema,
     pathParams: z.object({ id: z.uuid() }),
     responses: {
@@ -110,6 +110,6 @@ export const composerConnectorsContract = c.router({
       403: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Get connector authorization for one composer Agent",
+    summary: "Get connector authorization for one Agent",
   },
 });
