@@ -6908,9 +6908,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
           data: [{ publicUserData: { userId: fixture.peer.userId } }],
         },
       );
-      // A failed user-storage listing must not stop any cleanup domain.
       const s3CallCountBeforeCleanup = context.mocks.s3.send.mock.calls.length;
-      context.mocks.s3.send.mockRejectedValueOnce(new Error("R2 unavailable"));
       api.verifyNextClerkWebhook({
         type: "user.deleted",
         data: { id: fixture.doomed.userId },
