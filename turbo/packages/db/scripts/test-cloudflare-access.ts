@@ -209,6 +209,27 @@ try {
     "INSERT INTO cloudflare_access_configs (id,org_id,user_id,scope,name,encrypted_client_id,encrypted_client_secret) VALUES ('00000000-0000-4000-8000-000000000008','org',NULL,'personal','Invalid','encrypted-id','encrypted-secret')",
     { code: "23514", constraint: "chk_cloudflare_access_configs_scope_owner" },
   );
+  // Outgoing API binaries omit both new columns on their SSH inserts.
+  await client.query(`
+    INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,credential_id)
+      VALUES ('00000000-0000-4000-8000-000000000009','org','user','Old Direct','ssh.example.com','00000000-0000-4000-8000-000000000002');
+    INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,port,credential_id,cloudflare_access_id)
+      VALUES ('00000000-0000-4000-8000-000000000010','org','user','Old Access','ssh.example.com',443,'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000004');
+  `);
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT cloudflare_access_id,needs_rebind FROM ssh_connections WHERE id IN ('00000000-0000-4000-8000-000000000009','00000000-0000-4000-8000-000000000010') ORDER BY id",
+      )
+    ).rows,
+    [
+      { cloudflare_access_id: null, needs_rebind: false },
+      {
+        cloudflare_access_id: "00000000-0000-4000-8000-000000000004",
+        needs_rebind: false,
+      },
+    ],
+  );
   await client.query("ROLLBACK");
   console.log("Cloudflare Access migrations and scoped constraints passed");
 } finally {

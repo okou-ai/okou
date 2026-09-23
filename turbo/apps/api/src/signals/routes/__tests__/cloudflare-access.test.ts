@@ -770,6 +770,8 @@ describe("Cloudflare Access owner configuration", () => {
 
 describe("protected SSH authority", () => {
   it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
+    // Conversion is not exposed by the production API until the App floor is
+    // raised; the test-only route constructs that otherwise unreachable state.
     const f = await fixture();
     expect((await resolve(f)).outcome).toBe("resolved_access");
     const changed = await accept(
@@ -828,6 +830,8 @@ describe("protected SSH authority", () => {
   });
 
   it("resolves a same-organization shared Access row for another member", async () => {
+    // Organization-level creation is activated by the next staged API PR;
+    // this foundation test constructs the row through the test-only route.
     const first = owner();
     const personal = await config();
     const second = owner({ orgId: first.orgId });
