@@ -209,13 +209,80 @@ try {
     "INSERT INTO cloudflare_access_configs (id,org_id,user_id,scope,name,encrypted_client_id,encrypted_client_secret) VALUES ('00000000-0000-4000-8000-000000000008','org',NULL,'personal','Invalid','encrypted-id','encrypted-secret')",
     { code: "23514", constraint: "chk_cloudflare_access_configs_scope_owner" },
   );
-  // Outgoing API binaries omit both new columns on their SSH inserts.
-  await client.query(`
+  // Outgoing API binaries omit the new columns and use INSERT ... RETURNING.
+  assert.deepEqual(
+    (
+      await client.query(`
+        INSERT INTO cloudflare_access_configs (id,org_id,user_id,name,encrypted_client_id,encrypted_client_secret)
+          VALUES ('00000000-0000-4000-8000-000000000011','org','user','Old Personal','encrypted-id','encrypted-secret')
+          RETURNING id,org_id,user_id,name,revision,generation;
+      `)
+    ).rows,
+    [
+      {
+        id: "00000000-0000-4000-8000-000000000011",
+        org_id: "org",
+        user_id: "user",
+        name: "Old Personal",
+        revision: 1,
+        generation: 1,
+      },
+    ],
+  );
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT scope FROM cloudflare_access_configs WHERE id='00000000-0000-4000-8000-000000000011'",
+      )
+    ).rows,
+    [{ scope: "personal" }],
+  );
+  assert.deepEqual(
+    (
+      await client.query(`
+        UPDATE cloudflare_access_configs SET name='Renamed Personal',revision=revision+1
+          WHERE id='00000000-0000-4000-8000-000000000011'
+          RETURNING id,name,revision;
+      `)
+    ).rows,
+    [
+      {
+        id: "00000000-0000-4000-8000-000000000011",
+        name: "Renamed Personal",
+        revision: 2,
+      },
+    ],
+  );
+  const oldDirect = await client.query(`
     INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,credential_id)
-      VALUES ('00000000-0000-4000-8000-000000000009','org','user','Old Direct','ssh.example.com','00000000-0000-4000-8000-000000000002');
-    INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,port,credential_id,cloudflare_access_id)
-      VALUES ('00000000-0000-4000-8000-000000000010','org','user','Old Access','ssh.example.com',443,'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000004');
+      VALUES ('00000000-0000-4000-8000-000000000009','org','user','Old Direct','ssh.example.com','00000000-0000-4000-8000-000000000002')
+      RETURNING id,org_id,user_id,cloudflare_access_id,port,generation;
   `);
+  const oldAccess = await client.query(`
+    INSERT INTO ssh_connections (id,org_id,user_id,display_name,host,port,credential_id,cloudflare_access_id)
+      VALUES ('00000000-0000-4000-8000-000000000010','org','user','Old Access','ssh.example.com',443,'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000011')
+      RETURNING id,org_id,user_id,cloudflare_access_id,port,generation;
+  `);
+  assert.deepEqual(oldDirect.rows, [
+    {
+      id: "00000000-0000-4000-8000-000000000009",
+      org_id: "org",
+      user_id: "user",
+      cloudflare_access_id: null,
+      port: 22,
+      generation: 1,
+    },
+  ]);
+  assert.deepEqual(oldAccess.rows, [
+    {
+      id: "00000000-0000-4000-8000-000000000010",
+      org_id: "org",
+      user_id: "user",
+      cloudflare_access_id: "00000000-0000-4000-8000-000000000011",
+      port: 443,
+      generation: 1,
+    },
+  ]);
   assert.deepEqual(
     (
       await client.query(
@@ -225,7 +292,7 @@ try {
     [
       { cloudflare_access_id: null, needs_rebind: false },
       {
-        cloudflare_access_id: "00000000-0000-4000-8000-000000000004",
+        cloudflare_access_id: "00000000-0000-4000-8000-000000000011",
         needs_rebind: false,
       },
     ],
