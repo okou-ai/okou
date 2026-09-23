@@ -586,8 +586,9 @@ describe("custom model provider gateway routes", () => {
       expect(deepseekClaim.appendSystemPrompt).toContain(
         'okou image-recognition --file <image-path> --prompt "<instruction>"',
       );
-
-      await runs.requestCancelRun(actor, deepseekRunId, [200]);
+      // This fixture validates the mapped launch contract, not inference at
+      // gateway.example.com. Pi's API-first attempt can already have settled
+      // against that intentionally unreachable endpoint by cleanup time.
     }
   }, 15_000);
 
