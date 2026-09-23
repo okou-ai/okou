@@ -14,6 +14,7 @@ import {
   type SocialKitRequest,
   type SocialKitResponse,
   type SocialKitCollectionSourceLimit,
+  type SocialKitInstagramCommentsOutcome,
   type SocialErrorReason,
 } from "@okouai/api-contracts/contracts/social";
 import chalk from "chalk";
@@ -166,6 +167,7 @@ interface SocialCollectionOutput {
   readonly uncertainty?: string;
   readonly nextInput?: SocialCollectionNextInput;
   readonly sourceLimit?: SocialKitCollectionSourceLimit;
+  readonly providerOutcome?: SocialKitInstagramCommentsOutcome;
   readonly callerLimited?: boolean;
   readonly bufferedItemsReturned?: number;
   readonly cumulative?: CollectionProgress;
@@ -622,7 +624,12 @@ function collectionPage(
     items,
     context: Object.fromEntries(
       Object.entries(response.result).filter(([key]) => {
-        return key !== resultField && !PAGINATION_RESULT_FIELDS.has(key);
+        return (
+          key !== resultField &&
+          !PAGINATION_RESULT_FIELDS.has(key) &&
+          (response.tool !== "instagram_comments" ||
+            (key !== "collectionStatus" && key !== "stopReason"))
+        );
       }),
     ),
   };
@@ -689,6 +696,37 @@ function collectionWarnings(
             },
           ]
         : []),
+    ];
+  }
+  if (collection.state === "provider_limited") {
+    if (collection.providerOutcome?.collectionStatus === "partial") {
+      return [
+        {
+          code: "PROVIDER_LIMITED",
+          message: `Instagram stopped comment collection (${collection.providerOutcome.stopReason}); the returned comments are a partial sample.`,
+        },
+      ];
+    }
+    if (collection.providerOutcome?.collectionStatus === "unknown") {
+      return [
+        {
+          code: "PROVIDER_LIMITED",
+          message:
+            "Instagram did not confirm whether the available comment pages were exhausted.",
+        },
+      ];
+    }
+  }
+  if (
+    collection.state === "complete" &&
+    collection.providerOutcome?.collectionStatus === "exhausted"
+  ) {
+    return [
+      {
+        code: "SOURCE_PAGINATION_EXHAUSTED",
+        message:
+          "Available Instagram comment pages ended; hidden comments or replies may still be missing.",
+      },
     ];
   }
   switch (collection.state) {
@@ -846,6 +884,21 @@ function collectionOutput(
       };
 }
 
+function terminalCollectionStatus(
+  metadata: SocialKitCollection,
+  requestSatisfied: boolean,
+  sourceComplete: boolean,
+): SocialStatus {
+  if (
+    metadata.state === "provider_limited" &&
+    metadata.providerOutcome &&
+    metadata.providerOutcome.collectionStatus !== "exhausted"
+  ) {
+    return "partial";
+  }
+  return requestSatisfied || sourceComplete ? "complete" : "partial";
+}
+
 function terminalCollectionOutput(
   intent: SocialIntent,
   requestedItems: number,
@@ -886,11 +939,14 @@ function terminalCollectionOutput(
           callerLimited: collectionHasTail(accumulator),
         }
       : {}),
+    ...(metadata.providerOutcome
+      ? { providerOutcome: metadata.providerOutcome }
+      : {}),
   };
   return collectionOutput(
     intent,
     accumulator,
-    requestSatisfied || sourceComplete ? "complete" : "partial",
+    terminalCollectionStatus(metadata, requestSatisfied, sourceComplete),
     collection,
     {
       category: "request",
@@ -905,7 +961,8 @@ function collectionHasTail(accumulator: CollectionAccumulator): boolean {
     return accumulator.bufferedItems.length > 0;
   return (
     accumulator.itemsObserved > accumulator.itemsReturned ||
-    (accumulator.reportedTotal !== undefined &&
+    (accumulator.request.tool !== "instagram_comments" &&
+      accumulator.reportedTotal !== undefined &&
       accumulator.reportedTotal > accumulator.itemsReturned)
   );
 }

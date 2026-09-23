@@ -2,7 +2,10 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { and, eq, isNull } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
-import { publishMorningBriefChangedSafely } from "../external/realtime";
+import {
+  publishMorningBriefChangedSafely,
+  publishUserPreferenceChangedForUserSafely,
+} from "../external/realtime";
 import { command, computed } from "ccstate";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 
@@ -86,6 +89,11 @@ const updateUserPreferencesInner$ = command(
     );
     if (!result.ok) {
       return badRequestMessage(result.message);
+    }
+    if (body.data.cloudBrowserEnabledByDefault !== undefined) {
+      await publishUserPreferenceChangedForUserSafely(auth.userId, [
+        "cloudBrowserEnabledByDefault",
+      ]);
     }
     if (body.data.timezone !== undefined) {
       await set(

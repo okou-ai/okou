@@ -1727,7 +1727,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.98.1"
+version = "0.98.2"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -3448,7 +3448,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.2"
+version = "0.213.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3607,7 +3607,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ably-subscriber",
  "api-contracts",

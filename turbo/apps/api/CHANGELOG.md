@@ -8,6 +8,42 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.663.1](https://github.com/okou-ai/okou/compare/api-v1.663.0...api-v1.663.1) (2026-09-23)
+
+
+### Bug Fixes
+
+* **agentphone:** deliver imessage replies and keep typing active ([#36276](https://github.com/okou-ai/okou/issues/36276)) ([85d1d63](https://github.com/okou-ai/okou/commit/85d1d63e9b34057b8b740ab59953a9bae00f3dd7))
+* **api:** clean artifact catalog during relational erasure ([#36304](https://github.com/okou-ai/okou/issues/36304)) ([94bfa0e](https://github.com/okou-ai/okou/commit/94bfa0e2eaca7b49db446f9b56e4370f0c62ecd8))
+* **api:** extend skill import token lifetime to one day ([#36300](https://github.com/okou-ai/okou/issues/36300)) ([9c163fa](https://github.com/okou-ai/okou/commit/9c163faab42127066312b27606a481e5b1789a02))
+* **api:** narrow computer-use host session row locks by route ([#36329](https://github.com/okou-ai/okou/issues/36329)) ([80b1ea0](https://github.com/okou-ai/okou/commit/80b1ea0b5cf18a2e3933630a59aaae04f77b8feb)), closes [#36176](https://github.com/okou-ai/okou/issues/36176)
+* **api:** refresh onboarding subscription model seeds ([#36314](https://github.com/okou-ai/okou/issues/36314)) ([054b264](https://github.com/okou-ai/okou/commit/054b2645a02547258137f15828264ac5cf57d5ba))
+* **api:** synchronize send draft clears with existing child rows ([#36308](https://github.com/okou-ai/okou/issues/36308)) ([996001b](https://github.com/okou-ai/okou/commit/996001bdda7cfef7151043b7779439f5c7ccd298))
+* **model-provider:** authenticate codex workspace discovery ([#36335](https://github.com/okou-ai/okou/issues/36335)) ([0ce8d6b](https://github.com/okou-ai/okou/commit/0ce8d6b881ccbb57476eabe29fe013702ea1aa90))
+* prefer installed okou cli in agent instructions ([#36298](https://github.com/okou-ai/okou/issues/36298)) ([39f8244](https://github.com/okou-ai/okou/commit/39f8244b068c71322bf4803b3af23e50012ba348))
+
+
+### Refactoring
+
+* **api:** write browser state when creating hosted chat threads ([#36294](https://github.com/okou-ai/okou/issues/36294)) ([dbf800a](https://github.com/okou-ai/okou/commit/dbf800afbdea6faca4a5baeae444ea6c48602c70))
+* retire chat thread unreads get endpoint ([#36271](https://github.com/okou-ai/okou/issues/36271)) ([125f010](https://github.com/okou-ai/okou/commit/125f010e0c056b8051f04a5be40049dd5cafc2c6))
+
+
+### Performance Improvements
+
+* **api:** attribute admission lock time by attempt ([#36280](https://github.com/okou-ai/okou/issues/36280)) ([2d2846b](https://github.com/okou-ai/okou/commit/2d2846bfcc33afaf5e6a66117d561906dec9a470))
+* **api:** reuse captured subscription identity for run environment ([#36284](https://github.com/okou-ai/okou/issues/36284)) ([8c4e103](https://github.com/okou-ai/okou/commit/8c4e10314bb8c4c6be0c3a7fc2493f37536c060d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.497.1
+    * @okouai/core bumped to 8.703.1
+    * @okouai/db bumped to 1.290.1
+    * @okouai/pi-agent-runtime bumped to 1.39.3
+
 ## [1.663.0](https://github.com/okou-ai/okou/compare/api-v1.662.0...api-v1.663.0) (2026-09-23)
 
 

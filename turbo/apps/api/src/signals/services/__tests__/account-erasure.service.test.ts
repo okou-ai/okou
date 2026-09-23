@@ -3,7 +3,10 @@ import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it, onTestFinished } from "vitest";
+import { z } from "zod";
 import { testContext } from "../../../__tests__/test-context";
+import { executeRawRows } from "../../../lib/db-raw-rows";
+import type { Tx } from "../../../lib/db-types";
 import { env } from "../../../lib/env";
 import { createDeferredPromise } from "../../utils";
 
@@ -210,18 +213,32 @@ describe("dormant account erasure persistence", () => {
       },
     };
   }
-  async function waitForAdvisoryWaiter() {
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const result = await pool.query(
-        "SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND wait_event = 'advisory'",
-        [applicationName],
-      );
-      if (result.rowCount) {
-        return;
-      }
-      await pool.query("SELECT pg_sleep(0.01)");
+  async function backendPid(tx: Tx): Promise<number> {
+    const [row] = await executeRawRows(
+      tx,
+      sql`SELECT pg_backend_pid() AS pid`,
+      z.object({ pid: z.number() }),
+    );
+    if (!row) {
+      throw new Error("Missing advisory-lock holder backend");
     }
-    throw new Error("expected a PostgreSQL advisory-lock waiter");
+    return row.pid;
+  }
+  async function waitForAdvisoryWaiter(blockerPid: number): Promise<void> {
+    // Another transaction in this suite may also be waiting; only this holder
+    // proves the intended ownership boundary was reached.
+    await expect
+      .poll(
+        async () => {
+          const result = await pool.query(
+            "SELECT 1 FROM pg_stat_activity WHERE application_name = $1 AND wait_event = 'advisory' AND $2::int = ANY(pg_blocking_pids(pid))",
+            [applicationName, blockerPid],
+          );
+          return (result.rowCount ?? 0) > 0;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(true);
   }
   async function expire(lease: ErasureLease) {
     await db
@@ -795,11 +812,11 @@ describe("dormant account erasure persistence", () => {
       ),
     ]);
     await entered.promise;
-    const locked = deferred<void>();
+    const locked = deferred<number>();
     const release = deferred<void>();
     const blocker = db.transaction(async (tx) => {
       await lockErasureSubjects(tx, [job]);
-      locked.resolve();
+      locked.resolve(await backendPid(tx));
       await release.promise;
     });
     onTestFinished(async () => {
@@ -808,9 +825,9 @@ describe("dormant account erasure persistence", () => {
       }
       await blocker;
     });
-    await locked.promise;
+    const blockerPid = await locked.promise;
     returned.resolve(proof(lease));
-    await waitForAdvisoryWaiter();
+    await waitForAdvisoryWaiter(blockerPid);
     controller.abort();
     release.resolve();
     await blocker;
@@ -1222,22 +1239,22 @@ describe("dormant account erasure persistence", () => {
 
   it("serializes first closure behind a writer without a pre-existing job", async () => {
     const input = decision();
-    const entered = deferred<void>();
+    const entered = deferred<number>();
     const release = deferred<void>();
     userIds.push(input.subjectId);
     const writing = db.transaction(async (tx) => {
       await assertErasureSubjectWritable(tx, [input]);
       await tx.insert(users).values({ id: input.subjectId });
-      entered.resolve();
+      entered.resolve(await backendPid(tx));
       await release.promise;
     });
-    await entered.promise;
+    const blockerPid = await entered.promise;
     const closing = project(input);
     const completed = Promise.allSettled([writing, closing]);
     onTestFinished(async () => {
       await completed;
     });
-    await waitForAdvisoryWaiter();
+    await waitForAdvisoryWaiter(blockerPid);
     release.resolve();
     await expect(completed).resolves.toMatchObject([
       { status: "fulfilled" },
@@ -1279,9 +1296,10 @@ describe("dormant account erasure persistence", () => {
     "admits concurrent %s writers and waits for both before closure",
     async (subjectKind) => {
       const input = decision({ subjectKind });
-      const entered = [deferred<void>(), deferred<void>()];
+      const entered = [deferred<number>(), deferred<number>()];
       const release = [releaseGate(), releaseGate()];
       const writing: Promise<void>[] = [];
+      const blockerPids: number[] = [];
       const tasks: Promise<unknown>[] = [];
       onTestFinished(async () => {
         for (const gate of release) {
@@ -1293,20 +1311,21 @@ describe("dormant account erasure persistence", () => {
         const writer = db.transaction(async (tx) => {
           await tx.execute(sql`SET LOCAL lock_timeout = '1s'`);
           await assertErasureSubjectWritable(tx, [input, input]);
-          gate.resolve();
+          gate.resolve(await backendPid(tx));
           await release[index]!.promise;
         });
         writing.push(writer);
         tasks.push(writer);
         // Surface a failed admission instead of waiting for a gate it cannot open.
         await Promise.race([gate.promise, writer]);
+        blockerPids.push(await gate.promise);
       }
       const closing = project(input);
       tasks.push(closing);
-      await waitForAdvisoryWaiter();
+      await waitForAdvisoryWaiter(blockerPids[0]!);
       release[0]!.release();
       await writing[0];
-      await waitForAdvisoryWaiter();
+      await waitForAdvisoryWaiter(blockerPids[1]!);
       release[1]!.release();
       await Promise.all([...writing, closing]);
       await expect(
@@ -1319,13 +1338,13 @@ describe("dormant account erasure persistence", () => {
 
   it("allows a writer after the first closure rolls back", async () => {
     const input = decision();
-    const entered = deferred<void>();
+    const entered = deferred<number>();
     const release = releaseGate();
     const rollback = new Error("synthetic closure rollback");
     const closing = Promise.allSettled([
       db.transaction(async (tx) => {
         await projectErasureDecision(tx, input);
-        entered.resolve();
+        entered.resolve(await backendPid(tx));
         await release.promise;
         throw rollback;
       }),
@@ -1334,7 +1353,7 @@ describe("dormant account erasure persistence", () => {
       release.release();
       await closing;
     });
-    await entered.promise;
+    const blockerPid = await entered.promise;
     const writing = db.transaction(async (tx) => {
       await assertErasureSubjectWritable(tx, [input]);
     });
@@ -1342,7 +1361,7 @@ describe("dormant account erasure persistence", () => {
       release.release();
       await Promise.allSettled([writing]);
     });
-    await waitForAdvisoryWaiter();
+    await waitForAdvisoryWaiter(blockerPid);
     release.release();
     await writing;
     await expect(closing).resolves.toStrictEqual([
@@ -1354,7 +1373,7 @@ describe("dormant account erasure persistence", () => {
     "preserves mixed-version exclusion with %s first",
     async (first) => {
       const input = decision();
-      const entered = deferred<void>();
+      const entered = deferred<number>();
       const release = releaseGate();
       const lock =
         first === "admission"
@@ -1366,14 +1385,14 @@ describe("dormant account erasure persistence", () => {
           : assertErasureSubjectWritable;
       const holding = db.transaction(async (tx) => {
         await lock(tx, [input]);
-        entered.resolve();
+        entered.resolve(await backendPid(tx));
         await release.promise;
       });
       onTestFinished(async () => {
         release.release();
         await Promise.allSettled([holding]);
       });
-      await entered.promise;
+      const blockerPid = await entered.promise;
       const waiting = db.transaction(async (tx) => {
         await otherLock(tx, [input]);
       });
@@ -1381,7 +1400,7 @@ describe("dormant account erasure persistence", () => {
         release.release();
         await Promise.allSettled([waiting]);
       });
-      await waitForAdvisoryWaiter();
+      await waitForAdvisoryWaiter(blockerPid);
       release.release();
       await expect(Promise.all([holding, waiting])).resolves.toStrictEqual([
         undefined,
@@ -1399,12 +1418,12 @@ describe("dormant account erasure persistence", () => {
       const open = decision({
         subjectKind: position === "first" ? "user" : "organization",
       });
-      const entered = deferred<void>();
+      const entered = deferred<number>();
       const release = releaseGate();
       const closing = db.transaction(async (tx) => {
         const job = await projectErasureDecision(tx, input);
         jobIds.push(job.id);
-        entered.resolve();
+        entered.resolve(await backendPid(tx));
         await release.promise;
       });
       const tasks: Promise<unknown>[] = [closing];
@@ -1412,7 +1431,10 @@ describe("dormant account erasure persistence", () => {
         release.release();
         await Promise.allSettled(tasks);
       });
-      await Promise.race([entered.promise, closing]);
+      const blockerPid = await Promise.race([entered.promise, closing]);
+      if (blockerPid === undefined) {
+        throw new Error("Closure finished before acquiring the advisory lock");
+      }
       const writing = Promise.allSettled([
         db.transaction(async (tx) => {
           // Organization locks sort before user locks. The final closure read
@@ -1421,7 +1443,7 @@ describe("dormant account erasure persistence", () => {
         }),
       ]);
       tasks.push(writing);
-      await waitForAdvisoryWaiter();
+      await waitForAdvisoryWaiter(blockerPid);
       release.release();
       await closing;
       const [result] = await writing;

@@ -153,7 +153,7 @@ describe("runner builtin firewall resolver", () => {
     });
   });
 
-  it("publishes the Codex workspace discovery firewall to Runner", async () => {
+  it("publishes the Codex OAuth backend API firewall to Runner", async () => {
     const name = "model-provider:codex-oauth-token";
     const response = await accept(
       client().resolve({
@@ -163,21 +163,28 @@ describe("runner builtin firewall resolver", () => {
       [200],
     );
 
-    expect(response.body.firewalls[name]?.apis[1]).toStrictEqual({
-      base: "https://chatgpt.com/backend-api/wham/accounts/check",
-      auth: {
-        headers: {
-          Authorization: CHATGPT_ACCESS_TOKEN_AUTH_HEADER,
-          "ChatGPT-Account-ID": CHATGPT_ACCOUNT_ID_AUTH_HEADER,
+    expect(response.body.firewalls[name]?.apis).toStrictEqual([
+      {
+        base: "https://chatgpt.com/backend-api",
+        auth: {
+          headers: {
+            Authorization: CHATGPT_ACCESS_TOKEN_AUTH_HEADER,
+            "ChatGPT-Account-ID": CHATGPT_ACCOUNT_ID_AUTH_HEADER,
+          },
         },
+        permissions: [
+          {
+            name: "codex:api",
+            rules: ["GET /{path*}", "POST /{path*}"],
+          },
+        ],
       },
-      permissions: [
-        {
-          name: "codex:workspace-routing",
-          rules: ["GET /"],
-        },
-      ],
-    });
+      {
+        base: "https://auth.openai.com",
+        auth: { headers: {} },
+        permissions: [],
+      },
+    ]);
   });
 
   it("handles concurrent full generated builtin firewall catalog resolves", async () => {

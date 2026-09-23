@@ -1671,7 +1671,7 @@ function OAuthCredentialRow({
           </p>
           <p
             data-testid="connector-help-text"
-            className="mt-0.5 truncate text-xs text-muted-foreground"
+            className="mt-0.5 text-xs text-muted-foreground"
           >
             {description}
           </p>

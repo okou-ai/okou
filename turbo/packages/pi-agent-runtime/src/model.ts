@@ -176,7 +176,7 @@ function sourceModel(provider: string, model: string): Model<Api> | undefined {
   // copies `source.compat` only when `source.api === dialect`, so recording the
   // upstream dialect keeps that guard false and leaves the wire unchanged.
   // This is the V4 text-only model, priced apart from V4.1; never substitute one
-  // for the other. The OpenRouter route still resolves from the 0.86.1 catalog.
+  // for the other. The OpenRouter route still resolves from the 0.87.1 catalog.
   if (provider === "deepseek" && model === "deepseek-v4-flash") {
     return {
       id: model,

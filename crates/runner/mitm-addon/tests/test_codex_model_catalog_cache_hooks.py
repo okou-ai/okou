@@ -494,7 +494,7 @@ def _write_codex_registry(tmp_path: Path, *, capture: bool, billable: bool = Fal
             run_id="run-catalog-cache",
             firewall_name=firewall_name,
             api_entry={
-                "base": "https://chatgpt.com/backend-api/codex",
+                "base": "https://chatgpt.com/backend-api",
                 "auth": {
                     "headers": {
                         "Authorization": "Bearer ${{ secrets.CHATGPT_ACCESS_TOKEN }}",

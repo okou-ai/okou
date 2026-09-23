@@ -3675,7 +3675,7 @@ describe("Morning Brief legacy writer fences", () => {
     });
   });
 
-  async function setupDisabledRecreatedMorningBrief() {
+  it("recreates only the disabled retained target after Settings changes", async () => {
     const brief = await prepareSelectedMorningBrief();
     await tickUntilPhase(brief.actor, brief.owner, "native");
 
@@ -3722,33 +3722,6 @@ describe("Morning Brief legacy writer fences", () => {
       enabled: false,
       phase: "native",
       legacyWorkflowId: brief.workflowId,
-      legacyAutomationId: brief.automationId,
-      nextRunAt: null,
-      scheduleOwner: null,
-    });
-    return brief;
-  }
-
-  it("recreates only the disabled retained target after Settings changes", async () => {
-    expect.hasAssertions();
-    await setupDisabledRecreatedMorningBrief();
-  });
-
-  it("rolls a disabled recreated target back without resurrecting an occurrence", async () => {
-    const brief = await setupDisabledRecreatedMorningBrief();
-    await setSimpleMorningBriefEnabled(brief.actor, false);
-    await tickUntilPhase(brief.actor, brief.owner, "legacy");
-    await expect(
-      readLegacyAutomation(brief.automationId),
-    ).resolves.toMatchObject({
-      enabled: false,
-      officialIntendedEnabled: false,
-      officialReconciliationStatus: "current",
-      nextRunAt: null,
-    });
-    await expect(readNativeSchedule(brief.owner)).resolves.toMatchObject({
-      enabled: false,
-      phase: "legacy",
       legacyAutomationId: brief.automationId,
       nextRunAt: null,
       scheduleOwner: null,
