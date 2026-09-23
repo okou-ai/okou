@@ -147,6 +147,38 @@ for (const browser of appleBrowsers) {
       await expect(editor).toBeFocused();
     });
 
+    await test.step("the first Enter after compositionend keeps the draft intact", async () => {
+      await editor.fill("Confirmed composition");
+      // Safari can finish composition before delivering the confirming Enter,
+      // with neither isComposing nor keyCode 229. Dispatch this synthetic guard
+      // scenario together so browser-command latency cannot leave the boundary.
+      await editor.evaluate((element) => {
+        element.dispatchEvent(
+          new CompositionEvent("compositionstart", { bubbles: true }),
+        );
+        element.dispatchEvent(
+          new CompositionEvent("compositionend", { bubbles: true }),
+        );
+        element.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            bubbles: true,
+            cancelable: true,
+            key: "Enter",
+            code: "Enter",
+            keyCode: 13,
+            shiftKey: true,
+            isComposing: false,
+          }),
+        );
+      });
+      await expect.poll(() => editor.innerText()).toBe("Confirmed composition");
+      await expect(editor.locator("p")).toHaveText(["Confirmed composition"]);
+      await expect(editor.locator("br")).toHaveCount(0);
+      // That first event only confirms composition. The next intentional
+      // Shift+Enter must be usable immediately, without suppressing it again.
+      await expectSingleNewline(page, editor, "Confirmed composition");
+    });
+
     expect(submissionAttempts).toBe(0);
     await expect(page.locator('[data-role="user"]')).toHaveCount(0);
     await editor.fill("");
