@@ -3577,6 +3577,217 @@ describe("okou social command", () => {
     });
   });
 
+  it.each(["--json", "--stream"] as const)(
+    "preserves the terminal Instagram comment stop in %s output",
+    async (mode) => {
+      let page = 0;
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          page += 1;
+          const first = page === 1;
+          const providerOutcome = first
+            ? {
+                collectionStatus: "partial" as const,
+                stopReason: "requested_limit" as const,
+              }
+            : {
+                collectionStatus: "partial" as const,
+                stopReason: "repeated_cursor" as const,
+              };
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              first
+                ? {
+                    state: "more",
+                    itemsReturned: 2,
+                    nextInput: { cursor: "next" },
+                    providerOutcome,
+                  }
+                : {
+                    state: "provider_limited",
+                    itemsReturned: 1,
+                    reason: "provider_partial",
+                    providerOutcome,
+                  },
+              {
+                postUrl: "https://instagram.com/p/example",
+                comments: first
+                  ? [{ id: "one" }, { id: "two" }]
+                  : [{ id: "three" }],
+                commentCount: null,
+                hasMore: first,
+                cursor: first ? "next" : null,
+                ...providerOutcome,
+              },
+            ),
+          );
+        }),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "comments",
+        "https://instagram.com/p/example",
+        "--limit",
+        "10",
+        mode,
+      ]);
+
+      const records = mockConsoleLog.mock.calls.map(([value]) => {
+        return JSON.parse(String(value)) as Readonly<Record<string, unknown>>;
+      });
+      expect(page).toBe(2);
+      expect(records).toHaveLength(mode === "--stream" ? 3 : 1);
+      const terminal = records.at(-1);
+      expect(terminal).toMatchObject({
+        status: "partial",
+        collection: {
+          state: "provider_limited",
+          reason: "provider_partial",
+          itemsReturned: 3,
+          providerOutcome: {
+            collectionStatus: "partial",
+            stopReason: "repeated_cursor",
+          },
+        },
+        warnings: [
+          {
+            code: "PROVIDER_LIMITED",
+            message: expect.stringContaining("repeated_cursor"),
+          },
+        ],
+      });
+      if (mode === "--stream") {
+        expect(records[0]).toHaveProperty(
+          "collection.providerOutcome.stopReason",
+          "requested_limit",
+        );
+        expect(records[1]).toHaveProperty(
+          "collection.providerOutcome.stopReason",
+          "repeated_cursor",
+        );
+      } else {
+        expect(terminal).toHaveProperty("data.items", [
+          { id: "one" },
+          { id: "two" },
+          { id: "three" },
+        ]);
+        expect(terminal).not.toHaveProperty("data.context.collectionStatus");
+        expect(terminal).not.toHaveProperty("data.context.stopReason");
+      }
+    },
+  );
+
+  it.each([
+    {
+      providerOutcome: {
+        collectionStatus: "exhausted" as const,
+        stopReason: "upstream_exhausted" as const,
+      },
+      state: "complete" as const,
+      status: "complete",
+      warning: "SOURCE_PAGINATION_EXHAUSTED",
+    },
+    {
+      providerOutcome: {
+        collectionStatus: "unknown" as const,
+        stopReason: "unknown" as const,
+      },
+      state: "provider_limited" as const,
+      status: "partial",
+      warning: "PROVIDER_LIMITED",
+    },
+  ])(
+    "scopes Instagram $providerOutcome.collectionStatus output",
+    async (testCase) => {
+      server.use(
+        http.post("http://localhost:3000/api/social/request", () => {
+          return HttpResponse.json(
+            socialResponse(
+              "instagram_comments",
+              {
+                state: testCase.state,
+                itemsReturned: 1,
+                providerOutcome: testCase.providerOutcome,
+              },
+              {
+                comments: [{ id: "one" }],
+                commentCount: null,
+                hasMore: false,
+                ...testCase.providerOutcome,
+              },
+            ),
+          );
+        }),
+      );
+
+      await socialCommand.parseAsync([
+        "node",
+        "okou",
+        "comments",
+        "https://instagram.com/p/example",
+        "--limit",
+        "10",
+        "--json",
+      ]);
+      const result = JSON.parse(output()) as Readonly<Record<string, unknown>>;
+      expect(result).toMatchObject({
+        status: testCase.status,
+        collection: {
+          state: testCase.state,
+          providerOutcome: testCase.providerOutcome,
+        },
+        warnings: [{ code: testCase.warning }],
+      });
+    },
+  );
+
+  it("does not treat Instagram's post-wide comment count as a caller-truncated tail", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/social/request", () => {
+        return HttpResponse.json(
+          socialResponse(
+            "instagram_comments",
+            {
+              state: "complete",
+              itemsReturned: 1,
+              reportedTotal: 486,
+              providerOutcome: {
+                collectionStatus: "exhausted",
+                stopReason: "upstream_exhausted",
+              },
+            },
+            {
+              comments: [{ id: "one" }],
+              commentCount: 486,
+              hasMore: false,
+              collectionStatus: "exhausted",
+              stopReason: "upstream_exhausted",
+            },
+          ),
+        );
+      }),
+    );
+
+    await socialCommand.parseAsync([
+      "node",
+      "okou",
+      "comments",
+      "https://instagram.com/p/example",
+      "--limit",
+      "1",
+      "--json",
+    ]);
+    const result = JSON.parse(output()) as Readonly<Record<string, unknown>>;
+    expect(result).toMatchObject({
+      status: "complete",
+      collection: { state: "complete", itemsReturned: 1, reportedTotal: 486 },
+      warnings: [{ code: "SOURCE_PAGINATION_EXHAUSTED" }],
+    });
+  });
+
   it("marks a complete provider page caller-limited when trimming overshoot", async () => {
     server.use(
       http.post("http://localhost:3000/api/social/request", () => {

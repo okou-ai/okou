@@ -1771,6 +1771,130 @@ describe("managed SocialKit route", () => {
     }
   });
 
+  it("uses Instagram comment outcomes and treats comment counts as advisory", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    await fundActor(actor);
+    const pricing = await setupConfiguredPricing();
+    const outcome = {
+      collectionStatus: "partial",
+      stopReason: "repeated_cursor",
+    } as const;
+    const cases = [
+      {
+        data: {
+          comments: [{ id: "one" }],
+          commentCount: null,
+          hasMore: false,
+          cursor: null,
+          ...outcome,
+        },
+        expected: {
+          state: "provider_limited",
+          itemsReturned: 1,
+          reason: "provider_partial",
+          providerOutcome: outcome,
+        },
+      },
+      {
+        data: {
+          comments: [{ id: "one" }],
+          commentCount: 0,
+          hasMore: true,
+          cursor: "safe-next",
+          collectionStatus: "partial",
+          stopReason: "requested_limit",
+        },
+        expected: {
+          state: "more",
+          itemsReturned: 1,
+          reportedTotal: 0,
+          nextInput: { cursor: "safe-next" },
+          providerOutcome: {
+            collectionStatus: "partial",
+            stopReason: "requested_limit",
+          },
+        },
+      },
+      {
+        data: {
+          comments: [{ id: "one" }],
+          commentCount: 1,
+          hasMore: true,
+          cursor: "still-safe",
+          collectionStatus: "partial",
+          stopReason: "requested_limit",
+        },
+        expected: {
+          state: "more",
+          itemsReturned: 1,
+          reportedTotal: 1,
+          nextInput: { cursor: "still-safe" },
+          providerOutcome: {
+            collectionStatus: "partial",
+            stopReason: "requested_limit",
+          },
+        },
+      },
+      {
+        data: {
+          comments: [{ id: "one" }],
+          commentCount: 486,
+          hasMore: false,
+          cursor: null,
+          collectionStatus: "exhausted",
+          stopReason: "upstream_exhausted",
+        },
+        expected: {
+          state: "complete",
+          itemsReturned: 1,
+          reportedTotal: 486,
+          providerOutcome: {
+            collectionStatus: "exhausted",
+            stopReason: "upstream_exhausted",
+          },
+        },
+      },
+      {
+        data: {
+          comments: [{ id: "one" }],
+          commentCount: null,
+          hasMore: false,
+          cursor: null,
+        },
+        expected: {
+          state: "provider_limited",
+          itemsReturned: 1,
+          reason: "provider_outcome_unknown",
+          providerOutcome: {
+            collectionStatus: "unknown",
+            stopReason: "unknown",
+          },
+        },
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      server.use(
+        providerHandler("GET", "/instagram/comments", () => {
+          return HttpResponse.json(providerResponse(testCase.data));
+        }),
+      );
+      const response = await accept(
+        client(pricing.resolution)(socialContract).request({
+          headers: authenticate(actor),
+          body: requestForPath("/instagram/comments", {
+            url: "https://instagram.com/p/example",
+            limit: 10,
+          }),
+        }),
+        [200],
+      );
+      expect(response.body.collection).toStrictEqual(testCase.expected);
+      expect(response.body.result).toMatchObject(testCase.data);
+    }
+  });
+
   it("uses reported comment totals to prevent false completion", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
@@ -2353,6 +2477,14 @@ describe("managed SocialKit route", () => {
     {
       providerStatus: 504,
       errorCode: "upstream_timeout",
+      retryable: true,
+      reason: "upstream_failure",
+      status: 502,
+      expectedRetryable: true,
+    },
+    {
+      providerStatus: 502,
+      errorCode: "operation_failed",
       retryable: true,
       reason: "upstream_failure",
       status: 502,
