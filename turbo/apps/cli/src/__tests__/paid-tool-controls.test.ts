@@ -121,7 +121,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     { tool: "finance", args: ["finance", "quote", "AAPL"] },
     {
       tool: "maps",
-      args: ["maps", "places", "details", "--place-id", "place"],
+      args: ["maps", "search", "coffee near Union Square"],
     },
     { tool: "seo", args: ["seo", "serp", "example"] },
     { tool: "social", args: ["social", "inspect", "https://x.com/example"] },
@@ -425,7 +425,7 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(output).toContain("Disabled paid tools in this run: maps.");
     expect(output).not.toContain("future-tool");
     output = "";
-    await expect(run(["maps", "places", "--help"])).rejects.toMatchObject({
+    await expect(run(["maps", "search", "--help"])).rejects.toMatchObject({
       code: "commander.helpDisplayed",
     });
     expect(output).toContain("Disabled paid tools in this run: maps.");
@@ -441,23 +441,12 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     expect(requests).toEqual([]);
   });
 
-  it("blocks nested map rendering before creating an output", async () => {
+  it("blocks a Maps search before issuing a request", async () => {
     vi.stubEnv(DISABLED_PAID_TOOLS_ENV_VAR, '["maps"]');
     await expect(
-      run([
-        "maps",
-        "osm",
-        "render",
-        "--center",
-        "37.7,-122.4",
-        "--radius",
-        "100",
-        "--output",
-        join(directory, "map.png"),
-      ]),
+      run(["maps", "search", "coffee near Union Square"]),
     ).rejects.toThrow("process.exit(1)");
     expect(requests).toEqual([]);
-    expect(await readdir(directory)).toEqual([]);
   });
 
   it.each([

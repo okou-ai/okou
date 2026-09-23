@@ -579,6 +579,11 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   // Perplexity Search API — https://docs.perplexity.ai/docs/getting-started/pricing
   // Raw provider cost is $5 per 1,000 requests with no token charge.
   ...usageGroup("web-search", "perplexity", [["request", usd(0.005), 1]]),
+  // Runtime reports one aggregate Google provider cost in micro-USD; this
+  // converts it once at 1,250 credits/USD (the required 25% markup).
+  ...usageGroup("maps", "google-maps-grounding", [
+    ["provider_cost_usd_micros", 1250, 1_000_000],
+  ]),
   // SocialKit Growth costs $95 per 50,000 requests. A 25% markup is
   // $0.002375, rounded up to 3 whole Okou credits per successful request.
   ...usageGroup("social", "socialkit", [

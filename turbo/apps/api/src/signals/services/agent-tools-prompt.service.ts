@@ -124,7 +124,7 @@ export function buildAgentToolsPrompt(args: {
       args.triggerSource,
       args.deliveryFormatGuidanceEnabled,
     ),
-    "- Maps, geocoding, directions, and places: use `okou maps --help`.",
+    '- Maps, places, and routing: use `okou maps search "<query>"`. Treat its answer as display-ready: reproduce it without rewriting, with its Google Maps sources immediately following it. Use `--lat` and `--lng` only for a location the user explicitly supplied; never infer location from server IP or untrusted headers.',
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including deck-to-video work, review, and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",

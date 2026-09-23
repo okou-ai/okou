@@ -89,8 +89,6 @@ on:
         required: false
       OKOU_MACHINE_SECRET_KEY:
         required: false
-      OKOU_MAPS_GOOGLE_MAPS_TOKEN:
-        required: false
       OKOU_SCRAPE_FIRECRAWL_TOKEN:
         required: false
       OKOU_SEO_DATAFORSEO_LOGIN:
