@@ -308,9 +308,7 @@ test.each(["completed", "cancelled", "replaced", "queued"] as const)(
           ? findButton("queue...")
           : outcome === "completed"
             ? findButton("Send")
-            : screen.findByText(
-                "Paused mid-thought — pick it back up whenever.",
-              );
+            : screen.findByText("Run paused — resume anytime.");
     await expect(outcomeIndicator).resolves.toBeVisible();
     expect(screen.queryByLabelText(PREPARATION)).not.toBeInTheDocument();
     expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();

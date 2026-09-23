@@ -302,9 +302,7 @@ test.each(["failed", "cancelled"] as const)(
 
     expect(
       screen.getByText(
-        status === "failed"
-          ? OLD_ERROR
-          : "Paused mid-thought — pick it back up whenever.",
+        status === "failed" ? OLD_ERROR : "Run paused — resume anytime.",
       ),
     ).toBeVisible();
     expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();

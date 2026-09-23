@@ -29,25 +29,33 @@ presentation.
 
 ## Fixed Height and Stable Layout
 
-Every card in the chat transcript must keep one outer height for the lifetime of
-that card occurrence, at a given available width. This includes action, failure
-recovery, billing, unavailable, and resource-preview cards. Different card types
-may use different dimensions, and responsive breakpoints may select a different
-height. Asynchronous data and status changes must not select the card's height.
+Every card in the chat transcript keeps a stable outer height across
+asynchronous updates, at a given available width. This includes action,
+failure recovery, billing, unavailable, and resource-preview cards. Different
+card types may use different dimensions, and responsive breakpoints may select
+a different height. Billing helper copy may wrap onto another line rather than
+leaving a blank reserved line in every short-copy state. A user opening the
+inline Custom credit form may also expand its card.
 
 The height itself may come from the card's own synchronous row structure rather
 than from a hardcoded pixel value. A notice card that renders only a headline is
 one row tall, and the same card with a supporting line is taller, because that
-choice is made from props already present at mount and never changes afterwards.
-Reserve geometry wherever the asynchronous read does reach. The notice cards in
-`chat-thread-page.tsx` keep a two-line box for the supporting line, since
-billing status and failure-recovery classification swap that text inside an
-already mounted frame, and the billing states keep their action slot at the
-shared action height whether or not an action is resolved yet. Below the card's
-640px breakpoint the body is a column, so a late action row would add its own
-height plus the container gap. Do not pay for either reservation on rows the
-asynchronous read cannot introduce, such as the supporting line of a notice that
-never carries one.
+choice is known at mount. Reserve geometry only where an asynchronous read can
+add content. Failure cards render their synchronous supporting copy invisibly
+while classification loads, so a one-line reason keeps its natural height
+without collapsing during that read. Personal usage-limit recovery reserves
+the account-and-window rows that provider metadata can introduce; ordinary
+usage-limit errors use their actual supporting-copy height. Both keep the same
+one-row action floor as other recovery kinds. Resolved controls remain
+content-sized and add another row only when they actually wrap; do not leave an
+empty second row for a hypothetical later model change. Billing states keep
+their action reservation because it can change after role and credit reads;
+their helper copy wraps to its actual height so a short sentence does not leave
+an empty second line. Do not pay for a reservation on rows the asynchronous
+read cannot introduce. Paid credit options share the action row until a narrow
+viewport wraps them; opening Custom reveals its fields inside the same card.
+Localized failure titles and action labels wrap within narrow cards; pending
+cards reserve the fallback title's wrapped height instead of truncating it.
 
 ### Keep the frame mounted
 
@@ -106,13 +114,17 @@ contract by themselves.
   details dialog that repeats the visible rows is redundant chrome beside the
   card's real allow/deny action.
 - Keep long text and translated copy within their allocated rows. Do not let
-  overflowing descendants enlarge the transcript's scrollable area. Full
-  descriptions and diagnostics belong in an accessible dialog, popover, or
-  detail sidebar. Required action controls, account identity, permission scope,
-  and confirmation information must remain readable and reachable; clipping
-  them is not a valid way to achieve fixed height.
+  overflowing descendants enlarge the transcript's scrollable area. A short
+  plain diagnostic can stay inline without a duplicate details action;
+  multiline Markdown and unusually long raw diagnostics belong in an accessible
+  dialog, popover, or detail sidebar. Known failure reasons keep concise
+  recovery copy, account identity, reset windows, and every recovery control in
+  the card. Required action controls, account identity, permission scope, and
+  confirmation information must remain readable and reachable; clipping them is
+  not a valid way to achieve fixed height.
 - Forms, account lists, raw error details, and expanded document content open
-  outside the transcript card. Do not expand the card inline for these details.
+  outside the transcript card, except for the user-opened inline Custom credit
+  form. Do not expand the card inline for other details.
 - Media cards may derive their height from a reserved width and aspect ratio.
   The frame, including any fixed header, must exist before a thumbnail, image,
   video metadata, or iframe loads. Loading and error content occupies that same
@@ -124,14 +136,22 @@ For preview geometry, follow `AttachmentCardArtwork` and
 the artwork or preview area and place changing content inside it. Reading the
 full document or interacting with a page happens in the existing viewer.
 
-`ChatCardDetails` provides the shared dialog for recovery diagnostics, banking
-account selection and confirmation, and credit checkout options. Recovery keeps
-the original account and current-settings notice beside the reset/retry controls
-in that dialog. Banking keeps its connection polling owned by the card even when
-the dialog is closed. Preserve those action and lifecycle owners when adding
-another state. Open the dialog only for content the card cannot already show:
-its trigger competes with the card's own action, so a dialog whose body repeats
-the visible rows should not exist.
+`ChatCardDetails` provides the shared dialog for banking account selection and
+confirmation, and an unknown raw provider diagnostic
+whose multiline or unusually long Markdown body cannot fit a notice row. A
+short plain diagnostic is already readable on the card and does not repeat
+itself behind a details button. A known failure resolves in place: reset, retry,
+model, settings, external-service, and new-chat controls stay in the card's
+trailing-aligned action slot, with every wrapped action row aligned to that same
+edge. Account identity and every exhausted reset window stay in separate
+readable supporting rows. The dialog never owns a recovery action or
+repeats a known failure's visible copy. Banking keeps its connection polling
+owned by the card even when the dialog is closed. Preserve those action and
+lifecycle owners when adding another state. Paid-workspace credit options and
+the Custom amount form live in the recovery card; selecting an amount opens the
+purchase review. Preset amounts use the primary `Button` style; Custom remains
+secondary and, when opened, is replaced in the same row by a `$`-prefixed
+amount input and its Buy button.
 
 Current frame owners are `AssistantErrorContent` (including billing),
 `ConnectorActionCard`, `PermissionActionCard`, `BankingActionCard`,

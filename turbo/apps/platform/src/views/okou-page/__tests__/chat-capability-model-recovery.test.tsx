@@ -65,14 +65,12 @@ test("Match model-provider recovery guidance to the failure", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
-  click(await findButton("View details"));
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
+  const card = await screen.findByRole("status");
+  expect(card).toHaveTextContent("No model provider configured yet.");
   const configureProvider = await findButton(
     "Set one up in Workspace Settings",
   );
-  expect(configureProvider.parentElement).toHaveTextContent(
-    "No model provider configured yet.",
-  );
+  expect(card).toContainElement(configureProvider);
   click(configureProvider);
 
   const settings = await screen.findByRole("dialog", { name: "Settings" });
@@ -95,12 +93,10 @@ test("Start a compatible session after a model-provider mismatch", async () => {
       "This session was started with a different model provider and can't be continued with the current one.",
     ),
   ).resolves.toBeVisible();
-  click(await findButton("View details"));
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
-  await expect(findLink("Start a new session")).resolves.toHaveAttribute(
-    "href",
-    "/",
-  );
+  const card = await screen.findByRole("status");
+  const startNewSession = await findLink("Start a new session");
+  expect(card).toContainElement(startNewSession);
+  expect(startNewSession).toHaveAttribute("href", "/");
 });
 
 test("Start a new conversation after a model provider disappears", async () => {
@@ -111,11 +107,11 @@ test("Start a new conversation after a model provider disappears", async () => {
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
-  click(await findButton("View details"));
-  await screen.findByRole("dialog", { name: "This run couldn't finish" });
-  const startNewChat = await findLink("Start a new chat thread");
-  expect(startNewChat.parentElement).toHaveTextContent(
+  const card = await screen.findByRole("status");
+  expect(card).toHaveTextContent(
     "The model provider used by this thread has been deleted.",
   );
+  const startNewChat = await findLink("Start a new chat thread");
+  expect(card).toContainElement(startNewChat);
   expect(startNewChat).toHaveAttribute("href", "/");
 });

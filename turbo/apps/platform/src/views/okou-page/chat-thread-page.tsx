@@ -21,7 +21,11 @@ import {
 import type { TFunction } from "i18next";
 import { equalArrays, equalSets } from "../../lib/equality.ts";
 import { useTranslation } from "react-i18next";
-import { formatAppNumber, formatChatTimestamp } from "../../i18n/format.ts";
+import {
+  formatAppNumber,
+  formatChatTimestamp,
+  formatLocalizedNumber,
+} from "../../i18n/format.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { hideAppSkeletonOnContentReadyRef$ } from "../../signals/app-skeleton.ts";
 import {
@@ -104,6 +108,10 @@ import {
   buttonVariants,
 } from "@okouai/ui";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
+import {
+  knownRunFailureReasonSchema,
+  type KnownRunFailureReason,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import type {
   ChatEventUsagePayload,
   ChatRecommendedFollowup,
@@ -4760,17 +4768,14 @@ function customCreditsFromForm(form: HTMLFormElement | null): number | null {
   return credits;
 }
 
-/**
- * A notice card's height comes from its own rows, so a card that carries only a
- * headline is one row tall. The supporting line keeps a reserved two-line box
- * instead: billing status and failure-recovery classification both resolve
- * asynchronously and swap this text inside an already mounted frame, and
- * `docs/chat-cards.md` requires that swap to leave the frame's geometry
- * untouched. Clamping alone would let a one-line message resize the transcript
- * once the asynchronous read lands.
- */
-const CHAT_NOTICE_DESCRIPTION_CLASS =
-  "line-clamp-2 h-10 text-sm leading-5 text-muted-foreground";
+/** Let resolved billing copy wrap to its actual height, including longer
+ * translations, without leaving an unused second line under short copy. */
+const BILLING_NOTICE_DESCRIPTION_CLASS =
+  "text-sm leading-5 text-muted-foreground";
+
+/** A personal usage limit can resolve to an account plus two exhausted windows.
+ * Ordinary usage limits need only their actual description height. */
+const USAGE_RECOVERY_DESCRIPTION_CLASS = "min-h-20 @[640px]:min-h-10";
 
 /**
  * The billing notice's action is the other row an asynchronous read introduces:
@@ -4782,7 +4787,19 @@ const CHAT_NOTICE_DESCRIPTION_CLASS =
  * and the error card's pending state reserves the same box for its own details
  * trigger.
  */
-const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex h-8 shrink-0 items-center";
+const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex min-h-8 shrink-0 items-center";
+
+/**
+ * Recovery controls keep a one-row floor while classification loads, then grow
+ * only when the controls actually wrap. Reserving a hypothetical second row
+ * leaves resolved mobile cards with false bottom padding.
+ */
+const ASSISTANT_ERROR_ACTION_SLOT_CLASS =
+  "flex min-h-8 shrink-0 items-center justify-end";
+
+/** Let translated recovery actions fit narrow chat cards without clipping. */
+const ERROR_CARD_ACTION_CLASS =
+  "h-auto min-h-8 max-w-full shrink-0 whitespace-normal break-words py-1 text-center";
 
 function creditsAvailableCopy(): {
   readonly headline: string;
@@ -4849,14 +4866,18 @@ function PaidCreditCheckoutActions({
   readonly preparing: boolean;
   readonly handleCreditClick: (
     selection: CreditCheckoutSelection,
-    event: ReactMouseEvent<HTMLButtonElement>,
+    newTab: boolean,
   ) => void;
 }) {
   const { t } = useTranslation();
-  const handleCustomCreditClick = (
-    event: ReactMouseEvent<HTMLButtonElement>,
+  const submitCustomCredits = (
+    form: HTMLFormElement | null,
+    newTab: boolean,
   ) => {
-    const credits = customCreditsFromForm(event.currentTarget.form);
+    if (preparing) {
+      return;
+    }
+    const credits = customCreditsFromForm(form);
     if (credits === null) {
       toast.error(
         t(($) => {
@@ -4865,11 +4886,11 @@ function PaidCreditCheckoutActions({
       );
       return;
     }
-    handleCreditClick({ credits, customAmount: true }, event);
+    handleCreditClick({ credits, customAmount: true }, newTab);
   };
 
   return (
-    <div className="mt-3 flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         {CREDIT_TOP_UP_OPTIONS.map((credits) => {
           return (
@@ -4877,7 +4898,7 @@ function PaidCreditCheckoutActions({
               key={credits}
               type="button"
               onClick={(event) => {
-                handleCreditClick({ credits }, event);
+                handleCreditClick({ credits }, event.metaKey || event.ctrlKey);
               }}
               disabled={preparing}
               variant="default"
@@ -4888,36 +4909,61 @@ function PaidCreditCheckoutActions({
             </Button>
           );
         })}
-        <details>
+        <details
+          className="group flex"
+          onToggle={(event) => {
+            if (event.currentTarget.open) {
+              event.currentTarget.querySelector("input")?.focus();
+            }
+          }}
+        >
           <summary
             role="button"
-            className="inline-flex h-8 cursor-pointer list-none items-center rounded-md border border-border bg-background px-3 text-sm font-medium text-foreground transition-colors hover:bg-state-hover marker:hidden disabled:opacity-60 [&::-webkit-details-marker]:hidden"
+            className={cn(
+              buttonVariants({ size: "sm", variant: "outline" }),
+              "list-none group-open:hidden [&::-webkit-details-marker]:hidden",
+            )}
           >
             {t(($) => {
               return $.chat.billing.custom;
             })}
           </summary>
-          <form className="mt-2 flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted-foreground">$</span>
-            <Input
-              type="text"
-              inputMode="numeric"
-              name="customUsd"
-              defaultValue="100"
-              onInput={(event) => {
-                event.currentTarget.value = event.currentTarget.value.replace(
-                  /\D/g,
-                  "",
-                );
-              }}
-              aria-label={t(($) => {
-                return $.chat.billing.customDollarAmount;
-              })}
-              className="h-8 w-24 px-2"
-            />
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitCustomCredits(event.currentTarget, false);
+            }}
+          >
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm text-muted-foreground">
+                $
+              </span>
+              <Input
+                type="text"
+                inputMode="numeric"
+                name="customUsd"
+                defaultValue="100"
+                onInput={(event) => {
+                  event.currentTarget.value = event.currentTarget.value.replace(
+                    /\D/g,
+                    "",
+                  );
+                }}
+                aria-label={t(($) => {
+                  return $.chat.billing.customDollarAmount;
+                })}
+                className="h-8 w-24 pr-2 pl-5"
+              />
+            </div>
             <Button
               type="button"
-              onClick={handleCustomCreditClick}
+              onClick={(event) => {
+                submitCustomCredits(
+                  event.currentTarget.form,
+                  event.metaKey || event.ctrlKey,
+                );
+              }}
               disabled={preparing}
               variant="default"
               size="sm"
@@ -4999,9 +5045,8 @@ function InsufficientCreditsCard() {
 
   const handleCreditClick = (
     selection: CreditCheckoutSelection,
-    event: ReactMouseEvent<HTMLButtonElement>,
+    newTab: boolean,
   ) => {
-    const newTab = event.metaKey || event.ctrlKey;
     detach(
       creditCheckout(selection, newTab, "chat", pageSignal),
       Reason.DomCallback,
@@ -5013,7 +5058,7 @@ function InsufficientCreditsCard() {
       <div className="min-w-0">
         <p
           className={cn(
-            "truncate text-[0.9375rem] font-medium",
+            "break-words text-[0.9375rem] font-medium",
             hasAvailableCredits
               ? "text-emerald-700 dark:text-emerald-300"
               : "text-foreground",
@@ -5021,7 +5066,7 @@ function InsufficientCreditsCard() {
         >
           {headline}
         </p>
-        <p className={cn("mt-1", CHAT_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
+        <p className={cn("mt-1", BILLING_NOTICE_DESCRIPTION_CLASS)}>{helper}</p>
       </div>
       <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
         {!canShowBillingAction ? null : shouldStartProCheckout ? (
@@ -5031,7 +5076,7 @@ function InsufficientCreditsCard() {
             disabled={checkoutRedirecting}
             variant="default"
             size="sm"
-            className="shrink-0 disabled:opacity-60"
+            className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
           >
             {checkoutRedirecting
               ? t(($) => {
@@ -5042,18 +5087,10 @@ function InsufficientCreditsCard() {
                 })}
           </Button>
         ) : (
-          <ChatCardDetails
-            title={headline}
-            triggerLabel={t(($) => {
-              return $.runErrors.actions.addCredits;
-            })}
-          >
-            <p>{helper}</p>
-            <PaidCreditCheckoutActions
-              preparing={creditCheckoutPreparing}
-              handleCreditClick={handleCreditClick}
-            />
-          </ChatCardDetails>
+          <PaidCreditCheckoutActions
+            preparing={creditCheckoutPreparing}
+            handleCreditClick={handleCreditClick}
+          />
         )}
       </div>
     </div>
@@ -5065,29 +5102,174 @@ function isBillingRecoveryError(error: string): boolean {
   return normalized === "insufficient_credits" || normalized === "pro_required";
 }
 
-function assistantRecoveryResetText(
+function assistantRecoveryResetTexts(
   recovery: AssistantErrorRecovery,
-): string | null {
-  if (recovery.retryAt) {
-    const formatted = formatSubscriptionUsageReset(recovery.retryAt);
-    if (formatted && "fallbackText" in formatted) {
-      return formatted.fallbackText;
+): readonly string[] {
+  const resetTexts = recovery.resetWindows.flatMap((window) => {
+    if (!window.resetAt) {
+      return [];
     }
-    return formatted?.absoluteResetText ?? null;
+    const formatted = formatSubscriptionUsageReset(window.resetAt);
+    if (!formatted) {
+      return [];
+    }
+    if (recovery.resetWindows.length === 1) {
+      return [
+        "fallbackText" in formatted
+          ? formatted.fallbackText
+          : formatted.absoluteResetText,
+      ];
+    }
+    const time =
+      "fallbackText" in formatted ? window.resetAt : formatted.absoluteText;
+    return [
+      i18n.t(
+        ($) => {
+          return window.limitWindow === "five-hour"
+            ? $.chat.errors.recovery.fiveHourReset
+            : $.chat.errors.recovery.weeklyReset;
+        },
+        { time },
+      ),
+    ];
+  });
+  if (resetTexts.length > 0) {
+    return resetTexts;
   }
   if (!recovery.retryLabel) {
-    return null;
+    return [];
   }
-  return i18n.t(
-    ($) => {
-      return $.chat.errors.recovery.resetsAt;
-    },
-    { time: recovery.retryLabel },
-  );
+  return [
+    i18n.t(
+      ($) => {
+        return $.chat.errors.recovery.resetsAt;
+      },
+      { time: recovery.retryLabel },
+    ),
+  ];
 }
 
 function AssistantRecoveryActionSpinner({ loading }: { loading: boolean }) {
   return loading ? <Loader2 size={16} className="animate-spin" /> : null;
+}
+
+function hasAssistantRecoveryModelPicker(
+  recovery: AssistantErrorRecovery,
+): boolean {
+  return (
+    recovery.kind === "subscription-error" ||
+    recovery.kind === "usage-limit" ||
+    recovery.kind === "model-capacity" ||
+    recovery.kind === "model-unavailable" ||
+    recovery.kind === "safety-policy-refusal" ||
+    (recovery.kind === "provider-retryable" &&
+      recovery.failureReason !== "guest_root_filesystem_full" &&
+      recovery.failureReason !== "codex_access_program_unavailable")
+  );
+}
+
+function AssistantRecoveryModelPicker({
+  recovery,
+  thread,
+}: {
+  readonly recovery: AssistantErrorRecovery;
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const modelSelection =
+    useLastResolved(thread.composer.model.modelSelection$) ?? null;
+  const setModelSelection = useSet(thread.composer.model.setModelSelection$);
+  if (!hasAssistantRecoveryModelPicker(recovery)) {
+    return null;
+  }
+  const pickerValue =
+    recovery.kind === "model-unavailable" &&
+    modelSelection?.selectedModel === recovery.failedModel
+      ? null
+      : modelSelection;
+  const handleModelSelection = (
+    selection: ModelProviderSelection | null,
+  ): void => {
+    if (!selection) {
+      return;
+    }
+    detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
+  };
+  return (
+    <ModelProviderPicker
+      value={pickerValue}
+      onChange={handleModelSelection}
+      placeholder={t(($) => {
+        return $.chat.errors.recovery.selectModel;
+      })}
+      triggerClassName="h-8 w-auto min-w-24 max-w-36 bg-background text-sm"
+      compactTrigger
+      {...(recovery.kind === "model-unavailable" && recovery.failedModel
+        ? { excludedModel: recovery.failedModel }
+        : {})}
+    />
+  );
+}
+
+function AssistantRecoveryDestinationAction({
+  recovery,
+}: {
+  readonly recovery: AssistantErrorRecovery;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const openSettings = useSet(openSettingsDialogAt$);
+  if (recovery.kind === "provider-settings") {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="neutral"
+        className={ERROR_CARD_ACTION_CLASS}
+        onClick={() => {
+          detach(openSettings("model", pageSignal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return $.runErrors.actions.openModelProviders;
+        })}
+      </Button>
+    );
+  }
+  if (recovery.kind === "new-chat-required") {
+    return (
+      <Link
+        pathname="/"
+        className={cn(
+          buttonVariants({ size: "sm", variant: "neutral" }),
+          ERROR_CARD_ACTION_CLASS,
+        )}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.newChat;
+        })}
+      </Link>
+    );
+  }
+  if (recovery.kind === "terms-acceptance-required") {
+    return (
+      <a
+        href="https://claude.ai"
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(
+          buttonVariants({ size: "sm", variant: "neutral" }),
+          ERROR_CARD_ACTION_CLASS,
+        )}
+      >
+        {t(($) => {
+          return $.chat.errors.recovery.openClaude;
+        })}
+      </a>
+    );
+  }
+  return null;
 }
 
 function AssistantRecoveryActions({
@@ -5099,80 +5281,35 @@ function AssistantRecoveryActions({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const modelSelection =
-    useLastResolved(thread.composer.model.modelSelection$) ?? null;
-  const setModelSelection = useSet(thread.composer.model.setModelSelection$);
   const [retryLoadable, retry] = useLoadableSet(thread.retryAssistantError$);
   const [resetLoadable, resetAndRetry] = useLoadableSet(
     thread.resetCodexSubscriptionAndRetry$,
   );
   const retrying = retryLoadable.state === "loading";
   const resetting = resetLoadable.state === "loading";
-  const hasResetAction = recovery.actions.resetAndTryAgain !== null;
+  const resetAction = recovery.actions.resetAndTryAgain;
   const hasRetryAction = recovery.actions.tryAgain !== null;
-  const hasModelSelectionAction = recovery.framework !== null;
-  // `excludedModel` drops the failed model from the menu, so showing it as the
-  // trigger label would offer a choice the user cannot make. Fall back to the
-  // "Switch model" placeholder until they pick something else.
-  const pickerValue =
-    modelSelection && modelSelection.selectedModel === recovery.failedModel
-      ? null
-      : modelSelection;
-  const handleModelSelection = (
-    selection: ModelProviderSelection | null,
-  ): void => {
-    if (!selection) {
-      return;
-    }
-    detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
-  };
+  const continueAction =
+    recovery.kind === "execution-timeout" ||
+    recovery.kind === "autonomy-budget-exhausted" ||
+    recovery.kind === "output-token-limit";
 
   return (
-    <div className="flex max-w-full flex-wrap items-center gap-2">
-      {hasResetAction && (
-        <Button
-          type="button"
-          size="sm"
-          variant="neutral"
-          disabled={retrying || resetting}
-          onClick={() => {
-            detach(resetAndRetry(pageSignal), Reason.DomCallback);
-          }}
-        >
-          <AssistantRecoveryActionSpinner loading={resetting} />
-          {t(($) => {
-            return $.chat.errors.recovery.resetAndTryAgain;
-          })}
-        </Button>
-      )}
-      {hasModelSelectionAction && (
-        <ModelProviderPicker
-          value={pickerValue}
-          onChange={handleModelSelection}
-          placeholder={t(($) => {
-            return $.chat.errors.recovery.selectModel;
-          })}
-          triggerClassName="h-8 w-auto bg-background text-sm"
-          compactTrigger
-          {...(recovery.failedModel
-            ? { excludedModel: recovery.failedModel }
-            : {})}
-        />
-      )}
+    <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+      <AssistantRecoveryModelPicker recovery={recovery} thread={thread} />
       {hasRetryAction && (
         <Button
           type="button"
           size="sm"
-          // Filled neutral leads; the plain outline reads as the secondary
-          // action when reset is also offered.
-          variant={hasResetAction ? "outline" : "neutral"}
+          variant="neutral"
+          className={ERROR_CARD_ACTION_CLASS}
           disabled={retrying || resetting}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
           }}
         >
           <AssistantRecoveryActionSpinner loading={retrying} />
-          {recovery.framework === null
+          {continueAction
             ? t(($) => {
                 return $.chat.errors.recovery.continue;
               })
@@ -5181,6 +5318,27 @@ function AssistantRecoveryActions({
               })}
         </Button>
       )}
+      {resetAction && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className={ERROR_CARD_ACTION_CLASS}
+          disabled={retrying || resetting}
+          onClick={() => {
+            detach(resetAndRetry(pageSignal), Reason.DomCallback);
+          }}
+        >
+          <AssistantRecoveryActionSpinner loading={resetting} />
+          {t(
+            ($) => {
+              return $.chat.errors.recovery.resetUsageRemaining;
+            },
+            { value: formatLocalizedNumber(resetAction.resetsRemaining) },
+          )}
+        </Button>
+      )}
+      <AssistantRecoveryDestinationAction recovery={recovery} />
     </div>
   );
 }
@@ -5198,31 +5356,40 @@ function AssistantRecoveryActions({
 interface AssistantErrorCardContent {
   readonly icon: LucideIcon;
   readonly title: string;
-  readonly description: string;
+  readonly description: ReactNode;
+  readonly descriptionTitle?: string;
+  readonly descriptionClassName?: string;
   readonly details?: ReactNode;
   readonly actions?: ReactNode;
+  readonly reserveActions?: boolean;
   readonly testId?: string;
 }
 
 /**
  * The classification behind this card resolves over two chained requests, so
  * `pending` is the state before either landed. It keeps the settled card's own
- * frame and reserves the title, supporting-line, and action boxes at their
- * settled heights: `docs/chat-cards.md` requires the resolution to swap what
- * fills those boxes without moving the transcript. Withholding the details
- * trigger is the point of the state — the settled card decides whether that
- * dialog offers a model switch, and offering it early would show a dialog whose
- * contents change under the reader.
+ * frame and renders its synchronous supporting copy invisibly, so short cards
+ * can hug their content without collapsing during classification. Usage limits
+ * reserve the account-and-window rows that load from the provider. Recovery
+ * controls stay inline; only multiline or unusually long raw diagnostics keep
+ * a details dialog.
  */
 function AssistantErrorCard({
   icon: Icon,
   title,
   description,
+  descriptionTitle,
+  descriptionClassName,
   details,
   actions,
+  reserveActions = false,
   testId,
   pending = false,
 }: AssistantErrorCardContent & { readonly pending?: boolean }) {
+  const hasDescription = Boolean(description);
+  const accessibleDescription =
+    descriptionTitle ??
+    (typeof description === "string" ? description : undefined);
   return (
     <div
       role="status"
@@ -5239,64 +5406,318 @@ function AssistantErrorCard({
           <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
         )}
         <div className="min-w-0">
-          <div className="h-6 truncate text-[0.9375rem] font-medium leading-6">
-            {pending ? null : title}
+          <div
+            className={cn(
+              "min-h-6 break-words text-[0.9375rem] font-medium leading-6",
+              pending && "invisible",
+            )}
+            aria-hidden={pending ? true : undefined}
+          >
+            {title}
           </div>
-          {(pending || description !== "") && (
-            <div className={cn("mt-0.5", CHAT_NOTICE_DESCRIPTION_CLASS)}>
-              {pending ? null : description}
+          {hasDescription && (
+            <div
+              data-testid="assistant-error-description"
+              className={cn(
+                "mt-0.5 break-words text-sm leading-5 text-muted-foreground",
+                descriptionClassName,
+                pending && "invisible",
+              )}
+              title={pending ? undefined : accessibleDescription}
+              aria-hidden={pending ? true : undefined}
+            >
+              {description}
             </div>
           )}
         </div>
       </div>
       {pending ? (
-        <div className={CHAT_NOTICE_ACTION_SLOT_CLASS} />
-      ) : (
-        (description !== "" ||
-          details !== undefined ||
-          actions !== undefined) && (
-          <ChatCardDetails title={title}>
-            {details ?? <p>{description}</p>}
-            {actions}
-          </ChatCardDetails>
-        )
-      )}
+        reserveActions ? (
+          <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS} />
+        ) : null
+      ) : actions !== undefined || details !== undefined ? (
+        <div className={ASSISTANT_ERROR_ACTION_SLOT_CLASS}>
+          {actions !== undefined ? (
+            actions
+          ) : (
+            <ChatCardDetails title={title}>{details}</ChatCardDetails>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function assistantErrorRecoveryContent(
-  recovery: AssistantErrorRecovery,
-  thread: ChatPanelSignals,
+type StructuredFailureTitle = () => string;
+
+const STRUCTURED_FAILURE_TITLES = Object.freeze({
+  session_history_limit: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.sessionHistoryTitle;
+    });
+  },
+  guest_root_filesystem_full: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.filesystemFullTitle;
+    });
+  },
+  execution_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.timeoutTitle;
+    });
+  },
+  insufficient_credits: () => {
+    return i18n.t(($) => {
+      return $.chat.billing.outOfCredits;
+    });
+  },
+  provider_insufficient_credits: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerBalanceTitle;
+    });
+  },
+  invalid_api_key: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.invalidApiKeyTitle;
+    });
+  },
+  invalid_credentials: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.invalidCredentialsTitle;
+    });
+  },
+  terms_acceptance_required: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.termsTitle;
+    });
+  },
+  context_window_exceeded: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.contextWindowTitle;
+    });
+  },
+  input_too_large: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.inputTooLargeTitle;
+    });
+  },
+  output_token_limit: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.outputLimitTitle;
+    });
+  },
+  provider_rate_limited: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerRateLimitedTitle;
+    });
+  },
+  provider_overloaded: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.capacityTitle;
+    });
+  },
+  provider_stream_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerStreamTimeoutTitle;
+    });
+  },
+  provider_queue_timeout: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerQueueTimeoutTitle;
+    });
+  },
+  codex_access_program_unavailable: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.accessProgramTitle;
+    });
+  },
+  provider_server_error: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.providerServerErrorTitle;
+    });
+  },
+  response_connection_lost: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.connectionLostTitle;
+    });
+  },
+  safety_policy_refusal: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.safetyTitle;
+    });
+  },
+  reconnect_required: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.reconnectTitle;
+    });
+  },
+  unsupported_model: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.unavailableTitle;
+    });
+  },
+  usage_limit: () => {
+    return i18n.t(($) => {
+      return $.chat.errors.recovery.usageFallbackTitle;
+    });
+  },
+} satisfies Record<KnownRunFailureReason, StructuredFailureTitle>);
+
+function structuredFailureTitle(reason: KnownRunFailureReason): string {
+  return STRUCTURED_FAILURE_TITLES[reason]();
+}
+
+type StructuredFailureDescription = (t: TFunction<"common">) => string;
+
+const FAILURE_DESCRIPTIONS = Object.freeze({
+  newChat: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.newChatDescription;
+    });
+  },
+  filesystemFull: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.filesystemFullDescription;
+    });
+  },
+  timeout: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.timeoutDescription;
+    });
+  },
+  providerBalance: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.providerBalanceDescription;
+    });
+  },
+  providerConnection: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.providerConnectionDescription;
+    });
+  },
+  terms: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.termsDescription;
+    });
+  },
+  inputTooLarge: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.inputTooLargeDescription;
+    });
+  },
+  outputLimit: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.outputLimitDescription;
+    });
+  },
+  capacity: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.capacityDescription;
+    });
+  },
+  accessProgram: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.accessProgramDescription;
+    });
+  },
+  safety: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.safetyDescription;
+    });
+  },
+  unavailable: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.unavailableDescription;
+    });
+  },
+  usage: (t: TFunction<"common">) => {
+    return t(($) => {
+      return $.chat.errors.recovery.usageDescription;
+    });
+  },
+});
+
+const STRUCTURED_FAILURE_DESCRIPTIONS = Object.freeze({
+  session_history_limit: FAILURE_DESCRIPTIONS.newChat,
+  guest_root_filesystem_full: FAILURE_DESCRIPTIONS.filesystemFull,
+  execution_timeout: FAILURE_DESCRIPTIONS.timeout,
+  insufficient_credits: () => {
+    return "";
+  },
+  provider_insufficient_credits: FAILURE_DESCRIPTIONS.providerBalance,
+  invalid_api_key: FAILURE_DESCRIPTIONS.providerConnection,
+  invalid_credentials: FAILURE_DESCRIPTIONS.providerConnection,
+  terms_acceptance_required: FAILURE_DESCRIPTIONS.terms,
+  context_window_exceeded: FAILURE_DESCRIPTIONS.newChat,
+  input_too_large: FAILURE_DESCRIPTIONS.inputTooLarge,
+  output_token_limit: FAILURE_DESCRIPTIONS.outputLimit,
+  provider_rate_limited: FAILURE_DESCRIPTIONS.capacity,
+  provider_overloaded: FAILURE_DESCRIPTIONS.capacity,
+  provider_stream_timeout: FAILURE_DESCRIPTIONS.capacity,
+  provider_queue_timeout: FAILURE_DESCRIPTIONS.capacity,
+  codex_access_program_unavailable: FAILURE_DESCRIPTIONS.accessProgram,
+  provider_server_error: FAILURE_DESCRIPTIONS.capacity,
+  response_connection_lost: FAILURE_DESCRIPTIONS.capacity,
+  safety_policy_refusal: FAILURE_DESCRIPTIONS.safety,
+  reconnect_required: FAILURE_DESCRIPTIONS.providerConnection,
+  unsupported_model: FAILURE_DESCRIPTIONS.unavailable,
+  usage_limit: FAILURE_DESCRIPTIONS.usage,
+} satisfies Record<KnownRunFailureReason, StructuredFailureDescription>);
+
+function structuredFailureDescription(
+  reason: KnownRunFailureReason,
   t: TFunction<"common">,
-): AssistantErrorCardContent {
-  const resetText = assistantRecoveryResetText(recovery);
-  const title = (() => {
-    if (recovery.kind === "subscription-error") {
-      return t(($) => {
-        return $.chat.errors.genericTitle;
-      });
-    }
-    if (recovery.kind === "execution-timeout") {
-      return t(($) => {
-        return $.chat.errors.recovery.timeoutTitle;
-      });
-    }
-    if (recovery.kind === "autonomy-budget-exhausted") {
-      return t(($) => {
-        return $.chat.errors.recovery.autonomyLimitTitle;
-      });
-    }
-    if (recovery.kind === "model-unavailable") {
-      return t(($) => {
-        return $.chat.errors.recovery.unavailableTitle;
-      });
-    }
-    if (recovery.kind === "model-capacity") {
-      return t(($) => {
-        return $.chat.errors.recovery.capacityTitle;
-      });
-    }
+): string {
+  return STRUCTURED_FAILURE_DESCRIPTIONS[reason](t);
+}
+
+function structuredFailureIcon(reason: KnownRunFailureReason): LucideIcon {
+  if (
+    reason === "execution_timeout" ||
+    reason === "output_token_limit" ||
+    reason === "provider_rate_limited" ||
+    reason === "provider_stream_timeout" ||
+    reason === "provider_queue_timeout" ||
+    reason === "usage_limit"
+  ) {
+    return Clock;
+  }
+  if (reason === "safety_policy_refusal") {
+    return Hand;
+  }
+  if (
+    reason === "invalid_api_key" ||
+    reason === "invalid_credentials" ||
+    reason === "reconnect_required" ||
+    reason === "terms_acceptance_required" ||
+    reason === "context_window_exceeded" ||
+    reason === "input_too_large" ||
+    reason === "session_history_limit"
+  ) {
+    return AlertCircle;
+  }
+  return Coffee;
+}
+
+function structuredFailureHasActions(reason: KnownRunFailureReason): boolean {
+  return reason !== "insufficient_credits" && reason !== "input_too_large";
+}
+
+function assistantRecoveryTitle(
+  recovery: AssistantErrorRecovery,
+  t: TFunction<"common">,
+): string {
+  if (recovery.kind === "subscription-error") {
+    return t(($) => {
+      return $.chat.errors.genericTitle;
+    });
+  }
+  if (recovery.kind === "autonomy-budget-exhausted") {
+    return t(($) => {
+      return $.chat.errors.recovery.autonomyLimitTitle;
+    });
+  }
+  if (recovery.kind === "usage-limit" && recovery.framework !== null) {
     const framework =
       recovery.framework === "codex"
         ? t(($) => {
@@ -5311,73 +5732,188 @@ function assistantErrorRecoveryContent(
       },
       { framework },
     );
-  })();
-  const description =
-    recovery.kind === "subscription-error"
-      ? recovery.providerMessage
-      : recovery.kind === "execution-timeout"
-        ? t(($) => {
-            return $.chat.errors.recovery.timeoutDescription;
-          })
-        : recovery.kind === "autonomy-budget-exhausted"
-          ? t(($) => {
-              return $.chat.errors.recovery.autonomyLimitDescription;
-            })
-          : recovery.kind === "usage-limit"
-            ? t(($) => {
-                return $.chat.errors.recovery.usageDescription;
-              })
-            : recovery.kind === "model-unavailable"
-              ? t(($) => {
-                  return $.chat.errors.recovery.unavailableDescription;
-                })
-              : t(($) => {
-                  return $.chat.errors.recovery.capacityDescription;
-                });
-  const personalSource = recovery.source?.credentialScope === "member";
-  const sourceDescription = personalSource
-    ? recovery.source?.account.status === "unavailable"
-      ? t(($) => {
-          return $.chat.errors.recovery.originalAccountUnavailable;
-        })
-      : recovery.source?.account.status === "unknown"
-        ? t(($) => {
-            return $.chat.errors.recovery.originalAccountUnknown;
-          })
-        : recovery.accountLabel
-          ? t(
-              ($) => {
-                return $.chat.errors.recovery.originalAccount;
-              },
-              { account: recovery.accountLabel },
-            )
-          : null
-    : null;
+  }
+  if (recovery.failureReason) {
+    return structuredFailureTitle(recovery.failureReason);
+  }
+  if (recovery.kind === "execution-timeout") {
+    return t(($) => {
+      return $.chat.errors.recovery.timeoutTitle;
+    });
+  }
+  if (recovery.kind === "model-unavailable") {
+    return t(($) => {
+      return $.chat.errors.recovery.unavailableTitle;
+    });
+  }
+  if (recovery.kind === "model-capacity") {
+    return t(($) => {
+      return $.chat.errors.recovery.capacityTitle;
+    });
+  }
+  return t(($) => {
+    return $.chat.errors.recovery.usageFallbackTitle;
+  });
+}
 
+function assistantRecoverySourceDescription(
+  recovery: AssistantErrorRecovery,
+  t: TFunction<"common">,
+): string | null {
+  if (
+    recovery.kind !== "usage-limit" ||
+    recovery.source?.credentialScope !== "member"
+  ) {
+    return null;
+  }
+  if (recovery.source.account.status === "unavailable") {
+    return t(($) => {
+      return $.chat.errors.recovery.originalAccountUnavailable;
+    });
+  }
+  if (recovery.source.account.status === "unknown") {
+    return t(($) => {
+      return $.chat.errors.recovery.originalAccountUnknown;
+    });
+  }
+  return recovery.accountLabel
+    ? t(
+        ($) => {
+          return $.chat.errors.recovery.originalAccount;
+        },
+        { account: recovery.accountLabel },
+      )
+    : null;
+}
+
+interface AssistantRecoveryDescription {
+  readonly content: ReactNode;
+  readonly title: string;
+}
+
+function textAssistantRecoveryDescription(
+  text: string,
+): AssistantRecoveryDescription {
+  return { content: text, title: text };
+}
+
+function assistantRecoveryDescription(
+  recovery: AssistantErrorRecovery,
+  t: TFunction<"common">,
+): AssistantRecoveryDescription {
+  if (recovery.kind === "usage-limit") {
+    const sourceDescription = assistantRecoverySourceDescription(recovery, t);
+    const resetTexts = assistantRecoveryResetTexts(recovery);
+    const details = [sourceDescription, ...resetTexts].filter(
+      (part): part is string => {
+        return Boolean(part);
+      },
+    );
+    if (details.length === 0) {
+      return textAssistantRecoveryDescription(
+        t(($) => {
+          return $.chat.errors.recovery.usageDescription;
+        }),
+      );
+    }
+    return {
+      title: details.join(" · "),
+      content: (
+        <>
+          {sourceDescription && <div>{sourceDescription}</div>}
+          {resetTexts.length > 0 && (
+            <div className="flex flex-col @[640px]:flex-row @[640px]:flex-wrap @[640px]:gap-x-4">
+              {resetTexts.map((resetText) => {
+                return <span key={resetText}>{resetText}</span>;
+              })}
+            </div>
+          )}
+        </>
+      ),
+    };
+  }
+  if (recovery.kind === "subscription-error") {
+    return textAssistantRecoveryDescription(
+      localizedRunError(recovery.providerMessage),
+    );
+  }
+  if (recovery.failureReason) {
+    return textAssistantRecoveryDescription(
+      structuredFailureDescription(recovery.failureReason, t),
+    );
+  }
+  if (recovery.kind === "execution-timeout") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.timeoutDescription;
+      }),
+    );
+  }
+  if (recovery.kind === "autonomy-budget-exhausted") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.autonomyLimitDescription;
+      }),
+    );
+  }
+  if (recovery.kind === "model-unavailable") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.unavailableDescription;
+      }),
+    );
+  }
+  if (recovery.kind === "model-capacity") {
+    return textAssistantRecoveryDescription(
+      t(($) => {
+        return $.chat.errors.recovery.capacityDescription;
+      }),
+    );
+  }
+  return textAssistantRecoveryDescription("");
+}
+
+function assistantRecoveryIcon(recovery: AssistantErrorRecovery): LucideIcon {
+  if (recovery.kind === "autonomy-budget-exhausted") {
+    return Hand;
+  }
+  if (recovery.failureReason) {
+    return structuredFailureIcon(recovery.failureReason);
+  }
+  return recovery.kind === "usage-limit" ||
+    recovery.kind === "execution-timeout"
+    ? Clock
+    : Coffee;
+}
+
+function assistantErrorRecoveryContent(
+  recovery: AssistantErrorRecovery,
+  thread: ChatPanelSignals,
+  t: TFunction<"common">,
+): AssistantErrorCardContent {
+  const hasActions =
+    recovery.kind !== "input-too-large" &&
+    (recovery.failureReason === null ||
+      structuredFailureHasActions(recovery.failureReason));
+  const description = assistantRecoveryDescription(recovery, t);
   return {
-    icon:
-      recovery.kind === "autonomy-budget-exhausted"
-        ? Hand
-        : recovery.kind === "usage-limit" ||
-            recovery.kind === "execution-timeout"
-          ? Clock
-          : Coffee,
-    title,
-    description: `${description}${resetText ? ` ${resetText}` : ""}`,
-    details: (
-      <>
-        {`${description}${resetText ? ` ${resetText}` : ""}`}
-        {sourceDescription && <p className="mt-1">{sourceDescription}</p>}
-        {personalSource && (
-          <p className="mt-1">
-            {t(($) => {
-              return $.chat.errors.recovery.newRunCurrentSettings;
-            })}
-          </p>
-        )}
-      </>
-    ),
-    actions: <AssistantRecoveryActions recovery={recovery} thread={thread} />,
+    icon: assistantRecoveryIcon(recovery),
+    title: assistantRecoveryTitle(recovery, t),
+    description: description.content,
+    descriptionTitle: description.title,
+    ...(recovery.kind === "usage-limit" &&
+    (recovery.source?.credentialScope === "member" ||
+      recovery.resetWindows.length > 0)
+      ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
+      : {}),
+    ...(hasActions
+      ? {
+          actions: (
+            <AssistantRecoveryActions recovery={recovery} thread={thread} />
+          ),
+        }
+      : {}),
+    reserveActions: hasActions,
     testId: "assistant-error-recovery",
   };
 }
@@ -5389,9 +5925,11 @@ function ModelSettingsButton() {
   const pageSignal = useGet(pageSignal$);
 
   return (
-    <button
+    <Button
       type="button"
-      className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
+      size="sm"
+      variant="neutral"
+      className={ERROR_CARD_ACTION_CLASS}
       onClick={() => {
         detach(openSettings("model", pageSignal), Reason.DomCallback);
       }}
@@ -5399,7 +5937,7 @@ function ModelSettingsButton() {
       {t(($) => {
         return $.chat.errors.noModelProviderAction;
       })}
-    </button>
+    </Button>
   );
 }
 
@@ -5414,17 +5952,8 @@ function noModelProviderErrorContent(
     description: t(($) => {
       return $.chat.errors.noModelProviderPrefix;
     }),
-    details: (
-      <span>
-        {t(($) => {
-          return $.chat.errors.noModelProviderPrefix;
-        })}{" "}
-        <ModelSettingsButton />{" "}
-        {t(($) => {
-          return $.chat.errors.noModelProviderSuffix;
-        })}
-      </span>
-    ),
+    actions: <ModelSettingsButton />,
+    reserveActions: true,
   };
 }
 
@@ -5434,12 +5963,53 @@ function noModelProviderErrorContent(
  * card is on screen: the recovery classification never claims
  * `insufficient_credits` or `pro_required`.
  */
+function isLegacyUsageLimitError(
+  error: string,
+  failureReason: string | undefined,
+): boolean {
+  if (failureReason !== undefined) {
+    return failureReason === "usage_limit";
+  }
+  return (
+    /you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
+      error,
+    ) || /\bclaude(?: code)? (?:rate|usage) limit reached\b/iu.test(error)
+  );
+}
+
+function structuredUsageDescriptionClass(
+  error: string,
+  reason: KnownRunFailureReason,
+): string {
+  return reason === "usage_limit" && isLegacyUsageLimitError(error, undefined)
+    ? USAGE_RECOVERY_DESCRIPTION_CLASS
+    : "";
+}
+
 function assistantErrorFallbackContent(
   error: string,
+  failureReason: string | undefined,
   t: TFunction<"common">,
 ): AssistantErrorCardContent | null {
-  if (isBillingRecoveryError(error)) {
+  const knownReason = knownRunFailureReasonSchema.safeParse(failureReason);
+  if (
+    isBillingRecoveryError(error) ||
+    (knownReason.success && knownReason.data === "insufficient_credits")
+  ) {
     return null;
+  }
+
+  if (knownReason.success) {
+    return {
+      icon: structuredFailureIcon(knownReason.data),
+      title: structuredFailureTitle(knownReason.data),
+      description: structuredFailureDescription(knownReason.data, t),
+      descriptionClassName: structuredUsageDescriptionClass(
+        error,
+        knownReason.data,
+      ),
+      reserveActions: structuredFailureHasActions(knownReason.data),
+    };
   }
 
   if (error.trim().toLowerCase() === "run cancelled") {
@@ -5477,21 +6047,20 @@ function assistantErrorFallbackContent(
       description: t(($) => {
         return $.chat.errors.providerIncompatiblePrefix;
       }),
-      details: (
-        <span>
+      actions: (
+        <Link
+          pathname="/"
+          className={cn(
+            buttonVariants({ size: "sm", variant: "neutral" }),
+            ERROR_CARD_ACTION_CLASS,
+          )}
+        >
           {t(($) => {
-            return $.chat.errors.providerIncompatiblePrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
-            {t(($) => {
-              return $.chat.errors.providerIncompatibleAction;
-            })}
-          </Link>
-        </span>
+            return $.chat.errors.providerIncompatibleAction;
+          })}
+        </Link>
       ),
+      reserveActions: true,
     };
   }
 
@@ -5510,54 +6079,64 @@ function assistantErrorFallbackContent(
       description: t(($) => {
         return $.chat.errors.providerDeletedPrefix;
       }),
-      details: (
-        <span>
+      actions: (
+        <Link
+          pathname="/"
+          className={cn(
+            buttonVariants({ size: "sm", variant: "neutral" }),
+            ERROR_CARD_ACTION_CLASS,
+          )}
+        >
           {t(($) => {
-            return $.chat.errors.providerDeletedPrefix;
-          })}{" "}
-          <Link
-            pathname="/"
-            className="inline-flex items-center gap-1 text-amber-500 underline underline-offset-2 hover:text-amber-400"
-          >
-            {t(($) => {
-              return $.chat.errors.providerDeletedAction;
-            })}
-          </Link>{" "}
-          {t(($) => {
-            return $.chat.errors.providerDeletedSuffix;
+            return $.chat.errors.providerDeletedAction;
           })}
-        </span>
+        </Link>
       ),
+      reserveActions: true,
     };
   }
 
+  const description = localizedRunError(error);
+  const showDetails = /[\r\n]/u.test(description) || description.length > 240;
+  const legacyUsageLimit = isLegacyUsageLimitError(error, failureReason);
   return {
     icon: AlertCircle,
     title: t(($) => {
       return $.chat.errors.genericTitle;
     }),
-    description: localizedRunError(error),
-    details: (
-      <Markdown
-        className="!text-muted-foreground"
-        source={localizedRunError(error)}
-      />
-    ),
+    // Keep multiline and unusually long diagnostics in the read-only dialog;
+    // the notice row should remain a compact recovery surface.
+    description: showDetails ? "" : description,
+    ...(showDetails
+      ? {
+          details: (
+            <Markdown className="!text-muted-foreground" source={description} />
+          ),
+        }
+      : {}),
+    reserveActions: showDetails || legacyUsageLimit,
   };
 }
 
 function AssistantErrorContent({
   error,
   eventId,
+  failureReason,
   thread,
 }: {
   error: string;
   eventId: string;
+  failureReason: string | undefined;
   thread: ChatPanelSignals;
 }) {
   return (
     <ChatCard data-testid="assistant-error-card-shell" className="w-full">
-      <AssistantErrorState error={error} eventId={eventId} thread={thread} />
+      <AssistantErrorState
+        error={error}
+        eventId={eventId}
+        failureReason={failureReason}
+        thread={thread}
+      />
     </ChatCard>
   );
 }
@@ -5565,10 +6144,12 @@ function AssistantErrorContent({
 function AssistantErrorState({
   error,
   eventId,
+  failureReason,
   thread,
 }: {
   error: string;
   eventId: string;
+  failureReason: string | undefined;
   thread: ChatPanelSignals;
 }) {
   const { t } = useTranslation();
@@ -5578,7 +6159,7 @@ function AssistantErrorState({
   // appended event.
   const loadable = useLastLoadable(thread.assistantErrorRecovery$);
   const pendingEventId = useLastResolved(thread.assistantErrorRecoveryEventId$);
-  const fallback = assistantErrorFallbackContent(error, t);
+  const fallback = assistantErrorFallbackContent(error, failureReason, t);
   if (fallback === null) {
     return <InsufficientCreditsCard />;
   }
@@ -7654,6 +8235,9 @@ function PagedAssistantEventItem({
         <AssistantErrorContent
           error={error}
           eventId={event.id}
+          failureReason={
+            event.eventType === "run.failed" ? event.failureReason : undefined
+          }
           thread={thread}
         />
       </div>
