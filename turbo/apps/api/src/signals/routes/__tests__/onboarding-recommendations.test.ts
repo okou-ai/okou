@@ -319,6 +319,11 @@ describe("onboarding recommendations", () => {
       throw new Error("Expected the model context message");
     }
     expect(JSON.parse(contextMessage.content)).toMatchObject({
+      industry: "operations",
+      selectedPositioning: {
+        name: "Business & operations",
+        summary: "Business owners, assistants & operators",
+      },
       connectedContext: expect.arrayContaining([
         {
           sourceSlug: "github",
@@ -332,6 +337,9 @@ describe("onboarding recommendations", () => {
     });
     expect(modelRequest).toContain("[email]");
     expect(modelRequest).toContain('"profile"');
+    expect(modelRequest).toContain(
+      "Combine it with connectedContext when writing the profile",
+    );
     expect(modelRequest).toContain("[link]");
     expect(modelRequest).not.toContain("alice@example.com");
     expect(modelRequest).not.toContain("private.example.test");
