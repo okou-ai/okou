@@ -13,6 +13,7 @@ setup_file() {
     E2E_API_TOKEN="$(jq -er '.token | select(type == "string" and length > 0)' "$credentials")"
     E2E_API_URL="$(jq -er '.apiUrl | select(type == "string" and length > 0)' "$credentials")"
     require_runner_api_credentials
+    runner_e2e_use_legacy_route
 
     export RUNNER_AGENT_ID
     RUNNER_AGENT_ID="$(create_runner_agent \

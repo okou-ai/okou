@@ -20,6 +20,14 @@ require_runner_api_credentials() {
     runner_api_token >/dev/null && runner_api_url >/dev/null
 }
 
+runner_e2e_use_legacy_route() {
+    local switches
+    switches="$(runner_api_curl "/api/feature-switches" \
+        -X POST \
+        -d '{"switches":{"piLoop":false}}')" || return
+    jq -e '.effectiveSwitches.piLoop == false' <<<"$switches" >/dev/null
+}
+
 # Returns the Vercel log search for one host and path without a status term,
 # so callers decide whether to narrow the search by response status.
 _runner_api_vercel_logs_url_prefix() {

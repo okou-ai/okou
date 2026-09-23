@@ -7,6 +7,7 @@ load '../../helpers/runner-chat'
 
 setup_file() {
     require_runner_api_credentials
+    runner_e2e_use_legacy_route
 
     export RUNNER_AGENT_ID
     RUNNER_AGENT_ID="$(create_runner_agent \
