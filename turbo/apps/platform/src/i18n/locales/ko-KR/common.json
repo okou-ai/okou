@@ -1466,20 +1466,7 @@
             "title": "팀이 이미 대화하는 곳에서 {{assistantName}}와 일하세요"
           },
           "workflow": {
-            "browse": "템플릿 둘러보기",
-            "confirm": "하나 해보기",
             "description": "반복하는 일을 팀이 실행할 수 있는 워크플로로 만듭니다.",
-            "prompt": "매주 월요일 아침에 경쟁사가 지난주에 공개한 내용을 확인하고 주제별로 묶어 비교표로 만들어 주세요.",
-            "promptConfirm": "{{assistantName}}에게 보내기",
-            "promptDescription": "이대로 {{assistantName}}에게 보내거나, 문구를 고쳐서 보내세요.",
-            "promptOutcome": "자료를 읽고, 찾은 것을 묶어서 표로 답합니다. 결과가 괜찮으면 그 실행을 워크플로로 저장할지 물어봅니다.",
-            "promptTitle": "동료에게 부탁하듯 말하세요",
-            "stepRun": "한 번 실행해 보기",
-            "stepRunDescription": "무엇을 정하기 전에 완성된 결과물을 먼저 봅니다.",
-            "stepSave": "저장하고 일정을 정하기",
-            "stepSaveDescription": "아무도 시키지 않아도 실행되고, 팀원 누구나 실행할 수 있습니다.",
-            "stepTemplate": "템플릿에서 시작하기",
-            "stepTemplateDescription": "빈 화면 대신 내 업무에 가까운 것을 고르세요.",
             "title": "잘된 실행 한 번이 팀의 자산이 됩니다"
           }
         },

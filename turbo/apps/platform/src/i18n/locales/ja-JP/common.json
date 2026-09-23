@@ -1466,20 +1466,7 @@
             "title": "チームがすでに会話している場所で {{assistantName}} を使う"
           },
           "workflow": {
-            "browse": "テンプレートを見る",
-            "confirm": "ひとつ試してみる",
             "description": "繰り返している仕事を、チームが実行できるワークフローにします。",
-            "prompt": "毎週月曜の朝に、競合が先週公開した内容を調べて、テーマごとにまとめて比較表にしてください。",
-            "promptConfirm": "{{assistantName}} に送る",
-            "promptDescription": "このまま {{assistantName}} に送るか、文言を変えてから送ってください。",
-            "promptOutcome": "情報源を読み、見つけたものを整理して、表にして返します。結果が良ければ、その実行をワークフローとして保存するか聞いてきます。",
-            "promptTitle": "同僚に頼むように伝えてください",
-            "stepRun": "まず 1 回動かす",
-            "stepRunDescription": "何かを決める前に、仕上がった成果物を確認できます。",
-            "stepSave": "保存して、スケジュールを決める",
-            "stepSaveDescription": "誰も頼まなくても動き、チームの誰でも実行できます。",
-            "stepTemplate": "テンプレートから始める",
-            "stepTemplateDescription": "白紙からではなく、自分の仕事に近いものを選びます。",
             "title": "うまくいった 1 回が、チームの資産になります"
           }
         },

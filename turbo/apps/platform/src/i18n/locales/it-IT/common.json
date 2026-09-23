@@ -1491,20 +1491,7 @@
             "title": "Lavora con {{assistantName}} dove il team già parla"
           },
           "workflow": {
-            "browse": "Sfoglia i modelli",
-            "confirm": "Mostramene uno",
             "description": "Trasforma un lavoro che ripeti in un workflow che il team può eseguire.",
-            "prompt": "Ogni lunedì mattina controlla cosa hanno pubblicato i miei concorrenti la settimana scorsa, raggruppalo per tema e preparami una tabella di confronto.",
-            "promptConfirm": "Invialo a {{assistantName}}",
-            "promptDescription": "Invialo così a {{assistantName}}, oppure cambia prima le parole.",
-            "promptOutcome": "Legge le fonti, raggruppa quello che trova e risponde con la tabella. Se il risultato va bene, ti propone di tenere l'esecuzione come workflow.",
-            "promptTitle": "Chiedilo come lo chiederesti a un collega",
-            "stepRun": "Eseguilo una volta",
-            "stepRunDescription": "Vedi il lavoro finito prima di impegnarti in qualcosa.",
-            "stepSave": "Salvalo e dagli una pianificazione",
-            "stepSaveDescription": "Parte senza che nessuno lo chieda e può eseguirlo qualunque collega.",
-            "stepTemplate": "Parti da un modello",
-            "stepTemplateDescription": "Scegline uno vicino al tuo lavoro invece di una pagina bianca.",
             "title": "Una buona esecuzione diventa qualcosa che resta al team"
           }
         },

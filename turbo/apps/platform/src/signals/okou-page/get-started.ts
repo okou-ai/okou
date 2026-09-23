@@ -177,45 +177,14 @@ export const setRewardsNoteOpen$ = command(({ set }, open: boolean) => {
  * same reason the share dialog is.
  */
 const internalQuestIntroKey$ = state<GetStartedQuestKey | null>(null);
-/**
- * Whether the workflow intro has advanced from its three steps to the prompt
- * it hands over. Every open starts on the steps.
- */
-const internalQuestIntroPromptShown$ = state(false);
-/**
- * The workflow prompt as the reader has edited it, or `null` while it is still
- * the suggestion.
- *
- * The screen's own subtitle offers to change the wording first, so the sentence
- * has to be editable. `null` rather than a copy of the default, because the
- * default is a translated string that only the view can resolve -- seeding this
- * with it would freeze one language into the signal.
- */
-const internalQuestWorkflowPrompt$ = state<string | null>(null);
 export const questIntroKey$ = computed((get) => {
   return get(internalQuestIntroKey$);
-});
-export const questIntroPromptShown$ = computed((get) => {
-  return get(internalQuestIntroPromptShown$);
-});
-export const questWorkflowPrompt$ = computed((get) => {
-  return get(internalQuestWorkflowPrompt$);
 });
 export const setQuestIntroKey$ = command(
   ({ set }, key: GetStartedQuestKey | null) => {
     set(internalQuestIntroKey$, key);
-    set(internalQuestIntroPromptShown$, false);
-    // Every open starts on the suggested prompt rather than on a sentence
-    // edited in a session the reader has since left.
-    set(internalQuestWorkflowPrompt$, null);
   },
 );
-export const setQuestWorkflowPrompt$ = command(({ set }, value: string) => {
-  set(internalQuestWorkflowPrompt$, value);
-});
-export const showQuestIntroPrompt$ = command(({ set }) => {
-  set(internalQuestIntroPromptShown$, true);
-});
 
 const internalShareDialogOpen$ = state(false);
 const internalSharePostDraft$ = state("");
