@@ -2816,7 +2816,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       // organization, so it also pins that the note reads the same
       // override-aware evaluation as `# Agent Tools`.
       const privateArtifactRule =
-        "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private `/artifacts/...` address is not openable from Slack, so a link alone shows the user nothing. When you judge that Slack can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou slack upload-file` so the user has something they can open there. If you upload it, also keep the original private artifact address in the final reply so the owner can open it after returning to the web app.";
+        "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. A private `/artifacts/...` address is not openable from Slack, so a link alone shows the user nothing. When you judge that Slack can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou slack upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou slack upload-file`, so the owner can open the original artifact after returning to the web app.";
       if (privateFiles) {
         expect(canonicalInputRun.appendSystemPrompt).toContain(
           privateArtifactRule,
