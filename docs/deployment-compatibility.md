@@ -3312,6 +3312,17 @@ validation. Preflight performs one bounded provider lookup and read-only CDP
 connection per explicit form entry. A confirmed target mismatch marks a pending
 request stale; transient provider failures leave it pending for retry.
 
+The Browser action GET response can also report `callbackDelivered` for a
+terminal success or cancellation. It derives this fact from the matching
+canonical Chat input event ID in the owning thread, not from Browser completion
+or a page-local send flag. The lookup uses the Chat event primary key and runs
+only for retryable terminal outcomes. An older API omits the optional field;
+the newer Platform treats absence as unproven delivery and keeps Continue
+available. An older Platform ignores the new field and retains its existing
+local behavior until updated. No callback receipt or submitted Browser value is
+written to the action row. Thread erasure removes the action and its Chat events
+together; ordinary action retention remains seven days for callback recovery.
+
 ## OOM containment proof chain removal (#36027)
 
 `OomEvidence.runtime_progress_at` is removed, together with the containment

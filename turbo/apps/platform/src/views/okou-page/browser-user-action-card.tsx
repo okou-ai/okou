@@ -974,10 +974,15 @@ export function BrowserUserActionCard({
   const pageSignal = useGet(pageSignal$);
   const requestLoadable = useLoadable(signals.request$);
   const refresh = useSet(signals.refresh$);
-  const callbackDelivered = useGet(signals.callbackDelivered$);
+  const locallyDelivered = useGet(signals.callbackDelivered$);
   const callbackFailed = useGet(signals.callbackFailed$);
   const busy = useGet(signals.busy$);
   const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
+  const callbackDelivered =
+    locallyDelivered ||
+    (requestLoadable.state === "hasData" &&
+      requestLoadable.data.kind === "action" &&
+      requestLoadable.data.action.callbackDelivered === true);
 
   let content: ReactNode;
   if (requestLoadable.state === "loading") {

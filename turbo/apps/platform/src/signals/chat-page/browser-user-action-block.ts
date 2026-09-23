@@ -615,6 +615,7 @@ function createCancelSignal({
 function createContinueSignal({
   descriptor,
   request$,
+  refresh$,
   activeMutation$,
   deliverCallback$,
 }: BrowserUserActionMutationContext): BrowserUserActionSignals["continue$"] {
@@ -646,11 +647,14 @@ function createContinueSignal({
       return;
     }
     set(activeMutation$, true);
-    await set(deliverCallback$, callback.prompt, callback.ids, signal).finally(
+    await onRejection(
+      set(deliverCallback$, callback.prompt, callback.ids, signal),
       () => {
-        set(activeMutation$, false);
+        set(refresh$);
       },
-    );
+    ).finally(() => {
+      set(activeMutation$, false);
+    });
   });
 }
 
