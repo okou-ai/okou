@@ -155,22 +155,27 @@ mod tests {
         tempfile::TempDir,
     ) {
         let dir = tempfile::tempdir().unwrap();
-        let (mitm, rx) = proxy::MitmProxy::new(proxy::ProxyConfig {
-            mitmdump_bin: PathBuf::from("true"),
-            ca_dir: dir.path().to_path_buf(),
-            ca_lock_path: dir.path().join("ca.lock"),
-            addon_dir: dir.path().join("addon"),
-            registry_path: dir.path().join("registry.json"),
-            registry_lock_path: dir.path().join("registry.lock"),
-            builtin_firewall_catalog_cache_path: dir
-                .path()
-                .join("builtin-firewall-catalog-cache.json"),
-            runtime_dir: dir.path().join("mitmdump-runtime"),
-            runtime_lock_path: dir.path().join("mitmdump-runtime.lock"),
-            api_url: None,
-            client_session_id: "runner-session-test".to_string(),
-            runner_token: None,
-        })
+        let (mitm, rx) = proxy::MitmProxy::new(
+            proxy::ProxyConfig {
+                mitmdump_bin: PathBuf::from("true"),
+                ca_dir: dir.path().to_path_buf(),
+                ca_lock_path: dir.path().join("ca.lock"),
+                addon_dir: dir.path().join("addon"),
+                registry_path: dir.path().join("registry.json"),
+                registry_lock_path: dir.path().join("registry.lock"),
+                builtin_firewall_catalog_cache_path: dir
+                    .path()
+                    .join("builtin-firewall-catalog-cache.json"),
+                runtime_dir: dir.path().join("mitmdump-runtime"),
+                runtime_lock_path: dir.path().join("mitmdump-runtime.lock"),
+                api_url: None,
+                client_session_id: "runner-session-test".to_string(),
+                client_version: env!("CARGO_PKG_VERSION"),
+                system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
+                runner_token: None,
+            },
+            crate::ADDON_FILES,
+        )
         .await
         .unwrap();
         (mitm, rx, dir)
@@ -363,7 +368,7 @@ mod tests {
         );
         retry.handle = Some(tokio::spawn(async {
             Err(proxy::MitmRestartError::Startup(
-                crate::error::RunnerError::Internal("spawn failed".into()),
+                runner_network::NetworkError::Internal("spawn failed".into()),
             ))
         }));
 

@@ -33,6 +33,10 @@ cargo test --manifest-path crates/Cargo.toml --profile local \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-provider -- --test-threads=1
 
+# Extracted Runner network behavior and its owner tests
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-network -- --test-threads=1
+
 # Extracted Runner storage planning and cache owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
