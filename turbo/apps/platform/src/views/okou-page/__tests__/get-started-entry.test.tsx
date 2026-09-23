@@ -1092,7 +1092,7 @@ test("Declining an introduced step costs the user nothing", async () => {
   expect(pathname()).toBe(questChatPath());
 });
 
-test("The workflow step ends by handing over the prompt itself", async () => {
+test("The workflow step offers the recommendations rather than one sentence", async () => {
   configureQuestPage(context, "admin");
   await setupPage({
     context,
@@ -1106,34 +1106,27 @@ test("The workflow step ends by handing over the prompt itself", async () => {
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-workflow"));
 
-  const steps = await screen.findByRole("dialog", {
+  const dialog = await screen.findByRole("dialog", {
     name: "One good run becomes something the team keeps",
   });
-  expect(within(steps).getByText("Start from a template")).toBeInTheDocument();
-  expect(within(steps).getByText("Run it once")).toBeInTheDocument();
+  // The composer's own shelf, so the step introduces the product's
+  // recommendations instead of a second list kept in step with them by hand.
   expect(
-    within(steps).getByText("Save it, then give it a schedule"),
+    within(dialog).getByText("Start your day with a clear plan"),
+  ).toBeInTheDocument();
+  expect(
+    within(dialog).getByText("Walk into meetings prepared"),
   ).toBeInTheDocument();
 
-  click(buttonNamed("Give me one to try", steps));
-
-  const handover = await screen.findByRole("dialog", {
-    name: "Ask the way you would ask a colleague",
-  });
-  // The prompt is readable before it is sent, not hidden behind the button.
-  const prompt = within(handover).getByTestId("quest-workflow-prompt");
-  expect(prompt).toHaveValue(
-    "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
-  );
-
-  // The way out of the handover is still the template list.
-  click(buttonNamed("Browse templates", handover));
+  // The way out is still the workflows page, and it is a link rather than the
+  // screen's only filled control.
+  click(buttonNamed("Browse workflows", dialog));
   await waitFor(() => {
     expect(pathname()).toBe("/workflows");
   });
 });
 
-test("The handed-over prompt is the one the reader edited", async () => {
+test("Picking a workflow hands its sentence to the composer", async () => {
   configureQuestPage(context, "member");
   await setupPage({
     context,
@@ -1146,28 +1139,14 @@ test("The handed-over prompt is the one the reader edited", async () => {
 
   await openQuestPanel();
   click(screen.getByTestId("get-started-quest-workflow"));
-  click(
-    buttonNamed(
-      "Give me one to try",
-      await screen.findByRole("dialog", {
-        name: "One good run becomes something the team keeps",
-      }),
-    ),
-  );
-  const handover = await screen.findByRole("dialog", {
-    name: "Ask the way you would ask a colleague",
+  const dialog = await screen.findByRole("dialog", {
+    name: "One good run becomes something the team keeps",
   });
+  click(within(dialog).getByTestId("quest-workflow-inbox"));
 
-  // The screen offers to change the wording first, so it has to be changeable.
-  await fill(
-    within(handover).getByTestId("quest-workflow-prompt"),
-    "Every Friday, summarise what shipped this week.",
-  );
-  click(buttonNamed("Send it to Okou", handover));
-
-  // The composer is handed the edited sentence, not the suggestion. The URL
-  // param is not the assertion, because the composer consumes and clears it on
-  // arrival; what matters is the sentence the reader lands in front of.
+  // The URL param is not the assertion, because the composer consumes and
+  // clears it on arrival; what matters is the sentence the reader lands in
+  // front of, which they can still read and edit before sending.
   await waitFor(() => {
     expect(pathname()).toBe("/");
   });
@@ -1176,53 +1155,9 @@ test("The handed-over prompt is the one the reader edited", async () => {
       '[data-slot="chat-composer-card"] [contenteditable="true"]',
     );
     expect(composer).toHaveTextContent(
-      "Every Friday, summarise what shipped this week.",
+      "Help me organize incoming Gmail by urgency",
     );
   });
-});
-
-test("Reopening the workflow step restores the suggested prompt", async () => {
-  configureQuestPage(context, "member");
-  await setupPage({
-    context,
-    path: questChatPath(),
-    featureSwitches: {
-      [FeatureSwitchKey.GetStartedQuests]: true,
-      [FeatureSwitchKey.GetStartedQuestIntro]: true,
-    },
-  });
-
-  const openHandover = async (): Promise<HTMLElement> => {
-    await openQuestPanel();
-    click(screen.getByTestId("get-started-quest-workflow"));
-    click(
-      buttonNamed(
-        "Give me one to try",
-        await screen.findByRole("dialog", {
-          name: "One good run becomes something the team keeps",
-        }),
-      ),
-    );
-    return await screen.findByRole("dialog", {
-      name: "Ask the way you would ask a colleague",
-    });
-  };
-
-  await fill(
-    within(await openHandover()).getByTestId("quest-workflow-prompt"),
-    "Something else entirely.",
-  );
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-
-  // A sentence abandoned in a session the reader has left is not their prompt.
-  expect(
-    within(await openHandover()).getByTestId("quest-workflow-prompt"),
-  ).toHaveValue(
-    "Every Monday morning, check what my competitors published last week, group it by theme, and give me a comparison table.",
-  );
 });
 
 test("An ordinary day's check-in reports the streak without taking the screen", async () => {

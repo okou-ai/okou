@@ -12,7 +12,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Textarea,
 } from "@okouai/ui";
 import { assistantName$ } from "../../signals/branding.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
@@ -21,12 +20,8 @@ import {
   checkinClaimedOpen$,
   getStartedQuests$,
   questIntroKey$,
-  questIntroPromptShown$,
-  questWorkflowPrompt$,
   setCheckinClaimedOpen$,
   setQuestIntroKey$,
-  setQuestWorkflowPrompt$,
-  showQuestIntroPrompt$,
 } from "../../signals/okou-page/get-started.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
@@ -40,6 +35,7 @@ import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/s
 import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { QuestConnectorPicker } from "./get-started-connector-picker.tsx";
+import { QuestWorkflowPicker } from "./get-started-workflow-picker.tsx";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 
 /**
@@ -87,8 +83,6 @@ export function questHasIntro(key: GetStartedQuestKey): boolean {
 const QUEST_ART = Object.freeze({
   slack: "get-started-slack-12b969d9d2a7.png",
   invite: "get-started-invite-09ddee851551.png",
-  workflow: "get-started-workflow-6e3bfc12345c.png",
-  prompt: "get-started-prompt-39ad0cd9e05f.png",
   checkinWeek: "get-started-checkin-week-b218eb5cd860.png",
 });
 
@@ -127,38 +121,6 @@ function QuestFigure({ art }: { art: keyof typeof QUEST_ART }) {
         className="block w-full object-contain"
         style={{ maxHeight: ART_MAX }}
       />
-    </div>
-  );
-}
-
-/**
- * One of the three steps.
- *
- * The order is carried by a number, which is what a number is for. The tiles
- * this replaces drew three accents from the start-card palette, where each
- * colour stands for a different *kind* of work -- so three consecutive steps of
- * one process read as three unrelated categories.
- */
-function WorkflowStep({
-  index,
-  title,
-  description,
-}: {
-  index: number;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex items-start gap-3 py-1.5">
-      <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-brand-subtle text-xs font-semibold tabular-nums text-brand-text">
-        {formatLocalizedNumber(index)}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="block text-sm text-muted-foreground">
-          {description}
-        </span>
-      </span>
     </div>
   );
 }
@@ -453,10 +415,33 @@ function InviteIntro({ onConfirm, onClose, reward }: IntroProps) {
   );
 }
 
-/** The three steps, before any of them is asked for. */
-function WorkflowStepsIntro({ onConfirm, onClose, reward }: IntroProps) {
+/**
+ * The workflows the step can start from.
+ *
+ * It was two screens: three steps described in prose, and then a single
+ * suggested sentence. The prose screen spent a whole dialog explaining a
+ * process the reader was about to be walked through anyway, and the one
+ * sentence behind it made the step look like it had a single answer. The
+ * recommendations the composer already ships are that answer, nine of them, so
+ * the step shows them and keeps only the part a list cannot carry: what it
+ * pays.
+ *
+ * Pressing a card hands its sentence to the composer, which is what the second
+ * screen did with its own. Nothing is installed here: the workflow the
+ * assistant writes from that sentence belongs to the reader, and that is the
+ * one the reward is recorded against.
+ */
+function WorkflowIntro({ onConfirm, onClose, reward }: IntroProps) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
+  const navigate = useSet(detachedNavigateTo$);
+  const copy = t(
+    ($) => {
+      return $.chat.taskChips.workflows.items;
+    },
+    { returnObjects: true },
+  );
+
   return (
     <IntroLayout
       title={t(
@@ -469,152 +454,27 @@ function WorkflowStepsIntro({ onConfirm, onClose, reward }: IntroProps) {
         return $.chat.agentPage.getStarted.intro.workflow.description;
       })}
       reward={reward}
-      figure={<QuestFigure art="workflow" />}
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirmLabel={t(($) => {
-        return $.chat.agentPage.getStarted.intro.workflow.confirm;
+        return $.chat.taskChips.workflows.browse;
       })}
       onConfirm={onConfirm}
+      // The step is finished by pressing a card, and a card is not a button
+      // shape, so the only control with a fill would have been the way out.
+      confirmIsEscape
     >
-      <div>
-        <WorkflowStep
-          index={1}
-          title={t(($) => {
-            return $.chat.agentPage.getStarted.intro.workflow.stepTemplate;
-          })}
-          description={t(($) => {
-            return $.chat.agentPage.getStarted.intro.workflow
-              .stepTemplateDescription;
-          })}
-        />
-        <WorkflowStep
-          index={2}
-          title={t(($) => {
-            return $.chat.agentPage.getStarted.intro.workflow.stepRun;
-          })}
-          description={t(($) => {
-            return $.chat.agentPage.getStarted.intro.workflow
-              .stepRunDescription;
-          })}
-        />
-        <WorkflowStep
-          index={3}
-          title={t(($) => {
-            return $.chat.agentPage.getStarted.intro.workflow.stepSave;
-          })}
-          description={t(($) => {
-            return $.chat.agentPage.getStarted.intro.workflow
-              .stepSaveDescription;
-          })}
-        />
-      </div>
-    </IntroLayout>
-  );
-}
-
-/**
- * The sentence that starts the first step.
- *
- * The prompt is the payload of this dialog, so it is shown as text the reader
- * can judge and edit later rather than hidden behind the button that sends it.
- */
-function WorkflowPromptIntro({
-  onSend,
-  onBrowse,
-  reward,
-}: {
-  onSend: (prompt: string) => void;
-  onBrowse: () => void;
-  reward?: number;
-}) {
-  const { t } = useTranslation();
-  const assistantName = useGet(assistantName$);
-  const edited = useGet(questWorkflowPrompt$);
-  const setPrompt = useSet(setQuestWorkflowPrompt$);
-  const suggestion = t(($) => {
-    return $.chat.agentPage.getStarted.intro.workflow.prompt;
-  });
-  // `null` means untouched, so the suggestion follows the interface language
-  // until the reader makes the sentence theirs.
-  const prompt = edited ?? suggestion;
-  return (
-    <IntroLayout
-      title={t(
-        ($) => {
-          return $.chat.agentPage.getStarted.intro.workflow.promptTitle;
-        },
-        { assistantName },
-      )}
-      description={t(($) => {
-        return $.chat.agentPage.getStarted.intro.workflow.promptDescription;
-      })}
-      secondaryLabel={t(($) => {
-        return $.chat.agentPage.getStarted.intro.workflow.browse;
-      })}
-      onSecondary={onBrowse}
-      confirmLabel={t(
-        ($) => {
-          return $.chat.agentPage.getStarted.intro.workflow.promptConfirm;
-        },
-        { assistantName },
-      )}
-      reward={reward}
-      onConfirm={() => {
-        onSend(prompt);
-      }}
-      figure={<QuestFigure art="prompt" />}
-    >
-      {/* The subtitle offers to change the wording first, so the sentence has
-          to be editable -- it was a paragraph, which made that offer false.
-          `field-sizing-content` keeps it the height of its own text, so a
-          longer prompt grows the box instead of hiding in a scroller. */}
-      <Textarea
-        data-testid="quest-workflow-prompt"
-        aria-label={t(($) => {
-          return $.chat.agentPage.getStarted.intro.workflow.promptTitle;
-        })}
-        value={prompt}
-        onChange={(event) => {
-          setPrompt(event.target.value);
+      <QuestWorkflowPicker
+        onSelect={(item) => {
+          const searchParams = new URLSearchParams();
+          searchParams.set("prompt", copy[item.id].prompt);
+          // The composer picks the prompt up on arrival, so the user lands in a
+          // chat that is already filled in rather than on an empty page.
+          navigate(ROUTES.home, { searchParams });
+          onClose();
         }}
-        className="min-h-0 resize-none rounded-xl border-surface-border bg-card px-4 py-3.5 text-[15px] leading-relaxed text-foreground [field-sizing:content]"
       />
-      <p className="px-0.5 text-xs text-muted-foreground">
-        {t(($) => {
-          return $.chat.agentPage.getStarted.intro.workflow.promptOutcome;
-        })}
-      </p>
     </IntroLayout>
-  );
-}
-
-function WorkflowIntro({ onConfirm, onClose, reward }: IntroProps) {
-  const showPrompt = useGet(questIntroPromptShown$);
-  const advance = useSet(showQuestIntroPrompt$);
-  const navigate = useSet(detachedNavigateTo$);
-
-  return showPrompt ? (
-    <WorkflowPromptIntro
-      reward={reward}
-      onSend={(prompt) => {
-        const searchParams = new URLSearchParams();
-        searchParams.set("prompt", prompt);
-        // The composer picks the prompt up on arrival, so the user lands in a
-        // chat that is already filled in rather than on an empty page.
-        navigate(ROUTES.home, { searchParams });
-        onClose();
-      }}
-      onBrowse={onConfirm}
-    />
-  ) : (
-    <WorkflowStepsIntro
-      onConfirm={() => {
-        advance();
-      }}
-      onClose={onClose}
-      reward={reward}
-    />
   );
 }
 

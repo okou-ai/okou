@@ -1466,20 +1466,7 @@
             "title": "Bekerja dengan {{assistantName}} di tempat tim Anda sudah berbicara"
           },
           "workflow": {
-            "browse": "Lihat templat",
-            "confirm": "Tunjukkan satu",
             "description": "Ubah pekerjaan yang Anda ulang menjadi alur kerja yang bisa dijalankan tim.",
-            "prompt": "Setiap Senin pagi, periksa apa yang dipublikasikan kompetitor saya minggu lalu, kelompokkan menurut tema, dan buatkan tabel perbandingan.",
-            "promptConfirm": "Kirim ke {{assistantName}}",
-            "promptDescription": "Kirim begini saja ke {{assistantName}}, atau ubah dulu kalimatnya.",
-            "promptOutcome": "Ia membaca sumbernya, mengelompokkan yang ditemukan, lalu menjawab dengan tabelnya. Kalau hasilnya pas, ia menawarkan menyimpan jalannya itu sebagai alur kerja.",
-            "promptTitle": "Minta seperti Anda meminta kepada rekan kerja",
-            "stepRun": "Jalankan sekali",
-            "stepRunDescription": "Anda melihat hasil jadinya sebelum memutuskan apa pun.",
-            "stepSave": "Simpan, lalu beri jadwal",
-            "stepSaveDescription": "Ia jalan tanpa diminta, dan rekan mana pun bisa menjalankannya.",
-            "stepTemplate": "Mulai dari templat",
-            "stepTemplateDescription": "Pilih yang dekat dengan pekerjaan Anda daripada mulai dari halaman kosong.",
             "title": "Satu jalan yang berhasil menjadi milik tim seterusnya"
           }
         },

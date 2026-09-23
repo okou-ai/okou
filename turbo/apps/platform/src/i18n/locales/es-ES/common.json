@@ -1491,20 +1491,7 @@
             "title": "Trabaja con {{assistantName}} donde tu equipo ya habla"
           },
           "workflow": {
-            "browse": "Ver plantillas",
-            "confirm": "Enséñame una",
             "description": "Convierte un trabajo que repites en un flujo que el equipo puede ejecutar.",
-            "prompt": "Cada lunes por la mañana, mira qué publicaron mis competidores la semana pasada, agrúpalo por temas y dame una tabla comparativa.",
-            "promptConfirm": "Enviárselo a {{assistantName}}",
-            "promptDescription": "Envíaselo a {{assistantName}} tal cual, o cambia antes la redacción.",
-            "promptOutcome": "Lee las fuentes, agrupa lo que encuentra y responde con la tabla. Si el resultado está bien, te ofrece guardar esa ejecución como flujo.",
-            "promptTitle": "Pídelo como se lo pedirías a un compañero",
-            "stepRun": "Ejecútala una vez",
-            "stepRunDescription": "Ves el trabajo terminado antes de comprometerte con nada.",
-            "stepSave": "Guárdala y dale un horario",
-            "stepSaveDescription": "Se ejecuta sin que nadie lo pida, y cualquier compañero puede lanzarla también.",
-            "stepTemplate": "Empieza por una plantilla",
-            "stepTemplateDescription": "Elige una cercana a tu trabajo en lugar de partir de una página en blanco.",
             "title": "Una buena ejecución se convierte en algo que el equipo conserva"
           }
         },

@@ -1467,20 +1467,7 @@
             "title": "Arbeiten Sie mit {{assistantName}} dort, wo Ihr Team schon spricht"
           },
           "workflow": {
-            "browse": "Vorlagen ansehen",
-            "confirm": "Zeig mir eines",
             "description": "Machen Sie aus einer wiederkehrenden Aufgabe einen Workflow, den das Team ausführen kann.",
-            "prompt": "Sieh jeden Montagmorgen nach, was meine Wettbewerber letzte Woche veröffentlicht haben, gruppiere es nach Thema und gib mir eine Vergleichstabelle.",
-            "promptConfirm": "An {{assistantName}} senden",
-            "promptDescription": "Schicken Sie das so an {{assistantName}} oder ändern Sie vorher den Wortlaut.",
-            "promptOutcome": "Es liest die Quellen, gruppiert, was es findet, und antwortet mit der Tabelle. Stimmt das Ergebnis, bietet es an, den Durchlauf als Workflow zu behalten.",
-            "promptTitle": "Fragen Sie so, wie Sie eine Kollegin fragen würden",
-            "stepRun": "Einmal laufen lassen",
-            "stepRunDescription": "Sie sehen die fertige Arbeit, bevor Sie sich festlegen.",
-            "stepSave": "Speichern und einen Zeitplan geben",
-            "stepSaveDescription": "Es läuft, ohne dass jemand fragt, und jede Kollegin kann es ebenfalls starten.",
-            "stepTemplate": "Mit einer Vorlage beginnen",
-            "stepTemplateDescription": "Nehmen Sie eine, die Ihrer Arbeit nahekommt, statt eines leeren Blatts.",
             "title": "Ein guter Durchlauf wird zu etwas, das dem Team bleibt"
           }
         },
