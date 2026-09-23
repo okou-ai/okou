@@ -94,7 +94,12 @@ export const dispatchProgressCallbacks$ = command(
       return;
     }
 
-    if (callbacks.some(isCanonicalChatCallback)) {
+    if (
+      callbacks.some(isCanonicalChatCallback) ||
+      callbacks.some((callback) => {
+        return internalRunCallbackKindForRecord(callback) === "agentphone:chat";
+      })
+    ) {
       await set(refreshAgentPhoneTypingForRun$, runId, signal);
       signal.throwIfAborted();
     }

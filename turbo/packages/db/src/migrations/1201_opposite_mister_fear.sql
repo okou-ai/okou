@@ -1,0 +1,1 @@
+ALTER TABLE "chat_agentphone_context" ADD COLUMN "group_id" text;

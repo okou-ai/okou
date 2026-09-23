@@ -33,6 +33,7 @@ type AgentPhoneLaunchContextRow = Pick<
   | "messageId"
   | "rootMessageId"
   | "conversationId"
+  | "groupId"
   | "channel"
   | "isGroup"
   | "phoneHandle"
@@ -98,6 +99,7 @@ async function loadAgentPhoneLaunchContext(
       messageId: chatAgentphoneContext.messageId,
       rootMessageId: chatAgentphoneContext.rootMessageId,
       conversationId: chatAgentphoneContext.conversationId,
+      groupId: chatAgentphoneContext.groupId,
       channel: chatAgentphoneContext.channel,
       isGroup: chatAgentphoneContext.isGroup,
       phoneHandle: chatAgentphoneContext.phoneHandle,
@@ -179,6 +181,7 @@ export async function loadAgentPhoneQueuedLaunchMaterial(
     agentphoneDelivery: agentphoneDeliveryTargetSchema.parse({
       messageId: context.messageId,
       conversationId: context.conversationId,
+      groupId: context.groupId,
       channel: context.channel,
       isGroup: context.isGroup,
       rootMessageId: context.rootMessageId,
