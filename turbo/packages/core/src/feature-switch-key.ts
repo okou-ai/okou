@@ -56,6 +56,7 @@ export enum FeatureSwitchKey {
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "_larkIntegration",
   VncAccess = "vncAccess",
+  ThreadRemoteAccess = "threadRemoteAccess",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
   DeepSeekAlternativeRouting = "deepSeekAlternativeRouting",

@@ -8536,8 +8536,8 @@ async function resolveQueueFirstAdmissionForLaunch(args: {
       association.kind === "user_message"
         ? association.admissionTime
         : args.createArgs.apiStartTime,
+    association,
     sessionSnapshotState: args.sessionSnapshotState,
-    threadId: association.threadId,
     timing: args.timing,
     ...(args.threadAlreadyLocked ? { threadAlreadyLocked: true } : {}),
   });

@@ -154,6 +154,26 @@ function orgOf(actor: ApiTestUser): string {
   return actor.orgId;
 }
 
+async function createLimitedFreeOrgFromClerk(): Promise<ApiTestUser> {
+  const bdd = createBddApi(context);
+  api.configureClerkWebhookSecret();
+  bdd.acceptAgentStorageWrites();
+
+  const admin = bdd.user();
+  api.verifyNextClerkWebhook({
+    type: "organization.created",
+    data: {
+      id: orgOf(admin),
+      created_by: admin.userId,
+      created_at: now(),
+    },
+  });
+  const created = await api.requestClerkWebhook("{}", {}, [200]);
+  expect(created.body).toBe("OK");
+  await flushWaitUntilForTest();
+  return admin;
+}
+
 async function sandboxStorageWriteFixture(label: string) {
   const bdd = createBddApi(context);
   const runs = createRunsApi(context);
@@ -702,24 +722,9 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
     expect(membershipDeleted.body).toBe("OK");
   });
 
-  it("bootstraps limited-free orgs after verified Clerk org creation events", async () => {
-    const bdd = createBddApi(context);
+  it("bootstraps limited-free billing and model providers after Clerk org creation", async () => {
     const runs = createRunsApi(context);
-    api.configureClerkWebhookSecret();
-    bdd.acceptAgentStorageWrites();
-
-    const admin = bdd.user();
-    api.verifyNextClerkWebhook({
-      type: "organization.created",
-      data: {
-        id: orgOf(admin),
-        created_by: admin.userId,
-        created_at: now(),
-      },
-    });
-    const created = await api.requestClerkWebhook("{}", {}, [200]);
-    expect(created.body).toBe("OK");
-    await flushWaitUntilForTest();
+    const admin = await createLimitedFreeOrgFromClerk();
 
     const billing = await runs.readBillingStatus(admin);
     expect(billing).toMatchObject({
@@ -764,6 +769,12 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
         return provider.type === "built-in";
       })?.selectedModel,
     ).toBe("gpt-6-luna");
+  });
+
+  it("keeps Clerk membership creation from duplicating bootstrap state", async () => {
+    const bdd = createBddApi(context);
+    const runs = createRunsApi(context);
+    const admin = await createLimitedFreeOrgFromClerk();
 
     api.verifyNextClerkWebhook({
       type: "organizationMembership.created",
@@ -806,6 +817,10 @@ describe("WHCB-01: third-party webhook verification boundaries", () => {
         return agent.displayName === "Okou";
       }),
     ).toHaveLength(1);
+  });
+
+  it("publishes billing changes for Stripe grants after Clerk org bootstrap", async () => {
+    const admin = await createLimitedFreeOrgFromClerk();
 
     api.configureStripeBillingEnv();
     context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
