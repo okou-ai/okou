@@ -4795,6 +4795,10 @@ const CHAT_NOTICE_ACTION_SLOT_CLASS = "flex min-h-8 shrink-0 items-center";
 const ASSISTANT_ERROR_ACTION_SLOT_CLASS =
   "flex min-h-8 shrink-0 items-center justify-end";
 
+/** Let translated recovery actions fit narrow chat cards without clipping. */
+const ERROR_CARD_ACTION_CLASS =
+  "h-auto min-h-8 max-w-full shrink-0 whitespace-normal break-words py-1.5 text-center";
+
 function creditsAvailableCopy(): {
   readonly headline: string;
   readonly helper: string;
@@ -4860,14 +4864,18 @@ function PaidCreditCheckoutActions({
   readonly preparing: boolean;
   readonly handleCreditClick: (
     selection: CreditCheckoutSelection,
-    event: ReactMouseEvent<HTMLButtonElement>,
+    newTab: boolean,
   ) => void;
 }) {
   const { t } = useTranslation();
-  const handleCustomCreditClick = (
-    event: ReactMouseEvent<HTMLButtonElement>,
+  const submitCustomCredits = (
+    form: HTMLFormElement | null,
+    newTab: boolean,
   ) => {
-    const credits = customCreditsFromForm(event.currentTarget.form);
+    if (preparing) {
+      return;
+    }
+    const credits = customCreditsFromForm(form);
     if (credits === null) {
       toast.error(
         t(($) => {
@@ -4876,7 +4884,7 @@ function PaidCreditCheckoutActions({
       );
       return;
     }
-    handleCreditClick({ credits, customAmount: true }, event);
+    handleCreditClick({ credits, customAmount: true }, newTab);
   };
 
   return (
@@ -4888,7 +4896,7 @@ function PaidCreditCheckoutActions({
               key={credits}
               type="button"
               onClick={(event) => {
-                handleCreditClick({ credits }, event);
+                handleCreditClick({ credits }, event.metaKey || event.ctrlKey);
               }}
               disabled={preparing}
               variant="default"
@@ -4918,7 +4926,13 @@ function PaidCreditCheckoutActions({
               return $.chat.billing.custom;
             })}
           </summary>
-          <form className="flex items-center gap-2">
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submitCustomCredits(event.currentTarget, false);
+            }}
+          >
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-sm text-muted-foreground">
                 $
@@ -4942,7 +4956,12 @@ function PaidCreditCheckoutActions({
             </div>
             <Button
               type="button"
-              onClick={handleCustomCreditClick}
+              onClick={(event) => {
+                submitCustomCredits(
+                  event.currentTarget.form,
+                  event.metaKey || event.ctrlKey,
+                );
+              }}
               disabled={preparing}
               variant="default"
               size="sm"
@@ -5024,9 +5043,8 @@ function InsufficientCreditsCard() {
 
   const handleCreditClick = (
     selection: CreditCheckoutSelection,
-    event: ReactMouseEvent<HTMLButtonElement>,
+    newTab: boolean,
   ) => {
-    const newTab = event.metaKey || event.ctrlKey;
     detach(
       creditCheckout(selection, newTab, "chat", pageSignal),
       Reason.DomCallback,
@@ -5038,7 +5056,7 @@ function InsufficientCreditsCard() {
       <div className="min-w-0">
         <p
           className={cn(
-            "truncate text-[0.9375rem] font-medium",
+            "break-words text-[0.9375rem] font-medium",
             hasAvailableCredits
               ? "text-emerald-700 dark:text-emerald-300"
               : "text-foreground",
@@ -5056,7 +5074,7 @@ function InsufficientCreditsCard() {
             disabled={checkoutRedirecting}
             variant="default"
             size="sm"
-            className="shrink-0 disabled:opacity-60"
+            className={cn(ERROR_CARD_ACTION_CLASS, "disabled:opacity-60")}
           >
             {checkoutRedirecting
               ? t(($) => {
@@ -5206,7 +5224,7 @@ function AssistantRecoveryDestinationAction({
         type="button"
         size="sm"
         variant="neutral"
-        className="shrink-0"
+        className={ERROR_CARD_ACTION_CLASS}
         onClick={() => {
           detach(openSettings("model", pageSignal), Reason.DomCallback);
         }}
@@ -5223,7 +5241,7 @@ function AssistantRecoveryDestinationAction({
         pathname="/"
         className={cn(
           buttonVariants({ size: "sm", variant: "neutral" }),
-          "shrink-0",
+          ERROR_CARD_ACTION_CLASS,
         )}
       >
         {t(($) => {
@@ -5240,7 +5258,7 @@ function AssistantRecoveryDestinationAction({
         rel="noopener noreferrer"
         className={cn(
           buttonVariants({ size: "sm", variant: "neutral" }),
-          "shrink-0",
+          ERROR_CARD_ACTION_CLASS,
         )}
       >
         {t(($) => {
@@ -5282,7 +5300,7 @@ function AssistantRecoveryActions({
           type="button"
           size="sm"
           variant="neutral"
-          className="shrink-0"
+          className={ERROR_CARD_ACTION_CLASS}
           disabled={retrying || resetting}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
@@ -5303,7 +5321,7 @@ function AssistantRecoveryActions({
           type="button"
           size="sm"
           variant="outline"
-          className="shrink-0"
+          className={ERROR_CARD_ACTION_CLASS}
           disabled={retrying || resetting}
           onClick={() => {
             detach(resetAndRetry(pageSignal), Reason.DomCallback);
@@ -5386,8 +5404,14 @@ function AssistantErrorCard({
           <Icon size={16} className="mt-1 shrink-0 text-brand-text" />
         )}
         <div className="min-w-0">
-          <div className="h-6 truncate text-[0.9375rem] font-medium leading-6">
-            {pending ? null : title}
+          <div
+            className={cn(
+              "min-h-6 break-words text-[0.9375rem] font-medium leading-6",
+              pending && "invisible",
+            )}
+            aria-hidden={pending ? true : undefined}
+          >
+            {title}
           </div>
           {hasDescription && (
             <div
@@ -5821,6 +5845,7 @@ function ModelSettingsButton() {
       type="button"
       size="sm"
       variant="neutral"
+      className={ERROR_CARD_ACTION_CLASS}
       onClick={() => {
         detach(openSettings("model", pageSignal), Reason.DomCallback);
       }}
@@ -5941,7 +5966,10 @@ function assistantErrorFallbackContent(
       actions: (
         <Link
           pathname="/"
-          className={buttonVariants({ size: "sm", variant: "neutral" })}
+          className={cn(
+            buttonVariants({ size: "sm", variant: "neutral" }),
+            ERROR_CARD_ACTION_CLASS,
+          )}
         >
           {t(($) => {
             return $.chat.errors.providerIncompatibleAction;
@@ -5970,7 +5998,10 @@ function assistantErrorFallbackContent(
       actions: (
         <Link
           pathname="/"
-          className={buttonVariants({ size: "sm", variant: "neutral" })}
+          className={cn(
+            buttonVariants({ size: "sm", variant: "neutral" }),
+            ERROR_CARD_ACTION_CLASS,
+          )}
         >
           {t(($) => {
             return $.chat.errors.providerDeletedAction;

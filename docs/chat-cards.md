@@ -54,6 +54,8 @@ their helper copy wraps to its actual height so a short sentence does not leave
 an empty second line. Do not pay for a reservation on rows the asynchronous
 read cannot introduce. Paid credit options share the action row until a narrow
 viewport wraps them; opening Custom reveals its fields inside the same card.
+Localized failure titles and action labels wrap within narrow cards; pending
+cards reserve the fallback title's wrapped height instead of truncating it.
 
 ### Keep the frame mounted
 
@@ -121,7 +123,8 @@ contract by themselves.
   confirmation information must remain readable and reachable; clipping them is
   not a valid way to achieve fixed height.
 - Forms, account lists, raw error details, and expanded document content open
-  outside the transcript card. Do not expand the card inline for these details.
+  outside the transcript card, except for the user-opened inline Custom credit
+  form. Do not expand the card inline for other details.
 - Media cards may derive their height from a reserved width and aspect ratio.
   The frame, including any fixed header, must exist before a thumbnail, image,
   video metadata, or iframe loads. Loading and error content occupies that same

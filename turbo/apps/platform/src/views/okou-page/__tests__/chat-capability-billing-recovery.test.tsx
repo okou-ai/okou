@@ -281,6 +281,18 @@ test("Let a paid workspace admin buy more credits", async () => {
     0,
   );
   expect(checkoutRequests).toHaveLength(2);
+
+  await fill(customAmount, "275");
+  await user.type(customAmount, "{enter}");
+  review = await screen.findByRole("dialog", {
+    name: "Review credit purchase",
+  });
+  expect(within(review).getByText("$275.00")).toBeVisible();
+  expect(checkoutRequests[2]).toMatchObject({
+    credits: 275_000,
+    customAmount: true,
+  });
+  expect(window.location.search).not.toContain("customUsd");
 });
 
 test("Offer a plan upgrade when a limited workspace cannot buy top-ups", async () => {

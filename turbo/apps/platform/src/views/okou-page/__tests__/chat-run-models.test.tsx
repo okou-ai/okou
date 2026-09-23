@@ -1222,7 +1222,10 @@ test("Replace the failure card copy when recovery resolves", async () => {
   ).resolves.toBeInTheDocument();
   // Neither copy is readable yet, and no dialog is reachable, so nothing the
   // reader can act on changes when the classification lands.
-  expect(screen.queryByText("This run couldn't finish")).toBeNull();
+  expect(screen.getByText("This run couldn't finish")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
   expect(screen.queryByText("This model is busy right now")).toBeNull();
   expect(queryButton("View details", shell)).toBeNull();
   expect(screen.queryByTestId("assistant-error-recovery")).toBeNull();
@@ -1556,7 +1559,10 @@ test("A held or missing run detail leaves chat usable and reads only the latest 
   expect(
     screen.getByTestId("assistant-error-card-loading"),
   ).toBeInTheDocument();
-  expect(screen.queryByText("This run couldn't finish")).toBeNull();
+  expect(screen.getByText("This run couldn't finish")).toHaveAttribute(
+    "aria-hidden",
+    "true",
+  );
   detailGate.resolve();
   await expect(
     screen.findByText("Codex limit reached"),
