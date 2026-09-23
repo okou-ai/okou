@@ -46,6 +46,36 @@ function OnboardingAccount() {
   return <AccountDropdown onAccountAction={onAccountAction} collapsed />;
 }
 
+function OnboardingTrustPoints({
+  points,
+}: {
+  readonly points?: readonly string[];
+}) {
+  if (!points || points.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul className="mt-10 space-y-4 border-t border-border/60 pt-6">
+      {points.map((point) => {
+        return (
+          <li
+            key={point}
+            className="flex items-start gap-3 text-sm leading-6 text-muted-foreground"
+          >
+            <Check
+              size={16}
+              className="mt-1 shrink-0 text-foreground"
+              aria-hidden="true"
+            />
+            <span>{point}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
  * Every sources-first step reads the same way: the app's rail on the left, and
  * the step centred on the canvas -- the question and its one action beside the
@@ -108,25 +138,7 @@ export function OnboardingStepLayout({
             <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
               {description}
             </p>
-            {trustPoints && trustPoints.length > 0 ? (
-              <ul className="mt-10 space-y-4 border-t border-border/60 pt-6">
-                {trustPoints.map((point) => {
-                  return (
-                    <li
-                      key={point}
-                      className="flex items-start gap-3 text-sm leading-6 text-muted-foreground"
-                    >
-                      <Check
-                        size={16}
-                        className="mt-1 shrink-0 text-foreground"
-                        aria-hidden="true"
-                      />
-                      <span>{point}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
+            <OnboardingTrustPoints points={trustPoints} />
             {footnote ? (
               <p className="mt-4 text-xs leading-5 text-muted-foreground">
                 {footnote}
