@@ -1,20 +1,22 @@
 # Deployment Compatibility
 
-## Codex OAuth workspace ID preparation
+## Codex 0.156.1 OAuth workspace routing
 
-The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
-Codex OAuth runs. The guest writes that ID into `auth.json` and both placeholder
-JWT claims. Access and refresh tokens remain placeholders; the firewall still
-injects real credentials into outbound requests.
+Codex 0.156.1 compares its local `auth.json` workspace ID with the selected
+entry returned by `/wham/accounts/check`. The API supplies that selected ID as
+`CODEX_OAUTH_ACCOUNT_ID` for Codex OAuth runs. The guest writes it into
+`auth.json` and both placeholder JWT claims. Access and refresh tokens remain
+placeholders; the firewall still injects real credentials into outbound requests.
 
 The API retains the existing placeholder `CHATGPT_ACCOUNT_ID` for the firewall
-and Pi. This preparatory change keeps the Runner on Codex 0.155.1. An older
-Runner ignores the additive field; a newer Runner served by an older API, or
-claiming a context queued before API promotion, retains the original
-placeholder account ID when the new field is absent. An explicitly empty field
-is rejected as a broken API contract. Deploy this compatible change first;
-upgrade Codex to 0.156.1 only after the API rollout and old claimable contexts
-have drained. The follow-up upgrade and fallback removal are tracked by #36420.
+and Pi. PR #36402 first deploys the additive ID field while keeping Codex
+0.155.1 and a missing-field compatibility branch. Upgrade the Runner image to
+0.156.1 and remove that branch only after the new API is deployed, old APIs
+are neither serving nor retained as rollback targets, and no claimable queued
+or replayable Codex OAuth context lacks the field. Record dated evidence for
+those gates in #36420 before merging this upgrade. Older Runners can continue
+to drain with Codex 0.155.1 and ignore the additive field; new Runners reject
+missing or empty selected IDs rather than choosing a placeholder.
 
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
