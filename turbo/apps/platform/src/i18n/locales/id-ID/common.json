@@ -1959,7 +1959,7 @@
         "usageTitle": "Batas {{framework}} tercapai",
         "weeklyReset": "Batas mingguan direset {{time}}"
       },
-      "runCancelled": "Tertunda di tengah pikiran — lanjutkan kapan saja."
+      "runCancelled": "Proses dijeda — lanjutkan kapan saja."
     },
     "feedback": {
       "emailDraftDescription": "draf email",

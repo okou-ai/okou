@@ -320,7 +320,7 @@ describe("with a localized running conversation", () => {
     click(stop);
 
     const portugueseCancellation = await screen.findByText(
-      "Pausado no meio do raciocínio — retome quando quiser.",
+      "Execução pausada — retome quando quiser.",
     );
     expect(portugueseCancellation).toBeVisible();
     await waitFor(() => {
@@ -339,13 +339,11 @@ describe("with a localized running conversation", () => {
     await changeLanguage(portuguese, english);
 
     const englishCancellation = await screen.findByText(
-      "Paused mid-thought — pick it back up whenever.",
+      "Run paused — resume anytime.",
     );
     expect(englishCancellation).toBeVisible();
     expect(
-      screen.queryByText(
-        "Pausado no meio do raciocínio — retome quando quiser.",
-      ),
+      screen.queryByText("Execução pausada — retome quando quiser."),
     ).not.toBeInTheDocument();
     expect(pathname()).toBe(`/chats/${THREAD_ID}`);
   });

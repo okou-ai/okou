@@ -1966,7 +1966,7 @@
         "usageTitle": "{{framework}} की सीमा पूरी हो गई",
         "weeklyReset": "साप्ताहिक सीमा {{time}} पर रीसेट होगी"
       },
-      "runCancelled": "विचार के बीच में रुका हुआ - जब भी हो, इसे वापस उठा लें।"
+      "runCancelled": "रन रोक दिया गया है — कभी भी जारी रखें।"
     },
     "feedback": {
       "emailDraftDescription": "एक ईमेल ड्राफ्ट",

@@ -1959,7 +1959,7 @@
         "usageTitle": "{{framework}} 已達用量上限",
         "weeklyReset": "週額度於 {{time}} 重置"
       },
-      "runCancelled": "思考到一半暫停了，你隨時可以繼續。"
+      "runCancelled": "執行已暫停，可隨時繼續。"
     },
     "feedback": {
       "emailDraftDescription": "郵件草稿",

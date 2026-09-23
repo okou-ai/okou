@@ -5972,7 +5972,9 @@ function assistantErrorFallbackContent(
     title: t(($) => {
       return $.chat.errors.genericTitle;
     }),
-    description,
+    // Keep multiline and unusually long diagnostics in the read-only dialog;
+    // the notice row should remain a compact recovery surface.
+    description: showDetails ? "" : description,
     ...(showDetails
       ? {
           details: (

@@ -1966,7 +1966,7 @@
         "usageTitle": "{{framework}} limit reached",
         "weeklyReset": "Week resets {{time}}"
       },
-      "runCancelled": "Paused mid-thought — pick it back up whenever."
+      "runCancelled": "Run paused — resume anytime."
     },
     "feedback": {
       "emailDraftDescription": "an email draft",
