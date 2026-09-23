@@ -1,6 +1,8 @@
 import { command, computed, state } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../lib/accept.ts";
 import { agents$, currentAgent$ } from "./agent.ts";
+import { featureSwitch$ } from "./external/feature-switch.ts";
 import {
   vncClients$,
   vncIdentity$,
@@ -9,6 +11,9 @@ import {
 } from "./vnc.ts";
 
 export const currentAgentVncAccess$ = computed(async (get) => {
+  if (get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
+    return null;
+  }
   const identity = await get(vncIdentity$);
   if (!identity) {
     return null;
@@ -33,6 +38,9 @@ export const currentAgentVncAccess$ = computed(async (get) => {
 
 export function vncAccessForAgent(agentId: string) {
   return computed(async (get) => {
+    if (get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
+      return null;
+    }
     const [identity, summary] = await Promise.all([
       get(vncIdentity$),
       get(vncSummary$),
@@ -94,6 +102,9 @@ export const updateAgentVncAccess$ = command(
 );
 
 export const vncAgentAccessRows$ = computed(async (get) => {
+  if (get(featureSwitch$)[FeatureSwitchKey.ThreadRemoteAccess]) {
+    return [];
+  }
   const summary = await get(vncSummary$);
   if (!summary) {
     return null;

@@ -1,8 +1,10 @@
 import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -14,12 +16,96 @@ import {
   installComposerConnectorFixture,
   builtinConnector,
   SCOUT_AGENT_ID,
+  SCOUT_THREAD_ID,
   OTHER_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 
 const github = connectorSlugSchema.parse("github");
 const slack = connectorSlugSchema.parse("slack");
 const gmail = connectorSlugSchema.parse("gmail");
+
+test("A chat can override multiple SSH hosts and return to each host default", async () => {
+  const hostIds = [
+    "b0000000-0000-4000-8000-000000000001",
+    "b0000000-0000-4000-8000-000000000002",
+  ];
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  const overrides = new Map<string, boolean>();
+  const host = (connectionId: string, index: number) => {
+    const overrideEnabled = overrides.get(connectionId) ?? null;
+    const defaultEnabled = index === 0;
+    return {
+      connectionId,
+      displayName: `SSH host ${index + 1}`,
+      defaultEnabled,
+      overrideEnabled,
+      enabled: overrideEnabled ?? defaultEnabled,
+      source:
+        overrideEnabled === null ? ("default" as const) : ("override" as const),
+    };
+  };
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    ({ respond }) => {
+      return respond(200, {
+        ssh: hostIds.map(host),
+        vnc: [],
+      });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ params, body, respond }) => {
+      overrides.set(params.connectionId, body.enabled);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.clearThreadOverride,
+    ({ params, respond }) => {
+      overrides.delete(params.connectionId);
+      return respond(
+        200,
+        host(params.connectionId, hostIds.indexOf(params.connectionId)),
+      );
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  click(await screen.findByText("Remote access"));
+  const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
+  const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+  expect(first).toHaveValue("default");
+  expect(second).toHaveValue("default");
+  const user = userEvent.setup({ delay: null });
+  await user.selectOptions(first, "off");
+  await waitFor(() => {
+    expect(overrides.get(hostIds[0]!)).toBeFalsy();
+    expect(second).not.toBeDisabled();
+  });
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "SSH SSH host 2" }),
+    "on",
+  );
+  await waitFor(() => {
+    expect(overrides.get(hostIds[0]!)).toBeFalsy();
+    expect(overrides.get(hostIds[1]!)).toBeTruthy();
+  });
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "SSH SSH host 1" }),
+    "default",
+  );
+  await waitFor(() => {
+    expect(overrides.has(hostIds[0]!)).toBeFalsy();
+  });
+});
 
 async function loadSshAccess(trigger: HTMLElement): Promise<void> {
   click(trigger);
