@@ -6155,7 +6155,7 @@
           "reconnectTitle": "Claude को पुनः कनेक्ट करें",
           "signIn": "Claude के साथ साइन इन करें",
           "submit": "कनेक्ट करें",
-          "usageNotice": "Okou Claude Code चलाने के लिए कनेक्ट की गई Claude सदस्यता का उपयोग करता है। यह उपयोग उसी सदस्यता में गिना जाता है।"
+          "usageNotice": "Claude Code पर आधारित एजेंटों के लिए अपनी Claude सदस्यता से साइन इन करें।"
         },
         "codex": {
           "approvalOpened": "अनुमोदन पृष्ठ खोला गया. अनुमोदन देने से पहले डिवाइस कोड कॉपी करें.",
@@ -6221,7 +6221,7 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "सक्रिय",
         "addAccount": "खाता जोड़ें",
-        "claudeDescription": "Okou में Claude Code चलाने के लिए अपनी Claude सदस्यता का उपयोग करें।",
+        "claudeDescription": "Claude Code पर आधारित एजेंटों के लिए अपनी Claude सदस्यता से साइन इन करें।",
         "claudeTitle": "Claude",
         "codexDescription": "Codex-समर्थित मॉडल मार्गों के लिए Codex डिवाइस लॉगिन से कनेक्ट करें।",
         "codexTitle": "ChatGPT (Codex)",

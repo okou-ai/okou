@@ -780,7 +780,7 @@ test("Start and close personal Claude login from the account menu", async () => 
   expect(screen.getAllByText("Connect Claude")).not.toHaveLength(0);
   expect(
     screen.getByText(
-      "Okou uses the connected Claude subscription to run Claude Code. This usage counts toward that plan.",
+      "Sign in with your Claude subscription for Claude Code-backed agents.",
     ),
   ).toBeVisible();
   closeClaudeCodeDialogs();
