@@ -343,7 +343,9 @@ describe("GET /api/cron/project-chat-event-search", () => {
       `beforetimeout ${randomUUID()}`,
     );
     await projectOwnedChatEventSearch([first.threadId]);
-    const before = await readChatEventSearchProjectionFixture(first.threadId);
+    const before = await readChatEventSearchProjectionRowsFixture(
+      first.threadId,
+    );
     const marker = `timeoutretry${randomUUID().replaceAll("-", "")}`;
     await insertSearchablePromptFixture({
       chatThreadId: first.threadId,
@@ -386,7 +388,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
       convergence: { eligibleThreads: 2, durableCaughtUpThreads: 1 },
     });
     await expect(
-      readChatEventSearchProjectionFixture(first.threadId),
+      readChatEventSearchProjectionRowsFixture(first.threadId),
     ).resolves.toStrictEqual(before);
     expect((await chat.searchChat(first.actor, marker)).results).toStrictEqual(
       [],
