@@ -747,6 +747,13 @@ radius. Connector-action and mail-draft cards use the same token. Their content
 uses a 16px horizontal inset; vertical spacing stays with each card's layout.
 Selected and disabled states may still tint or attenuate the neutral stroke.
 
+Keep the component boundary with the behavior. Mail-draft cards own loading,
+error, reconnect, deleted and selected states, and actionable drafts retain a
+native `button`; connector actions have a separate state and confirmation flow.
+Reuse the shared geometry and stroke rule for these shells, and use `ChatCard`
+where its stable edge and shadow fit. Do not add a generic wrapper solely to
+share styling.
+
 `cn()` merges the base with the caller's `className`, so a conflicting base
 utility is dropped rather than outranked and no layer ordering is involved. The
 browser session card's hover and selected borders rely on this.
