@@ -703,8 +703,8 @@ export async function planRelationalErasure(
     );
   });
   // Additive attribution columns do not identify rows written before the new
-  // producers shipped. Neither a recipient address nor a Feishu installation
-  // alone proves account ownership. Until every legacy row is attributed or
+  // producers shipped. Neither a recipient address nor a Feishu sender ID
+  // alone proves account ownership. Until every unowned row is attributed or
   // separately remediated, block all completion claims rather than allowing a
   // root/descendant sweep to silently ignore its NULL owner key.
   const [legacyEmail] = await executeRawRows(
@@ -717,7 +717,7 @@ export async function planRelationalErasure(
   const [legacyFeishu] = await executeRawRows(
     db,
     sql`SELECT EXISTS (
-      SELECT 1 FROM feishu_chat_ingress WHERE sender_open_id IS NULL
+      SELECT 1 FROM feishu_chat_ingress WHERE owner_user_id IS NULL
     ) AS present`,
     presenceSchema,
   );

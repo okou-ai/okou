@@ -141,6 +141,9 @@ describe("relational erasure plan", () => {
         { eventId: "unlinked", senderOpenId: openId, ownerUserId: null },
       ]),
     );
+    expect(
+      (await planRelationalErasure(db)).unattributableDescendants,
+    ).toContain("feishu_chat_ingress");
   });
 
   it("resolves a composite foreign key as ordered positional pairs", async () => {
