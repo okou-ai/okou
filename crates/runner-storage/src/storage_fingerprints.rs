@@ -12,11 +12,11 @@ use runner_types::storage_manifest::StorageManifest;
 /// entries conservatively. Storage and artifact paths remain separate because the planner applies
 /// distinct behavior to each entry kind.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct StorageFingerprints {
+pub struct StorageFingerprints {
     /// mount_path to version fingerprint for regular storages.
-    pub(crate) storages: HashMap<String, StorageFingerprint>,
+    pub storages: HashMap<String, StorageFingerprint>,
     /// mount_path to version fingerprint for artifacts.
-    pub(crate) artifacts: HashMap<String, StorageFingerprint>,
+    pub artifacts: HashMap<String, StorageFingerprint>,
 }
 
 // These exact NUL-delimited values form the reserved serialized pair for a tainted fingerprint.
@@ -32,7 +32,7 @@ const TAINTED_STORAGE_FINGERPRINT_VERSION: &str = "\0vm0-tainted-storage\0";
 /// representation is persisted in workspace-cache metadata and must remain compatible with
 /// existing entries.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct StorageFingerprint {
+pub struct StorageFingerprint {
     kind: StorageFingerprintKind,
 }
 
@@ -49,10 +49,7 @@ impl StorageFingerprint {
     /// Creates a known fingerprint unless both values are the exact reserved taint sentinel pair.
     ///
     /// Recognizing that pair here restores tainted state when persisted metadata is deserialized.
-    pub(crate) fn new(
-        vas_storage_name: impl Into<String>,
-        vas_version_id: impl Into<String>,
-    ) -> Self {
+    pub fn new(vas_storage_name: impl Into<String>, vas_version_id: impl Into<String>) -> Self {
         let vas_storage_name = vas_storage_name.into();
         let vas_version_id = vas_version_id.into();
         if vas_storage_name == TAINTED_STORAGE_FINGERPRINT_NAME
@@ -69,13 +66,13 @@ impl StorageFingerprint {
     }
 
     /// Creates a fingerprint for filesystem state that must not be reused as known.
-    pub(crate) fn tainted() -> Self {
+    pub fn tainted() -> Self {
         Self {
             kind: StorageFingerprintKind::Tainted,
         }
     }
 
-    pub(crate) fn is_tainted(&self) -> bool {
+    pub fn is_tainted(&self) -> bool {
         matches!(self.kind, StorageFingerprintKind::Tainted)
     }
 
@@ -83,7 +80,7 @@ impl StorageFingerprint {
     ///
     /// A tainted fingerprint never matches any input, including the reserved sentinel values. This
     /// makes the next storage plan clean and materialize the current entry instead of reusing it.
-    pub(crate) fn matches(&self, vas_storage_name: &str, vas_version_id: &str) -> bool {
+    pub fn matches(&self, vas_storage_name: &str, vas_version_id: &str) -> bool {
         if self.is_tainted() {
             return false;
         }
@@ -96,7 +93,7 @@ impl StorageFingerprint {
         }
     }
 
-    pub(crate) fn vas_storage_name(&self) -> Option<&str> {
+    pub fn vas_storage_name(&self) -> Option<&str> {
         match &self.kind {
             StorageFingerprintKind::Known {
                 vas_storage_name, ..
@@ -136,7 +133,7 @@ impl<'de> Deserialize<'de> for StorageFingerprint {
 }
 
 impl StorageFingerprints {
-    pub(crate) fn from_manifest(manifest: &StorageManifest) -> Self {
+    pub fn from_manifest(manifest: &StorageManifest) -> Self {
         let mut storages = HashMap::new();
         for s in &manifest.storages {
             storages.insert(
@@ -162,7 +159,7 @@ impl StorageFingerprints {
     /// A non-successful turn may not have finished removing paths that existed only in the previous
     /// manifest. Retaining those paths preserves their cleanup obligations for the next reuse.
     /// Storage and artifact maps are unioned independently so their entry kinds remain intact.
-    pub(crate) fn tainted_paths_including(&self, previous: Option<&Self>) -> Self {
+    pub fn tainted_paths_including(&self, previous: Option<&Self>) -> Self {
         let mut tainted = Self {
             storages: self
                 .storages

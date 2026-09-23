@@ -33,16 +33,16 @@
 //! storage names separate collision-resistant staged filenames in normal
 //! operation, so they do not clobber each other on the guest tmpfs.
 //!
-//! Entries above [`CACHE_MAX_SIZE`], entries without a content key, and
+//! Entries above `CACHE_MAX_SIZE`, entries without a content key, and
 //! reuse/repair actions pass through untouched.
 //! For a post-spawn background fill, if the probe says an entry is cache-eligible
-//! but the full response exceeds [`CACHE_MAX_SIZE`], the cache rejects publication
+//! but the full response exceeds `CACHE_MAX_SIZE`, the cache rejects publication
 //! and reports a background-fill failure. The original URL has already been handed
 //! to the guest; this failure does not revoke it or retroactively fail storage
 //! application.
 //!
 //! Runtime contract: `file://` URLs produced here point to guest-local archives
-//! staged under [`GUEST_STAGE_DIR`]. `guest-storage-apply` supports that scheme and
+//! staged under `GUEST_STAGE_DIR`. `guest-storage-apply` supports that scheme and
 //! treats missing local archives as a broken staging contract.
 
 use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
@@ -69,14 +69,16 @@ use tracing::{info, warn};
 use crate::archive_connection_attempt::{
     ArchiveConnectionAttempt, ConnectionAttemptLayer, ConnectionAttemptObserver,
 };
-use crate::error::{RunnerError, RunnerResult};
+use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
 use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
 use crate::storage_plan::{ArchiveHandle, CacheArchiveCandidate, StoragePlan};
+#[cfg(test)]
+use crate::telemetry::StorageTelemetry;
 use crate::telemetry::{ArchiveSizeMismatch, JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 use runner_host::lock;
 use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 
-pub(crate) mod decoded;
+pub mod decoded;
 
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
@@ -299,7 +301,7 @@ impl FreshDeliveryScanSummary {
 /// sockets and a 30-second idle timeout. Origin replacement releases the cached
 /// client; admitted fetches can retain its old pool until their owned tasks end.
 #[derive(Clone)]
-pub(crate) struct FreshArchiveDeliveryAdmission {
+pub struct FreshArchiveDeliveryAdmission {
     permits: Arc<Semaphore>,
     http: Arc<Mutex<Option<FreshArchiveHttpClient>>>,
 }
@@ -310,7 +312,7 @@ struct FreshArchiveHttpClient {
 }
 
 impl FreshArchiveDeliveryAdmission {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             permits: Arc::new(Semaphore::new(FRESH_DELIVERY_RUNNER_LIMIT)),
             http: Arc::new(Mutex::new(None)),
@@ -352,6 +354,12 @@ impl FreshArchiveDeliveryAdmission {
             });
         }
         Ok(client)
+    }
+}
+
+impl Default for FreshArchiveDeliveryAdmission {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -401,7 +409,7 @@ struct BackgroundFillAdmissionState {
 
 enum BackgroundFillCommand {
     Shutdown(oneshot::Sender<()>),
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     Checkpoint(oneshot::Sender<(usize, usize)>),
 }
 
@@ -428,7 +436,7 @@ struct BackgroundFillCoordinatorLifecycle {
 /// active and queued work across jobs, deduplicates keys while work is queued
 /// or active, and owns the supervisor task until explicit runner shutdown.
 #[derive(Clone)]
-pub(crate) struct StorageCacheBackgroundFillCoordinator {
+pub struct StorageCacheBackgroundFillCoordinator {
     lifecycle: Arc<BackgroundFillCoordinatorLifecycle>,
 }
 
@@ -445,7 +453,7 @@ struct BackgroundFillWorkerResult {
 }
 
 impl StorageCacheBackgroundFillCoordinator {
-    pub(crate) fn new() -> RunnerResult<Self> {
+    pub fn new() -> RunnerResult<Self> {
         Self::new_with_limits(BACKGROUND_FILL_ACTIVE_LIMIT, BACKGROUND_FILL_QUEUE_CAPACITY)
     }
 
@@ -677,7 +685,7 @@ impl StorageCacheBackgroundFillCoordinator {
 
     /// Close admissions, cancel queued work, drain active atomic operations,
     /// and join all terminal telemetry reports before returning.
-    pub(crate) async fn shutdown(&self) {
+    pub async fn shutdown(&self) {
         {
             let mut state = self
                 .lifecycle
@@ -730,8 +738,8 @@ impl StorageCacheBackgroundFillCoordinator {
             .closed
     }
 
-    #[cfg(test)]
-    pub(crate) async fn wait_idle_for_test(&self) {
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn wait_idle_for_test(&self) {
         loop {
             let (send, receive) = oneshot::channel();
             self.lifecycle
@@ -840,7 +848,7 @@ async fn run_background_fill_supervisor(
             biased;
             command = receiver.recv() => {
                 match command {
-                    #[cfg(test)]
+                    #[cfg(any(test, feature = "test-support"))]
                     Some(BackgroundFillCommand::Checkpoint(complete)) => {
                         let state = inner.state.lock().unwrap_or_else(|e| e.into_inner());
                         let _ = complete.send((workers.len() + inner.classifiers.len(), state.pending.len()));
@@ -1216,7 +1224,7 @@ struct FreshArchiveResolved {
 /// Implicit `Drop` is not equivalent cleanup: it aborts fetches but detaches
 /// already-started publication so an atomic fsync/rename transaction is not
 /// cancelled midway.
-pub(crate) struct FreshArchiveDelivery {
+pub struct FreshArchiveDelivery {
     cancel: CancellationToken,
     phase_records: FreshArchivePhaseRecords,
     classification: JoinSet<FreshArchiveClassification>,
@@ -1241,9 +1249,9 @@ struct FreshArchiveClassification {
 /// workspace-image selection must drain the previous delivery and rebuild both
 /// values; a retry such as DNS-only sandbox replacement may retain the pair
 /// when the plan inputs are unchanged.
-pub(crate) struct PreparedStorage {
-    pub(crate) plan: StoragePlan,
-    pub(crate) delivery: FreshArchiveDelivery,
+pub struct PreparedStorage {
+    pub plan: StoragePlan,
+    pub delivery: FreshArchiveDelivery,
 }
 
 impl Drop for FreshArchiveDelivery {
@@ -1290,7 +1298,7 @@ impl FreshArchiveDelivery {
     /// Unlike implicit `Drop`, this keeps publication in normal awaited
     /// teardown and records cancellation and drain telemetry when owned work
     /// exists.
-    pub(crate) async fn cancel_and_drain(&mut self, telemetry: &mut JobTelemetry) {
+    pub async fn cancel_and_drain(&mut self, telemetry: &mut JobTelemetry) {
         let started_at = Instant::now();
         let had_owned_work = !self.classification.is_empty()
             || !self.apply.is_empty()
@@ -1468,7 +1476,7 @@ impl FreshArchiveDelivery {
 /// task, cache lock, or file, so dropping it on a pre-spawn failure requires
 /// no asynchronous cleanup.
 #[must_use = "deferred storage cache fill must be started after agent spawn or explicitly dropped"]
-pub(crate) struct DeferredBackgroundFill {
+pub struct DeferredBackgroundFill {
     groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
     home: HomePaths,
     selected_at: Instant,
@@ -1480,7 +1488,7 @@ impl DeferredBackgroundFill {
         run_background_fill_groups(self.groups, self.home).await
     }
 
-    pub(crate) fn start(
+    pub fn start(
         self,
         coordinator: &StorageCacheBackgroundFillCoordinator,
         telemetry: &mut JobTelemetry,
@@ -2207,7 +2215,7 @@ pub async fn populate_cache(
     populate_cache_with_fresh_delivery(plan, sandbox, home, telemetry, None, None).await
 }
 
-pub(crate) async fn populate_cache_with_fresh_delivery(
+pub async fn populate_cache_with_fresh_delivery(
     plan: &mut StoragePlan,
     sandbox: &dyn Sandbox,
     home: &HomePaths,
@@ -2571,7 +2579,7 @@ fn collect_targets(candidates: Vec<CacheArchiveCandidate>) -> Vec<CacheTarget> {
 /// Select extracted files using the same source groups before archive admission;
 /// selected hits never start an archive request. A prepared plan keeps its pins
 /// and does not repeat the lookup during population.
-pub(crate) async fn prepare_fresh_archive_delivery(
+pub async fn prepare_fresh_archive_delivery(
     plan: &mut StoragePlan,
     home: &HomePaths,
     admission: &FreshArchiveDeliveryAdmission,
@@ -4202,14 +4210,12 @@ mod tests {
     use tokio::io::AsyncWriteExt as _;
     use tokio::net::TcpListener;
 
-    use crate::http::{HttpClient, HttpClientConfig};
     use crate::storage_fingerprints::{StorageFingerprint, StorageFingerprints};
     use crate::storage_plan::build_storage_plan;
     use crate::test_fixtures::raw_http::{
         RawHttpAction, RawHttpTestServer, http_response, join_raw_http_task, json_response,
         read_http_request,
     };
-    use runner_types::ids::RunId;
     use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
 
     const CACHE_TEST_RUNTIME_DIR: &str = "/tmp/storage-cache-test-runtime";
@@ -4240,18 +4246,7 @@ mod tests {
     }
 
     fn new_telemetry_for_api_url(api_url: &str) -> JobTelemetry {
-        let http = HttpClient::new(HttpClientConfig {
-            api_url: api_url.to_string(),
-            vercel_bypass: None,
-            client_session_id: "runner-session-test".to_string(),
-        })
-        .unwrap();
-        JobTelemetry::new(
-            http,
-            RunId::from(uuid::Uuid::nil()),
-            "test-token".to_string(),
-            None,
-        )
+        JobTelemetry::new(api_url)
     }
 
     fn assert_op(ops: &[(String, bool, Option<String>)], action_type: &str, success: bool) {
@@ -5253,8 +5248,11 @@ mod tests {
     async fn fresh_delivery_only_needs_ca_certificates_for_admitted_misses() {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
-        crate::ca::ensure(&home).await.unwrap();
-        let cert_file = home.ca_dir().join(crate::ca::CA_CERT);
+        fs::create_dir_all(home.ca_dir()).await.unwrap();
+        let certificate =
+            rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        let cert_file = home.ca_dir().join("test-ca-cert.pem");
+        fs::write(&cert_file, certificate.cert.pem()).await.unwrap();
         let empty_cert_dir = temp.path().join("empty-certs");
         fs::create_dir(&empty_cert_dir).await.unwrap();
 

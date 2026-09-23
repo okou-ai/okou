@@ -52,13 +52,13 @@ use super::session_history_cpu::{
 use super::session_restore::MaterializedResumeSession;
 use crate::error::{RunnerError, RunnerResult};
 use crate::http::HttpClient;
-use crate::object_download_policy::OBJECT_DOWNLOAD_TIMEOUT;
 use crate::restored_session_identity::RestoredSessionHistoryPrefixAttribution;
 use crate::telemetry::{
     SessionHistoryCacheProbeMetadata, SessionHistoryContentEncodingState,
     SessionHistoryContentLengthState, SessionHistoryResponseTelemetryMetadata,
     SessionHistoryTelemetryMetadata, SessionHistoryTransferEncodingState,
 };
+use runner_storage::OBJECT_DOWNLOAD_TIMEOUT;
 use runner_types::types::{
     ResumeSession, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind,

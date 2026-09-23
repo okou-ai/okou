@@ -183,13 +183,13 @@ pub(super) fn io_other<E: std::fmt::Display>(e: E) -> std::io::Error {
     std::io::Error::other(e.to_string())
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl R2ImageCache {
     /// Test-only constructor. Lets unit tests inject a mock `aws_sdk_s3::Client`
     /// (built via `aws_smithy_mocks::mock_client!`) without going through
     /// `from_env`, which reads process env vars. Production code MUST construct
     /// via `from_env`.
-    pub(crate) fn with_client(client: aws_sdk_s3::Client, bucket: String) -> Self {
+    pub fn with_client(client: aws_sdk_s3::Client, bucket: String) -> Self {
         Self { client, bucket }
     }
 }
