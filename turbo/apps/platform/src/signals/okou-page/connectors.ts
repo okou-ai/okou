@@ -88,6 +88,9 @@ export interface ComposerConnectorSignals {
   readonly addDialogCatalog$: Computed<
     Promise<PublicConnectorCatalogDiscoveryResponse | null>
   >;
+  readonly addDialogBrowseCatalog$: Computed<
+    Promise<PublicConnectorCatalogDiscoveryResponse | null>
+  >;
   readonly addDialogCatalogItems$: Computed<
     Promise<readonly PlatformConnectorCatalogStatusItem[]>
   >;
@@ -111,7 +114,13 @@ export interface ComposerConnectorSignals {
     Promise<readonly PlatformUserPermissionGrant[]>
   >;
   readonly accounts: ComposerConnectorAccountSignals;
-  readonly sshAccess$: Computed<Promise<{ readonly enabled: boolean } | null>>;
+  readonly sshAccess$: Computed<
+    Promise<{
+      readonly identity: string;
+      readonly agentId: string;
+      readonly enabled: boolean;
+    } | null>
+  >;
   readonly vncAccess$: Computed<Promise<{ readonly enabled: boolean } | null>>;
 }
 
@@ -343,6 +352,11 @@ export function createComposerConnectorSignals(
     emptyCatalogKeyword$,
     addDialogCategory$,
   );
+  const addDialogBrowseCatalog$ = computed(async (get) => {
+    return get(ui.connectorUiState$).showAddDialog
+      ? await get(browseCatalog$)
+      : null;
+  });
   const addDialogCatalog$ = computed(async (get) => {
     if (!get(ui.connectorUiState$).showAddDialog) {
       return null;
@@ -353,7 +367,7 @@ export function createComposerConnectorSignals(
     if (get(addDialogCategory$)) {
       return await get(categoryCatalog$);
     }
-    return await get(browseCatalog$);
+    return await get(addDialogBrowseCatalog$);
   });
   const addDialogCatalogItems$ = computed(async (get) => {
     return (await get(addDialogCatalog$))?.connectors ?? [];
@@ -382,6 +396,7 @@ export function createComposerConnectorSignals(
     data$,
     connectorAuthorization$: authorization$,
     addDialogCatalog$,
+    addDialogBrowseCatalog$,
     addDialogCatalogItems$,
     addDialogCustomConnectors$,
     setConnectorAuthorization$: createConnectorAuthorizationCommand(

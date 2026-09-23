@@ -12,7 +12,6 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import { db$ } from "../external/db";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
   agentCustomConnectorGrants,

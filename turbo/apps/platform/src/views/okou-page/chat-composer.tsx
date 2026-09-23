@@ -244,6 +244,7 @@ import type {
   ConnectorAccountTarget,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
+import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type {
   ComposerBuiltinConnector,
   ComposerCustomConnector,
@@ -289,7 +290,11 @@ import {
 } from "../../signals/connector-connection-progress.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { updateAgentSshAccess$, sshSummary$ } from "../../signals/ssh.ts";
+import {
+  updateAgentSshAccess$,
+  sshSummary$,
+  sshIdentity$,
+} from "../../signals/ssh.ts";
 import { updateAgentVncAccess$ } from "../../signals/vnc-access.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
 import { VncLoadError } from "./vnc-load-error.tsx";
@@ -7730,6 +7735,28 @@ function composerPopoverItems({
   ];
 }
 
+function matchingComposerSshAccess(
+  identity: Loadable<string | null>,
+  access:
+    | {
+        readonly identity: string;
+        readonly agentId: string;
+        readonly enabled: boolean;
+      }
+    | null
+    | undefined,
+  agentId: string | null,
+) {
+  if (
+    identity.state !== "hasData" ||
+    access?.identity !== identity.data ||
+    access.agentId !== agentId
+  ) {
+    return null;
+  }
+  return access;
+}
+
 function ConnectorsPopoverButton({
   signals,
   agentId,
@@ -7776,7 +7803,13 @@ function ConnectorsPopoverButton({
   );
   const permissionConnectorSlug = connectorUi.permissionConnectorSlug;
   const sshRows = useLoadable(signals.connector.sshAccess$);
-  const sshAccess = useLastResolved(signals.connector.sshAccess$);
+  const sshIdentity = useLoadable(sshIdentity$);
+  const lastSshAccess = useLastResolved(signals.connector.sshAccess$);
+  const sshAccess = matchingComposerSshAccess(
+    sshIdentity,
+    lastSshAccess,
+    agentId,
+  );
   const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
   const vncRows = useLoadable(signals.connector.vncAccess$);
   const vncAccess = useLastResolved(signals.connector.vncAccess$);
@@ -10164,6 +10197,17 @@ function useComposerComputerUse(signals: ComposerSignals): ComposerComputerUse {
   };
 }
 
+function composerDirectoryBrowseData(
+  browse: PublicConnectorCatalogDiscoveryResponse | null | undefined,
+  items: readonly PlatformConnectorCatalogStatusItem[],
+) {
+  return {
+    categoryCounts: browse?.categoryConnectorCounts,
+    categoryMetadata: browse?.categoryMetadata,
+    chipCatalog: browse?.connectors ?? items,
+  };
+}
+
 function ComposerConnectorsSlot({
   signals,
   actions,
@@ -10177,10 +10221,17 @@ function ComposerConnectorsSlot({
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const connectorData = useLastResolved(signals.connector.data$);
   const addDialogCatalog = useLastResolved(signals.connector.addDialogCatalog$);
+  const addDialogBrowseCatalog = useLastResolved(
+    signals.connector.addDialogBrowseCatalog$,
+  );
   const addDialogCatalogItems =
     useLastResolved(signals.connector.addDialogCatalogItems$) ?? [];
   const addDialogCustomConnectors =
     useLastResolved(signals.connector.addDialogCustomConnectors$) ?? [];
+  const directoryBrowse = composerDirectoryBrowseData(
+    addDialogBrowseCatalog,
+    addDialogCatalogItems,
+  );
   const agents = useLastResolved(agents$) ?? [];
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
@@ -10414,12 +10465,12 @@ function ComposerConnectorsSlot({
           <ConnectorDirectoryDialog
             state={connectorUi}
             onUpdateState={updateConnectorUi}
-            categoryCounts={addDialogCatalog?.categoryConnectorCounts}
-            categoryMetadata={addDialogCatalog?.categoryMetadata}
+            categoryCounts={directoryBrowse.categoryCounts}
+            categoryMetadata={directoryBrowse.categoryMetadata}
             loading={
               addDialogCatalog === undefined || addDialogCatalog === null
             }
-            chipCatalog={addDialogCatalogItems}
+            chipCatalog={directoryBrowse.chipCatalog}
             connected={directoryConnected}
             unconnected={unconnectedConnectors}
             connectedCustom={directoryConnectedCustom}

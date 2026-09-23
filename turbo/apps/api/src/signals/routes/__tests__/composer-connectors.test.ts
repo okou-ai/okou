@@ -31,17 +31,17 @@ test("composer overview and Agent grants stay scoped to the signed-in user", asy
     composerConnectorsContract,
   );
   const overview = await accept(client.overview({ headers }), [200]);
-  expect(overview.body.builtinConnectors).toEqual([]);
-  expect(overview.body.customConnectors).toEqual([]);
-  expect(overview.body.accountSummaries).toEqual([]);
-  expect(overview.body.computerUseHosts).toEqual([]);
+  expect(overview.body.builtinConnectors).toStrictEqual([]);
+  expect(overview.body.customConnectors).toStrictEqual([]);
+  expect(overview.body.accountSummaries).toStrictEqual([]);
+  expect(overview.body.computerUseHosts).toStrictEqual([]);
   expect(typeof overview.body.cloudBrowserEnabledByDefault).toBe("boolean");
 
   const grants = await accept(
     client.agent({ headers, params: { id: created.body.agentId } }),
     [200],
   );
-  expect(grants.body).toEqual({
+  expect(grants.body).toStrictEqual({
     enabledConnectorSlugs: [],
     customConnectorIds: [],
   });
