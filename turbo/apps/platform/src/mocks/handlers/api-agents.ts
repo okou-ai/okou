@@ -332,11 +332,6 @@ export const apiAgentsHandlers = [
     return respond(204);
   }),
 
-  // GET /api/chat-thread-unreads
-  mockApi(chatThreadsContract.unreads, ({ respond }) => {
-    return respond(200, { unreads: [] });
-  }),
-
   // POST /api/chat-thread-unreads/mark-read
   mockApi(chatThreadMarkAgentReadContract.markAgentRead, ({ respond }) => {
     return respond(204);

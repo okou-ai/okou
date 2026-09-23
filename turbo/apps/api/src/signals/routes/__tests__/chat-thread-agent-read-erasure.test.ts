@@ -522,10 +522,6 @@ describe("account erasure fences the bulk Agent read-cursor write", () => {
     await expect(
       readChatThreadCursorsFixture(fixture.threadIds),
     ).resolves.toStrictEqual(before);
-    await expect(unreadThreadIds(fixture)).resolves.toStrictEqual(
-      new Set(fixture.threadIds),
-    );
-
     // A rolled back attempt is not a durable denial: the same request commits
     // the whole set once its operation is no longer cancelled.
     await chat.markAgentThreadsRead(fixture.actor, fixture.agentId);

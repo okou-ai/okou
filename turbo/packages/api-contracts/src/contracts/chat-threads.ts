@@ -309,7 +309,7 @@ const persistedAttachmentSchema = z.object({
  * Per-agent unread snapshot. `unreadAt` is the creation time of the latest
  * run-finish marker — the one that made the thread unread.
  */
-const chatThreadUnreadsSchema = z.object({
+const chatThreadReadStateUnreadsSchema = z.object({
   unreads: z.array(
     z.object({
       threadId: z.string(),
@@ -324,8 +324,7 @@ export const indicatorsSchema = z.object({
   agents: z.record(z.string().uuid(), indicatorSchema),
   threads: z.record(z.string().uuid(), indicatorSchema),
   /** Latest unread marker for each thread marked unread above. */
-  // Optional while a previously deployed API can serve this response during rollback.
-  unreadAt: z.record(z.string().uuid(), z.string().datetime()).optional(),
+  unreadAt: z.record(z.string().uuid(), z.string().datetime()),
 });
 
 const chatThreadEventIdSchema = z.string().uuid();
@@ -1351,21 +1350,6 @@ export const chatThreadsContract = c.router({
     summary:
       "Report which of the caller's chat threads hold an unsent composer draft. Fetched separately from the thread list so the sidebar draft dots don't gate the list query.",
   },
-  unreads: {
-    method: "GET",
-    path: "/api/chat-thread-unreads",
-    headers: authHeadersSchema,
-    query: z.object({
-      agentId: z.string().min(1),
-    }),
-    responses: {
-      200: chatThreadUnreadsSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-    },
-    summary:
-      "List the caller's unread chat threads under an agent, each with the timestamp of the message that made it unread.",
-  },
 });
 
 /**
@@ -1453,11 +1437,11 @@ export const chatThreadDraftContract = c.router({
 const chatThreadReadStateResponseSchema = z.object({
   lastReadAt: z.string().nullable(),
   /**
-   * Fresh unread snapshot for the thread's agent (same shape as the unreads
-   * endpoint). Clients should treat `chatThreadReadCursorUpdated` as
+   * Fresh unread snapshot for the thread's agent. Clients should treat
+   * `chatThreadReadCursorUpdated` as
    * read-state invalidation.
    */
-  unreads: chatThreadUnreadsSchema.shape.unreads,
+  unreads: chatThreadReadStateUnreadsSchema.shape.unreads,
 });
 
 /**
