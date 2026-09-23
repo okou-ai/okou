@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
-import { delay } from "signal-timers";
 import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
 import { testRuntimeStateContract } from "@okouai/api-contracts/contracts/test-runtime-state";
 
@@ -265,13 +264,16 @@ describe("auxiliary generation outcomes", () => {
     await expect(title.titles()).resolves.toStrictEqual([]);
 
     let drained = false;
+    const drainStarted = createDeferredPromise<void>(context.signal);
     const drain = (async () => {
+      drainStarted.resolve(undefined);
       await flushWaitUntilForTest();
       drained = true;
     })();
-    // A lifetime that had stopped tracking the background work would settle
-    // here instead of waiting for the generation still in flight.
-    await delay(30, { signal: context.signal });
+    await drainStarted.promise;
+    // This API read is an observable scheduling boundary. A tracker that lost
+    // the held generation would finish draining before the read completes.
+    await expect(title.titles()).resolves.toStrictEqual([]);
     expect(drained).toBeFalsy();
     releaseTitle.resolve(undefined);
     await drain;

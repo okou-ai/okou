@@ -583,6 +583,28 @@ export default [
       "src/**/__tests__/**/*.ts",
       "src/**/*.test.ts",
       "src/test-fixtures/**/*.ts",
+    ],
+    rules: {
+      "ccstate/no-test-delay": [
+        "error",
+        {
+          allowed: [
+            {
+              file: "src/signals/routes/__tests__/morning-brief-composition.test.ts",
+              kinds: ["delay"],
+              reason:
+                "Issue #35737 verifies successful provider reads before a real source deadline; #35594 tracks replacing the pacing with a controlled deadline signal.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "src/**/__tests__/**/*.ts",
+      "src/**/*.test.ts",
+      "src/test-fixtures/**/*.ts",
       "src/signals/routes/test-*.ts",
     ],
     rules: {
