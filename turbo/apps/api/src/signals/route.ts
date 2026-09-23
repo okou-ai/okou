@@ -152,6 +152,7 @@ import { socialRoutes } from "./routes/social";
 import { socialDataRoutes } from "./routes/social-data";
 import { sshConnectionsRoutes } from "./routes/ssh-connections";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
+import { chatRemoteAccessRoutes } from "./routes/chat-remote-access";
 import { vncAccessRoutes } from "./routes/vnc-access";
 import { runnerVncRoutes } from "./routes/runner-vnc";
 import { cloudflareAccessRoutes } from "./routes/cloudflare-access";
@@ -366,6 +367,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...socialDataRoutes,
   ...sshConnectionsRoutes,
   ...vncConnectionsRoutes,
+  ...chatRemoteAccessRoutes,
   ...vncAccessRoutes,
   ...runnerVncRoutes,
   ...cloudflareAccessRoutes,

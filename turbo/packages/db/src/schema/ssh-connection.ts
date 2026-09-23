@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  boolean,
   foreignKey,
   index,
   integer,
@@ -34,6 +35,9 @@ export const sshConnections = pgTable(
       length: 64,
     }),
     generation: integer("generation").notNull().default(1),
+    defaultEnabledForChats: boolean("default_enabled_for_chats")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

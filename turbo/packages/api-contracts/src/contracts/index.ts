@@ -172,6 +172,14 @@ export {
   type UpdateSshConnectionRequest,
 } from "./ssh-connections";
 export {
+  chatRemoteAccessContract,
+  remoteHostDefaultSchema,
+  threadRemoteHostAccessSchema,
+  type RemoteAccessProtocol,
+  type RemoteHostDefault,
+  type ThreadRemoteHostAccess,
+} from "./chat-remote-access";
+export {
   createModelProviderConnectionRequestSchema,
   getModelProviderTypeForSurfaceProtocol,
   modelProviderConnectionResponseSchema,
