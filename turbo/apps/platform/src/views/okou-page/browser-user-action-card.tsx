@@ -5,7 +5,7 @@ import {
 import { cn } from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Input } from "@okouai/ui/components/ui/input";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
@@ -964,36 +964,28 @@ function PendingInlineDirectInteraction({
   );
 }
 
-export function BrowserUserActionCard({
+function BrowserUserActionCardContent({
   browserSessionSignals,
+  callbackDelivered,
+  callbackFailed,
+  continuing,
+  onContinue,
+  refresh,
+  requestLoadable,
   signals,
-  variant = "inline",
+  variant,
 }: {
   readonly browserSessionSignals: BrowserSessionSignals;
+  readonly callbackDelivered: boolean;
+  readonly callbackFailed: boolean;
+  readonly continuing: boolean;
+  readonly onContinue: () => void;
+  readonly refresh: () => void;
+  readonly requestLoadable: Loadable<BrowserUserActionRequestState>;
   readonly signals: BrowserUserActionSignals;
-  readonly variant?: BrowserUserActionCardVariant;
+  readonly variant: BrowserUserActionCardVariant;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const requestLoadable = useLoadable(signals.request$);
-  const refresh = useSet(signals.refresh$);
-  const resumeRef = useSet(signals.resumeRef$);
-  const locallyDelivered = useGet(signals.callbackDelivered$);
-  const callbackFailed = useGet(signals.callbackFailed$);
-  const busy = useGet(signals.busy$);
-  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
-  const callbackDelivered =
-    locallyDelivered ||
-    (requestLoadable.state === "hasData" &&
-      requestLoadable.data.kind === "action" &&
-      requestLoadable.data.action.callbackDelivered === true);
-  const needsDeliveryRefresh =
-    requestLoadable.state === "hasData" &&
-    requestLoadable.data.kind === "action" &&
-    (requestLoadable.data.action.state === "succeeded" ||
-      requestLoadable.data.action.state === "cancelled") &&
-    !callbackDelivered;
-
   let content: ReactNode;
   if (requestLoadable.state === "loading") {
     content = (
@@ -1055,10 +1047,8 @@ export function BrowserUserActionCard({
           action={action}
           callbackDelivered={callbackDelivered}
           callbackFailed={callbackFailed}
-          continuing={busy || continueLoadable.state === "loading"}
-          onContinue={() => {
-            detach(continueAction(pageSignal), Reason.DomCallback);
-          }}
+          continuing={continuing}
+          onContinue={onContinue}
           variant={variant}
         />
       );
@@ -1085,22 +1075,65 @@ export function BrowserUserActionCard({
           request={requestLoadable.data}
           callbackDelivered={callbackDelivered}
           callbackFailed={callbackFailed}
-          continuing={busy || continueLoadable.state === "loading"}
-          onContinue={() => {
-            detach(continueAction(pageSignal), Reason.DomCallback);
-          }}
+          continuing={continuing}
+          onContinue={onContinue}
           variant={variant}
         />
       </DraftClearingState>
     );
   }
+  return content;
+}
+
+export function BrowserUserActionCard({
+  browserSessionSignals,
+  signals,
+  variant = "inline",
+}: {
+  readonly browserSessionSignals: BrowserSessionSignals;
+  readonly signals: BrowserUserActionSignals;
+  readonly variant?: BrowserUserActionCardVariant;
+}) {
+  const pageSignal = useGet(pageSignal$);
+  const requestLoadable = useLoadable(signals.request$);
+  const refresh = useSet(signals.refresh$);
+  const resumeRef = useSet(signals.resumeRef$);
+  const locallyDelivered = useGet(signals.callbackDelivered$);
+  const callbackFailed = useGet(signals.callbackFailed$);
+  const busy = useGet(signals.busy$);
+  const [continueLoadable, continueAction] = useLoadableSet(signals.continue$);
+  const action =
+    requestLoadable.state === "hasData" &&
+    requestLoadable.data.kind === "action"
+      ? requestLoadable.data.action
+      : undefined;
+  const callbackDelivered =
+    locallyDelivered || action?.callbackDelivered === true;
+  const needsDeliveryRefresh =
+    action !== undefined &&
+    (action.state === "succeeded" || action.state === "cancelled") &&
+    !callbackDelivered;
+  const continuing = busy || continueLoadable.state === "loading";
+  const onContinue = () => {
+    detach(continueAction(pageSignal), Reason.DomCallback);
+  };
 
   return (
     <BrowserActionSurface
       variant={variant}
       resumeRef={needsDeliveryRefresh ? resumeRef : undefined}
     >
-      {content}
+      <BrowserUserActionCardContent
+        browserSessionSignals={browserSessionSignals}
+        callbackDelivered={callbackDelivered}
+        callbackFailed={callbackFailed}
+        continuing={continuing}
+        onContinue={onContinue}
+        refresh={refresh}
+        requestLoadable={requestLoadable}
+        signals={signals}
+        variant={variant}
+      />
     </BrowserActionSurface>
   );
 }
