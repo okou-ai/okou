@@ -336,6 +336,7 @@ test("Number filtered threads and give the search dialog priority over the list"
     return respond(200, {
       agents: { [CHAT_LIST_AGENT_ID]: "unread" },
       threads: { [first.id]: "unread" },
+      unreadAt: {},
     });
   });
   await setupPage({

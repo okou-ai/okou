@@ -354,6 +354,7 @@ test("Empty search follows the current agent and unread filter", async () => {
         [third.id]: "unread",
         [foreign.id]: "unread",
       },
+      unreadAt: {},
     });
   });
   await setupPage({

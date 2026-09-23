@@ -73,7 +73,9 @@ export interface SharedDatabaseQuery<TKey extends SharedDatabaseDataKey> {
 
 const chatThreadSnapshotSchema = chatThreadsContract.snapshot.responses[200];
 export const chatThreadIndicatorsSchema =
-  chatThreadsContract.indicators.responses[200];
+  chatThreadsContract.indicators.responses[200].extend({
+    unreadAt: z.record(z.string().uuid(), z.string().datetime()),
+  });
 export type ChatThreadIndicators = z.infer<typeof chatThreadIndicatorsSchema>;
 
 export const chatThreadEventQueryResultSchema = z

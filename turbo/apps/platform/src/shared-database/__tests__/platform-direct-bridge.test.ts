@@ -111,7 +111,7 @@ test("Preserve exact UTF-8 snapshot bytes across the worker protocol", async () 
     latestSeqId: 1,
   };
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     return respond(200, snapshot);
@@ -162,7 +162,7 @@ test("Show cached chat data before catching up live", async () => {
   let availableRows: readonly ChatEventRow[] = [caughtUpRow];
   const requestedSeqIds: number[] = [];
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
     return respond(200, {
@@ -281,6 +281,7 @@ test("Cache incoming chat messages before the conversation is opened", async () 
     return respond(200, {
       agents: {},
       threads: { [unopenedThreadId]: "unread" },
+      unreadAt: {},
     });
   });
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
@@ -365,6 +366,7 @@ test("Preserve every message during a burst of realtime notifications", async ()
     return respond(200, {
       agents: {},
       threads: { [unopenedThreadId]: "unread" },
+      unreadAt: {},
     });
   });
   context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
@@ -460,7 +462,7 @@ test("Preserve every message during a burst of realtime notifications", async ()
 
 test("Subscribe shared chat data through the worker", async () => {
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
 
   await setupPage({
@@ -529,7 +531,7 @@ test("Keep the chat list current with realtime thread changes", async () => {
   let availableEvents: readonly ChatThreadEvent[] = [firstRename];
 
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
     return respond(200, {

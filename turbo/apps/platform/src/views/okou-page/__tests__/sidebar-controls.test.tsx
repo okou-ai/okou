@@ -411,6 +411,7 @@ test("Show pinned agents before unread indicators finish loading", async () => {
     return respond(200, {
       agents: { [SUPPORT_AGENT_ID]: "unread" },
       threads: {},
+      unreadAt: {},
     });
   });
 
@@ -504,11 +505,14 @@ test("Recognize and pin sidebar conversation states", async () => {
   context.mocks.api(chatThreadsContract.drafts, ({ respond }) => {
     return respond(200, { draftThreadIds: [ARCHIVED_THREAD_ID] });
   });
-  context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
     return respond(200, {
-      unreads: [
-        { threadId: INCIDENT_THREAD_ID, unreadAt: "2026-03-10T00:05:00Z" },
-      ],
+      agents: { [AGENT_ID]: "unread" },
+      threads: {
+        [INCIDENT_THREAD_ID]: "unread",
+        [AUTOMATION_THREAD_ID]: "active",
+      },
+      unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
   });
 
@@ -609,18 +613,9 @@ test.each(["agent", "thread"] as const)(
       return respond(200, {
         agents: hasUnread ? { [AGENT_ID]: "unread" } : {},
         threads: hasUnread ? { [EXISTING_THREAD_ID]: "unread" } : {},
-      });
-    });
-    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-      return respond(200, {
-        unreads: hasUnread
-          ? [
-              {
-                threadId: EXISTING_THREAD_ID,
-                unreadAt: "2026-03-10T00:05:00Z",
-              },
-            ]
-          : [],
+        unreadAt: hasUnread
+          ? { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" }
+          : {},
       });
     });
 
@@ -673,16 +668,9 @@ test.each(["thread list", "read cursor"] as const)(
       return respond(200, {
         agents: {},
         threads: { [EXISTING_THREAD_ID]: running ? "active" : "unread" },
-      });
-    });
-    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-      return respond(200, {
-        unreads: [
-          {
-            threadId: EXISTING_THREAD_ID,
-            unreadAt: "2026-03-10T00:05:00Z",
-          },
-        ],
+        unreadAt: running
+          ? {}
+          : { [EXISTING_THREAD_ID]: "2026-03-10T00:05:00Z" },
       });
     });
 
