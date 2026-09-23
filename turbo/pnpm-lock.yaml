@@ -372,6 +372,9 @@ importers:
       '@okouai/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
+      '@okouai/eslint-rules':
+        specifier: workspace:*
+        version: link:../../packages/eslint-rules
       '@okouai/pi-agent-runtime':
         specifier: workspace:*
         version: link:../../packages/pi-agent-runtime
