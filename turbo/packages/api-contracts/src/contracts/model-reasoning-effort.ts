@@ -80,6 +80,7 @@ export function getModelReasoningEfforts(
     case "gpt-5.5":
       return ["low", "medium", "high", "xhigh"];
     case "claude-fable-5-1":
+    case "claude-opus-5-5":
     case "claude-opus-5":
     case "claude-opus-4-8":
     case "claude-sonnet-5":
@@ -121,6 +122,8 @@ export function defaultModelReasoningEffort(
       return "max";
     case "gpt-5.5":
       return "xhigh";
+    case "claude-opus-5-5":
+      return "medium";
     case "claude-opus-5":
     case "claude-opus-4-8":
     case "claude-sonnet-5":

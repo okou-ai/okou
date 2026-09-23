@@ -40,8 +40,17 @@ describe("chat reasoning effort capabilities", () => {
       "max",
       "ultra",
     ]);
+    expect(getModelReasoningEfforts("claude-opus-5-5")).toStrictEqual([
+      "low",
+      "medium",
+      "high",
+      "extra",
+      "max",
+      "ultracode",
+    ]);
     expect(defaultModelReasoningEffort("gpt-5.6-sol")).toBe("max");
     expect(defaultModelReasoningEffort("gpt-6-sol")).toBe("max");
+    expect(defaultModelReasoningEffort("claude-opus-5-5")).toBe("medium");
     expect(defaultModelReasoningEffort("deepseek-v4-flash")).toBe("high");
   });
 
@@ -89,6 +98,9 @@ describe("chat reasoning effort capabilities", () => {
     expect(
       getModelReasoningEfforts("anthropic/claude-fable-5.1"),
     ).toStrictEqual(getModelReasoningEfforts("claude-fable-5-1"));
+    expect(getModelReasoningEfforts("anthropic/claude-opus-5.5")).toStrictEqual(
+      getModelReasoningEfforts("claude-opus-5-5"),
+    );
     expect(
       isModelReasoningEffortSupported("anthropic/claude-sonnet-4.6", "max"),
     ).toBe(true);

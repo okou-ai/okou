@@ -165,6 +165,23 @@ describe("pinned Pi runtime capability", () => {
     expect(disagreements).toStrictEqual([]);
   });
 
+  it("leaves Claude Opus 5.5 off the loop while the native catalog lacks it", () => {
+    expect(
+      resolvesInRuntime({ provider: "anthropic", model: "claude-opus-5-5" }),
+    ).toBe(false);
+    for (const modelProviderType of getProvidersForModel("claude-opus-5-5")) {
+      expect(
+        isPiExecutionRoute({
+          selectedModel: "claude-opus-5-5",
+          modelProviderType,
+          runtimeProviderType: modelProviderType,
+          codexServiceTier: undefined,
+          piEnabled: true,
+        }),
+      ).toBe(false);
+    }
+  });
+
   it("leaves a pre-launch model the pinned catalog lacks off the loop", () => {
     // `gpt-6-sol` is absent from every pinned catalog. These are the identities
     // its Built-in and BYOK routes would request if it were ever admitted, so

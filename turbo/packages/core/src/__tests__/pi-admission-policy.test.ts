@@ -189,10 +189,10 @@ const EXPECTED_ADMITTED_ROUTES = [
 
 /**
  * The enumeration is driven by `ACTIVE_RUN_MODELS` and their providers, so it
- * does not shrink when admission narrows: all 260 combinations are still
+ * does not shrink when admission narrows: all 282 combinations are still
  * evaluated, and fewer of them are admitted.
  */
-const ENUMERATED_COMBINATIONS = 260;
+const ENUMERATED_COMBINATIONS = 282;
 
 interface Combination {
   readonly selectedModel: string;
@@ -264,7 +264,12 @@ describe("Pi admission policy table", () => {
       excluded.map(([model]) => {
         return model;
       }),
-    ).toStrictEqual(["claude-fable-5-1", "gpt-6-astra", "gpt-6-sol"]);
+    ).toStrictEqual([
+      "claude-fable-5-1",
+      "claude-opus-5-5",
+      "gpt-6-astra",
+      "gpt-6-sol",
+    ]);
     for (const [model, policy] of excluded) {
       expect(policy.pi, model).toBe(false);
       if (!policy.pi) {
@@ -386,24 +391,30 @@ describe("Pi admission decisions", () => {
     }
   });
 
-  it("keeps a model the pinned runtime cannot resolve out of the loop", () => {
-    expect(
-      isPiRouteRuntimeCapable({
-        selectedModel: "gpt-6-sol",
-        modelProviderType: "openai-api-key",
-        runtimeProviderType: "openai-api-key",
-      }),
-    ).toBe(false);
-    expect(
-      isPiExecutionRoute({
-        selectedModel: "gpt-6-sol",
-        modelProviderType: "openai-api-key",
-        runtimeProviderType: "openai-api-key",
-        codexServiceTier: undefined,
-        piEnabled: true,
-      }),
-    ).toBe(false);
-  });
+  it.each([
+    ["claude-opus-5-5", "anthropic-api-key"],
+    ["gpt-6-sol", "openai-api-key"],
+  ] as const)(
+    "keeps %s out of the loop while the pinned runtime cannot resolve it",
+    (selectedModel, providerType) => {
+      expect(
+        isPiRouteRuntimeCapable({
+          selectedModel,
+          modelProviderType: providerType,
+          runtimeProviderType: providerType,
+        }),
+      ).toBe(false);
+      expect(
+        isPiExecutionRoute({
+          selectedModel,
+          modelProviderType: providerType,
+          runtimeProviderType: providerType,
+          codexServiceTier: undefined,
+          piEnabled: true,
+        }),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("Pi runtime capability data", () => {

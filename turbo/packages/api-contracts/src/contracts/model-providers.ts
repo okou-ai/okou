@@ -195,6 +195,7 @@ const SUPPORTED_RUN_MODEL_LABELS: Record<SupportedRunModel, string> = {
   "okou-1.0": "Okou 1.0",
   "claude-fable-5-1": "Claude Fable 5.1",
   "claude-fable-5": "Claude Fable 5",
+  "claude-opus-5-5": "Claude Opus 5.5",
   "claude-opus-5": "Claude Opus 5",
   "claude-opus-4-8": "Claude Opus 4.8",
   "claude-sonnet-5": "Claude Sonnet 5",
@@ -366,6 +367,15 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       {
         concreteType: "openrouter-api-key",
         apiModel: "anthropic/claude-fable-5.1",
+      },
+    ],
+  },
+  "claude-opus-5-5": {
+    candidates: [
+      { concreteType: "anthropic-api-key" },
+      {
+        concreteType: "openrouter-api-key",
+        apiModel: "anthropic/claude-opus-5.5",
       },
     ],
   },
@@ -547,6 +557,7 @@ export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
   "openai/gpt-5.5": "gpt-5.5",
   "anthropic/claude-fable-5.1": "claude-fable-5-1",
   "anthropic/claude-fable-5": "claude-fable-5",
+  "anthropic/claude-opus-5.5": "claude-opus-5-5",
   "anthropic/claude-opus-5": "claude-opus-5",
   "anthropic/claude-opus-4.8": "claude-opus-4-8",
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
@@ -599,11 +610,13 @@ const IMAGE_INPUT_SUPPORTED_MODELS = new Set([
   "deepseek-v4.1-flash",
   "deepseek/deepseek-v4.1-flash",
   "claude-fable-5-1",
+  "claude-opus-5-5",
   "claude-opus-5",
   "claude-opus-4-8",
   "claude-sonnet-5",
   "claude-sonnet-4-6",
   "anthropic/claude-fable-5.1",
+  "anthropic/claude-opus-5.5",
   "anthropic/claude-opus-5",
   "anthropic/claude-opus-4.8",
   "anthropic/claude-sonnet-5",
@@ -697,6 +710,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "claude-fable-5-1",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
@@ -717,6 +731,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "claude-fable-5-1",
+      "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5",
       "claude-sonnet-4-6",
@@ -742,6 +757,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "anthropic/claude-fable-5.1",
+      "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
@@ -787,6 +803,7 @@ export const MODEL_PROVIDER_TYPES = {
     } satisfies ModelProviderEnvBindings,
     models: [
       "anthropic/claude-fable-5.1",
+      "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
       "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
@@ -1079,6 +1096,15 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "azure-foundry",
     "aws-bedrock",
   ],
+  "claude-opus-5-5": [
+    "built-in",
+    "claude-code-oauth-token",
+    "anthropic-api-key",
+    "openrouter-api-key",
+    "vercel-ai-gateway",
+    "azure-foundry",
+    "aws-bedrock",
+  ],
   "claude-opus-5": [
     "built-in",
     "claude-code-oauth-token",
@@ -1158,6 +1184,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
 > = {
   "openrouter-api-key": {
     "claude-fable-5-1": "anthropic/claude-fable-5.1",
+    "claude-opus-5-5": "anthropic/claude-opus-5.5",
     "claude-opus-5": "anthropic/claude-opus-5",
     "claude-opus-4-8": "anthropic/claude-opus-4.8",
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
@@ -1165,6 +1192,7 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
   },
   "vercel-ai-gateway": {
     "claude-fable-5-1": "anthropic/claude-fable-5.1",
+    "claude-opus-5-5": "anthropic/claude-opus-5.5",
     "claude-opus-5": "anthropic/claude-opus-5",
     "claude-opus-4-8": "anthropic/claude-opus-4.8",
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
@@ -1194,6 +1222,7 @@ const CANONICAL_RUN_MODEL_ALIASES: Readonly<Record<string, SupportedRunModel>> =
     "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
     "anthropic/claude-fable-5.1": "claude-fable-5-1",
     "anthropic/claude-fable-5": "claude-fable-5",
+    "anthropic/claude-opus-5.5": "claude-opus-5-5",
     "anthropic/claude-opus-5": "claude-opus-5",
     "anthropic/claude-opus-4.8": "claude-opus-4-8",
     "anthropic/claude-sonnet-5": "claude-sonnet-5",

@@ -1516,7 +1516,8 @@ function enabledPolicySnapshot(): OrgModelPoliciesResponse {
       return (
         model !== "gpt-5.6-luna" &&
         model !== "gpt-6-astra" &&
-        model !== "gpt-6-sol"
+        model !== "gpt-6-sol" &&
+        model !== "claude-opus-5-5"
       );
     }),
     policies: [
@@ -1575,6 +1576,7 @@ function mockPriorityPolicyWrites() {
       modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
         return (
           model !== "gpt-6-sol" &&
+          model !== "claude-opus-5-5" &&
           !policies.some((policy) => {
             return policy.model === model;
           })

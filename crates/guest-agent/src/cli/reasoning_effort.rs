@@ -40,6 +40,8 @@ pub(super) fn resolve(
             "claude-fable-5-1"
                 | "claude-fable-5.1"
                 | "fable"
+                | "claude-opus-5-5"
+                | "claude-opus-5.5"
                 | "claude-opus-5"
                 | "claude-opus-4-8"
                 | "claude-opus-4.8"
@@ -86,6 +88,12 @@ mod tests {
                 "ANTHROPIC_MODEL",
                 "claude-sonnet-4-6",
                 "ultracode",
+            ),
+            (
+                Framework::ClaudeCode,
+                "ANTHROPIC_MODEL",
+                "claude-opus-5-5",
+                "xhigh",
             ),
             (
                 Framework::ClaudeCode,

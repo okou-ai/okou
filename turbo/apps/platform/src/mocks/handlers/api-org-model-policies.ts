@@ -59,7 +59,11 @@ function response(): OrgModelPoliciesResponse {
     writePreconditionRequired: false,
     policies,
     modelsAvailableToAdd: ACTIVE_RUN_MODELS.filter((model) => {
-      return model !== "gpt-6-sol" && !configuredModels.has(model);
+      return (
+        model !== "gpt-6-sol" &&
+        model !== "claude-opus-5-5" &&
+        !configuredModels.has(model)
+      );
     }),
     workspaceDefaultModel: workspaceDefault?.model ?? null,
     workspaceDefaultPolicyId: workspaceDefault?.id ?? null,

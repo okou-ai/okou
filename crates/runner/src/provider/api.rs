@@ -1466,6 +1466,7 @@ impl ApiClient {
             self.http
                 .request_route(routes::runners::poll::POLL, &self.token)
                 .native_gpt_6_sol_reader()
+                .native_claude_opus_5_5_reader()
                 .json(&body),
             "poll",
         )
@@ -1521,7 +1522,10 @@ impl ApiClient {
             ),
             &self.token,
         );
-        let request = request.native_gpt_6_sol_reader().json(&body);
+        let request = request
+            .native_gpt_6_sol_reader()
+            .native_claude_opus_5_5_reader()
+            .json(&body);
         let request_to_response_headers_started_at = Instant::now();
         let resp = send_api(request, "claim").await?;
         let request_to_response_headers_elapsed = request_to_response_headers_started_at.elapsed();
@@ -4295,6 +4299,7 @@ mod tests {
                 when.method(POST)
                     .path(routes::runners::poll::POLL.path)
                     .header("X-Native-Gpt-6-Sol", "1")
+                    .header("X-Native-Claude-Opus-5-5", "1")
                     .json_body(serde_json::json!({
                         "runnerId": "550e8400-e29b-41d4-a716-446655440000",
                         "group": "default",
@@ -5450,7 +5455,8 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(claim_path.as_str())
-                    .header("X-Native-Gpt-6-Sol", "1");
+                    .header("X-Native-Gpt-6-Sol", "1")
+                    .header("X-Native-Claude-Opus-5-5", "1");
                 then.status(200)
                     .header("content-type", "application/json")
                     .body(RUNNER_CLAIM_RESPONSE_FIXTURE);

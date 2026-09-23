@@ -1,6 +1,7 @@
 /** Product-approved model/API pairs, not the entire US catalog. */
 const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
   messages: [
+    "anthropic/claude-opus-5.5",
     "anthropic/claude-opus-5",
     "anthropic/claude-opus-4.8",
     "anthropic/claude-sonnet-5",

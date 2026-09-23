@@ -410,6 +410,14 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.cache_read", usd(0.2), 1_000_000],
     ["tokens.cache_creation", usd(2.5), 1_000_000],
   ]),
+  // Anthropic pricing retrieved 2026-09-22 from:
+  // https://platform.claude.com/docs/en/about-claude/pricing
+  ...usageGroup("model", "claude-opus-5-5", [
+    ["tokens.input", usd(4), 1_000_000],
+    ["tokens.output", usd(20), 1_000_000],
+    ["tokens.cache_read", usd(0.2), 1_000_000],
+    ["tokens.cache_creation", usd(5), 1_000_000],
+  ]),
   ...usageGroup("model", "claude-opus-5", [
     ["tokens.input", usd(5), 1_000_000],
     ["tokens.output", usd(25), 1_000_000],

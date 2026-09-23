@@ -1,4 +1,5 @@
 import {
+  NATIVE_CLAUDE_OPUS_5_5_HEADER,
   NATIVE_GPT_6_SOL_HEADER,
   claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
@@ -850,6 +851,17 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       AND ${inArray(
         sql`${runnerJobQueue.executionContext}->'environment'->>'OPENAI_MODEL'`,
         ["gpt-6-sol", "openai/gpt-6-sol"],
+      )}
+    ) IS NOT TRUE`);
+  }
+  if (get(request$).header(NATIVE_CLAUDE_OPUS_5_5_HEADER) !== "1") {
+    // The logical billing identity remains stable across direct, gateway and
+    // opaque cloud deployment model IDs.
+    whereConditions.push(sql`(
+      ${eq(sql`${runnerJobQueue.executionContext}->>'cliAgentType'`, "claude-code")}
+      AND ${eq(
+        sql`${runnerJobQueue.executionContext}->>'modelUsageProvider'`,
+        "claude-opus-5-5",
       )}
     ) IS NOT TRUE`);
   }
@@ -2708,6 +2720,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
     readonly supportsNativeGpt6Sol: boolean;
+    readonly supportsNativeClaudeOpus55: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2745,6 +2758,19 @@ async function resolveStoredExecutionContextForClaim(
   ) {
     // Old Runner artifacts bundle a Guest that rejects Sol's native effort.
     // Keep the job queued for a capable claimant, including during rollback.
+    return {
+      compatible: false as const,
+      response: notFound("Job not found in queue"),
+    };
+  }
+  if (
+    !args.supportsNativeClaudeOpus55 &&
+    storedContext.cliAgentType === "claude-code" &&
+    storedContext.modelUsageProvider === "claude-opus-5-5"
+  ) {
+    // Old Runner artifacts bundle a Guest that rejects Opus 5.5's native
+    // effort. Keep the job queued for a capable claimant during rollout and
+    // rollback, independent of the provider's concrete runtime model ID.
     return {
       compatible: false as const,
       response: notFound("Job not found in queue"),
@@ -2792,6 +2818,7 @@ const claimAuthorizedJob$ = command(
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
       readonly supportsNativeGpt6Sol: boolean;
+      readonly supportsNativeClaudeOpus55: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2811,6 +2838,7 @@ const claimAuthorizedJob$ = command(
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
         supportsNativeGpt6Sol: args.supportsNativeGpt6Sol,
+        supportsNativeClaudeOpus55: args.supportsNativeClaudeOpus55,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs);
@@ -2975,6 +3003,8 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       capabilities: body.data.capabilities,
       supportsNativeGpt6Sol:
         get(request$).header(NATIVE_GPT_6_SOL_HEADER) === "1",
+      supportsNativeClaudeOpus55:
+        get(request$).header(NATIVE_CLAUDE_OPUS_5_5_HEADER) === "1",
       jobWithRun,
       telemetry: body.data.telemetry,
       claimRequestStartedAtMs,

@@ -154,6 +154,13 @@ impl ApiRequestBuilder {
         }
     }
 
+    pub(crate) fn native_claude_opus_5_5_reader(self) -> Self {
+        Self {
+            builder: self.builder.header("X-Native-Claude-Opus-5-5", "1"),
+            ..self
+        }
+    }
+
     #[cfg(test)]
     fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
         let Self {
