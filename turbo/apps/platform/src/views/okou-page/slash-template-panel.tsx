@@ -149,10 +149,7 @@ function SlashTemplateDetailPane({
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <div
-      // The flyout's own surface: it floats beside the index rather than inside
-      // it, so it restates the popover's hairline, radius and drop shadow the
-      // same way the model picker's flyout panel does — `shadow-lg` reproduces
-      // the shadow the shared popover applies as an inline style.
+      // The pane paints its own surface inside the shadowless positioning box.
       className="h-full w-[320px] overflow-hidden rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg"
       data-slot="slash-template-detail"
       data-category={category}
@@ -288,8 +285,7 @@ function SlashTemplateDetailFlyout({
         // A bare positioning box: the pane paints its own surface, and the gap
         // that reads as air between the two cards is padding on the index's
         // side, so a pointer crossing it never leaves the flyout.
-        className="h-[min(380px,var(--available-height))] w-auto border-0 bg-transparent p-0 data-[side=left]:pr-1.5 data-[side=right]:pl-1.5"
-        style={FLYOUT_BOX_STYLE}
+        className="h-[min(380px,var(--available-height))] w-auto border-0 bg-transparent p-0 shadow-none data-[side=left]:pr-1.5 data-[side=right]:pl-1.5"
         data-slot="slash-template-flyout"
         onMouseLeave={(event) => {
           if (insideSlashPanel(event.relatedTarget)) {
@@ -306,9 +302,6 @@ function SlashTemplateDetailFlyout({
     </Popover>
   );
 }
-
-/** The shared popover paints its shadow inline, so only a style can clear it. */
-const FLYOUT_BOX_STYLE = { boxShadow: "none" } as const;
 
 function SlashPanelWorkflowList({
   workflows,

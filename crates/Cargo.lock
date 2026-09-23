@@ -1727,7 +1727,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.98.0"
+version = "0.98.1"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.24.15"
+version = "0.24.16"
 dependencies = [
  "flate2",
  "guest-contracts",
@@ -3448,7 +3448,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.213.1"
+version = "0.213.2"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3554,7 +3554,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -3585,7 +3585,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -3639,7 +3639,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "api-contracts",
  "async-trait",

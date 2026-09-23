@@ -1515,7 +1515,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}}-day streak",
-        "title": "Get started",
+        "title": "Get more credits",
         "toGo": "{{amount}} to go",
         "workflow": {
           "action": "Build",
@@ -1834,14 +1834,10 @@
       "authorizationDescription": "Select a Desktop host for future runs in this thread.",
       "checkingCompatibility": "Checking compatibility",
       "cloudBrowser": "Cloud browser",
-      "connectHost": "Connect {{hostName}}",
       "connectMyComputer": "Connect my computer",
       "dialogDescription": "So {{desktopProductName}} can work in your browser and apps for you, even ones with no connector like LinkedIn or Reddit.",
       "dialogTitle": "Let {{desktopProductName}} use your computer",
-      "disableCloudBrowser": "Disable Cloud browser",
-      "disconnectHost": "Disconnect {{hostName}}",
       "downloadMacos": "Download for macOS",
-      "enableCloudBrowser": "Enable Cloud browser",
       "hosts": "Computer Use hosts",
       "macosRequirement": "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
       "noOnlineComputers": "No online computers",
@@ -3196,12 +3192,19 @@
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
       "remoteAccess": "Remote access",
+      "remoteControl": {
+        "connections": "Connections",
+        "credentials": "Credentials",
+        "type": "Type"
+      },
       "scope": {
         "aria": "Connector scope",
         "attention": "Needs attention",
         "connected": "Connected",
         "custom": "Custom",
         "discover": "Discover",
+        "privateNetwork": "Private network",
+        "remoteControl": "Remote control",
         "searchConnected": "Find connected connectors",
         "searchCustom": "Find custom connectors"
       },

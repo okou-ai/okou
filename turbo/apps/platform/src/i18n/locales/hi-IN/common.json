@@ -1515,7 +1515,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} दिन लगातार",
-        "title": "शुरू करें",
+        "title": "और क्रेडिट पाएँ",
         "toGo": "{{amount}} बाकी",
         "workflow": {
           "action": "बनाएँ",
@@ -1834,14 +1834,10 @@
       "authorizationDescription": "इस थ्रेड में भविष्य में चलने के लिए एक डेस्कटॉप होस्ट चुनें।",
       "checkingCompatibility": "अनुकूलता की जाँच हो रही है",
       "cloudBrowser": "क्लाउड ब्राउज़र",
-      "connectHost": "{{hostName}} कनेक्ट करें",
       "connectMyComputer": "मेरा कंप्यूटर कनेक्ट करें",
       "dialogDescription": "तो {{desktopProductName}} आपके ब्राउज़र और ऐप्स में आपके लिए काम कर सकता है, यहां तक ​​कि LinkedIn या Reddit जैसे बिना कनेक्टर वाले ऐप्स में भी।",
       "dialogTitle": "{{desktopProductName}} को अपने कंप्यूटर का उपयोग करने दें",
-      "disableCloudBrowser": "क्लाउड ब्राउज़र अक्षम करें",
-      "disconnectHost": "{{hostName}} को डिस्कनेक्ट करें",
       "downloadMacos": "macOS के लिए डाउनलोड करें",
-      "enableCloudBrowser": "क्लाउड ब्राउज़र सक्षम करें",
       "hosts": "कंप्यूटर उपयोग होस्ट",
       "macosRequirement": "macOS 14 या नए संस्करण वाला Apple सिलिकॉन Mac आवश्यक है। Intel Mac समर्थित नहीं हैं.",
       "noOnlineComputers": "कोई ऑनलाइन कंप्यूटर नहीं",
@@ -3204,12 +3200,19 @@
       "noConnectorsAlt": "कोई कनेक्टर नहीं",
       "otherCategory": "अन्य",
       "remoteAccess": "रिमोट एक्सेस",
+      "remoteControl": {
+        "connections": "कनेक्शन",
+        "credentials": "क्रेडेंशियल",
+        "type": "प्रकार"
+      },
       "scope": {
         "aria": "कनेक्टर दायरा",
         "attention": "ध्यान देने की आवश्यकता",
         "connected": "जुड़े हुए",
         "custom": "कस्टम",
         "discover": "खोजें",
+        "privateNetwork": "निजी नेटवर्क",
+        "remoteControl": "रिमोट कंट्रोल",
         "searchConnected": "कनेक्टेड कनेक्टर खोजें",
         "searchCustom": "कस्टम कनेक्टर खोजें"
       },

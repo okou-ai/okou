@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}}日連続",
-        "title": "はじめる",
+        "title": "クレジットをもっと獲得",
         "toGo": "残り {{amount}}",
         "workflow": {
           "action": "作成",
@@ -1831,14 +1831,10 @@
       "authorizationDescription": "このスレッドで今後実行するデスクトップ ホストを選択してください。",
       "checkingCompatibility": "互換性の確認",
       "cloudBrowser": "クラウドブラウザ",
-      "connectHost": "{{hostName}} を接続します",
       "connectMyComputer": "コンピューターを接続する",
       "dialogDescription": "そのため、{{desktopProductName}} は、LinkedIn や Reddit のようなコネクタを持たないブラウザやアプリでも動作します。",
       "dialogTitle": "{{desktopProductName}} にコンピュータを使用させます",
-      "disableCloudBrowser": "クラウドブラウザを無効にする",
-      "disconnectHost": "{{hostName}} を切断します",
       "downloadMacos": "macOS をダウンロード",
-      "enableCloudBrowser": "クラウドブラウザを有効にする",
       "hosts": "コンピュータ使用ホスト",
       "macosRequirement": "macOS 14 以降を搭載した Apple Silicon Mac が必要です。 Intel Mac はサポートされていません。",
       "noOnlineComputers": "オンラインコンピュータはありません",
@@ -3190,12 +3186,19 @@
       "noConnectorsAlt": "コネクターなし",
       "otherCategory": "その他",
       "remoteAccess": "リモートアクセス",
+      "remoteControl": {
+        "connections": "接続",
+        "credentials": "認証情報",
+        "type": "種類"
+      },
       "scope": {
         "aria": "コネクタの表示範囲",
         "attention": "対応が必要",
         "connected": "接続済み",
         "custom": "カスタム",
         "discover": "探す",
+        "privateNetwork": "プライベートネットワーク",
+        "remoteControl": "リモート操作",
         "searchConnected": "接続済みのコネクタを検索",
         "searchCustom": "カスタムコネクタを検索"
       },

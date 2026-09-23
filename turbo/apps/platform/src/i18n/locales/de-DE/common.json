@@ -1515,7 +1515,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} Tage in Folge",
-        "title": "Einstieg",
+        "title": "Mehr Guthaben erhalten",
         "toGo": "Noch {{amount}}",
         "workflow": {
           "action": "Bauen",
@@ -1834,14 +1834,10 @@
       "authorizationDescription": "Wählen Sie in diesem Thread einen Desktop-Host für zukünftige Ausführungen aus.",
       "checkingCompatibility": "Kompatibilität prüfen",
       "cloudBrowser": "Cloud-Browser",
-      "connectHost": "{{hostName}} verbinden",
       "connectMyComputer": "Meinen Computer verbinden",
       "dialogDescription": "So kann {{desktopProductName}} in Ihrem Browser und in Ihren Apps für Sie arbeiten, auch in solchen ohne Integration wie LinkedIn oder Reddit.",
       "dialogTitle": "Lassen Sie {{desktopProductName}} Ihren Computer nutzen",
-      "disableCloudBrowser": "Deaktivieren Sie den Cloud-Browser",
-      "disconnectHost": "Trennen Sie {{hostName}}",
       "downloadMacos": "Für macOS herunterladen",
-      "enableCloudBrowser": "Aktivieren Sie den Cloud-Browser",
       "hosts": "Hosts für die Computernutzung",
       "macosRequirement": "Erfordert einen Apple Silicon Mac mit macOS 14 oder neuer. Intel-Macs werden nicht unterstützt.",
       "noOnlineComputers": "Keine Online-Computer",
@@ -3204,12 +3200,19 @@
       "noConnectorsAlt": "Keine Integrationen",
       "otherCategory": "Andere",
       "remoteAccess": "Fernzugriff",
+      "remoteControl": {
+        "connections": "Verbindungen",
+        "credentials": "Zugangsdaten",
+        "type": "Typ"
+      },
       "scope": {
         "aria": "Connector-Bereich",
         "attention": "Benötigt Aufmerksamkeit",
         "connected": "Verbunden",
         "custom": "Eigene",
         "discover": "Entdecken",
+        "privateNetwork": "Privates Netzwerk",
+        "remoteControl": "Fernsteuerung",
         "searchConnected": "Verbundene Integrationen finden",
         "searchCustom": "Eigene Integrationen finden"
       },

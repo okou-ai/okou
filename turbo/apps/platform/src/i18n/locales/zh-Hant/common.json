@@ -1514,7 +1514,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "連續 {{amount}} 天",
-        "title": "快速上手",
+        "title": "獲得更多積分",
         "toGo": "還差 {{amount}}",
         "workflow": {
           "action": "搭建",
@@ -1831,14 +1831,10 @@
       "authorizationDescription": "為這個會話之後的執行選擇一臺 Desktop 主機。",
       "checkingCompatibility": "正在檢查相容性",
       "cloudBrowser": "雲端瀏覽器",
-      "connectHost": "連線 {{hostName}}",
       "connectMyComputer": "連線我的電腦",
       "dialogDescription": "這樣 {{desktopProductName}} 就能替你在瀏覽器和各種應用裡幹活，連 LinkedIn、Reddit 這類沒有連接器的也可以。",
       "dialogTitle": "讓 {{desktopProductName}} 使用你的電腦",
-      "disableCloudBrowser": "停用雲端瀏覽器",
-      "disconnectHost": "斷開 {{hostName}}",
       "downloadMacos": "下載 macOS 版",
-      "enableCloudBrowser": "啟用雲端瀏覽器",
       "hosts": "Computer Use 主機",
       "macosRequirement": "需要搭載 Apple 晶片、執行 macOS 14 或更高版本的 Mac，不支援 Intel Mac。",
       "noOnlineComputers": "沒有線上的電腦",
@@ -3190,12 +3186,19 @@
       "noConnectorsAlt": "暫無連接器",
       "otherCategory": "其他",
       "remoteAccess": "遠端訪問",
+      "remoteControl": {
+        "connections": "連線",
+        "credentials": "憑證",
+        "type": "類型"
+      },
       "scope": {
         "aria": "連接器範圍",
         "attention": "需要處理",
         "connected": "已連線",
         "custom": "自定義",
         "discover": "發現",
+        "privateNetwork": "私人網路",
+        "remoteControl": "遠端控制",
         "searchConnected": "查詢已連線的連接器",
         "searchCustom": "查詢自定義連接器"
       },

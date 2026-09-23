@@ -470,10 +470,7 @@ function SettingsDialog({
           </nav>
 
           {/* Content area */}
-          <div
-            className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden"
-            style={{ backgroundColor: "hsl(var(--background))" }}
-          >
+          <div className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-background">
             <header className="shrink-0 px-4 sm:px-10 pt-6 sm:pt-8 pb-1">
               <div className="flex min-h-7 items-center gap-2">
                 <h2 className="hidden h-7 items-center text-xl font-semibold tracking-tight text-foreground sm:flex">

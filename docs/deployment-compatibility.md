@@ -36,6 +36,58 @@ New versions are normally deployed together, but they do not become active at
 the same instant. Code and tests must account for periods where different
 surfaces are on different versions.
 
+## Chat unread endpoint retirement (2026-09-23)
+
+API 1.662.0, App 0.948.0, and CLI 9.356.0 added unread timestamps to the
+shared `GET /api/indicators` response. The follow-up removes
+`GET /api/chat-thread-unreads` and requires `unreadAt` in that response.
+`POST /api/chat-thread-unreads/mark-read` and the unread query used by read-state
+writers remain available.
+
+The API force-upgrades App versions below 0.948.0 before route matching, so an
+older browser bundle cannot call the removed GET. CLI has no minimum-version
+gate; `okou chat list --unread` on CLI versions before 9.356.0 can fail against
+the new API. This compatibility loss was explicitly accepted for this cleanup.
+
+New App and CLI builds no longer fetch timestamps from the old GET when an API
+omits `unreadAt`. Rollback targets for the API must therefore include the
+shared indicators response introduced in API 1.662.0. Rolling the API back
+below that version requires restoring the clients' fallback first.
+
+## Thread draft child table, phase 1 (2026-09-23)
+
+`chat_thread_drafts` holds one row per thread whose composer draft has been
+written since the table existed. Phase 1 of #36230 only adds the table and
+writes it. `chat_threads.draft_user_message` and `chat_threads.draft_attachments`
+remain the values every reader serves, and the draft `PATCH` writes both in one
+transaction, so an API version that predates the table is unaffected and keeps
+serving the same drafts.
+
+Rolling the API back is schema-compatible, and the table then simply stops
+receiving writes. It does not stay correct: an older API still clears and
+rewrites the legacy columns, so the child row becomes stale rather than merely
+missing. The phase-2 cutover therefore cannot assume the child row is current
+for a thread that already has one. Its backfill has to reconcile existing rows,
+not only insert missing ones, and it must run after phase 1 is serving
+everywhere.
+
+A cleared draft is stored as a retained row with null draft values, never a
+deleted row. Phase 2 reads the child row first and falls back to the legacy
+columns only when the row is absent, so absence has to keep meaning "never
+written" — deleting on clear would resurrect a cleared draft.
+
+Two draft writers in the current API still touch only the legacy columns: the
+message-send paths clear the draft inside the transaction that reserves the
+thread's event sequence. Phase 1 deliberately leaves them alone, because they
+lock the thread row before they could write a child row and the reverse order
+in `PATCH` would make the two paths deadlock. Phase 2 owns converting them
+together with the read cutover.
+
+This phase changes no read, contract, or response, and performs no historical
+backfill. It does not remove the `chat_threads` row contention in #36173: the
+draft `PATCH` still updates that row and can still fail with 55P03 while
+another transaction holds it.
+
 ## Browser user-action retention (2026-09-23)
 
 Browser user-action requests have no independent expiry. Their active lifetime
@@ -3335,6 +3387,19 @@ form. An older Platform on the newer API still relies on the unchanged submit
 validation. Preflight performs one bounded provider lookup and read-only CDP
 connection per explicit form entry. A confirmed target mismatch marks a pending
 request stale; transient provider failures leave it pending for retry.
+
+The Browser action GET response can also report `callbackDelivered` for a
+terminal success or cancellation. It derives this fact from the matching
+canonical Chat input event ID in the owning thread, not from Browser completion
+or a page-local send flag. The lookup uses the Chat event primary key and runs
+only for retryable terminal outcomes. An older API omits the optional field;
+the newer Platform treats absence as unproven delivery and keeps Continue
+available. A mounted card refreshes that fact when its page regains focus or
+visibility, so a callback sent from a separate action page converges without a
+reload. An older Platform ignores the new field and retains its existing
+local behavior until updated. No callback receipt or submitted Browser value is
+written to the action row. Thread erasure removes the action and its Chat events
+together; ordinary action retention remains seven days for callback recovery.
 
 ## OOM containment proof chain removal (#36027)
 

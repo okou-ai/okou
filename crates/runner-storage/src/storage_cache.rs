@@ -3103,10 +3103,10 @@ fn cache_target_from_entry(
     version: &str,
     archive_size: Option<u64>,
 ) -> Option<CacheTarget> {
-    // Empty components would hash to the same fixed digest as every other
-    // empty component, collapsing distinct manifest entries into a shared
-    // cache slot. Treat them like missing keys: passthrough.
-    if name.is_empty() || version.is_empty() {
+    // Empty identity components collapse distinct entries into one cache slot.
+    // Guest treats the literal "null" source as absent; neither it nor an
+    // empty source may be replaced by cached content.
+    if name.is_empty() || version.is_empty() || archive_url.is_empty() || archive_url == "null" {
         return None;
     }
     Some(CacheTarget {

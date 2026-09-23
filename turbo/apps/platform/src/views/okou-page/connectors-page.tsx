@@ -165,6 +165,10 @@ import {
 import { filteredCloudflareAccessSummary$ } from "../../signals/okou-page/settings/cloudflare-access-connector.ts";
 import { CloudflareAccessConnectorCard } from "./components/settings/cloudflare-access-connector-card.tsx";
 import { CloudflareAccessLoadError } from "./cloudflare-access.tsx";
+import {
+  PrivateNetworkPanel,
+  RemoteControlPanel,
+} from "./connectors-remote-panels.tsx";
 
 function withRemoteAccessCategory(
   metadata: PublicConnectorCatalogCategoryMetadata | undefined,
@@ -538,6 +542,8 @@ function ConnectorFilterDropdown({
 interface ConnectorsScopeBadge {
   readonly connected: number;
   readonly custom: number;
+  readonly remoteControl: number;
+  readonly privateNetwork: number;
   readonly needsAttention: boolean;
 }
 
@@ -574,15 +580,18 @@ function connectorsScopeBadge(
     readonly needsAttention: boolean;
   }>,
   custom: number,
-  remoteAccess: number,
+  remoteControl: number,
+  privateNetwork: number,
 ): ConnectorsScopeBadge {
   const connected =
     loadable.state === "hasData"
       ? loadable.data
       : { count: 0, needsAttention: false };
   return {
-    connected: connected.count + remoteAccess,
+    connected: connected.count,
     custom,
+    remoteControl,
+    privateNetwork,
     needsAttention: connected.needsAttention,
   };
 }
@@ -653,6 +662,24 @@ function ConnectorsScopeSegment({
           return $.connectors.catalog.scope.connected;
         })}
         <ConnectorsScopeCount value={badge.connected} />
+      </SegmentControlItem>
+      <SegmentControlItem
+        value="remote-control"
+        data-testid="connectors-scope-remote-control"
+      >
+        {t(($) => {
+          return $.connectors.catalog.scope.remoteControl;
+        })}
+        <ConnectorsScopeCount value={badge.remoteControl} />
+      </SegmentControlItem>
+      <SegmentControlItem
+        value="private-network"
+        data-testid="connectors-scope-private-network"
+      >
+        {t(($) => {
+          return $.connectors.catalog.scope.privateNetwork;
+        })}
+        <ConnectorsScopeCount value={badge.privateNetwork} />
       </SegmentControlItem>
       <SegmentControlItem value="custom" data-testid="connectors-scope-custom">
         {t(($) => {
@@ -869,9 +896,8 @@ function ConnectorsDirectoryToolbar({
     // top padding and column gap so nothing moves until the page is scrolled,
     // and the strip under the controls dissolves what passes beneath them
     // rather than clipping it on a line.
-    // z-30 clears the cards: their access buttons carry `relative z-20` in the
-    // same stacking context, and on a tie the later element in the document
-    // wins, so a z-20 bar would have the card's button painted over it.
+    // z-30 keeps the toolbar above complete card stacking contexts at the page
+    // level. Each card owns the ordering of its actions within its isolate host.
     // The padding the strip carries is the clearance the segment gets once the
     // strip is latched, so it is the page's 24px rather than the 12px the
     // controls keep between themselves -- a gap equal to the one inside the
@@ -883,155 +909,159 @@ function ConnectorsDirectoryToolbar({
     // of the 900px column, hard-edged against the canvas on both sides.
     <div className="sticky top-0 z-30 -mb-6 -mt-6">
       <div className="flex flex-col gap-3 bg-workspace-canvas pt-6">
-        <div className="flex items-center">
+        <div className="flex items-center overflow-x-auto">
           <ConnectorsScopeSegment
             scope={scope}
             setScope={setScope}
             badge={badge}
           />
         </div>
-        {breadcrumb && (
-          <ConnectorsBreadcrumb
-            label={breadcrumb}
-            onBack={() => {
-              setCategoryFilter(null);
-            }}
-          />
-        )}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative min-w-0 sm:flex-1">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
-              aria-hidden="true"
-            />
-            <Input
-              type="text"
-              placeholder={t(($) => {
-                return scope === "connected"
-                  ? $.connectors.catalog.scope.searchConnected
-                  : scope === "custom"
-                    ? $.connectors.catalog.scope.searchCustom
-                    : $.connectors.catalog.search;
-              })}
-              value={search}
-              onChange={(event) => {
-                return setSearch(event.target.value);
+        {breadcrumb &&
+          scope !== "remote-control" &&
+          scope !== "private-network" && (
+            <ConnectorsBreadcrumb
+              label={breadcrumb}
+              onBack={() => {
+                setCategoryFilter(null);
               }}
-              className="pl-9 pr-3"
             />
-          </div>
-          {scope === "connected" ? (
-            <ConnectorAgentFilterMenu
-              agents={agents}
-              value={connectionFilter}
-              onChange={setConnectionFilter}
-            />
-          ) : scope === "custom" ? (
-            isAdmin && <NewCustomConnectorButton />
-          ) : (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 shrink-0 self-end gap-1.5"
-                    aria-label={t(($) => {
-                      return $.connectors.catalog.filters.aria;
-                    })}
-                  />
-                }
-              >
-                <Filter size={14} aria-hidden="true" />
-                <span className="max-w-[160px] truncate">
-                  {t(
-                    ($) => {
-                      return $.connectors.catalog.filterWith;
-                    },
-                    {
-                      category:
-                        (customScope
-                          ? t(($) => {
-                              return $.connectors.catalog.directory.custom;
-                            })
-                          : active?.menuLabel) ??
-                        t(($) => {
-                          return $.connectors.catalog.filters.all;
-                        }),
-                    },
-                  )}
-                </span>
-                <ChevronDown size={14} aria-hidden="true" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
-              >
-                <ConnectorFilterSectionLabel>
-                  {t(($) => {
-                    return $.connectors.catalog.directory.browse;
-                  })}
-                </ConnectorFilterSectionLabel>
-                <ConnectorFilterOption
-                  active={!customScope && categoryFilter === null}
-                  onSelect={() => {
-                    setCategoryFilter(null);
-                  }}
+          )}
+        {scope !== "remote-control" && scope !== "private-network" && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 sm:flex-1">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/60"
+                aria-hidden="true"
+              />
+              <Input
+                type="text"
+                placeholder={t(($) => {
+                  return scope === "connected"
+                    ? $.connectors.catalog.scope.searchConnected
+                    : scope === "custom"
+                      ? $.connectors.catalog.scope.searchCustom
+                      : $.connectors.catalog.search;
+                })}
+                value={search}
+                onChange={(event) => {
+                  return setSearch(event.target.value);
+                }}
+                className="pl-9 pr-3"
+              />
+            </div>
+            {scope === "connected" ? (
+              <ConnectorAgentFilterMenu
+                agents={agents}
+                value={connectionFilter}
+                onChange={setConnectionFilter}
+              />
+            ) : scope === "custom" ? (
+              isAdmin && <NewCustomConnectorButton />
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 self-end gap-1.5"
+                      aria-label={t(($) => {
+                        return $.connectors.catalog.filters.aria;
+                      })}
+                    />
+                  }
                 >
-                  {t(($) => {
-                    return $.connectors.catalog.filters.all;
-                  })}
-                </ConnectorFilterOption>
-                {categories.some((section) => {
-                  return section.category === REMOTE_ACCESS_CATEGORY;
-                }) && (
+                  <Filter size={14} aria-hidden="true" />
+                  <span className="max-w-[160px] truncate">
+                    {t(
+                      ($) => {
+                        return $.connectors.catalog.filterWith;
+                      },
+                      {
+                        category:
+                          (customScope
+                            ? t(($) => {
+                                return $.connectors.catalog.directory.custom;
+                              })
+                            : active?.menuLabel) ??
+                          t(($) => {
+                            return $.connectors.catalog.filters.all;
+                          }),
+                      },
+                    )}
+                  </span>
+                  <ChevronDown size={14} aria-hidden="true" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  className="max-h-[min(420px,var(--available-height))] w-64 overflow-y-auto"
+                >
+                  <ConnectorFilterSectionLabel>
+                    {t(($) => {
+                      return $.connectors.catalog.directory.browse;
+                    })}
+                  </ConnectorFilterSectionLabel>
                   <ConnectorFilterOption
-                    active={categoryFilter === REMOTE_ACCESS_CATEGORY}
+                    active={!customScope && categoryFilter === null}
                     onSelect={() => {
-                      setCategoryFilter(REMOTE_ACCESS_CATEGORY);
+                      setCategoryFilter(null);
                     }}
                   >
                     {t(($) => {
-                      return $.connectors.catalog.remoteAccess;
+                      return $.connectors.catalog.filters.all;
                     })}
                   </ConnectorFilterOption>
-                )}
-                <DropdownMenuSeparator />
-                <ConnectorFilterSectionLabel>
-                  {t(($) => {
-                    return $.connectors.catalog.filterCategory;
-                  })}
-                </ConnectorFilterSectionLabel>
-                {categories
-                  .filter((section) => {
-                    return section.category !== REMOTE_ACCESS_CATEGORY;
-                  })
-                  .map((section) => {
-                    const total = categoryCounts?.[section.category];
-                    return (
-                      <ConnectorFilterOption
-                        key={section.category}
-                        active={categoryFilter === section.category}
-                        onSelect={() => {
-                          setCategoryFilter(section.category);
-                        }}
-                      >
-                        <span className="min-w-0 truncate">
-                          {section.menuLabel}
-                        </span>
-                        {total !== undefined && (
-                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
-                            {total}
+                  {categories.some((section) => {
+                    return section.category === REMOTE_ACCESS_CATEGORY;
+                  }) && (
+                    <ConnectorFilterOption
+                      active={categoryFilter === REMOTE_ACCESS_CATEGORY}
+                      onSelect={() => {
+                        setCategoryFilter(REMOTE_ACCESS_CATEGORY);
+                      }}
+                    >
+                      {t(($) => {
+                        return $.connectors.catalog.remoteAccess;
+                      })}
+                    </ConnectorFilterOption>
+                  )}
+                  <DropdownMenuSeparator />
+                  <ConnectorFilterSectionLabel>
+                    {t(($) => {
+                      return $.connectors.catalog.filterCategory;
+                    })}
+                  </ConnectorFilterSectionLabel>
+                  {categories
+                    .filter((section) => {
+                      return section.category !== REMOTE_ACCESS_CATEGORY;
+                    })
+                    .map((section) => {
+                      const total = categoryCounts?.[section.category];
+                      return (
+                        <ConnectorFilterOption
+                          key={section.category}
+                          active={categoryFilter === section.category}
+                          onSelect={() => {
+                            setCategoryFilter(section.category);
+                          }}
+                        >
+                          <span className="min-w-0 truncate">
+                            {section.menuLabel}
                           </span>
-                        )}
-                      </ConnectorFilterOption>
-                    );
-                  })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
-        </div>
+                          {total !== undefined && (
+                            <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">
+                              {total}
+                            </span>
+                          )}
+                        </ConnectorFilterOption>
+                      );
+                    })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        )}
       </div>
       <div
         aria-hidden="true"
@@ -1601,6 +1631,8 @@ function ConnectorsPagePanels({
   builtinPanel,
   connectedPanel,
   directoryPanel,
+  remoteControlPanel,
+  privateNetworkPanel,
 }: {
   readonly shelfEnabled: boolean;
   readonly scope: ConnectorsScope;
@@ -1608,11 +1640,22 @@ function ConnectorsPagePanels({
   readonly builtinPanel: ReactNode;
   readonly connectedPanel: ReactNode;
   readonly directoryPanel: ReactNode;
+  readonly remoteControlPanel: ReactNode;
+  readonly privateNetworkPanel: ReactNode;
 }) {
   if (!shelfEnabled) {
     return activeTab === "custom" ? <CustomConnectorsPanel /> : builtinPanel;
   }
-  return scope === "connected" ? connectedPanel : directoryPanel;
+  if (scope === "connected") {
+    return connectedPanel;
+  }
+  if (scope === "remote-control") {
+    return remoteControlPanel;
+  }
+  if (scope === "private-network") {
+    return privateNetworkPanel;
+  }
+  return directoryPanel;
 }
 
 /** The card grid before the catalog answers. */
@@ -1660,9 +1703,8 @@ function ConnectorEmptyState({ message }: { readonly message: string }) {
 }
 
 /**
- * Everything configured: connected built-ins, connected custom connectors, and
- * remote-access resources. A plain grid rather than a shelf view keeps this
- * short list easy to scan.
+ * Connected built-in and custom connector accounts. Remote control and private
+ * network resources have their own scopes.
  */
 function ConnectorsConnectedPanel({
   connected,
@@ -1715,80 +1757,6 @@ function ConnectorsConnectedPanel({
   );
 }
 
-function RemoteAccessConnectedPanel(
-  props: Parameters<typeof ConnectorsConnectedPanel>[0],
-) {
-  const { t } = useTranslation();
-  const vncEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.VncAccess] === true;
-  const summary = useLoadable(vncSummary$);
-  const filtered = useLoadable(filteredVncSummary$);
-  const rows = useLoadable(vncAgentAccessRows$);
-  const cloudflareAccess = useLoadable(filteredCloudflareAccessSummary$);
-  const failed =
-    cloudflareAccess.state === "hasError" ||
-    (vncEnabled &&
-      [summary.state, filtered.state, rows.state].includes("hasError"));
-  const loading =
-    cloudflareAccess.state === "loading" ||
-    (vncEnabled &&
-      (summary.state === "loading" || filtered.state === "loading"));
-  return (
-    <>
-      <SshDirectoryLoadError />
-      {vncEnabled && <VncDirectoryLoadError />}
-      {cloudflareAccess.state === "hasError" && <CloudflareAccessLoadError />}
-      {!failed && loading && (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return cloudflareAccess.state === "loading"
-              ? $.cloudflareAccess.loading
-              : $.vnc.loading;
-          })}
-        </p>
-      )}
-      <ConnectorsConnectedPanel {...props} suppressEmpty={failed || loading} />
-    </>
-  );
-}
-
-function RemoteAccessConnectedCards({
-  ssh,
-  vnc,
-  cloudflareAccess,
-}: {
-  readonly ssh: number;
-  readonly vnc: number;
-  readonly cloudflareAccess: number;
-}) {
-  return (
-    <>
-      {ssh > 0 && <SshConnectorCard configuredCount={ssh} />}
-      {vnc > 0 && <VncConnectorCard configuredCount={vnc} />}
-      {cloudflareAccess > 0 && (
-        <CloudflareAccessConnectorCard configuredCount={cloudflareAccess} />
-      )}
-    </>
-  );
-}
-
-function remoteAccessLoadState(
-  vncEnabled: boolean,
-  ssh: Loadable<{ configuredCount: number } | null>,
-  vnc: Loadable<{ configuredCount: number } | null>,
-  cloudflareAccess: Loadable<{ configuredCount: number } | null>,
-): "loading" | "hasError" | "hasData" {
-  const states = new Set(
-    vncEnabled
-      ? [ssh.state, vnc.state, cloudflareAccess.state]
-      : [ssh.state, cloudflareAccess.state],
-  );
-  if (states.has("hasError")) {
-    return "hasError";
-  }
-  return states.has("loading") ? "loading" : "hasData";
-}
-
 function suppressBuiltinEmptyState(
   shelfEnabled: boolean,
   vncEnabled: boolean,
@@ -1823,9 +1791,13 @@ function effectiveConnectorCatalogCount(
   cloudflareAccessSummary: Loadable<{
     readonly configuredCount: number;
   } | null>,
+  directoryEnabled: boolean,
 ): number | null {
   if (catalogStatusLoadable.state !== "hasData") {
     return null;
+  }
+  if (directoryEnabled) {
+    return catalogStatusLoadable.data.totalConnectorCount;
   }
   return (
     catalogStatusLoadable.data.totalConnectorCount +
@@ -2261,16 +2233,9 @@ export function ConnectorsPage() {
   const scopeBadge = connectorsScopeBadge(
     connectedBadge,
     custom.all.length,
-    Number(configuredRemoteAccessResources(sshSummary) > 0) +
-      Number(configuredRemoteAccessResources(vncSummary) > 0) +
-      Number(configuredRemoteAccessResources(cloudflareAccessSummary) > 0),
-  );
-  // Remote access belongs to the connected scope once resources exist; until
-  // then it is only discoverable through the directory catalog.
-  const connectedSshCount = configuredRemoteAccessResources(filteredSshSummary);
-  const connectedVncCount = configuredRemoteAccessResources(filteredVncSummary);
-  const connectedCloudflareAccessCount = configuredRemoteAccessResources(
-    filteredCloudflareAccessSummary,
+    configuredRemoteAccessResources(sshSummary) +
+      (vncEnabled ? configuredRemoteAccessResources(vncSummary) : 0),
+    configuredRemoteAccessResources(cloudflareAccessSummary),
   );
   const agentsLoadable = useLastLoadable(agents$);
   const agents = agentsLoadable.state === "hasData" ? agentsLoadable.data : [];
@@ -2284,6 +2249,7 @@ export function ConnectorsPage() {
     sshSummary,
     vncSummary,
     cloudflareAccessSummary,
+    shelfEnabled,
   );
   const categoryMetadata = localizeConnectorCategoryMetadata(
     catalogStatusLoadable.state === "hasData"
@@ -2444,10 +2410,11 @@ export function ConnectorsPage() {
     categoryFilter,
     connectionFilter,
     ready: shelfEnabled && filteredCatalogItemsLoadable.state === "hasData",
-    remoteAccessCount:
-      Number(Boolean(remoteAccessSummaryData(sshSummary))) +
-      Number(Boolean(remoteAccessSummaryData(vncSummary))) +
-      Number(Boolean(remoteAccessSummaryData(cloudflareAccessSummary))),
+    remoteAccessCount: shelfEnabled
+      ? 0
+      : Number(Boolean(remoteAccessSummaryData(sshSummary))) +
+        Number(Boolean(remoteAccessSummaryData(vncSummary))) +
+        Number(Boolean(remoteAccessSummaryData(cloudflareAccessSummary))),
     remoteAccessLabel,
   });
 
@@ -2574,74 +2541,32 @@ export function ConnectorsPage() {
               activeTab={activeTab}
               builtinPanel={builtinPanel}
               connectedPanel={
-                <RemoteAccessConnectedPanel
+                <ConnectorsConnectedPanel
                   connected={browse.connected}
                   ready={browse.ready}
                   connectionFilter={connectionFilter}
                   renderCard={renderCard}
-                  extraCount={
-                    custom.connected.length +
-                    Number(connectedSshCount > 0) +
-                    Number(connectedVncCount > 0) +
-                    Number(connectedCloudflareAccessCount > 0)
-                  }
+                  extraCount={custom.connected.length}
                   extras={
-                    <>
-                      {custom.connected.length > 0 && (
-                        <CustomConnectorGrid
-                          connectors={custom.connected}
-                          isAdmin={isAdmin}
-                          className="contents"
-                        />
-                      )}
-                      <RemoteAccessConnectedCards
-                        ssh={connectedSshCount}
-                        vnc={connectedVncCount}
-                        cloudflareAccess={connectedCloudflareAccessCount}
+                    custom.connected.length > 0 ? (
+                      <CustomConnectorGrid
+                        connectors={custom.connected}
+                        isAdmin={isAdmin}
+                        className="contents"
                       />
-                    </>
+                    ) : null
                   }
                 />
               }
+              remoteControlPanel={
+                <RemoteControlPanel vncEnabled={vncEnabled} />
+              }
+              privateNetworkPanel={<PrivateNetworkPanel />}
               directoryPanel={
                 <ConnectorsDirectoryContent
                   builtin={builtinPanel}
                   builtinState={filteredCatalogItemsLoadable.state}
                   builtinCount={filteredConnectors.length}
-                  remote={
-                    <>
-                      <SshDirectoryLoadError />
-                      <VncDirectoryLoadError />
-                      <VncDirectoryLoading />
-                      <CloudflareAccessDirectoryState />
-                      <RemoteAccessShelfCategory
-                        enabled
-                        groups={grouped}
-                        renderCard={renderPresentationCard}
-                      />
-                    </>
-                  }
-                  remoteState={remoteAccessLoadState(
-                    vncEnabled,
-                    filteredSshSummary,
-                    filteredVncSummary,
-                    filteredCloudflareAccessSummary,
-                  )}
-                  remoteCount={
-                    Number(
-                      Boolean(remoteAccessSummaryData(filteredSshSummary)),
-                    ) +
-                    Number(
-                      Boolean(remoteAccessSummaryData(filteredVncSummary)),
-                    ) +
-                    Number(
-                      Boolean(
-                        remoteAccessSummaryData(
-                          filteredCloudflareAccessSummary,
-                        ),
-                      ),
-                    )
-                  }
                 />
               }
             />

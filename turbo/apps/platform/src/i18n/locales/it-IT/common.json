@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} giorni di fila",
-        "title": "Inizia",
+        "title": "Ottieni più crediti",
         "toGo": "Mancano {{amount}}",
         "workflow": {
           "action": "Crea",
@@ -1863,14 +1863,10 @@
       "authorizationDescription": "Seleziona un host desktop per le esecuzioni future in questo thread.",
       "checkingCompatibility": "Verifica compatibilità",
       "cloudBrowser": "Browser cloud",
-      "connectHost": "Connetti {{hostName}}",
       "connectMyComputer": "Collega il mio computer",
       "dialogDescription": "Quindi {{desktopProductName}} può funzionare nel tuo browser e nelle tue app, anche quelle senza connettore come LinkedIn o Reddit.",
       "dialogTitle": "Consenti a {{desktopProductName}} di utilizzare il tuo computer",
-      "disableCloudBrowser": "Disabilita il browser cloud",
-      "disconnectHost": "Disconnetti {{hostName}}",
       "downloadMacos": "Scarica per macOS",
-      "enableCloudBrowser": "Abilita il browser cloud",
       "hosts": "Host di Computer Use",
       "macosRequirement": "Richiede un Mac Apple Silicon con macOS 14 o successivo. I Mac Intel non sono supportati.",
       "noOnlineComputers": "Nessun computer online",
@@ -3256,12 +3252,19 @@
       "noConnectorsAlt": "Nessun connettore",
       "otherCategory": "Altro",
       "remoteAccess": "Accesso remoto",
+      "remoteControl": {
+        "connections": "Connessioni",
+        "credentials": "Credenziali",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Ambito dei connettori",
         "attention": "Richiede attenzione",
         "connected": "Connesso",
         "custom": "Personalizzati",
         "discover": "Esplora",
+        "privateNetwork": "Rete privata",
+        "remoteControl": "Controllo remoto",
         "searchConnected": "Trova i connettori collegati",
         "searchCustom": "Trova i connettori personalizzati"
       },

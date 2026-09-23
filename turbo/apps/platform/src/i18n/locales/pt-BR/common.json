@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "Sequência de {{amount}} dias",
-        "title": "Primeiros passos",
+        "title": "Obtenha mais créditos",
         "toGo": "Faltam {{amount}}",
         "workflow": {
           "action": "Criar",
@@ -1863,14 +1863,10 @@
       "authorizationDescription": "Selecione um host do Desktop para futuras execuções nesta conversa.",
       "checkingCompatibility": "Verificando compatibilidade",
       "cloudBrowser": "Navegador na nuvem",
-      "connectHost": "Conectar {{hostName}}",
       "connectMyComputer": "Conectar meu computador",
       "dialogDescription": "Assim, o {{desktopProductName}} pode trabalhar por você no navegador e nos aplicativos, inclusive naqueles sem conector, como LinkedIn ou Reddit.",
       "dialogTitle": "Permita que o {{desktopProductName}} use seu computador",
-      "disableCloudBrowser": "Desativar navegador na nuvem",
-      "disconnectHost": "Desconectar {{hostName}}",
       "downloadMacos": "Baixar para macOS",
-      "enableCloudBrowser": "Ativar navegador na nuvem",
       "hosts": "Hosts do Computer Use",
       "macosRequirement": "Requer macOS 14 ou posterior em Apple silicon.",
       "noOnlineComputers": "Nenhum computador online",
@@ -3256,12 +3252,19 @@
       "noConnectorsAlt": "Nenhum conector",
       "otherCategory": "Outros",
       "remoteAccess": "Acesso remoto",
+      "remoteControl": {
+        "connections": "Conexões",
+        "credentials": "Credenciais",
+        "type": "Tipo"
+      },
       "scope": {
         "aria": "Escopo dos conectores",
         "attention": "Requer atenção",
         "connected": "Conectados",
         "custom": "Personalizados",
         "discover": "Descobrir",
+        "privateNetwork": "Rede privada",
+        "remoteControl": "Controle remoto",
         "searchConnected": "Buscar conectores conectados",
         "searchCustom": "Buscar conectores personalizados"
       },

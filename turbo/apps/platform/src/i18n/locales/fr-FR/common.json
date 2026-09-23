@@ -1539,7 +1539,7 @@
         },
         "stepCount": "{{completed}}/{{total}}",
         "streak": "{{amount}} jours d’affilée",
-        "title": "Démarrer",
+        "title": "Obtenir plus de crédits",
         "toGo": "Encore {{amount}}",
         "workflow": {
           "action": "Créer",
@@ -1863,14 +1863,10 @@
       "authorizationDescription": "Sélectionnez un hôte de bureau pour les futures exécutions dans ce fil.",
       "checkingCompatibility": "Vérification de la compatibilité",
       "cloudBrowser": "Navigateur cloud",
-      "connectHost": "Connecter {{hostName}}",
       "connectMyComputer": "Connecter mon ordinateur",
       "dialogDescription": "Ainsi, {{desktopProductName}} peut travailler dans votre navigateur et vos applications pour vous, même celles sans connecteur comme LinkedIn ou Reddit.",
       "dialogTitle": "Autoriser {{desktopProductName}} à utiliser votre ordinateur",
-      "disableCloudBrowser": "Désactiver le navigateur cloud",
-      "disconnectHost": "Déconnecter {{hostName}}",
       "downloadMacos": "Télécharger pour macOS",
-      "enableCloudBrowser": "Activer le navigateur cloud",
       "hosts": "Hôtes d'utilisation de l'ordinateur",
       "macosRequirement": "Nécessite un Mac Apple silicon avec macOS 14 ou version ultérieure. Les Mac Intel ne sont pas pris en charge.",
       "noOnlineComputers": "Aucun ordinateur en ligne",
@@ -3256,12 +3252,19 @@
       "noConnectorsAlt": "Aucun connecteur",
       "otherCategory": "Autre",
       "remoteAccess": "Accès à distance",
+      "remoteControl": {
+        "connections": "Connexions",
+        "credentials": "Identifiants",
+        "type": "Type"
+      },
       "scope": {
         "aria": "Portée des connecteurs",
         "attention": "Nécessite votre attention",
         "connected": "Connecté",
         "custom": "Personnalisés",
         "discover": "Découvrir",
+        "privateNetwork": "Réseau privé",
+        "remoteControl": "Contrôle à distance",
         "searchConnected": "Trouver les connecteurs connectés",
         "searchCustom": "Trouver les connecteurs personnalisés"
       },

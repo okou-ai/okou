@@ -44,10 +44,9 @@ const Switch = React.forwardRef<HTMLElement, SwitchProps>(
         <SwitchPrimitive.Thumb
           data-slot="switch-thumb"
           className={cn(
-            "pointer-events-none block rounded-full shadow-lg ring-0 transition-transform",
+            "pointer-events-none block rounded-full bg-[#ffffff] shadow-lg ring-0 transition-transform",
             s.thumb,
           )}
-          style={{ backgroundColor: "#ffffff" }}
         />
       </SwitchPrimitive.Root>
     );

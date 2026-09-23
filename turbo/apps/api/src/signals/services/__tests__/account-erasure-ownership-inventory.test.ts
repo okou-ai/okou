@@ -325,6 +325,13 @@ describe("account erasure ownership coverage guard", () => {
       coverage: "user_descendant",
       parents: ["agent_runs", "workflow_automations"],
     });
+    // The thread composer draft now also lives in its own child row. It holds
+    // account content and names no account, so it has to be reached through
+    // the thread that does.
+    expect(ACCOUNT_OWNERSHIP_INVENTORY.chat_thread_drafts).toStrictEqual({
+      coverage: "user_descendant",
+      parents: ["chat_threads"],
+    });
   });
 
   it("checks every declared reach against the columns the schema has", () => {

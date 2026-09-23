@@ -538,13 +538,7 @@ export function WorkflowTooltip({
           side="bottom"
           align="start"
           collisionPadding={8}
-          className="w-80 max-w-(--available-width) rounded-lg border border-[hsl(var(--gray-400))] p-3"
-          style={{
-            backgroundColor: "hsl(var(--card))",
-            color: "hsl(var(--card-foreground))",
-            boxShadow:
-              "0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)",
-          }}
+          className="w-80 max-w-(--available-width) rounded-lg border border-[hsl(var(--gray-400))] p-3 bg-card! text-card-foreground! shadow-[0_10px_15px_-3px_rgba(0,0,0,0.1),0_4px_6px_-2px_rgba(0,0,0,0.05)]"
         >
           <WorkflowHoverContent
             workflow={workflow}
