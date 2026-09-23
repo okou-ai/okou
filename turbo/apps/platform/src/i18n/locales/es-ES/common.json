@@ -6214,7 +6214,8 @@
           "reconnectAction": "Volver a conectar Claude",
           "reconnectTitle": "Volver a conectar Claude",
           "signIn": "Inicia sesión con Claude",
-          "submit": "Conectar"
+          "submit": "Conectar",
+          "usageNotice": "Okou usa la suscripción a Claude conectada para ejecutar Claude Code. Este uso cuenta para los límites de ese plan."
         },
         "codex": {
           "approvalOpened": "Página de aprobación abierta. Copia el código del dispositivo antes de aprobar.",
@@ -6280,7 +6281,7 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Activa",
         "addAccount": "Añadir cuenta",
-        "claudeDescription": "Usa tu suscripción a Claude para ejecutar modelos Claude en Okou.",
+        "claudeDescription": "Usa tu suscripción a Claude para ejecutar Claude Code en Okou.",
         "claudeTitle": "Claude",
         "codexDescription": "Conecta tu cuenta mediante el inicio de sesión de dispositivo de Codex para usar rutas de modelos basadas en Codex.",
         "codexTitle": "ChatGPT (Codex)",

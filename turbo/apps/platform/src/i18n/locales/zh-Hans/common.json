@@ -6140,7 +6140,8 @@
           "reconnectAction": "重新连接Claude",
           "reconnectTitle": "重新连接Claude",
           "signIn": "使用Claude登录",
-          "submit": "连接"
+          "submit": "连接",
+          "usageNotice": "Okou使用已连接的Claude订阅运行Claude Code，使用量计入该订阅套餐。"
         },
         "codex": {
           "approvalOpened": "授权页面已打开。请先复制设备码，再进行授权。",
@@ -6206,7 +6207,7 @@
         "actionForProvider": "{{action}}{{provider}}",
         "activeAccount": "使用中",
         "addAccount": "添加账号",
-        "claudeDescription": "使用你的Claude订阅在Okou中运行Claude模型。",
+        "claudeDescription": "使用你的Claude订阅在Okou中运行Claude Code。",
         "claudeTitle": "Claude",
         "codexDescription": "用Codex设备登录连接，供基于Codex的模型线路使用。",
         "codexTitle": "ChatGPT (Codex)",

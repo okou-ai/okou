@@ -367,9 +367,7 @@ test("Offer personal subscription providers from one add-account menu", async ()
   }
   click(addAccountButton);
   const addAccountMenu = await screen.findByRole("menu");
-  expect(
-    within(addAccountMenu).getByText("Claude"),
-  ).toBeInTheDocument();
+  expect(within(addAccountMenu).getByText("Claude")).toBeInTheDocument();
   expect(
     within(addAccountMenu).getByText("ChatGPT (Codex)"),
   ).toBeInTheDocument();
@@ -780,6 +778,11 @@ test("Start and close personal Claude login from the account menu", async () => 
   );
   expect(authorizationCodeInputs).not.toHaveLength(0);
   expect(screen.getAllByText("Connect Claude")).not.toHaveLength(0);
+  expect(
+    screen.getByText(
+      "Okou uses the connected Claude subscription to run Claude Code. This usage counts toward that plan.",
+    ),
+  ).toBeVisible();
   closeClaudeCodeDialogs();
   await waitFor(() => {
     expect(
@@ -821,10 +824,7 @@ test("Connect a personal Claude subscription", async () => {
   const claudeCodeRow = await screen.findByTestId(
     "oauth-card-claude-code-oauth-token",
   );
-  const connectButton = connectButtonInRow(
-    claudeCodeRow,
-    "Connect Claude",
-  );
+  const connectButton = connectButtonInRow(claudeCodeRow, "Connect Claude");
   click(connectButton);
 
   const codeInput = await findLatestClaudeCodeInput();

@@ -6140,7 +6140,8 @@
           "reconnectAction": "Hubungkan ulang Claude",
           "reconnectTitle": "Hubungkan ulang Claude",
           "signIn": "Masuk dengan Claude",
-          "submit": "Hubungkan"
+          "submit": "Hubungkan",
+          "usageNotice": "Okou menggunakan langganan Claude yang terhubung untuk menjalankan Claude Code. Penggunaan ini dihitung dalam paket tersebut."
         },
         "codex": {
           "approvalOpened": "Halaman persetujuan dibuka. Salin kode perangkat sebelum menyetujui.",
@@ -6206,7 +6207,7 @@
         "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktif",
         "addAccount": "Tambah akun",
-        "claudeDescription": "Gunakan langganan Claude Anda untuk menjalankan model Claude di Okou.",
+        "claudeDescription": "Gunakan langganan Claude Anda untuk menjalankan Claude Code di Okou.",
         "claudeTitle": "Claude",
         "codexDescription": "Hubungkan dengan login perangkat Codex untuk rute model berbasis Codex.",
         "codexTitle": "ChatGPT (Codex)",
