@@ -114,9 +114,8 @@ test("Startup timing is bounded and anonymous", async () => {
     return [];
   });
 
-  const { captureFirstSkeletonPaint, initPostHog } = await import(
-    "../../lib/posthog.ts"
-  );
+  const { captureFirstSkeletonPaint, initPostHog } =
+    await import("../../lib/posthog.ts");
   captureFirstSkeletonPaint();
 
   const paintTiming = capturedEvents(APP_FIRST_SKELETON_PAINT_EVENT).at(-1);
