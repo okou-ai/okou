@@ -4610,7 +4610,7 @@ describe("Morning Brief default onboarding", () => {
         mockBriefMemberships([]);
       }
       if (qualification !== "unstarted") {
-        await initializeBriefMember(actor);
+        await initializeBriefMember(actor, "America/Los_Angeles");
         expect(membershipReads).toHaveBeenCalledTimes(1);
       }
       await deliverClerkOrganizationMembershipDeleted(actor);
