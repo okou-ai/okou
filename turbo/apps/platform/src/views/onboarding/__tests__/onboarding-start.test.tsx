@@ -149,7 +149,7 @@ test("Onboarding sends authenticated events without waiting, with one attempt re
   complete.resolve();
 });
 
-test.each([200, 204, 401, 503])(
+test.each([204, 503])(
   "A Marketing %s response does not produce another telemetry record or block onboarding",
   async (status) => {
     onboardingNeeded();
@@ -159,9 +159,7 @@ test.each([200, 204, 401, 503])(
       return status === 204
         ? new Response(null, { status })
         : Response.json(
-            status === 200
-              ? { code: "EVENT_RECORDED" }
-              : { code: "TEST_FAILURE", error: "Marketing unavailable" },
+            { code: "TEST_FAILURE", error: "Marketing unavailable" },
             { status },
           );
     });

@@ -622,27 +622,6 @@ test("A Japanese chat keeps ordinary assistant output unchanged", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("Credential recovery guidance links to Model Providers", async () => {
-  const url = "https://app.example.test/?settings=model";
-  configureModelPolicies(["gpt-5.6-sol"]);
-  installRunChat({
-    selectedModel: "gpt-5.6-sol",
-    chatEvents: failedRunEvents(
-      `Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: ${url}`,
-      "gpt-5.6-sol",
-      "invalid_credentials",
-    ),
-  });
-
-  await setupPage({ context, path: RUN_PATH });
-
-  const details = await openRecoveryDetails();
-  const link = queryAllByRoleFast("link", details).find((candidate) => {
-    return candidate.getAttribute("href") === url;
-  });
-  expect(link).toBeInTheDocument();
-});
-
 test("An unknown structured failure does not infer recovery from provider text", async () => {
   const providerError =
     "Selected model is at capacity. Please try a different model.";

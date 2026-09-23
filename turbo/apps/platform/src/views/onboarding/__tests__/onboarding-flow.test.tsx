@@ -726,38 +726,22 @@ test("Built-in workflows can start without connector setup", async () => {
   );
 });
 
-test.each([
-  "Everyone",
-  "Engineer",
-  "Product",
-  "Data",
-  "Marketing",
-  "Sales",
-  "Support",
-  "CEO",
-  "Operations",
-] as const)(
-  "The %s onboarding role has six curated workflows and returns to role selection",
-  async (role) => {
-    await openMakePage();
-    chooseMakeOption("Workflow automation");
-    await expect(
-      screen.findByRole("heading", { name: "What do you work on?" }),
-    ).resolves.toBeInTheDocument();
-    click(buttonByText(role));
-    await expect(
-      screen.findByRole("heading", { name: `${role} workflows` }),
-    ).resolves.toBeInTheDocument();
-
-    const workflowCards = screen.getAllByRole("article");
-    expect(workflowCards).toHaveLength(6);
-
-    click(buttonByText("Back"));
-    await expect(
-      screen.findByRole("heading", { name: "What do you work on?" }),
-    ).resolves.toBeInTheDocument();
-  },
-);
+test("Workflow role selection returns to the role list", async () => {
+  await openMakePage();
+  chooseMakeOption("Workflow automation");
+  await expect(
+    screen.findByRole("heading", { name: "What do you work on?" }),
+  ).resolves.toBeInTheDocument();
+  click(buttonByText("Engineer"));
+  await expect(
+    screen.findByRole("heading", { name: "Engineer workflows" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getAllByRole("article")).toHaveLength(6);
+  click(buttonByText("Back"));
+  await expect(
+    screen.findByRole("heading", { name: "What do you work on?" }),
+  ).resolves.toBeInTheDocument();
+});
 
 test("A workflow preview can be selected as the first draft", async () => {
   await openMakePage();

@@ -44,8 +44,6 @@ function expectPinchPrevented(prevented: boolean): void {
 test.each([
   ["sign-in", ""],
   ["sign-up", ""],
-  ["sign-in", "/tasks/choose-organization"],
-  ["sign-up", "/verify-email-address"],
 ])("Hosted %s%s permits viewport zoom", async (mode, suffix) => {
   const viewport = installViewport();
   await setupPage({

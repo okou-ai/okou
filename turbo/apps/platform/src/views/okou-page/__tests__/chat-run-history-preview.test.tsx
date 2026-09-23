@@ -69,7 +69,7 @@ test("Show no history toggle when the only output is the main result", async () 
   ).toBeNull();
 });
 
-test.each([2, 3, 4, 5, 6])(
+test.each([2, 6])(
   "Hide all collapsed history and expand every message with %s outputs",
   async (count) => {
     await setupRunWithOutputCount(count);

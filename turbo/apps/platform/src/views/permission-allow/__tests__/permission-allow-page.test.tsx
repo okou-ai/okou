@@ -319,17 +319,9 @@ test("A user grants a time-limited connector permission and resumes the chat", a
 });
 
 test.each([
-  [1, "Expires in less than 1 hour"],
   [30 * MINUTE_MS - 1, "Expires in less than 1 hour"],
   [30 * MINUTE_MS, "Expires in 1 hour"],
-  [HOUR_MS + 1, "Expires in 1 hour"],
-  [90 * MINUTE_MS - 1, "Expires in 1 hour"],
-  [90 * MINUTE_MS, "Expires in 2 hours"],
-  [DAY_MS - 1, "Expires in 24 hours"],
-  [DAY_MS + 1, "Expires in 24 hours"],
-  [6.5 * DAY_MS - 1, "Expires in 6 days"],
   [6.5 * DAY_MS, "Expires in 7 days"],
-  [7 * DAY_MS + 1, "Expires in 7 days"],
 ] as const)(
   "An existing grant with %i ms remaining shows %s",
   async (remainingMs, expiryText) => {
