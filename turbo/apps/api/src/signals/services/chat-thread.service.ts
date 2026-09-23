@@ -414,6 +414,18 @@ async function loadActiveIndicatorRows(
         inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
         isNotNull(agentRuns.triggerSource),
         isNotNull(agentRuns.chatThreadId),
+        exists(
+          db
+            .select({ id: chatThreads.id })
+            .from(chatThreads)
+            .where(
+              and(
+                eq(chatThreads.id, agentRuns.chatThreadId),
+                eq(chatThreads.userId, args.userId),
+                inArray(chatThreads.agentId, agentIds),
+              ),
+            ),
+        ),
       ),
     )
     .groupBy(agentRuns.chatThreadId)
