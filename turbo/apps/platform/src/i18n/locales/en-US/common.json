@@ -4235,6 +4235,7 @@
       "documentTitles": {
         "experience": "Your AI experience",
         "industry": "Choose your field",
+        "profile": "Your profile",
         "ready": "Okou is ready",
         "skills": "Import your skills",
         "slack": "Add Okou to Slack",
@@ -4296,6 +4297,17 @@
       "industry": {
         "copy": "Okou uses this to pick your first task and the sources it starts from.",
         "title": "What kind of work do you do?"
+      },
+      "profile": {
+        "communicationStyle": "How you communicate",
+        "copy": "A first look at your work, based on the accounts you connected.",
+        "failed": "We couldn't create your profile right now. Try again or continue.",
+        "heading": "Your profile",
+        "loading": "Creating your profile from your connected work…",
+        "priorities": "Likely priorities",
+        "professionalIdentity": "Your work",
+        "retry": "Try again",
+        "title": "Here's what we've learned about you"
       },
       "skills": {
         "copied": "Copied",
