@@ -460,9 +460,6 @@ describe("Morning Brief native delivery", () => {
       agentId: f.agentId,
       title: "Okou Morning Brief",
     });
-    await expect(
-      chat.readThread(actor, response.body.delivery.chatThreadId),
-    ).resolves.toMatchObject({ lastReadAt: null });
     const history = await chat.listThreadEvents(
       actor,
       response.body.delivery.chatThreadId,
@@ -486,28 +483,6 @@ describe("Morning Brief native delivery", () => {
         seqId: 1,
       },
     ]);
-
-    // The Run-only indicators endpoint does not classify the native delivery.
-    // The thread read-state routes still advance and clear its delivery cursor.
-    const unread = {
-      threadId: response.body.delivery.chatThreadId,
-      unreadAt: response.body.delivery.deliveredAt,
-    };
-    await expect(chat.listIndicators(actor)).resolves.toStrictEqual({
-      agents: {},
-      threads: {},
-      unreadAt: {},
-    });
-    await expect(
-      chat.markThreadRead(actor, response.body.delivery.chatThreadId),
-    ).resolves.toStrictEqual({
-      lastReadAt: response.body.delivery.deliveredAt,
-      unreads: [],
-    });
-    await expect(
-      chat.markThreadUnread(actor, response.body.delivery.chatThreadId),
-    ).resolves.toStrictEqual({ lastReadAt: null, unreads: [unread] });
-    await chat.markAgentThreadsRead(actor, f.agentId);
 
     // The thread is the member's own Morning Brief thread, and it carries the
     // sticky exclusion so tomorrow's brief cannot summarise this one.
@@ -565,7 +540,7 @@ describe("Morning Brief native delivery", () => {
     expect(drained?.providerIdempotencyKey).toBe(sent.options.idempotencyKey);
   });
 
-  it("preserves mixed Run history and reads the later native watermark through both endpoints", async () => {
+  it("preserves mixed Run and native delivery history", async () => {
     const f = await fixture();
     const actor = chatActor(f);
     const threadId = await store.set(
@@ -588,8 +563,6 @@ describe("Morning Brief native delivery", () => {
       workflowId: f.workflowId,
       chatThreadId: threadId,
     });
-    await chat.markThreadRead(actor, threadId);
-
     scriptSlack();
     const { calls } = scriptProviders();
     const attemptId = await generateAcceptedResult(f);
@@ -638,20 +611,6 @@ describe("Morning Brief native delivery", () => {
         seqId: 4,
       },
     ]);
-
-    const nativeUnread = {
-      threadId,
-      unreadAt: response.body.delivery.deliveredAt,
-    };
-    await expect(chat.markThreadRead(actor, threadId)).resolves.toStrictEqual({
-      lastReadAt: response.body.delivery.deliveredAt,
-      unreads: [],
-    });
-    await expect(chat.markThreadUnread(actor, threadId)).resolves.toStrictEqual({
-      lastReadAt: null,
-      unreads: [nativeUnread],
-    });
-    await chat.markAgentThreadsRead(actor, f.agentId);
   });
 
   it("returns the same delivery to a repeated request without a second message", async () => {

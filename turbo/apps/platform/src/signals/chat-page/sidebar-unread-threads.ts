@@ -9,10 +9,8 @@ import { optimisticReadMarks$ } from "./optimistic-chat-thread-read-marks.ts";
  * The server's unread instant for one thread, once optimistic local marks
  * are applied.
  *
- * The server watermark already covers both kinds of unread: a Run terminal
- * marker and a native Morning Brief delivery, which has no Run and therefore
- * no client-visible terminal event. Reading it here is what lets the open
- * thread clear a native unread without inventing a Run event locally.
+ * The server watermark comes from the latest Run terminal marker. Reading it
+ * here lets the open thread account for a marker before local catch-up ends.
  */
 export function serverUnreadAt$(threadId: string) {
   return computed(async (get): Promise<string | undefined> => {

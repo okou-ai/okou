@@ -64,9 +64,7 @@ export const mcpChatThreadSchema = z.strictObject({
   unread: z.boolean(),
 });
 
-const unreadCoverageSchema = z.literal(
-  "retained_terminal_events_and_native_deliveries",
-);
+const unreadCoverageSchema = z.literal("retained_terminal_events");
 
 export const mcpListChatThreadsOutputSchema = z.strictObject({
   threads: z.array(mcpChatThreadSchema).max(50),
