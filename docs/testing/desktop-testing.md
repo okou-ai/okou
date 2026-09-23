@@ -125,6 +125,11 @@ event loop and an actual request timeout. Its timing assertions establish the
 fixture's ordering across processes; replacing that stall with a mocked timer
 would remove the behavior under test.
 
+`computer-use-native.test.ts` also holds replies in an external helper process
+to make concurrent protocol requests observable. The short helper response
+delays belong to that external boundary; they should not become sleeps in the
+parent test process.
+
 ## Narrow Exceptions
 
 Pure or matrix-style tests are allowed only when the integration boundary would
