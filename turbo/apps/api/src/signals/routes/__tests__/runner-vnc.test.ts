@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { projectErasureDecision } from "@okouai/db/operations/account-erasure";
+import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
@@ -946,4 +948,42 @@ describe("private Runner VNC authority", () => {
       body: { outcome: "unavailable" },
     });
   });
+
+  it("discards an in-flight direct VNC password when its Run is cancelled before KMS returns", async () => {
+    const f = await api.fixture();
+    const peer = await api.fixture();
+    api.authenticate(f);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<Uint8Array>(context.signal);
+    useSecretKmsProbe(undefined, (_request, call) => {
+      if (call === 1) {
+        entered.resolve(undefined);
+        return release.promise;
+      }
+      return undefined;
+    });
+    const pending = api.resolve(f);
+    await entered.promise;
+    const releaseKms = () => {
+      release.resolve(Buffer.from("0123456789abcdef0123456789abcdef"));
+    };
+    await onRejection(
+      db
+        .update(agentRuns)
+        .set({ status: "cancelled", runnerCancellationMode: "hard" })
+        .where(eq(agentRuns.id, f.runId)),
+      () => {
+        releaseKms();
+      },
+    );
+    releaseKms();
+    await expect(pending).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(check(f, 1)).resolves.toMatchObject({
+      body: { outcome: "unavailable" },
+    });
+    api.authenticate(peer);
+    await expect(api.resolve(peer)).resolves.toMatchObject({
+      outcome: "resolved",
+    });
+  }, 20_000);
 });

@@ -75,6 +75,10 @@ import {
   SSH_REMOTE_ERASURE_COLLECTOR_VERSION,
   createSshRemoteErasureCollector,
 } from "./account-erasure-ssh-remote-collector";
+import {
+  VNC_DIRECT_ERASURE_COLLECTOR_VERSION,
+  createVncDirectErasureCollector,
+} from "./account-erasure-vnc-direct-collector";
 
 const NAMESPACE = "929b9a52-05dc-44ea-b0b6-b3bce89968ef";
 const MAX_WORK_PER_INVOCATION = 64;
@@ -106,7 +110,8 @@ type SinkName =
   | "shared_blob"
   | "storage_object"
   | "relational"
-  | "ssh_remote";
+  | "ssh_remote"
+  | "vnc_direct";
 
 const sinkSpecs: readonly {
   readonly name: SinkName;
@@ -172,6 +177,11 @@ const sinkSpecs: readonly {
     name: "ssh_remote",
     domain: "providers",
     version: SSH_REMOTE_ERASURE_COLLECTOR_VERSION,
+  },
+  {
+    name: "vnc_direct",
+    domain: "providers",
+    version: VNC_DIRECT_ERASURE_COLLECTOR_VERSION,
   },
 ];
 
@@ -270,6 +280,7 @@ async function handlers(db: Db) {
     storage_object: createStorageObjectErasureCollector(db),
     relational: createRelationalErasureCollector(db, plan),
     ssh_remote: createSshRemoteErasureCollector(db),
+    vnc_direct: createVncDirectErasureCollector(db),
   };
   return { plan, byName };
 }

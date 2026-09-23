@@ -115,6 +115,25 @@ const selectorSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     version: z.literal(1),
+    kind: z.literal("vnc_direct"),
+    userId: z.string().min(1).max(192),
+    orgId: z.string().min(1).max(192),
+    resourceType: z.enum(["credential", "connection", "grant", "run"]),
+    resourceId: z.uuid(),
+    credentialId: z.uuid().nullable(),
+    credentialRevision: z.number().int().positive().nullable(),
+    credentialDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/u)
+      .nullable(),
+    connectionId: z.uuid().nullable(),
+    host: z.string().min(1).max(253).nullable(),
+    port: z.number().int().min(1).max(65_535).nullable(),
+    agentId: z.uuid().nullable(),
+    runnerGroup: z.string().min(1).max(255).nullable(),
+  }),
+  z.strictObject({
+    version: z.literal(1),
     kind: z.literal("provider"),
     accountRef: z.uuid(),
     subjectId: z.string().min(1).max(192),
