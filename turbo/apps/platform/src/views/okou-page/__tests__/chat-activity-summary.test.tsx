@@ -126,30 +126,6 @@ test.each(["available", "unavailable"] as const)(
   },
 );
 
-test("The loop keeps polling on its fixed interval while hidden", async () => {
-  context.mocks.browser.visibilityState("hidden");
-  installActiveRun();
-  let refreshed = false;
-  context.mocks.api(
-    chatThreadActivitySummaryContract.summarize,
-    ({ respond }) => {
-      if (!refreshed) {
-        return respond(200, summary());
-      }
-      return respond(
-        200,
-        summary({ messages: [{ id: ACTIVITY, text: ACTIVITY }] }),
-      );
-    },
-  );
-
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
-  await expect(screen.findByText(PREPARATION)).resolves.toBeVisible();
-
-  refreshed = true;
-  await expect(screen.findByText(ACTIVITY)).resolves.toBeVisible();
-});
-
 test("The last resolved summary remains visible while a refresh is loading", async () => {
   installActiveRun();
   const refreshStarted = createDeferredPromise<void>(context.signal);

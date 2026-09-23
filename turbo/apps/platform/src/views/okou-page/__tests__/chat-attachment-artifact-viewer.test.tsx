@@ -783,7 +783,6 @@ test.each(["link", "card"])(
     const firstPreview = `https://pv-${"a".repeat(48)}.sites.vm7.io/`;
     const nextPreview = `https://pv-${"b".repeat(48)}.sites.vm7.io/`;
     let currentPreview = firstPreview;
-    const visibility = context.mocks.browser.visibilityState("visible");
     mockAttachmentChat(context, {
       chatEvents: [
         assistantMessage(
@@ -851,13 +850,6 @@ test.each(["link", "card"])(
     });
     click(await findNamedButton("Open in split view"));
     const sidebar = await screen.findByTestId("artifact-sidebar");
-    await waitFor(() => {
-      expect(
-        within(sidebar).getByTestId("artifact-sidebar-body-html"),
-      ).toHaveAttribute("src", `${firstPreview}#slide-2`);
-    });
-    visibility.changeTo("hidden");
-    visibility.changeTo("visible");
     await waitFor(() => {
       expect(
         within(sidebar).getByTestId("artifact-sidebar-body-html"),

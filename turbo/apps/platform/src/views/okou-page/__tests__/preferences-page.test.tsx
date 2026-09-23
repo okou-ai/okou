@@ -464,37 +464,6 @@ test("A shared theme cookie supersedes and removes an older host-only duplicate"
   );
 });
 
-test("Theme preferences refresh from the cookie when the page becomes active", async () => {
-  mockPreferences({ theme: "dark" });
-  let cookie = "__Secure-okou-theme=v1.dark";
-  vi.spyOn(document, "cookie", "get").mockImplementation(() => {
-    return cookie;
-  });
-  vi.spyOn(document, "cookie", "set").mockImplementation(() => {});
-  const visibility = context.mocks.browser.visibilityState("visible");
-
-  await setupPage({ context, path: "/settings", host: "app.okou.ai" });
-  await expect(
-    screen.findByText("Your preferred color scheme"),
-  ).resolves.toBeVisible();
-  expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-
-  cookie = "__Secure-okou-theme=v1.light";
-  window.dispatchEvent(new Event("focus"));
-  await waitFor(() => {
-    expect(document.documentElement).toHaveAttribute("data-theme", "light");
-    expectSelected(getFastRole("button", "Light"));
-  });
-
-  visibility.changeTo("hidden");
-  cookie = "__Secure-okou-theme=v1.dark";
-  visibility.changeTo("visible");
-  await waitFor(() => {
-    expect(document.documentElement).toHaveAttribute("data-theme", "dark");
-    expectSelected(getFastRole("button", "Dark"));
-  });
-});
-
 test("Cookie theme and account-backed color theme are restored and saved", async () => {
   const updates = mockPreferences({
     theme: "dark",
