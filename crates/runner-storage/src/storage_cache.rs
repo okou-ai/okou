@@ -2358,7 +2358,7 @@ pub async fn populate_cache_with_fresh_delivery(
     stage_metrics.record_total(telemetry);
     let outcomes = stage_result?;
 
-    record_passthrough_summary(&outcomes, telemetry);
+    record_passthrough_summary(&outcomes, plan, telemetry);
     let deferred =
         defer_background_fill_groups(&outcomes, home.clone(), decoded.cloned(), plan, telemetry);
     for (group, outcome) in outcomes {
@@ -4031,11 +4031,18 @@ struct PassthroughSummary {
 
 fn record_passthrough_summary(
     outcomes: &[(CacheTargetGroup, TargetOutcome)],
+    plan: &StoragePlan,
     telemetry: &mut JobTelemetry,
 ) {
     let mut summary = PassthroughSummary::default();
     for (group, outcome) in outcomes {
-        add_passthrough_summary(&mut summary, outcome, group.targets.len());
+        for target in &group.targets {
+            if plan.has_decoded(target.handle) {
+                add_passthrough_summary(&mut summary, &TargetOutcome::Decoded, 1);
+            } else {
+                add_passthrough_summary(&mut summary, outcome, 1);
+            }
+        }
     }
 
     telemetry.record(

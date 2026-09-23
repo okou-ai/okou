@@ -405,6 +405,53 @@ async fn archive_required_instruction_does_not_exclude_same_key_decoded_targets(
 }
 
 #[tokio::test]
+async fn mixed_key_archive_miss_counts_only_archive_consumers_as_misses() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    warm_positive(&home, &cache).await;
+    std::fs::remove_file(home.storage_cache_dir(NAME, VERSION).join("archive.tar.gz")).unwrap();
+    let url = "https://storage.example/unused";
+    let mut instruction = storage_entry("/mnt/instructions".into(), url.into(), NAME, VERSION);
+    instruction.instructions_target_filename = Some("AGENTS.md".into());
+    let mut plan = plan_from_entries(
+        vec![
+            instruction,
+            storage_entry("/mnt/storage".into(), url.into(), NAME, VERSION),
+        ],
+        vec![artifact_entry(
+            "/mnt/artifact".into(),
+            url.into(),
+            NAME,
+            VERSION,
+        )],
+        None,
+    );
+    let mut telemetry = new_telemetry();
+
+    let deferred = populate_cache_with_fresh_delivery(
+        &mut plan,
+        &MockSandbox::new("mixed-key-miss"),
+        &home,
+        &mut telemetry,
+        None,
+        Some(&cache),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        deferred.is_some(),
+        "instruction still requires archive fill"
+    );
+    assert_eq!(plan.take_decoded().len(), 2);
+    let ops = telemetry.pending_ops_snapshot();
+    assert_op(&ops, passthrough_hit_count_action(2), true);
+    assert_op(&ops, passthrough_miss_count_action(1), true);
+    cache.shutdown().await;
+}
+
+#[tokio::test]
 async fn missing_decoded_files_do_not_mark_same_key_artifact_ineligible() {
     let temp = tempfile::tempdir().unwrap();
     let home = home_at(&temp);
