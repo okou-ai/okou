@@ -45,9 +45,12 @@ test("Template attachment buttons own pointer focus and restore editing after re
   await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
-    expect(preview).toHaveFocus();
+    expect(editor).toHaveFocus();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  await user.keyboard(" Kept editing.");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(editor).toHaveTextContent("Keep this draft. Kept editing.");
 
   const remove = await findButton("Remove template Legacy deck");
   await user.pointer({ target: remove, keys: "[MouseRight]" });
@@ -59,7 +62,9 @@ test("Template attachment buttons own pointer focus and restore editing after re
   expect(editor).toHaveFocus();
   expect(preview).not.toBeInTheDocument();
   await user.keyboard(" Continue editing.");
-  expect(editor).toHaveTextContent("Keep this draft. Continue editing.");
+  expect(editor).toHaveTextContent(
+    "Keep this draft. Kept editing. Continue editing.",
+  );
 });
 
 test("The quote remove button accepts pointer focus until activation and returns focus to the draft", async () => {
@@ -127,5 +132,37 @@ test.each(["{Enter}", " "])(
     ).resolves.toBeInTheDocument();
     expect(editor).not.toHaveTextContent(first.title);
     expect(editor).toHaveTextContent(replacement.title);
+    await waitFor(() => {
+      expect(editor).toHaveFocus();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
   },
 );
+
+test("Dismissing a template chip preview returns the caret to the draft", async () => {
+  const editor = await openComposer();
+  const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
+  if (!first) {
+    throw new Error("Expected a presentation template");
+  }
+  click(await findButton("Template"));
+  await screen.findByRole("dialog");
+  click(screen.getByLabelText(`Select template ${first.title}`));
+  const preview = await findButton(`Preview template ${first.title}`);
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(preview);
+  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(editor).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  // Space activates a native button, so a chip that kept the picker's focus
+  // return would reopen it instead of letting the draft continue.
+  await user.keyboard(" ");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});

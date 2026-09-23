@@ -2132,6 +2132,10 @@ function createMountEditorCommand({
       };
       runtime.openTemplate = (intent) => {
         set(openTemplatePicker$, intent);
+        // A chip button lives inside the editing host, so the caret owns the
+        // picker's focus return. Space and Enter activate a native button, and
+        // a chip that kept focus would reopen the picker instead of editing.
+        editor.view.focus();
       };
       runtime.removeTemplate = () => {
         set(legacyTemplateAttachment.remove$);
