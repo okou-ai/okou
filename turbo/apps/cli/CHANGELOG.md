@@ -1,5 +1,27 @@
 # Changelog
 
+## [9.357.0](https://github.com/okou-ai/okou/compare/cli-v9.356.2...cli-v9.357.0) (2026-09-23)
+
+
+### Features
+
+* move chat thread snapshots to r2 ([#36320](https://github.com/okou-ai/okou/issues/36320)) ([f5f5d6a](https://github.com/okou-ai/okou/commit/f5f5d6aec5358f740258c478dda7215485bc26b9))
+* **pi:** upgrade to 0.87.1 and admit new models ([#36239](https://github.com/okou-ai/okou/issues/36239)) ([4a51b9b](https://github.com/okou-ai/okou/commit/4a51b9be36b393c55a9339250fd1d9d692f14a7d))
+
+
+### Bug Fixes
+
+* **social:** respect socialkit collection outcomes ([#36338](https://github.com/okou-ai/okou/issues/36338)) ([b670935](https://github.com/okou-ai/okou/commit/b670935e0c5985b320e17b71284707f44c70d84d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.498.0
+    * @okouai/core bumped to 8.704.0
+    * @okouai/pi-agent-runtime bumped to 1.40.0
+
 ## [9.356.2](https://github.com/okou-ai/okou/compare/cli-v9.356.1...cli-v9.356.2) (2026-09-23)
 
 
