@@ -73,7 +73,7 @@ function mockThreads(count: number, archived = false): void {
     return respond(200, { events: [], hasMore: false });
   });
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, { agents: {}, threads: {} });
+    return respond(200, { agents: {}, threads: {}, unreadAt: {} });
   });
   context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
     return respond(200, {
@@ -356,6 +356,7 @@ async function setupUnreadHistoryBeyondCurrentWindow() {
         ),
         [threadId(100)]: "active",
       },
+      unreadAt: {},
     });
   });
   await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
@@ -583,7 +584,11 @@ test("Refresh virtualization when unread indicators add an agent to the grid", a
   const indicators = context.mocks.deferred<void>();
   context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
     await indicators.promise;
-    return respond(200, { agents: { [unreadAgentId]: "unread" }, threads: {} });
+    return respond(200, {
+      agents: { [unreadAgentId]: "unread" },
+      threads: {},
+      unreadAt: {},
+    });
   });
   mockViewportHeight(() => {
     return document.querySelectorAll('[data-testid="pinned-agent-card"]')

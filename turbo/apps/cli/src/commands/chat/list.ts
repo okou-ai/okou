@@ -3,7 +3,7 @@ import { Command } from "commander";
 import type { EventDrivenChatThread } from "@okouai/core/chat-thread-event-replay";
 
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { listChatThreadUnreads } from "../../lib/api/domains/chat";
+import { getChatIndicators } from "../../lib/api/domains/chat";
 import { formatIsoTimestamp } from "../../lib/utils/time-format";
 import { parseBoundedLogCount } from "../../lib/utils/log-pagination";
 import { isUuid } from "../../lib/utils/uuid";
@@ -12,7 +12,6 @@ import { syncCachedChatThreads } from "./chat-thread-cache";
 
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
-const MAX_UNREAD_REQUEST_CONCURRENCY = 4;
 
 interface ListOptions {
   readonly agent?: string;
@@ -53,40 +52,6 @@ function titleForDisplay(title: string | null): string {
   return (title ?? "(untitled)").replace(/\s+/g, " ");
 }
 
-async function unreadTimestampsByThread(
-  agentIds: readonly string[],
-): Promise<ReadonlyMap<string, string>> {
-  const unreadTimestamps = new Map<string, string>();
-  let nextIndex = 0;
-
-  async function worker(): Promise<void> {
-    while (nextIndex < agentIds.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      const agentId = agentIds[index];
-      if (agentId === undefined) {
-        throw new Error(`Unread agent ${index} is missing`);
-      }
-      const unreads = await listChatThreadUnreads({ agentId });
-      for (const unread of unreads) {
-        unreadTimestamps.set(unread.threadId, unread.unreadAt);
-      }
-    }
-  }
-
-  await Promise.all(
-    Array.from(
-      {
-        length: Math.min(MAX_UNREAD_REQUEST_CONCURRENCY, agentIds.length),
-      },
-      async () => {
-        await worker();
-      },
-    ),
-  );
-  return unreadTimestamps;
-}
-
 function compareUnreadThreads(
   left: UnreadChatThread,
   right: UnreadChatThread,
@@ -103,7 +68,7 @@ export const listCommand = new Command()
   .description("List web chat threads")
   .option("--agent <id>", "Filter by agent ID (defaults to OKOU_AGENT_ID)")
   .option("--all-agents", "List threads across all agents in the current org")
-  .option("--unread", "List only canonical unread threads")
+  .option("--unread", "List the latest 50 unread threads from the past 7 days")
   .option(
     "--limit <n>",
     `Maximum number of threads to print (default: ${DEFAULT_LIMIT}, max: ${MAX_LIMIT})`,
@@ -155,21 +120,14 @@ Notes:
         | UnreadChatThread
       )[];
       if (options.unread) {
-        const unreadTimestamps = await unreadTimestampsByThread(
-          agentId === undefined
-            ? [
-                ...new Set(
-                  agentThreads.map((thread) => {
-                    return thread.agentId;
-                  }),
-                ),
-              ]
-            : [agentId],
-        );
+        const indicators = await getChatIndicators();
         matchingThreads = agentThreads
           .flatMap((thread): UnreadChatThread[] => {
-            const unreadAt = unreadTimestamps.get(thread.id);
-            return unreadAt === undefined ? [] : [{ ...thread, unreadAt }];
+            const unreadAt = indicators.unreadAt[thread.id];
+            return indicators.threads[thread.id] === "unread" &&
+              unreadAt !== undefined
+              ? [{ ...thread, unreadAt }]
+              : [];
           })
           .sort(compareUnreadThreads);
       } else {

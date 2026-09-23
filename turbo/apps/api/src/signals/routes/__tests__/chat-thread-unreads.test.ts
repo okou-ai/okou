@@ -165,6 +165,12 @@ describe("GET /api/chat-thread-unreads", () => {
       read: (await chat.readThread(actor, read.threadId)).lastReadAt,
     };
 
+    const indicators = await accept(client().indicators({ headers }), [200]);
+    expect(indicators.body.threads[unread.threadId]).toBe("unread");
+    expect(indicators.body.unreadAt).toStrictEqual({
+      [unread.threadId]: unread.unreadAt,
+    });
+
     await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
       [unread],
     );

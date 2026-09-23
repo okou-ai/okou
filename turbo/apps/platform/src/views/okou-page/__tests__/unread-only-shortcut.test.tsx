@@ -87,6 +87,7 @@ function preparePage(userAgent: string, unread = false): Promise<void> {
       return respond(200, {
         agents: {},
         threads: { [EXISTING_THREAD_ID]: "unread" },
+        unreadAt: {},
       });
     });
   }

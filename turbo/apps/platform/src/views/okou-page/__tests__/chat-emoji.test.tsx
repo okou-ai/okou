@@ -1,10 +1,7 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  chatThreadRenameContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
@@ -28,11 +25,6 @@ function setupEmojiPage(
     threadId: THREAD_ID,
     threadTitle,
   });
-  if (archiveEnabled) {
-    context.mocks.api(chatThreadsContract.unreads, ({ respond }) => {
-      return respond(200, { unreads: [] });
-    });
-  }
   return setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
