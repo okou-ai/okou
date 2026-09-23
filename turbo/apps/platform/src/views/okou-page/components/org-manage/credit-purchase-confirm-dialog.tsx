@@ -37,29 +37,29 @@ function CreditPurchaseConfirmDialogContent({
         return $.billing.credits.payAndAddCredits;
       })}
     >
-      <div className="mt-1">
+      <div className="mt-1 min-w-0">
         <p className="pb-0.5 pt-1 text-xs font-medium text-muted-foreground">
           {t(($) => {
             return $.billing.credits.today;
           })}
         </p>
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border py-3.5">
+        <div className="grid min-w-0 grid-cols-1 gap-1 border-t border-border py-3.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
           <p className="text-sm font-medium text-foreground">
             {t(($) => {
               return $.billing.credits.dueNow;
             })}
           </p>
-          <p className="text-right text-3xl font-light tracking-tight tabular-nums text-foreground">
+          <p className="min-w-0 break-words text-left text-2xl font-light tracking-tight tabular-nums text-foreground sm:text-right sm:text-3xl">
             {formatPurchaseAmount(preview.amountCents, preview.currency)}
           </p>
         </div>
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-[hsl(var(--gray-100))] py-2.5">
+        <div className="grid min-w-0 grid-cols-1 gap-1 border-t border-[hsl(var(--gray-100))] py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-3">
           <p className="text-sm font-medium text-foreground">
             {t(($) => {
               return $.billing.credits.creditsAdded;
             })}
           </p>
-          <p className="text-right text-sm font-medium tabular-nums text-foreground">
+          <p className="min-w-0 break-words text-left text-sm font-medium tabular-nums text-foreground sm:text-right">
             +{formatLocalizedNumber(preview.credits)}
           </p>
         </div>
