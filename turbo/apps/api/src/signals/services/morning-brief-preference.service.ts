@@ -90,8 +90,7 @@ interface MorningBriefPreferenceArgs {
   readonly member: WorkflowMember;
 }
 
-interface MorningBriefPreferenceMutationArgs
-  extends MorningBriefPreferenceArgs {
+interface MorningBriefPreferenceMutationArgs extends MorningBriefPreferenceArgs {
   readonly enabled: boolean;
 }
 
