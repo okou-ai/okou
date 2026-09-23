@@ -2435,7 +2435,7 @@ Access management and protected host creation require no additional opt-in.
 Already-bound hosts are never silently converted to Direct. Removing a binding
 requires owner authorization and an explicit Direct selection. Changing owner
 clears open secret forms and cancels their pending UI work. API authorization and
-same-owner foreign keys remain authoritative; frontend visibility is not an
+database ownership checks remain authoritative; frontend visibility is not an
 access check.
 
 SSH save retries (#34503) require a client-generated resource `id` on host creation
@@ -2486,6 +2486,33 @@ failure eviction and Run/sandbox teardown remain effective. The accepted
 Run-lifetime missed-notification window includes observed outages; this introduces
 no reconnect grace deadline, periodic reauthorization or new TTL. No coordinated
 API rollout or migration is required for this Runner change.
+
+### Organization Cloudflare Access foundation (#36260)
+
+Migration `1201` adds `scope` to the existing Access table and `needs_rebind` to
+SSH hosts. Existing Access rows default to `personal`, existing hosts default to
+`needs_rebind=false`, and their IDs, encrypted credentials, bindings and
+generations are unchanged. An SSH Access reference must remain in the same
+organization; a database trigger additionally rejects another user's personal
+Access. Organization rows have no user owner. A host with a null Access ID and
+`needs_rebind=true` remains a protected, unusable host with its 443/FQDN target
+and host-key pin intact, not a Direct host. Runner resolution, pinning and
+observations return unavailable, and Agent inventory omits it before any token
+decryption. The old SSH management response cannot represent this state and
+fails closed; no production path creates it in this foundation release.
+
+The outgoing API remains compatible with the migrated schema for existing
+personal/Direct data: omitted columns receive their defaults, and its existing
+`INSERT ... RETURNING` and update shapes remain legal. The new API requires
+`1201`, so migration-before-API-promotion is mandatory. This release does not
+expose organization creation, binding or conversion. Do not enable organization
+writes until the foundation is deployed and every serving API authority reader
+and Runner path has been verified; an older API or rollback target that joins
+Access by user ID cannot safely serve shared bindings. Do not enable conversion
+or write `needs_rebind=true` until the rebind-capable App is verified live and
+the later App compatibility floor is raised. A rollback to pre-foundation API
+after either new state is written is unsafe without first restoring a compatible
+authority reader; rolling back code does not roll back persisted state.
 
 ## Feishu and Lark integration identity
 
