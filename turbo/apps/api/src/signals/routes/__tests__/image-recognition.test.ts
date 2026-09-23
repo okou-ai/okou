@@ -131,7 +131,9 @@ async function seedImageRecognitionActor(): Promise<ImageRecognitionActor> {
   return { ...actor, orgId: actor.orgId, runId: run.runId };
 }
 
-async function seedAdmittedImageRecognitionActor(): Promise<ImageRecognitionActor> {
+async function seedAdmittedImageRecognitionActor(
+  tier: "free" | "pro" = "free",
+): Promise<ImageRecognitionActor> {
   await seedBuiltInDefaultModelKey(context);
   const bdd = createBddApi(context);
   const api = createRunsApi(context);
@@ -143,7 +145,7 @@ async function seedAdmittedImageRecognitionActor(): Promise<ImageRecognitionActo
   api.configureRunnerGroup();
   const completed = await bdd.completeOnboarding(actor);
   expect(completed.status).toBe(200);
-  await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 1 });
+  await seedOrgMetadata({ orgId: actor.orgId, tier, credits: 1 });
   const agent = await bdd.createAgent(actor, {
     displayName: "Admitted recognition agent",
     visibility: "private",
@@ -1137,7 +1139,7 @@ describe("POST /api/image-recognition", () => {
     );
     const actor = await seedAdmittedImageRecognitionActor();
     const pricing = await createConfiguredImageRecognitionPricing();
-    await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 0 });
+    await seedOrgMetadata({ orgId: actor.orgId, tier: "free", credits: 0 });
     const fileId = randomUUID();
     setStoredObjects([
       { userId: actor.userId, id: fileId, filename: "screen.png", size: 1024 },
@@ -1162,6 +1164,35 @@ describe("POST /api/image-recognition", () => {
         credits: EXPECTED_CHARGE,
       }),
     ]);
+  });
+
+  it("rejects an admitted paid run after credits are exhausted", async () => {
+    mockOptionalEnv("OPENROUTER_API_KEY", "test-openrouter-key");
+    let providerCalled = false;
+    server.use(
+      http.post(OPENROUTER_URL, () => {
+        providerCalled = true;
+        return HttpResponse.json({});
+      }),
+    );
+    const actor = await seedAdmittedImageRecognitionActor("pro");
+    const pricing = await createConfiguredImageRecognitionPricing();
+    await seedOrgMetadata({ orgId: actor.orgId, tier: "pro", credits: 0 });
+    const fileId = randomUUID();
+    setStoredObjects([
+      { userId: actor.userId, id: fileId, filename: "screen.png", size: 1024 },
+    ]);
+
+    const response = await requestImageRecognition({
+      token: okouToken(actor),
+      fileId,
+      usagePricingResolution: pricing.resolution,
+    });
+    expect(response.status).toBe(402);
+    expect(response.body).toMatchObject({
+      error: { code: "INSUFFICIENT_CREDITS" },
+    });
+    expect(providerCalled).toBeFalsy();
   });
 
   it("enforces agent-only capability authorization before object access", async () => {

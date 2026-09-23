@@ -35,6 +35,7 @@ type RunAdmissionFailure =
 type CreditDb = Pick<Db, "$with" | "select" | "with">;
 
 interface OrgCreditAvailability {
+  readonly planKey: OrgPlanCapabilities["planKey"];
   readonly status: OrgPlanCapabilities["status"];
   readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
@@ -53,11 +54,19 @@ export interface RunCreditAdmissionState {
   readonly creditAdmitted: boolean;
 }
 
+function isFreePlanKey(planKey: OrgPlanCapabilities["planKey"]): boolean {
+  return planKey === "free" || planKey === "limited-free-1";
+}
+
 export function runHasActiveCreditAdmission(
   run: Pick<RunCreditAdmissionState, "status" | "creditAdmitted">,
+  planKey: OrgPlanCapabilities["planKey"],
 ): boolean {
+  // Older paid runs can already have this marker; the current plan still gates continuation.
   return (
-    run.creditAdmitted && (run.status === "pending" || run.status === "running")
+    isFreePlanKey(planKey) &&
+    run.creditAdmitted &&
+    (run.status === "pending" || run.status === "running")
   );
 }
 
@@ -90,15 +99,16 @@ export async function resolveActiveRunCreditAdmission(params: {
   readonly runId: string | undefined;
   readonly orgId: string;
   readonly userId: string;
+  readonly planKey: OrgPlanCapabilities["planKey"];
 }): Promise<boolean> {
-  if (!params.runId) {
+  if (!params.runId || !isFreePlanKey(params.planKey)) {
     return false;
   }
   const run = await loadRunCreditAdmissionState({
     ...params,
     runId: params.runId,
   });
-  return run !== undefined && runHasActiveCreditAdmission(run);
+  return run !== undefined && runHasActiveCreditAdmission(run, params.planKey);
 }
 
 export async function resolveOrgCreditAvailability(params: {
@@ -151,6 +161,7 @@ export async function resolveOrgCreditAvailability(params: {
     at,
   });
   return {
+    planKey: capabilities.planKey,
     status: capabilities.status,
     supportByok: capabilities.supportByok,
     restrictedBuiltInModels: capabilities.restrictedBuiltInModels,

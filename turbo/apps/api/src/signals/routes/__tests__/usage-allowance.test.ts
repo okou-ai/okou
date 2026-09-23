@@ -67,6 +67,7 @@ interface AllowanceEntitlementArgs {
 async function builtInAllowanceActor(args: {
   readonly credits: number;
   readonly allowance?: AllowanceEntitlementArgs;
+  readonly tier?: "free" | "limited-free-1" | "pro";
 }): Promise<{
   readonly actor: ApiTestUser;
   readonly orgId: string;
@@ -84,7 +85,11 @@ async function builtInAllowanceActor(args: {
   api.configureRunnerGroup();
   const completed = await bdd.completeOnboarding(actor);
   expect(completed.status).toBe(200);
-  await seedOrgMetadata({ orgId, tier: "pro", credits: args.credits });
+  await seedOrgMetadata({
+    orgId,
+    tier: args.tier ?? "pro",
+    credits: args.credits,
+  });
   if (args.allowance) {
     await seedAllowanceEntitlement(actor, orgId, args.allowance);
   }
@@ -504,6 +509,7 @@ describe("Usage Allowance", () => {
   it("keeps billable firewall auth available to an admitted run after exhaustion", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: 0,
+      tier: "free",
       allowance: { shortWindowUnits: 2, weeklyWindowUnits: 2 },
     });
     const api = createRunsApi(context);
@@ -569,6 +575,44 @@ describe("Usage Allowance", () => {
     expect(rejected.body.error.code).toBe("INSUFFICIENT_CREDITS");
   });
 
+  it("rejects billable firewall auth for an admitted paid run after exhaustion", async () => {
+    const { actor, agentId } = await builtInAllowanceActor({ credits: 1 });
+    const api = createRunsApi(context);
+    const run = await createBuiltInRun(
+      actor,
+      agentId,
+      "paid run exhausting credits",
+    );
+    const provider = usageProvider();
+    await recordPendingUsage({
+      actor,
+      runId: run.runId,
+      provider,
+      quantity: 2,
+    });
+    await processOrgUsageEvents(actor);
+    await expect(readOrgCredits(actor)).resolves.toBe(-1);
+
+    const client = setupApp({
+      context,
+      routes: webhooksAgentFirewallAuthRoutes,
+    })(webhookFirewallAuthContract);
+    const denied = await accept(
+      client.resolve({
+        headers: {
+          authorization: `Bearer ${api.sandboxTokenForRun(actor, run.runId)}`,
+        },
+        body: {
+          encryptedSecrets: encryptSecretForTests(JSON.stringify({})),
+          authHeaders: { Authorization: "Bearer static-token" },
+          firewallBillable: true,
+        },
+      }),
+      [402],
+    );
+    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
+  });
+
   it("uses run allowance for billable firewall fallback under shared debt", async () => {
     const { actor, agentId } = await builtInAllowanceActor({
       credits: -10,
@@ -610,6 +654,7 @@ describe("Usage Allowance", () => {
   it("does not let built-in credit admission bypass workspace suspension", async () => {
     const { actor, orgId, agentId } = await builtInAllowanceActor({
       credits: 1,
+      tier: "free",
     });
     const api = createRunsApi(context);
     const run = await createBuiltInRun(
@@ -617,7 +662,7 @@ describe("Usage Allowance", () => {
       agentId,
       "admitted before suspension",
     );
-    await seedOrgMetadata({ orgId, tier: "pro", credits: 1 });
+    await seedOrgMetadata({ orgId, tier: "free", credits: 1 });
     await upsertOrgPlanEntitlementFixture({ orgId, status: "suspended" });
     const client = setupApp({
       context,

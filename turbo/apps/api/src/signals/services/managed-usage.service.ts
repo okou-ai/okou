@@ -218,6 +218,7 @@ export async function checkManagedCreditsInDb(
     runId: args.runId,
     orgId: args.orgId,
     userId: args.userId,
+    planKey: capabilities.planKey,
   });
   signal.throwIfAborted();
   if (activeRunAdmission && !args.enforceBalance) {

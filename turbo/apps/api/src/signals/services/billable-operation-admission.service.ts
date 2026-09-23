@@ -33,6 +33,7 @@ export const checkBillableOperationCredits$ = command(
       runId: args.runId,
       orgId: args.orgId,
       userId: args.userId,
+      planKey: availability.planKey,
     });
     signal.throwIfAborted();
     if (activeRunAdmission) {
