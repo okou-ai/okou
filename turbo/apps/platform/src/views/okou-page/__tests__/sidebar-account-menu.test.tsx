@@ -787,7 +787,6 @@ test("Toggle network-body capture in Debug settings", async () => {
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
   };
   context.mocks.data.userPreferences(preferences);
   context.mocks.api(userPreferencesContract.update, ({ body, respond }) => {

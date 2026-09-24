@@ -63,10 +63,6 @@ export const userPreferencesResponseSchema = z.object({
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
   captureNetworkBodiesRemaining: z.number().int().min(0),
-  // Retired: voice input always uses Gemini 3.1 Flash-Lite on Vertex. The API
-  // always returns null for App bundles that still render the Debug model
-  // picker. Remove after those bundles drain.
-  voiceInputModel: z.string().nullable(),
 });
 
 export type UserPreferencesResponse = z.infer<
@@ -92,9 +88,6 @@ export const updateUserPreferencesRequestSchema = z
     theme: themePreferenceSchema.optional(),
     colorTheme: colorThemeSchema.optional(),
     captureNetworkBodiesRemaining: z.number().int().min(0).optional(),
-    // Retired and ignored; still accepted from App bundles that can send it.
-    // Remove with the response field.
-    voiceInputModel: z.string().max(255).nullable().optional(),
   })
   .refine(
     (data) => {
@@ -106,8 +99,7 @@ export const updateUserPreferencesRequestSchema = z
         data.cloudBrowserEnabledByDefault !== undefined ||
         data.theme !== undefined ||
         data.colorTheme !== undefined ||
-        data.captureNetworkBodiesRemaining !== undefined ||
-        data.voiceInputModel !== undefined
+        data.captureNetworkBodiesRemaining !== undefined
       );
     },
     {

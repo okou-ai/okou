@@ -28,7 +28,6 @@ let mockPreferences: UserPreferencesResponse = {
   theme: "system",
   colorTheme: null,
   captureNetworkBodiesRemaining: 0,
-  voiceInputModel: null,
 };
 
 function normalizePinnedAgentIds(ids: readonly string[]): string[] {
@@ -59,7 +58,6 @@ export function resetMockUserPreferences(): void {
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
   };
 }
 

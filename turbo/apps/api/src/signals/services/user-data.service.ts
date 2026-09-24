@@ -139,7 +139,6 @@ export function userPreferences({
         cloudBrowserEnabledByDefault: true,
         theme: null,
         colorTheme: null,
-        voiceInputModel: null,
         captureNetworkBodiesRemaining: 0,
       };
     }
@@ -155,7 +154,6 @@ export function userPreferences({
       cloudBrowserEnabledByDefault: row.cloudBrowserEnabledByDefault,
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
-      voiceInputModel: null,
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
     };
   });
@@ -250,7 +248,6 @@ function mergeUserPreferences(
       existing.cloudBrowserEnabledByDefault,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
-    voiceInputModel: null,
     captureNetworkBodiesRemaining:
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,

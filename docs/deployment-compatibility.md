@@ -6,15 +6,14 @@ Voice input always uses Gemini 3.1 Flash-Lite on Vertex AI. The Debug
 preferences picker and the OpenRouter and fal transcription paths are removed;
 `POST /api/voice-io/transcribe/segment` no longer reads a member preference.
 
-Older App bundles can still read `voiceInputModel` from
-`GET /api/user-preferences` and send it in preference updates. The API keeps
-the field: responses always return `null`, and updates accept any string up to
-255 characters but neither validate nor persist it. An older API instance
-during the rollout continues to honor a stored selection. The
-`org_members_metadata.voice_input_model` column is left in place and is no
-longer read or written. Remove the contract field after older App bundles
-drain, then drop the column in a separate migration after older API
-deployments drain.
+`voiceInputModel` is removed from the user preferences contract without a
+compatibility window. Its only producer and consumer was the Debug picker behind
+the staff-only `_debug` switch, and the App does not validate API responses. An
+older bundle therefore only shows the default in that staff picker, and a staff
+update that carries nothing but this field is rejected as empty. The
+`org_members_metadata.voice_input_model` column is left in place: the new API
+neither reads nor writes it while an older API may still do so. Drop it in a
+separate migration after older API deployments drain.
 
 ## Codex 0.156.1 OAuth workspace routing
 

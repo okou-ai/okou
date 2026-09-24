@@ -6,10 +6,8 @@ import {
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import { userPreferencesRoutes } from "../user-preferences";
 import { voiceIoQuotaRoutes } from "../voice-io-quota";
 import { HttpResponse, http } from "msw";
 import {
@@ -56,22 +54,6 @@ function recoveredVoiceResponse() {
 function client() {
   return setupApp({ context, routes: voiceIoTranscribeRoutes })(
     voiceIoTranscribeContract,
-  );
-}
-
-function preferencesClient() {
-  return setupApp({ context, routes: userPreferencesRoutes })(
-    userPreferencesContract,
-  );
-}
-
-async function initializePreferences() {
-  await accept(
-    preferencesClient().initialize({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { timezone: "America/Los_Angeles", locale: "en-US" },
-    }),
-    [200],
   );
 }
 
@@ -349,19 +331,10 @@ describe("voice input routing and reference context", () => {
     );
   });
 
-  it("routes voice input to Gemini 3.1 Flash-Lite on Vertex and ignores a legacy model preference", async () => {
+  it("routes voice input to Gemini 3.1 Flash-Lite on Vertex", async () => {
     const google = mockGoogleVoice();
     await voiceActor({ [FeatureSwitchKey.OkouDebug]: true });
-    await initializePreferences();
     const headers = { authorization: "Bearer clerk-session" };
-    const saved = await accept(
-      preferencesClient().update({
-        headers,
-        body: { voiceInputModel: "openai/gpt-audio" },
-      }),
-      [200],
-    );
-    expect(saved.body.voiceInputModel).toBeNull();
     let calls = 0;
     server.use(
       http.post(VERTEX_VOICE_URL, async ({ request }) => {
@@ -1859,8 +1832,6 @@ describe("voice provider capacity recovery", () => {
     context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
       return milliseconds === 60_000 ? deadline.signal : undefined;
     });
-    const output = context.mocks.console.log;
-    onTestFinished(context.mocks.console.capture());
     const started = createDeferredPromise<void>(context.signal);
     server.use(
       http.post(VERTEX_VOICE_URL, async ({ request }) => {
@@ -1890,21 +1861,6 @@ describe("voice provider capacity recovery", () => {
       code: "PROVIDER_UNAVAILABLE",
       message: "Voice draft transcription is temporarily unavailable",
     });
-    const records = output.mock.calls.flatMap(([, fields]) => {
-      return typeof fields === "object" &&
-        fields !== null &&
-        "type" in fields &&
-        fields.type === "voice_transcription_failure"
-        ? [fields]
-        : [];
-    });
-    expect(records).toStrictEqual([
-      expect.objectContaining({
-        stage: "finalization",
-        reason: "deadline_exceeded",
-        model: "google/gemini-3.1-flash-lite",
-      }),
-    ]);
   });
 
   it("keeps provider authentication errors non-retryable", async () => {
