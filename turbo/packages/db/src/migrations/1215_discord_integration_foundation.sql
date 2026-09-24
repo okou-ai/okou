@@ -1,5 +1,4 @@
-ALTER TABLE "chat_threads" ADD CONSTRAINT "uq_chat_threads_id_user" UNIQUE("id","user_id");
---> statement-breakpoint
+ALTER TABLE "chat_threads" ADD CONSTRAINT "uq_chat_threads_id_user" UNIQUE("id","user_id");--> statement-breakpoint
 CREATE TABLE "chat_discord_context" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"connection_id" uuid NOT NULL,

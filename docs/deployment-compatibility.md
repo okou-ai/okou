@@ -26,6 +26,31 @@ the new API. This is a non-GA, default-off surface and introduces no compatibili
 reader or rollback fallback. Application credentials remain environment-owned
 and are never exported or revoked by guild removal.
 
+## Chat search user keyword GIN index (2026-09-24)
+
+Migration `1214_chat_search_user_tsv_gin` installs `btree_gin` and builds
+`chat_event_search_messages_user_tsv_gin_idx` on `(user_id, tsv)` with
+`CREATE INDEX CONCURRENTLY`. It does not block chat search reads or projector
+writes. The build waits for older transactions database-wide, so the migration
+raises `lock_timeout` to 10 minutes and disables `statement_timeout` for its
+own session, then resets both. A failed build is retried from the start: the
+migration drops any INVALID index concurrently before rebuilding it.
+
+The new index keeps `fastupdate`, like `chat_event_search_messages_tsv_idx`.
+The search projector's GIN maintenance now drains both indexes from one shared
+30-second tick budget, so a foreground 4 MiB pending-list flush does not land
+inside a projection transaction. The API role must own the new index for
+`gin_clean_pending_list`, as it does the existing one.
+
+Old API/new DB remains compatible: the old projector does not maintain the new
+index, but the old API only serves until promotion. New API/old DB is not a
+serving combination, because maintenance resolves the new index by name. The
+release must complete the migration before API promotion. Rollback keeps the
+extension and index and rolls back only the API. The search query and its
+responses are unchanged; the planner chooses the new index. The existing
+`chat_event_search_messages_tsv_idx` stays until production plans confirm it
+is unused.
+
 ## AgentPhone connect link brand signature (2026-09-24)
 
 The API verifies only the provider-identity `sig` on an AgentPhone connect

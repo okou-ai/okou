@@ -74,7 +74,6 @@ import {
   setupOnboardingEntryPage$,
   setupOnboardingExperiencePage$,
   setupOnboardingSourcesPage$,
-  setupOnboardingProfilePage$,
   setupOnboardingReadyPage$,
   setupOnboardingSkillsPage$,
   setupOnboardingSlackPage$,
@@ -454,11 +453,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.onboardingSkills,
     setup: setupAuthPageWrapper(setupOnboardingSkillsPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
-  },
-  {
-    path: ROUTES.onboardingProfile,
-    setup: setupAuthPageWrapper(setupOnboardingProfilePage$),
     pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
