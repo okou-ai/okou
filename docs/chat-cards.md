@@ -733,8 +733,10 @@ reads resolve callback delivery from the matching canonical Chat input event in
 the owning thread. A pending transcript input card or terminal card with an
 unconfirmed callback refreshes when its page regains focus or visibility, so
 completing a standalone action updates the original transcript card on return.
-The standalone form keeps its draft mounted when the user switches tabs; submit
-revalidates the Browser target. The Platform and API both enforce
+The inline dialog pauses that return refresh while it is open, so switching
+tabs does not dismiss the form or lose its draft. The standalone form also keeps
+its draft mounted when the user switches tabs; submit revalidates the Browser
+target. The Platform and API both enforce
 `BrowserNativeInput`.
 
 For direct Browser takeover, the agent shares the current `okou browser view`

@@ -507,6 +507,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
 });
 
 test("A Browser input card opens a preflighted dialog and completes without navigation", async () => {
+  let reads = 0;
   let preflights = 0;
   let state: BrowserUserActionResponse["state"] = "pending";
   let sentPrompt = "";
@@ -514,6 +515,7 @@ test("A Browser input card opens a preflighted dialog and completes without navi
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    reads += 1;
     return respond(200, {
       ...browserInputAction(state),
       fields: [
@@ -609,6 +611,12 @@ test("A Browser input card opens a preflighted dialog and completes without navi
   );
   expect(window.location.href).toBe(currentUrl);
   expect(preflights).toBe(1);
+  await fill(within(dialog).getByLabelText("Notes"), "Draft");
+  const readsBeforeFocus = reads;
+  window.dispatchEvent(new Event("focus"));
+  expect(dialog).toBeVisible();
+  expect(within(dialog).getByLabelText("Notes")).toHaveValue("Draft");
+  expect(reads).toBe(readsBeforeFocus);
 
   const closeButton = buttonsByName("Close", dialog)[0];
   if (!closeButton) {
@@ -723,6 +731,7 @@ test("A mounted transcript card rechecks callback delivery on page return", asyn
 });
 
 test("Absolute and relative Browser input URLs both render dialog cards", async () => {
+  let reads = 0;
   installCapabilityChat({
     events: completedConversation(
       [
@@ -732,6 +741,10 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
     ),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    reads += 1;
+    return respond(200, browserInputAction("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
     return respond(200, browserInputAction("pending"));
   });
 
@@ -747,6 +760,22 @@ test("Absolute and relative Browser input URLs both render dialog cards", async 
     expect(buttonsByName("Enter information")).toHaveLength(2);
   });
   expect(linksByName("Enter information")).toHaveLength(0);
+
+  const openButton = buttonsByName("Enter information")[0];
+  if (!openButton) {
+    throw new Error("Browser input card button was not visible");
+  }
+  click(openButton);
+  const dialog = await screen.findByRole("dialog", {
+    name: "Enter information in browser",
+  });
+  await expect(
+    within(dialog).findByLabelText("Account email"),
+  ).resolves.toBeVisible();
+  const readsBeforeFocus = reads;
+  window.dispatchEvent(new Event("focus"));
+  expect(dialog).toBeVisible();
+  expect(reads).toBe(readsBeforeFocus);
 });
 
 test("Keep feature-disabled and foreign Browser actions inert without hiding the ordinary Browser card", async () => {

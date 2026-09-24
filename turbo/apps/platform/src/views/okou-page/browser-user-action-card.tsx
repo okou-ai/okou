@@ -792,6 +792,7 @@ function PendingInlineAction({
   const [open, setOpen] = useState(false);
   const pageSignal = useGet(pageSignal$);
   const beginEntry = useSet(signals.beginEntry$);
+  const dialogRef = useSet(signals.dialogRef$);
   const title = t(($) => {
     return $.chat.browserInput.title;
   });
@@ -817,7 +818,7 @@ function PendingInlineAction({
               </Button>
             }
           />
-          <DialogContent>
+          <DialogContent ref={dialogRef}>
             <DialogHeader>
               <DialogTitle>{title}</DialogTitle>
             </DialogHeader>

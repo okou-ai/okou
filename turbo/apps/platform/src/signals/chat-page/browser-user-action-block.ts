@@ -82,6 +82,10 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
     (() => void) | undefined,
     [HTMLDivElement | null]
   >;
+  readonly dialogRef$: Command<
+    (() => void) | undefined,
+    [HTMLDivElement | null]
+  >;
   readonly formRef$: Command<
     (() => void) | undefined,
     [HTMLFormElement | null]
@@ -781,10 +785,29 @@ export function createBrowserUserActionSignals(
   descriptor: BrowserUserActionDescriptor,
 ): BrowserUserActionSignals {
   const requestSignals = createRequestSignals(descriptor);
-  const resumeRef$ = onRef(
+  const openDialogCount$ = state(0);
+  const dialogRef$ = onRef(
     command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+      set(openDialogCount$, (count) => {
+        return count + 1;
+      });
+      signal.addEventListener(
+        "abort",
+        () => {
+          set(openDialogCount$, (count) => {
+            return Math.max(0, count - 1);
+          });
+        },
+        { once: true },
+      );
+    }),
+  );
+  const resumeRef$ = onRef(
+    command(({ get, set }, _element: HTMLDivElement, signal: AbortSignal) => {
       const refresh = () => {
-        set(requestSignals.refresh$);
+        if (get(openDialogCount$) === 0) {
+          set(requestSignals.refresh$);
+        }
       };
       window.addEventListener("focus", refresh, { signal });
       document.addEventListener(
@@ -818,6 +841,7 @@ export function createBrowserUserActionSignals(
     ...descriptor,
     ...requestSignals,
     resumeRef$,
+    dialogRef$,
     ...entrySignals,
     ...standaloneEntrySignals,
     ...draftSignals,
