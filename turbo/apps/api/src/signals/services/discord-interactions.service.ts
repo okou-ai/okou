@@ -611,7 +611,7 @@ export const handleDiscordInteractions$ = command(
         acknowledged.kind === "discord-error" &&
         acknowledged.code === 40_060
       ) {
-        return Response.json(null, { status: 202 });
+        return new Response(null, { status: 202 });
       }
       return Response.json(
         { error: "Discord could not acknowledge the interaction" },
@@ -621,6 +621,6 @@ export const handleDiscordInteractions$ = command(
     waitUntil(
       set(finishDiscordInteraction$, interaction, actor, botToken, signal),
     );
-    return Response.json(null, { status: 202 });
+    return new Response(null, { status: 202 });
   },
 );

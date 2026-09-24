@@ -114,7 +114,7 @@ export const discordInteractionsContract = c.router({
     body: c.type<string>(),
     responses: {
       200: z.object({ type: z.literal(1) }),
-      202: z.null(),
+      202: c.noBody(),
       400: z.object({ error: z.string() }),
       401: z.object({ error: z.string() }),
       503: z.object({ error: z.string() }),
