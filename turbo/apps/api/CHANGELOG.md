@@ -8,6 +8,36 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.669.0](https://github.com/okou-ai/okou/compare/api-v1.668.0...api-v1.669.0) (2026-09-24)
+
+
+### Features
+
+* **browser:** support native number input ([#36549](https://github.com/okou-ai/okou/issues/36549)) ([d0006e3](https://github.com/okou-ai/okou/commit/d0006e3974bfc524e77388536422b5fe4fe70b7f))
+* enforce live chat ssh/vnc host access ([#36440](https://github.com/okou-ai/okou/issues/36440)) ([69b29a9](https://github.com/okou-ai/okou/commit/69b29a9ac264f582613a966fd8c1844a13f1b5ec))
+* store chat thread archive state instead of title emoji ([#36480](https://github.com/okou-ai/okou/issues/36480)) ([f5a0de6](https://github.com/okou-ai/okou/commit/f5a0de65c0621ca58c35edd65fc257417becdaa3))
+
+
+### Bug Fixes
+
+* **api:** keep artifact delivery in web chat after switching ([#36567](https://github.com/okou-ai/okou/issues/36567)) ([0e4515a](https://github.com/okou-ai/okou/commit/0e4515a5b79b3e8c13d33fb9ecf0f4356f0d5563))
+
+
+### Performance Improvements
+
+* **api:** attribute storage cache pool acquisition ([#36530](https://github.com/okou-ai/okou/issues/36530)) ([9e67181](https://github.com/okou-ai/okou/commit/9e67181ce016aaf66ace5f12544c0a35fcb4b002))
+* **indicators:** resolve unread threads without correlated subqueries ([#36557](https://github.com/okou-ai/okou/issues/36557)) ([55dea0f](https://github.com/okou-ai/okou/commit/55dea0f14bc599c5b54dd6137216970662e8144c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.503.0
+    * @okouai/core bumped to 8.708.0
+    * @okouai/db bumped to 1.293.0
+    * @okouai/pi-agent-runtime bumped to 1.40.6
+
 ## [1.668.0](https://github.com/okou-ai/okou/compare/api-v1.667.0...api-v1.668.0) (2026-09-24)
 
 
