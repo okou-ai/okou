@@ -69,7 +69,7 @@ async function resolveUserMention(
 }
 
 /**
- * Resolve the audit footer text appended to user-initiated Slack messages.
+ * Resolve the attribution footer text appended to user-initiated Slack messages.
  *
  * Mirrors the Slack message route footer resolver. Each resolver swallows its
  * own errors so any single lookup failure degrades the footer gracefully.

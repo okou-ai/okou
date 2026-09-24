@@ -7,7 +7,7 @@ import { Client } from "pg";
 import { z } from "zod";
 
 const MIGRATION_FILE =
-  "../src/migrations/1211_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro.sql";
+  "../src/migrations/1212_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro.sql";
 
 export async function validateSonnet46Opus48DeepSeekV4ProRetirement(
   databaseUrl: string,

@@ -227,14 +227,10 @@ async function deliverClaimedSlackChatCallback(
       {
         db: args.db,
         orgId: run.orgId,
-        userId: run.userId,
         runId: args.callback.runId,
         agentId: run.agentId,
         replyToMention:
           mentionerCount > 1 ? `<@${binding.slackUserId}>` : undefined,
-        getFeatureOverrides: () => {
-          return Promise.resolve(featureContext.overrides ?? {});
-        },
       },
       signal,
     ),

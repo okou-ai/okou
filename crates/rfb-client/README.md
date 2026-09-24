@@ -17,12 +17,13 @@ and a deadline. The caller must validate its saved destination, profile and
 authorization before opening that stream. This crate never resolves a hostname
 or opens a second socket.
 
-`authenticate_apple_dh` is a separate engine-only entry point for Apple's
-legacy ARD security type 30. `authenticate_apple_srp` is a separate, additive
-engine-only entry point for the observed Apple Direct SRP security type 36.
-Neither raw-stream entry point supplies post-authentication encryption or an
-authorization decision; product admission must supply a verified outer channel.
-Type 36 is not currently selectable through saved connections or Runner policy.
+`authenticate_apple_dh` is a separate entry point for Apple's legacy ARD
+security type 30. `authenticate_apple_srp` is a separate, additive entry point
+for the observed Apple Direct SRP security type 36. Neither raw-stream entry
+point supplies post-authentication encryption or an authorization decision.
+The Runner admits each as a distinct saved profile only through an independently
+authorized SSH host and a literal Mac loopback VNC destination. `VncAccess`
+remains disabled by default.
 
 RFB 3.8 / VeNCrypt 0.2 supports only the caller-selected X509None (subtype 260),
 X509Vnc (261), or X509Plain (262) policy. TLS 1.2 or 1.3 verifies the certificate
@@ -123,8 +124,8 @@ rejected credentials. It does not
 initialize or read the desktop. An earlier direct-public-port authentication
 probe is not a product transport policy.
 Security type 33 (Apple RSA-SRP) remains unsupported pending an independently
-verified key-trust and final-proof contract. This engine does not turn on
-`VncAccess` or admit any saved profile.
+verified key-trust and final-proof contract. This crate does not turn on
+`VncAccess` or select a saved profile; the Runner enforces that policy.
 
 The earlier of the caller deadline and 30 seconds bounds the whole handshake.
 RFB version exchange, security negotiation, any selected TLS handshake, and the
