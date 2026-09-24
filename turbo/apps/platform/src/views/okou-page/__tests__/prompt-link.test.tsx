@@ -227,26 +227,20 @@ test("A prompt link starts a presentation chat with its selected template", asyn
   });
 });
 
-test("A prompt link starts a video chat with its selected style", async () => {
+test("A saved video template link recovers its brief as an editable chat draft", async () => {
   const capture = capturePromptLaunch();
   await setupPage({
     context,
     path: "/prompt?prompt=Create%20a%20cinematic%20product%20film&template=epic-grandeur",
   });
 
-  const send = await waitForPromptLaunch(
-    "Create a cinematic product film",
-    capture,
+  const composer = await waitForDraft("Create a cinematic product film");
+  await userEvent.setup().type(composer, " with my own provider");
+  expect(composer).toHaveTextContent(
+    "Create a cinematic product film with my own provider",
   );
-
-  expect(templatePart(send)).toStrictEqual({
-    type: "template",
-    titleSnapshot: "Epic Grandeur",
-    template: {
-      type: "video",
-      selection: { stylePresetId: "video-template:epic-grandeur" },
-    },
-  });
+  expect(capture.sends).toHaveLength(0);
+  expect(search()).toBe("");
 });
 
 test("A prompt link starts a website chat with its selected template", async () => {

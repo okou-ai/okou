@@ -210,8 +210,6 @@ export function ComposerPaidToolNotice({
 
 const CATEGORY_TOOLS: Readonly<Record<string, readonly PaidToolId[]>> = {
   illustration: ["image-generation"],
-  video: ["video-generation"],
-  avatar: ["avatar-video-generation"],
 };
 
 export function TemplatePaidToolNotice({

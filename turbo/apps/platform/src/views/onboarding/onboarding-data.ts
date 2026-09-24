@@ -20,7 +20,6 @@ const ONBOARDING_MAKE_OPTION_IDS = [
   "slack",
   "workflow",
   "presentation",
-  "video",
   "images",
   "website",
   "explore",
@@ -34,8 +33,6 @@ const ONBOARDING_MAKE_OPTION_IMAGES: Readonly<
     "https://static.okou.io/web/assets/onboarding/v2-choice-workflow-default_80x80.png",
   presentation:
     "https://static.okou.io/web/assets/onboarding/v2-choice-presentation_80x80.png",
-  video:
-    "https://static.okou.io/web/assets/onboarding/v2-choice-video_80x80.png",
   images:
     "https://static.okou.io/web/assets/onboarding/v2-choice-images_80x80.png",
   website:
@@ -265,35 +262,4 @@ export function buildCustomWorkflowPrompt(
   return trimmedNote.startsWith("@")
     ? trimmedNote
     : `@${assistantName} ${trimmedNote}`;
-}
-
-const VIDEO_PROMPTS: Readonly<Record<string, string>> = {
-  "epic-grandeur":
-    "/gen video with video template `epic-grandeur`, create a 12-second cinematic launch teaser for Aster Ridge, a mountain observatory opening at sunrise. Use sweeping aerial scale, golden backlight, slow camera movement, and a final title card.",
-  "gourmet-documentary":
-    "/gen video with video template `gourmet-documentary`, create a 12-second documentary spot for Hearth & Grain, an artisan bakery introducing its morning sourdough ritual. Focus on macro crust texture, steam, warm backlight, and hands at work.",
-  "luxury-product":
-    "/gen video with video template `luxury-product`, create a 10-second product reveal for a black ceramic chronograph watch. Use a dark studio, pinpoint highlights, premium material detail, slow macro movement, and a refined final lockup.",
-  "shortform-viral":
-    "/gen video with video template `shortform-viral`, create a 9:16 creator-style teaser for a desk setup upgrade. Start with a fast visual hook, use handheld energy, bright color, quick cuts, and end with a simple call to action.",
-  "fashion-editorial":
-    "/gen video with video template `fashion-editorial`, create a 12-second editorial film for a winter capsule collection in a concrete gallery. Use cold desaturated color, strong silhouettes, luxury fabric texture, and deliberate pose changes.",
-  "sports-performance-ad":
-    "/gen video with video template `sports-performance-ad`, create a 12-second performance ad for a carbon-plate running shoe. Show athlete effort, gear close-ups, impact rhythm, dramatic rim light, and a confident product end frame.",
-  "japanese-wabi-sabi":
-    "/gen video with video template `japanese-wabi-sabi`, create a 12-second quiet lifestyle film for a ceramic tea set in a morning kitchen. Use warm soft light, natural imperfection, negative space, and slow, calm motion.",
-  "hand-drawn-fantasy-anime":
-    "/gen video with video template `hand-drawn-fantasy-anime`, create a 12-second fantasy animation moment where a young mapmaker discovers a floating lantern forest. Use painterly 2D backgrounds, expressive character motion, and gentle wonder.",
-  "cyberpunk-anime":
-    "/gen video with video template `cyberpunk-anime`, create a 12-second 2D anime scene of a courier crossing a neon megacity at night. Use rain-slick streets, cel shading, glowing signage, and a melancholic final beat.",
-  "chinese-ink-art":
-    "/gen video with video template `chinese-ink-art`, create a 12-second ink-wash scene of cranes crossing misty mountains at dawn. Use monochrome brush texture, white space, drifting mist, and a calm classical-poetry mood.",
-};
-
-export function onboardingVideoPrompt(slug: string): string {
-  const prompt = VIDEO_PROMPTS[slug];
-  if (!prompt) {
-    throw new Error(`Missing onboarding video prompt: ${slug}`);
-  }
-  return prompt;
 }

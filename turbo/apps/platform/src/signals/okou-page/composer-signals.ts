@@ -8,7 +8,6 @@ import {
   type ComposerVoiceInputSignals,
 } from "./composer-voice-input.ts";
 import type {
-  ChatRunVideoOptionsRequest,
   GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
@@ -59,7 +58,6 @@ import {
   createComposerUiSignals,
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
-import { videoRunOptionsForSend } from "./video-run-options.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import {
@@ -123,18 +121,12 @@ type ComposerTemplateEditorSignals = Pick<
 >;
 
 type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
-type ComposerVideoOptionsSignals = ComposerUiSignalGroups["videoOptions"];
 type ComposerTemplateUiSignals = ComposerUiSignalGroups["template"];
 
 export interface ComposerSubmission {
   readonly prompt: string;
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: WorkflowComposerSubmissionSnapshot["editorDocument"];
-  /**
-   * Video parameters for composers outside the Create rollout. Enabled
-   * composers carry their settings in the message's additional_info part.
-   */
-  readonly videoRunOptions: ChatRunVideoOptionsRequest | undefined;
   /**
    * What the composer is set to make. A send inside a thread keeps it, so a
    * send that creates one hands it to the thread it opens.
@@ -296,7 +288,6 @@ export interface ComposerSignals {
   readonly model: ComposerModelSignals;
   readonly imageModel?: ComposerImageModelSignals;
   readonly videoModel?: ComposerVideoModelSignals;
-  readonly videoOptions: ComposerVideoOptionsSignals;
   readonly computer: ComposerComputerSignals;
   readonly submission: ComposerSubmissionSignals;
   readonly queue: ComposerQueueSignals;
@@ -624,7 +615,6 @@ export function createComposerSignals(
   );
   const create = createComposerCreateSignals(workflowComposer, ui, {
     image: options.imageModel !== undefined,
-    video: options.videoModel !== undefined,
   });
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
@@ -642,7 +632,6 @@ export function createComposerSignals(
     options,
     eventSignals,
     workflowComposer,
-    ui.videoOptions,
     { voice, create, taskChips },
   );
   const fileInput = createComposerFileInputSignals();
@@ -708,7 +697,6 @@ export function createComposerSignals(
     },
     ...(options.imageModel ? { imageModel: options.imageModel } : {}),
     ...(options.videoModel ? { videoModel: options.videoModel } : {}),
-    videoOptions: ui.videoOptions,
     computer: {
       ...createComputerUseUiSignals(),
       computerUseHostId$: options.computerUseHostId$,
@@ -839,26 +827,6 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
   };
 }
 
-/**
- * Resolved at send rather than held settled, so the parameters follow a video
- * model the user changed after setting them. Creative Video sends every
- * displayed parameter, including the model's defaults.
- */
-function createVideoRunOptionsSignal(
-  videoModel: ComposerVideoModelSignals | undefined,
-  videoOptions: ComposerVideoOptionsSignals,
-): Command<Promise<ChatRunVideoOptionsRequest | undefined>, [AbortSignal]> {
-  return command(async ({ get }, signal: AbortSignal) => {
-    if (!videoModel) {
-      return undefined;
-    }
-    const patch = get(videoOptions.videoRunOptions$);
-    const model = await get(videoModel.effectiveVideoModel$);
-    signal.throwIfAborted();
-    return videoRunOptionsForSend(patch, model);
-  });
-}
-
 function createComposerPrimaryActionSignal(args: {
   readonly options: CreateComposerSignalsOptions;
   readonly eventSignals: ReturnType<typeof createComposerChatEventSignals>;
@@ -913,24 +881,18 @@ function joinAdditionalInfo(
 function createSubmitCurrentInput({
   options,
   workflowComposer,
-  videoOptions,
   voice,
   create,
   taskChips,
 }: {
   readonly options: CreateComposerSignalsOptions;
   readonly workflowComposer: WorkflowComposerSignals;
-  readonly videoOptions: ComposerVideoOptionsSignals;
   readonly voice: ComposerVoiceInputSignals;
   readonly create: ComposerCreateSignals;
   readonly taskChips: ComposerTaskChipsSignals;
 }) {
   const draft = options.draft.signals;
   const voiceState$ = voice.state$;
-  const readVideoRunOptions$ = createVideoRunOptionsSignal(
-    options.videoModel,
-    videoOptions,
-  );
   return command(
     async (
       { get, set },
@@ -963,15 +925,10 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
-      const videoRunOptions = get(create.creativeVideo$)
-        ? await set(readVideoRunOptions$, signal)
-        : undefined;
-      signal.throwIfAborted();
       // Keep the new persisted part within the existing Create rollout.
       const composerAdditionalInfo = get(create.enabled$)
         ? buildComposerAdditionalInfo(
             mode,
-            videoRunOptions,
             get(create.presentationSlideCount$),
             get(taskChips.task$) === "visualization"
               ? get(taskChips.visualization.preferences$)
@@ -994,11 +951,6 @@ function createSubmitCurrentInput({
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
-        // Read from the composer's own block rather than the joined text: the
-        // video parameters are only inside that one, so a caller's context
-        // must not be what drops the structured field a composer outside the
-        // rollout still depends on.
-        videoRunOptions: composerAdditionalInfo ? undefined : videoRunOptions,
         taskSelection: {
           task: get(taskChips.task$) ?? mode,
           presentationSlideCount: get(create.presentationSlideCount$),
@@ -1015,9 +967,6 @@ function createSubmitCurrentInput({
         nextSubmission,
         signal,
       );
-      if (submitted) {
-        set(videoOptions.resetVideoRunOptions$);
-      }
       return submitted;
     },
   );
@@ -1027,7 +976,6 @@ function createComposerSubmissionSignals(
   options: CreateComposerSignalsOptions,
   eventSignals: ReturnType<typeof createComposerChatEventSignals>,
   workflowComposer: WorkflowComposerSignals,
-  videoOptions: ComposerVideoOptionsSignals,
   {
     voice,
     create,
@@ -1056,7 +1004,6 @@ function createComposerSubmissionSignals(
   const submitCurrentInput$ = createSubmitCurrentInput({
     options,
     workflowComposer,
-    videoOptions,
     voice,
     create,
     taskChips,

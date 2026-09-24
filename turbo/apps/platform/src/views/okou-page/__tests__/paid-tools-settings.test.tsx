@@ -67,7 +67,7 @@ test("Members manage Paid tools in Tools, separately from Chat", async () => {
   click(button("Tools", dialog));
   const toggle = await readySwitch("Web search");
   expect(toggle).toBeChecked();
-  expect(within(dialog).getAllByRole("switch")).toHaveLength(12);
+  expect(within(dialog).getAllByRole("switch")).toHaveLength(9);
   expect(
     within(dialog).getByText(
       "These settings apply only to you in Research team.",

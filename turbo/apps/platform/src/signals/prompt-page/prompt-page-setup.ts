@@ -52,22 +52,6 @@ function websiteGenerationTemplateFromId(
   };
 }
 
-function videoGenerationTemplateFromId(
-  id: string,
-): ResolvedGenerationTemplate | undefined {
-  const videoTemplate = findVideoTemplateItem(id);
-  if (!videoTemplate) {
-    return undefined;
-  }
-  return {
-    titleSnapshot: videoTemplate.title,
-    template: {
-      type: "video",
-      selection: { stylePresetId: videoTemplate.id },
-    },
-  };
-}
-
 function presentationGenerationTemplateFromId(
   id: string,
 ): ResolvedGenerationTemplate | undefined {
@@ -127,7 +111,6 @@ function illustrationGenerationTemplateFromId(
 
 const generationTemplateParsers = [
   websiteGenerationTemplateFromId,
-  videoGenerationTemplateFromId,
   presentationGenerationTemplateFromId,
   illustrationGenerationTemplateFromId,
 ] as const;
@@ -168,11 +151,22 @@ export const setupPromptPage$ = command(
     const params = get(searchParams$);
     const prompt = params.get("prompt")?.trim();
     const requestedModel = params.get("model")?.trim();
-    const template = params.get("template");
+    const template = params.get("template")?.trim() ?? null;
     const resolvedGenerationTemplate =
       generationTemplateFromSearchParam(template);
-    if (!prompt) {
-      set(detachedNavigateTo$, "/", { replace: true });
+    const retiredTemplate =
+      template &&
+      (template.startsWith("video-template:") ||
+        template.startsWith("avatar-template:") ||
+        template.startsWith("intro-video-template:") ||
+        findVideoTemplateItem(template) !== undefined);
+    if (!prompt || retiredTemplate) {
+      set(detachedNavigateTo$, "/", {
+        replace: true,
+        searchParams: new URLSearchParams(
+          retiredTemplate && prompt ? { prompt } : {},
+        ),
+      });
       return;
     }
 

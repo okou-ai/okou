@@ -6,7 +6,6 @@ import {
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
-import { videoPickersVisible$ } from "./video-picker-visibility.ts";
 
 /**
  * Entry kinds on the chat landing page. The values match the template picker
@@ -16,8 +15,6 @@ const START_CARD_KINDS = [
   "slides",
   "website",
   "illustration",
-  "video",
-  "avatar",
   "workflow",
 ] as const;
 
@@ -80,20 +77,14 @@ export const startCardWorkflowConnectorIcons$ = computed(
   },
 );
 
-export const startCardKinds$ = computed(
-  async (get): Promise<readonly StartCardKind[]> => {
-    const showVideo = await get(videoPickersVisible$);
-    const workflowTemplate = get(startCardWorkflowTemplate$);
-    return get(internalStartCardOrder$)
-      .filter((kind) => {
-        if (kind === "video" || kind === "avatar") {
-          return showVideo;
-        }
-        if (kind === "workflow") {
-          return workflowTemplate !== undefined;
-        }
-        return true;
-      })
-      .slice(0, START_CARD_COUNT);
-  },
-);
+export const startCardKinds$ = computed((get): readonly StartCardKind[] => {
+  const workflowTemplate = get(startCardWorkflowTemplate$);
+  return get(internalStartCardOrder$)
+    .filter((kind) => {
+      if (kind === "workflow") {
+        return workflowTemplate !== undefined;
+      }
+      return true;
+    })
+    .slice(0, START_CARD_COUNT);
+});

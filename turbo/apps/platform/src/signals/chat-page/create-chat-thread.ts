@@ -3753,9 +3753,6 @@ function createThreadSubmitMessageSignal(
                 cloudBrowserEnabled: explicit ? cloudBrowserEnabled : undefined,
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
-                ...(submission.videoRunOptions === undefined
-                  ? {}
-                  : { videoRunOptions: submission.videoRunOptions }),
                 ...(options.forward ? { forward: options.forward } : {}),
                 ...(options.onOptimisticSend
                   ? { onOptimisticSend: options.onOptimisticSend }
@@ -3771,9 +3768,6 @@ function createThreadSubmitMessageSignal(
                 ...(explicit ? { cloudBrowserEnabled } : {}),
                 generationTemplate: submission.generationTemplate,
                 editorDocument: submission.editorDocument,
-                ...(submission.videoRunOptions === undefined
-                  ? {}
-                  : { videoRunOptions: submission.videoRunOptions }),
                 ...(options.forward ? { forward: options.forward } : {}),
                 ...(options.onOptimisticSend
                   ? { onOptimisticSend: options.onOptimisticSend }

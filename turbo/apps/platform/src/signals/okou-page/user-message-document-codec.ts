@@ -774,9 +774,35 @@ export function messageDocumentToEditorDoc(value: unknown): JSONContent | null {
 /** Restores only the persisted user message portion of a composer draft. */
 export function draftToEditorDoc(userMessage: unknown): JSONContent | null {
   const parsedUserMessage = userMessageDocumentSchema.safeParse(userMessage);
-  return parsedUserMessage.success
-    ? restoredEditorDoc(parsedUserMessage.data)
-    : null;
+  if (!parsedUserMessage.success) {
+    return null;
+  }
+  return restoredEditorDoc({
+    ...parsedUserMessage.data,
+    parts: parsedUserMessage.data.parts.flatMap((part): UserMessagePart[] => {
+      if (part.type === "template") {
+        return part.template.type === "video" ||
+          part.template.type === "intro-video"
+          ? []
+          : [part];
+      }
+      if (part.type === "feedback") {
+        return [
+          {
+            ...part,
+            note: part.note.filter((note) => {
+              return (
+                note.type !== "template" ||
+                (note.template.type !== "video" &&
+                  note.template.type !== "intro-video")
+              );
+            }),
+          },
+        ];
+      }
+      return [part];
+    }),
+  });
 }
 
 /** Serializes the business document to the same plain prompt representation. */

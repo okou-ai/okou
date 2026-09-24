@@ -1,4 +1,3 @@
-import type { SyntheticEvent } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import type { TFunction } from "i18next";
@@ -9,8 +8,6 @@ import {
   type OnboardingDraft,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
-import { detach, Reason } from "../../signals/utils.ts";
-import { onboardingVideoPrompt } from "./onboarding-data.ts";
 import { useOnboardingNavigation } from "./onboarding-navigation.ts";
 import { OnboardingRunAction } from "./onboarding-run-action.tsx";
 import { Textarea, cn } from "@okouai/ui";
@@ -20,20 +17,8 @@ import {
 } from "./onboarding-shell.tsx";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { VIDEO_TEMPLATE_ITEMS } from "@okouai/core/video-template-items";
 
-type TemplateRunKind = "presentation" | "image" | "video";
-
-type TemplateRunMedia =
-  | {
-      readonly kind: "presentation" | "image";
-      readonly imageUrl: string;
-    }
-  | {
-      readonly kind: "video";
-      readonly imageUrl: string;
-      readonly videoUrl: string;
-    };
+type TemplateRunKind = "presentation" | "image";
 
 interface TemplateRunConfig {
   readonly title: string;
@@ -44,8 +29,10 @@ interface TemplateRunConfig {
   readonly templateSlug: string;
   readonly templateId: string;
   readonly backPath: RoutePath;
-  readonly media: TemplateRunMedia;
-  readonly requiresPaidPlan: boolean;
+  readonly media: {
+    readonly kind: TemplateRunKind;
+    readonly imageUrl: string;
+  };
 }
 
 function withNote(basePrompt: string, label: string, note: string): string {
@@ -85,7 +72,6 @@ function presentationRunConfig(
       kind: "presentation",
       imageUrl: item.previewImages[0] ?? item.previewImage,
     },
-    requiresPaidPlan: false,
   };
 }
 
@@ -120,46 +106,6 @@ function imageRunConfig(
       kind: "image",
       imageUrl: item.previewImage,
     },
-    requiresPaidPlan: false,
-  };
-}
-
-function videoRunConfig(
-  slug: string | null,
-  note: string,
-  t: TFunction<"common">,
-): TemplateRunConfig | null {
-  const item = VIDEO_TEMPLATE_ITEMS.find((candidate) => {
-    return candidate.slug === slug;
-  });
-  if (!item) {
-    return null;
-  }
-  return {
-    title: t(($) => {
-      return $.onboarding.templateRun.video.title;
-    }),
-    prompt: withNote(
-      onboardingVideoPrompt(item.slug),
-      "Additional direction",
-      note,
-    ),
-    note,
-    noteLabel: t(($) => {
-      return $.onboarding.templateRun.video.noteLabel;
-    }),
-    notePlaceholder: t(($) => {
-      return $.onboarding.templateRun.video.notePlaceholder;
-    }),
-    templateSlug: item.slug,
-    templateId: item.id,
-    backPath: ROUTES.onboardingVideoTemplate,
-    media: {
-      kind: "video",
-      imageUrl: item.cardPreviewImage ?? item.previewImage,
-      videoUrl: item.previewWebm,
-    },
-    requiresPaidPlan: true,
   };
 }
 
@@ -175,55 +121,15 @@ function templateRunConfig(
       t,
     );
   }
-  if (kind === "image") {
-    return imageRunConfig(draft.imageTemplateSlug, draft.imageNote, t);
-  }
-  return videoRunConfig(draft.videoTemplateSlug, draft.videoNote, t);
+  return imageRunConfig(draft.imageTemplateSlug, draft.imageNote, t);
 }
 
-function playVideo(event: SyntheticEvent<HTMLElement>): void {
-  const video = event.currentTarget.querySelector("video");
-  if (video) {
-    detach(video.play(), Reason.DomCallback);
-  }
-}
-
-function resetVideo(event: SyntheticEvent<HTMLElement>): void {
-  const video = event.currentTarget.querySelector("video");
-  if (video) {
-    video.pause();
-    video.currentTime = 0;
-  }
-}
-
-function TemplateRunPreview({ media }: { readonly media: TemplateRunMedia }) {
+function TemplateRunPreview({
+  media,
+}: {
+  readonly media: TemplateRunConfig["media"];
+}) {
   const { t } = useTranslation();
-  if (media.kind === "video") {
-    return (
-      <section
-        aria-label={t(($) => {
-          return $.onboarding.templateRun.video.previewLabel;
-        })}
-        tabIndex={0}
-        className="mt-6 h-[200px] w-full max-w-[350px] overflow-hidden rounded-3xl border border-border bg-background shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary"
-        onFocus={playVideo}
-        onBlur={resetVideo}
-        onMouseEnter={playVideo}
-        onMouseLeave={resetVideo}
-      >
-        <video
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          poster={media.imageUrl}
-          className="h-full w-full object-cover"
-        >
-          <source src={media.videoUrl} type="video/webm; codecs=vp9" />
-        </video>
-      </section>
-    );
-  }
   if (media.kind === "presentation") {
     return (
       <section
@@ -274,10 +180,8 @@ function OnboardingTemplateRunPage({
   const setNote = (note: string): void => {
     if (kind === "presentation") {
       setDraft({ presentationNote: note });
-    } else if (kind === "image") {
-      setDraft({ imageNote: note });
     } else {
-      setDraft({ videoNote: note });
+      setDraft({ imageNote: note });
     }
   };
 
@@ -296,10 +200,7 @@ function OnboardingTemplateRunPage({
       footer={
         <OnboardingRunAction
           prompt={config.prompt}
-          note={config.note}
           template={config.templateId}
-          templateSlug={config.templateSlug}
-          requiresPaidPlan={config.requiresPaidPlan}
           onBack={handleBack}
         />
       }
@@ -333,8 +234,4 @@ export function OnboardingPresentationRunPage() {
 
 export function OnboardingImageRunPage() {
   return <OnboardingTemplateRunPage kind="image" />;
-}
-
-export function OnboardingVideoRunPage() {
-  return <OnboardingTemplateRunPage kind="video" />;
 }

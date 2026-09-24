@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { VIDEO_TEMPLATE_ITEMS } from "@okouai/core/video-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import {
   click,
   fill,
@@ -151,7 +151,7 @@ test("Gallery notices follow each paid branch without blocking unrelated preview
   mockTemplateChat();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
     return respond(200, {
-      disabledTools: ["image-generation", "avatar-video-generation"],
+      disabledTools: ["image-generation"],
     });
   });
   await setupComposer();
@@ -160,11 +160,9 @@ test("Gallery notices follow each paid branch without blocking unrelated preview
     "Illustration",
   );
   await within(dialog).findByText("Image generation is off for you");
-  click(tabByText("Avatar"));
-  await within(dialog).findByText("Avatar video generation is off for you");
-  click(tabByText("Video"));
+  click(tabByText("Website"));
   await within(dialog).findByLabelText(
-    `Select video template ${VIDEO_TEMPLATE_ITEMS[0]?.title}`,
+    `Select website template ${WEBSITE_TEMPLATE_ITEMS[0]?.title}`,
   );
   expect(within(dialog).queryByText(/is off for you/)).not.toBeInTheDocument();
 });

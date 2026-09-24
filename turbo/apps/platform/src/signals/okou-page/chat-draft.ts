@@ -1119,7 +1119,12 @@ export function createDraftSignals(): DraftSignals {
   });
   const setGenerationTemplate$ = command(
     ({ set }, value: GenerationTemplateRequest | undefined) => {
-      set(internalGenerationTemplate$, value);
+      set(
+        internalGenerationTemplate$,
+        value?.type === "video" || value?.type === "intro-video"
+          ? undefined
+          : value,
+      );
     },
   );
 

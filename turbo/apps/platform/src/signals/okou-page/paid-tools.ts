@@ -105,12 +105,6 @@ export function templatePaidTool(
     case "illustration": {
       return "image-generation";
     }
-    case "video": {
-      return "video-generation";
-    }
-    case "avatar": {
-      return "avatar-video-generation";
-    }
     default: {
       return undefined;
     }

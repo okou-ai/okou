@@ -1,10 +1,8 @@
-import type { SyntheticEvent } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { ChevronLeft, ChevronRight, CircleCheckBig, Eye } from "lucide-react";
 import type { IllustrationTemplateItem } from "@okouai/core/illustration-template-items";
 import type { PresentationTemplateItem } from "@okouai/core/presentation-template-items";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import type { VideoTemplateItem } from "@okouai/core/video-template-items";
 import { Button, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,7 +12,6 @@ import {
   updateOnboardingDraft$,
   updateOnboardingUi$,
 } from "../../signals/onboarding/onboarding-state.ts";
-import { detach, Reason } from "../../signals/utils.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { useOnboardingNavigation } from "./onboarding-navigation.ts";
 import {
@@ -25,7 +22,6 @@ import {
 import {
   localizedIllustrationTemplates,
   localizedPresentationTemplates,
-  localizedVideoTemplates,
 } from "./onboarding-template-localization.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
@@ -465,133 +461,6 @@ export function OnboardingImageTemplatePage() {
               }}
               onVariantChange={(index) => {
                 setImageVariant(template.slug, index);
-              }}
-            />
-          );
-        })}
-      </div>
-    </OnboardingShell>
-  );
-}
-
-function previewVideo(event: SyntheticEvent<HTMLButtonElement>): void {
-  const video = event.currentTarget.querySelector("video");
-  if (video) {
-    detach(video.play(), Reason.DomCallback);
-  }
-}
-
-function resetVideo(event: SyntheticEvent<HTMLButtonElement>): void {
-  const video = event.currentTarget.querySelector("video");
-  if (video) {
-    video.pause();
-    video.currentTime = 0;
-  }
-}
-
-function VideoTemplateCard({
-  template,
-  selected,
-  onSelect,
-}: {
-  readonly template: VideoTemplateItem;
-  readonly selected: boolean;
-  readonly onSelect: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      aria-label={t(
-        ($) => {
-          return $.onboarding.templatePicker.video.selectTemplate;
-        },
-        { title: template.title },
-      )}
-      className={cn(
-        "overflow-hidden rounded-xl border bg-background text-left shadow-[var(--okou-card-shadow)] transition-colors hover:border-primary",
-        selected && "border-primary",
-      )}
-      onClick={onSelect}
-      onFocus={previewVideo}
-      onBlur={resetVideo}
-      onMouseEnter={previewVideo}
-      onMouseLeave={resetVideo}
-    >
-      <span className="block aspect-[16/10] overflow-hidden bg-muted">
-        <video
-          muted
-          loop
-          playsInline
-          preload="metadata"
-          poster={template.cardPreviewImage ?? template.previewImage}
-          className="h-full w-full object-cover"
-        >
-          <source src={template.previewWebm} type="video/webm; codecs=vp9" />
-        </video>
-      </span>
-      <span className="flex min-w-0 items-center justify-between gap-2 px-3 pb-3 pt-[11px]">
-        <span className="truncate text-sm font-semibold leading-5">
-          {template.title}
-        </span>
-        <SelectionCheck selected={selected} />
-      </span>
-    </button>
-  );
-}
-
-export function OnboardingVideoTemplatePage() {
-  const { t } = useTranslation();
-  const draft = useGet(onboardingDraft$);
-  const setDraft = useSet(updateOnboardingDraft$);
-  const { navigateTo } = useOnboardingNavigation();
-  const selectedSlug = draft.videoTemplateSlug ?? "";
-  const templates = localizedVideoTemplates(t);
-
-  const continueToRun = (): void => {
-    if (!selectedSlug) {
-      return;
-    }
-    setDraft({ videoTemplateSlug: selectedSlug });
-    navigateTo(ROUTES.onboardingVideoRun, {
-      updates: { template: selectedSlug },
-      remove: ["category", "workflow"],
-    });
-  };
-
-  return (
-    <OnboardingShell
-      currentStep={2}
-      totalSteps={3}
-      title={t(($) => {
-        return $.onboarding.templatePicker.video.title;
-      })}
-      description={t(($) => {
-        return $.onboarding.templatePicker.video.description;
-      })}
-      footer={
-        <OnboardingFooter
-          onBack={() => {
-            navigateTo(ROUTES.onboarding);
-          }}
-          onPrimary={continueToRun}
-          primaryLabel={t(($) => {
-            return $.onboarding.common.continue;
-          })}
-          primaryDisabled={!selectedSlug}
-        />
-      }
-    >
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {templates.map((template) => {
-          return (
-            <VideoTemplateCard
-              key={template.id}
-              template={template}
-              selected={template.slug === selectedSlug}
-              onSelect={() => {
-                setDraft({ videoTemplateSlug: template.slug });
               }}
             />
           );
