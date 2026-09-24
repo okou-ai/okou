@@ -11,6 +11,30 @@ Releases before September 2026 are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.958.0](https://github.com/okou-ai/okou/compare/app-v0.957.0...app-v0.958.0) (2026-09-24)
+
+
+### Features
+
+* **vnc:** admit apple direct srp over mac ssh loopback ([#36556](https://github.com/okou-ai/okou/issues/36556)) ([737563c](https://github.com/okou-ai/okou/commit/737563c6c3d95b13cf53480ddb8f34ce9709cae9))
+
+
+### Bug Fixes
+
+* **agentphone:** remove vendor name and brand signature from phone surfaces ([#36651](https://github.com/okou-ai/okou/issues/36651)) ([bc12388](https://github.com/okou-ai/okou/commit/bc12388e72374f8ffa7d06a401a0b3235e08a015))
+* **chat:** match remote access host choices to app styling ([#36667](https://github.com/okou-ai/okou/issues/36667)) ([7db7a1e](https://github.com/okou-ai/okou/commit/7db7a1ee21558115ebdf63f67e61f94401cdb8e0))
+* **platform:** hide zero reset credits in personal account rows ([#36688](https://github.com/okou-ai/okou/issues/36688)) ([c044414](https://github.com/okou-ai/okou/commit/c044414b9c4ab5449ed24bf8a59b32f781e9ffd0))
+* **platform:** open telegram oauth directly in new tabs ([#36624](https://github.com/okou-ai/okou/issues/36624)) ([ffe493c](https://github.com/okou-ai/okou/commit/ffe493cd9f71d22119d5c44487ebc2352d1dd37b))
+* **platform:** polish source-first onboarding left column and new-user illustration ([#36610](https://github.com/okou-ai/okou/issues/36610)) ([04ffebe](https://github.com/okou-ai/okou/commit/04ffebea4005953d594713f31940b62f586476f8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.0
+    * @okouai/core bumped to 8.708.3
+
 ## [0.957.0](https://github.com/okou-ai/okou/compare/app-v0.956.0...app-v0.957.0) (2026-09-24)
 
 
