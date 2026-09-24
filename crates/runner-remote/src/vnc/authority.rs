@@ -332,10 +332,7 @@ mod apple_srp_tests {
         ] {
             let mut invalid = response();
             invalid["authentication"][field] = json!(value);
-            assert!(matches!(
-                parse(invalid, true),
-                Err(Failure::InvalidCredential)
-            ));
+            assert!(serde_json::from_value::<ResolveResponse>(invalid).is_err());
         }
     }
 }

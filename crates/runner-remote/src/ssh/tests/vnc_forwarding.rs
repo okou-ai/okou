@@ -94,7 +94,8 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                             {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
                             {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
                             {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
-                            {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"}
+                            {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"},
+                            {"authMethod":"apple_srp_username_password","securityType":"apple_srp","transportType":"ssh"}
                         ]
                     }));
                 then.status(200).json_body(json!({
