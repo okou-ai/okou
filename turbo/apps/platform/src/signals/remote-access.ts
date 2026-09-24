@@ -3,9 +3,10 @@ import {
   type RemoteAccessProtocol,
   type RemoteHostDefault,
   type ThreadRemoteHostAccess,
+  type InitialRemoteAccessOverride,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 
 import { accept } from "../lib/accept.ts";
 import { apiClient$ } from "./api-client.ts";
@@ -58,6 +59,33 @@ export const remoteHostDefaults$ = computed(async (get) => {
   });
   return result.body;
 });
+
+/** Draft choices belong to one new-chat composer until its thread is created. */
+export function createPendingRemoteAccessSignals() {
+  const overrides$ = state<readonly InitialRemoteAccessOverride[]>([]);
+  const setOverride$ = command(
+    (
+      { get, set },
+      protocol: RemoteAccessProtocol,
+      connectionId: string,
+      enabled: boolean | null,
+    ) => {
+      const others = get(overrides$).filter((item) => {
+        return item.protocol !== protocol || item.connectionId !== connectionId;
+      });
+      set(
+        overrides$,
+        enabled === null
+          ? others
+          : [...others, { protocol, connectionId, enabled }],
+      );
+    },
+  );
+  const reset$ = command(({ set }) => {
+    set(overrides$, []);
+  });
+  return { overrides$, setOverride$, reset$ };
+}
 
 export function threadRemoteAccess$(threadId: string) {
   return computed(async (get) => {

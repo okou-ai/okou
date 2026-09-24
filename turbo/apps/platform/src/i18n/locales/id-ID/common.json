@@ -2086,7 +2086,6 @@
       "on": "Aktif",
       "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",
       "retry": "Coba lagi",
-      "startChat": "Mulai chat untuk mengubah akses host.",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia",
       "useDefault": "Gunakan default"

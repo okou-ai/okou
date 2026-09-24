@@ -7,7 +7,11 @@ import {
   loadRightThread$,
 } from "./chat-thread-panes.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
-import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
+import {
+  pinChatThread$,
+  setChatThreadArchived$,
+  unpinChatThread$,
+} from "./chat-event.ts";
 import {
   clearChatThreadEmojiFromThreadMeta$,
   openRenameChatThreadDialogFromThreadMeta$,
@@ -30,6 +34,8 @@ import {
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { scrollToThread$ } from "./sidebar-chat-thread-scroll.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 
 type ChatThreadPane = "main" | "side";
 
@@ -211,7 +217,7 @@ function setupKeyboardScrollPrepareListener(
 }
 
 interface ChatPageShortcutActions {
-  canToggleThreadPin: (event: KeyboardEvent) => boolean;
+  canToggleThreadState: (event: KeyboardEvent) => boolean;
   clearEmoji: () => void | Promise<void>;
   openEmojiMenu: () => void | Promise<void>;
   renameThread: (event: KeyboardEvent) => void | Promise<void>;
@@ -222,6 +228,7 @@ interface ChatPageShortcutActions {
   setEmoji: (emoji: string) => void | Promise<void>;
   toggleVoiceInput: () => void | Promise<void>;
   toggleThreadPin: (event: KeyboardEvent) => void | Promise<void>;
+  toggleThreadArchive: (event: KeyboardEvent) => void | Promise<void>;
 }
 
 interface ChatPageShortcutSetup {
@@ -296,7 +303,7 @@ const setupChatPageShortcutActions$ = command(
     setupChatPageGlobalShortcutListener(
       {
         actions: {
-          canToggleThreadPin: (event) => {
+          canToggleThreadState: (event) => {
             return !event.isComposing && event.keyCode !== 229;
           },
           clearEmoji: async () => {
@@ -377,6 +384,26 @@ const setupChatPageShortcutActions$ = command(
               );
             }
           },
+          toggleThreadArchive: async (event) => {
+            if (
+              event.repeat ||
+              get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] !== true
+            ) {
+              return;
+            }
+            const thread = focusedThread();
+            const threadId = menuThreadId(event.target) ?? thread?.threadId;
+            if (threadId) {
+              await set(
+                setChatThreadArchived$,
+                {
+                  threadId,
+                  archived: !get(chatThreadMetaMap$).get(threadId)?.archived,
+                },
+                signal,
+              );
+            }
+          },
         },
         doc,
       },
@@ -442,7 +469,7 @@ function createEmojiShortcutBindings({
 }
 
 function createChatPageShortcutBindings({
-  canToggleThreadPin,
+  canToggleThreadState,
   clearEmoji,
   openEmojiMenu,
   renameThread,
@@ -453,6 +480,7 @@ function createChatPageShortcutBindings({
   setEmoji,
   toggleVoiceInput,
   toggleThreadPin,
+  toggleThreadArchive,
 }: ChatPageShortcutActions): GlobalShortcutBindings {
   return {
     "shift+f2": {
@@ -473,8 +501,13 @@ function createChatPageShortcutBindings({
     },
     [GLOBAL_KEYBOARD_SHORTCUTS.toggleChatPin.binding]: {
       allowInEditableTarget: true,
-      shouldHandle: canToggleThreadPin,
+      shouldHandle: canToggleThreadState,
       run: toggleThreadPin,
+    },
+    [GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.binding]: {
+      allowInEditableTarget: true,
+      shouldHandle: canToggleThreadState,
+      run: toggleThreadArchive,
     },
     [COMPOSER_VOICE_INPUT_SHORTCUT]: {
       allowInEditableTarget: true,

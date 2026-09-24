@@ -6,6 +6,7 @@ import {
 import {
   nextSourcesFirstStep,
   previousSourcesFirstStep,
+  SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
   sourcesFirstFlow$,
   sourcesFirstProgress,
@@ -13,19 +14,7 @@ import {
   type SourcesFirstFlow,
   type SourcesFirstStep,
 } from "../../signals/onboarding/onboarding-sources-first-state.ts";
-import { ROUTES, type RoutePath } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$, searchParams$ } from "../../signals/route.ts";
-
-const STEP_ROUTES: Readonly<Record<SourcesFirstStep, RoutePath>> = {
-  industry: ROUTES.onboarding,
-  sources: ROUTES.onboardingSources,
-  team: ROUTES.onboardingTeam,
-  experience: ROUTES.onboardingExperience,
-  skills: ROUTES.onboardingSkills,
-  profile: ROUTES.onboardingProfile,
-  slack: ROUTES.onboardingSlack,
-  ready: ROUTES.onboardingReady,
-};
 
 interface SourcesFirstFlowState {
   readonly flow: SourcesFirstFlow;
@@ -61,7 +50,7 @@ export function useSourcesFirstFlow(
     // Every step keeps the query it arrived with, so the Marketing `prompt`
     // handoff and a `redeemCode` still reach the last step's completion and
     // first request.
-    navigate(STEP_ROUTES[target], {
+    navigate(SOURCES_FIRST_STEP_ROUTES[target], {
       searchParams: new URLSearchParams(searchParams),
     });
   };

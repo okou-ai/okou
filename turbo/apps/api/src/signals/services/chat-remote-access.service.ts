@@ -2,6 +2,7 @@ import type {
   RemoteAccessProtocol,
   RemoteHostDefault,
   ThreadRemoteHostAccess,
+  InitialRemoteAccessOverride,
 } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
@@ -9,7 +10,7 @@ import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-
 import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
@@ -38,6 +39,90 @@ interface HostOwner extends Owner {
 
 interface ThreadHostOwner extends ThreadOwner {
   readonly connectionId: string;
+}
+
+/** Validate every initial selection before inserting the chat thread. */
+export async function ownsInitialRemoteAccessHosts(
+  tx: Tx,
+  owner: Owner,
+  overrides: readonly InitialRemoteAccessOverride[],
+): Promise<boolean> {
+  const sshIds = overrides
+    .filter((item) => {
+      return item.protocol === "ssh";
+    })
+    .map((item) => {
+      return item.connectionId;
+    });
+  const vncIds = overrides
+    .filter((item) => {
+      return item.protocol === "vnc";
+    })
+    .map((item) => {
+      return item.connectionId;
+    });
+  const [ssh, vnc] = await Promise.all([
+    sshIds.length
+      ? tx
+          .select({ id: sshConnections.id })
+          .from(sshConnections)
+          .where(
+            and(
+              inArray(sshConnections.id, sshIds),
+              eq(sshConnections.orgId, owner.orgId),
+              eq(sshConnections.userId, owner.userId),
+            ),
+          )
+      : Promise.resolve([]),
+    vncIds.length
+      ? tx
+          .select({ id: vncConnections.id })
+          .from(vncConnections)
+          .where(
+            and(
+              inArray(vncConnections.id, vncIds),
+              eq(vncConnections.orgId, owner.orgId),
+              eq(vncConnections.userId, owner.userId),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
+  return ssh.length === sshIds.length && vnc.length === vncIds.length;
+}
+
+export async function insertInitialRemoteAccessOverrides(
+  tx: Tx,
+  chatThreadId: string,
+  overrides: readonly InitialRemoteAccessOverride[],
+): Promise<void> {
+  const ssh = overrides.filter((item) => {
+    return item.protocol === "ssh";
+  });
+  const vnc = overrides.filter((item) => {
+    return item.protocol === "vnc";
+  });
+  if (ssh.length) {
+    await tx.insert(chatThreadSshAccessOverrides).values(
+      ssh.map((item) => {
+        return {
+          chatThreadId,
+          connectionId: item.connectionId,
+          enabled: item.enabled,
+        };
+      }),
+    );
+  }
+  if (vnc.length) {
+    await tx.insert(chatThreadVncAccessOverrides).values(
+      vnc.map((item) => {
+        return {
+          chatThreadId,
+          connectionId: item.connectionId,
+          enabled: item.enabled,
+        };
+      }),
+    );
+  }
 }
 
 async function notifyRemoteAccessChange(
