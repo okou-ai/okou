@@ -784,6 +784,10 @@ if ! sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_o
   sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
   fail "Guest-wide OOM scope or recovery was not verified"
 fi
+if ! sudo grep -F -q 'oom_classification=contained_tool_oom' "$GLOBAL_MEMORY_LOG"; then
+  sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
+  fail "Guest-wide tool OOM was not classified as contained"
+fi
 GLOBAL_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
