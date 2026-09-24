@@ -46,6 +46,7 @@ runner-network.workspace = true
 runner-provider.workspace = true
 runner-remote.workspace = true
 runner-storage.workspace = true
+runner-supervisor.workspace = true
 runner-types.workspace = true
 
 [build-dependencies]

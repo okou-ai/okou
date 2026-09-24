@@ -11,28 +11,28 @@ use tokio::task::JoinSet;
 use tokio_util::task::TaskTracker;
 use tracing::{info, warn};
 
-use super::blank_pool::BlankPoolDiagnostics;
-use crate::executor::{BlankPoolSelection, BlankPoolSelectionReason};
-use crate::idle_pool::{
+use crate::blank_pool::BlankPoolDiagnostics;
+use runner_executor::executor::{BlankPoolSelection, BlankPoolSelectionReason};
+use runner_host::paths::short_digest;
+use runner_lifecycle::idle_pool::{
     BlankIdleReservationMiss, DestroyOutcome, IdleDestroyJob, IdleDestroyPayload,
     IdleDestroyResult, IdlePool, IdlePoolSnapshot, ReservedIdleSandbox,
 };
-use crate::resource_budget::{BudgetLease, ResourceBudget};
-use crate::status::{StatusResult, StatusTracker};
-use runner_host::paths::short_digest;
+use runner_lifecycle::resource_budget::{BudgetLease, ResourceBudget};
+use runner_lifecycle::status::{StatusResult, StatusTracker};
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 
-pub(super) type SharedIdlePool = Arc<tokio::sync::Mutex<IdlePool>>;
+pub type SharedIdlePool = Arc<tokio::sync::Mutex<IdlePool>>;
 
 #[derive(Clone)]
-pub(super) struct IdleDestroyTracker {
+pub struct IdleDestroyTracker {
     tasks: TaskTracker,
     reuse_state_notify: Arc<Notify>,
 }
 
 impl IdleDestroyTracker {
-    pub(super) fn new(reuse_state_notify: Arc<Notify>) -> Self {
+    pub fn new(reuse_state_notify: Arc<Notify>) -> Self {
         Self {
             tasks: TaskTracker::new(),
             reuse_state_notify,
@@ -60,7 +60,7 @@ impl IdleDestroyTracker {
         }));
     }
 
-    pub(super) fn spawn_cleanup(
+    pub fn spawn_cleanup(
         &self,
         cleanup: impl Future<Output = ()> + Send + 'static,
         context: &'static str,
@@ -72,11 +72,11 @@ impl IdleDestroyTracker {
         }));
     }
 
-    pub(super) fn notify_reuse_state(&self) {
+    pub fn notify_reuse_state(&self) {
         self.reuse_state_notify.notify_one();
     }
 
-    pub(super) async fn close_and_wait(&self) {
+    pub async fn close_and_wait(&self) {
         let _ = self.tasks.close();
         self.tasks.wait().await;
     }
@@ -92,7 +92,7 @@ impl IdleDestroyTracker {
 ///
 /// `context` is logged alongside the destroyed count for operator clarity
 /// (e.g. "draining" vs "shutdown").
-pub(super) async fn drain_idle_pool(
+pub async fn drain_idle_pool(
     idle_pool: &SharedIdlePool,
     status: &StatusTracker,
     context: &'static str,
@@ -106,26 +106,26 @@ pub(super) async fn drain_idle_pool(
     set_idle_status_snapshot(status, snapshot).await;
 }
 
-pub(super) struct RetiringIdleEntry {
+pub struct RetiringIdleEntry {
     budget_lease: BudgetLease,
     reuse_key: Option<String>,
     profile_name: String,
 }
 
-pub(super) struct IdlePressureRequest<'a> {
-    pub(super) run_id: RunId,
-    pub(super) reuse_key: Option<&'a str>,
-    pub(super) profile_name: &'a str,
-    pub(super) device_rate_limits: &'a Option<DeviceRateLimits>,
-    pub(super) history_generation_run_id: Option<RunId>,
-    pub(super) allow_compatible_blank: bool,
-    pub(super) blank_pool_diagnostics: Option<&'a BlankPoolDiagnostics>,
-    pub(super) vcpu: u32,
-    pub(super) memory_mb: u32,
-    pub(super) context: &'static str,
+pub struct IdlePressureRequest<'a> {
+    pub run_id: RunId,
+    pub reuse_key: Option<&'a str>,
+    pub profile_name: &'a str,
+    pub device_rate_limits: &'a Option<DeviceRateLimits>,
+    pub history_generation_run_id: Option<RunId>,
+    pub allow_compatible_blank: bool,
+    pub blank_pool_diagnostics: Option<&'a BlankPoolDiagnostics>,
+    pub vcpu: u32,
+    pub memory_mb: u32,
+    pub context: &'static str,
 }
 
-pub(super) enum IdlePressureSelection {
+pub enum IdlePressureSelection {
     Reusable(ReservedIdleActivation),
     Fresh(BudgetLease),
     Exhausted(Vec<BudgetLease>),
@@ -135,20 +135,20 @@ pub(super) enum IdlePressureSelection {
 /// mutation or direct handoff. Its reservation retains the parked/running
 /// distinction so cancellation cannot restore a running sandbox to the pool.
 /// Claimed activation can publish ownership without reacquiring the pool.
-pub(super) struct ReservedIdleActivation {
+pub struct ReservedIdleActivation {
     reservation: Box<ReservedIdleSandbox>,
     idle_snapshot: IdlePoolSnapshot,
 }
 
 impl ReservedIdleActivation {
-    pub(super) fn new(reservation: ReservedIdleSandbox, idle_snapshot: IdlePoolSnapshot) -> Self {
+    pub fn new(reservation: ReservedIdleSandbox, idle_snapshot: IdlePoolSnapshot) -> Self {
         Self {
             reservation: Box::new(reservation),
             idle_snapshot,
         }
     }
 
-    pub(super) fn into_parts(self) -> (ReservedIdleSandbox, IdlePoolSnapshot) {
+    pub fn into_parts(self) -> (ReservedIdleSandbox, IdlePoolSnapshot) {
         (*self.reservation, self.idle_snapshot)
     }
 }
@@ -162,23 +162,23 @@ impl Deref for ReservedIdleActivation {
 }
 
 impl RetiringIdleEntry {
-    pub(super) fn reuse_key(&self) -> Option<&str> {
+    pub fn reuse_key(&self) -> Option<&str> {
         self.reuse_key.as_deref()
     }
 
-    pub(super) fn profile_name(&self) -> &str {
+    pub fn profile_name(&self) -> &str {
         &self.profile_name
     }
 
-    pub(super) fn budget_vcpu(&self) -> u32 {
+    pub fn budget_vcpu(&self) -> u32 {
         self.budget_lease.vcpu()
     }
 
-    pub(super) fn budget_memory_mb(&self) -> u32 {
+    pub fn budget_memory_mb(&self) -> u32 {
         self.budget_lease.memory_mb()
     }
 
-    pub(super) fn into_budget_lease(self) -> BudgetLease {
+    pub fn into_budget_lease(self) -> BudgetLease {
         self.budget_lease
     }
 }
@@ -191,7 +191,7 @@ impl RetiringIdleEntry {
 /// mutex inside that pool lock and never carries a guard across an await. Every
 /// evicted payload obtains tracked cleanup ownership before the final pool
 /// snapshot is captured and persisted once.
-pub(super) async fn select_idle_entries_for_pressure(
+pub async fn select_idle_entries_for_pressure(
     idle_pool: &SharedIdlePool,
     status: &StatusTracker,
     tracker: &IdleDestroyTracker,
@@ -324,7 +324,7 @@ fn try_substitute_retiring_leases(
     }
 }
 
-pub(super) async fn set_idle_status_snapshot(status: &StatusTracker, snapshot: IdlePoolSnapshot) {
+pub async fn set_idle_status_snapshot(status: &StatusTracker, snapshot: IdlePoolSnapshot) {
     let revision = snapshot.revision;
     let result = status.set_idle_snapshot(snapshot).await;
     match result {
@@ -342,7 +342,7 @@ pub(super) async fn set_idle_status_snapshot(status: &StatusTracker, snapshot: I
     }
 }
 
-pub(super) async fn add_running_run_with_idle_status_snapshot(
+pub async fn add_running_run_with_idle_status_snapshot(
     status: &StatusTracker,
     run_id: RunId,
     sandbox_id: SandboxId,
@@ -361,7 +361,7 @@ pub(super) async fn add_running_run_with_idle_status_snapshot(
     Ok(())
 }
 
-pub(super) async fn add_preparing_run_with_idle_status_snapshot(
+pub async fn add_preparing_run_with_idle_status_snapshot(
     status: &StatusTracker,
     run_id: RunId,
     sandbox_id: SandboxId,
@@ -380,7 +380,7 @@ pub(super) async fn add_preparing_run_with_idle_status_snapshot(
     Ok(())
 }
 
-pub(super) fn spawn_idle_destroy_job(
+pub fn spawn_idle_destroy_job(
     tracker: &IdleDestroyTracker,
     job: IdleDestroyJob,
     context: &'static str,
@@ -406,10 +406,7 @@ fn retire_idle_destroy_job(
 }
 
 /// Destroy idle entries in parallel and wait until their leases are dropped.
-pub(super) async fn destroy_idle_jobs_and_wait(
-    jobs: Vec<IdleDestroyJob>,
-    context: &'static str,
-) -> bool {
+pub async fn destroy_idle_jobs_and_wait(jobs: Vec<IdleDestroyJob>, context: &'static str) -> bool {
     // Destroy in parallel -- cgroup/NBD/netns teardown can still make serial
     // cleanup exceed shutdown and budget-pressure recovery budgets when many
     // sandboxes are idle.
@@ -432,7 +429,7 @@ async fn destroy_idle_job(job: IdleDestroyJob, context: &'static str) -> bool {
     job.run_with_context(context).await
 }
 
-pub(super) async fn destroy_idle_payload_and_wait(
+pub async fn destroy_idle_payload_and_wait(
     payload: IdleDestroyPayload,
     context: &'static str,
 ) -> IdleDestroyResult {
@@ -456,13 +453,15 @@ mod tests {
     use sandbox::{ResourceLimits, SandboxConfig, SandboxFactory};
     use sandbox_mock::MockSandboxFactory;
 
-    use crate::idle_pool::{
+    use runner_lifecycle::idle_pool::{
         IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig, ParkResult,
     };
-    use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
-    use crate::resource_budget::ResourceBudget;
-    use crate::storage_fingerprints::StorageFingerprints;
-    use crate::workspace_promotion::test_support::{TEST_COMPLETED_AT, WorkspacePromotionFixture};
+    use runner_lifecycle::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
+    use runner_lifecycle::resource_budget::ResourceBudget;
+    use runner_lifecycle::workspace_promotion::test_support::{
+        TEST_COMPLETED_AT, WorkspacePromotionFixture,
+    };
+    use runner_storage::storage_fingerprints::StorageFingerprints;
 
     #[tokio::test]
     async fn destroy_idle_jobs_and_wait_empty_returns_false() {
@@ -503,7 +502,7 @@ mod tests {
             storage_fingerprints: StorageFingerprints::default(),
             restored_session_identity: None,
             history_generation_run_id: None,
-            guest_timezone_intent: crate::guest_timezone::GuestTimezoneIntent::Unknown,
+            guest_timezone_intent: runner_lifecycle::guest_timezone::GuestTimezoneIntent::Unknown,
             workspace_image_size_bytes: b"workspace image".len() as u64,
             workspace_promotion: Some(fixture.promotion),
             handoff: None,

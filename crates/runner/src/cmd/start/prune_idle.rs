@@ -6,12 +6,12 @@ use futures_util::stream::{FuturesUnordered, StreamExt};
 use tokio::net::UnixStream;
 use tokio::sync::OwnedSemaphorePermit;
 
-use super::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 use crate::idle_pool::DestroyOutcome;
 use crate::idle_prune_control::{PruneIdleReport, PruneIdleResponse, read_request, write_response};
 use crate::lifecycle::{LifecycleController, RunnerMode};
 use crate::status::StatusTracker;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool};
 
 pub(super) struct PruneIdleContext {
     pub identity: RunnerProcessIdentity,

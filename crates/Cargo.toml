@@ -28,6 +28,7 @@ members = [
     "runner-provider",
     "runner-remote",
     "runner-storage",
+    "runner-supervisor",
     "runner-types",
     "sandbox",
     "sandbox-firecracker",
@@ -74,6 +75,7 @@ runner-network = { path = "runner-network" }
 runner-provider = { path = "runner-provider" }
 runner-remote = { path = "runner-remote" }
 runner-storage = { path = "runner-storage" }
+runner-supervisor = { path = "runner-supervisor" }
 runner-types = { path = "runner-types" }
 sandbox = { path = "sandbox" }
 sandbox-firecracker = { path = "sandbox-firecracker" }
