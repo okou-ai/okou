@@ -783,8 +783,6 @@ describe("artifact upload provenance", () => {
   it.each([
     "automation-schedule",
     "automation-event",
-    "automation-schedule",
-    "automation-event",
     "goal",
   ] as const)(
     "attributes run uploads to the %s source",
