@@ -24,6 +24,7 @@ import { expect, test } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -187,6 +188,26 @@ test("VNC management omits the redundant refresh action", async () => {
     "true",
   );
   expect(getAction("radio", "Credentials")).toBeInTheDocument();
+});
+
+test("Returning to Remote control does not reopen an abandoned VNC dialog", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  await page("/connectors");
+  click(getConnectorAction("tab", "Remote control"));
+  const section = await screen.findByRole("region", { name: "VNC" });
+  click(getAction("button", "Add host", section));
+  await screen.findByRole("dialog", { name: "Add host" });
+
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  await screen.findByRole("heading", { name: "Remote access" });
+  click(getConnectorAction("tab", "Remote control"));
+  await waitFor(() => {
+    expect(window.location.search).toBe("?scope=remote-control");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
 
 test("An owner reuses a VNC credential without exposing its password", async () => {

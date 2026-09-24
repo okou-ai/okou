@@ -8,6 +8,7 @@ import { beforeEach, expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { getConnectorAction } from "./connector-page-test-helpers.ts";
 import {
   getAction,
   queryAction,
@@ -89,6 +90,25 @@ test("Cloudflare Access is managed in Connectors Private network", async () => {
   expect(screen.queryByText("Direct")).toBeNull();
   expect(screen.queryByText("Add access")).toBeNull();
   expect(document.title).toContain("Connectors");
+});
+
+test("Returning to Private network does not reopen an abandoned Access dialog", async () => {
+  await page("/connectors");
+  click(getConnectorAction("tab", "Private network"));
+  await screen.findByRole("heading", { name: "Cloudflare Access" });
+  click(getAction("button", "Add Cloudflare Access"));
+  await screen.findByRole("dialog", { name: "Add Cloudflare Access" });
+
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.search).toBe("");
+  });
+  await screen.findByRole("heading", { name: "Remote access" });
+  click(getConnectorAction("tab", "Private network"));
+  await waitFor(() => {
+    expect(window.location.search).toBe("?scope=private-network");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
 
 test("The directory add intent is consumed and creates through the canonical API", async () => {

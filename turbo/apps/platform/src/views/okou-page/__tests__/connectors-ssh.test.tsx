@@ -22,6 +22,7 @@ import {
   publicStatusItem,
   queryConnectorAction,
 } from "./connector-page-test-helpers.ts";
+import { getAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const agentId = "c0000000-0000-4000-8000-000000000001";
@@ -330,6 +331,38 @@ test("Legacy tabs remain usable after opening SSH management", async () => {
     expect(window.location.search).toBe("?tab=custom");
     expect(screen.queryByText("0 hosts configured")).toBeNull();
   });
+});
+
+test("Opening the SSH card returns to connections after viewing credentials", async () => {
+  mockCatalog();
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [] });
+  });
+  await page();
+  click(getConnectorAction("tab", "Remote control"));
+  await screen.findByText("0 hosts configured");
+  click(getAction("radio", "Credentials"));
+  expect(getAction("radio", "Credentials")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  click(getConnectorAction("tab", "Built-in"));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("link", "Manage SSH hosts");
+    }),
+  );
+  await screen.findByText("0 hosts configured");
+  expect(getAction("radio", "Connections")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
 });
 
 test.each([0])(
