@@ -149,19 +149,23 @@ describe("GET /api/chat/search durable reader", () => {
   });
 
   it("returns at most 100 newest messages from the candidate set", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const owner = bdd.user({ orgId });
+    const owner = bdd.user();
     const source = await createSearchThread(owner, `bounded-${randomUUID()}`);
     const keyword = `bounded${randomUUID().replaceAll("-", "")}`;
-    await insertSearchableMessageBatchFixture({
-      chatThreadId: source.threadId,
-      agentId: source.agentId,
-      userId: owner.userId,
-      orgId,
-      keyword,
-      count: 120,
-      startAt: new Date(now()),
+    await api.ensureOrgModelProvider(owner);
+    const baseTime = now();
+    await withMockNowForTest(baseTime, async () => {
+      for (let index = 0; index <= 100; index++) {
+        mockNow(baseTime + index * 1000);
+        const sent = await chat.requestSendEvent(
+          owner,
+          { ...source, prompt: `${keyword} ${index}` },
+          [201],
+        );
+        expect(sent).toMatchObject({ status: 201, body: { runId: null } });
+      }
     });
+    await projectChatSearchMessages([source.threadId]);
 
     const search = await chat.searchChat(owner, keyword);
     expect(search.results).toHaveLength(100);
@@ -171,11 +175,11 @@ describe("GET /api/chat/search durable reader", () => {
       }),
     ).toStrictEqual(
       Array.from({ length: 100 }, (_, index) => {
-        return `${keyword} ${119 - index}`;
+        return `${keyword} ${100 - index}`;
       }),
     );
     expect(search).not.toHaveProperty("hasMore");
-  });
+  }, 60_000);
 
   it("serves matched message identity after source events are deleted", async () => {
     const owner = bdd.user();
