@@ -153,7 +153,7 @@ export function CodexResetCreditsMenuItem({
             aria-label={label}
             aria-disabled={resetDisabled || undefined}
             className={cn(
-              "shrink-0 gap-1.5 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
+              "shrink-0 gap-1.5 px-1 text-[10px] leading-4 tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground [&_svg]:size-3",
               className,
               resetDisabled &&
                 "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
@@ -165,7 +165,7 @@ export function CodexResetCreditsMenuItem({
               }
             }}
           >
-            <RotateCcw size={14} className="shrink-0" aria-hidden />
+            <RotateCcw size={12} className="shrink-0" aria-hidden />
             <span className="truncate">{displayLabel}</span>
           </DropdownMenuItem>
         }

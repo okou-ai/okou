@@ -58,12 +58,12 @@ export function AccountMenuSubscriptionsPanel({
 }) {
   const { t } = useTranslation();
   return (
-    <div data-testid="account-menu-subscriptions" className="px-3 py-2.5">
+    <div data-testid="account-menu-subscriptions" className="px-3 pt-1 pb-2.5">
       {loading && rows.length === 0 ? (
         <AccountMenuSubscriptionsSkeleton />
       ) : (
         <TooltipProvider delay={100}>
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-4">
             {rows.map((row, index) => {
               const label =
                 row.type === "codex-oauth-token"
@@ -98,24 +98,28 @@ export function AccountMenuSubscriptionsPanel({
 
 function AccountMenuSubscriptionsSkeleton() {
   return (
-    <div className="flex flex-col gap-2.5" aria-hidden="true">
+    <div className="flex flex-col gap-4" aria-hidden="true">
       {ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS.map((provider, index) => {
         return (
           <div key={provider.type} className="flex flex-col gap-1.5">
             {index > 0 && <div className="-mx-3 h-px bg-divider" />}
-            <div className="h-3 w-20 animate-pulse rounded bg-muted/60" />
-            {["fiveHour", "week"].map((kind) => {
-              return (
-                <div
-                  key={kind}
-                  className="grid grid-cols-[34px_minmax(0,1fr)_34px] items-center gap-1.5"
-                >
-                  <div className="h-2.5 animate-pulse rounded bg-muted/60" />
-                  <div className="h-1.5 animate-pulse rounded-full bg-muted/60" />
-                  <div className="h-2.5 animate-pulse rounded bg-muted/60" />
-                </div>
-              );
-            })}
+            <div className="flex min-h-9 items-center">
+              <div className="h-3 w-20 animate-pulse rounded bg-muted/60" />
+            </div>
+            <div className="flex flex-col gap-2.5">
+              {["fiveHour", "week"].map((kind) => {
+                return (
+                  <div
+                    key={kind}
+                    className="grid grid-cols-[34px_minmax(0,1fr)_34px] items-center gap-1.5"
+                  >
+                    <div className="h-2.5 animate-pulse rounded bg-muted/60" />
+                    <div className="h-1 animate-pulse rounded-full bg-muted/60" />
+                    <div className="h-2.5 animate-pulse rounded bg-muted/60" />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         );
       })}
@@ -159,13 +163,13 @@ function AccountMenuSubscriptionProviderSection({
       )}
     >
       {divided && <div className="-mx-3 h-px bg-divider" />}
-      <div className="flex min-w-0 items-center gap-2">
-        <h3 className="min-w-0 flex-1 truncate text-xs font-medium leading-4 text-foreground">
+      <div className="flex min-h-9 min-w-0 items-center gap-2">
+        <h3 className="min-w-0 flex-1 truncate text-xs font-medium leading-4 tracking-tight text-foreground">
           {label}
         </h3>
         {resetCredits === undefined ? null : (
           <CodexResetCreditsMenuItem
-            className="ml-auto"
+            className="ml-auto -me-1"
             resetCredits={resetCredits}
             resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}
             resetPending={resetPending}
@@ -179,7 +183,7 @@ function AccountMenuSubscriptionProviderSection({
           />
         )}
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2.5">
         {windows.map(({ kind, window }) => {
           const windowLabel =
             kind === "fiveHour"
@@ -230,7 +234,7 @@ function AccountMenuSubscriptionUsageBar({
 
   return (
     <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] items-center gap-1.5">
-      <span className="truncate text-[10px] font-medium leading-none text-muted-foreground">
+      <span className="truncate text-[10px] font-normal leading-none text-muted-foreground">
         {windowLabel}
       </span>
       <Tooltip>
@@ -248,7 +252,7 @@ function AccountMenuSubscriptionUsageBar({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={remainingPercent ?? undefined}
-              className={`block h-1.5 min-w-0 overflow-hidden rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring ${tone.trackClassName}`}
+              className={`block h-1 min-w-0 overflow-hidden rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring ${tone.trackClassName}`}
             >
               <span
                 className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
@@ -317,8 +321,8 @@ function usageTone(remainingPercent: number | null): {
     };
   }
   return {
-    barClassName: "bg-emerald-500",
-    textClassName: "text-emerald-600 dark:text-emerald-400",
-    trackClassName: "bg-emerald-500/15",
+    barClassName: "bg-emerald-600 dark:bg-emerald-500",
+    textClassName: "text-emerald-700 dark:text-emerald-400",
+    trackClassName: "bg-emerald-500/10 dark:bg-emerald-500/15",
   };
 }
