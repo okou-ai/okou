@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Check, Copy, FileText, Loader2 } from "lucide-react";
 import { Button, cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import {
   captureSourceOnboardingChannelClicked$,
@@ -840,18 +841,16 @@ function AgentPhoneChannelTile() {
   );
 }
 
-/**
- * Telegram's setup asks for a bot token and which agent answers it, which is
- * more than a tile can hold, so this one hands over to the settings page that
- * already asks. It navigates in-app, so the answers given so far are still
- * here when the browser comes back to the step.
- */
+/** Connect the official bot without detouring through bot settings. */
 function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
   const { t } = useTranslation();
 
   return (
     <Link
-      pathname={ROUTES.settingsTelegram}
+      pathname={ROUTES.telegramConnect}
+      options={{
+        searchParams: new URLSearchParams({ bot: OFFICIAL_TELEGRAM_BOT_ID }),
+      }}
       onClick={onOpen}
       className={cn(
         buttonVariants({ variant: "outline" }),
