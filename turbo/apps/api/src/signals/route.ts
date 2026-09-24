@@ -193,6 +193,8 @@ import { discordStatePreviewRoutes } from "./routes/discord-state-preview";
 import { integrationsSlackRoutes } from "./routes/integrations-slack";
 import { integrationsSlackMessageRoutes } from "./routes/integrations-slack-message";
 import { integrationsSlackReadRoutes } from "./routes/integrations-slack-read";
+import { integrationsDiscordReadRoutes } from "./routes/integrations-discord-read";
+import { integrationsDiscordMessageRoutes } from "./routes/integrations-discord-message";
 import { integrationsFeishuMessageRoutes } from "./routes/integrations-feishu-message";
 import { integrationsSlackUploadCompleteRoutes } from "./routes/integrations-slack-upload-complete";
 import { integrationsSlackUploadInitRoutes } from "./routes/integrations-slack-upload-init";
@@ -468,6 +470,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...discordStatePreviewRoutes,
   ...integrationsSlackMessageRoutes,
   ...integrationsSlackReadRoutes,
+  ...integrationsDiscordReadRoutes,
+  ...integrationsDiscordMessageRoutes,
   ...integrationsFeishuMessageRoutes,
   ...integrationsSlackUploadCompleteRoutes,
   ...integrationsSlackUploadInitRoutes,
