@@ -762,18 +762,10 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
 }
 
 /**
- * Restores the editor-owned portion of a business document. File parts stay in
- * the existing external attachment state and therefore do not become Tiptap
- * nodes. Newlines are canonically restored as paragraph boundaries.
- */
-export function messageDocumentToEditorDoc(value: unknown): JSONContent | null {
-  const parsed = userMessageDocumentSchema.safeParse(value);
-  return parsed.success ? restoredEditorDoc(parsed.data) : null;
-}
-
-/**
- * Restores editable content from a saved draft or copied message. Immutable
- * history keeps its original template parts; a new editable document accepts
+ * Restores editable draft content from a saved draft or copied message. File
+ * parts stay in external attachment state and do not become Tiptap nodes.
+ * Newlines are canonically restored as paragraph boundaries.
+ * Immutable history keeps its original template parts; a new document accepts
  * only currently supported templates while preserving text and attachments.
  * Current clients can copy old messages, so this policy is not rollout-limited.
  */
