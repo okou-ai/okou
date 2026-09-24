@@ -25,6 +25,7 @@ import { secrets } from "@okouai/db/schema/secret";
 import { testContext } from "../../../__tests__/test-context";
 import { env } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
+import { encryptStoredSecretValue } from "../crypto.utils";
 import {
   CONNECTOR_REMOTE_ERASURE_COLLECTOR_VERSION,
   createConnectorRemoteErasureCollector,
@@ -124,7 +125,8 @@ describe("account erasure connector remote capture", () => {
     }
     const connectorId = firstAccount.id;
     const secretId = randomUUID();
-    const encryptedValue = "test-encrypted-token-that-must-not-appear-in-b1";
+    const token = `synthetic-provider-token-${randomUUID()}`;
+    const encryptedValue = await encryptStoredSecretValue(token);
     await db.insert(secrets).values({
       id: secretId,
       name: "access_token",
@@ -235,8 +237,13 @@ describe("account erasure connector remote capture", () => {
       credentialDigest: createHash("sha256")
         .update(encryptedValue)
         .digest("hex"),
+      credentialCiphertext: encryptedValue,
     });
-    expect(JSON.stringify(captured)).not.toContain(encryptedValue);
+    // The stored-secret envelope remains recoverable for a later provider
+    // revoke, while neither it nor the plaintext token appears in B1 rows.
+    expect(JSON.stringify(captured)).not.toContain(token);
+    expect(JSON.stringify(work)).not.toContain(token);
+    expect(JSON.stringify(work)).not.toContain(encryptedValue);
 
     await db.delete(connectors).where(eq(connectors.userId, userId));
     await expect(

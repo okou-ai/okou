@@ -7202,6 +7202,86 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       await expectSurvivingOrganization(fixture, s3CallCountBeforeCleanup);
     });
 
+    it("invalidates issued OAuth states at the durable deletion receipt without affecting a peer", async () => {
+      const fixture = await prepareUserErasure();
+      const { doomed, peer, sharedAgent } = fixture;
+      const connectors = createConnectorBddApi(context);
+      mockSlackConnectorOAuth();
+      const customOAuthProvider = mockCustomConnectorOAuth2Provider(context);
+      const customOauth = await connectors.createCustomConnector(
+        doomed,
+        customOauthConnectorBodyForTeardown("user", customOAuthProvider),
+      );
+      const doomedBuiltinState = oauthStateFromAuthorizationUrl(
+        (
+          await connectors.startOauth(
+            doomed,
+            "slack",
+            "oauth",
+            sharedAgent.agentId,
+          )
+        ).authorizationUrl,
+      );
+      const peerBuiltinState = oauthStateFromAuthorizationUrl(
+        (
+          await connectors.startOauth(
+            peer,
+            "slack",
+            "oauth",
+            sharedAgent.agentId,
+          )
+        ).authorizationUrl,
+      );
+      const doomedCustomState = oauthStateFromAuthorizationUrl(
+        await connectors.startCustomConnectorOAuth2(
+          doomed,
+          customOauth.id,
+          sharedAgent.agentId,
+        ),
+      );
+      const peerCustomState = oauthStateFromAuthorizationUrl(
+        await connectors.startCustomConnectorOAuth2(
+          peer,
+          customOauth.id,
+          sharedAgent.agentId,
+        ),
+      );
+
+      await startUserDeletion(fixture);
+      await flushWaitUntilForTest();
+      await expect(
+        connectors.completeOauthCallbackResult("slack", {
+          code: "deleted-state",
+          state: doomedBuiltinState,
+        }),
+      ).resolves.toMatchObject({
+        body: { status: "error", message: "Invalid state - please try again" },
+      });
+      await expect(
+        connectors.completeCustomConnectorOAuth2CallbackResult({
+          code: "deleted-custom-state",
+          state: doomedCustomState,
+        }),
+      ).resolves.toMatchObject({
+        body: {
+          status: "error",
+          message: "Invalid OAuth state - please try again",
+        },
+      });
+      await expect(
+        connectors.completeOauthCallbackResult("slack", {
+          code: "peer-state",
+          state: peerBuiltinState,
+        }),
+      ).resolves.toMatchObject({ body: { status: "success" } });
+      await expect(
+        connectors.completeCustomConnectorOAuth2CallbackResult({
+          code: "peer-custom-state",
+          state: peerCustomState,
+        }),
+      ).resolves.toMatchObject({ body: { status: "success" } });
+    });
+
     it("invalidates only the deleted user's pending builtin and custom OAuth states", async () => {
       const fixture = await prepareUserErasure();
       const { doomed, peer, sharedAgent } = fixture;

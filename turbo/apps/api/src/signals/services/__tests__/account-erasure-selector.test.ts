@@ -60,5 +60,20 @@ describe("account erasure selector envelope", () => {
         after: "x".repeat(2049),
       }),
     ).rejects.toThrow(/^account_erasure:invalid_selector$/);
+    // An oversized credential cannot be partially captured and then swept.
+    await expect(
+      encryptErasureSelector({
+        version: 1,
+        kind: "connector_remote",
+        userId: "synthetic",
+        orgId: "synthetic",
+        resourceType: "secret",
+        resourceId: randomUUID(),
+        connectorId: randomUUID(),
+        locator: "access_token",
+        credentialDigest: "a".repeat(64),
+        credentialCiphertext: "x".repeat(3073),
+      }),
+    ).rejects.toThrow(/^account_erasure:invalid_selector$/);
   });
 });

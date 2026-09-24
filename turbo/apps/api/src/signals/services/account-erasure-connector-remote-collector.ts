@@ -48,6 +48,7 @@ type Resource = {
   readonly connectorId: string | null;
   readonly locator: string | null;
   readonly credentialDigest: string | null;
+  readonly credentialCiphertext?: string;
 };
 type Cursor = readonly [number, string];
 
@@ -164,6 +165,10 @@ async function readSecretPage(
           credentialDigest: createHash("sha256")
             .update(credential.encryptedValue)
             .digest("hex"),
+          // Capture the already encrypted stored-secret envelope before its
+          // catalog row is removed. The B1 selector encrypts it again at rest;
+          // the digest alone cannot authorize a later provider revocation.
+          credentialCiphertext: credential.encryptedValue,
         };
       }),
     );
@@ -450,6 +455,7 @@ async function inventory(
           connectorId: row.connectorId,
           locator: row.locator,
           credentialDigest: row.credentialDigest,
+          credentialCiphertext: row.credentialCiphertext,
         }),
         dependencies: [],
       };

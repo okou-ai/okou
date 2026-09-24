@@ -152,6 +152,10 @@ const selectorSchema = z.discriminatedUnion("kind", [
       .string()
       .regex(/^[a-f0-9]{64}$/u)
       .nullable(),
+    // The original stored-secret envelope is needed to revoke credentials
+    // after the local connector row is swept. Older captured selectors lack
+    // it and must remain unresolved, never be treated as revoked.
+    credentialCiphertext: z.string().min(1).max(3072).optional(),
   }),
   z.strictObject({
     version: z.literal(1),
