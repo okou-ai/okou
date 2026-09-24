@@ -270,6 +270,13 @@ function apiInputRequestError(
       "Stop this request and ask the Okou team to configure managed Browser access.",
     );
   }
+  if (code === "BROWSER_USE_OUTPUT_TOO_LARGE") {
+    return new BrowserInputRequestError(
+      code,
+      "The managed Browser provider response exceeded the supported size",
+      "Stop this request and ask the Okou team to inspect the Browser provider response.",
+    );
+  }
   if (
     code === "BROWSER_USE_ERROR" ||
     code === "BROWSER_USER_ACTION_PROVIDER_ERROR"

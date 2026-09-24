@@ -1184,18 +1184,36 @@ describe("okou browser user-action commands", () => {
     );
   });
 
-  it("stops when managed Browser access is not configured", async () => {
+  it.each([
+    {
+      code: "BROWSER_USE_NOT_CONFIGURED",
+      status: 503,
+      providerMessage: "Managed browser provider is not configured",
+      message: "Managed Browser access is not configured",
+      nextAction:
+        "Stop this request and ask the Okou team to configure managed Browser access.",
+    },
+    {
+      code: "BROWSER_USE_OUTPUT_TOO_LARGE",
+      status: 502,
+      providerMessage: "Managed browser provider response is too large",
+      message:
+        "The managed Browser provider response exceeded the supported size",
+      nextAction:
+        "Stop this request and ask the Okou team to inspect the Browser provider response.",
+    },
+  ])("stops on a managed Browser provider failure: $code", async (failure) => {
     installCdp();
     server.use(
       http.post("http://localhost:3000/api/browser/user-actions", () => {
         return HttpResponse.json(
           {
             error: {
-              code: "BROWSER_USE_NOT_CONFIGURED",
-              message: "Managed browser provider is not configured",
+              code: failure.code,
+              message: failure.providerMessage,
             },
           },
-          { status: 503 },
+          { status: failure.status },
         );
       }),
     );
@@ -1222,10 +1240,9 @@ describe("okou browser user-action commands", () => {
     expect(consoleError).toHaveBeenCalledTimes(1);
     expect(JSON.parse(String(consoleError.mock.calls[0]?.[0]))).toStrictEqual({
       error: {
-        code: "BROWSER_USE_NOT_CONFIGURED",
-        message: "Managed Browser access is not configured",
-        nextAction:
-          "Stop this request and ask the Okou team to configure managed Browser access.",
+        code: failure.code,
+        message: failure.message,
+        nextAction: failure.nextAction,
         retryable: false,
       },
     });
