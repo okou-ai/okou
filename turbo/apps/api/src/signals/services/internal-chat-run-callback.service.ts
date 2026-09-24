@@ -1,12 +1,15 @@
 import {
   readRunContentOwnership,
   withRunContentWrite,
+  validateRunContentIdentity,
   type RunContentOwnership,
 } from "./run-content-erasure-admission.service";
 import { historicalRunGroupId } from "./run-event-provenance.service";
 import { resolveReasoningEffortForDispatch } from "./chat-reasoning-effort.service";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { randomBytes } from "node:crypto";
+import { v5 as uuidv5 } from "uuid";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 
 import { command, createStore } from "ccstate";
 import {
@@ -39,7 +42,7 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import {
   and,
@@ -135,6 +138,7 @@ import {
   insertAssistantEvents,
   insertAssistantEvents$,
   touchChatThreadLastMessageAt,
+  touchChatThreadLastMessageAtIndependently,
   type InsertAssistantEventsInput,
   visibleChatEventCondition,
 } from "./chat-event-shared.service";
@@ -841,7 +845,7 @@ type QueuedMessageAdmissionFailure =
 
 type CompletedChatCallbackResult =
   | {
-      readonly outcome: "written";
+      readonly outcome: "written" | "replayed";
       readonly lastResultText: string | null;
       readonly followupContext: readonly ChatCompletionContextMessage[];
       readonly slackDeliveryCallbackId?: string;
@@ -851,11 +855,12 @@ type CompletedChatCallbackResult =
       readonly agentphoneDeliveryCallbackId?: string;
       readonly githubDeliveryCallbackId?: string;
     }
-  | { readonly outcome: "duplicate" | "closed" };
+  | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
+  | { readonly outcome: "closed" };
 
 type FailedChatCallbackResult =
   | {
-      readonly outcome: "written";
+      readonly outcome: "written" | "replayed";
       readonly displayErrorMessage: string;
       readonly slackDeliveryCallbackId?: string;
       readonly feishuDeliveryCallbackId?: string;
@@ -864,16 +869,18 @@ type FailedChatCallbackResult =
       readonly agentphoneDeliveryCallbackId?: string;
       readonly githubDeliveryCallbackId?: string;
     }
-  | { readonly outcome: "duplicate" | "closed" };
+  | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
+  | { readonly outcome: "closed" };
 
 interface TerminalChatCallbackWork {
-  readonly outcome: "written" | "duplicate" | "closed";
+  readonly outcome: "written" | "replayed" | "duplicate" | "closed";
   readonly slackDeliveryCallbackId?: string;
   readonly feishuDeliveryCallbackId?: string;
   readonly teamsDeliveryCallbackId?: string;
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
   readonly githubDeliveryCallbackId?: string;
+  readonly retryableSideEffects?: (signal: AbortSignal) => Promise<void>;
   readonly deferredSideEffects?: (signal: AbortSignal) => Promise<void>;
 }
 
@@ -1167,278 +1174,219 @@ interface SlackDeliveryTarget {
   readonly routeThreadTs?: string;
 }
 
+const CHAT_DELIVERY_CALLBACK_NAMESPACE = "3c3c6fe0-1041-4d9b-8fbc-403eec20e47b";
+
+type ChatDeliveryKind =
+  | "slack:chat"
+  | "feishu:chat"
+  | "teams:chat"
+  | "telegram:chat"
+  | "agentphone:chat"
+  | "github:chat";
+
+async function requireSourceChatCallback(args: {
+  readonly db: ChatCallbackTransaction;
+  readonly runId: string;
+  readonly sourceCallbackId?: string;
+}) {
+  const [source] = await args.db
+    .select({
+      id: agentRunCallbacks.id,
+      encryptedSecret: agentRunCallbacks.encryptedSecret,
+    })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.runId, args.runId),
+        eq(agentRunCallbacks.internalKind, "chat"),
+        args.sourceCallbackId
+          ? eq(agentRunCallbacks.id, args.sourceCallbackId)
+          : undefined,
+      ),
+    )
+    .orderBy(asc(agentRunCallbacks.id))
+    .limit(1);
+  if (!source) {
+    throw new Error("Canonical delivery run is missing its chat callback");
+  }
+
+  return source;
+}
+
+async function insertChatDeliveryCallback(args: {
+  readonly db: ChatCallbackTransaction;
+  readonly runId: string;
+  readonly sourceCallbackId?: string;
+  readonly internalKind: ChatDeliveryKind;
+  readonly chatEventId: string;
+  readonly payload: NonNullable<
+    (typeof agentRunCallbacks.$inferInsert)["payload"]
+  >;
+}): Promise<string> {
+  const source = await requireSourceChatCallback(args);
+
+  // Pre-PR1 callbacks had random IDs. Reuse their delivery identity until the
+  // callback retention window drains in PR2; never resend a delivered legacy row.
+  const [existing] = await args.db
+    .select({ id: agentRunCallbacks.id })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.runId, args.runId),
+        eq(agentRunCallbacks.internalKind, args.internalKind),
+        eq(sql`${agentRunCallbacks.payload}->>'chatEventId'`, args.chatEventId),
+      ),
+    )
+    .orderBy(asc(agentRunCallbacks.createdAt), asc(agentRunCallbacks.id))
+    .limit(1);
+  if (existing) {
+    return existing.id;
+  }
+  const id = uuidv5(
+    `${source.id}:${args.internalKind}:${args.chatEventId}`,
+    CHAT_DELIVERY_CALLBACK_NAMESPACE,
+  );
+  await args.db
+    .insert(agentRunCallbacks)
+    .values({
+      id,
+      runId: args.runId,
+      internalKind: args.internalKind,
+      encryptedSecret: source.encryptedSecret,
+      payload: args.payload,
+    })
+    .onConflictDoNothing({ target: agentRunCallbacks.id });
+  return id;
+}
+
 async function insertSlackChatDeliveryCallback(args: {
-  readonly db: Db;
+  readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly sourceCallbackId?: string;
   readonly target: SlackDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
 }): Promise<string> {
-  const callbackCondition = args.sourceCallbackId
-    ? and(
-        eq(agentRunCallbacks.id, args.sourceCallbackId),
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      )
-    : and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      );
-  const [sourceCallback] = await args.db
-    .select({ encryptedSecret: agentRunCallbacks.encryptedSecret })
-    .from(agentRunCallbacks)
-    .where(callbackCondition)
-    .limit(1);
-  if (!sourceCallback) {
-    throw new Error("Canonical Slack run is missing its chat callback");
-  }
-
-  const [callback] = await args.db
-    .insert(agentRunCallbacks)
-    .values({
-      runId: args.runId,
-      internalKind: "slack:chat",
-      encryptedSecret: sourceCallback.encryptedSecret,
-      payload: {
-        ...args.target,
-        chatEventId: args.chatEventId,
-        publicBrand: args.publicBrand,
-      },
-    })
-    .returning({ id: agentRunCallbacks.id });
-  if (!callback) {
-    throw new Error("Failed to persist canonical Slack delivery callback");
-  }
-  return callback.id;
+  return await insertChatDeliveryCallback({
+    db: args.db,
+    runId: args.runId,
+    sourceCallbackId: args.sourceCallbackId,
+    internalKind: "slack:chat",
+    chatEventId: args.chatEventId,
+    payload: {
+      ...args.target,
+      chatEventId: args.chatEventId,
+      publicBrand: args.publicBrand,
+    },
+  });
 }
 
 async function insertFeishuChatDeliveryCallback(args: {
-  readonly db: Db;
+  readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly sourceCallbackId?: string;
   readonly target: FeishuDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
 }): Promise<string> {
-  const callbackCondition = args.sourceCallbackId
-    ? and(
-        eq(agentRunCallbacks.id, args.sourceCallbackId),
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      )
-    : and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      );
-  const [sourceCallback] = await args.db
-    .select({ encryptedSecret: agentRunCallbacks.encryptedSecret })
-    .from(agentRunCallbacks)
-    .where(callbackCondition)
-    .limit(1);
-  if (!sourceCallback) {
-    throw new Error("Canonical Feishu run is missing its chat callback");
-  }
-
-  const [callback] = await args.db
-    .insert(agentRunCallbacks)
-    .values({
-      runId: args.runId,
-      internalKind: "feishu:chat",
-      encryptedSecret: sourceCallback.encryptedSecret,
-      payload: {
-        ...args.target,
-        chatEventId: args.chatEventId,
-        publicBrand: args.publicBrand,
-      },
-    })
-    .returning({ id: agentRunCallbacks.id });
-  if (!callback) {
-    throw new Error("Failed to persist canonical Feishu delivery callback");
-  }
-  return callback.id;
+  return await insertChatDeliveryCallback({
+    db: args.db,
+    runId: args.runId,
+    sourceCallbackId: args.sourceCallbackId,
+    internalKind: "feishu:chat",
+    chatEventId: args.chatEventId,
+    payload: {
+      ...args.target,
+      chatEventId: args.chatEventId,
+      publicBrand: args.publicBrand,
+    },
+  });
 }
 
 async function insertTeamsChatDeliveryCallback(args: {
-  readonly db: Db;
+  readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly sourceCallbackId?: string;
   readonly target: TeamsDeliveryTarget;
   readonly chatEventId: string;
 }): Promise<string> {
-  const callbackCondition = args.sourceCallbackId
-    ? and(
-        eq(agentRunCallbacks.id, args.sourceCallbackId),
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      )
-    : and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      );
-  const [sourceCallback] = await args.db
-    .select({ encryptedSecret: agentRunCallbacks.encryptedSecret })
-    .from(agentRunCallbacks)
-    .where(callbackCondition)
-    .limit(1);
-  if (!sourceCallback) {
-    throw new Error("Canonical Teams run is missing its chat callback");
-  }
-
-  const [callback] = await args.db
-    .insert(agentRunCallbacks)
-    .values({
-      runId: args.runId,
-      internalKind: "teams:chat",
-      encryptedSecret: sourceCallback.encryptedSecret,
-      payload: {
-        ...args.target,
-        chatEventId: args.chatEventId,
-      },
-    })
-    .returning({ id: agentRunCallbacks.id });
-  if (!callback) {
-    throw new Error("Failed to persist canonical Teams delivery callback");
-  }
-  return callback.id;
+  return await insertChatDeliveryCallback({
+    db: args.db,
+    runId: args.runId,
+    sourceCallbackId: args.sourceCallbackId,
+    internalKind: "teams:chat",
+    chatEventId: args.chatEventId,
+    payload: {
+      ...args.target,
+      chatEventId: args.chatEventId,
+    },
+  });
 }
 
 async function insertTelegramChatDeliveryCallback(args: {
-  readonly db: Db;
+  readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly sourceCallbackId?: string;
   readonly target: TelegramDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
 }): Promise<string> {
-  const callbackCondition = args.sourceCallbackId
-    ? and(
-        eq(agentRunCallbacks.id, args.sourceCallbackId),
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      )
-    : and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      );
-  const [sourceCallback] = await args.db
-    .select({ encryptedSecret: agentRunCallbacks.encryptedSecret })
-    .from(agentRunCallbacks)
-    .where(callbackCondition)
-    .limit(1);
-  if (!sourceCallback) {
-    throw new Error("Canonical Telegram run is missing its chat callback");
-  }
-
-  const [callback] = await args.db
-    .insert(agentRunCallbacks)
-    .values({
-      runId: args.runId,
-      internalKind: "telegram:chat",
-      encryptedSecret: sourceCallback.encryptedSecret,
-      payload: {
-        ...args.target,
-        chatEventId: args.chatEventId,
-        publicBrand: args.publicBrand,
-      },
-    })
-    .returning({ id: agentRunCallbacks.id });
-  if (!callback) {
-    throw new Error("Failed to persist canonical Telegram delivery callback");
-  }
-  return callback.id;
+  return await insertChatDeliveryCallback({
+    db: args.db,
+    runId: args.runId,
+    sourceCallbackId: args.sourceCallbackId,
+    internalKind: "telegram:chat",
+    chatEventId: args.chatEventId,
+    payload: {
+      ...args.target,
+      chatEventId: args.chatEventId,
+      publicBrand: args.publicBrand,
+    },
+  });
 }
 
 async function insertAgentPhoneChatDeliveryCallback(args: {
-  readonly db: Db;
+  readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly sourceCallbackId?: string;
   readonly target: AgentPhoneDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
 }): Promise<string> {
-  const callbackCondition = args.sourceCallbackId
-    ? and(
-        eq(agentRunCallbacks.id, args.sourceCallbackId),
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      )
-    : and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      );
-  const [sourceCallback] = await args.db
-    .select({ encryptedSecret: agentRunCallbacks.encryptedSecret })
-    .from(agentRunCallbacks)
-    .where(callbackCondition)
-    .limit(1);
-  if (!sourceCallback) {
-    throw new Error("Canonical AgentPhone run is missing its chat callback");
-  }
-
-  const [callback] = await args.db
-    .insert(agentRunCallbacks)
-    .values({
-      runId: args.runId,
-      internalKind: "agentphone:chat",
-      encryptedSecret: sourceCallback.encryptedSecret,
-      payload: {
-        ...args.target,
-        chatEventId: args.chatEventId,
-        publicBrand: args.publicBrand,
-      },
-    })
-    .returning({ id: agentRunCallbacks.id });
-  if (!callback) {
-    throw new Error("Failed to persist canonical AgentPhone delivery callback");
-  }
-  return callback.id;
+  return await insertChatDeliveryCallback({
+    db: args.db,
+    runId: args.runId,
+    sourceCallbackId: args.sourceCallbackId,
+    internalKind: "agentphone:chat",
+    chatEventId: args.chatEventId,
+    payload: {
+      ...args.target,
+      chatEventId: args.chatEventId,
+      publicBrand: args.publicBrand,
+    },
+  });
 }
 
 async function insertGitHubChatDeliveryCallback(args: {
-  readonly db: Db;
+  readonly db: ChatCallbackTransaction;
   readonly runId: string;
   readonly sourceCallbackId?: string;
   readonly target: GitHubDeliveryTarget;
   readonly chatEventId: string;
   readonly publicBrand: PublicBrand;
 }): Promise<string> {
-  const callbackCondition = args.sourceCallbackId
-    ? and(
-        eq(agentRunCallbacks.id, args.sourceCallbackId),
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      )
-    : and(
-        eq(agentRunCallbacks.runId, args.runId),
-        eq(agentRunCallbacks.internalKind, "chat"),
-      );
-  const [sourceCallback] = await args.db
-    .select({ encryptedSecret: agentRunCallbacks.encryptedSecret })
-    .from(agentRunCallbacks)
-    .where(callbackCondition)
-    .limit(1);
-  if (!sourceCallback) {
-    throw new Error("Canonical GitHub run is missing its chat callback");
-  }
-
-  const [callback] = await args.db
-    .insert(agentRunCallbacks)
-    .values({
-      runId: args.runId,
-      internalKind: "github:chat",
-      encryptedSecret: sourceCallback.encryptedSecret,
-      payload: {
-        ...args.target,
-        chatEventId: args.chatEventId,
-        publicBrand: args.publicBrand,
-      },
-    })
-    .returning({ id: agentRunCallbacks.id });
-  if (!callback) {
-    throw new Error("Failed to persist canonical GitHub delivery callback");
-  }
-  return callback.id;
+  return await insertChatDeliveryCallback({
+    db: args.db,
+    runId: args.runId,
+    sourceCallbackId: args.sourceCallbackId,
+    internalKind: "github:chat",
+    chatEventId: args.chatEventId,
+    payload: {
+      ...args.target,
+      chatEventId: args.chatEventId,
+      publicBrand: args.publicBrand,
+    },
+  });
 }
 
 async function publishAssistantErrorEventSignals(args: {
@@ -1491,8 +1439,11 @@ async function insertAssistantErrorEventTransaction(
   input: AssistantErrorEventArgs,
   displayErrorMessage: string,
   goalId: string | undefined,
-): Promise<RunLifecycleDeliveryCallbacks | null> {
-  const event = await insertChatEvent(
+  splitWrites: boolean,
+): Promise<
+  (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
+> {
+  const insertedEvent = await insertChatEvent(
     tx,
     {
       chatThreadId: input.threadId,
@@ -1507,7 +1458,18 @@ async function insertAssistantErrorEventTransaction(
         : {}),
     },
     "run-lifecycle",
+    { splitWrites },
   );
+  if (!insertedEvent && !splitWrites) {
+    return null;
+  }
+  const event =
+    insertedEvent ??
+    (await loadRunLifecycleMarker(
+      tx,
+      input.runId,
+      input.lifecycleEvent === "failed" ? "run.failed" : "run.cancelled",
+    ));
   if (!event) {
     return null;
   }
@@ -1570,8 +1532,8 @@ async function insertAssistantErrorEventTransaction(
         publicBrand: input.publicBrand,
       })
     : undefined;
-  await touchChatThreadLastMessageAt(tx, input.threadId, event.createdAt);
   return {
+    markerInserted: insertedEvent !== null,
     slackDeliveryCallbackId,
     feishuDeliveryCallbackId,
     teamsDeliveryCallbackId,
@@ -1592,27 +1554,47 @@ async function insertAssistantErrorEvent(
     undefined,
     signal,
   );
-  const projection = await withRunContentWrite(
-    args.db,
-    {
-      runId: args.runId,
-      ownership: args.ownership,
-      destination: {
-        threadId: args.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
-      },
+  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+  const identity = {
+    runId: args.runId,
+    ownership: args.ownership,
+    destination: {
+      threadId: args.threadId,
+      userId: args.userId,
+      orgId: args.orgId,
     },
-    async (tx) => {
-      return await insertAssistantErrorEventTransaction(
-        tx,
-        args,
-        displayErrorMessage,
-        goalId,
+  };
+  const projection = splitWrites
+    ? {
+        outcome: "written" as const,
+        ownership: (await validateRunContentIdentity(args.db, identity, signal))
+          .ownership,
+        value: await insertAssistantErrorEventTransaction(
+          args.db,
+          args,
+          displayErrorMessage,
+          goalId,
+          splitWrites,
+        ),
+      }
+    : await withRunContentWrite(
+        args.db,
+        identity,
+        async (tx) => {
+          const inserted = await insertAssistantErrorEventTransaction(
+            tx,
+            args,
+            displayErrorMessage,
+            goalId,
+            splitWrites,
+          );
+          if (inserted) {
+            await touchChatThreadLastMessageAt(tx, args.threadId);
+          }
+          return inserted;
+        },
+        signal,
       );
-    },
-    signal,
-  );
   if (projection.outcome === "closed") {
     return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
   }
@@ -1621,10 +1603,15 @@ async function insertAssistantErrorEvent(
     return { outcome: "duplicate" };
   }
 
+  // Replays repeat the monotonic split-mode touch and publishes because an
+  // earlier attempt may have failed after its marker committed.
+  if (splitWrites) {
+    await touchChatThreadLastMessageAtIndependently(args.db, args.threadId);
+  }
   await publishAssistantErrorEventSignals(args);
   return {
     displayErrorMessage,
-    outcome: "written",
+    outcome: inserted.markerInserted ? "written" : "replayed",
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
@@ -1634,7 +1621,7 @@ async function insertAssistantErrorEvent(
   };
 }
 
-type ChatCallbackTransaction = Tx;
+type ChatCallbackTransaction = Db | Tx;
 
 interface CanonicalDeliveryEvent {
   readonly id: string;
@@ -1650,6 +1637,21 @@ async function closedTerminalProjectionOutcome(
   const duplicate = await runLifecycleMarkerExists(db, runId);
   signal.throwIfAborted();
   return { outcome: duplicate ? "duplicate" : "closed" };
+}
+
+async function loadRunLifecycleMarker(
+  db: Pick<Db, "select">,
+  runId: string,
+  eventType: "run.completed" | "run.cancelled" | "run.failed",
+) {
+  const [marker] = await db
+    .select({ id: chatEvents.id, createdAt: chatEvents.createdAt })
+    .from(chatEvents)
+    .where(
+      and(eq(chatEvents.runId, runId), eq(chatEvents.eventType, eventType)),
+    )
+    .limit(1);
+  return marker;
 }
 
 async function runLifecycleMarkerExists(
@@ -1699,6 +1701,7 @@ async function insertIntegrationCompletionFallback(args: {
   readonly threadId: string;
   readonly goalId: string | null | undefined;
   readonly createdAt: Date;
+  readonly splitWrites: boolean;
 }): Promise<CanonicalDeliveryEvent> {
   const eventId = integrationCompletionFallbackEventIdForRun(args.runId);
   const inserted = await insertChatEvent(
@@ -1713,6 +1716,7 @@ async function insertIntegrationCompletionFallback(args: {
       createdAt: args.createdAt,
     },
     "id",
+    { splitWrites: args.splitWrites },
   );
   if (inserted) {
     return { id: inserted.id };
@@ -1756,7 +1760,7 @@ interface RunLifecycleDeliveryCallbacks {
 }
 
 function hasCanonicalIntegrationDelivery(
-  args: RunLifecycleMarkerArgs,
+  args: Omit<RunLifecycleMarkerArgs, "ownership">,
 ): boolean {
   return Boolean(
     args.slackDelivery ||
@@ -1769,7 +1773,7 @@ function hasCanonicalIntegrationDelivery(
 }
 
 function requiresIntegrationCompletionFallback(
-  args: RunLifecycleMarkerArgs,
+  args: Omit<RunLifecycleMarkerArgs, "ownership">,
 ): boolean {
   return (
     args.event === "completed" &&
@@ -1782,14 +1786,98 @@ function requiresIntegrationCompletionFallback(
   );
 }
 
-async function insertRunLifecycleMarkerTransaction(args: {
+async function registerRunLifecycleDeliveryCallbacks(
+  tx: ChatCallbackTransaction,
+  input: Omit<RunLifecycleMarkerArgs, "ownership">,
+  deliveryEvent: { readonly id: string } | undefined,
+): Promise<RunLifecycleDeliveryCallbacks> {
+  const slackDeliveryCallbackId =
+    deliveryEvent && input.slackDelivery
+      ? await insertSlackChatDeliveryCallback({
+          db: tx,
+          runId: input.runId,
+          sourceCallbackId: input.sourceCallbackId,
+          target: input.slackDelivery,
+          chatEventId: deliveryEvent.id,
+          publicBrand: input.publicBrand,
+        })
+      : undefined;
+  const feishuDeliveryCallbackId =
+    deliveryEvent && input.feishuDelivery
+      ? await insertFeishuChatDeliveryCallback({
+          db: tx,
+          runId: input.runId,
+          sourceCallbackId: input.sourceCallbackId,
+          target: input.feishuDelivery,
+          chatEventId: deliveryEvent.id,
+          publicBrand: input.publicBrand,
+        })
+      : undefined;
+  const teamsDeliveryCallbackId =
+    deliveryEvent && input.teamsDelivery
+      ? await insertTeamsChatDeliveryCallback({
+          db: tx,
+          runId: input.runId,
+          sourceCallbackId: input.sourceCallbackId,
+          target: input.teamsDelivery,
+          chatEventId: deliveryEvent.id,
+        })
+      : undefined;
+  const telegramDeliveryCallbackId =
+    deliveryEvent && input.telegramDelivery
+      ? await insertTelegramChatDeliveryCallback({
+          db: tx,
+          runId: input.runId,
+          sourceCallbackId: input.sourceCallbackId,
+          target: input.telegramDelivery,
+          chatEventId: deliveryEvent.id,
+          publicBrand: input.publicBrand,
+        })
+      : undefined;
+  const agentphoneDeliveryCallbackId =
+    deliveryEvent && input.agentphoneDelivery
+      ? await insertAgentPhoneChatDeliveryCallback({
+          db: tx,
+          runId: input.runId,
+          sourceCallbackId: input.sourceCallbackId,
+          target: input.agentphoneDelivery,
+          chatEventId: deliveryEvent.id,
+          publicBrand: input.publicBrand,
+        })
+      : undefined;
+  const githubDeliveryCallbackId =
+    deliveryEvent && input.githubDelivery
+      ? await insertGitHubChatDeliveryCallback({
+          db: tx,
+          runId: input.runId,
+          sourceCallbackId: input.sourceCallbackId,
+          target: input.githubDelivery,
+          chatEventId: deliveryEvent.id,
+          publicBrand: input.publicBrand,
+        })
+      : undefined;
+  return {
+    slackDeliveryCallbackId,
+    feishuDeliveryCallbackId,
+    teamsDeliveryCallbackId,
+    telegramDeliveryCallbackId,
+    agentphoneDeliveryCallbackId,
+    githubDeliveryCallbackId,
+  };
+}
+
+export async function insertRunLifecycleMarkerProjection(args: {
   readonly tx: ChatCallbackTransaction;
-  readonly input: RunLifecycleMarkerArgs;
+  readonly input: Omit<RunLifecycleMarkerArgs, "ownership">;
   readonly markerCreatedAt: Date;
   readonly goalId: string | undefined;
-}): Promise<RunLifecycleDeliveryCallbacks | null> {
+  readonly splitWrites: boolean;
+}): Promise<
+  (RunLifecycleDeliveryCallbacks & { readonly markerInserted: boolean }) | null
+> {
   const { input } = args;
   if (
+    !args.splitWrites &&
     input.teamsDelivery &&
     (await runLifecycleMarkerExists(args.tx, input.runId))
   ) {
@@ -1807,6 +1895,7 @@ async function insertRunLifecycleMarkerTransaction(args: {
       threadId: input.threadId,
       goalId: args.goalId,
       createdAt: args.markerCreatedAt,
+      splitWrites: args.splitWrites,
     });
   }
   const marker = await insertChatEvent(
@@ -1821,87 +1910,28 @@ async function insertRunLifecycleMarkerTransaction(args: {
       createdAt: args.markerCreatedAt,
     },
     "run-lifecycle",
+    { splitWrites: args.splitWrites },
   );
-  if (!marker) {
+  if (!marker && !args.splitWrites) {
     return null;
   }
-  const slackDeliveryCallbackId =
-    deliveryEvent && input.slackDelivery
-      ? await insertSlackChatDeliveryCallback({
-          db: args.tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          target: input.slackDelivery,
-          chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
-        })
-      : undefined;
-  const feishuDeliveryCallbackId =
-    deliveryEvent && input.feishuDelivery
-      ? await insertFeishuChatDeliveryCallback({
-          db: args.tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          target: input.feishuDelivery,
-          chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
-        })
-      : undefined;
-  const teamsDeliveryCallbackId =
-    deliveryEvent && input.teamsDelivery
-      ? await insertTeamsChatDeliveryCallback({
-          db: args.tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          target: input.teamsDelivery,
-          chatEventId: deliveryEvent.id,
-        })
-      : undefined;
-  const telegramDeliveryCallbackId =
-    deliveryEvent && input.telegramDelivery
-      ? await insertTelegramChatDeliveryCallback({
-          db: args.tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          target: input.telegramDelivery,
-          chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
-        })
-      : undefined;
-  const agentphoneDeliveryCallbackId =
-    deliveryEvent && input.agentphoneDelivery
-      ? await insertAgentPhoneChatDeliveryCallback({
-          db: args.tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          target: input.agentphoneDelivery,
-          chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
-        })
-      : undefined;
-  const githubDeliveryCallbackId =
-    deliveryEvent && input.githubDelivery
-      ? await insertGitHubChatDeliveryCallback({
-          db: args.tx,
-          runId: input.runId,
-          sourceCallbackId: input.sourceCallbackId,
-          target: input.githubDelivery,
-          chatEventId: deliveryEvent.id,
-          publicBrand: input.publicBrand,
-        })
-      : undefined;
-  await touchChatThreadLastMessageAt(
-    args.tx,
-    input.threadId,
-    args.markerCreatedAt,
-  );
+  if (
+    !marker &&
+    !(await loadRunLifecycleMarker(
+      args.tx,
+      input.runId,
+      input.event === "completed" ? "run.completed" : "run.cancelled",
+    ))
+  ) {
+    return null;
+  }
   return {
-    slackDeliveryCallbackId,
-    feishuDeliveryCallbackId,
-    teamsDeliveryCallbackId,
-    telegramDeliveryCallbackId,
-    agentphoneDeliveryCallbackId,
-    githubDeliveryCallbackId,
+    markerInserted: marker !== null,
+    ...(await registerRunLifecycleDeliveryCallbacks(
+      args.tx,
+      input,
+      deliveryEvent,
+    )),
   };
 }
 
@@ -1909,8 +1939,11 @@ async function insertRunLifecycleMarker(
   args: RunLifecycleMarkerArgs,
   signal: AbortSignal,
 ): Promise<
-  | { readonly outcome: "duplicate" | "closed" }
-  | ({ readonly outcome: "written" } & RunLifecycleDeliveryCallbacks)
+  | ({ readonly outcome: "duplicate" } & RunLifecycleDeliveryCallbacks)
+  | { readonly outcome: "closed" }
+  | ({
+      readonly outcome: "written" | "replayed";
+    } & RunLifecycleDeliveryCallbacks)
 > {
   const markerCreatedAt = nowDate();
   const goalId = await historicalRunGroupId(
@@ -1919,33 +1952,68 @@ async function insertRunLifecycleMarker(
     undefined,
     signal,
   );
-  const projection = await withRunContentWrite(
-    args.db,
-    {
-      runId: args.runId,
-      ownership: args.ownership,
-      destination: {
-        threadId: args.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
-      },
+  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+  const identity = {
+    runId: args.runId,
+    ownership: args.ownership,
+    destination: {
+      threadId: args.threadId,
+      userId: args.userId,
+      orgId: args.orgId,
     },
-    async (tx) => {
-      return await insertRunLifecycleMarkerTransaction({
-        tx,
-        input: args,
-        markerCreatedAt,
-        goalId,
-      });
-    },
-    signal,
-  );
+  };
+  const projection = splitWrites
+    ? {
+        outcome: "written" as const,
+        ownership: (await validateRunContentIdentity(args.db, identity, signal))
+          .ownership,
+        value: await insertRunLifecycleMarkerProjection({
+          tx: args.db,
+          input: args,
+          markerCreatedAt,
+          goalId,
+          splitWrites,
+        }),
+      }
+    : await withRunContentWrite(
+        args.db,
+        identity,
+        async (tx) => {
+          const inserted = await insertRunLifecycleMarkerProjection({
+            tx,
+            input: args,
+            markerCreatedAt,
+            goalId,
+            splitWrites,
+          });
+          if (inserted) {
+            await touchChatThreadLastMessageAt(
+              tx,
+              args.threadId,
+              markerCreatedAt,
+            );
+          }
+          return inserted;
+        },
+        signal,
+      );
   if (projection.outcome === "closed") {
     return await closedTerminalProjectionOutcome(args.db, args.runId, signal);
   }
   const inserted = projection.value;
   if (!inserted) {
     return { outcome: "duplicate" };
+  }
+  // The marker is only one committed projection. Its source callback still
+  // owns completion work until registration and automation admission succeed,
+  // so a replay repeats the monotonic touch and publishes an earlier attempt
+  // may have lost after the marker committed.
+  if (splitWrites) {
+    await touchChatThreadLastMessageAtIndependently(
+      args.db,
+      args.threadId,
+      markerCreatedAt,
+    );
   }
   await publishChatThreadMessageCreatedSafely({
     userId: args.userId,
@@ -1957,7 +2025,7 @@ async function insertRunLifecycleMarker(
     orgId: args.orgId,
   });
   return {
-    outcome: "written",
+    outcome: inserted.markerInserted ? "written" : "replayed",
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
@@ -1976,20 +2044,18 @@ async function insertRecommendedFollowupsEvent(args: {
   readonly followups: readonly ChatRecommendedFollowup[];
 }): Promise<boolean> {
   const goalId = await historicalRunGroupId(args.db, args.runId);
-  const inserted = await args.db.transaction(async (tx) => {
-    return await insertChatEvent(
-      tx,
-      {
-        id: followupsEventIdForRun(args.runId),
-        chatThreadId: args.threadId,
-        eventType: "output.followups",
-        content: serializeChatFollowupsContent(args.followups),
-        runId: args.runId,
-        runGroupId: goalId,
-      },
-      "id",
-    );
-  });
+  const inserted = await insertChatEvent(
+    args.db,
+    {
+      id: followupsEventIdForRun(args.runId),
+      chatThreadId: args.threadId,
+      eventType: "output.followups",
+      content: serializeChatFollowupsContent(args.followups),
+      runId: args.runId,
+      runGroupId: goalId,
+    },
+    "id",
+  );
 
   if (!inserted) {
     return false;
@@ -2185,7 +2251,7 @@ async function handleCompletedChatCallback(
     },
   );
   signal.throwIfAborted();
-  if (inserted.outcome !== "written") {
+  if (inserted.outcome === "duplicate" || inserted.outcome === "closed") {
     return inserted;
   }
 
@@ -2205,7 +2271,7 @@ async function handleCompletedChatCallback(
   return {
     lastResultText,
     followupContext,
-    outcome: "written",
+    outcome: inserted.outcome,
     slackDeliveryCallbackId: inserted.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
@@ -2224,7 +2290,7 @@ async function runCompletedChatCallbackSideEffects(
     readonly lastResultText: string | null;
     readonly followupContext: readonly ChatCompletionContextMessage[];
     readonly saveRunSummary: (resultText: string) => Promise<void>;
-    readonly dispatchChatRunFinishedAutomations: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
+    readonly dispatchChatRunFinishedAutomations?: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
   },
   signal: AbortSignal,
 ): Promise<void> {
@@ -2232,7 +2298,7 @@ async function runCompletedChatCallbackSideEffects(
   // auto-send so LLM/push latency does not delay the next run.
   const saveSummaryStep = args.saveRunSummary(args.lastResultText ?? "");
 
-  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations(
+  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations?.(
     {
       chatThreadId: args.chatThread.chatThreadId,
       runId: args.runId,
@@ -2369,11 +2435,11 @@ async function runFailedChatCallbackSideEffects(
     readonly chatThread: ChatThreadForRunRow;
     readonly displayErrorMessage: string;
     readonly runStatus: "failed" | "cancelled";
-    readonly dispatchChatRunFinishedAutomations: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
+    readonly dispatchChatRunFinishedAutomations?: ChatCallbackDependencies["dispatchChatRunFinishedAutomations"];
   },
   signal: AbortSignal,
 ): Promise<void> {
-  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations(
+  const chatRunFinishedStep = args.dispatchChatRunFinishedAutomations?.(
     {
       chatThreadId: args.chatThread.chatThreadId,
       runId: args.runId,
@@ -3063,7 +3129,9 @@ async function resolveQueuedLaunchMaterial(
   if (material) {
     return material;
   }
-  throw new Error(`${contextType} queue item is missing launch material`);
+  throw new Error(
+    `${contextType} queue item is missing authorized launch routing`,
+  );
 }
 
 function queuedIntegrationDeliveries(
@@ -4154,6 +4222,7 @@ async function loadTerminalChatCallback(
 async function prepareCompletedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
+    readonly splitWrites: boolean;
     readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
@@ -4212,18 +4281,34 @@ async function prepareCompletedTerminalChatCallbackWork(
     },
   );
   const completed = prepared;
-  if (completed.outcome !== "written") {
-    return { outcome: completed.outcome };
+  if (completed.outcome !== "written" && completed.outcome !== "replayed") {
+    return completed;
   }
 
   return {
-    outcome: "written",
+    outcome: completed.outcome,
     slackDeliveryCallbackId: completed.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: completed.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: completed.teamsDeliveryCallbackId,
     telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: completed.githubDeliveryCallbackId,
+    retryableSideEffects: args.splitWrites
+      ? (retrySignal) => {
+          return args.dependencies.dispatchChatRunFinishedAutomations(
+            {
+              chatThreadId: args.chatThread.chatThreadId,
+              runId: args.runId,
+              sourceCallbackId: args.sourceCallbackId,
+              runStatus: "completed",
+              lastResultText: completed.lastResultText,
+              sourceAgentId: args.chatThread.agentId,
+              sourceThreadTitle: args.chatThread.title,
+            },
+            retrySignal,
+          );
+        }
+      : undefined,
     deferredSideEffects: (deferredSignal) => {
       return runCompletedChatCallbackSideEffects(
         {
@@ -4241,8 +4326,9 @@ async function prepareCompletedTerminalChatCallbackWork(
               deferredSignal,
             );
           },
-          dispatchChatRunFinishedAutomations:
-            args.dependencies.dispatchChatRunFinishedAutomations,
+          dispatchChatRunFinishedAutomations: args.splitWrites
+            ? undefined
+            : args.dependencies.dispatchChatRunFinishedAutomations,
         },
         deferredSignal,
       );
@@ -4253,6 +4339,7 @@ async function prepareCompletedTerminalChatCallbackWork(
 async function prepareFailedTerminalChatCallbackWork(
   args: {
     readonly db: Db;
+    readonly splitWrites: boolean;
     readonly ownership: RunContentOwnership;
     readonly runId: string;
     readonly run: ChatRunInfo;
@@ -4313,18 +4400,37 @@ async function prepareFailedTerminalChatCallbackWork(
       );
     },
   );
-  if (failed.outcome !== "written") {
-    return { outcome: failed.outcome };
+  if (failed.outcome !== "written" && failed.outcome !== "replayed") {
+    return failed;
   }
 
   return {
-    outcome: "written",
+    outcome: failed.outcome,
     slackDeliveryCallbackId: failed.slackDeliveryCallbackId,
     feishuDeliveryCallbackId: failed.feishuDeliveryCallbackId,
     teamsDeliveryCallbackId: failed.teamsDeliveryCallbackId,
     telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
     githubDeliveryCallbackId: failed.githubDeliveryCallbackId,
+    retryableSideEffects: args.splitWrites
+      ? (retrySignal) => {
+          return args.dependencies.dispatchChatRunFinishedAutomations(
+            {
+              chatThreadId: args.chatThread.chatThreadId,
+              runId: args.runId,
+              sourceCallbackId: args.sourceCallbackId,
+              runStatus:
+                args.errorMessage.trim().toLowerCase() === "run cancelled"
+                  ? "cancelled"
+                  : "failed",
+              lastResultText: null,
+              sourceAgentId: args.chatThread.agentId,
+              sourceThreadTitle: args.chatThread.title,
+            },
+            retrySignal,
+          );
+        }
+      : undefined,
     deferredSideEffects: (deferredSignal) => {
       return runFailedChatCallbackSideEffects(
         {
@@ -4337,8 +4443,9 @@ async function prepareFailedTerminalChatCallbackWork(
             args.errorMessage.trim().toLowerCase() === "run cancelled"
               ? "cancelled"
               : "failed",
-          dispatchChatRunFinishedAutomations:
-            args.dependencies.dispatchChatRunFinishedAutomations,
+          dispatchChatRunFinishedAutomations: args.splitWrites
+            ? undefined
+            : args.dependencies.dispatchChatRunFinishedAutomations,
         },
         deferredSignal,
       );
@@ -4716,7 +4823,10 @@ async function drainAndClearTerminalChatThread(
       }
       return await maybeDrainThreadQueueForTerminalCallback(
         {
-          enabled: args.work.outcome !== "duplicate",
+          enabled:
+            args.work.outcome === "written" ||
+            args.work.outcome === "replayed" ||
+            args.work.outcome === "closed",
           chatThreadId: drainThreadId,
           dependencies: args.callback.dependencies,
           timing: args.timing,
@@ -4774,8 +4884,21 @@ async function finishTerminalChatCallbackAfterProjection(
     throw drainResult.error;
   }
 
+  // A committed marker must not acknowledge an unfinished automation. Throw
+  // back to the existing callback owner so its failed/pending row can retry.
+  await args.work.retryableSideEffects?.(signal);
+  signal.throwIfAborted();
+
+  // Scheduling is the last step, so a replay after an earlier attempt threw
+  // must schedule it. The source callback has no attempt claim: a replay can
+  // also follow an attempt that reached this point but failed its final
+  // acknowledgement, or overlap a concurrent redrive. That residual is
+  // at-least-once for summary, follow-up generation and push.
   const deferredSideEffects = args.work.deferredSideEffects;
-  if (deferredSideEffects) {
+  if (
+    deferredSideEffects &&
+    (args.work.outcome === "written" || args.work.outcome === "replayed")
+  ) {
     const backgroundSignal = new AbortController().signal;
     waitUntil(
       runTerminalChatCallbackSideEffects({
@@ -4789,10 +4912,32 @@ async function finishTerminalChatCallbackAfterProjection(
   }
 }
 
+async function terminalChatCallbackSourceId(
+  args: TerminalChatCallbackArgs,
+  splitWrites: boolean,
+): Promise<string | undefined> {
+  if (!splitWrites) {
+    return args.callback.callbackId;
+  }
+  // Queue launch failure callbacks carry the run identity before they have
+  // an envelope callback ID. Resolve their existing persisted owner exactly
+  // as delivery registration does; active work must never lose its receipt.
+  return (
+    await requireSourceChatCallback({
+      db: args.db,
+      runId: args.callback.runId,
+      sourceCallbackId: args.callback.callbackId,
+    })
+  ).id;
+}
+
 async function processTerminalChatCallback(
   args: TerminalChatCallbackArgs,
   signal: AbortSignal,
-  options?: { readonly deferPostProjection?: boolean },
+  options?: {
+    readonly deferPostProjection?: boolean;
+    readonly splitWrites?: boolean;
+  },
 ): Promise<void> {
   const { runId, status: callbackStatus } = args.callback;
   if (callbackStatus === "progress") {
@@ -4832,6 +4977,13 @@ async function processTerminalChatCallback(
         return null;
       }
       const { run, chatThread, ownership } = loaded;
+      const splitWrites =
+        options?.splitWrites ?? (await isSplitChatEventWriteEnabled(args.db));
+      const sourceCallbackId = await terminalChatCallbackSourceId(
+        args,
+        splitWrites,
+      );
+      signal.throwIfAborted();
       const preparation = {
         db: args.db,
         runId,
@@ -4841,8 +4993,9 @@ async function processTerminalChatCallback(
         dependencies: args.dependencies,
         timing,
         publicBrand: args.payload.publicBrand ?? "vm0",
+        splitWrites,
         ...terminalIntegrationDeliveries(args.payload),
-        sourceCallbackId: args.callback.callbackId,
+        sourceCallbackId,
       };
       const work = await (callbackStatus === "completed"
         ? prepareCompletedTerminalChatCallbackWork(preparation, signal)
@@ -5147,7 +5300,13 @@ async function handleChatInternalCallback(
     payload: payload.data,
     dependencies: args.dependencies,
   };
-  if (args.awaitTerminalProjection) {
+  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+  signal.throwIfAborted();
+  if (splitWrites) {
+    // Keep required terminal work within the persisted source callback's retry
+    // lifetime. Each event, delivery registration and automation commits alone.
+    await processTerminalChatCallback(processingInput, signal, { splitWrites });
+  } else if (args.awaitTerminalProjection) {
     // The completion endpoint may only ACK after canonical lifecycle projection
     // succeeds. Queue wakeups keep their established detached recovery owner.
     await processTerminalChatCallback(processingInput, signal, {

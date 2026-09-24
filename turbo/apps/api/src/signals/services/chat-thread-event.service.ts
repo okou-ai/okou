@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import {
   modelSettingsPatchSchema,
   modelSettingsSchema,
@@ -21,44 +23,20 @@ import {
 } from "@okouai/db/schema/chat-thread-event";
 import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
 
-import type { ReadonlyDb } from "../external/db";
+import type { Db, ReadonlyDb } from "../external/db";
+import { executeRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 
-// The sequence row lock must remain held until its event becomes visible.
-// Requiring a transaction prevents callers from splitting those two commits.
+// Control operations still own transactions; ordinary appends own one statement.
 export type ChatThreadEventTransaction = Tx;
+type ChatThreadEventWriter = Db | Tx;
 const CHAT_THREAD_EVENTS_PAGE_SIZE = 1000;
 const cursorChatThreadEvent = alias(
   chatThreadEvents,
   "cursor_chat_thread_event",
 );
 const pageChatThreadEvent = alias(chatThreadEvents, "page_chat_thread_event");
-
-async function reserveChatThreadEventSeqId(
-  db: ChatThreadEventTransaction,
-  userId: string,
-  orgId: string,
-): Promise<number> {
-  const [sequence] = await db
-    .insert(chatThreadEventSequences)
-    .values({
-      userId,
-      orgId,
-      lastSeqId: 1,
-    })
-    .onConflictDoUpdate({
-      target: [chatThreadEventSequences.userId, chatThreadEventSequences.orgId],
-      set: {
-        lastSeqId: sql`${chatThreadEventSequences.lastSeqId} + 1`,
-      },
-    })
-    .returning({ seqId: chatThreadEventSequences.lastSeqId });
-  if (!sequence) {
-    throw new Error("Unable to reserve chat thread event seq_id");
-  }
-  return sequence.seqId;
-}
 
 interface ChatThreadEventAppend {
   readonly kind: ChatThreadEventKind;
@@ -88,7 +66,7 @@ export class ChatThreadEventIdConflictError extends Error {
 }
 
 async function insertChatThreadEvent(
-  db: ChatThreadEventTransaction,
+  db: ChatThreadEventWriter,
   args: ChatThreadEventAppend,
   strict: boolean,
 ): Promise<void> {
@@ -106,41 +84,45 @@ async function insertChatThreadEvent(
     throw new Error("Unable to resolve org for chat thread event");
   }
 
-  const seqId = await reserveChatThreadEventSeqId(db, args.userId, orgId);
-  const insertion = db.insert(chatThreadEvents).values({
-    ...(args.eventId !== undefined ? { id: args.eventId } : {}),
-    userId: args.userId,
-    orgId,
-    seqId,
-    chatThreadId: args.chatThreadId,
-    kind: args.kind,
-    agentId: args.agentId,
-    title: args.title ?? null,
-    pinOrder: args.pinOrder ?? null,
-    selectedModel: args.selectedModel ?? null,
-    modelSettings: args.modelSettings,
-    modelSettingsPatch: args.modelSettingsPatch,
-    serviceTier: args.serviceTier ?? null,
-    computerUseHostId: args.computerUseHostId ?? null,
-    cloudBrowserEnabled: args.cloudBrowserEnabled ?? false,
-    selectedVideoModel: args.selectedVideoModel ?? null,
-    selectedImageModel: args.selectedImageModel ?? null,
-    ...(args.createdAt !== undefined ? { createdAt: args.createdAt } : {}),
-  });
-  if (!strict) {
-    await insertion.onConflictDoNothing({ target: chatThreadEvents.id });
-    return;
-  }
-  const inserted = await insertion
-    .onConflictDoNothing({ target: chatThreadEvents.id })
-    .returning({ id: chatThreadEvents.id });
-  if (inserted.length === 0) {
+  // Sequence allocation and insertion commit together even without an outer
+  // transaction. A deliberate id conflict may leave a sequence gap.
+  const inserted = await executeRawRows(
+    db,
+    sql`WITH reserved AS (
+      INSERT INTO ${chatThreadEventSequences} (user_id, org_id, last_seq_id)
+      VALUES (${args.userId}, ${orgId}, 1)
+      ON CONFLICT (user_id, org_id) DO UPDATE
+      SET last_seq_id = ${chatThreadEventSequences.lastSeqId} + 1
+      RETURNING last_seq_id
+    )
+    INSERT INTO ${chatThreadEvents} (
+      id, user_id, org_id, seq_id, chat_thread_id, kind, agent_id, title,
+      pin_order, selected_model, model_settings, model_settings_patch,
+      service_tier, computer_use_host_id, cloud_browser_enabled,
+      selected_video_model, selected_image_model, created_at
+    ) SELECT
+      ${args.eventId ?? randomUUID()}::uuid, ${args.userId}, ${orgId}, last_seq_id,
+      ${args.chatThreadId}::uuid, ${args.kind}::chat_thread_event_kind,
+      ${args.agentId}::uuid, ${args.title ?? null}, ${args.pinOrder ?? null},
+      ${args.selectedModel ?? null},
+      ${args.modelSettings === undefined ? null : JSON.stringify(args.modelSettings)}::jsonb,
+      ${args.modelSettingsPatch === undefined ? null : JSON.stringify(args.modelSettingsPatch)}::jsonb,
+      ${args.serviceTier ?? null}, ${args.computerUseHostId ?? null}::uuid,
+      ${args.cloudBrowserEnabled ?? false}, ${args.selectedVideoModel ?? null},
+      ${args.selectedImageModel ?? null},
+      COALESCE(${args.createdAt?.toISOString() ?? null}::timestamp, timezone('UTC', now()))
+    FROM reserved
+    ON CONFLICT (id) DO NOTHING
+    RETURNING id`,
+    z.object({ id: z.string().uuid() }),
+  );
+  if (strict && inserted.length === 0) {
     throw new ChatThreadEventIdConflictError();
   }
 }
 
 export async function appendChatThreadEvent(
-  db: ChatThreadEventTransaction,
+  db: ChatThreadEventWriter,
   args: ChatThreadEventAppend,
 ): Promise<void> {
   await insertChatThreadEvent(db, args, false);
@@ -148,7 +130,7 @@ export async function appendChatThreadEvent(
 
 /** A conflicting event id aborts the caller's transaction instead of dropping projection evidence. */
 export async function appendChatThreadEventStrict(
-  db: ChatThreadEventTransaction,
+  db: ChatThreadEventWriter,
   args: ChatThreadEventAppend & { readonly eventId: string },
 ): Promise<void> {
   await insertChatThreadEvent(db, args, true);

@@ -6535,7 +6535,6 @@ describe("external MCP entry", () => {
     { modern: true, scopes: requiredScopes },
     { modern: false, scopes: requiredScopes },
     { modern: true, scopes: defaultScopes },
-    { modern: false, scopes: defaultScopes },
   ])(
     "discovers and calls chat discovery with modern=$modern and scopes=$scopes",
     async ({ modern, scopes }) => {

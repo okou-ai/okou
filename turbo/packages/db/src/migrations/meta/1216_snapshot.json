@@ -1,5 +1,5 @@
 {
-  "id": "880e114d-664e-4013-8bb5-4ac3f123d322",
+  "id": "ef65329a-ebd1-41ed-8e2b-2db7cdffc6f7",
   "prevId": "a3cd33a8-1f2d-43d7-82e1-d5ab2e65b238",
   "version": "7",
   "dialect": "postgresql",
@@ -2854,6 +2854,21 @@
         }
       },
       "indexes": {
+        "idx_agentphone_chat_thread_routes_thread": {
+          "name": "idx_agentphone_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_agentphone_chat_thread_routes_link_root": {
           "name": "idx_agentphone_chat_thread_routes_link_root",
           "columns": [
@@ -4434,6 +4449,22 @@
           ],
           "isUnique": false,
           "where": "\"background_jobs\".\"status\" = 'running'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_background_jobs_completed_clerk_deletion": {
+          "name": "idx_background_jobs_completed_clerk_deletion",
+          "columns": [
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"background_jobs\".\"kind\" = 'clerk-user-deletion' AND \"background_jobs\".\"status\" = 'completed'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7218,6 +7249,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "source_user_id": {
+          "name": "source_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_org_id": {
+          "name": "source_org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -7226,7 +7269,38 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_agent_run_context_source_user_idx": {
+          "name": "chat_agent_run_context_source_user_idx",
+          "columns": [
+            {
+              "expression": "source_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_agent_run_context_source_org_idx": {
+          "name": "chat_agent_run_context_source_org_idx",
+          "columns": [
+            {
+              "expression": "source_org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -7343,7 +7417,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_agentphone_context_thread_idx": {
+          "name": "chat_agentphone_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_agentphone_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_agentphone_context_chat_thread_id_chat_threads_id_fk",
@@ -7434,6 +7524,21 @@
         }
       },
       "indexes": {
+        "chat_automation_context_thread_idx": {
+          "name": "chat_automation_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "chat_automation_context_automation_id_idx": {
           "name": "chat_automation_context_automation_id_idx",
           "columns": [
@@ -7469,6 +7574,99 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chat_content_erasure_subjects": {
+      "name": "chat_content_erasure_subjects",
+      "schema": "",
+      "columns": {
+        "subject_kind": {
+          "name": "subject_kind",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject_id": {
+          "name": "subject_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_reference": {
+          "name": "source_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_sweep_at": {
+          "name": "next_sweep_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_content_erasure_next_sweep": {
+          "name": "chat_content_erasure_next_sweep",
+          "columns": [
+            {
+              "expression": "next_sweep_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "subject_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"chat_content_erasure_subjects\".\"completed_at\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "chat_content_erasure_subjects_subject_kind_subject_id_pk": {
+          "name": "chat_content_erasure_subjects_subject_kind_subject_id_pk",
+          "columns": [
+            "subject_kind",
+            "subject_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_content_erasure_subject_kind": {
+          "name": "chat_content_erasure_subject_kind",
+          "value": "\"chat_content_erasure_subjects\".\"subject_kind\" IN ('user', 'organization')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.chat_event_search_message_watermarks": {
@@ -7684,6 +7882,50 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.chat_event_sequences": {
+      "name": "chat_event_sequences",
+      "schema": "",
+      "columns": {
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "last_seq_id": {
+          "name": "last_seq_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "chat_event_sequences_chat_thread_id_chat_threads_id_fk": {
+          "name": "chat_event_sequences_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "chat_event_sequences",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_event_sequences_nonnegative": {
+          "name": "chat_event_sequences_nonnegative",
+          "value": "\"chat_event_sequences\".\"last_seq_id\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.chat_event_snapshot_scan_state": {
       "name": "chat_event_snapshot_scan_state",
       "schema": "",
@@ -7862,6 +8104,37 @@
         "chat_event_snapshots_terminal_cursor_check": {
           "name": "chat_event_snapshots_terminal_cursor_check",
           "value": "(\n          \"chat_event_snapshots\".\"terminal_event_id\" IS NULL\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" = 0\n        ) OR (\n          \"chat_event_snapshots\".\"terminal_event_id\" IS NOT NULL\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" > 0\n          AND \"chat_event_snapshots\".\"terminal_seq_id\" <= \"chat_event_snapshots\".\"last_seq_id\"\n        )"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.chat_event_write_control": {
+      "name": "chat_event_write_control",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "'global'"
+        },
+        "activated_at": {
+          "name": "activated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_event_write_control_singleton": {
+          "name": "chat_event_write_control_singleton",
+          "value": "\"chat_event_write_control\".\"id\" = 'global'"
         }
       },
       "isRLSEnabled": false
@@ -8341,7 +8614,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_feishu_context_thread_idx": {
+          "name": "chat_feishu_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_feishu_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_feishu_context_chat_thread_id_chat_threads_id_fk",
@@ -8443,7 +8732,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_github_context_thread_idx": {
+          "name": "chat_github_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_github_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_github_context_chat_thread_id_chat_threads_id_fk",
@@ -8579,7 +8884,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_slack_context_thread_idx": {
+          "name": "chat_slack_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_slack_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_slack_context_chat_thread_id_chat_threads_id_fk",
@@ -8740,7 +9061,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_teams_context_thread_idx": {
+          "name": "chat_teams_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_teams_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_teams_context_chat_thread_id_chat_threads_id_fk",
@@ -8877,7 +9214,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chat_telegram_context_thread_idx": {
+          "name": "chat_telegram_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "chat_telegram_context_chat_thread_id_chat_threads_id_fk": {
           "name": "chat_telegram_context_chat_thread_id_chat_threads_id_fk",
@@ -9326,6 +9679,21 @@
             },
             {
               "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_thread_events_org_idx": {
+          "name": "chat_thread_events_org_idx",
+          "columns": [
+            {
+              "expression": "org_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -9804,13 +10172,6 @@
           "notNull": true,
           "default": "now()"
         },
-        "last_chat_event_seq_id": {
-          "name": "last_chat_event_seq_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "provenance": {
           "name": "provenance",
           "type": "varchar(32)",
@@ -9830,6 +10191,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "last_chat_event_seq_id": {
+          "name": "last_chat_event_seq_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         }
       },
       "indexes": {
@@ -15334,7 +15702,7 @@
       "checkConstraints": {
         "get_started_quest_check": {
           "name": "get_started_quest_check",
-          "value": "\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'imessage', 'workflow', 'invite', 'share', 'checkin')"
+          "value": "\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'workflow', 'invite', 'share', 'checkin')"
         },
         "get_started_status_check": {
           "name": "get_started_status_check",
@@ -15350,11 +15718,11 @@
         },
         "get_started_slot_check": {
           "name": "get_started_slot_check",
-          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('imessage', 'workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
+          "value": "(\"get_started_claims\".\"status\" <> 'granted' AND \"get_started_claims\".\"reward_slot\" IS NULL) OR (\"get_started_claims\".\"status\" = 'granted' AND ((\"get_started_claims\".\"quest_key\" = 'invite' AND \"get_started_claims\".\"reward_slot\" BETWEEN 1 AND 15 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('workflow', 'share') AND \"get_started_claims\".\"reward_slot\" = 1 AND \"get_started_claims\".\"reward_slot\" IS NOT NULL) OR (\"get_started_claims\".\"quest_key\" IN ('connector', 'slack', 'checkin') AND \"get_started_claims\".\"reward_slot\" IS NULL)))"
         },
         "get_started_amount_check": {
           "name": "get_started_amount_check",
-          "value": "\"get_started_claims\".\"reward_amount\" = CASE \"get_started_claims\".\"quest_key\" WHEN 'slack' THEN 2000 WHEN 'share' THEN 2000 WHEN 'imessage' THEN 1000 WHEN 'workflow' THEN 1000 ELSE 100 END"
+          "value": "\"get_started_claims\".\"reward_amount\" = CASE \"get_started_claims\".\"quest_key\" WHEN 'slack' THEN 2000 WHEN 'share' THEN 2000 WHEN 'workflow' THEN 1000 ELSE 100 END"
         }
       },
       "isRLSEnabled": false
@@ -15422,6 +15790,21 @@
         }
       },
       "indexes": {
+        "idx_github_chat_thread_routes_thread": {
+          "name": "idx_github_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_github_chat_thread_routes_install_repo_subject_user": {
           "name": "idx_github_chat_thread_routes_install_repo_subject_user",
           "columns": [
@@ -31866,6 +32249,21 @@
         }
       },
       "indexes": {
+        "idx_teams_chat_thread_routes_thread": {
+          "name": "idx_teams_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_teams_chat_thread_routes_conn_conversation_thread_user": {
           "name": "idx_teams_chat_thread_routes_conn_conversation_thread_user",
           "columns": [
@@ -32349,6 +32747,21 @@
         }
       },
       "indexes": {
+        "idx_telegram_chat_thread_routes_thread": {
+          "name": "idx_telegram_chat_thread_routes_thread",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "idx_telegram_chat_thread_routes_chat_user_link": {
           "name": "idx_telegram_chat_thread_routes_chat_user_link",
           "columns": [
@@ -38175,160 +38588,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.morning_brief_native_schedule_skips": {
-      "name": "morning_brief_native_schedule_skips",
-      "schema": "",
-      "columns": {
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "owner_epoch": {
-          "name": "owner_epoch",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scheduled_anchor_at": {
-          "name": "scheduled_anchor_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "skipped_at": {
-          "name": "skipped_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_morning_brief_native_schedule_skips_at": {
-          "name": "idx_morning_brief_native_schedule_skips_at",
-          "columns": [
-            {
-              "expression": "skipped_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "fk_morning_brief_native_schedule_skips_owner": {
-          "name": "fk_morning_brief_native_schedule_skips_owner",
-          "tableFrom": "morning_brief_native_schedule_skips",
-          "tableTo": "morning_brief_native_schedules",
-          "columnsFrom": [
-            "org_id",
-            "user_id"
-          ],
-          "columnsTo": [
-            "org_id",
-            "user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "morning_brief_native_schedule_skips_pk": {
-          "name": "morning_brief_native_schedule_skips_pk",
-          "columns": [
-            "org_id",
-            "user_id",
-            "owner_epoch",
-            "scheduled_anchor_at"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.workflow_schedule_skips": {
-      "name": "workflow_schedule_skips",
-      "schema": "",
-      "columns": {
-        "automation_id": {
-          "name": "automation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "scheduled_anchor_at": {
-          "name": "scheduled_anchor_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "skipped_at": {
-          "name": "skipped_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_workflow_schedule_skips_at": {
-          "name": "idx_workflow_schedule_skips_at",
-          "columns": [
-            {
-              "expression": "skipped_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "workflow_schedule_skips_automation_id_workflow_automations_id_fk": {
-          "name": "workflow_schedule_skips_automation_id_workflow_automations_id_fk",
-          "tableFrom": "workflow_schedule_skips",
-          "tableTo": "workflow_automations",
-          "columnsFrom": [
-            "automation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "workflow_schedule_skips_pk": {
-          "name": "workflow_schedule_skips_pk",
-          "columns": [
-            "automation_id",
-            "scheduled_anchor_at"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.official_workflow_automation_identities": {
       "name": "official_workflow_automation_identities",
       "schema": "",
@@ -39645,6 +39904,160 @@
           "value": "\"x_resource_reads\".\"resource_id\" ~ '^[0-9]{1,32}$'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.morning_brief_native_schedule_skips": {
+      "name": "morning_brief_native_schedule_skips",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_epoch": {
+          "name": "owner_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_anchor_at": {
+          "name": "scheduled_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skipped_at": {
+          "name": "skipped_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_morning_brief_native_schedule_skips_at": {
+          "name": "idx_morning_brief_native_schedule_skips_at",
+          "columns": [
+            {
+              "expression": "skipped_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_morning_brief_native_schedule_skips_owner": {
+          "name": "fk_morning_brief_native_schedule_skips_owner",
+          "tableFrom": "morning_brief_native_schedule_skips",
+          "tableTo": "morning_brief_native_schedules",
+          "columnsFrom": [
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "morning_brief_native_schedule_skips_pk": {
+          "name": "morning_brief_native_schedule_skips_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "owner_epoch",
+            "scheduled_anchor_at"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.workflow_schedule_skips": {
+      "name": "workflow_schedule_skips",
+      "schema": "",
+      "columns": {
+        "automation_id": {
+          "name": "automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_anchor_at": {
+          "name": "scheduled_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skipped_at": {
+          "name": "skipped_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_workflow_schedule_skips_at": {
+          "name": "idx_workflow_schedule_skips_at",
+          "columns": [
+            {
+              "expression": "skipped_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "workflow_schedule_skips_automation_id_workflow_automations_id_fk": {
+          "name": "workflow_schedule_skips_automation_id_workflow_automations_id_fk",
+          "tableFrom": "workflow_schedule_skips",
+          "tableTo": "workflow_automations",
+          "columnsFrom": [
+            "automation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "workflow_schedule_skips_pk": {
+          "name": "workflow_schedule_skips_pk",
+          "columns": [
+            "automation_id",
+            "scheduled_anchor_at"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

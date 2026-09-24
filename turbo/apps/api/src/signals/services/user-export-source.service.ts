@@ -16,7 +16,7 @@ import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contrac
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";

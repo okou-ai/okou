@@ -3,7 +3,7 @@ import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets } from "@okouai/db/schema/secret";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   piMemoryStage1Days,
   piMemoryStage1Watermarks,

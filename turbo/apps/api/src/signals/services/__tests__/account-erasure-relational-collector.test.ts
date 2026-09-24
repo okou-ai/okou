@@ -264,15 +264,15 @@ describe("relational erasure plan", () => {
     const plan = await planRelationalErasure(db);
     const declared = new Set(
       Object.entries(ACCOUNT_OWNERSHIP_INVENTORY).flatMap((entry) => {
-        return entry[1].coverage === "user_descendant" ? [entry[0]] : [];
+        return "parents" in entry[1] && entry[1].parents ? [entry[0]] : [];
       }),
     );
 
     for (const path of plan.descendants) {
       expect([...declared]).toContain(path.child);
       const entry = ACCOUNT_OWNERSHIP_INVENTORY[path.child];
-      expect(entry?.coverage).toBe("user_descendant");
-      if (entry?.coverage === "user_descendant") {
+      expect(["user_descendant", "user_root"]).toContain(entry?.coverage);
+      if (entry && "parents" in entry) {
         expect(entry.parents).toContain(path.root);
       }
       expect(path.hops.length).toBeGreaterThan(0);
@@ -925,6 +925,61 @@ describe("dormant relational sweep", () => {
       sql`SELECT count(*)::int AS rows FROM chat_threads WHERE user_id = ${theirs}`,
     );
     expect(theirThreads.rows).toStrictEqual([{ rows: 1 }]);
+  });
+
+  it("removes attributed orphan provenance and nullable legacy provenance without removing another owner's", async () => {
+    const mine = account("provenance_mine");
+    const theirs = account("provenance_theirs");
+    const orgId = `org_sweep_${randomUUID().replaceAll("-", "")}`;
+    const agentId = randomUUID();
+    const sourceThreadId = randomUUID();
+    const legacyId = randomUUID();
+    const orphanId = randomUUID();
+    const survivorId = randomUUID();
+    onTestFinished(async () => {
+      await db.execute(
+        sql`DELETE FROM chat_agent_run_context WHERE id IN (${legacyId}, ${orphanId}, ${survivorId})`,
+      );
+      await db.execute(
+        sql`DELETE FROM chat_threads WHERE id = ${sourceThreadId}`,
+      );
+      await db.execute(sql`DELETE FROM agents WHERE id = ${agentId}`);
+    });
+    await db.execute(
+      sql`INSERT INTO agents (id, name, org_id, owner)
+          VALUES (${agentId}, 'provenance-agent', ${orgId}, ${theirs})`,
+    );
+    await db.execute(
+      sql`INSERT INTO chat_threads (id, user_id, agent_id)
+          VALUES (${sourceThreadId}, ${mine}, ${agentId})`,
+    );
+    await db.execute(sql`
+      INSERT INTO chat_agent_run_context
+        (id, source_chat_thread_id, source_agent_id, source_user_id)
+      VALUES
+        (${legacyId}, ${sourceThreadId}, ${agentId}, NULL),
+        (${orphanId}, ${randomUUID()}, ${randomUUID()}, ${mine}),
+        (${survivorId}, ${randomUUID()}, ${randomUUID()}, ${theirs})
+    `);
+    const plan = await planRelationalErasure(db);
+    const before = await relationalErasureResidual(
+      db,
+      { subjectKind: "user", subjectId: mine },
+      plan,
+    );
+    expect(before).toContainEqual({ table: "chat_agent_run_context", rows: 1 });
+    await drive(mine, { ...plan, unattributableDescendants: [] });
+    const remaining = await db.execute(
+      sql`SELECT id FROM chat_agent_run_context WHERE id IN (${legacyId}, ${orphanId}, ${survivorId})`,
+    );
+    expect(remaining.rows).toStrictEqual([{ id: survivorId }]);
+    await expect(
+      relationalErasureResidual(
+        db,
+        { subjectKind: "user", subjectId: mine },
+        plan,
+      ),
+    ).resolves.toStrictEqual([]);
   });
 
   it("removes source catalog rows across Agent, run and site cascades without deleting a survivor's catalog", async () => {

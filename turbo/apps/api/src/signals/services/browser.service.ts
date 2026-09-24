@@ -20,7 +20,7 @@ import {
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
 import { command } from "ccstate";

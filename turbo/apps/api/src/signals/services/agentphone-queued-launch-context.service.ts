@@ -3,7 +3,7 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import { optionalEnv } from "../../lib/env";

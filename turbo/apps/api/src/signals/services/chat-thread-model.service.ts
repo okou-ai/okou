@@ -6,7 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import { badRequestMessage } from "../../lib/error";

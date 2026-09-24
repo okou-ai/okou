@@ -5,7 +5,7 @@ import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-th
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";

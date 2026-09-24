@@ -24,9 +24,14 @@
         "src/signals/external/env.ts",
         "src/scripts/**/*.ts",
         "src/**/*.{test,spec}.ts",
-        "scripts/erasure-bridge/{acceptance,child}.ts"
+        "scripts/erasure-bridge/{acceptance,child}.ts",
+        "scripts/chat-event-*/acceptance.ts"
       ],
-      "project": ["src/**/*.ts", "scripts/erasure-bridge/*.ts"],
+      "project": [
+        "src/**/*.ts",
+        "scripts/erasure-bridge/*.ts",
+        "scripts/chat-event-*/*.ts"
+      ],
       "ignoreDependencies": ["@hono/node-server-v1", "clerk"],
       "ignoreBinaries": ["openssl"]
     },

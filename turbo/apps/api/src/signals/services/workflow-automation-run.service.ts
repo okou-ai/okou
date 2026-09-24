@@ -46,6 +46,7 @@ export const runWorkflowAutomationNow$ = command(
       async () => {
         return await admitWorkflowAutomationEvent(db, {
           automation,
+          queueEventId: args.queueEventId,
           workflowName: args.automationContext.workflowName,
           displayPrompt: workflowAutomationDisplayMessage(
             args.automationContext,

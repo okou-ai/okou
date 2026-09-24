@@ -25,7 +25,8 @@ import {
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatSearchIndexText } from "../../lib/chat-search-bigram";
 import type { Tx } from "../../lib/db-types";
 import { optionalEnv } from "../../lib/env";
@@ -315,9 +316,16 @@ async function loadProjectionThread(
       agentId: agents.id,
       agentOwner: agents.owner,
       orgId: agents.orgId,
-      lastChatEventSeqId: chatThreads.lastChatEventSeqId,
+      lastChatEventSeqId:
+        sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+          chatEventSequences.lastSeqId,
+        ),
     })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .innerJoin(agents, eq(chatThreads.agentId, agents.id))
     .where(eq(chatThreads.id, chatThreadId))
     .limit(1);
@@ -774,6 +782,10 @@ async function loadCandidateThreads(
   const candidates = await db
     .select({ chatThreadId: chatThreads.id })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .innerJoin(agents, eq(chatThreads.agentId, agents.id))
     .leftJoin(
       chatEventSearchMessageWatermarks,
@@ -783,7 +795,7 @@ async function loadCandidateThreads(
       and(
         threadScope,
         gt(
-          chatThreads.lastChatEventSeqId,
+          chatEventSequences.lastSeqId,
           sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
         ),
         openProjectionSubjectsCondition(db),
@@ -809,7 +821,7 @@ async function projectionConvergence(
 ): Promise<ChatEventSearchProjectionConvergence> {
   const eligibleScope = and(
     projectionThreadScope(options.chatThreadIds),
-    gt(chatThreads.lastChatEventSeqId, 0),
+    gt(chatEventSequences.lastSeqId, 0),
     openProjectionSubjectsCondition(db),
   );
   const [stats] = await db
@@ -820,6 +832,10 @@ async function projectionConvergence(
       ),
     })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .leftJoin(agents, eq(chatThreads.agentId, agents.id))
     .leftJoin(
       chatEventSearchMessageWatermarks,
@@ -827,7 +843,7 @@ async function projectionConvergence(
         eq(chatEventSearchMessageWatermarks.chatThreadId, chatThreads.id),
         gte(
           chatEventSearchMessageWatermarks.indexedSeqId,
-          chatThreads.lastChatEventSeqId,
+          chatEventSequences.lastSeqId,
         ),
       ),
     )
