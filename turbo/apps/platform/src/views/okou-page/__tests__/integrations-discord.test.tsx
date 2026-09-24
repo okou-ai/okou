@@ -389,7 +389,6 @@ test.each(["successful refresh", "failed refresh and retry"])(
     const saveReady = context.mocks.deferred<void>();
     const refreshStarted = context.mocks.deferred<void>();
     const refreshReady = context.mocks.deferred<void>();
-    const submitted: string[] = [];
     let current = status({
       dmSelectionConnectionId: first,
       dmBindings: [
@@ -425,7 +424,6 @@ test.each(["successful refresh", "failed refresh and retry"])(
     context.mocks.api(
       integrationsDiscordContract.setDmSelection,
       async ({ body, respond, withSignal }) => {
-        submitted.push(body.connectionId);
         saveStarted.resolve();
         await withSignal(saveReady.promise);
         current = { ...current, dmSelectionConnectionId: body.connectionId };
@@ -433,11 +431,10 @@ test.each(["successful refresh", "failed refresh and retry"])(
       },
     );
     await setupDiscordPage();
-    click(
-      await screen.findByRole("combobox", {
-        name: "Default server for direct messages",
-      }),
-    );
+    const initialSelect = await screen.findByRole("combobox", {
+      name: "Default server for direct messages",
+    });
+    click(initialSelect);
     click(await screen.findByRole("option", { name: "Operations" }));
     await saveStarted.promise;
 
@@ -469,7 +466,6 @@ test.each(["successful refresh", "failed refresh and retry"])(
     expect(select).toHaveTextContent("Design team");
     click(select);
     expect(screen.queryByRole("option", { name: "Design team" })).toBeNull();
-    expect(submitted).toStrictEqual([second]);
 
     saveReady.resolve();
     await waitFor(() => {

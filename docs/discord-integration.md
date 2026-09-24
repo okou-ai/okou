@@ -190,11 +190,40 @@ Fixture tests exercise the actual service/UI boundaries with controlled
 provider responses. They do not demonstrate that a live Discord bot is
 configured, installed, or reachable.
 
+A has [published the protected fixture interface](https://github.com/okou-ai/okou/issues/36640#issuecomment-5811564566).
+The actual provider revision must be available before running these steps;
+the interface announcement alone is not execution evidence.
+
+- `@okouai/api-contracts/contracts/test-discord-state` exports
+  `testDiscordStateContract.post` and `.delete`.
+- `POST /api/test/discord-state` requires an authenticated admin. Its body is
+  `{guildId, guildName, botUserId, discordUserId}`. Use synthetic snowflakes for
+  the three ID fields and a synthetic guild name. The response is
+  `200 {connectionId}`. The server binds only the
+  authenticated user's current org/user; callers cannot supply Okou identity
+  fields. Conflicting ownership returns `409` instead of rebinding.
+- Optional `history: {chatThreadId, channelId, messageId, messageText}` seeds
+  erasure/export descendants for an already-created owned canonical Chat
+  thread. Use C's real ingress entrypoint for admission tests.
+- `DELETE /api/test/discord-state?guildId=...` uses the same admin context and
+  deletes only that org's named guild.
+- Production returns `404`. Development is allowed; protected previews also
+  require `isPreviewEndpointAllowed`. This fixture does not bypass runtime
+  feature gating or turn supplied IDs into a production onboarding flow.
+- A's `signals/routes/__tests__/helpers/discord.ts` exports
+  `configureDiscordApp`, `uniqueDiscordSnowflake`, `mockDiscordMemberships`,
+  `seedDiscordFixture`, and `deleteDiscordFixture`. The seed helper calls the
+  guarded HTTP route and returns the actor, IDs, and connection ID. Mock current
+  Clerk membership at its external boundary; cached session roles are not
+  binding authority. Configure all four app settings with synthetic values and
+  enable `_discordIntegration` only for the fixture cohort through the existing
+  feature-switch API.
+
 1. Record the full checkout SHA, compatible provider PRs, and test environment.
-   Use A's guarded fixture setup once its concrete entrypoint is published in
-   [#36640](https://github.com/okou-ai/okou/issues/36640). Verify that production
-   use and arbitrary-ID binding are rejected. Until that helper exists, record
-   setup as pending rather than document an invented command.
+   Use A's guarded fixture setup above once its actual provider revision is
+   integrated. Verify production rejection, admin enforcement, conflicting
+   identity rejection, and scoped cleanup. Keep setup execution pending until
+   that revision is available; do not substitute raw database inserts.
 2. Create two test orgs/guilds, an admin and member, a second connected sender in
    one shared thread, an unbound sender, and one sender with valid bindings to
    both orgs. Include revoked membership, inaccessible agents/models, and stale
@@ -212,7 +241,9 @@ configured, installed, or reachable.
    The settings DM-choice control must contain only the authenticated sender's
    valid bindings, submit only `{connectionId}`, and reflect the saved choice
    after refresh. Verify that no first/recent choice is applied automatically
-   when multiple valid bindings have no saved selection.
+   when multiple valid bindings have no saved selection. Hold a selection PUT
+   pending while status refreshes, including a failed refresh followed by retry;
+   another choice must stay disabled until that PUT settles.
 5. Submit signed Gateway/interaction fixtures for mention, unmentioned reply,
    bot DM, bot/self/webhook message, and edit. Reject wrong signatures,
    application IDs, expired timestamps, mismatched component senders, and
