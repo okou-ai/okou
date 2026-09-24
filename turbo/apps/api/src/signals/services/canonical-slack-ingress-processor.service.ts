@@ -565,10 +565,13 @@ async function fetchCanonicalConversationContext(args: {
     throw result.error;
   }
   const failure = slackMessageClientFailure(result.error);
-  L.warn("Canonical Slack context is unavailable; processing current message", {
-    ingressId: args.ingressId,
-    errorClass: failure ? `slack:${failure.code}` : "slack:authorization",
-  });
+  L.debug(
+    "Canonical Slack context is unavailable; processing current message",
+    {
+      ingressId: args.ingressId,
+      errorClass: failure ? `slack:${failure.code}` : "slack:authorization",
+    },
+  );
   return { executionContext: "" };
 }
 
