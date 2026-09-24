@@ -10,6 +10,7 @@ import {
   persistedAttachment,
 } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
+import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 
 /*
 helper gap:
@@ -837,6 +838,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
   });
 
   it("prepares and completes a hosted-site deployment through host APIs", async () => {
+    createHostMapsBddApi(context).captureHostedSitesS3();
     const actor = bdd.user();
     const site = `bdd-site-${randomUUID().slice(0, 8)}`;
 
@@ -871,7 +873,6 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
     expectApiError(crossOrgComplete.body);
     expect(crossOrgComplete.body.error.code).toBe("NOT_FOUND");
 
-    api.mockObjectStorageObjectsExist();
     const completed = await api.completeHostedSite(
       actor,
       prepared.deploymentId,
