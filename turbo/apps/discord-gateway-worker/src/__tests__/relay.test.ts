@@ -212,7 +212,13 @@ describe("Discord Gateway relay", () => {
     relay.reply = () => {
       return Response.json({ ok: true, outcome: "duplicate" });
     };
-    const resumed = await relay.start();
+    // Initialize the replacement process through its read-only endpoint. The
+    // persisted alarm must recover without another operator /start request.
+    expect(await relay.health()).toMatchObject({
+      running: true,
+      resumable: true,
+    });
+    const resumed = await relay.connections.next();
     resumed.hello();
     expect(await resumed.next(6)).toEqual({
       op: 6,

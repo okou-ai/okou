@@ -127,7 +127,7 @@ export function apiUrl(env: Env): string {
 }
 
 export function configured(env: Env): boolean {
-  return Boolean(
+  const credentialsAndScopeValid = Boolean(
     env.DISCORD_GATEWAY_SHARD_ID === "0" &&
     env.DISCORD_GATEWAY_SHARD_COUNT === "1" &&
     env.DISCORD_APPLICATION_ID &&
@@ -142,6 +142,13 @@ export function configured(env: Env): boolean {
     env.DISCORD_BOT_TOKEN !== env.DISCORD_GATEWAY_SECRET &&
     ["test", "production"].includes(env.DISCORD_GATEWAY_ENVIRONMENT),
   );
+  if (!credentialsAndScopeValid) return false;
+  try {
+    apiUrl(env);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function signature(

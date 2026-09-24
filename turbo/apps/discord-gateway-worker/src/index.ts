@@ -172,11 +172,6 @@ export class DiscordGateway {
           { status: 409 },
         );
       }
-      try {
-        apiUrl(this.env);
-      } catch {
-        return new Response("Invalid API origin", { status: 503 });
-      }
       if (!this.state.running) {
         await this.save({
           ...this.state,

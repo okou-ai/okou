@@ -242,9 +242,14 @@ export class RelayFixture {
     return this.connections.next();
   }
 
-  async restart(bindings: Record<string, string> = {}): Promise<void> {
+  async restart(
+    bindings: Record<string, string | undefined> = {},
+  ): Promise<void> {
     await this.runtime.dispose();
-    Object.assign(this.bindings, bindings);
+    for (const [key, value] of Object.entries(bindings)) {
+      if (value === undefined) delete this.bindings[key];
+      else this.bindings[key] = value;
+    }
     this.runtime = this.createRuntime();
   }
 
