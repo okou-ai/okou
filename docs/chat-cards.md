@@ -711,9 +711,9 @@ and reopening the dialog runs preflight again. Preflight returns the observed
 textarea or input subtype and current site constraints, including multiple
 email addresses and number `min`, `max`, and `step` attributes. The form uses
 that verified control rather than guessing from the Agent's semantic field
-kind. A confirmed page or control change makes the
-request stale; a temporary provider failure leaves a Retry action. The form
-does not poll while open, and submit revalidates the exact target and site
+kind. A confirmed page or control change makes the request stale; a temporary
+provider failure leaves a Retry action. The form does not poll while open, and
+submit revalidates the exact target and site
 constraints before writing. The draft and mutation lock are local to each form
 entry, while the API serializes effects across tabs. Dismissing the dialog
 leaves the Browser request pending. Password fields clear when the form
