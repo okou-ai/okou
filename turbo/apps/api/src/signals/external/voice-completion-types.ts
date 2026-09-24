@@ -1,5 +1,3 @@
-import type { MultimodalVoiceInputModelId } from "@okouai/api-contracts/contracts/voice-input-models";
-
 export interface VoiceAudio {
   readonly data: string;
   readonly format: "wav";
@@ -28,7 +26,6 @@ export interface VoiceJsonSchema {
   };
 }
 export interface VoiceCompletionRequest {
-  readonly model: MultimodalVoiceInputModelId;
   readonly systemPrompt: string;
   readonly content: string | readonly VoiceContentPart[];
   readonly jsonSchema?: VoiceJsonSchema;

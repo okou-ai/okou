@@ -12,7 +12,7 @@ const RECOVERY_BUDGET_MS = 15_000;
 const INITIAL_BACKOFF_MS = 1000;
 
 interface VoiceProviderContext {
-  readonly provider: "openrouter" | "fal" | "vertex";
+  readonly provider: "vertex";
   readonly model: string;
   readonly responseSchema?: string;
 }
@@ -24,17 +24,7 @@ export class VoiceProviderUnavailableError extends Error {
   }
 }
 
-export class VoiceProviderTemporaryResponseError extends Error {
-  constructor(
-    readonly status: number,
-    readonly errorType: string | undefined,
-  ) {
-    super("Voice provider returned a temporary completion error");
-    this.name = "VoiceProviderTemporaryResponseError";
-  }
-}
-
-export function isRetryableVoiceProviderStatus(status: number): boolean {
+function isRetryableVoiceProviderStatus(status: number): boolean {
   return (
     status === 429 ||
     status === 500 ||
@@ -57,23 +47,18 @@ function retryAfterMs(value: string | null): number | undefined {
     : undefined;
 }
 
-interface ProviderFailure {
-  readonly status: number;
-  readonly source: "http" | "completion";
-  readonly errorType?: string;
-}
-
 function exhausted(
   context: VoiceProviderContext,
-  failure: ProviderFailure,
+  status: number,
   attempts: number,
 ): VoiceProviderUnavailableError {
   L.warn("Voice provider recovery exhausted", {
     ...context,
-    ...failure,
+    status,
+    source: "http",
     attempts,
   });
-  return new VoiceProviderUnavailableError(failure.status);
+  return new VoiceProviderUnavailableError(status);
 }
 
 /** Recover classified temporary failures at the failed provider step. */
@@ -89,40 +74,32 @@ export async function requestVoiceProvider<T>(
   let deadline: number | undefined;
   let attempts = 1;
   let responseSignal = signal;
-  let failure: ProviderFailure = { status: response.status, source: "http" };
+  let failedStatus = response.status;
   const checkSignal = () => {
     signal.throwIfAborted();
     if (
       deadline !== undefined &&
       (responseSignal.aborted || now() >= deadline)
     ) {
-      throw exhausted(context, failure, attempts);
+      throw exhausted(context, failedStatus, attempts);
     }
   };
   while (true) {
-    if (isRetryableVoiceProviderStatus(response.status)) {
-      failure = { status: response.status, source: "http" };
-    } else {
+    if (!isRetryableVoiceProviderStatus(response.status)) {
       const result = await onRejection(
         settle(readResponse(response), signal),
         checkSignal,
       );
       checkSignal();
-      if (result.ok) {
-        if (response.ok && attempts > 1) {
-          L.debug("Voice provider request recovered", { ...context, attempts });
-        }
-        return result.value;
-      }
-      if (!(result.error instanceof VoiceProviderTemporaryResponseError)) {
+      if (!result.ok) {
         throw result.error;
       }
-      failure = {
-        status: result.error.status,
-        source: "completion",
-        errorType: result.error.errorType,
-      };
+      if (response.ok && attempts > 1) {
+        L.debug("Voice provider request recovered", { ...context, attempts });
+      }
+      return result.value;
     }
+    failedStatus = response.status;
     deadline ??= now() + RECOVERY_BUDGET_MS;
     const wait = Math.max(
       INITIAL_BACKOFF_MS * 2 ** (attempts - 1),
@@ -136,13 +113,13 @@ export async function requestVoiceProvider<T>(
     checkSignal();
     // A provider's long retry delay is not permission to retry earlier.
     if (attempts >= MAX_ATTEMPTS || wait >= deadline - now()) {
-      throw exhausted(context, failure, attempts);
+      throw exhausted(context, failedStatus, attempts);
     }
     await delay(wait, { signal });
     signal.throwIfAborted();
     const remaining = deadline - now();
     if (remaining <= 0) {
-      throw exhausted(context, failure, attempts);
+      throw exhausted(context, failedStatus, attempts);
     }
     responseSignal = AbortSignal.any([signal, AbortSignal.timeout(remaining)]);
     attempts += 1;

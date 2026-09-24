@@ -6637,12 +6637,6 @@
           "trigger": "Exécuter Morning Brief maintenant",
           "triggering": "Mise en file d’attente…"
         },
-        "voiceInput": {
-          "default": "Par défaut ({{model}})",
-          "description": "Choisissez le modèle pour la saisie vocale v2. Les modèles de transcription utilisent {{model}} pour améliorer le texte.",
-          "title": "Modèle de saisie vocale",
-          "unavailable": "Modèle indisponible ({{model}})"
-        },
         "welcomeThread": {
           "create": "Créer une discussion de bienvenue",
           "creating": "Création…",

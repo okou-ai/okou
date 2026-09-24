@@ -6559,12 +6559,6 @@
           "trigger": "立即运行晨报",
           "triggering": "正在加入队列…"
         },
-        "voiceInput": {
-          "default": "默认（{{model}}）",
-          "description": "选择语音输入v2使用的模型。语音转文字模型，以及超过90秒的GPT Audio录音，会使用{{model}}做后处理。",
-          "title": "语音输入模型",
-          "unavailable": "不可用的模型（{{model}}）"
-        },
         "welcomeThread": {
           "create": "创建欢迎会话",
           "creating": "创建中…",

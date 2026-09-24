@@ -6559,12 +6559,6 @@
           "trigger": "Morning Brief を今すぐ実行",
           "triggering": "キューに追加中…"
         },
-        "voiceInput": {
-          "default": "デフォルト（{{model}}）",
-          "description": "音声入力 v2 のモデルを選択します。文字起こしモデルは {{model}} で文章を整えます。",
-          "title": "音声入力モデル",
-          "unavailable": "利用できないモデル（{{model}}）"
-        },
         "welcomeThread": {
           "create": "ウェルカムチャットを作成",
           "creating": "作成中…",
