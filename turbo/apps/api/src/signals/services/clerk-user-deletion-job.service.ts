@@ -20,6 +20,7 @@ import {
   captureUserErasureWork,
   verifyUserErasureWork,
 } from "./account-erasure-user-executor";
+import { markMorningBriefCollectionOwnershipRevoked } from "./morning-brief-collection-occurrence.service";
 import { cleanupClerkDeletedUser$ } from "./webhooks-clerk-cleanup.service";
 
 const L = logger("ClerkUserDeletionJob");
@@ -84,19 +85,28 @@ async function settleDeletionAttempt(
 export const enqueueClerkUserDeletion$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<string> => {
     const jobId = uuidv5(userId, JOB_NAMESPACE);
-    await enqueueBackgroundJob(
-      set(writeDb$),
-      {
-        id: jobId,
-        kind: JOB_KIND,
-        handlerVersion: JOB_HANDLER_VERSION,
-        userId,
-        orgId: "",
-        input: {},
-        checkpoint: { phase: "capture" },
-      },
-      signal,
-    );
+    await set(writeDb$).transaction(async (tx) => {
+      await enqueueBackgroundJob(
+        tx,
+        {
+          id: jobId,
+          kind: JOB_KIND,
+          handlerVersion: JOB_HANDLER_VERSION,
+          userId,
+          orgId: "",
+          input: {},
+          checkpoint: { phase: "capture" },
+        },
+        signal,
+      );
+      // Stop new collections at the durable receipt without destroying the
+      // occurrences B1 must capture before the legacy cleanup removes them.
+      await markMorningBriefCollectionOwnershipRevoked(
+        tx,
+        { kind: "user", userId },
+        nowDate(),
+      );
+    });
     signal.throwIfAborted();
     return jobId;
   },
