@@ -4272,7 +4272,6 @@
       "documentTitles": {
         "experience": "Your AI experience",
         "industry": "Choose your field",
-        "profile": "Your profile",
         "ready": "Okou is ready",
         "skills": "Import your skills",
         "slack": "Add Okou to Slack",
@@ -4335,17 +4334,6 @@
       "industry": {
         "copy": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
         "title": "What kind of work do you do?"
-      },
-      "profile": {
-        "communicationStyle": "How you communicate",
-        "copy": "A first look at your work, based on the accounts you connected.",
-        "failed": "We couldn't create your profile right now. Try again or continue.",
-        "heading": "Your profile",
-        "loading": "Creating your profile from your connected work…",
-        "priorities": "Likely priorities",
-        "professionalIdentity": "Your work",
-        "retry": "Try again",
-        "title": "Here's what we've learned about you"
       },
       "skills": {
         "copied": "Copied",
