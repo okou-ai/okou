@@ -285,7 +285,7 @@ export async function generateVertexVoice<T>(
             ? { inlineData: { mimeType: "audio/wav", data: part.audio.data } }
             : { text: part.text };
         });
-  const schema = args.jsonSchema?.schema;
+  const schema = args.jsonSchema;
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: args.systemPrompt }] },
     contents: [{ role: "user", parts }],
@@ -351,7 +351,6 @@ export async function generateVertexVoice<T>(
         return parseVertexResponse(body.text, parseResponse);
       },
       {
-        provider: "vertex",
         model: args.model,
         responseSchema: args.jsonSchema?.name,
       },
