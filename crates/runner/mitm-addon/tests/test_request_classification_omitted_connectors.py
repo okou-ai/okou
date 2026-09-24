@@ -75,65 +75,7 @@ def test_omitted_connector_intent_does_not_bypass_multiple_active_owners(
         ("omittedCustomConnectorIds", "removed-custom"),
     ],
 )
-def test_omitted_connector_intent_still_enforces_sole_owner_denial(
-    tmp_path,
-    real_flow,
-    mitm_ctx,
-    headers,
-    omitted_field,
-    intent,
-):
-    sandbox = _single_firewall_sandbox(
-        tmp_path,
-        firewall_name="active",
-        api_entry={
-            "base": "https://shared.example.com",
-            "auth": {"headers": {"Authorization": "Bearer ${{ secrets.ACTIVE_TOKEN }}"}},
-            "permissions": [{"name": "items-read", "rules": ["GET /items/{id}"]}],
-        },
-        network_policy={
-            "allow": [],
-            "deny": ["items-read"],
-            "ask": [],
-            "unknownPolicy": "deny",
-        },
-        sandbox_fields={omitted_field: [intent]},
-    )
-    registry_path = _write_registry(tmp_path, client_ip=_CLIENT_IP, sandbox_info=sandbox)
-    flow = real_flow(
-        with_response=False,
-        client_ip=_CLIENT_IP,
-        host="shared.example.com",
-        path="/items/123",
-        request_headers=headers(
-            ("Host", "shared.example.com"),
-            (_CONNECTOR_INTENT_HEADER, intent),
-        ),
-    )
-    connector_intent.capture_and_strip(flow)
-
-    with mitm_ctx(registry_path=str(registry_path), api_url=_API_URL):
-        classification = request_classification.classify_request(
-            flow,
-            registry_path=str(registry_path),
-            api_url=_API_URL,
-            tls_admission=None,
-        )
-
-    assert isinstance(classification, request_classification.FirewallBlock)
-    assert classification.firewall_block.name == "active"
-    assert classification.firewall_block.reason == "permission_denied"
-    assert _CONNECTOR_INTENT_HEADER not in flow.request.headers
-
-
-@pytest.mark.parametrize(
-    ("omitted_field", "intent"),
-    [
-        ("omittedBuiltinFirewalls", "removed-builtin"),
-        ("omittedCustomConnectorIds", "removed-custom"),
-    ],
-)
-async def test_omitted_intent_cannot_bypass_sole_owner_denial_in_request_hook(
+async def test_omitted_connector_intent_still_enforces_sole_owner_denial(
     tmp_path,
     real_flow,
     mitm_ctx,
