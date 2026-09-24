@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { securityPageUrl } from "./onboarding-security.ts";
+import { ILLUSTRATION_BASE } from "./onboarding-step-parts.tsx";
 
 /** A framework and its status, as the public security page states them. */
 interface ComplianceItem {
@@ -80,6 +81,12 @@ export function OnboardingCompliance() {
       aria-label={title}
       className="mt-10 border-t border-t-gray-400 pt-6"
     >
+      <img
+        src={`${ILLUSTRATION_BASE}v3-compliance-fit_480.png`}
+        srcSet={`${ILLUSTRATION_BASE}v3-compliance-fit_960.png 2x`}
+        alt=""
+        className="mb-4 h-28 w-auto"
+      />
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-sm font-medium text-foreground">{title}</h2>
         <a
