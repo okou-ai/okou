@@ -296,10 +296,21 @@ struct SandboxOp {
     history_transfer: Option<history_transfer::HistoryTransferTelemetry>,
     #[serde(flatten)]
     dns_readiness: Option<dns_readiness::DnsReadinessTelemetryFields>,
+    #[serde(flatten)]
+    storage_batch: Option<StorageBatchTelemetryFields>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_size_mismatch: Option<ArchiveSizeMismatch>,
     #[serde(skip_serializing_if = "Option::is_none")]
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
+}
+
+#[derive(Clone, Serialize)]
+struct StorageBatchTelemetryFields {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    storage_batch_guest_duration_ms: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    storage_batch_outer_residual_ms: Option<u64>,
+    storage_batch_timing: &'static str,
 }
 
 #[derive(Serialize)]
@@ -509,11 +520,13 @@ impl JobTelemetry {
 
     /// Record a storage-apply call using only fixed transport/position and
     /// serialized-manifest-size labels. The manifest and its identifiers never
-    /// enter this operation.
+    /// enter this operation. The outer residual includes work outside the
+    /// Guest-server timer on both sides of the connection, not pure transport.
     pub(crate) fn record_storage_apply_batch(
         &mut self,
         duration: Duration,
         success: bool,
+        guest_duration_ms: Option<u32>,
         transport_position: &'static str,
         manifest_size_bucket: &'static str,
     ) {
@@ -526,6 +539,18 @@ impl JobTelemetry {
             None,
         );
         op.reason = Some(manifest_size_bucket.to_string());
+        let residual =
+            guest_duration_ms.and_then(|guest| op.duration_ms.checked_sub(u64::from(guest)));
+        let timing = match (guest_duration_ms, residual) {
+            (None, _) => "unavailable",
+            (Some(_), None) => "inconsistent",
+            (Some(_), Some(_)) => "paired",
+        };
+        op.storage_batch = Some(StorageBatchTelemetryFields {
+            storage_batch_guest_duration_ms: guest_duration_ms,
+            storage_batch_outer_residual_ms: residual,
+            storage_batch_timing: timing,
+        });
         self.push_operation(op);
     }
 
@@ -760,6 +785,15 @@ impl JobTelemetry {
             .iter()
             .filter(|op| op.history_transfer.is_some())
             .map(|op| serde_json::to_value(op).expect("serialize history transfer operation"))
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pending_storage_batch_payloads(&self) -> Vec<serde_json::Value> {
+        self.pending_ops
+            .iter()
+            .filter(|op| op.storage_batch.is_some())
+            .map(|op| serde_json::to_value(op).expect("serialize storage batch operation"))
             .collect()
     }
 
@@ -1012,6 +1046,7 @@ fn sandbox_op_at(
         workspace_session_history: None,
         history_transfer: None,
         dns_readiness: None,
+        storage_batch: None,
         archive_size_mismatch: None,
         archive_connection_attempt: None,
     }
@@ -1153,6 +1188,7 @@ mod tests {
             workspace_session_history: None,
             history_transfer: None,
             dns_readiness: None,
+            storage_batch: None,
             archive_size_mismatch: None,
             archive_connection_attempt: None,
         };
@@ -1483,6 +1519,7 @@ mod tests {
                 workspace_session_history: None,
                 history_transfer: None,
                 dns_readiness: None,
+                storage_batch: None,
                 archive_size_mismatch: None,
                 archive_connection_attempt: None,
             }],

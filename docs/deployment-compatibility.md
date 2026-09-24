@@ -15,6 +15,19 @@ update that carries nothing but this field is rejected as empty. The
 neither reads nor writes it while an older API may still do so. Drop it in a
 separate migration after older API deployments drain.
 
+## Guest storage batch timing attribution (2026-09-24)
+
+Runner storage batch operations now include optional Guest-server duration, a
+nonnegative Runner-minus-Guest residual when the pair is consistent, and a
+fixed timing state. The API explicitly validates and forwards these fields to
+the sandbox operation log. An older Runner omits them and remains accepted by
+the new API. An older API strips the new optional fields; storage application
+still works, but the extra timing is unavailable until the API is promoted.
+Deploy the API before the Runner to retain the new samples. Mixed-version
+production comparisons must report field coverage and Runner version mix;
+missing timing is never a zero duration. The Guest protocol and storage apply
+behavior are unchanged.
+
 ## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for

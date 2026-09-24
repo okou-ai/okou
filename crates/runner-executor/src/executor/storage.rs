@@ -50,7 +50,8 @@ pub(super) async fn download_storages(
     manifest: &Manifest,
 ) -> RunnerResult<()> {
     let input = StorageInput::Json(manifest_json(manifest)?);
-    apply_storage_input(sandbox, context, &input).await
+    let mut guest_duration_ms = None;
+    apply_storage_input(sandbox, context, &input, &mut guest_duration_ms).await
 }
 
 pub(super) async fn download_storages_with_files(
@@ -79,13 +80,15 @@ pub(super) async fn download_storages_with_files(
     );
     for (index, input) in inputs.iter().enumerate() {
         let started = Instant::now();
-        let result = apply_storage_input(sandbox, context, input).await;
+        let mut guest_duration_ms = None;
+        let result = apply_storage_input(sandbox, context, input, &mut guest_duration_ms).await;
         // Keep telemetry bounded for an unusually large manifest. Always retain
         // the final or failing batch in addition to the first observed batches.
         if index < MAX_RECORDED_STORAGE_BATCHES || index + 1 == batch_count || result.is_err() {
             telemetry.record_storage_apply_batch(
                 started.elapsed(),
                 result.is_ok(),
+                guest_duration_ms,
                 batch_outcome(input, index, batch_count),
                 manifest_size_bucket(input.manifest_bytes()),
             );
@@ -336,6 +339,7 @@ async fn apply_storage_input(
     sandbox: &dyn Sandbox,
     context: &ExecutionContext,
     input: &StorageInput,
+    guest_duration_ms: &mut Option<u32>,
 ) -> RunnerResult<()> {
     let manifest_json = match input {
         StorageInput::Json(bytes) => bytes,
@@ -395,6 +399,8 @@ async fn apply_storage_input(
             return Err(e.into());
         }
     };
+
+    *guest_duration_ms = result.guest_duration_ms;
 
     if !helper_exec_succeeded(&result) {
         if !use_dedicated {
