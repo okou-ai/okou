@@ -3,10 +3,11 @@ import {
   validateResponse,
 } from "@okouai/api-contracts/contracts/trpc-contract";
 import { createStore, type Command, type Computed } from "ccstate";
-import type { Handler } from "hono";
+import type { Context, Handler } from "hono";
 import type { ContentfulStatusCode, StatusCode } from "hono/utils/http-status";
 
-import { now } from "../../lib/time";
+import { monotonicNow, now } from "../../lib/time";
+import { logger } from "../../lib/log";
 import {
   setUsagePricingResolution$,
   type UsagePricingResolution,
@@ -14,12 +15,32 @@ import {
 import { initHono$ } from "./hono";
 import { requestValidation$ } from "./request";
 import { setRootSignal$ } from "./root";
+import { safeSync } from "../utils";
 import {
   setSystemSkillStorageResolution$,
   type SystemSkillStorageResolution,
 } from "./system-skill-storage-resolution";
 
 export type SignalRouteHandler<T> = Computed<T> | Command<T, [AbortSignal]>;
+
+const L = logger("SignalRoute");
+
+export interface JsonResponseObservation {
+  readonly status: number;
+  readonly byteLength: number;
+  readonly serializationDurationMs: number;
+}
+
+export type JsonResponseObserver = (
+  context: Context,
+  observation: JsonResponseObservation,
+) => void;
+
+interface HonoSignalHandlerOptions {
+  readonly usagePricingResolution?: UsagePricingResolution;
+  readonly systemSkillStorageResolution?: SystemSkillStorageResolution;
+  readonly observeJsonResponse?: JsonResponseObserver;
+}
 
 interface RouteResult {
   readonly status: number;
@@ -104,8 +125,11 @@ export function honoSignalHandler(
   handler$: SignalRouteHandler<unknown>,
   contract: AppRoute,
   signal: AbortSignal,
-  usagePricingResolution?: UsagePricingResolution,
-  systemSkillStorageResolution?: SystemSkillStorageResolution,
+  {
+    usagePricingResolution,
+    systemSkillStorageResolution,
+    observeJsonResponse,
+  }: HonoSignalHandlerOptions = {},
 ): Handler {
   return async (context) => {
     const apiStartTime = now();
@@ -156,6 +180,37 @@ export function honoSignalHandler(
       return context.body(null, status);
     }
 
-    return context.json(response.body, status as ContentfulStatusCode);
+    if (!observeJsonResponse || status < 200 || status >= 300) {
+      return context.json(response.body, status as ContentfulStatusCode);
+    }
+
+    const serializationStartedAt = monotonicNow();
+    const serialized = JSON.stringify(response.body);
+    if (serialized === undefined) {
+      return context.json(response.body, status as ContentfulStatusCode);
+    }
+    const serializationDurationMs = Math.max(
+      0,
+      monotonicNow() - serializationStartedAt,
+    );
+    const jsonResponse = context.body(
+      serialized,
+      status as ContentfulStatusCode,
+      {
+        "Content-Type": "application/json",
+      },
+    );
+    const observationResult = safeSync(() => {
+      observeJsonResponse(context, {
+        status,
+        byteLength: Buffer.byteLength(serialized),
+        serializationDurationMs,
+      });
+    });
+    if ("error" in observationResult) {
+      // An ordinary observation error must not fail a successful claim.
+      L.warn("JSON response observation failed");
+    }
+    return jsonResponse;
   };
 }

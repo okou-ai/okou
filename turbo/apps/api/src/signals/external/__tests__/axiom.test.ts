@@ -15,6 +15,7 @@ import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
+import { recordClaimResponseJsonSerialization } from "../sandbox-op-log";
 
 const context = testContext();
 
@@ -34,6 +35,40 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
+  it("emits bounded claim JSON size without response content", () => {
+    // Telemetry-client suite exception: no API read endpoint exposes this event.
+    const runId = randomUUID();
+    for (const [byteLength, bucket] of [
+      [0, "lt_4_kib"],
+      [4 * 1024, "4_16_kib"],
+      [16 * 1024, "16_64_kib"],
+      [64 * 1024, "64_256_kib"],
+      [256 * 1024, "256_kib_1_mib"],
+      [1024 * 1024, "ge_1_mib"],
+    ] as const) {
+      recordClaimResponseJsonSerialization({
+        runId,
+        byteLength,
+        serializationDurationMs: 7,
+      });
+      expect(context.mocks.axiom.sdkIngest).toHaveBeenCalledWith(
+        "vm0-sandbox-op-log-dev",
+        [
+          {
+            _time: expect.any(String),
+            source: "api",
+            op_type: "api_claim_response_json_serialize",
+            sandbox_type: "runner",
+            duration_ms: 7,
+            success: true,
+            run_id: runId,
+            serialized_json_size_bucket: bucket,
+          },
+        ],
+      );
+    }
+  });
+
   it("preserves archive diagnostics through the sandbox-operation SDK transport", async () => {
     // Logger-suite exception: ingestion is the subject and no read endpoint
     // exposes it. Use the real webhook to cover validation and projection.

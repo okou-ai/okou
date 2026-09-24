@@ -614,13 +614,11 @@ export function createAppWithRoutes({
   // compose overlapping route slices.
   for (const entry of routes) {
     const { route } = entry;
-    const routeHandler = honoSignalHandler(
-      entry.handler,
-      route,
-      signal,
+    const routeHandler = honoSignalHandler(entry.handler, route, signal, {
       usagePricingResolution,
       systemSkillStorageResolution,
-    );
+      observeJsonResponse: entry.observeJsonResponse,
+    });
     app.on(route.method, route.path, routeHandler);
   }
 
