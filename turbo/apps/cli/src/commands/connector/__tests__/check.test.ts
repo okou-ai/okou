@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import {
+  CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
+  CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
   connectorCheckRequestBodySchema,
   type ConnectorCheckDiagnosticResult,
   type ConnectorCheckPolicy,
@@ -171,6 +173,7 @@ function stubDiagnostic(
   result: ConnectorCheckDiagnosticResult,
   onRequest?: (body: unknown) => void,
   baseUrl = API_BASE_URL,
+  awsContextHeader?: string,
 ): void {
   if (result.outcome === "unknown-connector") {
     server.use(
@@ -195,30 +198,44 @@ function stubDiagnostic(
   }
   server.use(
     http.post(diagnosticEndpoint(baseUrl), async ({ request }) => {
+      const responseInit =
+        awsContextHeader === undefined
+          ? undefined
+          : {
+              headers: {
+                [CONNECTOR_CHECK_AWS_CONTEXT_HEADER]: awsContextHeader,
+              },
+            };
       const body: unknown = await request.json();
       onRequest?.(body);
       const parsed = connectorCheckRequestBodySchema.parse(body);
       if ("includeCustomConnectors" in parsed || "target" in parsed) {
         if ("connector" in result) {
           const { connectorSlug, ...identity } = result.connector;
-          return HttpResponse.json({
-            ...result,
-            connector: {
-              ...identity,
-              target: { kind: "builtin", connectorSlug },
+          return HttpResponse.json(
+            {
+              ...result,
+              connector: {
+                ...identity,
+                target: { kind: "builtin", connectorSlug },
+              },
             },
-          });
+            responseInit,
+          );
         }
         if (result.outcome === "ambiguous") {
-          return HttpResponse.json({
-            ...result,
-            candidates: result.candidates.map(({ connectorSlug, label }) => {
-              return { target: { kind: "builtin", connectorSlug }, label };
-            }),
-          });
+          return HttpResponse.json(
+            {
+              ...result,
+              candidates: result.candidates.map(({ connectorSlug, label }) => {
+                return { target: { kind: "builtin", connectorSlug }, label };
+              }),
+            },
+            responseInit,
+          );
         }
       }
-      return HttpResponse.json(result);
+      return HttpResponse.json(result, responseInit);
     }),
   );
 }
@@ -448,6 +465,57 @@ describe("okou connector check command", () => {
         "no SigV4 signature was validated and no AWS request was sent",
       );
       expect(getOutput()).not.toContain("private");
+    });
+
+    it("keeps an incomplete AWS diagnostic but omits the broad unknown grant action", async () => {
+      stubDiagnostic(
+        resolvedUrl({
+          connector: connectorIdentity({ connectorSlug: "aws", label: "AWS" }),
+          method: "POST",
+          base: "https://sts.us-west-2.amazonaws.com",
+          relativePath: "/",
+          permission: {
+            kind: "unknown-endpoint",
+            policy: { outcome: "ask", basis: "unknown-policy" },
+          },
+        }),
+        undefined,
+        API_BASE_URL,
+        CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+      );
+      stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
+      setRunAccount("aws", "connected");
+
+      await checkConnectorCommand.parseAsync([
+        "node",
+        "cli",
+        "--url",
+        "https://sts.us-west-2.amazonaws.com/",
+        "--method",
+        "POST",
+        "--connector",
+        "aws",
+        "--json",
+      ]);
+
+      const json: unknown = JSON.parse(getOutput());
+      expect(json).toMatchObject({
+        diagnostic: {
+          permission: {
+            kind: "unknown-endpoint",
+            policy: { outcome: "ask", basis: "unknown-policy" },
+          },
+        },
+        guidance: expect.arrayContaining([
+          expect.stringContaining("AWS operation context is insufficient"),
+        ]),
+        actions: expect.arrayContaining([
+          expect.objectContaining({
+            command: expect.stringContaining("okou connector check"),
+          }),
+        ]),
+      });
+      expect(getOutput()).not.toContain("--permission '__unknown__'");
     });
 
     it("preserves sanitized diagnostics, exact accounts, separate grants, and permission actions", async () => {
@@ -1669,6 +1737,60 @@ describe("okou connector check command", () => {
           );
         } else {
           expect(getOutput()).not.toContain("--permission __unknown__");
+        }
+      },
+    );
+
+    it.each([
+      { name: "new API", header: CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT },
+      { name: "old API", header: undefined },
+    ])(
+      "handles an incomplete AWS check from the $name without changing policy",
+      async ({ header }) => {
+        stubDiagnostic(
+          resolvedUrl({
+            connector: connectorIdentity({
+              connectorSlug: "aws",
+              label: "AWS",
+            }),
+            method: "POST",
+            base: "https://sts.us-west-2.amazonaws.com",
+            relativePath: "/",
+            permission: {
+              kind: "unknown-endpoint",
+              policy: { outcome: "deny", basis: "unknown-policy" },
+            },
+          }),
+          undefined,
+          API_BASE_URL,
+          header,
+        );
+        stubResolvedDependencies("aws", { enabledConnectorSlugs: [] });
+        setRunAccount("aws", "connected");
+
+        await checkConnectorCommand.parseAsync([
+          "node",
+          "cli",
+          "--url",
+          "https://sts.us-west-2.amazonaws.com/",
+          "--method",
+          "POST",
+          "--connector",
+          "aws",
+        ]);
+
+        expect(getOutput()).toContain(
+          "unknown endpoint policy denies this request",
+        );
+        expect(getOutput()).toContain("okou connector check");
+        if (header === undefined) {
+          expect(getOutput()).toContain("--permission '__unknown__'");
+        } else {
+          expect(getOutput()).toContain(
+            "AWS operation context is insufficient",
+          );
+          expect(getOutput()).toContain("--aws-service");
+          expect(getOutput()).not.toContain("--permission '__unknown__'");
         }
       },
     );

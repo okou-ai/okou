@@ -148,6 +148,7 @@ type ResolveConnectorCheckResult =
   | {
       readonly kind: "ok";
       readonly diagnostic: ConnectorCheckResponseBody;
+      readonly awsContextIncomplete?: true;
     }
   | { readonly kind: "not-found" };
 
@@ -1395,12 +1396,17 @@ function requestedUrlTarget(
     : undefined;
 }
 
+interface UrlModeResolution {
+  readonly diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+  readonly awsContextIncomplete?: true;
+}
+
 async function resolveUrlMode(
   request: Extract<ConnectorCheckRequestBody, { readonly mode: "url" }>,
   parsed: ParsedConnectorDiagnosticRequest,
   timeline: ConnectorCheckTimeline,
   catalogContext: ConnectorCheckCatalogContext,
-): Promise<ConnectorCheckTargetAwareDiagnosticResult> {
+): Promise<UrlModeResolution> {
   const targetAware = targetAwareUrlRequest(request);
   const requestedTarget = requestedUrlTarget(request);
   const requestedConnectorSlug =
@@ -1412,7 +1418,7 @@ async function resolveUrlMode(
     requestedConnectorSlug !== undefined &&
     !isConnectorSlug(catalogContext.snapshot, requestedConnectorSlug)
   ) {
-    return { outcome: "unknown-connector" };
+    return { diagnostic: { outcome: "unknown-connector" } };
   }
 
   const configs =
@@ -1435,13 +1441,15 @@ async function resolveUrlMode(
       );
     })
   ) {
-    return noMatchDiagnostic(
-      requestedTarget,
-      configs,
-      timeline,
-      catalogContext,
-      targetAware,
-    );
+    return {
+      diagnostic: noMatchDiagnostic(
+        requestedTarget,
+        configs,
+        timeline,
+        catalogContext,
+        targetAware,
+      ),
+    };
   }
   const decision = matchFirewallRequestDecision(
     configsToDecisionFirewalls(configs),
@@ -1458,18 +1466,22 @@ async function resolveUrlMode(
   );
 
   if (decision.kind === "no_match") {
-    return noMatchDiagnostic(
-      requestedTarget,
-      configs,
-      timeline,
-      catalogContext,
-      targetAware,
-    );
+    return {
+      diagnostic: noMatchDiagnostic(
+        requestedTarget,
+        configs,
+        timeline,
+        catalogContext,
+        targetAware,
+      ),
+    };
   }
   if (decision.kind === "ambiguous") {
-    return unresolvedOwnerDiagnostic(decision, configs, catalogContext);
+    return {
+      diagnostic: unresolvedOwnerDiagnostic(decision, configs, catalogContext),
+    };
   }
-  return resolvedUrlDiagnostic({
+  const diagnostic = resolvedUrlDiagnostic({
     request,
     parsed,
     decision,
@@ -1477,6 +1489,15 @@ async function resolveUrlMode(
     timeline,
     catalogContext,
   });
+  return {
+    diagnostic,
+    ...(decision.awsContextIncomplete === true &&
+    diagnostic.outcome === "resolved" &&
+    diagnostic.mode === "url" &&
+    diagnostic.permission.kind === "unknown-endpoint"
+      ? { awsContextIncomplete: true as const }
+      : {}),
+  };
 }
 
 function resolveEnvironmentMode(
@@ -1685,16 +1706,20 @@ export const resolveConnectorCheck$ = command(
       visibleConnectorSlugs: new Set(visibleConnectorSlugs),
     };
     let diagnostic: ConnectorCheckTargetAwareDiagnosticResult;
+    let awsContextIncomplete = false;
     if (args.request.mode === "url") {
       if (!parsed) {
         throw new Error("Missing parsed connector diagnostic request");
       }
-      diagnostic = await resolveUrlMode(
+      const resolution = await resolveUrlMode(
         args.request,
         parsed,
         timeline,
         catalogContext,
       );
+      signal.throwIfAborted();
+      diagnostic = resolution.diagnostic;
+      awsContextIncomplete = resolution.awsContextIncomplete === true;
     } else {
       diagnostic = await resolveEnvironmentMode(
         args.request,
@@ -1708,6 +1733,7 @@ export const resolveConnectorCheck$ = command(
       diagnostic: targetAwareUrlRequest(args.request)
         ? diagnostic
         : legacyDiagnostic(diagnostic),
+      ...(awsContextIncomplete ? { awsContextIncomplete: true as const } : {}),
     };
   },
 );

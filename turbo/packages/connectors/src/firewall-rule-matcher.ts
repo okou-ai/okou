@@ -111,6 +111,7 @@ export type FirewallRequestDecision =
       readonly relativePath: string;
       readonly permission?: string;
       readonly rule?: string;
+      readonly awsContextIncomplete?: true;
     }
   | {
       readonly kind: "block";
@@ -119,6 +120,7 @@ export type FirewallRequestDecision =
       readonly relativePath: string;
       readonly reason: FirewallRequestBlockReason;
       readonly permissions: readonly string[];
+      readonly awsContextIncomplete?: true;
     }
   | {
       readonly kind: "ambiguous";
@@ -1016,6 +1018,59 @@ function awsRuleMatches(
   }
 
   return awsQueryRequirementsMatch(rule, context, false);
+}
+
+function awsRuleNeedsMissingDiagnosticContext(
+  rule: DecisionRule,
+  context: FirewallAwsDiagnosticContext | undefined,
+): boolean {
+  const predicates = rule.awsPredicates;
+  if (predicates === undefined) return false;
+  if (context === undefined) return true;
+  if (predicates.get("sigv4") !== context.sigv4Service) return false;
+
+  const action = predicates.get("action");
+  const actionSelectors = queryValues(context.query, "Action");
+  if (action !== undefined) {
+    if (
+      context.action !== undefined ||
+      context.target !== undefined ||
+      actionSelectors.length > 0
+    ) {
+      return false;
+    }
+    return awsRuleMatches(rule, { ...context, action });
+  }
+
+  const target = predicates.get("target");
+  if (target !== undefined) {
+    if (
+      context.target !== undefined ||
+      context.action !== undefined ||
+      actionSelectors.length > 0
+    ) {
+      return false;
+    }
+    return awsRuleMatches(rule, { ...context, target });
+  }
+
+  const missingRequirements = (rule.awsQueryRequirements ?? []).filter(
+    (requirement) => {
+      return queryValues(context.query, requirement.key).length === 0;
+    },
+  );
+  if (missingRequirements.length === 0) return false;
+  const query = [
+    ...context.query,
+    ...missingRequirements.map((requirement) => {
+      return {
+        key: requirement.key,
+        value:
+          requirement.value === "*" ? "diagnostic" : (requirement.value ?? ""),
+      };
+    }),
+  ];
+  return awsRuleMatches(rule, { ...context, query });
 }
 
 function compileDecisionApi(
@@ -2297,6 +2352,53 @@ function reduceSelectedOwner(
   return resolveFirewallDecision(state, networkPolicies);
 }
 
+function selectedAwsRulesNeedDiagnosticContext(
+  collection: FirewallMatchCollection,
+  selectedName: string | null,
+  upperMethod: string,
+  awsContext: FirewallAwsDiagnosticContext | undefined,
+): boolean {
+  if (selectedName === null) return false;
+  return selectedBaseApiMatches(collection, selectedName).some((apiMatch) => {
+    if (!apiMatch.api.supportsAwsSigv4) return false;
+    return apiMatch.api.rules.some((rule) => {
+      return (
+        rule.awsPredicates !== undefined &&
+        (rule.method === "ANY" || rule.method === upperMethod) &&
+        matchFirewallPath(apiMatch.baseMatch.relativePath, rule.path) !==
+          null &&
+        awsRuleNeedsMissingDiagnosticContext(rule, awsContext)
+      );
+    });
+  });
+}
+
+function annotateIncompleteAwsContext(
+  decision: FirewallRequestDecision,
+  collection: FirewallMatchCollection,
+  selectedName: string | null,
+  upperMethod: string,
+  awsContext: FirewallAwsDiagnosticContext | undefined,
+  awsDiagnosticEnabled: boolean,
+): FirewallRequestDecision {
+  if (!awsDiagnosticEnabled) return decision;
+  const unknownDecision =
+    (decision.kind === "allow" && decision.permission === undefined) ||
+    (decision.kind === "block" && decision.reason === "unknown_endpoint");
+  if (!unknownDecision) return decision;
+  if (
+    !selectedAwsRulesNeedDiagnosticContext(
+      collection,
+      selectedName,
+      upperMethod,
+      awsContext,
+    )
+  ) {
+    return decision;
+  }
+  return { ...decision, awsContextIncomplete: true };
+}
+
 export function matchFirewallBaseUrl(
   url: string,
   rawBase: string,
@@ -2388,10 +2490,18 @@ export function matchFirewallRequestDecision(
     rawPathFromUrl(url),
   );
   if (selection.kind === "ambiguous") return selection.decision;
-  return reduceSelectedOwner(
+  const decision = reduceSelectedOwner(
     collection,
     selection.name,
     compiledNetworkPolicies,
+  );
+  return annotateIncompleteAwsContext(
+    decision,
+    collection,
+    selection.name,
+    upperMethod,
+    awsContext,
+    awsDiagnosticEnabled,
   );
 }
 
