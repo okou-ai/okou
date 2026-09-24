@@ -4802,7 +4802,7 @@
         "unconfirmedNote": "Nous n'avons pas pu vérifier votre connexion à {{provider}}. Vous pouvez réessayer ou le connecter plus tard."
       },
       "team": {
-        "copy": "Invitez un membre de l’équipe à utiliser avec vous les workflows partagés.",
+        "copy": "Invitez un membre de l’équipe à partager vos workflows, chacun connectant ses propres outils.",
         "invite": "Envoyer l'invitation",
         "invited": "Invité",
         "label": "E-mail du membre de l’équipe",
@@ -4816,12 +4816,10 @@
           "workspace": "Rejoint votre espace de travail."
         },
         "sending": "Envoi…",
-        "title": "Rendez Okou utile à toute votre équipe",
-        "trust": "Tout le monde utilise les mêmes workflows et connecte ses propres outils."
+        "title": "Rendez Okou utile à toute votre équipe"
       },
       "welcome": {
         "copy": "Examinez une tâche suggérée pour votre travail, adaptez-la à votre objectif, puis laissez Okou commencer.",
-        "offerTitle": "La première heure de conseil est offerte, plus jusqu'à 100 crédits —",
         "promptLabel": "Votre prompt de départ",
         "start": "Commencer avec Okou",
         "title": "Commencez par une tâche qui compte"

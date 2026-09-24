@@ -4737,7 +4737,7 @@
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can try again, or continue and connect it later."
       },
       "team": {
-        "copy": "Invite a team member to run shared workflows with you.",
+        "copy": "Invite a team member to share your workflows, while each of you connects your own tools.",
         "invite": "Send invite",
         "invited": "Invited",
         "label": "Team member’s email",
@@ -4751,12 +4751,10 @@
           "workspace": "They join your workspace."
         },
         "sending": "Sending…",
-        "title": "Make Okou useful to your whole team",
-        "trust": "Everyone uses the same workflows and connects their own tools."
+        "title": "Make Okou useful to your whole team"
       },
       "welcome": {
         "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",
-        "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
         "promptLabel": "Your starting prompt",
         "start": "Start with Okou",
         "title": "Start with a task that matters"

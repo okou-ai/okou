@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@okouai/ui";
 import { useSet } from "ccstate-react";
-import { Check, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { AccountDropdown } from "../okou-page/sidebar-account";
 import { OrgSwitcherCompact } from "../okou-page/org-switcher.tsx";
@@ -56,23 +56,15 @@ function OnboardingTrustPoints({
   }
 
   return (
-    <ul className="mt-10 space-y-4 border-t border-border/60 pt-6">
+    <div className="mt-6 space-y-3">
       {points.map((point) => {
         return (
-          <li
-            key={point}
-            className="flex items-start gap-3 text-sm leading-6 text-muted-foreground"
-          >
-            <Check
-              size={16}
-              className="mt-1 shrink-0 text-foreground"
-              aria-hidden="true"
-            />
-            <span>{point}</span>
-          </li>
+          <p key={point} className="text-sm leading-6 text-muted-foreground">
+            {point}
+          </p>
         );
       })}
-    </ul>
+    </div>
   );
 }
 

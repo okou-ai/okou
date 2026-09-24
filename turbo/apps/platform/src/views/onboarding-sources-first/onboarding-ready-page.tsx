@@ -32,7 +32,6 @@ import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 const STARTING_PROMPT_MAX_LENGTH = 1000;
-const SUPPORT_EMAIL = "support@okou.ai";
 const CELEBRATION_URL =
   "https://static.okou.io/web/assets/onboarding/v3-ready-celebrate_640.png";
 
@@ -243,19 +242,6 @@ export function OnboardingReadyPage() {
       primaryDisabled={isLoading || text.trim().length === 0}
       primaryBusy={completeLoadable.state === "loading"}
       onBack={flow.goBack}
-      footnote={
-        <>
-          {t(($) => {
-            return $.onboarding.sourcesFirst.welcome.offerTitle;
-          })}{" "}
-          <a
-            className="text-brand-text hover:text-brand-text-hover"
-            href={`mailto:${SUPPORT_EMAIL}`}
-          >
-            {SUPPORT_EMAIL}
-          </a>
-        </>
-      }
     >
       {/* One column on the step's own sheet: the welcome, then the request it
           starts with. */}
