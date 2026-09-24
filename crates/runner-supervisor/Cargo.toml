@@ -1,6 +1,6 @@
 [package]
 name = "runner-supervisor"
-version = "0.1.6"
+version = "0.1.7"
 edition.workspace = true
 description = "Runner start-loop idle, finalization, heartbeat, and orphan orchestration"
 
