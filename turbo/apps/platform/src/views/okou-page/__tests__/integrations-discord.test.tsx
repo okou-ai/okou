@@ -380,9 +380,20 @@ test("Direct messages require an explicit server choice and a failed save keeps 
   });
 });
 
-test.each(["successful refresh", "failed refresh and retry"])(
-  "A pending DM choice remains disabled through a %s",
-  async (refresh) => {
+test.each([
+  {
+    name: "successful refresh",
+    refreshError: false,
+    refreshMessage: "Server: Updated team",
+  },
+  {
+    name: "failed refresh and retry",
+    refreshError: true,
+    refreshMessage: "Unable to load Discord status.",
+  },
+])(
+  "A pending DM choice remains disabled through a $name",
+  async ({ refreshError, refreshMessage }) => {
     const first = "e0000000-0000-4000-a000-000000000001";
     const second = "e0000000-0000-4000-a000-000000000002";
     const saveStarted = context.mocks.deferred<void>();
@@ -440,7 +451,7 @@ test.each(["successful refresh", "failed refresh and retry"])(
 
     current = { ...current, guildName: "Updated team" };
     refreshing = true;
-    denyRefresh = refresh === "failed refresh and retry";
+    denyRefresh = refreshError;
     context.mocks.ably.trigger("discord:changed");
     await refreshStarted.promise;
     expect(
@@ -449,10 +460,10 @@ test.each(["successful refresh", "failed refresh and retry"])(
       }),
     ).toBeDisabled();
     refreshReady.resolve();
+    await expect(
+      screen.findByText(refreshMessage),
+    ).resolves.toBeInTheDocument();
     if (denyRefresh) {
-      await expect(
-        screen.findByText("Unable to load Discord status."),
-      ).resolves.toBeInTheDocument();
       denyRefresh = false;
       click(getAction("button", "Retry", getIntegrationCard("Discord")));
     }

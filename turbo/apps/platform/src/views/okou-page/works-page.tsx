@@ -541,6 +541,9 @@ function DiscordDmSelection({
 
 function DiscordCard() {
   const { t } = useTranslation();
+  const title = t(($) => {
+    return $.works.discord.title;
+  });
   const status = useLastLoadable(discordOrgData$);
   const [disconnectState, disconnect] = useLoadableSet(disconnectDiscordOrg$);
   const [uninstallState, uninstall] = useLoadableSet(uninstallDiscordOrg$);
@@ -557,9 +560,7 @@ function DiscordCard() {
     <>
       <section
         data-slot="integration-card"
-        aria-label={t(($) => {
-          return $.works.discord.title;
-        })}
+        aria-label={title}
         className={surfaceVariants({ className: "flex flex-col" })}
       >
         <div className="flex flex-wrap items-center gap-4 p-4">
@@ -567,11 +568,7 @@ function DiscordCard() {
             <DiscordMark size={28} />
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <div className="text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.works.discord.title;
-              })}
-            </div>
+            <div className="text-sm font-medium text-foreground">{title}</div>
             <p className="text-sm text-muted-foreground">
               {status.state === "hasError"
                 ? t(($) => {
@@ -610,9 +607,7 @@ function DiscordCard() {
               connectUrl={null}
               connectedTestId="discord-connected-indicator"
               installTestId="discord-install-button"
-              installLabel={t(($) => {
-                return $.works.discord.title;
-              })}
+              installLabel={title}
               moreOptionsLabel={t(($) => {
                 return $.works.discord.moreOptions;
               })}
