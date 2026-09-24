@@ -1,7 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { MorningBriefCollectionOccurrenceView } from "@okouai/api-contracts/contracts/morning-brief-collection-preview";
-import type { MorningBriefOccurrenceCollectionFacts } from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
 import {
   MORNING_BRIEF_COLLECTION_KIND_SOURCES,
   MORNING_BRIEF_COLLECTION_VERSION,
@@ -33,7 +32,6 @@ import {
 } from "./morning-brief-collection-occurrence.service";
 import {
   composeMorningBrief$,
-  morningBriefCollectionFacts,
   type MorningBriefAuthorityChange,
   type MorningBriefCompositionOutcome,
   type MorningBriefCompositionTransport,
@@ -131,7 +129,7 @@ type MorningBriefComposedConflict =
   /** Another collection kind or contract version already owns this morning. */
   | "anchor-already-invoked";
 
-type MorningBriefComposedOutcome =
+export type MorningBriefComposedOutcome =
   | { readonly kind: "denied"; readonly reason: string }
   | { readonly kind: "invalid-anchor"; readonly message: string }
   | {
@@ -148,30 +146,6 @@ type MorningBriefComposedOutcome =
       readonly reason: MorningBriefAuthorityChange;
     }
   | MorningBriefGenerationExecution;
-
-/**
- * One composed attempt, and the account of what it collected.
- *
- * `collection` travels with every branch, including the ones that return
- * before a generation row can exist. That is the point: those branches are
- * exactly the ones a settled occurrence could not previously explain.
- */
-export type MorningBriefComposedExecution = MorningBriefComposedOutcome & {
-  readonly collection: MorningBriefOccurrenceCollectionFacts;
-};
-
-/** A slot that never reached collection still records why. */
-function notCollected(reason: string): MorningBriefOccurrenceCollectionFacts {
-  return { outcome: "not-collected", reason, sources: [] };
-}
-
-/** Attach one attempt's settlement account to the branch that produced it. */
-function withCollection<Outcome extends MorningBriefComposedOutcome>(
-  outcome: Outcome,
-  collection: MorningBriefOccurrenceCollectionFacts,
-): Outcome & { readonly collection: MorningBriefOccurrenceCollectionFacts } {
-  return { ...outcome, collection };
-}
 
 /** The native occurrence claim bound to the reserved attempt before POST. */
 type MorningBriefNativeGenerationAuthority = MorningBriefNativeActiveAuthority;
@@ -367,16 +341,10 @@ type ComposedCollectionOpening =
     }
   | {
       readonly kind: "refused";
-      readonly refusal: MorningBriefComposedExecution;
+      readonly refusal: MorningBriefComposedOutcome;
     };
 
-/**
- * Admit this owner and take the collection claim, before any source is read.
- *
- * Every refusal here happens before collection, so its account records that
- * nothing was collected rather than an empty set of sources — the two are
- * different facts and a settled occurrence has to keep them apart.
- */
+/** Admit this owner and take the collection claim, before any source is read. */
 async function openComposedCollection(
   input: {
     readonly db: Db;
@@ -390,12 +358,8 @@ async function openComposedCollection(
   const { db } = input;
   const refused = (
     outcome: MorningBriefComposedOutcome,
-    reason: string,
   ): ComposedCollectionOpening => {
-    return {
-      kind: "refused",
-      refusal: withCollection(outcome, notCollected(reason)),
-    };
+    return { kind: "refused", refusal: outcome };
   };
   const admissionArgs = {
     db,
@@ -414,20 +378,14 @@ async function openComposedCollection(
         );
   signal.throwIfAborted();
   if (admitted.kind !== "ok") {
-    return refused(
-      { kind: "denied", reason: admitted.reason },
-      admitted.reason,
-    );
+    return refused({ kind: "denied", reason: admitted.reason });
   }
   const { scope } = admitted;
 
   const admission = await composedAdmission(db, scope, input.scheduledFor);
   signal.throwIfAborted();
   if (admission === null) {
-    return refused(
-      { kind: "denied", reason: "not-installed" },
-      "not-installed",
-    );
+    return refused({ kind: "denied", reason: "not-installed" });
   }
 
   const claimed = await db.transaction(async (tx) => {
@@ -440,7 +398,7 @@ async function openComposedCollection(
   });
   signal.throwIfAborted();
   return claimed.kind === "rejected"
-    ? refused({ kind: "conflict", reason: claimed.reason }, claimed.reason)
+    ? refused({ kind: "conflict", reason: claimed.reason })
     : { kind: "claimed", scope, admission, claimed };
 }
 
@@ -455,19 +413,16 @@ export const executeMorningBriefComposedGeneration$ = command(
       readonly nativeAuthority?: MorningBriefNativeGenerationAuthority;
     },
     signal: AbortSignal,
-  ): Promise<MorningBriefComposedExecution> => {
+  ): Promise<MorningBriefComposedOutcome> => {
     const db = set(writeDb$);
     const clerk = get(clerk$);
     const startedAt = nowDate();
     const invalid = validateAnchor(args.scheduledFor, startedAt);
     if (invalid) {
-      return withCollection(invalid, notCollected(invalid.kind));
+      return invalid;
     }
     if (args.purpose === "production" && args.nativeAuthority === undefined) {
-      return withCollection(
-        { kind: "not-executed", reason: "native-authority-lost" },
-        notCollected("native-authority-lost"),
-      );
+      return { kind: "not-executed", reason: "native-authority-lost" };
     }
 
     // Bounded retention is consumed here rather than by a scheduler: every
@@ -479,10 +434,7 @@ export const executeMorningBriefComposedGeneration$ = command(
     if (!apiKey) {
       // Checked before admission, so a deployment without the platform
       // credential claims no occurrence and reads no source.
-      return withCollection(
-        { kind: "not-executed", reason: "generation-not-configured" },
-        notCollected("generation-not-configured"),
-      );
+      return { kind: "not-executed", reason: "generation-not-configured" };
     }
 
     const opened = await openComposedCollection(
@@ -510,16 +462,11 @@ export const executeMorningBriefComposedGeneration$ = command(
         args,
       );
       signal.throwIfAborted();
-      // This attempt collected nothing: it read back a morning an earlier
-      // attempt already finished. The earlier settlement owns those facts.
-      return withCollection(existing, notCollected("already-collected"));
+      return existing;
     }
     const { claim } = claimed;
     if (!collectionLeaseHeld(claim, nowDate())) {
-      return withCollection(
-        { kind: "conflict", reason: "claim-lost" },
-        notCollected("claim-lost"),
-      );
+      return { kind: "conflict", reason: "claim-lost" };
     }
 
     // Every provider read, the language archive read and the request assembly
@@ -535,34 +482,21 @@ export const executeMorningBriefComposedGeneration$ = command(
       signal,
     );
     signal.throwIfAborted();
-    // Every branch from here carries the same account of what the sources
-    // actually produced, including the ones that end before a generation row
-    // can exist. Those are precisely the branches #35656 could not explain.
-    const collection = morningBriefCollectionFacts(composed);
     if (composed.kind === "denied") {
-      return withCollection(
-        { kind: "denied", reason: composed.reason },
-        collection,
-      );
+      return { kind: "denied", reason: composed.reason };
     }
     if (composed.kind === "authority-changed") {
-      return withCollection(
-        { kind: "authority-changed", reason: composed.reason },
-        collection,
-      );
+      return { kind: "authority-changed", reason: composed.reason };
     }
     if (composed.kind === "incomplete") {
-      return withCollection(
-        {
-          kind: "incomplete",
-          reason: composed.reason,
-          detail: composed.detail,
-        },
-        collection,
-      );
+      return {
+        kind: "incomplete",
+        reason: composed.reason,
+        detail: composed.detail,
+      };
     }
 
-    const executed = await set(
+    return await set(
       reserveAndInvoke$,
       {
         db,
@@ -576,7 +510,6 @@ export const executeMorningBriefComposedGeneration$ = command(
       },
       signal,
     );
-    return withCollection(executed, collection);
   },
 );
 

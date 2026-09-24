@@ -6636,17 +6636,11 @@
         "title": "语言"
       },
       "morningBrief": {
-        "chatAndEmail": "聊天+邮件",
-        "chatOnly": "仅聊天",
-        "checkEmailSubscription": "投递状态请查看上方的邮件订阅。",
         "conflict": "晨报的安装状态不一致，暂时无法使用。请在状态同步完成后重试。",
         "description": "每天早上 7:00（按你的时区）接收当日重点。",
-        "lastDelivered": "上次投递：{{date}}",
         "loading": "正在加载晨报设置…",
         "missingDefaultAgent": "启用晨报前，请先选择一个可用的默认智能体。",
         "missingTimezone": "启用晨报前，请先设置有效的时区。",
-        "nextBrief": "下一份晨报 {{date}}",
-        "paused": "已暂停",
         "preparationFailed": "晨报设置会自动重试，你也可以现在就重试。",
         "preparing": "正在准备你的第一份晨报，你可以随时关闭。",
         "retry": "重试",

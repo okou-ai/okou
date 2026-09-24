@@ -24,8 +24,6 @@ import {
   sql,
 } from "drizzle-orm";
 
-import type { MorningBriefOccurrenceCollectionFacts } from "@okouai/db/jsonb-contracts/morning-brief-native-occurrence";
-
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import type { ReadonlyDb } from "../external/db";
@@ -163,31 +161,6 @@ export async function readMorningBriefNativeSchedule(
     .select()
     .from(morningBriefNativeSchedules)
     .where(scheduleWhere(owner))
-    .limit(1);
-  return row;
-}
-
-/**
- * Read the member's most recent native occurrence, for the Settings account.
- *
- * Ordering is by the frozen scheduled anchor, never by `updated_at`: a
- * delivery recovery touching an older row must not make it look like the
- * latest brief. This never locks, creates, repairs or schedules anything.
- */
-export async function readLatestMorningBriefNativeOccurrence(
-  db: MorningBriefNativeReader,
-  owner: MorningBriefMemberIdentity,
-): Promise<MorningBriefNativeOccurrenceRow | undefined> {
-  const [row] = await db
-    .select()
-    .from(morningBriefNativeOccurrences)
-    .where(
-      and(
-        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-        eq(morningBriefNativeOccurrences.userId, owner.userId),
-      ),
-    )
-    .orderBy(desc(morningBriefNativeOccurrences.scheduledFor))
     .limit(1);
   return row;
 }
@@ -1899,14 +1872,6 @@ export async function settleMorningBriefNativeOccurrence(
     readonly scheduledFor: Date;
     readonly outcome: MorningBriefNativeOutcome;
     readonly deliveryPending: boolean;
-    /**
-     * What this attempt collected.
-     *
-     * Null when the settlement is not the one that ran the collection — a
-     * delivery recovery closing an already-executed slot must not overwrite
-     * the account the executing attempt already wrote.
-     */
-    readonly collectionFacts?: MorningBriefOccurrenceCollectionFacts | null;
     readonly generationAttemptId?: string | null;
     /** The epoch that admitted this claim. */
     readonly expectedEpoch: number;
@@ -1931,9 +1896,6 @@ export async function settleMorningBriefNativeOccurrence(
       state: "settled",
       outcome: args.outcome,
       deliveryPending: args.deliveryPending,
-      ...(args.collectionFacts === undefined || args.collectionFacts === null
-        ? {}
-        : { collectionFacts: args.collectionFacts }),
       ...(args.generationAttemptId === undefined
         ? {}
         : { generationAttemptId: args.generationAttemptId }),
@@ -2060,8 +2022,6 @@ export async function deferMorningBriefNativeOccurrence(
   args: {
     readonly scheduledFor: Date;
     readonly reason: string;
-    /** What the attempt collected before it deferred, when it collected. */
-    readonly collectionFacts: MorningBriefOccurrenceCollectionFacts | null;
     readonly expectedEpoch: number;
     readonly leaseToken: string;
     readonly at: Date;
@@ -2103,9 +2063,6 @@ export async function deferMorningBriefNativeOccurrence(
       deferAttempt: row.deferAttempt + 1,
       deferredUntil: until,
       deferReason: args.reason,
-      ...(args.collectionFacts === null
-        ? {}
-        : { collectionFacts: args.collectionFacts }),
       leaseToken: null,
       leaseExpiresAt: null,
       updatedAt: args.at,

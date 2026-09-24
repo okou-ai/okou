@@ -6636,17 +6636,11 @@
         "title": "言語"
       },
       "morningBrief": {
-        "chatAndEmail": "チャット＋メール",
-        "chatOnly": "チャットのみ",
-        "checkEmailSubscription": "上のメール配信設定で配信状況を確認してください。",
         "conflict": "インストール状態に不整合があるため、Morning Brief は一時的に利用できません。調整が完了したら再試行してください。",
         "description": "お使いのタイムゾーンの午前7:00に毎日の優先事項を受け取ります。",
-        "lastDelivered": "前回の配信：{{date}}",
         "loading": "Morning Brief の設定を読み込んでいます...",
         "missingDefaultAgent": "Morning Brief を有効にする前に、使用可能なデフォルト Agent を選択してください。",
         "missingTimezone": "Morning Brief を有効にする前に、有効なタイムゾーンを設定してください。",
-        "nextBrief": "次のブリーフ {{date}}",
-        "paused": "一時停止中",
         "preparationFailed": "設定は自動的に再試行されます。今すぐ再試行することもできます。",
         "preparing": "最初のモーニングブリーフを準備中です。いつでもオフにできます。",
         "retry": "再試行",

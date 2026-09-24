@@ -25,7 +25,6 @@ import {
   bridgeConnected$,
   installedSharedDatabaseBridge$,
 } from "./shared-database-bridge-state.ts";
-import { setupMorningBriefRealtime$ } from "./okou-page/settings/morning-brief-preference.ts";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import { detach, Reason, waitForOperation } from "./utils.ts";
 
@@ -45,7 +44,6 @@ const runAppRealtimeDaemons$ = command(
     set(setupBillingRealtime$, signal);
     set(setupUserPreferenceRealtime$, signal);
     set(setupModelPolicyRealtime$, signal);
-    set(setupMorningBriefRealtime$, signal);
     set(subscribeCustomConnectorListChanged$, signal);
     set(subscribeConnectorOverview$, signal);
     set(subscribeAgentConnectorAccess$, signal);

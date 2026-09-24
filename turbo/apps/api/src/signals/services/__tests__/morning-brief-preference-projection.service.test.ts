@@ -231,12 +231,11 @@ describe("Morning Brief installed preference projection persistence", () => {
       enabled: true,
       cronExpression: "0 7 * * *",
       timezone: "Asia/Shanghai",
+      nextRunAt: new Date("2026-09-17T23:00:00.000Z"),
     });
     await expect(readProjectedPreference(brief)).resolves.toStrictEqual({
       enabled: true,
       status: "enabled",
-      nextRunAt: "2026-09-17T23:00:00.000Z",
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
     });
 
