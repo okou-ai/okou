@@ -91,7 +91,6 @@ use runner_provider::{
 };
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
-mod active_runs;
 mod blank_pool;
 mod factory_lifecycle;
 mod finalizing_claim;
@@ -109,7 +108,6 @@ mod prune_idle;
 mod sandbox_finalization;
 mod signals;
 
-use active_runs::ActiveRuns;
 use blank_pool::BlankPoolReplenisher;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
 use heartbeat::{
@@ -129,6 +127,7 @@ use mitm_restart::{
 use orphan_reap::{
     OrphanReapMode, OrphanReapProcessDiscovery, OrphanedActiveRuns, reap_orphaned_active_runs,
 };
+use runner_lifecycle::active_runs::ActiveRuns;
 use signals::{
     EarlySignals, SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task,
 };

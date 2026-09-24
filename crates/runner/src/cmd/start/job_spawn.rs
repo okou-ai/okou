@@ -15,7 +15,6 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tracing::{error, warn};
 
-use super::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
 use super::blank_pool::BlankPoolDiagnostics;
 use super::factory_lifecycle::SharedFactory;
 use super::heartbeat::WorkspaceCacheStateSnapshot;
@@ -43,6 +42,7 @@ use crate::resource_budget::{BudgetLease, ResourceBudget};
 use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
+use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
 use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_types::ids::RunId;
@@ -924,7 +924,6 @@ mod tests {
 
     use sandbox::SandboxId;
 
-    use super::super::active_runs::ActiveRuns;
     use super::super::idle_lifecycle::SharedIdlePool;
     use super::super::job_lifecycle::RunCleanupState;
     use super::super::orphan_reap::OrphanedActiveRuns;
@@ -937,6 +936,7 @@ mod tests {
     use crate::resource_budget::ResourceBudget;
     use crate::restored_session_identity::RestoredSessionIdentity;
     use crate::status::StatusTracker;
+    use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
     use runner_types::ids::RunId;
 
