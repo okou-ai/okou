@@ -37,7 +37,9 @@ test("send a message and receive the assistant reply", async ({ page }) => {
   const composer = page.locator('[data-slot="chat-composer-card"]');
   await composer
     .getByRole("textbox", { name: "Message" })
-    .fill(`printf '%s' '${marker}'`);
+    .fill(
+      `What is the following reference ID? Include it in your answer: ${marker}`,
+    );
   await composer.getByRole("button", { name: "Send" }).click();
 
   await expect(
