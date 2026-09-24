@@ -1948,7 +1948,13 @@ describe("CHAT-02: model-first provider policies", () => {
         "deepseek-v4-flash",
       ] as const
     ).flatMap((model) => {
-      return [false, true].map((enabled) => {
+      // Neither Fable nor DeepSeek is approved for the US endpoint;
+      // switch-on still proves their global endpoint and firewall auth.
+      const usSwitchValues =
+        model === "claude-fable-5-1" || model === "deepseek-v4-flash"
+          ? [true]
+          : [false, true];
+      return usSwitchValues.map((enabled) => {
         return { model, enabled };
       });
     }),
