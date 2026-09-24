@@ -3338,12 +3338,9 @@ const observeClaimJsonResponse: JsonResponseObserver = (
   context,
   observation,
 ) => {
-  if (observation.status !== 200) {
-    return;
-  }
   const runId = context.req.param("id");
-  if (!runId) {
-    return;
+  if (runId === undefined) {
+    throw new Error("Validated claim route is missing run ID");
   }
   recordClaimResponseJsonSerialization({
     runId,

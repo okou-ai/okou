@@ -26,7 +26,6 @@ export type SignalRouteHandler<T> = Computed<T> | Command<T, [AbortSignal]>;
 const L = logger("SignalRoute");
 
 export interface JsonResponseObservation {
-  readonly status: number;
   readonly byteLength: number;
   readonly serializationDurationMs: number;
 }
@@ -187,7 +186,7 @@ export function honoSignalHandler(
     const serializationStartedAt = monotonicNow();
     const serialized = JSON.stringify(response.body);
     if (serialized === undefined) {
-      return context.json(response.body, status as ContentfulStatusCode);
+      throw new Error("Validated JSON response could not be serialized");
     }
     const serializationDurationMs = Math.max(
       0,
@@ -202,7 +201,6 @@ export function honoSignalHandler(
     );
     const observationResult = safeSync(() => {
       observeJsonResponse(context, {
-        status,
         byteLength: Buffer.byteLength(serialized),
         serializationDurationMs,
       });
