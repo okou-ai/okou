@@ -3,7 +3,6 @@ import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-provi
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
-import { findVideoTemplateItem } from "@okouai/core/video-template-items";
 import { findWebsiteTemplateItem } from "@okouai/core/website-template-items";
 import { i18n } from "../../i18n/index.ts";
 import { sendNewThread$ } from "../chat-page/optimistic-chat-thread-page.ts";
@@ -154,18 +153,12 @@ export const setupPromptPage$ = command(
     const template = params.get("template")?.trim() ?? null;
     const resolvedGenerationTemplate =
       generationTemplateFromSearchParam(template);
-    const retiredTemplate =
-      template &&
-      (template.startsWith("video-template:") ||
-        template.startsWith("avatar-template:") ||
-        template.startsWith("intro-video-template:") ||
-        findVideoTemplateItem(template) !== undefined);
-    if (!prompt || retiredTemplate) {
+    const unresolvedTemplate =
+      Boolean(template) && resolvedGenerationTemplate === undefined;
+    if (!prompt || unresolvedTemplate) {
       set(detachedNavigateTo$, "/", {
         replace: true,
-        searchParams: new URLSearchParams(
-          retiredTemplate && prompt ? { prompt } : {},
-        ),
+        searchParams: new URLSearchParams(prompt ? { prompt } : {}),
       });
       return;
     }
