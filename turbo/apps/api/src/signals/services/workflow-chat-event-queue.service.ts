@@ -55,7 +55,7 @@ async function chatEventQueueAdmissionLock(
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
-async function pendingTickForAutomation(
+export async function pendingTickForAutomation(
   db: Pick<Db, "select">,
   automationId: string,
 ): Promise<string | undefined> {

@@ -939,6 +939,13 @@
       "when": 1790243965044,
       "tag": "1211_daily_diamondback",
       "breakpoints": true
+    },
+    {
+      "idx": 1212,
+      "version": "7",
+      "when": 1790252500070,
+      "tag": "1212_jazzy_magma",
+      "breakpoints": true
     }
   ]
 }
