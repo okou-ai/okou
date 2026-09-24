@@ -6382,7 +6382,7 @@
       }
     },
     "paidTools": {
-      "description": "Okou가 작업에 사용할 수 있는 유료 도구를 선택하세요. 사용할 때마다 크레딧이 소모됩니다.",
+      "description": "이 도구들은 기본 제공 크레딧을 사용하며, Okou가 작업 중 필요에 따라 자동으로 사용합니다. 도구를 끄면 Okou가 해당 도구를 사용하지 않습니다.",
       "disabledForCreation": "{{tool}} 기능이 내 설정에서 꺼져 있습니다",
       "loadError": "도구 설정을 불러올 수 없습니다.",
       "loading": "도구 설정을 불러오는 중…",
@@ -6392,7 +6392,7 @@
       "saving": "저장 중…",
       "scope": "이 설정은 {{workspace}}의 본인에게만 적용됩니다.",
       "timing": "변경 사항은 이후 실행에 적용됩니다. 실행 중이거나 이미 준비된 작업은 이전 설정을 유지할 수 있습니다.",
-      "title": "유료 도구",
+      "title": "기본 제공 도구",
       "tools": {
         "avatar-video-generation": {
           "description": "말하는 아바타 동영상을 만듭니다.",

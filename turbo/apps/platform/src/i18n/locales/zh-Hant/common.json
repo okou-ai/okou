@@ -6382,17 +6382,17 @@
       }
     },
     "paidTools": {
-      "description": "選擇你可以使用哪些付費內建工具。",
-      "disabledForCreation": "{{tool}}已在你的付費工具設定中關閉。",
+      "description": "這些工具會消耗內建 credits，Okou 在執行任務時會依需要自動使用。關閉後，Okou 在執行過程中就不會再使用該工具。",
+      "disabledForCreation": "{{tool}}已在你的內建工具設定中關閉。",
       "loadError": "無法載入你的工具設定。",
       "loading": "正在載入你的工具設定…",
-      "openSettings": "開啟付費工具設定",
+      "openSettings": "開啟內建工具設定",
       "retry": "重試",
       "saveError": "修改沒有儲存成功。",
       "saving": "正在儲存…",
       "scope": "這些設定只對你在{{workspace}}中的使用生效。",
       "timing": "修改對之後的執行生效。正在執行和已準備好的任務可能仍沿用原來的設定。",
-      "title": "付費工具",
+      "title": "內建工具",
       "tools": {
         "avatar-video-generation": {
           "description": "生成數字人口播影片。",

@@ -6389,7 +6389,7 @@
       }
     },
     "paidTools": {
-      "description": "Choose the paid tools Okou can use in your tasks. Each use costs credits.",
+      "description": "These tools use built-in credits, and Okou uses them automatically as it works on your tasks. Turn a tool off and Okou won't use it.",
       "disabledForCreation": "{{tool}} is off for you",
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
@@ -6399,7 +6399,7 @@
       "saving": "Saving…",
       "scope": "These settings apply only to you in {{workspace}}.",
       "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
-      "title": "Paid tools",
+      "title": "Built-in tools",
       "tools": {
         "avatar-video-generation": {
           "description": "Create talking-avatar videos.",
