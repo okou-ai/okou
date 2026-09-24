@@ -134,6 +134,18 @@ async function setup(
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
+  // Scheduler scenarios that claim and complete a Runner job use a native
+  // default; explicit Pi cases select their own model policy below.
+  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await wf.createAgent(actor, {
     displayName: "Scheduler Agent",
   });
@@ -634,7 +646,7 @@ describe("okou workflow automation scheduler", () => {
       });
       await runsApi.updateOrgModelPolicies(scenario.actor, [
         {
-          model: "gpt-5.6-luna",
+          model: "gpt-6-astra",
           isDefault: true,
           defaultProviderType: "openai-api-key",
           credentialScope: "org",
@@ -678,7 +690,7 @@ describe("okou workflow automation scheduler", () => {
             scenario.actor,
             {
               agentId: scenario.agentId,
-              model: "gpt-5.6-luna",
+              model: "gpt-6-astra",
               prompt: `Occupy organization concurrency ${index}`,
             },
             [201],
