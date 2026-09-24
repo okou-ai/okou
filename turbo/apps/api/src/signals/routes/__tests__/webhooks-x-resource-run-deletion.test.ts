@@ -29,7 +29,17 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
       actor: owner,
       agentId,
       runnerGroup,
+      providerId,
     } = await fixture.entitledChatActor();
+    await fixture.api.updateOrgModelPolicies(owner, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const orgId = requireOrgId(owner);
     await fixture.bdd.updateAgent(owner, agentId, { visibility: "public" });
     // The deleted user invokes another owner's Agent. Clerk retains that

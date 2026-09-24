@@ -2027,7 +2027,16 @@ async function setupBrowserScenario() {
   const runnerGroup = runs.configureRunnerGroup();
   await runs.heartbeatRunner(runnerGroup);
   await runs.grantProEntitlement(orgActor);
-  await runs.ensureOrgModelProvider(orgActor);
+  const { providerId } = await runs.ensureOrgModelProvider(orgActor);
+  await runs.updateOrgModelPolicies(orgActor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(orgActor, {
     displayName: "Managed Browser Test",
     visibility: "private",

@@ -2752,7 +2752,7 @@ describe("Stage 1 background credential availability", () => {
     );
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -2768,7 +2768,7 @@ describe("Stage 1 background credential availability", () => {
       {
         agentId: agent.agentId,
         prompt: "active foreground source",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
       },
       [201],
     );
