@@ -114,7 +114,8 @@ describe("connector catalog reads from the runtime projection", () => {
     await projectionOnlyCatalog();
     const client = setupApp({
       context,
-      routes: [...builtinConnectorsRoutes, ...connectorOverviewRoutes],
+      // The overview path would otherwise match `/api/connectors/:connectorSlug`.
+      routes: [...connectorOverviewRoutes, ...builtinConnectorsRoutes],
     });
     const account = await accept(
       client(builtinConnectorManualGrantContract).connect({
