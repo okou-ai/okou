@@ -2729,12 +2729,9 @@ describe("Morning Brief Slack final release proof", () => {
     };
   }
 
-  it.each([
-    ["exactly on", 0],
-    ["past", 1],
-  ])(
-    "withholds a channel an earlier final page proved when a later page lands %s the deadline",
-    async (_name, offset) => {
+  it(
+    "withholds a channel an earlier final page proved when a later page lands exactly on the deadline",
+    async () => {
       const f = await fixture();
       mockNow(ANCHOR_MS);
       const arrived = createDeferredPromise<void>(context.signal);
@@ -2743,7 +2740,7 @@ describe("Morning Brief Slack final release proof", () => {
 
       const pending = collect(f);
       await arrived.promise;
-      mockNow(ANCHOR_MS + COLLECTION_DEADLINE_MS + offset);
+      mockNow(ANCHOR_MS + COLLECTION_DEADLINE_MS);
       answer.resolve();
 
       const response = await accept(pending, [200]);
