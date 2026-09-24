@@ -309,6 +309,12 @@ beforeEach(() => {
     for (const option of command.options)
       command.setOptionValue(option.attributeName(), option.defaultValue);
   }
+  for (const command of sshCommand.commands.find((command) => {
+    return command.name() === "host";
+  })?.commands ?? []) {
+    for (const option of command.options)
+      command.setOptionValue(option.attributeName(), option.defaultValue);
+  }
 });
 afterEach(() => {
   process.exitCode = 0;
@@ -333,7 +339,8 @@ describe("okou ssh command", () => {
       ).rejects.toThrow("CLI exit");
       expect(help).toContain("Direct or Cloudflare Access");
       expect(help).toContain("port 443 identify the gateway");
-      expect(help).toContain("/connectors/ssh");
+      expect(help).toContain("Remote control tab of /connectors");
+      expect(help).toContain("availability.status=ready");
       expect(help).toContain("no proxy or token options");
     } finally {
       sshCommand.configureOutput(previous);
@@ -363,6 +370,7 @@ describe("okou ssh command", () => {
   });
 
   it("lists live hosts through the canonical API", async () => {
+    const blockedId = "a0000000-0000-4000-8000-000000000002";
     server.use(
       http.get("http://localhost:3000/api/ssh/hosts", () => {
         return HttpResponse.json({
@@ -374,6 +382,16 @@ describe("okou ssh command", () => {
               port: 22,
               username: "deploy",
               learnedHostKey: null,
+              availability: { status: "ready" },
+            },
+            {
+              id: blockedId,
+              displayName: "Blocked host",
+              host: "gateway.example.com",
+              port: 443,
+              username: "deploy",
+              learnedHostKey: null,
+              availability: { status: "blocked", reason: "needs_rebind" },
             },
           ],
         });
@@ -381,8 +399,78 @@ describe("okou ssh command", () => {
     );
     await sshCommand.parseAsync(["host", "list", "--json"], { from: "user" });
     expect(result()).toMatchObject({
-      hosts: [{ id, host: "ssh.example.com" }],
+      hosts: [
+        {
+          id,
+          host: "ssh.example.com",
+          availability: { status: "ready" },
+        },
+        {
+          id: blockedId,
+          host: "gateway.example.com",
+          availability: { status: "blocked", reason: "needs_rebind" },
+        },
+      ],
     });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("explains ready and rebind-required hosts without dispatching an SSH command", async () => {
+    const blockedId = "a0000000-0000-4000-8000-000000000002";
+    server.use(
+      http.get("http://localhost:3000/api/ssh/hosts", () => {
+        return HttpResponse.json({
+          hosts: [
+            {
+              id,
+              displayName: "Ready host",
+              host: "ssh.example.com",
+              port: 22,
+              username: "deploy",
+              learnedHostKey: null,
+              availability: { status: "ready" },
+            },
+            {
+              id: blockedId,
+              displayName: "Blocked host",
+              host: "gateway.example.com",
+              port: 443,
+              username: "deploy",
+              learnedHostKey: null,
+              availability: { status: "blocked", reason: "needs_rebind" },
+            },
+          ],
+        });
+      }),
+    );
+    await sshCommand.parseAsync(["host", "list"], { from: "user" });
+    expect(
+      output.mock.calls.map(([line]) => {
+        return line;
+      }),
+    ).toEqual([
+      expect.stringContaining("ready to attempt (connectivity not checked)"),
+      expect.stringContaining("blocked: needs_rebind"),
+    ]);
+    expect(String(output.mock.calls[1]?.[0])).toContain(
+      "explicitly choose Direct",
+    );
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("does not claim an empty Run inventory proves the owner has no hosts", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/ssh/hosts", () => {
+        return HttpResponse.json({ hosts: [] });
+      }),
+    );
+    await sshCommand.parseAsync(["host", "list"], { from: "user" });
+    expect(output).toHaveBeenCalledWith(
+      expect.stringContaining("No SSH hosts available to this Run"),
+    );
+    expect(String(output.mock.calls[0]?.[0])).not.toContain(
+      "No SSH hosts configured",
+    );
     expect(spawn).not.toHaveBeenCalled();
   });
 

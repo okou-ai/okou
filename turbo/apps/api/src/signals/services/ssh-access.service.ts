@@ -187,10 +187,7 @@ export async function listRunSshHosts(
       if (row.id === null) {
         return [];
       }
-      if (row.needsRebind) {
-        return [];
-      }
-      if (row.accessId !== null) {
+      if (!row.needsRebind && row.accessId !== null) {
         if (row.accessConfigId === null) {
           throw new Error("SSH Cloudflare Access is missing");
         }
@@ -206,6 +203,9 @@ export async function listRunSshHosts(
             row.algorithm === null && row.fingerprint === null
               ? null
               : { algorithm: row.algorithm, fingerprint: row.fingerprint },
+          availability: row.needsRebind
+            ? { status: "blocked", reason: "needs_rebind" }
+            : { status: "ready" },
         }),
       ];
     }),
