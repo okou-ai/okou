@@ -76,6 +76,39 @@ function OnboardingTrustPoints({
   );
 }
 
+/** The step's left column: what it asks, and why it is worth answering. */
+function OnboardingStepExplanation({
+  title,
+  description,
+  trustPoints,
+  footnote,
+  supplement,
+}: {
+  readonly title: string;
+  readonly description: string;
+  readonly trustPoints?: readonly string[];
+  readonly footnote?: ReactNode;
+  readonly supplement?: ReactNode;
+}) {
+  return (
+    <>
+      <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
+        {title}
+      </h1>
+      <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
+        {description}
+      </p>
+      <OnboardingTrustPoints points={trustPoints} />
+      {footnote ? (
+        <p className="mt-4 text-xs leading-5 text-muted-foreground">
+          {footnote}
+        </p>
+      ) : null}
+      {supplement}
+    </>
+  );
+}
+
 /**
  * Every sources-first step reads the same way: the app's rail on the left, and
  * the step centred on the canvas -- the question and its one action beside the
@@ -95,6 +128,7 @@ export function OnboardingStepLayout({
   onBack,
   trustPoints,
   footnote,
+  supplement,
   contentAlign = "center",
   children,
 }: {
@@ -112,6 +146,8 @@ export function OnboardingStepLayout({
   readonly trustPoints?: readonly string[];
   /** A line under the action, for a step that carries an offer or a note. */
   readonly footnote?: ReactNode;
+  /** A block closing the explanation, below everything else it says. */
+  readonly supplement?: ReactNode;
   readonly contentAlign?: "center" | "start";
   readonly children: ReactNode;
 }) {
@@ -135,18 +171,13 @@ export function OnboardingStepLayout({
         <div className="w-full min-w-0 px-6 pt-8 pb-6 lg:overflow-y-auto lg:px-10 lg:pt-28 lg:pb-10">
           <div className="lg:mx-auto lg:w-full lg:max-w-[480px]">
             <OnboardingStepProgress current={currentStep} total={totalSteps} />
-            <h1 className="mt-12 text-[30px] font-semibold leading-[1.16] tracking-[-0.02em] lg:text-[34px]">
-              {title}
-            </h1>
-            <p className="mt-5 text-base leading-[1.7] text-muted-foreground">
-              {description}
-            </p>
-            <OnboardingTrustPoints points={trustPoints} />
-            {footnote ? (
-              <p className="mt-4 text-xs leading-5 text-muted-foreground">
-                {footnote}
-              </p>
-            ) : null}
+            <OnboardingStepExplanation
+              title={title}
+              description={description}
+              trustPoints={trustPoints}
+              footnote={footnote}
+              supplement={supplement}
+            />
           </div>
         </div>
         {/* The answers sit on the app's own sheet, taking the other half. */}

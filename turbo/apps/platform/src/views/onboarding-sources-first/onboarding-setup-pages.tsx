@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Check, Loader2, TriangleAlert } from "lucide-react";
 import { Button, Input, RadioGroup } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { OnboardingCompliance } from "./onboarding-industry-parts.tsx";
 import { reloadBuiltinConnectors$ } from "../../signals/external/connectors.ts";
 import {
   sendSourcesFirstInvite$,
@@ -76,6 +77,7 @@ export function OnboardingIndustryPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.industry.copy;
       })}
+      supplement={<OnboardingCompliance />}
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}

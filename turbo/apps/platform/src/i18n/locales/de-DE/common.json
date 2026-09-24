@@ -4253,6 +4253,22 @@
         "notNow": "Jetzt nicht",
         "skip": "Vorerst überspringen"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Sicherheitsdetails",
+        "status": {
+          "aligned": "Ausgerichtet",
+          "compliant": "Konform",
+          "inProgress": "In Arbeit"
+        },
+        "title": "Okous Compliance – gebaut für dein Vertrauen"
+      },
       "documentTitles": {
         "experience": "Deine KI-Erfahrung",
         "industry": "Bereich wählen",
@@ -4317,7 +4333,7 @@
         }
       },
       "industry": {
-        "copy": "So kann Okou passende Tools anzeigen und eine erste Aufgabe vorschlagen, die zu deiner Arbeit passt.",
+        "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
       },
       "profile": {

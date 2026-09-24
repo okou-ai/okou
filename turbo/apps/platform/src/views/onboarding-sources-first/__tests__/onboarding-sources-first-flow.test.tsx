@@ -182,6 +182,43 @@ test("The switch opens the field question on /onboarding and continues to the so
   expect(fieldRadio(MARKETING_FIELD)).toBeChecked();
 });
 
+test("The first step introduces Okou and its compliance progress", async () => {
+  mockOnboardingNeeded();
+  mockCatalog();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboarding,
+    featureSwitches: SOURCES_FIRST_ON,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
+    ),
+  ).toBeInTheDocument();
+  const badges = Array.from(
+    document.querySelectorAll('[data-slot="badge"]'),
+  ).map((badge) => {
+    return badge.textContent;
+  });
+  expect(badges).toStrictEqual([
+    "SOC 2 Type IIIn progress",
+    "CCPA / CPRACompliant",
+    "GDPRCompliant",
+    "HIPAAAligned",
+    "ISO/IEC 27001Aligned",
+  ]);
+  const link = queryAllByRoleFast("link").find((candidate) => {
+    return candidate.textContent?.trim() === "Security details";
+  });
+  expect(link).toHaveAttribute("href", "https://www.okou.ai/en/security");
+});
+
 test.each([
   {
     locale: "ja-JP" as const,

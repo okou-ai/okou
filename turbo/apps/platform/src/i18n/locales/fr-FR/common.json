@@ -4310,6 +4310,22 @@
         "notNow": "Pas maintenant",
         "skip": "Passer pour l'instant"
       },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Détails de sécurité",
+        "status": {
+          "aligned": "Aligné",
+          "compliant": "Conforme",
+          "inProgress": "En cours"
+        },
+        "title": "La conformité d’Okou, pensée pour votre confiance"
+      },
       "documentTitles": {
         "experience": "Votre expérience de l'IA",
         "industry": "Choisir votre domaine",
@@ -4374,7 +4390,7 @@
         }
       },
       "industry": {
-        "copy": "Okou pourra ainsi afficher les outils pertinents et proposer une première tâche adaptée à votre travail.",
+        "copy": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud. Choisissez votre domaine pour une première tâche adaptée.",
         "title": "Quel type de travail faites-vous ?"
       },
       "profile": {
