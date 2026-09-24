@@ -32,6 +32,10 @@ export interface MarkdownChatFixture {
   readonly path: string;
   readonly realtimeTopic: string;
   readonly threadId: string;
+  readonly inputPrompt: (
+    text: string,
+    options: OutputRowOptions,
+  ) => ChatEventRow;
   readonly install: (options: InstallMarkdownChatOptions) => void;
   readonly outputError: (
     error: string,
@@ -69,6 +73,15 @@ export function createMarkdownChatFixture(
     threadId,
     path: `/chats/${threadId}`,
     realtimeTopic: `chatThreadMessageCreated:${threadId}`,
+    inputPrompt: (text, options) => {
+      return {
+        ...rowBase(threadId, options),
+        eventType: "input.prompt",
+        payload: {
+          userMessage: { version: 1, parts: [{ type: "text", text }] },
+        },
+      };
+    },
     outputMessage: (content, options) => {
       return {
         ...rowBase(threadId, options),

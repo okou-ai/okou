@@ -159,11 +159,12 @@ test("Opening Instructions preserves literal plus signs through streamed revisio
 test("Opening Instructions keeps rich Activity logs readable", async () => {
   const chat = createMarkdownChatFixture(context);
   const rows = [
+    chat.inputPrompt("Inspect the response", { seqId: 1, runId: RUN_ID }),
     chat.outputMessage("Inspect the completed response", {
-      seqId: 1,
+      seqId: 2,
       runId: RUN_ID,
     }),
-    chat.runCompleted({ seqId: 2, runId: RUN_ID }),
+    chat.runCompleted({ seqId: 3, runId: RUN_ID }),
   ];
   chat.install({
     rows: () => {

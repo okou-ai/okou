@@ -225,7 +225,7 @@ test("Keep run logs under the user message when a run fails without output", asy
   expect(screen.queryByTestId("chat-event-actions")).toBeNull();
 });
 
-test("Inspect or copy an assistant response from history", async () => {
+test("Inspect a response from its prompt or copy it from history", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   installCapabilityChat({
     events: completedConversation(RESPONSE_TEXT),
@@ -267,7 +267,15 @@ test("Inspect or copy an assistant response from history", async () => {
     throw new Error("Assistant response group was not available");
   }
 
-  click(linkIn(responseGroup, "View run logs"));
+  expect(findLink(responseGroup, "View run logs")).toBeUndefined();
+  const promptActions = screen
+    .getByText("Prepare the first response")
+    .closest('[data-role="user"]')
+    ?.querySelector("[data-chat-user-message-actions]");
+  if (!promptActions) {
+    throw new Error("User message action row was not available");
+  }
+  click(linkIn(promptActions, "View run logs"));
 
   const inspectionHeading = await screen.findByRole("heading", {
     name: "Response inspection",
