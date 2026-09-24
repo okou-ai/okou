@@ -838,6 +838,41 @@ async function projectionConvergence(
   return stats;
 }
 
+async function maintainChatSearchGinIndexes(
+  db: Db,
+  indexNames: readonly string[],
+  budgetMs: number,
+  signal: AbortSignal,
+): Promise<{
+  readonly remainingBudgetMs: number;
+  readonly deferRemaining: boolean;
+}> {
+  let remainingBudgetMs = budgetMs;
+  for (const indexName of indexNames) {
+    if (remainingBudgetMs <= 0) {
+      return { remainingBudgetMs, deferRemaining: true };
+    }
+    const started = performance.now();
+    const maintained = await settle(
+      maintainChatSearchGin(db, indexName, remainingBudgetMs, signal),
+    );
+    signal.throwIfAborted();
+    remainingBudgetMs -= performance.now() - started;
+    if (!maintained.ok) {
+      if (
+        !isLockNotAvailable(maintained.error) &&
+        !isStatementTimeout(maintained.error)
+      ) {
+        throw maintained.error;
+      }
+      // Avoid repeatedly charging a failed cleanup to every candidate. The
+      // untouched threads and their watermarks remain eligible next tick.
+      return { remainingBudgetMs, deferRemaining: true };
+    }
+  }
+  return { remainingBudgetMs, deferRemaining: remainingBudgetMs <= 0 };
+}
+
 async function projectChatEventSearch(
   db: Db,
   options: ChatEventSearchProjectionOptions,
@@ -861,32 +896,14 @@ async function projectChatEventSearch(
       // One shared budget for the whole tick and every index, not 30 seconds
       // per thread or index. A large pre-existing backlog may need a separate
       // operational drain.
-      let deferRemaining = false;
-      for (const ginIndexName of options.ginIndexNames) {
-        if (maintenanceBudgetMs <= 0) {
-          deferRemaining = true;
-          break;
-        }
-        const started = performance.now();
-        const maintained = await settle(
-          maintainChatSearchGin(db, ginIndexName, maintenanceBudgetMs, signal),
-        );
-        signal.throwIfAborted();
-        maintenanceBudgetMs -= performance.now() - started;
-        if (!maintained.ok) {
-          if (
-            !isLockNotAvailable(maintained.error) &&
-            !isStatementTimeout(maintained.error)
-          ) {
-            throw maintained.error;
-          }
-          // Avoid repeatedly charging a failed cleanup to every candidate. The
-          // untouched threads and their watermarks remain eligible next tick.
-          deferRemaining = true;
-          break;
-        }
-      }
-      if (deferRemaining || maintenanceBudgetMs <= 0) {
+      const maintained = await maintainChatSearchGinIndexes(
+        db,
+        options.ginIndexNames,
+        maintenanceBudgetMs,
+        signal,
+      );
+      maintenanceBudgetMs = maintained.remainingBudgetMs;
+      if (maintained.deferRemaining) {
         deferredThreads += candidateThreads.length - attemptedThreads;
         break;
       }
