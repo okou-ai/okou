@@ -412,7 +412,6 @@ async function resolveModelContext(
     selectedModel,
     codexServiceTier: runCodexServiceTier,
     builtInModelRuntimeRoute: builtInModelRuntimeRoute ?? undefined,
-    featureSwitchContext: threadModelContext.featureSwitchContext,
   });
   return {
     ok: true,

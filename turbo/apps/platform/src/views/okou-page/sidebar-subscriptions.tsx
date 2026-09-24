@@ -102,7 +102,9 @@ function AccountMenuSubscriptionsSkeleton() {
       {ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS.map((provider, index) => {
         return (
           <div key={provider.type} className="flex flex-col gap-1.5">
-            {index > 0 && <div className="-mx-3 h-px bg-divider" />}
+            {index > 0 && (
+              <div className="-mx-4 h-0 border-t border-t-gray-400" />
+            )}
             <div className="flex min-h-9 items-center">
               <div className="h-3 w-20 animate-pulse rounded bg-muted/60" />
             </div>
@@ -162,7 +164,7 @@ function AccountMenuSubscriptionProviderSection({
         { provider: label },
       )}
     >
-      {divided && <div className="-mx-3 h-px bg-divider" />}
+      {divided && <div className="-mx-4 h-0 border-t border-t-gray-400" />}
       <div className="flex min-h-9 min-w-0 items-center gap-2">
         <h3 className="min-w-0 flex-1 truncate text-xs font-medium leading-4 tracking-tight text-foreground">
           {label}

@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/realtime";
 import { createHash, randomUUID } from "node:crypto";
 import { piApiFirstTurnManifestSchema } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -15,7 +14,6 @@ import { readRunOutputMemoryCitationsFixture } from "../../../test-fixtures/chat
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   readThreadSessionBinding,
   readThreadSessionConversation,
@@ -23,7 +21,6 @@ import {
 import {
   createChatEventsFixture,
   GPT_PI_BDD_MODELS,
-  requireOrgId,
   expectPiApiUsage,
   createGptUsagePricingResolution,
   claimEnvironment,
@@ -45,7 +42,6 @@ const {
   chat,
   webhooks,
   chatCallbacks,
-  authDeviceSupport,
   entitledChatActor,
   seedBuiltInModelKey,
   configureBuiltInPiModel,
@@ -81,9 +77,7 @@ describe("CHAT-02: model-first provider policies", () => {
         };
       }),
     );
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
+
     const usagePricingResolution = await createGptUsagePricingResolution();
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
@@ -170,13 +164,7 @@ describe("CHAT-02: model-first provider policies", () => {
         modelProviderId: null,
       },
     ]);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiLoop]: true,
-      },
-    );
+
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
     const firstPiAnswer = "first Pi generation answer";
@@ -576,11 +564,7 @@ describe("CHAT-02: model-first provider policies", () => {
   it("completes API-first output when transient stream publication fails", async () => {
     const { actor, agentId } = await entitledChatActor();
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: requireOrgId(actor) },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     mockPiResourceArchiveDownloads();
     mockPiCheckpointObjectStore();
     const answer = "The complete answer survives the streaming outage";
@@ -636,11 +620,7 @@ describe("CHAT-02: model-first provider policies", () => {
       throw new Error("Expected entitled chat actor to have an org");
     }
     await configureBuiltInPiModel(actor, "gpt-5.6-terra");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     mockPiResourceArchiveDownloads();
     // A real assistant can copy the entire immutable archive notice. Its run
     // provenance must still keep citation transport private.

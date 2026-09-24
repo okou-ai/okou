@@ -2,22 +2,31 @@ import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
 import {
   type CodexServiceTier,
+  type ChatThreadServiceTier,
   chatThreadsContract,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   isImageModelId,
   type ImageModelId,
 } from "@okouai/api-contracts/contracts/image-models";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { clerk$ } from "../external/clerk";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { type Db, writeDb$ } from "../external/db";
 import { publishThreadListChanged } from "../external/realtime";
-import { badRequestMessage, notFound } from "../../lib/error";
+import {
+  badRequestMessage,
+  notFound,
+  resourceUnavailable,
+} from "../../lib/error";
 import {
   createChatThread$,
   type CreatedChatThread,
@@ -31,9 +40,12 @@ import {
 } from "../services/model-selection.service";
 import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
 import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
 import type { RouteEntry } from "../route-entry";
+import type { AuthContext } from "../../types/auth";
 
 const createBody$ = bodyResultOf(chatThreadsContract.create);
 
@@ -133,12 +145,81 @@ async function inheritedRunChatSettings(
   };
 }
 
+const validateInitialRemoteAccess$ = command(
+  async (
+    { get },
+    args: {
+      readonly owner: { readonly orgId: string; readonly userId: string };
+      readonly tokenType: string;
+      readonly overrides: readonly InitialRemoteAccessOverride[];
+    },
+    signal: AbortSignal,
+  ) => {
+    if (args.overrides.length === 0) {
+      return null;
+    }
+    if (args.tokenType !== "session") {
+      return resourceUnavailable("Remote access selection is not available");
+    }
+    const featureContext = await get(
+      userFeatureSwitchContext(args.owner.orgId, args.owner.userId),
+    );
+    signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, featureContext)
+    ) {
+      return badRequestMessage("Remote access is not available");
+    }
+    if (
+      args.overrides.some((item) => {
+        return item.protocol === "vnc";
+      }) &&
+      (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext) ||
+        !(await hasCurrentVncMembership(get(clerk$), args.owner, signal)))
+    ) {
+      return badRequestMessage("VNC access is not available");
+    }
+    return null;
+  },
+);
+
+function inheritedRunId(auth: AuthContext): string | undefined {
+  return auth.tokenType === "sandbox" || auth.tokenType === "agent"
+    ? auth.runId
+    : undefined;
+}
+
+function selectedCodexServiceTier(
+  requested: ChatThreadServiceTier | null | undefined,
+  inherited: CodexServiceTier | null,
+): CodexServiceTier | null {
+  if (requested === undefined) {
+    return inherited;
+  }
+  return requested === "priority" ? "fast" : null;
+}
+
 const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const body = await get(createBody$);
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
+  }
+
+  const initialRemoteAccessOverrides =
+    body.data.initialRemoteAccessOverrides ?? [];
+  const remoteAccessError = await set(
+    validateInitialRemoteAccess$,
+    {
+      owner: auth,
+      tokenType: auth.tokenType,
+      overrides: initialRemoteAccessOverrides,
+    },
+    signal,
+  );
+  if (remoteAccessError) {
+    return remoteAccessError;
   }
 
   const exists = await get(
@@ -154,22 +235,19 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const writeDb = set(writeDb$);
   const connectorSelections = body.data.connectorSelections ?? [];
-  const callerRunId =
-    auth.tokenType === "sandbox" || auth.tokenType === "agent"
-      ? auth.runId
-      : undefined;
-  const inherited = await inheritedRunChatSettings(writeDb, callerRunId);
+  const inherited = await inheritedRunChatSettings(
+    writeDb,
+    inheritedRunId(auth),
+  );
   signal.throwIfAborted();
   const selectedModel = body.data.model ?? inherited.selectedModel;
   if (!selectedModel) {
     return badRequestMessage("A model selection is required");
   }
-  const codexServiceTier: CodexServiceTier | null =
-    body.data.serviceTier === undefined
-      ? inherited.codexServiceTier
-      : body.data.serviceTier === "priority"
-        ? "fast"
-        : null;
+  const codexServiceTier = selectedCodexServiceTier(
+    body.data.serviceTier,
+    inherited.codexServiceTier,
+  );
   // Explicit request, then what the caller's own thread pinned, then the
   // member and catalog defaults. The last step is what keeps a thread from
   // following a default the member changes after this thread exists.
@@ -234,11 +312,15 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       selectedVideoModel,
       selectedImageModel,
       connectorSelections,
+      initialRemoteAccessOverrides,
     },
     signal,
   );
   signal.throwIfAborted();
   if (thread.kind === "invalid_connector_selection") {
+    return badRequestMessage(thread.message);
+  }
+  if (thread.kind === "invalid_remote_access_selection") {
     return badRequestMessage(thread.message);
   }
   // The id already belongs to another member, org, or agent. Answer exactly

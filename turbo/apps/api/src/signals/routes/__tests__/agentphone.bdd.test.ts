@@ -80,7 +80,16 @@ async function entitledLinkedActor(): Promise<LinkedAgentPhoneActor> {
   const sends = ap.captureAgentPhoneSends();
 
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const phone = uniquePhoneHandle();
   await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
   return { actor, phone, runnerGroup, sends, storage };
@@ -94,8 +103,8 @@ const modelSessionScenarios = [
 
 const modelResumeScenarios = modelSessionScenarios.flatMap((scenario) => {
   return [
-    { ...scenario, model: "claude-sonnet-5", otherModel: "claude-opus-4-8" },
-    { ...scenario, model: "claude-opus-4-8", otherModel: "claude-sonnet-5" },
+    { ...scenario, model: "claude-fable-5-1", otherModel: "gpt-6-astra" },
+    { ...scenario, model: "gpt-6-astra", otherModel: "claude-fable-5-1" },
   ] as const;
 });
 
@@ -110,20 +119,24 @@ async function modelSessionScenario({
     type: "anthropic-api-key",
     secret: "phone-dm-model-routing-key",
   });
+  const openAiProvider = await runs.createOrgModelProvider(actor, {
+    type: "openai-api-key",
+    secret: "phone-dm-native-codex-key",
+  });
   await runs.updateOrgModelPolicies(actor, [
     {
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
       isDefault: true,
       defaultProviderType: "anthropic-api-key",
       credentialScope: "org",
       modelProviderId: provider.providerId,
     },
     {
-      model: "claude-opus-4-8",
+      model: "gpt-6-astra",
       isDefault: false,
-      defaultProviderType: "anthropic-api-key",
+      defaultProviderType: "openai-api-key",
       credentialScope: "org",
-      modelProviderId: provider.providerId,
+      modelProviderId: openAiProvider.providerId,
     },
   ]);
   const conversationId = withConversation ? uniqueConversationId() : undefined;
@@ -138,7 +151,9 @@ async function modelSessionScenario({
   async function complete(body: string) {
     const messageId = await send(body);
     const run = await claimDispatchedRun(runnerGroup);
-    await completeSandboxRun(run.sandboxToken, run.runId, 0);
+    await completeSandboxRun(run.sandboxToken, run.runId, 0, {
+      cliAgentType: run.cliAgentType,
+    });
     expect(lastSend(sends).body).toBe("Task completed successfully.");
     if (channel === "imessage") {
       expect(lastSend(sends)).toMatchObject({
@@ -161,6 +176,7 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly okouToken: string | undefined;
+  readonly cliAgentType: "claude-code" | "codex";
 }> {
   const runs = createRunsApi(context);
   await runs.heartbeatRunner(runnerGroup);
@@ -176,12 +192,18 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
     throw new Error("Expected an AgentPhone run to be dispatched");
   }
   const claim = await runs.claimRunnerJob(runId);
+  if (claim.cliAgentType !== "claude-code" && claim.cliAgentType !== "codex") {
+    throw new Error(
+      `Expected a native AgentPhone claim, got ${claim.cliAgentType}`,
+    );
+  }
   return {
     runId,
     sandboxToken: claim.sandboxToken,
     prompt: claim.prompt,
     appendSystemPrompt: claim.appendSystemPrompt ?? "",
     okouToken: claim.platformEnvironment.OKOU_TOKEN,
+    cliAgentType: claim.cliAgentType,
   };
 }
 
@@ -196,6 +218,7 @@ async function completeSandboxRun(
   options: {
     readonly error?: string;
     readonly resultText?: string;
+    readonly cliAgentType?: "claude-code" | "codex";
   } = {},
 ): Promise<void> {
   const webhooks = createWebhookCallbackApi(context);
@@ -223,7 +246,7 @@ async function completeSandboxRun(
       ...(exitCode === 0
         ? {
             checkpoint: {
-              cliAgentType: "claude-code" as const,
+              cliAgentType: options.cliAgentType ?? "claude-code",
               cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
               cliAgentSessionHistoryHash: createHash("sha256")
                 .update(`bdd agentphone history ${runId}`)
@@ -238,6 +261,31 @@ async function completeSandboxRun(
     [200],
   );
   await flushWaitUntilForTest();
+}
+
+function expectConnectedWelcome(
+  sends: readonly AgentPhoneProviderSend[],
+): void {
+  expect(
+    sends.map((send) => {
+      return send.body;
+    }),
+  ).toStrictEqual([
+    expect.stringContaining("Your phone number is now connected to Okou."),
+    expect.stringContaining("Save Okou to your contacts"),
+    expect.stringContaining("connect the tools you already use"),
+    expect.stringContaining("What would you like to start with?"),
+  ]);
+  expect(
+    sends.map((send) => {
+      return send.mediaUrls;
+    }),
+  ).toStrictEqual([
+    [],
+    [expect.stringMatching(/^https:\/\/static\.vm0\.io\/.+\/okou\.vcf$/u)],
+    [],
+    [],
+  ]);
 }
 
 function lastSend(sends: AgentPhoneSendCapture): AgentPhoneProviderSend {
@@ -413,6 +461,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       9 * 60 * 1000,
     );
 
+    const beforeCode = sends.messages.length;
     const inboundMessageId = await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
@@ -421,12 +470,19 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: false,
     });
 
-    expect(lastSend(sends)).toMatchObject({
-      toNumber: phone,
-      replyToMessageId: inboundMessageId,
-      body: expect.stringContaining("Your phone number is now connected"),
-    });
-    expect(lastSend(sends).conversationId).toBeUndefined();
+    // The welcome is split into several messages with the Okou contact card
+    // after the first one; only the first threads onto the code message.
+    const welcome = sends.messages.slice(beforeCode);
+    expectConnectedWelcome(welcome);
+    expect(
+      welcome.map((send) => {
+        return send.replyToMessageId;
+      }),
+    ).toStrictEqual([inboundMessageId, undefined, undefined, undefined]);
+    for (const send of welcome) {
+      expect(send.toNumber).toBe(phone);
+      expect(send.conversationId).toBeUndefined();
+    }
     await expect(
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
@@ -473,14 +529,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: false });
 
+    const beforeSecond = sends.messages.length;
     await ap.postAgentPhoneInboundMessage({
       channel: "sms",
       from: phone,
       body: second.body.code,
     });
-    expect(lastSend(sends).body).toContain(
-      "Your phone number is now connected",
-    );
+    expectConnectedWelcome(sends.messages.slice(beforeSecond));
     await expect(
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
@@ -852,7 +907,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       });
       it("preserves the complete scenario", async () => {
         const { send, sends, complete } = preparedScenario;
-        if (scenario.model !== "claude-sonnet-5") {
+        if (scenario.model !== "claude-fable-5-1") {
           await send(`/model ${scenario.model}`);
           expect(lastSend(sends).body).toContain("Switched to");
         }
@@ -890,7 +945,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         const originalSession = await complete(
           "start the default model session",
         );
-        await send("/model claude-opus-4-8");
+        await send("/model gpt-6-astra");
         expect(lastSend(sends).body).toContain("Switched to");
         const alternateSession = await complete(
           "start the alternate model session",
@@ -1343,10 +1398,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await runs.ensureOrgModelProvider(actor);
     const phone = uniquePhoneHandle();
     await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-    expect(lastSend(sends).body).toContain(
-      "Your phone number is now connected to Okou.",
-    );
-    expect(lastSend(sends).body).not.toContain("I'm Okou");
+    const welcome = sends.messages.slice(-4);
+    expectConnectedWelcome(welcome);
+    for (const send of welcome) {
+      expect(send.body).not.toContain("I'm Okou");
+    }
 
     const SMS_RISK_WARNING =
       "Note: SMS and MMS replies may not be delivered reliably.";

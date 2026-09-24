@@ -197,9 +197,12 @@ fn parse_cpu_stat_line(line: &str) -> Option<CpuCounters> {
         return None;
     };
     let idle = idle_ticks.checked_add(*iowait_ticks)?;
+    // Linux includes guest and guest_nice in user and nice, respectively.
     let total = values
         .iter()
-        .try_fold(0u64, |total, value| total.checked_add(*value))?;
+        .enumerate()
+        .filter(|(index, _)| !matches!(*index, 8 | 9))
+        .try_fold(0u64, |total, (_, value)| total.checked_add(*value))?;
 
     Some(CpuCounters {
         idle,
@@ -439,6 +442,28 @@ mod tests {
     #[test]
     fn parse_cpu_stat_line_rejects_malformed_field() {
         assert_eq!(parse_cpu_stat_line("cpu 1 2 bad 4 5 6 7 8"), None);
+        assert_eq!(parse_cpu_stat_line("cpu 1 2 3 4 5 6 7 8 bad 10"), None);
+        assert_eq!(parse_cpu_stat_line("cpu 1 2 3 4 5 6 7 8 9 bad"), None);
+    }
+
+    #[test]
+    fn cpu_tracker_counts_guest_time_once_for_cumulative_and_interval_samples() {
+        let mut tracker = CpuTracker::new();
+
+        assert_eq!(
+            tracker.get_cpu_percentages_from_stat_line("cpu 40 10 0 40 0 0 0 10 20 5"),
+            CpuPercentages {
+                busy: 60.0,
+                steal: 10.0,
+            }
+        );
+        assert_eq!(
+            tracker.get_cpu_percentages_from_stat_line("cpu 70 20 0 100 0 0 0 10 35 10"),
+            CpuPercentages {
+                busy: 40.0,
+                steal: 0.0,
+            }
+        );
     }
 
     #[test]

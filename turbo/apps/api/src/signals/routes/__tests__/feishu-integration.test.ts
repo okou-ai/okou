@@ -723,7 +723,6 @@ async function enableFeishuIntegration(
     { userId: actor.userId, orgId: actor.orgId },
     {
       [FEISHU_PLATFORMS[platform].featureSwitch]: true,
-      [FeatureSwitchKey.PiLoop]: false,
       ...extraSwitches,
     },
   );
@@ -1145,7 +1144,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
       ? defaultAgent
       : alternateAgent;
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor);
+    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
     const { callbackUrl, installationId } = await configureTestInstallation({
       appId,
@@ -5303,7 +5302,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
         headers: { authorization: "Bearer clerk-session" },
         body: {
           agentId: fixture.defaultAgentId,
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           connectorSelections: [
             {
               connectionId: connectorId,
@@ -5597,7 +5596,7 @@ describe.each(["feishu", "lark"] as const)("%s integration", (platform) => {
     expect(completedReplyContent).toContain(
       `https://app.okou.ai/activities/${run.id}`,
     );
-    expect(completedReplyContent).toContain("Claude Sonnet");
+    expect(completedReplyContent).toContain("Claude Fable");
     expect(completedReplyContent).toContain("Responded by Okou");
     expect(fixtureState.removedReactions).toHaveLength(1);
 
@@ -6223,7 +6222,7 @@ describe("shared Feishu/Lark conversation and queue behavior", () => {
     });
     await runsApi.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-terra",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
@@ -6252,7 +6251,7 @@ describe("shared Feishu/Lark conversation and queue behavior", () => {
       ).update({
         headers: { authorization: "Bearer clerk-session" },
         params: { id: thread.chatThreadId },
-        body: { model: "gpt-5.6-terra" },
+        body: { model: "gpt-6-astra" },
       }),
       [204],
     );

@@ -2174,7 +2174,7 @@ function HeaderWorkflowAutomationCard({
               type="button"
               variant="neutral"
               size="sm"
-              className="h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
+              className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
               disabled={running}
               onClick={() => {
                 detach(
@@ -7670,6 +7670,33 @@ function UserMessageContent({
   );
 }
 
+function UserMessageTextActions({
+  event,
+  text,
+  thread,
+}: {
+  event: EnrichedChatEvent & ChatInputEvent;
+  text: string;
+  thread: ChatPanelSignals;
+}) {
+  const copyEvent = useSet(thread.copyEvent$);
+  const pageSignal = useGet(pageSignal$);
+  const sharingPhase = useGet(thread.sharing.phase$);
+  if (sharingPhase !== "idle") {
+    return null;
+  }
+
+  return (
+    <UserMessageActions
+      showCopy
+      runId={event.runId}
+      onCopy={() => {
+        return copyEvent({ text, attachments: [] }, pageSignal);
+      }}
+    />
+  );
+}
+
 function WorkflowUserMessage({
   event,
   thread,
@@ -7710,6 +7737,13 @@ function WorkflowUserMessage({
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
           {body}
+          {workflowBody ? (
+            <UserMessageTextActions
+              event={event}
+              text={workflowBody}
+              thread={thread}
+            />
+          ) : null}
         </div>
       </div>
     </div>
@@ -7749,6 +7783,13 @@ function GoalUserMessage({
             <div className="rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10 bg-gray-200 text-foreground">
               <div className="px-4 py-3 whitespace-pre-wrap">{goalBrief}</div>
             </div>
+          ) : null}
+          {goalBrief ? (
+            <UserMessageTextActions
+              event={event}
+              text={goalBrief}
+              thread={thread}
+            />
           ) : null}
         </div>
       </div>

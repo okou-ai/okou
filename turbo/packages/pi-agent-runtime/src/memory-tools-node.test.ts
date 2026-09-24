@@ -207,6 +207,23 @@ describe("first-party Pi memory tools", () => {
     expect(read.details).toStrictEqual({});
   });
 
+  it("explains when a file is passed as a search or list directory", async () => {
+    const root = await memoryRoot();
+    await put(root, "MEMORY.md", "Index\nNeedle in root");
+    const registry = tools({ root });
+    const expected = "Memory path must be a directory.";
+
+    await expect(
+      executeText(registry, "memories_search", {
+        query: "needle",
+        path: "MEMORY.md",
+      }),
+    ).rejects.toThrow(expected);
+    await expect(
+      executeText(registry, "memories_list", { path: "MEMORY.md" }),
+    ).rejects.toThrow(expected);
+  });
+
   it("pins the Codex-compatible ad-hoc note schema and provenance", async () => {
     const root = await memoryRoot();
     const tool = namedTool(tools({ root }), "add_ad_hoc_note");

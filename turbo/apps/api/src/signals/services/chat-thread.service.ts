@@ -11,6 +11,7 @@ import {
   persistedAttachmentSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
   modelProviderCredentialScopeSchema,
@@ -82,6 +83,10 @@ import {
 } from "./chat-thread-connector-selection.service";
 import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
 import { ORDINARY_CHAT_THREAD_PROVENANCE } from "./morning-brief-thread-provenance.service";
+import {
+  insertInitialRemoteAccessOverrides,
+  ownsInitialRemoteAccessHosts,
+} from "./chat-remote-access.service";
 
 type ChatThreadRow = {
   readonly id: string;
@@ -815,6 +820,7 @@ interface CreateChatThreadArgs {
   readonly selectedVideoModel: string | null;
   readonly selectedImageModel: ImageModelId | null;
   readonly connectorSelections?: readonly PreparedChatThreadConnectorSelection[];
+  readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
 
 /** Compose ordinary thread initialization inside a caller-owned transaction. */
@@ -840,6 +846,32 @@ export async function createChatThreadInTransaction(
     return {
       kind: "invalid_connector_selection" as const,
       message: preparedConnectorSelections.message,
+    };
+  }
+  const initialRemoteAccessOverrides = args.initialRemoteAccessOverrides ?? [];
+  if (
+    initialRemoteAccessOverrides.length > 0 &&
+    !(await ownsInitialRemoteAccessHosts(
+      tx,
+      { orgId: args.orgId, userId: args.userId },
+      initialRemoteAccessOverrides,
+    ))
+  ) {
+    // A retry may arrive after a host was deleted. Preserve the already-created
+    // chat without accepting that stale host for a new chat.
+    if (args.clientThreadId) {
+      const replay = await resolveExistingClientThread(tx, {
+        clientThreadId: args.clientThreadId,
+        userId: args.userId,
+        agentId: args.agentId,
+      });
+      if (replay.kind === "existing") {
+        return replay;
+      }
+    }
+    return {
+      kind: "invalid_remote_access_selection" as const,
+      message: "Remote access host not found",
     };
   }
   const insert = tx.insert(chatThreads).values({
@@ -879,6 +911,11 @@ export async function createChatThreadInTransaction(
     chatThreadId: createdThread.id,
     selections: preparedConnectorSelections.selections,
   });
+  await insertInitialRemoteAccessOverrides(
+    tx,
+    createdThread.id,
+    initialRemoteAccessOverrides,
+  );
   await appendChatThreadEvent(tx, {
     kind: "created",
     userId: args.userId,

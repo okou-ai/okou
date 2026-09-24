@@ -2634,7 +2634,6 @@ describe("Stage 1 background credential availability", () => {
           modelProviderType: type,
           runtimeProviderType: type,
           codexServiceTier: undefined,
-          piEnabled: true,
         })
       );
     });
@@ -2747,14 +2746,13 @@ describe("Stage 1 background credential availability", () => {
       context,
       { orgId: storage.org_id, userId: storage.user_id },
       {
-        [FeatureSwitchKey.PiLoop]: false,
         [FeatureSwitchKey.PiMemory]: true,
         [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
       },
     );
     await runs.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "built-in",
         credentialScope: "org",
@@ -2770,7 +2768,7 @@ describe("Stage 1 background credential availability", () => {
       {
         agentId: agent.agentId,
         prompt: "active foreground source",
-        model: "gpt-5.6-luna",
+        model: "gpt-6-astra",
       },
       [201],
     );

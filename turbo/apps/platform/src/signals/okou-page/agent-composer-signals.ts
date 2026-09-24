@@ -30,6 +30,7 @@ import {
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
 import { connectorAccountTargetKey } from "./connector-accounts.ts";
 import { createComposerConnectorSignals } from "./connectors.ts";
+import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
   chatPageEffectiveImageModel$,
   chatPageEffectiveVideoModel$,
@@ -206,6 +207,7 @@ function createAgentSubmitMessage(
   agentId: string,
   draft: DraftSignals,
   connector: ReturnType<typeof createComposerConnectorSignals>,
+  pendingRemoteAccess: ReturnType<typeof createPendingRemoteAccessSignals>,
   options: AgentComposerOptions,
 ) {
   return command(
@@ -236,6 +238,11 @@ function createAgentSubmitMessage(
       const send = options.forward
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;
+      const initialRemoteAccessOverrides = get(featureSwitch$)[
+        FeatureSwitchKey.ThreadRemoteAccess
+      ]
+        ? get(pendingRemoteAccess.overrides$)
+        : [];
       let connectorSelections: readonly ConnectorAccountSelection[] = [];
       if (connectorPreference.selections.length > 0) {
         const connectorAuthorization = await get(
@@ -298,6 +305,9 @@ function createAgentSubmitMessage(
             ? { onOptimisticSend: options.onOptimisticSend }
             : {}),
           ...(connectorSelections.length > 0 ? { connectorSelections } : {}),
+          ...(initialRemoteAccessOverrides.length > 0
+            ? { initialRemoteAccessOverrides }
+            : {}),
         },
         signal,
       );
@@ -307,6 +317,7 @@ function createAgentSubmitMessage(
         set(resetChatPageModelSelection$);
         set(resetChatPageVideoModelSelection$);
         set(connector.accounts.resetPendingSelections$);
+        set(pendingRemoteAccess.reset$);
       }
       return sent;
     },
@@ -319,16 +330,19 @@ function createAgentComposerSignalsWithDraft(
   options: AgentComposerOptions = {},
 ) {
   const connector = createComposerConnectorSignals(agentId);
+  const pendingRemoteAccess = createPendingRemoteAccessSignals();
   const submitMessage$ = createAgentSubmitMessage(
     agentId,
     agentDraft.draft,
     connector,
+    pendingRemoteAccess,
     options,
   );
 
   return createComposerSignals({
     agentId,
     connector,
+    pendingRemoteAccess,
     draft: {
       signals: agentDraft.draft,
       load$: options.forward ? noOpAction$ : agentDraft.load$,

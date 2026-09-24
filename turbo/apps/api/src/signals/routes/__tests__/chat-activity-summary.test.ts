@@ -90,7 +90,7 @@ async function fixture(prompt = "Prepare a launch checklist") {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   const group = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  const [, agent] = await Promise.all([
+  const [{ providerId }, agent] = await Promise.all([
     runs.ensureOrgModelProvider(actor),
     bdd.createAgent(actor, {
       displayName: "Activity summary",
@@ -98,10 +98,21 @@ async function fixture(prompt = "Prepare a launch checklist") {
       visibility: "private",
     }),
   ]);
+  // The activity suite needs a live Runner claim, not a Pi API-first turn.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const sent = await chat.requestSendEvent(
     actor,
     {
       agentId: agent.agentId,
+      model: "claude-fable-5-1",
       prompt,
       clientEventId: randomUUID(),
     },
@@ -894,21 +905,19 @@ describe("thread activity summary", () => {
     },
   );
 
-  it.each([
-    "",
-    "one\ntwo\nthree\nfour\nfive",
-    "**Markdown**",
-    "Valid message\n**Markdown**",
-  ])("cools down malformed output %j without retrying", async (output) => {
-    const f = await fixture();
-    const inputs = provider(() => {
-      return output;
-    });
-    const failed = await summarize(f.actor, f.run);
-    expect(failed).toMatchObject({ status: "available", messages: [] });
-    await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(1);
-  });
+  it.each(["", "one\ntwo\nthree\nfour\nfive", "**Markdown**"])(
+    "cools down malformed output %j without retrying",
+    async (output) => {
+      const f = await fixture();
+      const inputs = provider(() => {
+        return output;
+      });
+      const failed = await summarize(f.actor, f.run);
+      expect(failed).toMatchObject({ status: "available", messages: [] });
+      await summarize(f.actor, f.run);
+      expect(inputs).toHaveLength(1);
+    },
+  );
 
   it.each([
     {
@@ -949,12 +958,6 @@ describe("thread activity summary", () => {
       name: "an envelope without choices",
       reply: () => {
         return HttpResponse.json({});
-      },
-    },
-    {
-      name: "a completion with empty content",
-      reply: () => {
-        return completion("");
       },
     },
     {

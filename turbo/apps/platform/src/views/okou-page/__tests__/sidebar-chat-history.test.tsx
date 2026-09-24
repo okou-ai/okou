@@ -62,6 +62,15 @@ import {
   createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
 
+function pressArchiveShortcut(): void {
+  fireEvent.keyDown(document, {
+    key: "X",
+    code: "KeyX",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+}
+
 test("Browse a long sidebar chat history", async () => {
   const cachedChatThreadEvents = mockLongSidebarHistory();
   mockSidebarViewport(200, 1000);
@@ -306,6 +315,15 @@ test("Keep check-mark chats and archive controls unchanged when archiving is dis
   expect(menuItemByText("Rename chat")).toBeInTheDocument();
   expect(queryMenuItemByText("Archive chat")).not.toBeInTheDocument();
   expect(queryMenuItemByText("Unarchive chat")).not.toBeInTheDocument();
+  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+
+  pressArchiveShortcut();
+  await expect(
+    within(sidebar()).findByText("✅ Completed release"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(sidebar()).queryByText("All your chats are archived"),
+  ).not.toBeInTheDocument();
 });
 
 test("Filter chats by All chats, Unread, or Archived", async () => {
@@ -478,6 +496,49 @@ test("Hide the current chat after archiving it without changing its title", asyn
   ).resolves.toBeInTheDocument();
   expect(
     within(sidebar()).queryByText("No archived chats"),
+  ).not.toBeInTheDocument();
+});
+
+test("Archive and unarchive the current chat with the keyboard shortcut", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
+  });
+
+  await waitFor(() => {
+    expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
+  });
+  openThreadMenu("Release plan");
+  const archiveItem = menuItemByText("Archive chat");
+  expect(archiveItem).toHaveTextContent("Ctrl+Shift+X");
+  expect(archiveItem).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+X Control+Shift+X",
+  );
+  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+
+  pressArchiveShortcut();
+
+  await waitFor(() => {
+    expect(
+      within(sidebar()).getByText("All your chats are archived"),
+    ).toBeInTheDocument();
+    expect(
+      within(sidebar()).queryByText("Release plan"),
+    ).not.toBeInTheDocument();
+  });
+
+  pressArchiveShortcut();
+
+  await expect(
+    within(sidebar()).findByText("Release plan"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(sidebar()).queryByText("All your chats are archived"),
   ).not.toBeInTheDocument();
 });
 

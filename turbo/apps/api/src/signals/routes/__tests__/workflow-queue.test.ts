@@ -132,6 +132,18 @@ async function setup(): Promise<Scenario> {
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
+  // Queue ordering uses claimable native runs; Pi route tests set their
+  // own model policy instead of inheriting this fixture's default.
+  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await wf.createAgent(actor, {
     displayName: "Workflow Queue Agent",
   });
@@ -353,7 +365,7 @@ async function startOrgConcurrencyBlocker(scenario: Scenario): Promise<string> {
       body: {
         agentId: scenario.agentId,
         prompt: "hold org concurrency open",
-        model: "claude-sonnet-5",
+        model: "claude-fable-5-1",
         hasTextContent: true,
         userMessage: {
           version: 1,
@@ -1529,7 +1541,7 @@ describe("workflow queue", () => {
       version: 1,
       parts: [
         ...pendingTick.userMessage.parts,
-        { type: "model", selectedModel: "claude-sonnet-5" },
+        { type: "model", selectedModel: "claude-fable-5-1" },
       ],
     });
     expect(chatEventDisplayText(claimedTick)).toBe(admittedDisplayPrompt);

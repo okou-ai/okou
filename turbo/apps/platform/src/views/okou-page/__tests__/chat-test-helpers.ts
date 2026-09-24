@@ -393,6 +393,11 @@ export function mockChatLifecycle(
       imageModel?: string;
       videoModel?: string;
       connectorSelections?: readonly ConnectorAccountSelection[];
+      initialRemoteAccessOverrides?: readonly {
+        protocol: "ssh" | "vnc";
+        connectionId: string;
+        enabled: boolean;
+      }[];
     }) => void;
     onModelSelectionUpdate?: (body: {
       model?: string | null;
@@ -847,6 +852,7 @@ export function mockChatLifecycle(
       imageModel: body.imageModel,
       videoModel: body.videoModel,
       connectorSelections: body.connectorSelections,
+      initialRemoteAccessOverrides: body.initialRemoteAccessOverrides,
     });
     return respond(201, {
       id: threadId,

@@ -6,7 +6,6 @@ import {
   randomUUID,
   sign as signData,
 } from "node:crypto";
-import { DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL } from "@okouai/api-contracts/contracts/model-providers";
 import {
   connectorAccountsContract,
   type ConnectorAccountMutationIntent,
@@ -16,7 +15,6 @@ import {
   workflowAutomationsContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -73,7 +71,8 @@ const GMAIL_TOPIC_NAME = "projects/vm0-ai-488909/topics/gmail-events";
 const GMAIL_AUDIENCE = "https://api.okou.ai/api/webhooks/gmail";
 const GMAIL_PUSH_SERVICE_ACCOUNT =
   "gmail-pubsub-push@vm0-ai-488909.iam.gserviceaccount.com";
-const GMAIL_WORKSPACE_MODEL = DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL;
+// Queue/claim fixtures deliberately use the permanently native Claude route.
+const GMAIL_WORKSPACE_MODEL = "claude-fable-5-1";
 const GOOGLE_OIDC_CERT_KID = "gmail-pubsub-test-key";
 const googleOidcKeyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const googleOidcPublicKeyPem = googleOidcKeyPair.publicKey.export({
@@ -433,9 +432,7 @@ async function configureWorkspaceModelProvider(
 ): Promise<void> {
   // These Gmail queue cases assert the Runner claim path. The default model
   // gained a Pi route, so keep this fixture on its intended execution path.
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.PiLoop]: false,
-  });
+
   await configureBuiltInModelKey();
   const policies = await miscApi.listModelPolicies(actor);
   const workspacePolicy = policies.policies.find((policy) => {
@@ -620,6 +617,9 @@ async function setupFixture(
     displayName: "BDD Gmail Webhook Owner",
   });
   await grantVisibleCredits({ ...actor, orgId: actor.orgId });
+  // Fable's native Runner route requires the same Pro eligibility as other
+  // native-harness fixtures; keep the credit-purchase setup for billing checks.
+  await runsApi.grantProEntitlement(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "gmail-webhook-agent",
     visibility: "private",

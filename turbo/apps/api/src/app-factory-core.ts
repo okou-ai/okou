@@ -18,7 +18,7 @@ import { serializeError } from "@okouai/core/log-utils";
 import { Hono, type Context, type Next } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
-import { matchedRoutes } from "hono/route";
+import { matchedRoutes, routePath } from "hono/route";
 
 import { corsMiddleware } from "./lib/cors";
 import { env } from "./lib/env";
@@ -282,21 +282,25 @@ function isTemplateRoute(path: string): boolean {
   return path !== "*" && path !== "/*";
 }
 
+// `matchedRoutes` lists every registration matching the path, including ones
+// that never ran: `/api/chat-threads/events` also matches the later
+// `/api/chat-threads/:id`. Report the route that answered, as the OTel span
+// does; when a middleware answered first (e.g. the client force-upgrade
+// gate), report the first match, which is the handler Hono would have run.
 function requestRouteTemplate(context: Context): string | undefined {
   const result = safeSync(() => {
-    return matchedRoutes(context);
+    return { answered: routePath(context), matched: matchedRoutes(context) };
   });
   if (!("ok" in result)) {
     return undefined;
   }
-  const routes = result.ok;
-  for (let index = routes.length - 1; index >= 0; index -= 1) {
-    const path = routes[index]?.path;
-    if (path && isTemplateRoute(path)) {
-      return path;
-    }
+  const { answered, matched } = result.ok;
+  if (isTemplateRoute(answered)) {
+    return answered;
   }
-  return undefined;
+  return matched.find((route) => {
+    return isTemplateRoute(route.path);
+  })?.path;
 }
 
 function presentHeaderValue(value: string | null): string | undefined {

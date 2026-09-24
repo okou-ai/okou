@@ -161,6 +161,8 @@ function setup(timeoutMs = 30_000) {
   installDesktopAuthIpc(
     {
       getState: () => session.getAuthState(),
+      getLoginMethod: () => ({ method: "browser", nativeAvailable: false }),
+      setLoginMethod: async () => {},
       openSignIn: () => {},
       openOrgSelection: () => session.selectOrganization(),
       signOut: async () => session.signOut(),

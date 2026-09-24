@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -13,7 +12,6 @@ import { holdRunConversationDeletionForTest } from "../../../test-fixtures/usage
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   configureNativeCliArtifact,
   createChatEventsFixture,
@@ -25,23 +23,29 @@ const fixture = createChatEventsFixture(context);
 const billing = createBillingMediaApi(context);
 
 describe("X resource account cleanup and ordinary Run deletion", () => {
-  it("drains a threadless Run deletion before retaining its user's ledger", async () => {
+  it("completes concurrent threadless Run and user deletion", async () => {
     configureNativeCliArtifact();
     const {
       actor: owner,
       agentId,
       runnerGroup,
+      providerId,
     } = await fixture.entitledChatActor();
+    await fixture.api.updateOrgModelPolicies(owner, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const orgId = requireOrgId(owner);
     await fixture.bdd.updateAgent(owner, agentId, { visibility: "public" });
     // The deleted user invokes another owner's Agent. Clerk retains that
     // Agent and its Sessions, isolating the direct Run/ledger lock order.
     const actor = fixture.bdd.user({ orgId });
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId, orgRole: "org:admin" },
-      { [FeatureSwitchKey.PiLoop]: false },
-    );
+
     const deletedAgent = await fixture.bdd.createAgent(actor, {
       displayName: "Account cleanup commit evidence",
       visibility: "private",
@@ -114,9 +118,9 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
       code: "resource_missing",
     });
 
-    // Infrastructure-only gate: the real sweep must own its Run before it
-    // blocks deleting this API-created checkpoint conversation. Clerk must
-    // drain that deletion before holding ledger rows needed by its FK cascade.
+    // The sweep owns its Run while its conversation deletion is blocked.
+    // User deletion first captures erasure work, which may itself wait for
+    // the sweep before it can reach the later ledger cleanup phase.
     const gate = await holdRunConversationDeletionForTest(
       run.runId,
       context.signal,
@@ -149,7 +153,6 @@ describe("X resource account cleanup and ordinary Run deletion", () => {
       data: { id: actor.userId },
     });
     await fixture.webhooks.requestClerkWebhook("{}", {}, [200]);
-    await expect.poll(gate.cleanupWaiterCount, { interval: 5 }).toBe(1);
     gate.release();
     const [released] = await completion;
     if (released.status === "rejected") {

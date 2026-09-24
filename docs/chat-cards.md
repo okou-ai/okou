@@ -707,19 +707,22 @@ Only Web Chat turns this URL into a fixed-height transcript card. Other
 surfaces, including Slack, present the original URL. The card's **Enter
 information** button opens the form in a dialog without navigation. Opening
 the original URL directly presents an authenticated full-page form. Both entry
-points call the token-only Browser preflight before mounting any editable field,
-and reopening the dialog runs preflight again. Preflight returns the observed
-textarea or input subtype and current site constraints, including multiple
-email addresses and number `min`, `max`, and `step` attributes. The form uses
-that verified control rather than guessing from the Agent's semantic field
-kind. A confirmed page or control change makes the request stale; a temporary
-provider failure leaves a Retry action. The form does not poll while open, and
-submit revalidates the exact target and site
-constraints before writing. The draft and mutation lock are local to each form
-entry, while the API serializes effects across tabs. Dismissing the dialog
-leaves the Browser request pending. Password fields clear when the form
-unmounts, terminal and non-retryable states clear the complete draft, and
-nothing is persisted across page reload.
+points show the persisted fields immediately after the authenticated request
+read, then run the token-only Browser preflight in the background. Reopening
+the dialog runs preflight again. Users can fill and submit while the check is
+pending. Preflight returns the observed textarea or input subtype and current
+site constraints, including multiple email addresses and number `min`, `max`,
+and `step` attributes. The form switches to those observed controls without
+clearing the draft. A confirmed page or control change makes the request
+stale; a temporary provider failure blocks submission, preserves the draft,
+and offers Retry. The form does not poll while open. Preflight releases the
+thread write lock during remote Browser I/O, so it does not delay a submission.
+Apply independently revalidates the exact target and site constraints before
+writing, including when the check is still pending. The draft and mutation
+lock are local to each form entry, while the API serializes effects across tabs.
+Dismissing the dialog leaves the Browser request pending. Password fields
+clear when the form unmounts, terminal and non-retryable states clear the
+complete draft, and nothing is persisted across page reload.
 
 General number fields use the same form and Input styling as other controls,
 with a native number input and browser validity feedback. Their values remain

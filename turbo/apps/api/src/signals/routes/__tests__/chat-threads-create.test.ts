@@ -7,6 +7,9 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { createStore } from "ccstate";
@@ -28,17 +31,27 @@ import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedRun$ } from "./helpers/usage-state";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { inlineSshKey } from "./helpers/ssh-credential";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import {
+  createVncRuntimeApi,
+  initializeVncRuntimeTest,
+  vncConnectionBody,
+} from "./helpers/vnc-runtime";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadRenameRoutes } from "../chat-threads-rename";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { userModelPreferenceRoutes } from "../user-model-preference";
+import { chatRemoteAccessRoutes } from "../chat-remote-access";
+import { sshConnectionsRoutes } from "../ssh-connections";
 
 const context = testContext({ connectorCatalog: true });
 const store = createStore();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const connectorApi = createConnectorBddApi(context);
+const vnc = createVncRuntimeApi(context);
 
 const WORKSPACE_DEFAULT_MODEL = "claude-sonnet-5";
 const OTHER_WORKSPACE_MODEL = "claude-opus-4-8";
@@ -133,6 +146,18 @@ function threadsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract);
 }
 
+function remoteAccessClient() {
+  return setupApp({ context, routes: chatRemoteAccessRoutes })(
+    chatRemoteAccessContract,
+  );
+}
+
+function sshClient() {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
+  );
+}
+
 function metadataClient() {
   return setupApp({ context, routes: chatThreadGetRoutes })(
     chatThreadMetadataContract,
@@ -211,6 +236,172 @@ async function readCreatedThreadEvent(threadId: string, token: string) {
 }
 
 describe("POST /api/chat-threads", () => {
+  it("creates initial SSH and VNC overrides and preserves them on replay", async () => {
+    initializeVncRuntimeTest();
+    const fixture = await seedAgent();
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+      [FeatureSwitchKey.VncAccess]: true,
+    });
+    vnc.authenticate({ orgId: fixture.orgId, userId: fixture.userId });
+    const headers = { authorization: "Bearer clerk-session" };
+    const hostId = randomUUID();
+    await accept(
+      sshClient().create({
+        headers,
+        body: {
+          id: hostId,
+          displayName: "Selected host",
+          host: "selected.example.com",
+          credential: inlineSshKey("deploy", "private-key", null),
+        },
+      }),
+      [201],
+    );
+    await accept(
+      remoteAccessClient().updateHostDefault({
+        headers,
+        params: { protocol: "ssh", connectionId: hostId },
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    const vncHost = await accept(
+      vnc.connections().create({ headers, body: vncConnectionBody() }),
+      [201],
+    );
+    const vncHostId = vncHost.body.id;
+    const threadId = randomUUID();
+    const body = {
+      agentId: fixture.agentId,
+      clientThreadId: threadId,
+      model: "claude-sonnet-5" as const,
+      initialRemoteAccessOverrides: [
+        { protocol: "ssh" as const, connectionId: hostId, enabled: false },
+        { protocol: "vnc" as const, connectionId: vncHostId, enabled: true },
+      ],
+    };
+    await accept(threadsClient().create({ headers, body }), [201]);
+    const selected = await accept(
+      remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
+      [200],
+    );
+    expect(selected.body.ssh[0]).toMatchObject({
+      connectionId: hostId,
+      enabled: false,
+      overrideEnabled: false,
+      source: "override",
+    });
+    expect(selected.body.vnc[0]).toMatchObject({
+      connectionId: vncHostId,
+      enabled: true,
+      overrideEnabled: true,
+      source: "override",
+    });
+    await accept(
+      threadsClient().create({
+        headers,
+        body: {
+          ...body,
+          initialRemoteAccessOverrides: [
+            { protocol: "ssh", connectionId: hostId, enabled: true },
+            { protocol: "vnc", connectionId: vncHostId, enabled: false },
+          ],
+        },
+      }),
+      [201],
+    );
+    const replayed = await accept(
+      remoteAccessClient().listThreadAccess({ headers, params: { threadId } }),
+      [200],
+    );
+    expect(replayed.body.ssh[0]).toMatchObject({ overrideEnabled: false });
+    expect(replayed.body.vnc[0]).toMatchObject({ overrideEnabled: true });
+
+    await accept(
+      sshClient().delete({ headers, params: { connectionId: hostId } }),
+      [204],
+    );
+    const afterDeletion = await accept(
+      threadsClient().create({ headers, body }),
+      [201],
+    );
+    expect(afterDeletion.body.id).toBe(threadId);
+
+    const invalidId = randomUUID();
+    const invalidThreadId = randomUUID();
+    await accept(
+      threadsClient().create({
+        headers,
+        body: {
+          ...body,
+          clientThreadId: invalidThreadId,
+          initialRemoteAccessOverrides: [
+            { protocol: "ssh", connectionId: invalidId, enabled: true },
+          ],
+        },
+      }),
+      [400],
+    );
+    await accept(
+      remoteAccessClient().listThreadAccess({
+        headers,
+        params: { threadId: invalidThreadId },
+      }),
+      [404],
+    );
+  });
+
+  it("does not let a run token choose access to a host when creating a chat", async () => {
+    useSecretKmsProbe();
+    const fixture = await seedAgent();
+    await updateFeatureSwitchesForUser(context, fixture, {
+      [FeatureSwitchKey.ThreadRemoteAccess]: true,
+    });
+    const ownerHeaders = { authorization: "Bearer clerk-session" };
+    const hostId = randomUUID();
+    await accept(
+      sshClient().create({
+        headers: ownerHeaders,
+        body: {
+          id: hostId,
+          displayName: "Disabled host",
+          host: "disabled.example.com",
+          credential: inlineSshKey("deploy", "private-key", null),
+        },
+      }),
+      [201],
+    );
+    const threadId = randomUUID();
+    const token = okouToken({
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+      capabilities: ["chat-thread:read", "chat-thread:write"],
+    });
+    const response = await accept(
+      threadsClient().create({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          agentId: fixture.agentId,
+          clientThreadId: threadId,
+          model: WORKSPACE_DEFAULT_MODEL,
+          initialRemoteAccessOverrides: [
+            { protocol: "ssh", connectionId: hostId, enabled: true },
+          ],
+        },
+      }),
+      [403],
+    );
+    expect(response.body.error.code).toBe("FORBIDDEN");
+    await accept(
+      remoteAccessClient().listThreadAccess({
+        headers: ownerHeaders,
+        params: { threadId },
+      }),
+      [404],
+    );
+  });
+
   it("resolves only sparse connector selections during account deletion", async () => {
     const fixture = await seedAgent();
     await updateFeatureSwitchesForUser(context, fixture, {});

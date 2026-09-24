@@ -1,6 +1,5 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   sessionOutputChannelName,
   type SessionOutputDelta,
@@ -17,7 +16,6 @@ import {
   installRunChat,
   promptEvent,
   publishRunUpdate,
-  readyChat,
   findWorkHistoryToggle,
   findLink,
   RUN_PATH,
@@ -31,9 +29,6 @@ const CHANNEL = sessionOutputChannelName(
   "org_default",
   RUN_ID,
 );
-const featureSwitches = Object.freeze({
-  [FeatureSwitchKey.PiLoop]: true,
-});
 
 function activeRun(additionalRunIds: readonly string[] = []) {
   const events = [
@@ -74,7 +69,7 @@ async function subscribed(): Promise<void> {
 
 async function setupActiveOutputStream() {
   const events = activeRun();
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await subscribed();
   return events;
 }
@@ -132,7 +127,7 @@ test("Unsubscribe from output after the durable run completes", async () => {
 
 test("A viewer missing chunk zero waits for the durable output and can receive the next block", async () => {
   const events = activeRun();
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await subscribed();
   push(1, "Missing beginning");
   const nextEventId = "d0000000-0000-4000-a000-000000000853";
@@ -154,33 +149,10 @@ test("A viewer missing chunk zero waits for the durable output and can receive t
   ).resolves.toBeVisible();
 });
 
-test("PiLoop disabled leaves final output available without a streaming subscription", async () => {
-  const events = activeRun();
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.PiLoop]: false },
-  });
-  await readyChat();
-  expect(hasSubscriptionOnChannel(CHANNEL, RUN_ID)).toBeFalsy();
-  push(0, "Hidden preview");
-  events.push(
-    assistantEvent({
-      id: EVENT_ID,
-      runId: RUN_ID,
-      seqId: 2,
-      text: "Saved output",
-    }),
-  );
-  publishRunUpdate();
-  await expect(screen.findByText("Saved output")).resolves.toBeVisible();
-  expect(screen.queryByText("Hidden preview")).not.toBeInTheDocument();
-});
-
 test("Changing runs replaces the channel and leaving the thread cancels the subscription", async () => {
   const nextRunId = "d0000000-0000-4000-a000-000000000854";
   const events = activeRun([nextRunId]);
-  await setupPage({ context, path: RUN_PATH, featureSwitches });
+  await setupPage({ context, path: RUN_PATH });
   await subscribed();
   const nextChannel = sessionOutputChannelName(
     "test-user-123",

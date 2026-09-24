@@ -51,7 +51,7 @@ function piMemoryRecallTemplatePrefix(truncated: boolean): string {
     truncated
       ? `- ${PI_MEMORY_ROOT}/memory_summary.md (only a bounded excerpt is provided below; open it to read the omitted part)`
       : `- ${PI_MEMORY_ROOT}/memory_summary.md (already provided below; do NOT open again)`,
-    `- ${PI_MEMORY_ROOT}/MEMORY.md (searchable registry; primary file to query)`,
+    `- ${PI_MEMORY_ROOT}/MEMORY.md (registry file included in root searches; read it with \`memories_read\`)`,
     `- ${PI_MEMORY_ROOT}/skills/<skill-name>/ (skill folder)`,
     "  - SKILL.md (entrypoint instructions)",
     "  - scripts/ (optional helper scripts)",
@@ -65,7 +65,7 @@ function piMemoryRecallTemplatePrefix(truncated: boolean): string {
     "Quick memory pass (when applicable):",
     "",
     "1. Skim the MEMORY_SUMMARY below and extract task-relevant keywords.",
-    `2. Search ${PI_MEMORY_ROOT}/MEMORY.md using those keywords.`,
+    "2. Call `memories_search` with only `query` to search the frozen memory root; omit `path`. `MEMORY.md` is a file in the results, not a directory path.",
     `3. Only if MEMORY.md directly points to rollout summaries/skills, open the 1-2 most relevant files under ${PI_MEMORY_ROOT}/rollout_summaries/ or ${PI_MEMORY_ROOT}/skills/.`,
     "4. If above are not clear and you need exact commands, error text, or precise evidence, search over `rollout_path` for more evidence.",
     "5. If there are no relevant hits, stop memory lookup and continue normally.",
