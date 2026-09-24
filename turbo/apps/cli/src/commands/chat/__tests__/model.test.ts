@@ -19,6 +19,7 @@ const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000002";
 const GET_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/metadata`;
 const OTHER_GET_URL = `http://localhost:3000/api/chat-threads/${OTHER_THREAD_ID}/metadata`;
 const OTHER_MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${OTHER_THREAD_ID}/model-selection`;
+const MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/model-selection`;
 const MODEL_POLICIES_URL = "http://localhost:3000/api/model-policies";
 
 const MODEL_POLICIES_RESPONSE = {
@@ -107,6 +108,11 @@ describe("okou chat model command", () => {
     expect(output).toContain("Claude Sonnet 5");
     expect(output).toContain("claude-sonnet-5");
     expect(output).toContain("--thread <id>");
+    expect(output).toContain("--effort <level>");
+    expect(output).toContain("Claude uses extra where Codex uses xhigh");
+    expect(output).toContain(
+      "efforts: low, medium, high, extra, max, ultracode",
+    );
     expect(output).not.toContain("No personal subscription connected");
     expect(output).not.toContain("gpt-5.6-luna");
   });
@@ -119,6 +125,7 @@ describe("okou chat model command", () => {
           id: THREAD_ID,
           title: "Launch plan",
           selectedModel: "claude-sonnet-5",
+          modelSettings: {},
         });
       }),
       http.get(MODEL_POLICIES_URL, () => {
@@ -130,7 +137,9 @@ describe("okou chat model command", () => {
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("Chat thread loaded");
-    expect(output).toContain("Model:  Claude Sonnet 5 (claude-sonnet-5)");
+    expect(output).toContain(
+      "Model:  Claude Sonnet 5 (claude-sonnet-5) · effort high",
+    );
     expect(output).toContain("Switchable models:");
     expect(output).toContain("provider: built-in (Built-in model; built-in)");
     expect(output).toContain(`okou chat model --thread ${THREAD_ID} <model>`);
@@ -192,6 +201,151 @@ describe("okou chat model command", () => {
     expect(output).toContain("Chat model updated");
     expect(output).toContain(`Thread: ${OTHER_THREAD_ID}`);
     expect(output).toContain("Model:  Claude Sonnet 5 (claude-sonnet-5)");
+  });
+
+  it("switches a model and effort together without a tier patch so the server preserves it", async () => {
+    server.use(
+      http.get(MODEL_POLICIES_URL, () => {
+        return HttpResponse.json({
+          ...MODEL_POLICIES_RESPONSE,
+          policies: [
+            {
+              ...MODEL_POLICIES_RESPONSE.policies[0],
+              model: "claude-opus-5-5",
+              modelLabel: "Claude Opus 5.5",
+            },
+          ],
+        });
+      }),
+      http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          model: "claude-opus-5-5",
+          reasoningEffort: "extra",
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "model",
+      "--thread",
+      OTHER_THREAD_ID,
+      "claude-opus-5-5",
+      "--effort",
+      "extra",
+    ]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Model:  Claude Opus 5.5 (claude-opus-5-5) · effort extra",
+    );
+  });
+
+  it("updates only effort by reading and resending the selected model", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: "gpt-6-sol",
+          serviceTier: "priority",
+          modelSettings: { "gpt-6-sol": { effort: "high" } },
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          model: "gpt-6-sol",
+          reasoningEffort: "max",
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await chatCommand.parseAsync(["node", "cli", "model", "--effort", "max"]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "gpt-6-sol) · effort max",
+    );
+  });
+
+  it("does not send a model-selection request for an unpinned thread", async () => {
+    let requests = 0;
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: null,
+          modelSettings: {},
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, () => {
+        requests++;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      chatCommand.parseAsync(["node", "cli", "model", "--effort", "max"]),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toBe(0);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "This chat thread has no selected model",
+    );
+  });
+
+  it("rejects an unsupported model-effort pair before sending a request", async () => {
+    let requests = 0;
+    server.use(
+      http.get(MODEL_POLICIES_URL, () => {
+        return HttpResponse.json({
+          ...MODEL_POLICIES_RESPONSE,
+          policies: [
+            {
+              ...MODEL_POLICIES_RESPONSE.policies[0],
+              model: "claude-opus-5-5",
+              modelLabel: "Claude Opus 5.5",
+            },
+          ],
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, () => {
+        requests++;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      chatCommand.parseAsync([
+        "node",
+        "cli",
+        "model",
+        "claude-opus-5-5",
+        "--effort",
+        "xhigh",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toBe(0);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "claude-opus-5-5 supports: low, medium, high, extra, max, ultracode",
+    );
+  });
+
+  it("rejects extra for a Codex model before sending a request", async () => {
+    let requests = 0;
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: "gpt-6-sol",
+          modelSettings: {},
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, () => {
+        requests++;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      chatCommand.parseAsync(["node", "cli", "model", "--effort", "extra"]),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toBe(0);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "gpt-6-sol supports: low, medium, high, xhigh, max, ultra",
+    );
   });
 
   it("rejects models that are not switchable for this user", async () => {

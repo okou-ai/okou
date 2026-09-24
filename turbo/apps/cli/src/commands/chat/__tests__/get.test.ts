@@ -52,6 +52,7 @@ describe("okou chat get command", () => {
           agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: "claude-sonnet-5",
+          modelSettings: { "claude-sonnet-5": { effort: "extra" } },
         });
       }),
     );
@@ -63,7 +64,25 @@ describe("okou chat get command", () => {
     expect(output).toContain(`Thread: ${THREAD_ID}`);
     expect(output).toContain(`Agent:  ${AGENT_ID}`);
     expect(output).toContain("Title:  Launch plan");
-    expect(output).toContain("Model:  claude-sonnet-5");
+    expect(output).toContain("Model:  claude-sonnet-5 · effort extra");
+  });
+
+  it("shows the default effective effort without a saved override", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          agentId: AGENT_ID,
+          title: "Launch plan",
+          selectedModel: "gpt-6-sol",
+          modelSettings: {},
+        });
+      }),
+    );
+    await chatCommand.parseAsync(["node", "cli", "get"]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Model:  gpt-6-sol · effort max",
+    );
   });
 
   it("prints JSON output when --json is passed", async () => {
@@ -107,6 +126,7 @@ describe("okou chat get command", () => {
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("Title:  (untitled)");
     expect(output).toContain("Model:  (default)");
+    expect(output).not.toContain("effort");
   });
 
   it("loads another chat thread passed with --thread-id", async () => {
