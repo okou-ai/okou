@@ -8,7 +8,7 @@
 //! The sibling modules keep focused responsibilities out of this orchestration
 //! file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
-//! - `runner-supervisor`: idle-pool, heartbeat, ownership, completion settlement, and orphan-recovery policy.
+//! - `runner-supervisor`: idle-pool, heartbeat, claimed activation ownership, completion settlement, and orphan-recovery policy.
 //! - `identity`: persistent runner id storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
 //! - `job_spawn`: claimed job task spawning, completion, and panic cleanup.
