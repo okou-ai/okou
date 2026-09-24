@@ -466,10 +466,21 @@ describe("storage-object erasure", () => {
         sql`, `,
       )}`);
 
+    const bucket = bucketWithObjects([
+      ...storageRows.map((row) => {
+        return `${row.s3Prefix}/manifest.json`;
+      }),
+      ...versionRows.map((row) => {
+        return `${row.s3Key}/manifest.json`;
+      }),
+    ]);
     const captured = await capture(subject);
-    const items = await db.execute(sql`SELECT count(*)::int AS count
-      FROM account_erasure_work
-      WHERE job_id = ${captured.job.id} AND kind = 'erase'`);
-    expect(items.rows[0]?.count).toBe(120);
+    await expect(
+      runVerification(captured.job.id, captured.handler),
+    ).resolves.toBe(121);
+    expect(bucket.live.size).toBe(0);
+    await expect(
+      finalizeErasureJob(db, captured.job.id, captured.sealed),
+    ).resolves.toMatchObject({ state: "verified_erased" });
   });
 });
