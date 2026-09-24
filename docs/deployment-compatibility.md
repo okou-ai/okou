@@ -16,6 +16,30 @@ is rejected as a broken API contract. Deploy this compatible change first;
 upgrade Codex to 0.156.1 only after the API rollout and old claimable contexts
 have drained. The follow-up upgrade and fallback removal are tracked by #36420.
 
+## Chat thread archived flag (2026-09-24)
+
+Migration `1208_chat_thread_archived` adds `chat_threads.archived` (default
+`false`) and the `archived` / `unarchived` thread event kinds. It does not
+backfill: chats whose title starts with ✅ stay unarchived, and archiving no
+longer rewrites titles. Snapshot, metadata and replay readers treat an absent
+`archived` field as `false`, so snapshots compacted before this migration and
+responses from an older API remain valid. Those tolerant reads are rollout
+fallbacks tracked for removal by #36551.
+
+Old API code after the migration stays legal: the column has a default and the
+enum values are additive. New API code must not be promoted before the
+migration, because thread metadata, snapshot compaction and user export read
+`archived` unconditionally; the normal migration-before-promotion release order
+covers this.
+
+Only the new archive routes append the new event kinds, and those routes, the
+CLI commands that call them and the Web archive controls are all behind the
+`ChatThreadArchiving` switch. Web bundles, CLI builds
+and iOS builds from before this change parse thread event kinds strictly and
+fail to read a stream that contains an archive event until they update. A
+rollback of the API below this change leaves already appended archive events in
+the stream for those older readers; roll forward instead.
+
 ## Chat thread snapshot R2 handoff (2026-09-23)
 
 Migration `1204_chat_thread_snapshot_r2_pointer` adds a nullable R2 object key to

@@ -2,6 +2,7 @@ import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   type ChatEventSendBody,
   chatEventsContract,
+  chatThreadArchiveContract,
   chatThreadEventsContract,
   chatThreadsContract,
   chatThreadSnapshotArchiveSchema,
@@ -231,6 +232,27 @@ export async function renameChatThread(options: {
     return { threadId: options.threadId, title: options.title };
   }
   handleError(result, "Failed to rename chat thread");
+}
+
+export async function setChatThreadArchived(options: {
+  threadId: string;
+  archived: boolean;
+}): Promise<{ threadId: string; archived: boolean }> {
+  const config = await getClientConfig();
+  const client = initClient(chatThreadArchiveContract, config);
+  const request = { params: { id: options.threadId } };
+  const result = options.archived
+    ? await client.archive(request)
+    : await client.unarchive(request);
+  if (result.status === 204) {
+    return { threadId: options.threadId, archived: options.archived };
+  }
+  handleError(
+    result,
+    options.archived
+      ? "Failed to archive chat thread"
+      : "Failed to unarchive chat thread",
+  );
 }
 
 export async function getChatThread(options: {

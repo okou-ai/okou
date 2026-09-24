@@ -59,3 +59,47 @@ describe("model settings event replay", () => {
     });
   });
 });
+
+describe("archive event replay", () => {
+  const archived = {
+    ...created,
+    id: "00000000-0000-4000-8000-000000000005",
+    seqId: 2,
+    kind: "archived" as const,
+    createdAt: "2026-09-09T00:00:01.000Z",
+  };
+  const unarchived = {
+    ...created,
+    id: "00000000-0000-4000-8000-000000000006",
+    seqId: 3,
+    kind: "unarchived" as const,
+    createdAt: "2026-09-09T00:00:02.000Z",
+  };
+
+  it("toggles the archived flag without moving the thread", () => {
+    expect(replayChatThreadEvents([], [created])[0]).toMatchObject({
+      archived: false,
+    });
+    expect(replayChatThreadEvents([], [created, archived])[0]).toMatchObject({
+      archived: true,
+      sortAt: created.createdAt,
+    });
+    expect(
+      replayChatThreadEvents([], [created, archived, unarchived])[0],
+    ).toMatchObject({ archived: false });
+  });
+
+  it("treats snapshots without the archived field as unarchived", () => {
+    const [thread] = replayChatThreadEvents([], [created]);
+    if (!thread) {
+      throw new Error("Expected the created thread");
+    }
+    const { archived: _archived, ...legacySnapshot } = thread;
+    expect(replayChatThreadEvents([legacySnapshot], [])[0]).toMatchObject({
+      archived: false,
+    });
+    expect(
+      replayChatThreadEvents([legacySnapshot], [archived])[0],
+    ).toMatchObject({ archived: true });
+  });
+});

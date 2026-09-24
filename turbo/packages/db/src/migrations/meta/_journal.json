@@ -911,6 +911,13 @@
       "when": 1790181675893,
       "tag": "1207_smart_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 1208,
+      "version": "7",
+      "when": 1790215089991,
+      "tag": "1208_chat_thread_archived",
+      "breakpoints": true
     }
   ]
 }
