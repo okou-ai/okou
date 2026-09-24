@@ -209,6 +209,55 @@ function nativePasswordRequest(callbackPrompt: string) {
   };
 }
 
+async function createNativePasswordActionForPreflightTest(): Promise<{
+  readonly token: string;
+  readonly providerId: string;
+}> {
+  const { routeMocks, runs, chat, actor, agent } = await setupBrowserScenario();
+  const current = await createClaimedChatRun(
+    chat,
+    runs,
+    actor,
+    agent.agentId,
+    "Enter a password on the current Browser page",
+  );
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.BrowserNativeInput]: true,
+  });
+  const providerId = randomUUID();
+  acceptBrowserUseCdpSessions([providerId]);
+  mockNativeInputTarget();
+  server.use(
+    http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+      const body = z
+        .strictObject({ name: z.string() })
+        .parse(await request.json());
+      return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+        status: 201,
+      });
+    }),
+    http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+      return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+    }),
+    http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+      return HttpResponse.json(providerBrowser(String(params.id)));
+    }),
+  );
+  await accept(
+    client().use({ headers: current.claim.browserHeaders, body: {} }),
+    [200],
+  );
+  routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+  const created = await accept(
+    userActionClient().create({
+      headers: current.claim.browserHeaders,
+      body: nativePasswordRequest("Continue after entering the password"),
+    }),
+    [201],
+  );
+  return { token: created.body.action.requestToken, providerId };
+}
+
 interface NativeNumberConstraints {
   readonly min: string;
   readonly max: string;
@@ -337,6 +386,86 @@ aroundEach(async (runTest) => {
 });
 
 describe("Browser user-action route", () => {
+  it("lets apply finish while the preflight provider read is still pending", async () => {
+    const { token } = await createNativePasswordActionForPreflightTest();
+    const readStarted = createDeferredPromise<void>(context.signal);
+    const releaseRead = createDeferredPromise<void>(context.signal);
+    let holdNextRead = true;
+    server.use(
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async ({ params }) => {
+        if (holdNextRead) {
+          holdNextRead = false;
+          readStarted.resolve(undefined);
+          await releaseRead.promise;
+        }
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+    );
+
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await readStarted.promise;
+    const applied = await accept(
+      userActionClient().apply({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: token },
+        body: { values: [{ key: "password", value: "synthetic-secret" }] },
+      }),
+      [200],
+    );
+    expect(applied.body.state).toBe("succeeded");
+    releaseRead.resolve(undefined);
+    const checked = await preflight;
+    expect(checked.status).toBe(409);
+    expect(browserInputWrites()).toHaveLength(1);
+  });
+
+  it("returns a retryable provider timeout when the internal CDP deadline expires", async () => {
+    const { token, providerId } =
+      await createNativePasswordActionForPreflightTest();
+    const deadline = new AbortController();
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 15_000 ? deadline.signal : undefined;
+    });
+    const discoveryStarted = createDeferredPromise<void>(context.signal);
+    const discoveryAborted = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.get(
+        `https://${providerId}.cdp.browser-use.com/json/version`,
+        async ({ request }) => {
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              discoveryAborted.resolve(undefined);
+            },
+            { once: true },
+          );
+          discoveryStarted.resolve(undefined);
+          await discoveryAborted.promise;
+          return HttpResponse.json({
+            webSocketDebuggerUrl: browserUseCdpWebSocketUrl(providerId),
+          });
+        },
+      ),
+    );
+    const preflight = userActionClient().preflight({
+      headers: { authorization: "Bearer clerk-session" },
+      params: { requestToken: token },
+      body: {},
+    });
+    await discoveryStarted.promise;
+    deadline.abort(new DOMException("CDP deadline", "TimeoutError"));
+    const checked = await preflight;
+    await discoveryAborted.promise;
+    expect(checked).toMatchObject({
+      status: 503,
+      body: { error: { code: "BROWSER_USE_TIMEOUT" } },
+    });
+  });
+
   it("supports live number constraints, optional clear, and exact readback", async () => {
     const { routeMocks, runs, chat, actor, agent } =
       await setupBrowserScenario();

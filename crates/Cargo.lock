@@ -1868,6 +1868,7 @@ dependencies = [
  "httpmock",
  "libc",
  "linux-mountinfo",
+ "proptest",
  "roxmltree 0.21.1",
  "serde",
  "serde_json",
@@ -3807,18 +3808,25 @@ dependencies = [
 name = "runner-supervisor"
 version = "0.1.3"
 dependencies = [
+ "api-contracts",
+ "async-trait",
  "futures-util",
  "runner-executor",
  "runner-host",
  "runner-lifecycle",
+ "runner-provider",
  "runner-storage",
  "runner-types",
  "sandbox",
  "sandbox-mock",
  "tempfile",
+ "thiserror",
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
+ "tracing-test-support",
+ "uuid",
 ]
 
 [[package]]

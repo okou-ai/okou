@@ -467,6 +467,29 @@ impl MockSandbox {
         *self.write_file_gate.lock_ignoring_poison() = None;
     }
 
+    async fn ordinary_write_result(&self) -> Result<()> {
+        let gate = self.write_file_gate.lock_ignoring_poison().clone();
+        if let Some(gate) = gate {
+            gate.enter_and_wait().await;
+        }
+        if let Some(overrides) = &self.overrides {
+            wait_lifecycle_gate(&overrides.file.write_file_gate).await;
+        }
+        if let Some(result) = self.write_file_results.lock_ignoring_poison().pop_front() {
+            return result;
+        }
+        if let Some(overrides) = &self.overrides
+            && let Some(result) = overrides
+                .file
+                .write_file_results
+                .lock_ignoring_poison()
+                .pop_front()
+        {
+            return result;
+        }
+        Ok(())
+    }
+
     async fn start_process_with_contract(
         &self,
         request: &StartProcessRequest<'_>,
@@ -1259,26 +1282,7 @@ impl Sandbox for MockSandbox {
                 .push(call);
         }
         validate_mock_guest_file_path(SandboxOperation::WriteFile, "write_file", path)?;
-        let gate = self.write_file_gate.lock_ignoring_poison().clone();
-        if let Some(gate) = gate {
-            gate.enter_and_wait().await;
-        }
-        if let Some(overrides) = &self.overrides {
-            wait_lifecycle_gate(&overrides.file.write_file_gate).await;
-        }
-        if let Some(result) = self.write_file_results.lock_ignoring_poison().pop_front() {
-            return result.map(|()| None);
-        }
-        if let Some(overrides) = &self.overrides
-            && let Some(result) = overrides
-                .file
-                .write_file_results
-                .lock_ignoring_poison()
-                .pop_front()
-        {
-            return result.map(|()| None);
-        }
-        Ok(None)
+        self.ordinary_write_result().await.map(|()| None)
     }
 
     async fn finalize_staged_file(
@@ -1389,14 +1393,7 @@ impl Sandbox for MockSandbox {
         for file in files {
             validate_mock_guest_file_path(SandboxOperation::WriteFile, "write_files", file.path)?;
         }
-        let gate = self.write_file_gate.lock_ignoring_poison().clone();
-        if let Some(gate) = gate {
-            gate.enter_and_wait().await;
-        }
-        self.write_file_results
-            .lock_ignoring_poison()
-            .pop_front()
-            .unwrap_or(Ok(()))
+        self.ordinary_write_result().await
     }
 
     async fn write_private_file(&self, path: &str, content: &[u8]) -> Result<()> {

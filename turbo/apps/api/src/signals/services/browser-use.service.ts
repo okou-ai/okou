@@ -9,6 +9,7 @@ import { BROWSER_USER_ACTION_MAX_NUMBER_CONSTRAINT_LENGTH } from "@okouai/api-co
 import { z } from "zod";
 
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import {
   readBoundedResponseText,
   safeJsonParse,
@@ -20,6 +21,7 @@ import {
 const BROWSER_USE_API_BASE_URL = "https://api.browser-use.com/api/v3";
 const BROWSER_USE_REQUEST_TIMEOUT_MS = 30_000;
 const BROWSER_USE_CDP_REQUEST_TIMEOUT_MS = 15_000;
+const L = logger("BrowserUseCDP");
 const MAX_BROWSER_USE_RESPONSE_BYTES = 512 * 1024;
 const MAX_BROWSER_USE_CDP_RESPONSE_BYTES = 64 * 1024;
 const MAX_BROWSER_USE_SCREENSHOT_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -343,13 +345,28 @@ async function withBrowserUseCdpSocket<T>(
   cdpUrl: string,
   signal: AbortSignal,
   operation: (socket: WebSocket) => Promise<T>,
+  observePhase?: BrowserUseCdpPhaseObserver,
 ): Promise<T> {
-  const websocketUrl = await browserUseCdpWebSocketUrl(cdpUrl, signal);
+  const websocketUrl = await observeBrowserUseCdpPhase(
+    "discovery",
+    signal,
+    observePhase,
+    async () => {
+      return await browserUseCdpWebSocketUrl(cdpUrl, signal);
+    },
+  );
   const socket = new WebSocket(websocketUrl);
   // Cancellation is rethrown only after the socket cleanup below has run.
   const result = await settleIncludingAbort(
     (async () => {
-      await waitForBrowserUseCdpSocket(socket, signal);
+      await observeBrowserUseCdpPhase(
+        "connection",
+        signal,
+        observePhase,
+        async () => {
+          return await waitForBrowserUseCdpSocket(socket, signal);
+        },
+      );
       return await operation(socket);
     })(),
   );
@@ -443,6 +460,65 @@ function browserUseCdpSignal(signal: AbortSignal): AbortSignal {
     signal,
     AbortSignal.timeout(BROWSER_USE_CDP_REQUEST_TIMEOUT_MS),
   ]);
+}
+
+type BrowserUseCdpPreflightPhase =
+  | "discovery"
+  | "connection"
+  | "target"
+  | "controls";
+type BrowserUseCdpPhaseOutcome = "ok" | "timeout" | "cancelled" | "error";
+type BrowserUseCdpPhaseObserver = (
+  phase: BrowserUseCdpPreflightPhase,
+  outcome: BrowserUseCdpPhaseOutcome,
+  durationMs: number,
+) => void;
+
+async function observeBrowserUseCdpPhase<T>(
+  phase: BrowserUseCdpPreflightPhase,
+  signal: AbortSignal,
+  observe: BrowserUseCdpPhaseObserver | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (!observe) {
+    return await operation();
+  }
+  const startedAt = performance.now();
+  const result = await settleIncludingAbort(operation());
+  const outcome = result.ok
+    ? "ok"
+    : signal.aborted
+      ? signal.reason instanceof Error && signal.reason.name === "TimeoutError"
+        ? "timeout"
+        : "cancelled"
+      : "error";
+  observe(phase, outcome, Math.round(performance.now() - startedAt));
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
+}
+
+async function withBrowserUseCdpDeadline<T>(
+  signal: AbortSignal,
+  operation: (cdpSignal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const timeoutSignal = AbortSignal.timeout(BROWSER_USE_CDP_REQUEST_TIMEOUT_MS);
+  const result = await settleIncludingAbort(
+    operation(AbortSignal.any([signal, timeoutSignal])),
+  );
+  signal.throwIfAborted();
+  if (timeoutSignal.aborted) {
+    throw new BrowserUseProviderError(
+      503,
+      "BROWSER_USE_TIMEOUT",
+      "Managed browser check timed out",
+    );
+  }
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
 }
 
 export async function listBrowserUseTabUrls(
@@ -987,13 +1063,14 @@ export async function validateBrowserUseUserAction(
   },
   signal: AbortSignal,
 ): Promise<BrowserUseUserActionValidation> {
-  const cdpSignal = browserUseCdpSignal(signal);
-  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-    return await validateBrowserUseUserActionOnSocket(
-      socket,
-      target,
-      cdpSignal,
-    );
+  return await withBrowserUseCdpDeadline(signal, async (cdpSignal) => {
+    return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
+      return await validateBrowserUseUserActionOnSocket(
+        socket,
+        target,
+        cdpSignal,
+      );
+    });
   });
 }
 
@@ -1153,6 +1230,7 @@ export async function preflightBrowserUseUserAction(
   cdpUrl: string,
   target: BrowserUseUserActionExactTarget,
   signal: AbortSignal,
+  attemptId: string,
 ): Promise<
   | {
       readonly kind: "valid";
@@ -1160,26 +1238,64 @@ export async function preflightBrowserUseUserAction(
     }
   | { readonly kind: "stale" }
 > {
-  const cdpSignal = browserUseCdpSignal(signal);
-  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
-    const attached = await openBrowserUseApplyPage(socket, target, cdpSignal);
-    if (!attached) {
-      return { kind: "stale" };
-    }
-    const resolved = await resolveBrowserUseApplyFields(
-      socket,
-      attached.sessionId,
-      target.fields,
+  return await withBrowserUseCdpDeadline(signal, async (cdpSignal) => {
+    const observePhase: BrowserUseCdpPhaseObserver = (
+      phase,
+      outcome,
+      durationMs,
+    ) => {
+      const fields = {
+        type: "browser_input_preflight_phase",
+        attemptId,
+        phase,
+        outcome,
+        durationMs,
+      };
+      if (outcome === "ok" && durationMs < 1000) {
+        L.debug("Browser input preflight CDP phase", fields);
+      } else {
+        L.warn("Browser input preflight CDP phase", fields);
+      }
+    };
+    return await withBrowserUseCdpSocket(
+      cdpUrl,
       cdpSignal,
-    );
-    return resolved
-      ? {
-          kind: "valid",
-          controls: resolved.fields.map((field) => {
-            return field.inspection;
-          }),
+      async (socket) => {
+        const attached = await observeBrowserUseCdpPhase(
+          "target",
+          cdpSignal,
+          observePhase,
+          async () => {
+            return await openBrowserUseApplyPage(socket, target, cdpSignal);
+          },
+        );
+        if (!attached) {
+          return { kind: "stale" };
         }
-      : { kind: "stale" };
+        const resolved = await observeBrowserUseCdpPhase(
+          "controls",
+          cdpSignal,
+          observePhase,
+          async () => {
+            return await resolveBrowserUseApplyFields(
+              socket,
+              attached.sessionId,
+              target.fields,
+              cdpSignal,
+            );
+          },
+        );
+        return resolved
+          ? {
+              kind: "valid",
+              controls: resolved.fields.map((field) => {
+                return field.inspection;
+              }),
+            }
+          : { kind: "stale" };
+      },
+      observePhase,
+    );
   });
 }
 

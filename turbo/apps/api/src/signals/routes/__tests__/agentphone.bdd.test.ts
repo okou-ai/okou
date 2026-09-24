@@ -245,6 +245,31 @@ async function completeSandboxRun(
   await flushWaitUntilForTest();
 }
 
+function expectConnectedWelcome(
+  sends: readonly AgentPhoneProviderSend[],
+): void {
+  expect(
+    sends.map((send) => {
+      return send.body;
+    }),
+  ).toStrictEqual([
+    expect.stringContaining("Your phone number is now connected to Okou."),
+    expect.stringContaining("Save Okou to your contacts"),
+    expect.stringContaining("connect the tools you already use"),
+    expect.stringContaining("What would you like to start with?"),
+  ]);
+  expect(
+    sends.map((send) => {
+      return send.mediaUrls;
+    }),
+  ).toStrictEqual([
+    [],
+    [expect.stringMatching(/^https:\/\/static\.vm0\.io\/.+\/okou\.vcf$/u)],
+    [],
+    [],
+  ]);
+}
+
 function lastSend(sends: AgentPhoneSendCapture): AgentPhoneProviderSend {
   const send = sends.messages.at(-1);
   if (!send) {
@@ -418,6 +443,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       9 * 60 * 1000,
     );
 
+    const beforeCode = sends.messages.length;
     const inboundMessageId = await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
@@ -426,12 +452,19 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       isGroup: false,
     });
 
-    expect(lastSend(sends)).toMatchObject({
-      toNumber: phone,
-      replyToMessageId: inboundMessageId,
-      body: expect.stringContaining("Your phone number is now connected"),
-    });
-    expect(lastSend(sends).conversationId).toBeUndefined();
+    // The welcome is split into several messages with the Okou contact card
+    // after the first one; only the first threads onto the code message.
+    const welcome = sends.messages.slice(beforeCode);
+    expectConnectedWelcome(welcome);
+    expect(
+      welcome.map((send) => {
+        return send.replyToMessageId;
+      }),
+    ).toStrictEqual([inboundMessageId, undefined, undefined, undefined]);
+    for (const send of welcome) {
+      expect(send.toNumber).toBe(phone);
+      expect(send.conversationId).toBeUndefined();
+    }
     await expect(
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
@@ -478,14 +511,13 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: false });
 
+    const beforeSecond = sends.messages.length;
     await ap.postAgentPhoneInboundMessage({
       channel: "sms",
       from: phone,
       body: second.body.code,
     });
-    expect(lastSend(sends).body).toContain(
-      "Your phone number is now connected",
-    );
+    expectConnectedWelcome(sends.messages.slice(beforeSecond));
     await expect(
       integrations.getAgentPhoneLinkStatus(actor),
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
@@ -508,15 +540,14 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         user,
         [200],
       );
+      const beforeLink = sends.messages.length;
       await ap.postAgentPhoneInboundMessage({
         channel: "imessage",
         from: uniquePhoneHandle(),
         body: issued.body.code,
         isGroup: false,
       });
-      expect(lastSend(sends).body).toContain(
-        "Your phone number is now connected",
-      );
+      expectConnectedWelcome(sends.messages.slice(beforeLink));
     }
     async function imessageQuest(user: ApiTestUser) {
       const status = await readGetStartedStatus(context, user);
@@ -1424,10 +1455,11 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await runs.ensureOrgModelProvider(actor);
     const phone = uniquePhoneHandle();
     await ap.linkViaWebhookConnectPrompt(actor, phone, sends);
-    expect(lastSend(sends).body).toContain(
-      "Your phone number is now connected to Okou.",
-    );
-    expect(lastSend(sends).body).not.toContain("I'm Okou");
+    const welcome = sends.messages.slice(-4);
+    expectConnectedWelcome(welcome);
+    for (const send of welcome) {
+      expect(send.body).not.toContain("I'm Okou");
+    }
 
     const SMS_RISK_WARNING =
       "Note: SMS and MMS replies may not be delivered reliably.";
