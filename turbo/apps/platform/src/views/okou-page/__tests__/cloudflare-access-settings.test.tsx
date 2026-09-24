@@ -528,3 +528,152 @@ test("Access load failure does not expose provider details", async () => {
   ).not.toBeInTheDocument();
   expect(document.body.textContent).not.toContain("private provider detail");
 });
+
+test("admin conversion requires an aggregate impact confirmation and sends the reviewed snapshot", async () => {
+  const shared: ScopedCloudflareAccessConfig = {
+    ...config,
+    scope: "organization",
+    name: "Team gateway",
+  };
+  let configs: ScopedCloudflareAccessConfig[] = [shared];
+  const submitted: unknown[] = [];
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.conversionPreview,
+    ({ respond }) => {
+      return respond(200, {
+        expectedRevision: 1,
+        otherHostCount: 2,
+        impactSnapshot: "a".repeat(64),
+      });
+    },
+  );
+  context.mocks.api(
+    cloudflareAccessContract.convertToPersonal,
+    ({ body, respond }) => {
+      submitted.push(body);
+      const personal = { ...shared, scope: "personal" as const, revision: 2 };
+      configs = [personal];
+      return respond(200, personal);
+    },
+  );
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  await within(organization).findByText(shared.name);
+  click(getAction("button", "Make personal", organization));
+  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  const warning = await within(dialog).findByRole("alert");
+  expect(warning).toHaveTextContent("Other users' SSH hosts affected: 2");
+  expect(dialog.textContent).not.toContain("other-member-host");
+  const confirm = getAction("button", "Make personal", dialog);
+  expect(confirm).toBeDisabled();
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", {
+      name: /I understand these hosts will need their owners/u,
+    }),
+  );
+  expect(confirm).toBeEnabled();
+  click(confirm);
+  await waitFor(() => {
+    expect(submitted).toStrictEqual([
+      { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
+    ]);
+  });
+  expect(
+    within(screen.getByRole("region", { name: "Personal" })).getByText(
+      shared.name,
+    ),
+  ).toBeVisible();
+});
+
+test("zero-impact conversion needs no other-user warning", async () => {
+  const shared: ScopedCloudflareAccessConfig = {
+    ...config,
+    scope: "organization",
+  };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.conversionPreview,
+    ({ respond }) => {
+      return respond(200, {
+        expectedRevision: 1,
+        otherHostCount: 0,
+        impactSnapshot: "b".repeat(64),
+      });
+    },
+  );
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  await within(organization).findByText(shared.name);
+  click(getAction("button", "Make personal", organization));
+  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  await within(dialog).findByRole("button", { name: "Make personal" });
+  expect(within(dialog).queryByRole("alert")).toBeNull();
+  expect(within(dialog).queryByRole("checkbox")).toBeNull();
+  expect(getAction("button", "Make personal", dialog)).toBeEnabled();
+});
+
+test("changed conversion impact requires a fresh warning and confirmation", async () => {
+  const shared: ScopedCloudflareAccessConfig = {
+    ...config,
+    scope: "organization",
+  };
+  const requests: unknown[] = [];
+  let count = 1;
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  context.mocks.api(
+    cloudflareAccessContract.conversionPreview,
+    ({ respond }) => {
+      return respond(200, {
+        expectedRevision: 1,
+        otherHostCount: count,
+        impactSnapshot: (count === 1 ? "a" : "b").repeat(64),
+      });
+    },
+  );
+  context.mocks.api(
+    cloudflareAccessContract.convertToPersonal,
+    ({ body, respond }) => {
+      requests.push(body);
+      count = 2;
+      return respond(409, {
+        error: {
+          code: "CLOUDFLARE_ACCESS_IMPACT_CONFLICT",
+          message: "Impact changed",
+        },
+      });
+    },
+  );
+  await page(undefined, "admin");
+  const organization = await screen.findByRole("region", {
+    name: "Organization",
+  });
+  await within(organization).findByText(shared.name);
+  click(getAction("button", "Make personal", organization));
+  const dialog = await screen.findByRole("dialog", { name: "Make personal" });
+  await within(dialog).findByText(/SSH hosts affected: 1/u);
+  const acknowledge = within(dialog).getByRole("checkbox", {
+    name: /I understand these hosts will need their owners/u,
+  });
+  await userEvent.click(acknowledge);
+  click(getAction("button", "Make personal", dialog));
+  await within(dialog).findByText(/affected by this conversion changed/u);
+  expect(requests).toStrictEqual([
+    { expectedRevision: 1, impactSnapshot: "a".repeat(64) },
+  ]);
+  expect(queryAction("button", "Make personal", dialog)).toBeNull();
+  click(getAction("button", "Review latest impact", dialog));
+  await within(dialog).findByText(/SSH hosts affected: 2/u);
+  expect(getAction("button", "Make personal", dialog)).toBeDisabled();
+  expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
+});

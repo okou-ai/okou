@@ -457,8 +457,7 @@ describe("organization Cloudflare Access", () => {
       }),
       [200],
     );
-    // Conversion is deferred to #36262, so only the test route can construct
-    // needsRebind before that production writer exists.
+    // Exercise explicit recovery independently of the conversion writer.
     const retained = await accept(
       state().action({
         body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
@@ -541,7 +540,7 @@ describe("organization Cloudflare Access", () => {
     });
   });
 
-  it("keeps old App responses personal-only while members can bind shared configurations without seeing other hosts", async () => {
+  it("returns scoped configurations and lets members bind shared configurations without seeing other hosts", async () => {
     const admin = owner({}, "org:admin");
     const shared = (
       await accept(
@@ -561,31 +560,12 @@ describe("organization Cloudflare Access", () => {
     expect(shared).toMatchObject({ scope: "organization", sshHosts: [] });
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([]);
-    await accept(
-      configs().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          name: "Old request shape",
-          scope: "organization",
-          credentials: token,
-        },
-      }),
-      [404],
-    );
-    await accept(
-      configs().delete({
-        headers,
-        params: { configId: shared.id },
-        body: { expectedRevision: 1 },
-      }),
-      [404],
-    );
+    ).toStrictEqual([shared]);
     const privateConfig = await config("Admin private");
     expect(privateConfig).toStrictEqual({
       id: privateConfig.id,
       name: "Admin private",
+      scope: "personal",
       revision: 1,
       generation: 1,
       createdAt: expect.any(String),
@@ -594,7 +574,7 @@ describe("organization Cloudflare Access", () => {
     });
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([privateConfig]);
+    ).toStrictEqual(expect.arrayContaining([shared, privateConfig]));
     const renamedPrivate = await accept(
       configs().update({
         headers,
@@ -611,11 +591,11 @@ describe("organization Cloudflare Access", () => {
     });
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([renamedPrivate.body]);
+    ).toStrictEqual(expect.arrayContaining([shared, renamedPrivate.body]));
     expect(
       (await accept(configs().list({ headers, query: scoped }), [200])).body
         .configs,
-    ).toContainEqual({ ...renamedPrivate.body, scope: "personal" });
+    ).toContainEqual(renamedPrivate.body);
 
     const first = owner({ orgId: admin.orgId });
     const firstHost = await host(shared.id);
@@ -673,9 +653,9 @@ describe("organization Cloudflare Access", () => {
       configs().update({
         headers,
         params: { configId: shared.id },
-        body: { expectedRevision: 1, name: "Old App" },
+        body: { expectedRevision: 1, name: "Unauthorized member" },
       }),
-      [404],
+      [403],
     );
     await accept(
       configs().create({

@@ -1,4 +1,4 @@
-import type { ClipboardEvent } from "react";
+import { useState, type ClipboardEvent } from "react";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -22,13 +22,18 @@ import {
 import {
   CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH,
   type CloudflareAccessConfig,
+  type CloudflareAccessConversionPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import {
   acceptCloudflareAccessConflictReview$,
   chooseCloudflareAccessScope$,
   closeCloudflareAccessDialog$,
+  closeCloudflareAccessConversion$,
   cloudflareAccessConfigs$,
+  cloudflareAccessConversionDialog$,
+  cloudflareAccessConversionError$,
+  cloudflareAccessConversionPreview$,
   cloudflareAccessConflict$,
   cloudflareAccessConflictReview$,
   cloudflareAccessCreateScope$,
@@ -36,10 +41,13 @@ import {
   cloudflareAccessReplaceToken$,
   cloudflareAccessSaveMessage$,
   cloudflareAccessSaveUncertain$,
+  confirmCloudflareAccessConversion$,
   mountCloudflareAccessForm$,
   openCloudflareAccessDialog$,
+  openCloudflareAccessConversion$,
   replaceCloudflareAccessToken$,
   retryCloudflareAccess$,
+  reviewCloudflareAccessConversion$,
   saveCloudflareAccess$,
   type CloudflareAccessDialogState,
 } from "../../signals/cloudflare-access.ts";
@@ -621,6 +629,178 @@ export function CloudflareAccessDialog() {
   );
 }
 
+function CloudflareAccessConversionDecision({
+  preview,
+  isSaving,
+  onConfirm,
+}: {
+  readonly preview: CloudflareAccessConversionPreview;
+  readonly isSaving: boolean;
+  readonly onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+  const [confirmed, setConfirmed] = useState(false);
+  const requiresConfirmation = preview.otherHostCount > 0;
+  return (
+    <>
+      {requiresConfirmation && (
+        <div className="grid gap-3 rounded-lg border p-4 text-sm">
+          <p role="alert">
+            {t(
+              ($) => {
+                return $.cloudflareAccess.convertWarning;
+              },
+              { count: preview.otherHostCount },
+            )}
+          </p>
+          <label className="flex items-start gap-2">
+            <Checkbox
+              checked={confirmed}
+              disabled={isSaving}
+              onCheckedChange={setConfirmed}
+            />
+            {t(($) => {
+              return $.cloudflareAccess.convertConfirm;
+            })}
+          </label>
+        </div>
+      )}
+      <Button
+        type="button"
+        variant="destructive"
+        disabled={isSaving || (requiresConfirmation && !confirmed)}
+        onClick={onConfirm}
+      >
+        {t(($) => {
+          return $.cloudflareAccess.convert;
+        })}
+      </Button>
+    </>
+  );
+}
+
+export function CloudflareAccessConversionDialog() {
+  const { t } = useTranslation();
+  const dialog = useLoadable(cloudflareAccessConversionDialog$);
+  const preview = useLoadable(cloudflareAccessConversionPreview$);
+  const error = useGet(cloudflareAccessConversionError$);
+  const close = useSet(closeCloudflareAccessConversion$);
+  const review = useSet(reviewCloudflareAccessConversion$);
+  const [saving, confirm] = useLoadableSet(confirmCloudflareAccessConversion$);
+  const signal = useGet(pageSignal$);
+  const current = dialog.state === "hasData" ? dialog.data : null;
+  if (!current) {
+    return null;
+  }
+  const isSaving = saving.state === "loading";
+  const impact = preview.state === "hasData" ? preview.data : null;
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !isSaving) {
+          close();
+        }
+      }}
+    >
+      <DialogContent contentClassName="flex flex-col">
+        <DialogHeader>
+          <DialogTitle>
+            {t(($) => {
+              return $.cloudflareAccess.convert;
+            })}
+          </DialogTitle>
+          <DialogDescription>
+            {t(($) => {
+              return $.cloudflareAccess.convertHelp;
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogBody className="grid gap-4">
+          <p className="font-medium">{current.name}</p>
+          {preview.state === "loading" && (
+            <p role="status">
+              {t(($) => {
+                return $.cloudflareAccess.loading;
+              })}
+            </p>
+          )}
+          {preview.state === "hasError" && (
+            <div
+              role="alert"
+              className="flex items-center justify-between gap-3 text-sm"
+            >
+              <p>
+                {t(($) => {
+                  return $.cloudflareAccess.loadFailed;
+                })}
+              </p>
+              <Button type="button" variant="outline" onClick={review}>
+                {t(($) => {
+                  return $.cloudflareAccess.retry;
+                })}
+              </Button>
+            </div>
+          )}
+          {preview.state === "hasData" && !impact && (
+            <p role="alert">
+              {t(($) => {
+                return $.cloudflareAccess.missing;
+              })}
+            </p>
+          )}
+          {error && (
+            <p role="alert">
+              {error === "uncertain"
+                ? t(($) => {
+                    return $.cloudflareAccess.convertUncertain;
+                  })
+                : (localizedCloudflareAccessError(error) ??
+                  t(($) => {
+                    return $.cloudflareAccess.failed;
+                  }))}
+            </p>
+          )}
+          {error && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={review}
+              disabled={isSaving}
+            >
+              {t(($) => {
+                return $.cloudflareAccess.reviewLatest;
+              })}
+            </Button>
+          )}
+          {impact && !error && (
+            <CloudflareAccessConversionDecision
+              key={`${impact.expectedRevision}:${impact.impactSnapshot}`}
+              preview={impact}
+              isSaving={isSaving}
+              onConfirm={() => {
+                return detach(confirm(impact, signal), Reason.DomCallback);
+              }}
+            />
+          )}
+        </DialogBody>
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isSaving}
+            onClick={close}
+          >
+            {t(($) => {
+              return $.cloudflareAccess.cancel;
+            })}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function CloudflareAccessSection({
   scope,
   configs,
@@ -632,6 +812,7 @@ function CloudflareAccessSection({
 }) {
   const { t } = useTranslation();
   const open = useSet(openCloudflareAccessDialog$);
+  const openConversion = useSet(openCloudflareAccessConversion$);
   const signal = useGet(pageSignal$);
   return (
     <section
@@ -679,6 +860,21 @@ function CloudflareAccessSection({
                     return $.cloudflareAccess.edit;
                   })}
                 </Button>
+                {scope === "organization" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      return detach(
+                        openConversion(config, signal),
+                        Reason.DomCallback,
+                      );
+                    }}
+                  >
+                    {t(($) => {
+                      return $.cloudflareAccess.convert;
+                    })}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   disabled={config.sshHosts.length > 0}

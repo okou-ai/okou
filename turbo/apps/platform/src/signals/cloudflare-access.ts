@@ -6,6 +6,7 @@ import {
   cloudflareAccessContract,
   scopedCloudflareAccessConfigSchema,
   type ScopedCloudflareAccessConfig,
+  type CloudflareAccessConversionPreview,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/cloudflare-access-errors";
 import { command, computed, state } from "ccstate";
@@ -480,5 +481,133 @@ export const acceptCloudflareAccessConflictReview$ = command(
     }
     set(reviewedRevision$, reviewed.config?.revision ?? null);
     set(conflict$, null);
+  },
+);
+
+interface ConversionDialog {
+  readonly identity: string;
+  readonly configId: string;
+  readonly name: string;
+}
+
+const conversionDialog$ = state<ConversionDialog | null>(null);
+const conversionPreviewReload$ = state(0);
+const conversionError$ = state<string | null>(null);
+
+export const cloudflareAccessConversionDialog$ = computed(async (get) => {
+  const dialog = get(conversionDialog$);
+  return dialog?.identity === (await get(cloudflareAccessIdentity$))
+    ? dialog
+    : null;
+});
+
+export const cloudflareAccessConversionError$ = computed((get) => {
+  return get(conversionError$);
+});
+
+export const openCloudflareAccessConversion$ = command(
+  async (
+    { get, set },
+    config: ScopedCloudflareAccessConfig,
+    signal: AbortSignal,
+  ) => {
+    const [identity, admin] = await Promise.all([
+      get(cloudflareAccessIdentity$),
+      get(isOrgAdmin$),
+    ]);
+    signal.throwIfAborted();
+    if (!identity || !admin || config.scope !== "organization") {
+      return;
+    }
+    set(conversionError$, null);
+    set(conversionDialog$, {
+      identity,
+      configId: config.id,
+      name: config.name,
+    });
+  },
+);
+
+export const closeCloudflareAccessConversion$ = command(({ set }) => {
+  set(conversionDialog$, null);
+  set(conversionError$, null);
+});
+
+export const reviewCloudflareAccessConversion$ = command(({ set }) => {
+  set(conversionError$, null);
+  set(conversionPreviewReload$, (value) => {
+    return value + 1;
+  });
+  set(invalidateCloudflareAccess$);
+});
+
+export const cloudflareAccessConversionPreview$ = computed(async (get) => {
+  get(conversionPreviewReload$);
+  const dialog = await get(cloudflareAccessConversionDialog$);
+  if (!dialog) {
+    return null;
+  }
+  const client = await get(cloudflareAccessClient$);
+  if (client.identity !== dialog.identity) {
+    return null;
+  }
+  const result = await accept(
+    client.client.conversionPreview({ params: { configId: dialog.configId } }),
+    [200, 403, 404],
+    undefined,
+    { showErrorToast: false },
+  );
+  return result.status === 200 ? result.body : null;
+});
+
+export const confirmCloudflareAccessConversion$ = command(
+  async (
+    { get, set },
+    preview: CloudflareAccessConversionPreview,
+    signal: AbortSignal,
+  ) => {
+    const dialog = await get(cloudflareAccessConversionDialog$);
+    signal.throwIfAborted();
+    if (!dialog || !(await get(isOrgAdmin$))) {
+      set(conversionError$, CLOUDFLARE_ACCESS_ERROR_CODES.FORBIDDEN);
+      return;
+    }
+    const client = await get(cloudflareAccessClient$);
+    signal.throwIfAborted();
+    if (client.identity !== dialog.identity) {
+      return;
+    }
+    let result;
+    try {
+      result = await accept(
+        client.client.convertToPersonal({
+          params: { configId: dialog.configId },
+          body: {
+            expectedRevision: preview.expectedRevision,
+            impactSnapshot: preview.impactSnapshot,
+          },
+          fetchOptions: { signal },
+        }),
+        [200, 403, 404, 409],
+        signal,
+      );
+    } catch {
+      signal.throwIfAborted();
+      if (dialog === get(conversionDialog$)) {
+        set(conversionError$, "uncertain");
+        set(invalidateCloudflareAccess$);
+      }
+      return;
+    }
+    signal.throwIfAborted();
+    if (dialog !== get(conversionDialog$)) {
+      return;
+    }
+    set(invalidateCloudflareAccess$);
+    if (result.status === 200) {
+      set(closeCloudflareAccessConversion$);
+      return;
+    }
+    set(conversionError$, result.body.error.code);
   },
 );
