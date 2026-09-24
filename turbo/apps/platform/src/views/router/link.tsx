@@ -4,6 +4,7 @@ import {
   generateRouterPath,
   detachedNavigateTo$,
 } from "../../signals/route.ts";
+import { shouldHandleLinkClick } from "./link-click.ts";
 
 type PathName = Parameters<typeof generateRouterPath>[0];
 type PathParams = Parameters<typeof generateRouterPath>[1];
@@ -48,17 +49,7 @@ export function Link({
 
   const handleClick = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e);
-    const target = e.currentTarget.target;
-    if (
-      e.defaultPrevented ||
-      e.button !== 0 ||
-      e.metaKey ||
-      e.ctrlKey ||
-      e.shiftKey ||
-      e.altKey ||
-      (target && target !== "_self") ||
-      e.currentTarget.hasAttribute("download")
-    ) {
+    if (!shouldHandleLinkClick(e)) {
       return;
     }
 

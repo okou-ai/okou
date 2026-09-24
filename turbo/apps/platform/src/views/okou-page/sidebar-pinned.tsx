@@ -52,6 +52,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { equalSets } from "../../lib/equality.ts";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { PinAgentDialog } from "./sidebar-dialogs.tsx";
 import {
   AgentUnreadIndicator,
@@ -257,7 +258,7 @@ function PinnedAgentGridCard({
       aria-current={isPrimarySelected ? "page" : undefined}
       draggable={isReorderable}
       onClick={(e) => {
-        if (e.metaKey || e.ctrlKey || e.shiftKey) {
+        if (!shouldHandleLinkClick(e)) {
           return;
         }
         e.preventDefault();
@@ -615,7 +616,7 @@ export function PinnedAgentListSection({
                     options={{ pathParams: { agentId: agent.agentId } }}
                     aria-current={isPrimarySelected ? "page" : undefined}
                     onClick={(e) => {
-                      if (e.metaKey || e.ctrlKey || e.shiftKey) {
+                      if (!shouldHandleLinkClick(e)) {
                         return;
                       }
                       e.preventDefault();
