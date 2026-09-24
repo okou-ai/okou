@@ -699,6 +699,7 @@ function browserUseControlInspectionFunction(): string {
       const textarea = control instanceof HTMLTextAreaElement;
       const supported =
         textarea || (input && supportedInputTypes.has(control.type));
+      const textual = supported && (textarea || control.type !== "number");
       return {
         tagName: typeof control.tagName === "string" ? control.tagName : "",
         inputType: input ? control.type : textarea ? "textarea" : "",
@@ -707,11 +708,11 @@ function browserUseControlInspectionFunction(): string {
         writable: supported && !control.readOnly && !control.disabled,
         siteRequired: supported && control.required === true,
         multiple: input && control.type === "email" && control.multiple === true,
-        ...(supported && control.minLength >= 0 && control.minLength <= 4096
+        ...(textual && control.minLength >= 0 && control.minLength <= 4096
           ? { minLength: control.minLength } : {}),
-        ...(supported && control.maxLength >= 0 && control.maxLength <= 4096
+        ...(textual && control.maxLength >= 0 && control.maxLength <= 4096
           ? { maxLength: control.maxLength } : {}),
-        ...(input && control.pattern && control.pattern.length <= 512
+        ...(textual && input && control.pattern && control.pattern.length <= 512
           ? { pattern: control.pattern } : {}),
       };
     });
