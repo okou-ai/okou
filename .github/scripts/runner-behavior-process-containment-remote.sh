@@ -756,22 +756,34 @@ MEMORY_REUSE_RESULT_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$MEMORY_REUS
 MEMORY_REUSE_RUN_ID=$(jq -r '.run_id // empty' <<<"$MEMORY_REUSE_RESULT_JSON")
 [ -n "$MEMORY_REUSE_RUN_ID" ] || fail "memory-pressure reuse result omitted run ID"
 
-echo "--- Pressure: prefer tools during Guest-wide OOM ---"
+echo "--- Pressure: prefer tools during injected Guest-wide OOM ---"
 GLOBAL_MEMORY_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
-GLOBAL_MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+if GLOBAL_MEMORY_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --timeout 30 \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
   --feature-flag sandboxReuse=true \
-  --prompt '@guest-wide-tool-oom') \
-  || fail "Guest-wide tool OOM did not preserve runtime and sibling"
+  --prompt '@guest-wide-tool-oom-injected'); then
+  :
+else
+  printf '%s\n' "$GLOBAL_MEMORY_RESULT" >&2
+  GLOBAL_MEMORY_FAILURE_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$GLOBAL_MEMORY_RESULT")
+  GLOBAL_MEMORY_FAILURE_RUN_ID=$(jq -r '.run_id // empty' <<<"$GLOBAL_MEMORY_FAILURE_JSON")
+  if [ -n "$GLOBAL_MEMORY_FAILURE_RUN_ID" ]; then
+    sudo tail -n 80 "/var/lib/vm0-runner/logs/system-stream-${GLOBAL_MEMORY_FAILURE_RUN_ID}.log" >&2 || true
+  fi
+  fail "Guest-wide tool OOM did not preserve runtime and sibling"
+fi
 printf '%s\n' "$GLOBAL_MEMORY_RESULT"
 GLOBAL_MEMORY_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$GLOBAL_MEMORY_RESULT")
 GLOBAL_MEMORY_RUN_ID=$(jq -r '.run_id // empty' <<<"$GLOBAL_MEMORY_JSON")
 [ -n "$GLOBAL_MEMORY_RUN_ID" ] || fail "Guest-wide OOM result omitted run ID"
 GLOBAL_MEMORY_LOG="/var/lib/vm0-runner/logs/system-stream-${GLOBAL_MEMORY_RUN_ID}.log"
-sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_ooms=0' \
-  "$GLOBAL_MEMORY_LOG" || fail "Guest-wide OOM scope or recovery was not verified"
+if ! sudo grep -E -q 'parallel-shell-tool-oom-survived .*guest_wide=true memcg_ooms=0 trigger=sysrq' \
+  "$GLOBAL_MEMORY_LOG"; then
+  sudo tail -n 80 "$GLOBAL_MEMORY_LOG" >&2 || true
+  fail "Guest-wide OOM scope or recovery was not verified"
+fi
 GLOBAL_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --chat-thread-id "$GLOBAL_MEMORY_THREAD_ID" \
   --session-id e2e-process-containment-global-memory \
