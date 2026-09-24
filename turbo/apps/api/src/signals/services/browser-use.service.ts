@@ -508,9 +508,6 @@ async function withBrowserUseCdpDeadline<T>(
     operation(AbortSignal.any([signal, timeoutSignal])),
   );
   signal.throwIfAborted();
-  if (result.ok) {
-    return result.value;
-  }
   if (timeoutSignal.aborted) {
     throw new BrowserUseProviderError(
       503,
@@ -518,7 +515,10 @@ async function withBrowserUseCdpDeadline<T>(
       "Managed browser check timed out",
     );
   }
-  throw result.error;
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
 }
 
 export async function listBrowserUseTabUrls(
