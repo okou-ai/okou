@@ -1,5 +1,34 @@
 # Deployment Compatibility
 
+## Morning Brief settings status and collection account retirement (2026-09-24)
+
+`GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
+`timezone`, `lastDeliveredAt` or `lastRun`. The App does not validate API
+responses outside tests, so an older App bundle reading the new API sees the
+fields as absent and renders no next-run or delivery badge; a new App reading
+an older API ignores the extra fields.
+
+The `morningBriefChanged` realtime topic is retired: the API no longer
+publishes it and the App no longer subscribes to it, nor refetches the
+preference on `connector:changed`, `slack:changed` or a timezone update. The
+Settings card reflects server state when it loads. An older bundle keeps its
+subscription and simply receives nothing; an older API's publishes reach no
+subscriber in a new bundle. `connector:changed` and `slack:changed` are still
+published for their other consumers.
+
+Native Morning Brief execution no longer computes or writes the per-occurrence
+collection account, whose only reader was `lastRun`. The
+`morning_brief_native_occurrences.collection_facts` column is left in place
+because an older API may still write it during rollout; the new API neither
+reads nor writes it. Mixed versions are compatible: the column is nullable and
+nothing reads it. Rollback is safe; an older API simply resumes writing it.
+
+This API version still declares the column in Drizzle and uses full-row
+`select()`/`returning()` on the table, so the drop follows "Drop a Column as a
+Two-release Contract": first remove the Drizzle declaration in its own release,
+then drop the column in a later migration once every API that declares it has
+drained.
+
 ## Discord verified foundation (2026-09-24)
 
 The Discord foundation adds seven new relations, their ownership constraints,
@@ -35,35 +64,6 @@ in that phase, an older API cannot resume it; finish or restart that export with
 the new API. This is a non-GA, default-off surface and introduces no compatibility
 reader or rollback fallback. Application credentials remain environment-owned
 and are never exported or revoked by guild removal.
-
-## Morning Brief settings status and collection account retirement (2026-09-24)
-
-`GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
-`timezone`, `lastDeliveredAt` or `lastRun`. The App does not validate API
-responses outside tests, so an older App bundle reading the new API sees the
-fields as absent and renders no next-run or delivery badge; a new App reading
-an older API ignores the extra fields.
-
-The `morningBriefChanged` realtime topic is retired: the API no longer
-publishes it and the App no longer subscribes to it, nor refetches the
-preference on `connector:changed`, `slack:changed` or a timezone update. The
-Settings card reflects server state when it loads. An older bundle keeps its
-subscription and simply receives nothing; an older API's publishes reach no
-subscriber in a new bundle. `connector:changed` and `slack:changed` are still
-published for their other consumers.
-
-Native Morning Brief execution no longer computes or writes the per-occurrence
-collection account, whose only reader was `lastRun`. The
-`morning_brief_native_occurrences.collection_facts` column is left in place
-because an older API may still write it during rollout; the new API neither
-reads nor writes it. Mixed versions are compatible: the column is nullable and
-nothing reads it. Rollback is safe; an older API simply resumes writing it.
-
-This API version still declares the column in Drizzle and uses full-row
-`select()`/`returning()` on the table, so the drop follows "Drop a Column as a
-Two-release Contract": first remove the Drizzle declaration in its own release,
-then drop the column in a later migration once every API that declares it has
-drained.
 
 ## Chat search user keyword GIN index (2026-09-24)
 
