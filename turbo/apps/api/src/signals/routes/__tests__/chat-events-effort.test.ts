@@ -328,7 +328,7 @@ describe("CHAT effort: thread configuration", () => {
         ...(pi
           ? [
               {
-                model: selectedModel,
+                model: "gpt-5.6-sol" as const,
                 isDefault: false,
                 defaultProviderType: "openai-api-key" as const,
                 credentialScope: "org" as const,
@@ -441,7 +441,7 @@ describe("CHAT effort: thread configuration", () => {
     });
     await api.updateOrgModelPolicies(actor, [
       {
-        model: "gpt-5.6-sol",
+        model: "gpt-6-astra",
         isDefault: true,
         defaultProviderType: "openai-api-key",
         credentialScope: "org",
@@ -451,9 +451,9 @@ describe("CHAT effort: thread configuration", () => {
     const thread = await chat.createThread(actor, {
       agentId,
       title: "Independent Fast",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-astra",
     });
-    await chat.updateThreadModelSelection(actor, thread.id, "gpt-5.6-sol", {
+    await chat.updateThreadModelSelection(actor, thread.id, "gpt-6-astra", {
       reasoningEffort: "low",
       codexServiceTier: "fast",
     });
@@ -487,7 +487,7 @@ describe("CHAT effort: thread configuration", () => {
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({
-      modelSettings: { "gpt-5.6-sol": { effort: "ultra" } },
+      modelSettings: { "gpt-6-astra": { effort: "ultra" } },
       serviceTier: "priority",
     });
     await cancelChatRun(actor, explicit.runId, explicitClaim.sandboxHeaders);

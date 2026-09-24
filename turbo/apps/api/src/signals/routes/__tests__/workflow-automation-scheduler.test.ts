@@ -1113,10 +1113,10 @@ describe("okou workflow automation scheduler", () => {
     "keeps a credit-blocked %s automation enabled and resumes after billing recovers",
     async (scheduleType) => {
       const scenario = await setup();
-      await seedBuiltInModelKey(context, "claude-sonnet-5");
+      await seedBuiltInModelKey(context, "claude-fable-5-1");
       await runsApi.updateOrgModelPolicies(scenario.actor, [
         {
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
           isDefault: true,
           defaultProviderType: "built-in",
           credentialScope: "org",
