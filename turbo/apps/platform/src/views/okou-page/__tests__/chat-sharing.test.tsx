@@ -843,9 +843,10 @@ test("Share one answer with its prompt by copying the link before creating the s
   const { clipboard, createRequests, response, share } =
     await setupSingleMessageShare();
   click(share);
-  // The link and its confirmation do not wait for the share to be created.
+  // The button confirms in the click; it waits for neither the share nor a toast.
   expect(clipboard.writes).toHaveLength(1);
-  await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
+  expect(buttonsNamed("Share link copied")).toHaveLength(1);
+  expect(screen.queryByText("Link copied")).toBeNull();
   await waitFor(() => {
     expect(createRequests).toHaveLength(1);
   });
@@ -866,10 +867,14 @@ test("Share one answer with its prompt by copying the link before creating the s
 test("Report a dead copied link when the API ignores the client share ID", async () => {
   const { response, share } = await setupSingleMessageShare(SHARED_THREAD_ID);
   click(share);
+  expect(buttonsNamed("Share link copied")).toHaveLength(1);
   response.resolve();
   await expect(
     screen.findByText("The shared link could not be created. Try again."),
   ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonsNamed("Share message")).toHaveLength(1);
+  });
 });
 
 test("Hide single-message sharing while the switch is off", async () => {

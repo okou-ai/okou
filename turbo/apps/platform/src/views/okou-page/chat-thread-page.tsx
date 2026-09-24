@@ -76,6 +76,7 @@ import {
   getShortcutParts,
   Button,
   CopyButton,
+  ShareLinkButton,
   Checkbox,
   Input,
   Skeleton,
@@ -8628,6 +8629,68 @@ function RunLangfuseAction({
   return signals ? <RunLangfuseLink signals={signals} /> : null;
 }
 
+function MessageShareAction({ onShare }: { onShare: () => Promise<boolean> }) {
+  const { t } = useTranslation();
+  return (
+    <ShareLinkButton
+      shareAction={onShare}
+      render={({ onClick, ref }, { copied }) => {
+        const copiedLabel = t(($) => {
+          return $.chat.sharing.shareLinkCopied;
+        });
+        if (copied) {
+          // The button itself confirms the copy; no toast or tooltip.
+          return (
+            <Button
+              ref={ref}
+              type="button"
+              variant="quiet"
+              size="xs"
+              onClick={onClick}
+              className="gap-1 px-1.5 text-muted-foreground"
+              aria-label={copiedLabel}
+              data-testid="chat-message-share"
+            >
+              <Check />
+              {copiedLabel}
+            </Button>
+          );
+        }
+        return (
+          <TooltipProvider delay={300}>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    ref={ref}
+                    type="button"
+                    variant="quiet"
+                    size="icon-xs"
+                    iconSize="sm"
+                    onClick={onClick}
+                    className="text-muted-foreground/60"
+                    aria-label={t(($) => {
+                      return $.chat.actions.shareMessage;
+                    })}
+                    data-testid="chat-message-share"
+                  >
+                    <Share2 />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => {
+                  return $.chat.actions.shareMessage;
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        );
+      }}
+    />
+  );
+}
+
 function PagedGroupPrimaryActions({
   firstRunId,
   thread,
@@ -8642,7 +8705,7 @@ function PagedGroupPrimaryActions({
   hasContent: boolean;
   usage: ChatEventUsagePayload | undefined;
   onCopy: () => Promise<boolean>;
-  onShare: (() => void) | undefined;
+  onShare: (() => Promise<boolean>) | undefined;
   relatedArtifacts?: RunWorkSectionControl["remainingArtifactCards"];
 }) {
   const { t } = useTranslation();
@@ -8706,35 +8769,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {showShare && (
-        <TooltipProvider delay={300}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="quiet"
-                  size="icon-xs"
-                  iconSize="sm"
-                  onClick={onShare}
-                  className="text-muted-foreground/60"
-                  aria-label={t(($) => {
-                    return $.chat.actions.shareMessage;
-                  })}
-                  data-testid="chat-message-share"
-                >
-                  <Share2 />
-                </Button>
-              }
-            />
-            <TooltipContent side="bottom">
-              {t(($) => {
-                return $.chat.actions.shareMessage;
-              })}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )}
+      {showShare && <MessageShareAction onShare={showShare} />}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}
@@ -8791,11 +8826,7 @@ function PagedGroupActions({
   const handleShare =
     shareEventIds.length > 0
       ? () => {
-          detach(
-            shareMessage(shareEventIds, pageSignal),
-            Reason.DomCallback,
-            "share chat message",
-          );
+          return shareMessage(shareEventIds, pageSignal);
         }
       : undefined;
 

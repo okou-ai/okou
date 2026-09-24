@@ -2172,6 +2172,7 @@
       "selectedCount_other": "{{count}} चुने गए",
       "selectGroup": "संदेश समूह चुनें",
       "shareLink": "साझा बातचीत का लिंक",
+      "shareLinkCopied": "साझा लिंक कॉपी किया गया",
       "start": "संदेश शेयर करें",
       "tooLarge": "शेयर करने के लिए कम संदेश चुनें"
     },

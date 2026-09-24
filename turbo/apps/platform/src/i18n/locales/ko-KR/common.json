@@ -2164,6 +2164,7 @@
       "selectedCount_other": "{{count}}개 선택됨",
       "selectGroup": "메시지 그룹 선택",
       "shareLink": "공유된 대화 링크",
+      "shareLinkCopied": "공유 링크 복사됨",
       "start": "메시지 공유",
       "tooLarge": "공유할 메시지를 더 적게 선택하세요"
     },

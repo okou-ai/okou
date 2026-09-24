@@ -2172,6 +2172,7 @@
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
       "shareLink": "Link zur geteilten Unterhaltung",
+      "shareLinkCopied": "Freigabelink kopiert",
       "start": "Nachrichten teilen",
       "tooLarge": "Wähle weniger Nachrichten zum Teilen aus"
     },

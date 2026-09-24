@@ -45,10 +45,11 @@ export interface ChatThreadSharingSignals {
   /**
    * Share persisted assistant events with the user prompt that precedes them.
    * The link is copied before the first await so the clipboard write stays
-   * inside the click gesture; the share is created afterwards.
+   * inside the click gesture; the share is created afterwards. Resolves false
+   * when the copied link is unusable, after reporting why.
    */
   readonly shareMessage$: Command<
-    Promise<void>,
+    Promise<boolean>,
     [readonly string[], AbortSignal]
   >;
 }
@@ -168,9 +169,9 @@ function createShareMessageCommand(
       { get },
       assistantEventIds: readonly string[],
       signal: AbortSignal,
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       if (assistantEventIds.length === 0) {
-        return;
+        return false;
       }
       const eventIds = messageShareEventIds(
         get(allChatGroups$),
@@ -180,11 +181,6 @@ function createShareMessageCommand(
       // Start the clipboard write synchronously in the user gesture. Waiting
       // for the API first would lose the gesture in Safari.
       const copied = writeToClipboard(sharedThreadUrl(id));
-      toast.success(
-        i18n.t(($) => {
-          return $.chat.sharing.linkCopied;
-        }),
-      );
       const client = get(apiClient$)(sharedThreadsContract);
       const [copySucceeded, result] = await Promise.all([
         copied,
@@ -214,7 +210,9 @@ function createShareMessageCommand(
             return $.chat.sharing.messageShareFailed;
           }),
         );
+        return false;
       }
+      return copySucceeded;
     },
   );
 }

@@ -2172,6 +2172,7 @@
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
       "shareLink": "Shared conversation link",
+      "shareLinkCopied": "Share link copied",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share"
     },

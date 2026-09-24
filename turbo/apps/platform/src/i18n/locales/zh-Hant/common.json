@@ -2164,6 +2164,7 @@
       "selectedCount_other": "已選{{count}}條",
       "selectGroup": "選擇該組訊息",
       "shareLink": "分享對話連結",
+      "shareLinkCopied": "分享連結已複製",
       "start": "分享訊息",
       "tooLarge": "選擇的訊息過多，請減少後再分享"
     },

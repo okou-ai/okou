@@ -2218,6 +2218,7 @@
       "selectedCount_other": "{{count}} seleccionados",
       "selectGroup": "Seleccionar grupo de mensajes",
       "shareLink": "Enlace de conversación compartida",
+      "shareLinkCopied": "Enlace para compartir copiado",
       "start": "Compartir mensajes",
       "tooLarge": "Selecciona menos mensajes para compartir"
     },

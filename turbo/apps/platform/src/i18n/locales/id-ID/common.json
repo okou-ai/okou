@@ -2164,6 +2164,7 @@
       "selectedCount_other": "{{count}} dipilih",
       "selectGroup": "Pilih grup pesan",
       "shareLink": "Tautan percakapan yang dibagikan",
+      "shareLinkCopied": "Tautan berbagi disalin",
       "start": "Bagikan pesan",
       "tooLarge": "Pilih lebih sedikit pesan untuk dibagikan"
     },
