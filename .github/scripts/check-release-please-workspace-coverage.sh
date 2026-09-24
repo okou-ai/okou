@@ -24,10 +24,10 @@ release_config=$(jq -ce '
   select(
     type == "object" and
     (.packages | type == "object" and length > 0) and
-    (.packages | all(to_entries[]; .value["release-type"] == "node" or .value["release-type"] == "rust"))
+    (.packages | all(to_entries[]; .value["release-type"] == "node" or .value["release-type"] == "rust" or (.key == "ios" and .value["release-type"] == "simple")))
   )
 ' "$release_config_path" 2>/dev/null) ||
-  fail "Release Please config must contain Node or Rust package entries"
+  fail "Release Please config must contain Node, Rust, or the standalone iOS package entries"
 release_manifest=$(jq -ce '
   select(type == "object" and all(to_entries[]; .value | type == "string" and length > 0))
 ' "$release_manifest_path" 2>/dev/null) ||
@@ -73,7 +73,7 @@ jq -r '
   | select(.value["release-type"] == "rust")
   | .key
 ' <<<"$release_config" | sort -u >"$managed_rust_paths"
-sort -u "$managed_node_paths" "$managed_rust_paths" >"$managed_paths"
+jq -r '.packages | keys[]' <<<"$release_config" | sort -u >"$managed_paths"
 jq -r 'keys[]' <<<"$release_manifest" | sort -u >"$manifest_paths"
 jq -r 'keys[]' <<<"$exclusions" | sort -u >"$excluded_paths"
 
@@ -84,6 +84,16 @@ fi
 comm -13 "$managed_paths" "$manifest_paths" >"$difference_paths"
 if [ -s "$difference_paths" ]; then
   fail "Release Please manifest contains unconfigured packages: $(paste -sd, "$difference_paths")"
+fi
+
+# iOS is a standalone Xcode project, not a pnpm or Cargo workspace member.
+if jq -e '.packages | has("ios")' <<<"$release_config" >/dev/null; then
+  ios_version=$(cat ios/version.txt) || fail "missing iOS version file"
+  ios_config_version=$(sed -n 's/^MARKETING_VERSION = \([^ ]*\).*/\1/p' ios/Config/Shared.xcconfig)
+  ios_manifest_version=$(jq -r '.ios' <<<"$release_manifest")
+  if [ "$ios_version" != "$ios_manifest_version" ] || [ "$ios_version" != "$ios_config_version" ]; then
+    fail "iOS manifest, version.txt, and MARKETING_VERSION must agree"
+  fi
 fi
 
 node_workspace_root=$(dirname "$node_workspace_path")

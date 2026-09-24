@@ -456,7 +456,8 @@ describe("cron snapshot chat events", () => {
     api.acceptTelemetryIngest();
     const runnerGroup = api.configureRunnerGroup();
     await api.grantProEntitlement(owner);
-    await api.ensureOrgModelProvider(owner);
+    // Fable keeps the run on the claimable native Runner route.
+    await api.ensureOrgModelProvider(owner, { model: "claude-fable-5-1" });
     const agent = await bdd.createAgent(owner, {
       displayName: "Failure reason snapshot agent",
     });

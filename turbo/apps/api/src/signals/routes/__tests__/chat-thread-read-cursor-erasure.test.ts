@@ -83,7 +83,9 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
   prepareChatRuntime();
   const actor = bdd.user();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  // The Run must still be active when it is cancelled, so it uses Fable,
+  // which model policy keeps queued for the native Runner instead of Pi.
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(actor, {
     displayName: `Read cursor unread ${randomUUID().slice(0, 8)}`,
     visibility: "private",

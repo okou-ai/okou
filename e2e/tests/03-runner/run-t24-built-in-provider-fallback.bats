@@ -101,7 +101,7 @@ report_built_in_model_failure() {
     assert_success
     primary_context="$output"
     run jq -e --arg model "$BUILT_IN_FALLBACK_MODEL" '
-        .cliAgentType == "codex" and
+        .cliAgentType == "pi" and
         .environment.OPENAI_MODEL == $model and
         (.environment | has("OPENAI_BASE_URL") | not) and
         any(.firewalls[]?;
@@ -135,7 +135,7 @@ report_built_in_model_failure() {
     assert_success
     fallback_context="$output"
     run jq -e --arg model "openai/${BUILT_IN_FALLBACK_MODEL}" '
-        .cliAgentType == "codex" and
+        .cliAgentType == "pi" and
         .environment.OPENAI_BASE_URL == "https://openrouter.ai/api/v1" and
         .environment.OPENAI_MODEL == $model and
         any(.firewalls[]?;

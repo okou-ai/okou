@@ -24,8 +24,19 @@ describe("X resource account cleanup and Run admission", () => {
     configureNativeCliArtifact();
     const { actor, agentId } = await fixture.entitledChatActor();
     const orgId = requireOrgId(actor);
-    const model = "claude-sonnet-5";
-    await fixture.configureBuiltInPiModel(actor, model);
+    // Fable keeps the admitted Run on the native Runner route, so no
+    // model-provider turn races the organization cleanup.
+    const model = "claude-fable-5-1";
+    await fixture.seedBuiltInModelKey(model);
+    await fixture.api.updateOrgModelPolicies(actor, [
+      {
+        model,
+        isDefault: true,
+        defaultProviderType: "built-in",
+        credentialScope: "org",
+        modelProviderId: null,
+      },
+    ]);
     await postUsageAllowanceInvoicePaid(context.signal, {
       orgId,
       userId: actor.userId,

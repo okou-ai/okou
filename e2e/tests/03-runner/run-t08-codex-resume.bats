@@ -4,8 +4,10 @@
 
 load '../../helpers/setup'
 load '../../helpers/runner-chat'
+load '../../helpers/runner-api'
 
 setup_file() {
+    runner_e2e_use_native_codex_account
     require_runner_api_credentials
 
     export RUNNER_AGENT_ID

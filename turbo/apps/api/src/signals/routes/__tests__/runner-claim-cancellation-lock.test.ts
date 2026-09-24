@@ -26,10 +26,19 @@ const {
 } = createChatEventsFixture(context);
 
 async function inheritedChatRunFixture() {
-  const { actor, agentId, runnerGroup } = await entitledChatActor();
+  const { actor, agentId, runnerGroup, providerId } = await entitledChatActor();
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const first = await sendChatRun(actor, {
     agentId,
-    model: "claude-sonnet-5",
+    model: "claude-fable-5-1",
     prompt: "Establish the conversation inherited by the next run",
   });
   const { sandboxHeaders } = await claimChatRun(runnerGroup, first.runId);

@@ -121,6 +121,9 @@ for component in "${components[@]}"; do
   component_release_types["$component"]=$release_type
 
   pathspecs=(":(top,glob)${component}/**/src/**")
+  if [ "$component" = "ios" ] && [ "$release_type" = "simple" ]; then
+    pathspecs=(":(top,glob)ios/Okou/**" ":(top,glob)ios/Config/**" ":(top,glob)ios/Okou.xcodeproj/**" ":(top,glob)ios/Assets/**")
+  fi
   if [ "$release_type" = "node" ]; then
     # Match only colocated JS/TS test modules from turbo/vitest.config.ts and
     # Platform's tsconfig.production.json. Helpers, fixtures and other assets
@@ -161,6 +164,9 @@ for component in "${components[@]}"; do
   case "${component_release_types[$component]}" in
   node) ((node_component_count += 1)) ;;
   rust) ((rust_component_count += 1)) ;;
+  simple)
+    [ "$component" = "ios" ] || fail "unsupported standalone release component: ${component}"
+    ;;
   *)
     fail "unsupported release type for dependency graph: ${component} (${component_release_types[$component]})"
     ;;

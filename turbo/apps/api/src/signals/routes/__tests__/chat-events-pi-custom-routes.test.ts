@@ -10,7 +10,6 @@ import {
   DEFAULT_PROFILE,
   piApiFirstTurnManifestSchema,
 } from "@okouai/api-contracts/contracts/runners";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -24,7 +23,6 @@ import { createDeferredPromise } from "../../utils";
 import { modelProviderGatewayRoutes } from "../model-provider-gateways";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import {
   readRunLaunchSnapshotFixture,
   readThreadSessionConversation,
@@ -59,7 +57,6 @@ const {
   chat,
   webhooks,
   chatCallbacks,
-  authDeviceSupport,
   entitledChatActor,
   configureBuiltInPiModel,
   configureBuiltInPiModelOnOpenRouter,
@@ -149,9 +146,7 @@ async function configureCustomPiModel(
       modelProviderSurfaceId: surfaceId,
     },
   ]);
-  await authDeviceSupport.updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.PiLoop]: true,
-  });
+
   return {
     connection: created.body,
     surfaceId,
@@ -205,9 +200,7 @@ describe("CHAT-02: model-first provider policies", () => {
       } else {
         await configureBuiltInPiModel(actor, selectedModel);
       }
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: true,
-      });
+
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const endpoint =
@@ -304,13 +297,7 @@ describe("CHAT-02: model-first provider policies", () => {
         throw new Error("Expected entitled chat actor to have an org");
       }
       await configureBuiltInPiModel(actor, selectedModel);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.PiLoop]: true,
-        },
-      );
+
       mockPiResourceArchiveDownloads();
       const checkpointObjects = mockPiCheckpointObjectStore();
       const modelRequests: {
@@ -751,9 +738,7 @@ describe("CHAT-02: model-first provider policies", () => {
         [200],
       );
       // Mutating current settings after API ownership cannot rewrite the captured claim.
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
+
       await chat.updateThreadModelSelection(
         actor,
         run.threadId,
@@ -1269,10 +1254,23 @@ describe("CHAT-02: model-first provider policies", () => {
   it.each(GPT_PI_BDD_MODELS)(
     "promotes queued custom %s Fast with the admitted tier and switch snapshot",
     async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const { actor, agentId, runnerGroup, providerId } =
+        await entitledChatActor();
+      // The anchor must stay on the native Runner while the queued target
+      // proves Pi promotion; Sonnet 5 would itself run through Pi.
+      await api.updateOrgModelPolicies(actor, [
+        {
+          model: "claude-fable-5-1",
+          isDefault: true,
+          defaultProviderType: "anthropic-api-key",
+          credentialScope: "org",
+          modelProviderId: providerId,
+        },
+      ]);
       const anchor = await sendChatRun(actor, {
         agentId,
         prompt: "hold the target thread",
+        model: "claude-fable-5-1",
       });
       const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
       const gateway = await configureCustomPiModel(actor, selectedModel);
@@ -1332,9 +1330,7 @@ describe("CHAT-02: model-first provider policies", () => {
         selectedModel,
         { codexServiceTier: null },
       );
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: false,
-      });
+
       gate.release();
       await completion;
       const messages = await waitForThreadMessages(
@@ -1456,19 +1452,13 @@ describe("CHAT-02: model-first provider policies", () => {
   );
 
   it.each([
-    { selectedModel: "gpt-6-astra", tier: undefined, piLoop: true },
-    { selectedModel: "gpt-6-astra", tier: "fast", piLoop: true },
-    ...GPT_PI_BDD_MODELS.map((selectedModel) => {
-      return { selectedModel, tier: "fast", piLoop: false } as const;
-    }),
+    { selectedModel: "gpt-6-astra", tier: undefined },
+    { selectedModel: "gpt-6-astra", tier: "fast" },
   ] as const)(
-    "keeps custom $selectedModel $tier with PiLoop=$piLoop inside its existing runtime boundary",
-    async ({ selectedModel, tier, piLoop }) => {
+    "keeps custom $selectedModel $tier inside its existing runtime boundary",
+    async ({ selectedModel, tier }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const gateway = await configureCustomPiModel(actor, selectedModel);
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.PiLoop]: piLoop,
-      });
       const run = await sendChatRun(actor, {
         agentId,
         model: selectedModel,

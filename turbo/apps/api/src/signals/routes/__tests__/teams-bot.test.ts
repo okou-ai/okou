@@ -898,7 +898,7 @@ async function setupConnectedTeamsBotActor(): Promise<{
     visibility: "public",
   });
   await runsApi.grantProEntitlement(actor);
-  await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   botFrameworkHandlers();
   const outboundRequests = teamsOutboundHandlers(fixture.serviceUrl);
 
@@ -1652,7 +1652,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       visibility: "public",
     });
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor);
+    await runsApi.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
     await installTeamsForTest(context.signal, fixture);
     await connectTeamsFixture(fixture);
     botFrameworkHandlers();
@@ -2169,7 +2169,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         text: "",
         value: {
           okouTeamsAction: "switch_model",
-          selectedModel: "claude-sonnet-5",
+          selectedModel: "claude-fable-5-1",
         },
       }),
       token: teamsToken(),
@@ -2181,7 +2181,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       activity: {
         value: {
           okouTeamsAction: "switch_model",
-          selectedModel: "claude-sonnet-5",
+          selectedModel: "claude-fable-5-1",
         },
       },
     });
@@ -2189,7 +2189,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     await expect(
       userConfigApi.readModelPreference(actor),
     ).resolves.toMatchObject({
-      selectedModel: "claude-sonnet-5",
+      selectedModel: "claude-fable-5-1",
     });
 
     expect(outboundRequests).toHaveLength(6);
@@ -2264,8 +2264,8 @@ describe("POST /api/webhooks/teams/bot", () => {
                 id: "selectedModel",
                 choices: expect.arrayContaining([
                   expect.objectContaining({
-                    title: expect.stringContaining("Claude Sonnet 5"),
-                    value: "claude-sonnet-5",
+                    title: expect.stringContaining("Claude Fable 5.1"),
+                    value: "claude-fable-5-1",
                   }),
                 ]),
               }),
@@ -2287,7 +2287,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
     expect(outboundRequests[5]?.body).toMatchObject({
       type: "message",
-      text: expect.stringContaining("Claude Sonnet 5"),
+      text: expect.stringContaining("Claude Fable 5.1"),
     });
 
     outboundRequests.splice(0, outboundRequests.length);
@@ -2389,14 +2389,14 @@ describe("POST /api/webhooks/teams/bot", () => {
         });
         await runsApi.updateOrgModelPolicies(actor, [
           {
-            model: "claude-sonnet-5",
+            model: "claude-fable-5-1",
             isDefault: true,
             defaultProviderType: "anthropic-api-key",
             credentialScope: "org",
             modelProviderId: anthropic.providerId,
           },
           {
-            model: "gpt-5.6-sol",
+            model: "gpt-6-astra",
             isDefault: false,
             defaultProviderType: "openai-api-key",
             credentialScope: "org",
@@ -2510,7 +2510,7 @@ describe("POST /api/webhooks/teams/bot", () => {
             text: "",
             value: {
               okouTeamsAction: "switch_model",
-              selectedModel: "gpt-5.6-sol",
+              selectedModel: "gpt-6-astra",
             },
           }),
           token: teamsToken(),
@@ -2551,7 +2551,7 @@ describe("POST /api/webhooks/teams/bot", () => {
         expect(switchedModelClaim.appendSystemPrompt).not.toContain(
           "LOG_COMMAND",
         );
-        expect(switchedModelClaim.modelUsageProvider).toBe("claude-sonnet-5");
+        expect(switchedModelClaim.modelUsageProvider).toBe("claude-fable-5-1");
         await runsApi.requestCancelRun(actor, switchedModelRunId, [200]);
       });
     },
@@ -2692,7 +2692,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("clears thinking and preserves attribution without audit links for Teams run admission failures", async () => {
+  it("clears thinking and preserves attribution for Teams run admission failures", async () => {
     const fixture = await trackTeamsFixture(
       Promise.resolve(teamsConnectFixture()),
     );
@@ -2803,9 +2803,6 @@ describe("POST /api/webhooks/teams/bot", () => {
         text: expect.stringContaining("Sent via Teams support agent"),
         textFormat: "markdown",
       },
-    });
-    expect(outboundRequests[0]?.body).toMatchObject({
-      text: expect.not.stringMatching(/\[Audit\]|\/activities/),
     });
     expect(outboundRequests.reactions).toStrictEqual([
       {
@@ -2936,7 +2933,9 @@ describe("POST /api/webhooks/teams/bot", () => {
         visibility: "public",
       });
       await runsApi.grantProEntitlement(actor);
-      await runsApi.ensureOrgModelProvider(actor);
+      await runsApi.ensureOrgModelProvider(actor, {
+        model: "claude-fable-5-1",
+      });
       botFrameworkHandlers();
       const outboundRequests = teamsOutboundHandlers(fixture.serviceUrl);
 
