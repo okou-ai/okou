@@ -70,7 +70,7 @@ async function fixture(
   mockEnv("DISCORD_GATEWAY_SECRET", "discord-gateway-test-secret-at-least-32");
   mockEnv(
     "DISCORD_MESSAGE_CONTENT_ENABLED",
-    String(options.messageContent ?? true),
+    (options.messageContent ?? true) ? "true" : "false",
   );
   await updateFeatureSwitchesForUser(
     context,
