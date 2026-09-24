@@ -20,12 +20,10 @@ import {
   type VideoDuration,
   type VideoModel,
   type VideoModelConfig,
-  type VideoProvider,
   type VideoResolution,
 } from "@okouai/core/video-model-catalog";
 import { and, eq, inArray } from "drizzle-orm";
 
-import { logger } from "../../lib/log";
 import { redactPresignedUrls } from "../../lib/presigned-url-redaction";
 import {
   canonicalUsagePricingProvider,
@@ -34,25 +32,16 @@ import {
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
 import { db$, writeDb$ } from "../external/db";
-import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
-import { safeJsonParse, safeSync, tapError } from "../utils";
+import { safeSync } from "../utils";
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 import {
   builtInGenerationUsageIdempotencyKey,
   type BuiltInGenerationUsageIdempotency,
 } from "./built-in-generation-usage-idempotency";
-
-const BYTEPLUS_VIDEO_TASKS_URL =
-  "https://ark.ap-southeast.bytepluses.com/api/v3/contents/generations/tasks";
-const MINIMAX_VIDEO_GENERATION_URL =
-  "https://api.minimax.io/v2/video_generation";
-
-const L = logger("VideoGeneration");
 const VIDEO_IO_MAX_PROMPT_LENGTH = 32_000;
 const MINIMAX_H3_MAX_PROMPT_LENGTH = 7000;
-const PROVIDER_ERROR_BODY_LOG_MAX_LENGTH = 4000;
 
 const USAGE_KIND = "video";
 const VIDEO_AUDIO_CATEGORY = "output_video_seconds.audio";
@@ -201,21 +190,6 @@ export interface VideoOptions {
   readonly lastFrameImageUrl: string | undefined;
 }
 
-interface BytePlusTaskHandle {
-  readonly taskId: string;
-  readonly status: string | undefined;
-}
-
-interface MiniMaxTaskHandle {
-  readonly taskId: string;
-}
-
-interface FalQueueHandle {
-  readonly requestId: string | undefined;
-  readonly statusUrl: string;
-  readonly responseUrl: string;
-}
-
 interface FalFile {
   readonly url: string;
   readonly contentType: string | undefined;
@@ -295,27 +269,6 @@ interface RecordedVideo {
   readonly requestId: string | undefined;
 }
 
-type MultimodalVideoContent =
-  | {
-      readonly type: "text";
-      readonly text: string;
-    }
-  | {
-      readonly type: "image_url";
-      readonly image_url: { readonly url: string };
-      readonly role?: "first_frame" | "last_frame" | "reference_image";
-    }
-  | {
-      readonly type: "video_url";
-      readonly video_url: { readonly url: string };
-      readonly role: "reference_video";
-    }
-  | {
-      readonly type: "audio_url";
-      readonly audio_url: { readonly url: string };
-      readonly role: "reference_audio";
-    };
-
 function errorBody(message: string, code: string): ErrorBody {
   return { error: { message, code } };
 }
@@ -324,22 +277,8 @@ function badRequest(message: string, code = "BAD_REQUEST") {
   return { status: 400 as const, body: errorBody(message, code) };
 }
 
-function videoInternalError(message: string) {
-  return {
-    status: 500 as const,
-    body: errorBody(message, "INTERNAL_SERVER_ERROR"),
-  };
-}
-
 function badGateway(message: string, code: string) {
   return { status: 502 as const, body: errorBody(message, code) };
-}
-
-function bytePlusErrorStatus(status: number): ErrorStatus {
-  if (status === 400 || status === 503 || status === 504) {
-    return status;
-  }
-  return 502;
 }
 
 function normalizeBytePlusErrorCode(value: string | undefined): string {
@@ -354,45 +293,6 @@ function normalizeBytePlusErrorCode(value: string | undefined): string {
     : "BYTEPLUS_VIDEO_GENERATION_FAILED";
 }
 
-function bytePlusProviderErrorResponse(
-  providerError: VideoProviderError,
-  providerStatus: number,
-): VideoErrorResponse {
-  if (
-    providerError.code ===
-    "InputImageSensitiveContentDetected.PrivacyInformation"
-  ) {
-    return {
-      status: bytePlusErrorStatus(providerStatus),
-      body: errorBody(
-        "This model does not allow directly uploaded images that may contain a real person. Remove or replace them before trying again.",
-        "GENERATION_INPUT_REAL_PERSON_IMAGE_REJECTED",
-      ),
-    };
-  }
-
-  return {
-    status: bytePlusErrorStatus(providerStatus),
-    body: errorBody(
-      `BytePlus video generation failed: ${providerError.message}`,
-      normalizeBytePlusErrorCode(providerError.code),
-    ),
-  };
-}
-
-function miniMaxErrorStatus(status: number): ErrorStatus {
-  if (status === 400 || status === 422) {
-    return 400;
-  }
-  if (status === 402) {
-    return 402;
-  }
-  if (status === 429) {
-    return 503;
-  }
-  return 502;
-}
-
 function normalizeMiniMaxErrorCode(value: string | undefined): string {
   const normalized = value
     ?.trim()
@@ -403,43 +303,6 @@ function normalizeMiniMaxErrorCode(value: string | undefined): string {
   return normalized
     ? `MINIMAX_${normalized}`
     : "MINIMAX_VIDEO_GENERATION_FAILED";
-}
-
-function miniMaxProviderErrorResponse(
-  providerError: VideoProviderError,
-  providerStatus: number,
-): VideoErrorResponse {
-  return {
-    status: miniMaxErrorStatus(providerStatus),
-    body: errorBody(
-      `MiniMax video generation failed: ${providerError.message}`,
-      normalizeMiniMaxErrorCode(providerError.code),
-    ),
-  };
-}
-
-export function videoServiceUnavailable(message: string, code: string) {
-  return { status: 503 as const, body: errorBody(message, code) };
-}
-
-export function videoInsufficientCredits() {
-  return {
-    status: 402 as const,
-    body: errorBody(
-      "Insufficient credits. Please add credits to continue.",
-      "INSUFFICIENT_CREDITS",
-    ),
-  };
-}
-
-export function videoRequiresPaidPlan() {
-  return {
-    status: 402 as const,
-    body: errorBody(
-      "Built-in video generation requires Pro, Team, or Custom workspace access.",
-      "PRO_REQUIRED",
-    ),
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -512,24 +375,6 @@ function readVideoProviderError(value: unknown): VideoProviderError | null {
   }
 
   return null;
-}
-
-function videoProviderErrorFromText(
-  text: string | undefined,
-  status: number,
-  statusText: string,
-): VideoProviderError {
-  const parsed = text ? safeJsonParse(text) : undefined;
-  const providerError = readVideoProviderError(parsed);
-  if (providerError) {
-    return providerError;
-  }
-  return {
-    message: statusText
-      ? `${statusText} (HTTP ${status})`
-      : `provider returned HTTP ${status}`,
-    code: "VIDEO_GENERATION_FAILED",
-  };
 }
 
 function videoProviderFailureError(payload: unknown): VideoProviderError {
@@ -682,10 +527,6 @@ function videoModelList(): string {
   return VIDEO_MODELS.map((model) => {
     return VIDEO_MODEL_CONFIGS[model].alias;
   }).join(", ");
-}
-
-export function videoProviderForModel(model: VideoModel): VideoProvider {
-  return VIDEO_MODEL_CONFIGS[model].provider;
 }
 
 function parseDurationSeconds(duration: VideoDuration): number {
@@ -893,19 +734,6 @@ function parseVideoAspectRatio(
     );
   }
   return aspectRatio;
-}
-
-/**
- * Whether the request chose a model of its own.
- *
- * `parseVideoOptions` reads `model` through `readString`, which treats a blank
- * value as unset and applies its own default. A caller that decides whether to
- * substitute a different default has to answer the same question the same way;
- * two independent answers disagree exactly on `model: ""`, and the substitution
- * is then skipped for a request that never named anything.
- */
-export function namesVideoModel(body: unknown): boolean {
-  return isRecord(body) && readString(body, "model", "") !== "";
 }
 
 export function parseVideoOptions(
@@ -1164,356 +992,6 @@ export const videoPricing$: Computed<Promise<VideoPricing>> = computed(
     return mapPricingRows(rows, resolution);
   },
 );
-
-export const checkVideoCredits$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    return await set(checkBillableOperationCredits$, args, signal);
-  },
-);
-
-function falHeaders(falKey: string): Record<string, string> {
-  return {
-    Authorization: `Key ${falKey}`,
-    "Content-Type": "application/json",
-  };
-}
-
-function parseFalQueueHandle(value: unknown): FalQueueHandle | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const statusUrl =
-    typeof value.status_url === "string" ? value.status_url : undefined;
-  const responseUrl =
-    typeof value.response_url === "string" ? value.response_url : undefined;
-  if (!statusUrl || !responseUrl) {
-    return null;
-  }
-  return {
-    requestId:
-      typeof value.request_id === "string" ? value.request_id : undefined,
-    statusUrl,
-    responseUrl,
-  };
-}
-
-function falVideoQueueUrl(model: VideoModel): string {
-  return `https://queue.fal.run/${model}`;
-}
-
-function falVideoInput(options: VideoOptions): Record<string, unknown> {
-  const config = VIDEO_MODEL_CONFIGS[options.model];
-  if (config.provider !== "fal") {
-    throw new Error("Expected a Fal video model");
-  }
-
-  if (config.requestFormat === "kling") {
-    return compactObject({
-      prompt: options.prompt,
-      aspect_ratio: options.aspectRatio,
-      duration: String(options.durationSeconds),
-      generate_audio: options.generateAudio,
-      ...(config.supportsNegativePrompt && options.negativePrompt
-        ? { negative_prompt: options.negativePrompt }
-        : {}),
-    });
-  }
-
-  return compactObject({
-    prompt: options.prompt,
-    aspect_ratio: options.aspectRatio,
-    duration: options.duration,
-    resolution: options.resolution,
-    generate_audio: options.generateAudio,
-    ...(config.supportsAutoFix ? { auto_fix: options.autoFix } : {}),
-    ...(config.supportsSafetyTolerance
-      ? { safety_tolerance: options.safetyTolerance }
-      : {}),
-    ...(config.supportsNegativePrompt && options.negativePrompt
-      ? { negative_prompt: options.negativePrompt }
-      : {}),
-    ...(config.supportsSeed && options.seed !== undefined
-      ? { seed: options.seed }
-      : {}),
-  });
-}
-
-export async function submitFalVideoGeneration(
-  options: VideoOptions,
-  falKey: string,
-  signal: AbortSignal,
-  webhookUrl: string,
-): Promise<FalQueueHandle | VideoErrorResponse> {
-  const queueUrl = new URL(falVideoQueueUrl(options.model));
-  queueUrl.searchParams.set("fal_webhook", webhookUrl);
-  const response = await fetch(queueUrl, {
-    method: "POST",
-    headers: falHeaders(falKey),
-    body: JSON.stringify(falVideoInput(options)),
-    signal,
-  });
-
-  if (!response.ok) {
-    return videoInternalError("Video generation failed");
-  }
-
-  const body: unknown = await response.json();
-  const handle = parseFalQueueHandle(body);
-  if (!handle) {
-    return badGateway("Fal returned no queue handle", "NO_QUEUE_HANDLE");
-  }
-  return handle;
-}
-
-function bearerJsonHeaders(apiKey: string): Record<string, string> {
-  return {
-    Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
-  };
-}
-
-function parseBytePlusTaskHandle(value: unknown): BytePlusTaskHandle | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const taskId =
-    typeof value.id === "string"
-      ? value.id
-      : typeof value.task_id === "string"
-        ? value.task_id
-        : undefined;
-  if (!taskId) {
-    return null;
-  }
-  return {
-    taskId,
-    status: typeof value.status === "string" ? value.status : undefined,
-  };
-}
-
-function multimodalVideoContent(
-  options: VideoOptions,
-): readonly MultimodalVideoContent[] {
-  const config = VIDEO_MODEL_CONFIGS[options.model];
-  const requiresExplicitFrameRole =
-    config.provider === "byteplus" && config.family === "seedance-2-5";
-  const content: MultimodalVideoContent[] = [
-    {
-      type: "text",
-      text: options.prompt,
-    },
-  ];
-  const hasFirstAndLastFrame =
-    Boolean(options.firstFrameImageUrl) && Boolean(options.lastFrameImageUrl);
-  if (options.firstFrameImageUrl) {
-    content.push({
-      type: "image_url",
-      image_url: { url: options.firstFrameImageUrl },
-      ...(hasFirstAndLastFrame || requiresExplicitFrameRole
-        ? { role: "first_frame" }
-        : {}),
-    });
-  }
-  if (options.lastFrameImageUrl) {
-    content.push({
-      type: "image_url",
-      image_url: { url: options.lastFrameImageUrl },
-      role: "last_frame",
-    });
-  }
-  for (const url of options.referenceImageUrls) {
-    content.push({
-      type: "image_url",
-      image_url: { url },
-      role: "reference_image",
-    });
-  }
-  for (const url of options.inputVideoUrls) {
-    content.push({
-      type: "video_url",
-      video_url: { url },
-      role: "reference_video",
-    });
-  }
-  for (const url of options.referenceAudioUrls) {
-    content.push({
-      type: "audio_url",
-      audio_url: { url },
-      role: "reference_audio",
-    });
-  }
-  return content;
-}
-
-function bytePlusVideoInput(
-  options: VideoOptions,
-  webhookUrl: string,
-): Record<string, unknown> {
-  const config = VIDEO_MODEL_CONFIGS[options.model];
-  const usesAdaptiveFrameRatio =
-    config.provider === "byteplus" &&
-    config.family === "seedance-2-5" &&
-    Boolean(options.firstFrameImageUrl || options.lastFrameImageUrl);
-  return compactObject({
-    model: options.model,
-    content: multimodalVideoContent(options),
-    callback_url: webhookUrl,
-    resolution: options.resolution,
-    ratio: usesAdaptiveFrameRatio ? "adaptive" : options.aspectRatio,
-    duration: options.durationSeconds,
-    ...(config.supportsGenerateAudio
-      ? { generate_audio: options.generateAudio }
-      : {}),
-    ...(config.supportsSeed && options.seed !== undefined
-      ? { seed: options.seed }
-      : {}),
-  });
-}
-
-async function readProviderErrorBodyForLog(
-  response: Response,
-): Promise<string | undefined> {
-  const body = await tapError(response.text());
-  if (!body) {
-    return undefined;
-  }
-  const redactedBody = redactPresignedUrls(body);
-  return redactedBody.length > PROVIDER_ERROR_BODY_LOG_MAX_LENGTH
-    ? `${redactedBody.slice(0, PROVIDER_ERROR_BODY_LOG_MAX_LENGTH)}...`
-    : redactedBody;
-}
-
-export async function submitBytePlusVideoGeneration(
-  options: VideoOptions,
-  apiKey: string,
-  signal: AbortSignal,
-  webhookUrl: string,
-): Promise<BytePlusTaskHandle | VideoErrorResponse> {
-  const response = await fetch(BYTEPLUS_VIDEO_TASKS_URL, {
-    method: "POST",
-    headers: bearerJsonHeaders(apiKey),
-    body: JSON.stringify(bytePlusVideoInput(options, webhookUrl)),
-    signal,
-  });
-
-  if (!response.ok) {
-    const responseBody = await readProviderErrorBodyForLog(response);
-    const providerError = videoProviderErrorFromText(
-      responseBody,
-      response.status,
-      response.statusText,
-    );
-    L.warn("BytePlus video generation task creation failed", {
-      provider: "byteplus",
-      model: options.model,
-      status: response.status,
-      statusText: response.statusText,
-      providerErrorCode: providerError.code,
-      providerErrorMessage: providerError.message,
-      responseBody,
-      hasFirstFrameImage: Boolean(options.firstFrameImageUrl),
-      hasLastFrameImage: Boolean(options.lastFrameImageUrl),
-      referenceImageCount: options.referenceImageUrls.length,
-      referenceVideoCount: options.inputVideoUrls.length,
-      referenceAudioCount: options.referenceAudioUrls.length,
-    });
-    return bytePlusProviderErrorResponse(providerError, response.status);
-  }
-
-  const body: unknown = await response.json();
-  const handle = parseBytePlusTaskHandle(body);
-  if (!handle) {
-    return badGateway("BytePlus returned no task handle", "NO_TASK_HANDLE");
-  }
-  return handle;
-}
-
-function miniMaxResolution(resolution: VideoResolution): "768P" | "2K" {
-  if (resolution === "768p") {
-    return "768P";
-  }
-  if (resolution === "2k") {
-    return "2K";
-  }
-  throw new Error("Unsupported MiniMax H3 video resolution");
-}
-
-function miniMaxVideoInput(
-  options: VideoOptions,
-  webhookUrl: string,
-): Record<string, unknown> {
-  const hasFrameImage = Boolean(
-    options.firstFrameImageUrl || options.lastFrameImageUrl,
-  );
-  return {
-    model: options.model,
-    content: multimodalVideoContent(options),
-    callback_url: webhookUrl,
-    resolution: miniMaxResolution(options.resolution),
-    duration: options.durationSeconds,
-    ratio: hasFrameImage ? "adaptive" : options.aspectRatio,
-  };
-}
-
-function parseMiniMaxTaskHandle(value: unknown): MiniMaxTaskHandle | null {
-  if (!isRecord(value) || typeof value.task_id !== "string") {
-    return null;
-  }
-  return { taskId: value.task_id };
-}
-
-export async function submitMiniMaxVideoGeneration(
-  options: VideoOptions,
-  apiKey: string,
-  signal: AbortSignal,
-  webhookUrl: string,
-): Promise<MiniMaxTaskHandle | VideoErrorResponse> {
-  const response = await fetch(MINIMAX_VIDEO_GENERATION_URL, {
-    method: "POST",
-    headers: bearerJsonHeaders(apiKey),
-    body: JSON.stringify(miniMaxVideoInput(options, webhookUrl)),
-    signal,
-  });
-
-  if (!response.ok) {
-    const responseBody = await readProviderErrorBodyForLog(response);
-    const providerError = videoProviderErrorFromText(
-      responseBody,
-      response.status,
-      response.statusText,
-    );
-    L.warn("MiniMax H3 video generation task creation failed", {
-      provider: "minimax",
-      model: options.model,
-      status: response.status,
-      statusText: response.statusText,
-      providerErrorCode: providerError.code,
-      providerErrorMessage: providerError.message,
-      responseBody,
-      hasFirstFrameImage: Boolean(options.firstFrameImageUrl),
-      hasLastFrameImage: Boolean(options.lastFrameImageUrl),
-      referenceImageCount: options.referenceImageUrls.length,
-      referenceVideoCount: options.inputVideoUrls.length,
-      referenceAudioCount: options.referenceAudioUrls.length,
-    });
-    return miniMaxProviderErrorResponse(providerError, response.status);
-  }
-
-  const body: unknown = await response.json();
-  const handle = parseMiniMaxTaskHandle(body);
-  if (!handle) {
-    return badGateway("MiniMax returned no task handle", "NO_TASK_HANDLE");
-  }
-  return handle;
-}
 
 function normalizeVideoContentType(
   value: string | null | undefined,

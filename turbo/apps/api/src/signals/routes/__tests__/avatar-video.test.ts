@@ -12,16 +12,14 @@ import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
-import { buildArtifactKey, buildFileUrlFromKey } from "../../../lib/file-url";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
   createUsagePricingFixture,
   seedOrgMetadata,
   type UsagePricingFixture,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
+import { seedPreviouslyAcceptedVideoJob } from "../../../test-fixtures/previously-accepted-video-job";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise } from "../../utils";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
@@ -37,11 +35,7 @@ import { seedCompose$, seedRun$ } from "./helpers/usage-state";
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
-const TEST_BUCKET = "test-user-artifacts";
 
-const JOGGAI_CREATE_URL = "https://api.jogg.ai/v2/create_video_from_avatar";
-const JOGGAI_AVATARS_URL = "https://api.jogg.ai/v2/avatars/public";
-const JOGGAI_VOICES_URL = "https://api.jogg.ai/v2/voices";
 const JOGGAI_WEBHOOK_SECRET = randomUUID();
 const GENERATED_VIDEO_URL = "https://res.jogg.ai/avatar-video.mp4";
 const VIDEO_BYTES = Buffer.from("generated avatar video");
@@ -82,23 +76,6 @@ function createAvatarVideoTestApp(
   });
 }
 
-function okouToken(args: {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly runId: string;
-}): string {
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: args.userId,
-    orgId: args.orgId,
-    runId: args.runId,
-    capabilities: ["file:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
-}
-
 async function seedAvatarVideoFixture(options?: {
   readonly withPricing?: boolean;
 }): Promise<AvatarVideoFixture> {
@@ -134,23 +111,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   throw new Error("Expected record");
 }
 
-function readGenerationId(value: unknown, userId: string): string {
-  const body = asRecord(value);
-  if (typeof body.generationId !== "string") {
-    throw new Error("Expected generation ID");
-  }
-  expect(body).toMatchObject({
-    generationId: body.generationId,
-    type: "video",
-    status: "queued",
-    realtime: {
-      channelName: `user:${userId}`,
-      eventName: `built-in-generation:${body.generationId}`,
-    },
-  });
-  return body.generationId;
-}
-
 async function orgCredits(fixture: AvatarVideoFixture): Promise<number> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const response = await createAvatarVideoTestApp(
@@ -167,7 +127,6 @@ async function orgCredits(fixture: AvatarVideoFixture): Promise<number> {
 describe("JoggAI built-in avatar video routes", () => {
   beforeEach(() => {
     mockEnv("PUBLIC_ARTIFACTS_BASE_URL", "https://artifacts.okou.test");
-    mockEnv("JOGGAI_API_KEY", "test-joggai-key");
     mockEnv("JOGGAI_WEBHOOK_SECRET", JOGGAI_WEBHOOK_SECRET);
     context.mocks.clerk.authenticateRequest.mockReset();
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
@@ -183,177 +142,6 @@ describe("JoggAI built-in avatar video routes", () => {
       nonce: "test-nonce",
       mac: "test-mac",
     });
-  });
-
-  it("lists and normalizes public avatars and voices", async () => {
-    const fixture = await seedAvatarVideoFixture();
-    const observedUrls: string[] = [];
-    server.use(
-      http.get(JOGGAI_AVATARS_URL, ({ request }) => {
-        observedUrls.push(request.url);
-        expect(request.headers.get("x-api-key")).toBe("test-joggai-key");
-        return HttpResponse.json({
-          code: 0,
-          msg: "Success",
-          data: {
-            avatars: [
-              {
-                id: 81,
-                name: "Ada",
-                video_url: "https://res.jogg.ai/ada.mp4",
-                cover_url: "https://res.jogg.ai/ada.jpg",
-                aspect_ratio: 1,
-                style: "professional",
-                gender: "female",
-                age: "adult",
-              },
-            ],
-          },
-        });
-      }),
-      http.get(JOGGAI_VOICES_URL, ({ request }) => {
-        observedUrls.push(request.url);
-        expect(request.headers.get("x-api-key")).toBe("test-joggai-key");
-        return HttpResponse.json({
-          code: 0,
-          msg: "Success",
-          data: {
-            voices: [
-              {
-                voice_id: "en-US-ChristopherNeural",
-                name: "Christopher",
-                audio_url: "https://res.jogg.ai/christopher.mp3",
-                language: "english",
-                gender: "male",
-                age: "young",
-                accent: "american",
-                use_case: "narrative_story",
-              },
-            ],
-            has_more: true,
-          },
-        });
-      }),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const app = createAvatarVideoTestApp(fixture.usagePricingResolution);
-
-    const avatars = await app.request(
-      "/api/avatar-video/avatars?page=2&pageSize=20&aspectRatio=portrait&style=professional",
-      { headers: authHeaders() },
-    );
-    expect(avatars.status).toBe(200);
-    await expect(avatars.json()).resolves.toStrictEqual({
-      avatars: [
-        {
-          id: 81,
-          name: "Ada",
-          videoUrl: "https://res.jogg.ai/ada.mp4",
-          coverUrl: "https://res.jogg.ai/ada.jpg",
-          aspectRatio: 1,
-          style: "professional",
-          gender: "female",
-          age: "adult",
-        },
-      ],
-    });
-
-    const voices = await app.request(
-      "/api/avatar-video/voices?page=3&pageSize=25&language=english&gender=male",
-      { headers: authHeaders() },
-    );
-    expect(voices.status).toBe(200);
-    await expect(voices.json()).resolves.toStrictEqual({
-      voices: [
-        {
-          id: "en-US-ChristopherNeural",
-          name: "Christopher",
-          sampleUrl: "https://res.jogg.ai/christopher.mp3",
-          language: "english",
-          gender: "male",
-          age: "young",
-          accent: "american",
-          useCase: "narrative_story",
-        },
-      ],
-      hasMore: true,
-      filterOptions: {
-        languages: ["english"],
-        useCases: ["narrative_story"],
-      },
-    });
-
-    expect(new URL(observedUrls[0] ?? "").searchParams.toString()).toBe(
-      "page=2&page_size=20&aspect_ratio=portrait&style=professional",
-    );
-    expect(new URL(observedUrls[1] ?? "").searchParams.toString()).toBe(
-      "page=3&page_size=25&gender=male&language=english",
-    );
-  });
-
-  it("paginates full collections returned by JoggAI", async () => {
-    const fixture = await seedAvatarVideoFixture();
-    const avatars = Array.from({ length: 25 }, (_, index) => {
-      const id = index + 1;
-      return { id, name: `Avatar ${String(id)}` };
-    });
-    const voices = Array.from({ length: 25 }, (_, index) => {
-      const id = index + 1;
-      return { voice_id: `voice-${String(id)}`, name: `Voice ${String(id)}` };
-    });
-    server.use(
-      http.get(JOGGAI_AVATARS_URL, () => {
-        return HttpResponse.json({
-          code: 0,
-          msg: "Success",
-          data: { avatars },
-        });
-      }),
-      http.get(JOGGAI_VOICES_URL, () => {
-        return HttpResponse.json({
-          code: 0,
-          msg: "Success",
-          data: { voices, has_more: true },
-        });
-      }),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const app = createAvatarVideoTestApp(fixture.usagePricingResolution);
-
-    const avatarResponse = await app.request(
-      "/api/avatar-video/avatars?page=2&pageSize=10",
-      { headers: authHeaders() },
-    );
-    expect(avatarResponse.status).toBe(200);
-    const avatarBody = asRecord(await avatarResponse.json());
-    expect(
-      Array.isArray(avatarBody.avatars)
-        ? avatarBody.avatars.map((avatar) => {
-            return asRecord(avatar).id;
-          })
-        : [],
-    ).toStrictEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-
-    const voiceResponse = await app.request(
-      "/api/avatar-video/voices?page=3&pageSize=10",
-      { headers: authHeaders() },
-    );
-    expect(voiceResponse.status).toBe(200);
-    const voiceBody = asRecord(await voiceResponse.json());
-    expect(
-      Array.isArray(voiceBody.voices)
-        ? voiceBody.voices.map((voice) => {
-            return asRecord(voice).id;
-          })
-        : [],
-    ).toStrictEqual([
-      "voice-21",
-      "voice-22",
-      "voice-23",
-      "voice-24",
-      "voice-25",
-    ]);
-    expect(voiceBody.hasMore).toBeFalsy();
   });
 
   it("accepts JoggAI's documented webhook video ID", async () => {
@@ -389,7 +177,7 @@ describe("JoggAI built-in avatar video routes", () => {
   });
 
   it.each([false, true])(
-    "stores talking-avatar catalog output with its recorded policy (private=%s)",
+    "completes a previously accepted avatar job with its recorded policy (private=%s)",
     async (privateArtifacts) => {
       const fixture = await seedAvatarVideoFixture();
       installArtifactReferenceStorage(context);
@@ -411,21 +199,9 @@ describe("JoggAI built-in avatar video routes", () => {
         },
         context.signal,
       );
-      const token = okouToken({ ...fixture, runId });
       const videoDownloadStarted = createDeferredPromise<void>(context.signal);
       const releaseVideoDownload = createDeferredPromise<void>(context.signal);
-      let observedBody: unknown = null;
-      let observedApiKey: string | null = null;
       server.use(
-        http.post(JOGGAI_CREATE_URL, async ({ request }) => {
-          observedApiKey = request.headers.get("x-api-key");
-          observedBody = await request.json();
-          return HttpResponse.json({
-            code: 0,
-            msg: "Success",
-            data: { video_id: "jogg-video-123" },
-          });
-        }),
         http.get(GENERATED_VIDEO_URL, async () => {
           videoDownloadStarted.resolve(undefined);
           await releaseVideoDownload.promise;
@@ -441,44 +217,25 @@ describe("JoggAI built-in avatar video routes", () => {
       );
       mocks.clerk.session(fixture.userId, fixture.orgId);
       const app = createAvatarVideoTestApp(fixture.usagePricingResolution);
-      const response = await app.request(
-        privateArtifacts
-          ? "/api/avatar-video/generate/private"
-          : "/api/avatar-video/generate",
-        {
-          method: "POST",
-          headers: { authorization: `Bearer ${token}` },
-          body: JSON.stringify({
-            avatarId: 81,
-            voiceId: "en-US-ChristopherNeural",
-            script: "Welcome to Okou",
-            aspectRatio: "landscape",
-            screenStyle: 2,
-            caption: false,
-            videoName: "Product introduction",
-          }),
-        },
-      );
-
-      expect(response.status).toBe(202);
-      const generationId = readGenerationId(
-        await response.json(),
-        fixture.userId,
-      );
-      expect(observedApiKey).toBe("test-joggai-key");
-      expect(observedBody).toMatchObject({
-        avatar: { avatar_type: 0, avatar_id: 81 },
-        voice: {
-          type: "script",
-          voice_id: "en-US-ChristopherNeural",
+      // New requests now return 410, so only a historical job fixture can
+      // exercise a callback that arrives after the retirement deploy.
+      const providerVideoId = `jogg_${randomUUID()}`;
+      const { generationId } = await seedPreviouslyAcceptedVideoJob({
+        ...fixture,
+        runId,
+        privateArtifacts,
+        provider: "joggai",
+        providerJobId: providerVideoId,
+        request: {
+          avatarId: 81,
+          voiceId: "en-US-ChristopherNeural",
           script: "Welcome to Okou",
+          aspectRatio: "landscape",
+          screenStyle: 2,
+          caption: false,
+          videoName: "Product introduction",
         },
-        aspect_ratio: "landscape",
-        screen_style: 2,
-        caption: false,
-        video_name: "Product introduction",
       });
-      expect(asRecord(observedBody)).not.toHaveProperty("webhook_url");
 
       await updateFeatureSwitchesForUser(context, fixture, {
         [FeatureSwitchKey.PrivateArtifacts]: !privateArtifacts,
@@ -488,7 +245,7 @@ describe("JoggAI built-in avatar video routes", () => {
         event: "generated_avatar_video_success",
         timestamp: 1_700_000_000,
         data: {
-          project_id: "jogg-video-123",
+          project_id: providerVideoId,
           video_url: GENERATED_VIDEO_URL,
           cover_url: "https://res.jogg.ai/private-cover.jpg",
           duration: 121,
@@ -548,7 +305,7 @@ describe("JoggAI built-in avatar video routes", () => {
         creditsCharged: 1246,
         provider: "joggai",
         model: "joggai-talking-avatar",
-        providerVideoId: "jogg-video-123",
+        providerVideoId,
         avatarId: 81,
         voiceId: "en-US-ChristopherNeural",
         inputType: "script",
@@ -667,96 +424,4 @@ describe("JoggAI built-in avatar video routes", () => {
       await expect(orgCredits(fixture)).resolves.toBe(8754);
     },
   );
-
-  it("maps audio input without exposing private JoggAI resources", async () => {
-    const fixture = await seedAvatarVideoFixture();
-    const audioKey = buildArtifactKey(
-      fixture.userId,
-      randomUUID(),
-      "voice.mp3",
-    );
-    const audioUrl = buildFileUrlFromKey(audioKey, "okou");
-    let observedBody: unknown = null;
-    server.use(
-      http.post(JOGGAI_CREATE_URL, async ({ request }) => {
-        observedBody = await request.json();
-        return HttpResponse.json({
-          code: 0,
-          msg: "Success",
-          data: { video_id: "jogg-audio-video" },
-        });
-      }),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const response = await createAvatarVideoTestApp(
-      fixture.usagePricingResolution,
-    ).request("/api/avatar-video/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        avatarId: 82,
-        voiceId: "en-US-AvaNeural",
-        audioUrl,
-      }),
-    });
-
-    expect(response.status).toBe(202);
-    expect(observedBody).toMatchObject({
-      avatar: { avatar_type: 0, avatar_id: 82 },
-      voice: {
-        type: "audio",
-        voice_id: "en-US-AvaNeural",
-        audio_url: expect.any(String),
-      },
-      aspect_ratio: "portrait",
-      screen_style: 1,
-      caption: true,
-    });
-    const providerAudioUrl = asRecord(asRecord(observedBody).voice).audio_url;
-    if (typeof providerAudioUrl !== "string") {
-      throw new Error("Expected JoggAI audio URL");
-    }
-    const signedAudioUrl = new URL(providerAudioUrl);
-    expect(signedAudioUrl.origin).toBe("https://r2.example.com");
-    expect(signedAudioUrl.searchParams.get("object")).toBe(
-      `${TEST_BUCKET}/${audioKey}`,
-    );
-  });
-
-  it("disables captions by default for a transparent background", async () => {
-    const fixture = await seedAvatarVideoFixture();
-    let observedBody: unknown = null;
-    server.use(
-      http.post(JOGGAI_CREATE_URL, async ({ request }) => {
-        observedBody = await request.json();
-        return HttpResponse.json({
-          code: 0,
-          msg: "Success",
-          data: { video_id: "jogg-transparent-video" },
-        });
-      }),
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const response = await createAvatarVideoTestApp(
-      fixture.usagePricingResolution,
-    ).request("/api/avatar-video/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({
-        avatarId: 1790,
-        voiceId: "en-US-AvaNeural",
-        script: "Welcome to Okou",
-        screenStyle: 3,
-      }),
-    });
-
-    expect(response.status).toBe(202);
-    expect(observedBody).toMatchObject({
-      avatar: { avatar_type: 0, avatar_id: 1790 },
-      screen_style: 3,
-      caption: false,
-    });
-  });
 });

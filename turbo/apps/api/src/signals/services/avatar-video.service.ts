@@ -4,23 +4,17 @@ import { command, computed, type Computed } from "ccstate";
 import {
   AVATAR_VIDEO_TRANSPARENT_SCREEN_STYLE,
   avatarVideoGenerateRequestSchema,
-  type AvatarVideoAvatarsQuery,
-  type AvatarVideoVoicesQuery,
 } from "@okouai/api-contracts/contracts/avatar-video";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, eq } from "drizzle-orm";
 
-import { logger } from "../../lib/log";
-import { redactPresignedUrls } from "../../lib/presigned-url-redaction";
 import {
   resolveUsagePricingProvider,
   usagePricingResolution$,
 } from "../context/usage-pricing-resolution";
 import { db$, writeDb$ } from "../external/db";
-import { safeJsonParse } from "../utils";
-import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
 import {
   builtInGenerationUsageIdempotencyKey,
@@ -29,18 +23,11 @@ import {
 import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
 import { processOrgUsageEvents$ } from "./credit-usage.service";
 
-const L = logger("AvatarVideo");
-
 const JOGGAI_AVATAR_VIDEO_MODEL = "joggai-talking-avatar";
 const JOGGAI_AVATAR_VIDEO_PRICING_CATEGORY = "output_video_joggai_credits";
-
-const JOGGAI_API_BASE_URL = "https://api.jogg.ai/v2";
-const JOGGAI_CREATE_AVATAR_VIDEO_URL = `${JOGGAI_API_BASE_URL}/create_video_from_avatar`;
-const JOGGAI_PUBLIC_AVATARS_URL = `${JOGGAI_API_BASE_URL}/avatars/public`;
-const JOGGAI_PUBLIC_VOICES_URL = `${JOGGAI_API_BASE_URL}/voices`;
 const JOGGAI_CREDIT_DURATION_SECONDS = 120;
 
-type ErrorStatus = 400 | 402 | 502 | 503;
+type ErrorStatus = 400 | 502;
 
 interface ErrorBody {
   readonly error: {
@@ -71,37 +58,6 @@ interface AvatarVideoPricingRow {
   readonly category: typeof JOGGAI_AVATAR_VIDEO_PRICING_CATEGORY;
   readonly unitPrice: number;
   readonly unitSize: number;
-}
-
-interface JoggAiAvatarVideoHandle {
-  readonly videoId: string;
-}
-
-interface JoggAiAvatar {
-  readonly id: number;
-  readonly name: string;
-  readonly videoUrl?: string;
-  readonly coverUrl?: string;
-  readonly aspectRatio?: number;
-  readonly style?: string;
-  readonly gender?: string;
-  readonly age?: string;
-}
-
-interface JoggAiVoice {
-  readonly id: string;
-  readonly name: string;
-  readonly sampleUrl?: string;
-  readonly language?: string;
-  readonly gender?: string;
-  readonly age?: string;
-  readonly accent?: string;
-  readonly useCase?: string;
-}
-
-interface JoggAiVoiceFilterOptions {
-  readonly languages: readonly string[];
-  readonly useCases: readonly string[];
 }
 
 type JoggAiWebhookPayload =
@@ -163,32 +119,6 @@ function badGateway(message: string, code: string): AvatarVideoErrorResponse {
   return { status: 502, body: errorBody(message, code) };
 }
 
-export function avatarVideoServiceUnavailable(
-  message: string,
-): AvatarVideoErrorResponse {
-  return { status: 503, body: errorBody(message, "NOT_CONFIGURED") };
-}
-
-export function avatarVideoInsufficientCredits(): AvatarVideoErrorResponse {
-  return {
-    status: 402,
-    body: errorBody(
-      "Insufficient credits. Please add credits to continue.",
-      "INSUFFICIENT_CREDITS",
-    ),
-  };
-}
-
-export function avatarVideoRequiresPaidPlan(): AvatarVideoErrorResponse {
-  return {
-    status: 402,
-    body: errorBody(
-      "Built-in avatar video generation requires Pro, Team, or Custom workspace access.",
-      "PRO_REQUIRED",
-    ),
-  };
-}
-
 export function isAvatarVideoErrorResponse(
   value: unknown,
 ): value is AvatarVideoErrorResponse {
@@ -212,16 +142,6 @@ function optionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
-}
-
-function compactObject(
-  value: Record<string, unknown>,
-): Record<string, unknown> {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => {
-      return entry !== undefined;
-    }),
-  );
 }
 
 export function parseAvatarVideoOptions(
@@ -286,342 +206,6 @@ export const avatarVideoPricing$: Computed<
     unitSize: row.unitSize,
   };
 });
-
-export const checkAvatarVideoCredits$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    return await set(checkBillableOperationCredits$, args, signal);
-  },
-);
-
-function joggAiHeaders(apiKey: string): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    "x-api-key": apiKey,
-  };
-}
-
-function joggAiProviderError(
-  responseStatus: number,
-  code: number | undefined,
-  message: string | undefined,
-): AvatarVideoErrorResponse {
-  const providerMessage = message ?? "Unknown provider error";
-  if (responseStatus === 400 || code === 40_000) {
-    return badRequest(`JoggAI rejected the request: ${providerMessage}`);
-  }
-  if (code === 10_105 || code === 18_020 || code === 18_025) {
-    return {
-      status: 503,
-      body: errorBody(
-        "JoggAI avatar video generation is temporarily unavailable",
-        "JOGGAI_UNAVAILABLE",
-      ),
-    };
-  }
-  return badGateway(
-    `JoggAI avatar video generation failed: ${providerMessage}`,
-    "JOGGAI_REQUEST_FAILED",
-  );
-}
-
-function joggAiEnvelopeError(
-  body: unknown,
-  responseStatus: number,
-): AvatarVideoErrorResponse | null {
-  if (!isRecord(body)) {
-    return badGateway(
-      "JoggAI returned an invalid response",
-      "JOGGAI_BAD_RESPONSE",
-    );
-  }
-  const code = optionalNumber(body.code);
-  if (responseStatus >= 200 && responseStatus < 300 && code === 0) {
-    return null;
-  }
-  const rawMessage = optionalString(body.msg);
-  const message = rawMessage ? redactPresignedUrls(rawMessage) : undefined;
-  L.warn("JoggAI API request failed", {
-    status: responseStatus,
-    providerCode: code,
-    providerMessage: message,
-  });
-  return joggAiProviderError(responseStatus, code, message);
-}
-
-function joggAiVoiceInput(
-  options: AvatarVideoOptions,
-): Record<string, unknown> {
-  if (options.inputType === "script") {
-    return {
-      type: "script",
-      voice_id: options.voiceId,
-      script: options.script,
-    };
-  }
-  return {
-    type: "audio",
-    voice_id: options.voiceId,
-    audio_url: options.audioUrl,
-  };
-}
-
-export async function submitJoggAiAvatarVideo(
-  options: AvatarVideoOptions,
-  apiKey: string,
-  signal: AbortSignal,
-): Promise<JoggAiAvatarVideoHandle | AvatarVideoErrorResponse> {
-  const response = await fetch(JOGGAI_CREATE_AVATAR_VIDEO_URL, {
-    method: "POST",
-    headers: joggAiHeaders(apiKey),
-    body: JSON.stringify(
-      compactObject({
-        avatar: { avatar_type: 0, avatar_id: options.avatarId },
-        voice: joggAiVoiceInput(options),
-        aspect_ratio: options.aspectRatio,
-        screen_style: options.screenStyle,
-        caption: options.caption,
-        video_name: options.videoName,
-      }),
-    ),
-    signal,
-  });
-  const body = safeJsonParse(await response.text());
-  const error = joggAiEnvelopeError(body, response.status);
-  if (error) {
-    return error;
-  }
-  const data = isRecord(body) && isRecord(body.data) ? body.data : null;
-  const videoId = data ? optionalString(data.video_id) : undefined;
-  if (!videoId) {
-    return badGateway(
-      "JoggAI returned no avatar video ID",
-      "JOGGAI_NO_VIDEO_ID",
-    );
-  }
-  return { videoId };
-}
-
-function addQueryValue(
-  url: URL,
-  key: string,
-  value: string | number | undefined,
-): void {
-  if (value !== undefined) {
-    url.searchParams.set(key, String(value));
-  }
-}
-
-function parseJoggAiAvatar(value: unknown): JoggAiAvatar | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const id = optionalNumber(value.id);
-  const name = optionalString(value.name);
-  if (!id || !Number.isInteger(id) || !name) {
-    return null;
-  }
-  const videoUrl = optionalString(value.video_url);
-  const coverUrl = optionalString(value.cover_url);
-  const aspectRatio = optionalNumber(value.aspect_ratio);
-  const style = optionalString(value.style);
-  const gender = optionalString(value.gender);
-  const age = optionalString(value.age);
-  return {
-    id,
-    name,
-    ...(videoUrl ? { videoUrl } : {}),
-    ...(coverUrl ? { coverUrl } : {}),
-    ...(aspectRatio !== undefined ? { aspectRatio } : {}),
-    ...(style ? { style } : {}),
-    ...(gender ? { gender } : {}),
-    ...(age ? { age } : {}),
-  };
-}
-
-function parseJoggAiVoice(value: unknown): JoggAiVoice | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const id = optionalString(value.voice_id);
-  const name = optionalString(value.name);
-  if (!id || !name) {
-    return null;
-  }
-  const sampleUrl = optionalString(value.audio_url);
-  const language = optionalString(value.language);
-  const gender = optionalString(value.gender);
-  const age = optionalString(value.age);
-  const accent = optionalString(value.accent);
-  const useCase = optionalString(value.use_case);
-  return {
-    id,
-    name,
-    ...(sampleUrl ? { sampleUrl } : {}),
-    ...(language ? { language } : {}),
-    ...(gender ? { gender } : {}),
-    ...(age ? { age } : {}),
-    ...(accent ? { accent } : {}),
-    ...(useCase ? { useCase } : {}),
-  };
-}
-
-function paginateProviderCollection<T>(
-  items: readonly T[],
-  page: number | undefined,
-  pageSize: number | undefined,
-): readonly T[] {
-  if (
-    page === undefined ||
-    pageSize === undefined ||
-    items.length <= pageSize
-  ) {
-    return items;
-  }
-  const start = (page - 1) * pageSize;
-  return items.slice(start, start + pageSize);
-}
-
-function normalizedCategoryValues(
-  values: readonly (string | undefined)[],
-): readonly string[] {
-  return Array.from(
-    new Set(
-      values.flatMap((value) => {
-        const normalized = value?.trim().toLowerCase();
-        return normalized ? [normalized] : [];
-      }),
-    ),
-  ).sort();
-}
-
-async function getJoggAiCollection(
-  url: URL,
-  apiKey: string,
-  signal: AbortSignal,
-): Promise<Record<string, unknown> | AvatarVideoErrorResponse> {
-  const response = await fetch(url, {
-    method: "GET",
-    headers: joggAiHeaders(apiKey),
-    signal,
-  });
-  const body = safeJsonParse(await response.text());
-  const error = joggAiEnvelopeError(body, response.status);
-  if (error) {
-    return error;
-  }
-  if (!isRecord(body) || !isRecord(body.data)) {
-    return badGateway(
-      "JoggAI returned an invalid response",
-      "JOGGAI_BAD_RESPONSE",
-    );
-  }
-  return body.data;
-}
-
-export async function listJoggAiPublicAvatars(
-  query: AvatarVideoAvatarsQuery,
-  apiKey: string,
-  signal: AbortSignal,
-): Promise<
-  { readonly avatars: readonly JoggAiAvatar[] } | AvatarVideoErrorResponse
-> {
-  const url = new URL(JOGGAI_PUBLIC_AVATARS_URL);
-  addQueryValue(url, "page", query.page);
-  addQueryValue(url, "page_size", query.pageSize);
-  addQueryValue(url, "aspect_ratio", query.aspectRatio);
-  addQueryValue(url, "style", query.style);
-  addQueryValue(url, "gender", query.gender);
-  addQueryValue(url, "age", query.age);
-  addQueryValue(url, "scene", query.scene);
-  addQueryValue(url, "ethnicity", query.ethnicity);
-
-  const data = await getJoggAiCollection(url, apiKey, signal);
-  if (isAvatarVideoErrorResponse(data)) {
-    return data;
-  }
-  if (!Array.isArray(data.avatars)) {
-    return badGateway("JoggAI returned no avatar list", "JOGGAI_BAD_RESPONSE");
-  }
-  const avatars = data.avatars.flatMap((value) => {
-    const avatar = parseJoggAiAvatar(value);
-    return avatar ? [avatar] : [];
-  });
-  return {
-    avatars: paginateProviderCollection(avatars, query.page, query.pageSize),
-  };
-}
-
-export async function listJoggAiPublicVoices(
-  query: AvatarVideoVoicesQuery,
-  apiKey: string,
-  signal: AbortSignal,
-): Promise<
-  | {
-      readonly voices: readonly JoggAiVoice[];
-      readonly hasMore: boolean;
-      readonly filterOptions: JoggAiVoiceFilterOptions;
-    }
-  | AvatarVideoErrorResponse
-> {
-  const url = new URL(JOGGAI_PUBLIC_VOICES_URL);
-  addQueryValue(url, "page", query.page);
-  addQueryValue(url, "page_size", query.pageSize);
-  addQueryValue(url, "gender", query.gender);
-  addQueryValue(url, "language", query.language);
-  addQueryValue(url, "age", query.age);
-  addQueryValue(url, "use_case", query.useCase);
-
-  const data = await getJoggAiCollection(url, apiKey, signal);
-  if (isAvatarVideoErrorResponse(data)) {
-    return data;
-  }
-  if (!Array.isArray(data.voices)) {
-    return badGateway("JoggAI returned no voice list", "JOGGAI_BAD_RESPONSE");
-  }
-  const voices = data.voices.flatMap((value) => {
-    const voice = parseJoggAiVoice(value);
-    return voice ? [voice] : [];
-  });
-  const providerReturnedFullCollection =
-    query.page !== undefined &&
-    query.pageSize !== undefined &&
-    voices.length > query.pageSize;
-  const pageVoices = paginateProviderCollection(
-    voices,
-    query.page,
-    query.pageSize,
-  );
-  const fullCollectionHasMore =
-    query.pageSize !== undefined &&
-    pageVoices.length === query.pageSize &&
-    (query.page ?? 1) * query.pageSize < voices.length;
-  return {
-    voices: pageVoices,
-    hasMore: providerReturnedFullCollection
-      ? fullCollectionHasMore
-      : data.has_more === true,
-    filterOptions: {
-      languages: normalizedCategoryValues(
-        voices.map((voice) => {
-          return voice.language;
-        }),
-      ),
-      useCases: normalizedCategoryValues(
-        voices.map((voice) => {
-          return voice.useCase;
-        }),
-      ),
-    },
-  };
-}
 
 function webhookErrorMessage(value: Record<string, unknown>): string {
   if (isRecord(value.error)) {

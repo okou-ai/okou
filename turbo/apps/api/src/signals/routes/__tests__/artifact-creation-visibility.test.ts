@@ -10,9 +10,6 @@ import { featureSwitchesRoutes } from "../feature-switches";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { hostRoutes } from "../host";
 import { imageIoGenerateRoutes } from "../image-io-generate";
-import { videoIoGenerateRoutes } from "../video-io-generate";
-import { voiceIoSpeechRoutes } from "../voice-io-speech";
-import { avatarVideoRoutes } from "../avatar-video";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -27,9 +24,6 @@ const routes = Object.freeze([
   ...uploadsPrepareRoutes,
   ...hostRoutes,
   ...imageIoGenerateRoutes,
-  ...videoIoGenerateRoutes,
-  ...voiceIoSpeechRoutes,
-  ...avatarVideoRoutes,
 ]);
 const creations = [
   {
@@ -46,18 +40,6 @@ const creations = [
   {
     path: "/api/image-io/generate",
     body: { prompt: "A private landscape", model: "flux-pro-1.1" },
-  },
-  {
-    path: "/api/video-io/generate",
-    body: { prompt: "A private landscape" },
-  },
-  {
-    path: "/api/voice-io/speech",
-    body: { text: "A private report" },
-  },
-  {
-    path: "/api/avatar-video/generate",
-    body: { avatarId: 81, voiceId: "en-US-ChristopherNeural", script: "Hello" },
   },
 ] as const;
 
@@ -92,22 +74,6 @@ test.each(creations)(
     });
     expect(context.mocks.s3.getSignedUrl).not.toHaveBeenCalled();
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
-  },
-);
-
-test.each(["/api/video-io/generate", "/api/avatar-video/generate"])(
-  "preserves the existing %s plan error before invalid-body validation",
-  async (path) => {
-    const app = createAppWithRoutes({ signal: context.signal, routes });
-    const response = await app.request(path, {
-      method: "POST",
-      headers,
-      body: "{",
-    });
-    expect(response.status).toBe(402);
-    await expect(response.json()).resolves.toMatchObject({
-      error: { code: "PRO_REQUIRED" },
-    });
   },
 );
 
