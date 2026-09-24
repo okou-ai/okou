@@ -486,25 +486,33 @@ try {
   );
   assert.match(historicalSlackMaterial.prompt, /<@U111>[\s\S]*<@U222>/);
   assert.equal(historicalSlackMaterial.slackDelivery.threadTs, "1.0");
-  const identifiedSlackMessage = createUserMessageDocument({
-    text: "Ask @Same (U111) to tell @Same (U222) that (U111) and (U222) are ticket labels",
-    files: canonicalFiles,
-  });
-  await client.query("UPDATE chat_events SET payload=$1 WHERE id=$2", [
-    JSON.stringify({ userMessage: identifiedSlackMessage }),
-    slack.eventId,
-  ]);
-  const identifiedSlackProjection = projectUserMessage(identifiedSlackMessage);
-  const identifiedSlackMaterial = await loadSlackQueuedLaunchMaterial(db, {
-    ...slack,
-    userMessageProjection: identifiedSlackProjection,
-  });
-  assert.ok(identifiedSlackMaterial);
-  assert.equal(
-    identifiedSlackMaterial.prompt,
-    identifiedSlackProjection.agentPrompt,
-    "canonical mentions with IDs at their original positions need no duplicate text",
-  );
+  for (const text of [
+    "Ask @Same (U111) to tell @Same (U222) that (U111) and (U222) are ticket labels",
+    "Ask <@U111> to tell @Same (U222) that (U111) and (U222) are ticket labels",
+    "Ask <@U111> to tell <@U222> that (U111) and (U222) are ticket labels",
+  ]) {
+    const identifiedSlackMessage = createUserMessageDocument({
+      text,
+      files: canonicalFiles,
+    });
+    await client.query("UPDATE chat_events SET payload=$1 WHERE id=$2", [
+      JSON.stringify({ userMessage: identifiedSlackMessage }),
+      slack.eventId,
+    ]);
+    const identifiedSlackProjection = projectUserMessage(
+      identifiedSlackMessage,
+    );
+    const identifiedSlackMaterial = await loadSlackQueuedLaunchMaterial(db, {
+      ...slack,
+      userMessageProjection: identifiedSlackProjection,
+    });
+    assert.ok(identifiedSlackMaterial);
+    assert.equal(
+      identifiedSlackMaterial.prompt,
+      identifiedSlackProjection.agentPrompt,
+      "canonical mentions with IDs at their original positions need no duplicate text",
+    );
+  }
   await client.query("UPDATE slack_chat_ingress SET payload=$1 WHERE id=$2", [
     JSON.stringify({
       team_id: "workspace",

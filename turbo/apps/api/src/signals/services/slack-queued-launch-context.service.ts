@@ -174,20 +174,18 @@ function preserveSlackMentionIdentities(
   if (!/<@\w+>/.test(originalText)) {
     return canonicalPrompt;
   }
-  // Match each identity at its original literal-text position. An unrelated
-  // occurrence of "(U123)" elsewhere cannot identify a display-name mention.
-  const identifiedMessagePattern = originalText
-    .split(/(<@\w+>)/g)
-    .map((part) => {
-      const mention = /^<@(\w+)>$/.exec(part);
-      if (mention) {
-        return `(?:${part}|@[^@\\r\\n]* \\(${mention[1]}\\))`;
-      }
-      return part.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
-    })
-    .join("");
+  // Normalize only explicit ID-bearing display mentions, then compare all
+  // original literal text. Incidental "(U123)" labels cannot prove identity.
+  // Keep raw <@ID> mentions intact, including mixed resolved/unresolved names.
+  const normalizedPrompt = canonicalPrompt.replace(
+    /(?<!<)@[^@\r\n]*? \((\w+)\)/g,
+    "<@$1>",
+  );
   if (
-    new RegExp(`(?:^|\\n\\n)${identifiedMessagePattern}$`).test(canonicalPrompt)
+    canonicalPrompt === originalText ||
+    canonicalPrompt.endsWith(`\n\n${originalText}`) ||
+    normalizedPrompt === originalText ||
+    normalizedPrompt.endsWith(`\n\n${originalText}`)
   ) {
     return canonicalPrompt;
   }
