@@ -11,7 +11,10 @@ import {
 } from "@okouai/core";
 import { expect, test } from "vitest";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
+import type {
+  ComposerWorkflow,
+  WorkflowSummary,
+} from "@okouai/api-contracts/contracts/workflows";
 
 import {
   click,
@@ -21,6 +24,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
+  AGENT_ID,
   composerInlineTemplates,
   context,
   expectInlineTemplateInComposer,
@@ -307,6 +311,77 @@ test("Find and insert a workflow with an abbreviated name", async () => {
     expect(editor).toHaveTextContent(/^Review \/pr-design-acceptance-url\s*$/);
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   });
+});
+
+test("Suggest effective workflows from an API that predates the composer endpoint", async () => {
+  mockAgent();
+  mockThread();
+  const summary = (
+    name: string,
+    options: {
+      readonly agentId?: string;
+      readonly description: string;
+      readonly visibility?: WorkflowSummary["visibility"];
+      readonly shadowedBy?: WorkflowSummary["shadowedBy"];
+    },
+  ): WorkflowSummary => {
+    return {
+      id: crypto.randomUUID(),
+      agentId: options.agentId ?? AGENT_ID,
+      agentName: null,
+      agentDisplayName: "Scout",
+      name,
+      displayName: null,
+      description: options.description,
+      visibility: options.visibility ?? "public",
+      ownerUserId: "user-1",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      canManage: true,
+      canPublish: false,
+      official: null,
+      shadowedBy: options.shadowedBy ?? null,
+    };
+  };
+  const privateWorkflow = summary("pr-auto", {
+    description: "Review, repair, and merge one pull request",
+    visibility: "private",
+  });
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(400, {
+      error: { message: "Invalid uuid", code: "BAD_REQUEST" },
+    });
+  });
+  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
+    return respond(200, [
+      summary("pr-auto", {
+        description: "Legacy goal-driven pull request automation",
+        shadowedBy: {
+          id: privateWorkflow.id,
+          name: privateWorkflow.name,
+          displayName: privateWorkflow.displayName,
+        },
+      }),
+      privateWorkflow,
+      summary("pr-review", {
+        agentId: "e0000000-0000-4000-a000-000000000099",
+        description: "Another agent's workflow",
+      }),
+    ]);
+  });
+
+  await setupPage({ context, path: `/chats/${THREAD_ID}` });
+
+  const user = userEvent.setup();
+  const editor = await findComposerEditor();
+  await user.click(editor);
+  await user.keyboard("/pr");
+
+  await waitFor(() => {
+    expect(slashButton("/pr-auto")).toHaveTextContent(
+      "Review, repair, and merge one pull request",
+    );
+  });
+  expect(slashWorkflowNames()).toStrictEqual(["/pr-auto"]);
 });
 
 test("Rank exact workflow names before prefixes, substrings, and abbreviations", async () => {

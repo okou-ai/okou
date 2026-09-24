@@ -1614,6 +1614,7 @@ export const workflowsCollectionContract = c.router({
     query: z.object({ agentId: z.string().uuid() }),
     responses: {
       200: composerWorkflowListResponseSchema,
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
