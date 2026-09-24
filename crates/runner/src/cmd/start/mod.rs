@@ -532,7 +532,7 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
                     "failed to persist stopped status after live runner publication failure"
                 );
             }
-            Err(e)
+            Err(e.into())
         }
     }
 }
