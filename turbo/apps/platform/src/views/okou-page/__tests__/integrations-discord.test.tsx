@@ -416,11 +416,12 @@ test.each([
       ],
     });
     let denyRefresh = false;
-    let refreshing = false;
+    let deferNextRefresh = false;
     context.mocks.api(
       integrationsDiscordContract.getStatus,
       async ({ respond, withSignal }) => {
-        if (refreshing) {
+        if (deferNextRefresh) {
+          deferNextRefresh = false;
           refreshStarted.resolve();
           await withSignal(refreshReady.promise);
         }
@@ -450,7 +451,7 @@ test.each([
     await saveStarted.promise;
 
     current = { ...current, guildName: "Updated team" };
-    refreshing = true;
+    deferNextRefresh = true;
     denyRefresh = refreshError;
     context.mocks.ably.trigger("discord:changed");
     await refreshStarted.promise;
