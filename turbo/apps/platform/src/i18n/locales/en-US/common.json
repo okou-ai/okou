@@ -6041,8 +6041,8 @@
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
         "windows": {
-          "fiveHour": "5h",
-          "week": "week"
+          "fiveHour": "5H",
+          "week": "Week"
         }
       },
       "switchAccount": "Switch account",
