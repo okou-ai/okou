@@ -780,11 +780,7 @@ describe("video Artifact previews", () => {
 });
 
 describe("artifact upload provenance", () => {
-  it.each([
-    "automation-schedule",
-    "automation-event",
-    "goal",
-  ] as const)(
+  it.each(["automation-schedule", "automation-event", "goal"] as const)(
     "attributes run uploads to the %s source",
     async (triggerSource) => {
       const owner = await artifactActor(
