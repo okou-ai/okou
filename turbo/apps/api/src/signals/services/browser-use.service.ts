@@ -950,13 +950,19 @@ async function resolveBrowserUseValidationControl(
     ),
   );
   signal.throwIfAborted();
-  const remote = resolved.ok
-    ? browserUseCdpRemoteObjectSchema.safeParse(resolved.value)
-    : null;
-  if (!remote?.success) {
+  if (!resolved.ok) {
+    if (!isMissingBrowserUseNode(resolved.error)) {
+      throw resolved.error;
+    }
     throw new BrowserUseUserActionValidationError(
       "backend_node_not_found",
       args.fieldPosition,
+    );
+  }
+  const remote = browserUseCdpRemoteObjectSchema.safeParse(resolved.value);
+  if (!remote.success) {
+    throw new Error(
+      "Browser Use CDP node resolution returned an invalid response",
     );
   }
   return {

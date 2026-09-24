@@ -115,6 +115,24 @@ function browserUserActionObjectId(backendNodeId: unknown): string {
   return backendNodeId === 44 ? "native-code-object" : "native-password-object";
 }
 
+function browserValidationNodeResult(args: {
+  readonly backendNodeId: unknown;
+  readonly available: boolean;
+  readonly missingBackendNodeId: number | null;
+  readonly malformed: boolean;
+  readonly failure: string | null;
+}): unknown {
+  if (args.failure) {
+    return new Error(args.failure);
+  }
+  if (args.malformed) {
+    return {};
+  }
+  return args.available && args.backendNodeId !== args.missingBackendNodeId
+    ? { object: { objectId: browserUserActionObjectId(args.backendNodeId) } }
+    : new Error("No node with given id found");
+}
+
 function mockNativeInputTarget(): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
     switch (command.method) {
@@ -690,6 +708,7 @@ describe("Browser user-action route", () => {
     let disconnectAfterNextWrite = false;
     let resolveNodeAvailable = true;
     let missingBackendNodeId: number | null = null;
+    let nodeResolutionFailure: string | null = null;
     let malformedNodeResponse = false;
     let verificationMatches = true;
     let failNextProviderRead = false;
@@ -731,19 +750,13 @@ describe("Browser user-action route", () => {
         };
       }
       if (command.method === "DOM.resolveNode") {
-        if (malformedNodeResponse) {
-          return {};
-        }
-        return resolveNodeAvailable &&
-          command.params.backendNodeId !== missingBackendNodeId
-          ? {
-              object: {
-                objectId: browserUserActionObjectId(
-                  command.params.backendNodeId,
-                ),
-              },
-            }
-          : new Error("No node with given id found");
+        return browserValidationNodeResult({
+          backendNodeId: command.params.backendNodeId,
+          available: resolveNodeAvailable,
+          missingBackendNodeId,
+          malformed: malformedNodeResponse,
+          failure: nodeResolutionFailure,
+        });
       }
       if (command.method === "Runtime.callFunctionOn") {
         const declaration =
@@ -1016,6 +1029,51 @@ describe("Browser user-action route", () => {
       },
     });
     missingBackendNodeId = null;
+
+    const nodeInspectionRequest = {
+      headers: current.claim.browserHeaders,
+      body: {
+        kind: "input" as const,
+        callbackPrompt: "Continue after input",
+        pageTargetId: "native-input-target",
+        fields: [
+          {
+            key: "password",
+            label: "Password",
+            fieldKind: "password" as const,
+            required: true,
+            backendNodeId: 42,
+          },
+        ],
+      },
+    };
+    nodeResolutionFailure = "Target session closed";
+    const failedNodeInspection = await userActionClient().create(
+      nodeInspectionRequest,
+    );
+    expect(failedNodeInspection).toMatchObject({
+      status: 502,
+      body: {
+        error: {
+          code: "BROWSER_USER_ACTION_PROVIDER_ERROR",
+          message: "Managed Browser operation failed",
+        },
+      },
+    });
+    expect(JSON.stringify(failedNodeInspection.body)).not.toContain(
+      "Target session closed",
+    );
+    nodeResolutionFailure = null;
+
+    malformedNodeResponse = true;
+    const malformedNodeInspection = await userActionClient().create(
+      nodeInspectionRequest,
+    );
+    expect(malformedNodeInspection).toMatchObject({
+      status: 502,
+      body: { error: { code: "BROWSER_USER_ACTION_PROVIDER_ERROR" } },
+    });
+    malformedNodeResponse = false;
 
     const missingPage = await userActionClient().create({
       headers: current.claim.browserHeaders,
