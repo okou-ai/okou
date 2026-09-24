@@ -58,7 +58,6 @@ export enum FeatureSwitchKey {
   DiscordIntegration = "_discordIntegration",
   VncAccess = "vncAccess",
   ThreadRemoteAccess = "threadRemoteAccess",
-  PiLoop = "piLoop",
   PiMemory = "piMemory",
   OpenRouterUsRouting = "openRouterUsRouting",
   DeepSeekAlternativeRouting = "deepSeekAlternativeRouting",

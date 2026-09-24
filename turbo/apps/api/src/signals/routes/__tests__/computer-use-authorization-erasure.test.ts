@@ -138,7 +138,17 @@ async function createAuthorizationRunFixture(options?: {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  // Authorization erasure races a claimable native run against persisted locks.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(owner, {
     displayName: `Computer Use authorization ${randomUUID().slice(0, 8)}`,
     visibility: "public",

@@ -10,7 +10,6 @@ import {
   getMemberModelPolicyRoute,
   isMemberModelPolicyConfigurable,
 } from "@okouai/api-contracts/contracts/member-model-policy";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 
 /** Saved preferences remain independent of the route's current capability. */
@@ -26,7 +25,6 @@ export function preferredChatReasoningEffort(
 /** Resolve the same model/provider runtime policy used by server admission. */
 export function availableChatReasoningEfforts(
   selection: ModelProviderSelection | null | undefined,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
   policy: OrgModelPolicy | undefined,
 ): readonly ReasoningEffort[] {
   if (!selection || !policy || !isMemberModelPolicyConfigurable(policy)) {
@@ -42,7 +40,6 @@ export function availableChatReasoningEfforts(
     modelProviderType: route.providerType,
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
-    piEnabled: switches[FeatureSwitchKey.PiLoop] === true,
   });
   return getRouteReasoningEfforts({
     model: selection.selectedModel,
@@ -54,13 +51,12 @@ export function availableChatReasoningEfforts(
 /** Resolve the value this UI can execute without mutating the saved preference. */
 export function effectiveChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
   policy: OrgModelPolicy | undefined,
 ): ReasoningEffort | undefined {
   if (!selection) {
     return undefined;
   }
-  const available = availableChatReasoningEfforts(selection, switches, policy);
+  const available = availableChatReasoningEfforts(selection, policy);
   const preferred = preferredChatReasoningEffort(selection);
   if (preferred && available.includes(preferred)) {
     return preferred;

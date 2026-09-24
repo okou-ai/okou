@@ -48,7 +48,17 @@ async function seedGoalApiFixture(): Promise<GoalApiFixture> {
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  const { providerId } = await api.ensureOrgModelProvider(actor);
+  // Retired Goal admission is checked against an otherwise claimable run.
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await bdd.createAgent(actor, {
     displayName: "Goal Agent",
     visibility: "private",
@@ -58,7 +68,7 @@ async function seedGoalApiFixture(): Promise<GoalApiFixture> {
     {
       agentId: agent.agentId,
       prompt: "goal precondition",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     },
     [201],
   );

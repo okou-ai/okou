@@ -336,12 +336,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Send preview chat runs through real agent CLIs instead of preview mock runners.",
     enabled: false,
   },
-  [FeatureSwitchKey.PiLoop]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Run owned chat threads with the official Pi runtime, streamed session output, native session persistence, and shared memory learning across interactive and automation turns.",
-    enabled: true,
-  },
   [FeatureSwitchKey.PiMemory]: {
     maintainer: "lancy@okou.ai",
     description:

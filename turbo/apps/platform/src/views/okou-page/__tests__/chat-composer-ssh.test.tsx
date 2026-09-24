@@ -142,6 +142,95 @@ test("A chat can override multiple SSH hosts and return to each host default", a
   });
 });
 
+test("Remote access stays open while a changed chat host refreshes", async () => {
+  const firstId = "b0000000-0000-4000-8000-000000000001";
+  const secondId = "b0000000-0000-4000-8000-000000000002";
+  const hosts = [
+    { connectionId: firstId, displayName: "SSH host 1", defaultEnabled: false },
+    {
+      connectionId: secondId,
+      displayName: "SSH host 2",
+      defaultEnabled: false,
+    },
+  ];
+  const refreshStarted = context.mocks.deferred<void>();
+  const releaseRefresh = context.mocks.deferred<void>();
+  const releaseDefaultsRefresh = context.mocks.deferred<void>();
+  let listRequests = 0;
+  let firstEnabled = false;
+  let delayDefaultsRefresh = false;
+  const access = () => {
+    return {
+      ssh: hosts.map((host) => {
+        const enabled = host.connectionId === firstId && firstEnabled;
+        return {
+          ...host,
+          overrideEnabled: enabled ? true : null,
+          enabled,
+          source: enabled ? ("override" as const) : ("default" as const),
+        };
+      }),
+      vnc: [],
+    };
+  };
+  installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  context.mocks.api(
+    chatRemoteAccessContract.listHostDefaults,
+    async ({ respond }) => {
+      if (delayDefaultsRefresh) {
+        await releaseDefaultsRefresh.promise;
+      }
+      return respond(200, { ssh: hosts, vnc: [] });
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.listThreadAccess,
+    async ({ respond }) => {
+      listRequests += 1;
+      if (listRequests > 1) {
+        refreshStarted.resolve();
+        await releaseRefresh.promise;
+      }
+      return respond(200, access());
+    },
+  );
+  context.mocks.api(
+    chatRemoteAccessContract.setThreadOverride,
+    ({ body, respond }) => {
+      firstEnabled = body.enabled;
+      return respond(200, access().ssh[0]!);
+    },
+  );
+  await setupPage({
+    context,
+    path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ThreadRemoteAccess]: true },
+  });
+  click(await findFastControl("button", "Connectors"));
+  const remoteAccess = await screen.findByText("Remote access");
+  click(remoteAccess);
+  const menu = screen.getByRole("dialog", { name: "Remote access" });
+  const first = await screen.findByRole("combobox", { name: "SSH SSH host 1" });
+  const second = screen.getByRole("combobox", { name: "SSH SSH host 2" });
+
+  delayDefaultsRefresh = true;
+  await userEvent.setup({ delay: null }).selectOptions(first, "on");
+  await refreshStarted.promise;
+  expect(menu).toBeInTheDocument();
+  expect(first).toBeInTheDocument();
+  expect(second).toBeInTheDocument();
+  expect(second).not.toBeDisabled();
+  expect(remoteAccess.closest("button")).toHaveTextContent("0 enabled");
+
+  releaseDefaultsRefresh.resolve();
+  releaseRefresh.resolve();
+  await waitFor(() => {
+    expect(first).toHaveValue("on");
+    expect(menu).toBeInTheDocument();
+    expect(remoteAccess.closest("button")).toHaveTextContent("1 enabled");
+  });
+});
+
 test("A chat can enable multiple VNC hosts independently", async () => {
   const hostIds = [
     "b0000000-0000-4000-8000-000000000011",

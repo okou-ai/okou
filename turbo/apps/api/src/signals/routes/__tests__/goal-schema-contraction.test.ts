@@ -34,6 +34,23 @@ const api = createRunsApi(context);
 const chat = createChatFilesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
+async function selectNativeGoalFixtureModel(
+  actor: ReturnType<typeof bdd.user>,
+) {
+  const { providerId } = await api.ensureOrgModelProvider(actor);
+  // Historical callback tests claim and complete a native Runner job; keep
+  // Pi-admitted Sonnet out of this fixture without disabling the Pi route.
+  await api.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
+}
+
 async function archive(threadId: string, keepEventId?: string): Promise<void> {
   const previous = context.mocks.s3.send.getMockImplementation();
   installFakeChatEventR2(context);
@@ -75,7 +92,7 @@ test("executes normal and CTE launches, callbacks and late historical billing af
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await selectNativeGoalFixtureModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Consumer-free runtime",
       visibility: "private",
@@ -86,7 +103,7 @@ test("executes normal and CTE launches, callbacks and late historical billing af
         {
           agentId: agent.agentId,
           prompt: "ordinary chat after contraction",
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
         },
         [201],
       );
@@ -307,7 +324,7 @@ test.each(
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     await api.grantProEntitlement(actor);
-    await api.ensureOrgModelProvider(actor);
+    await selectNativeGoalFixtureModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Continue archived conversation",
       visibility: "private",
@@ -319,7 +336,7 @@ test.each(
           agentId: agent.agentId,
           threadId,
           prompt: "continue ordinary conversation",
-          model: "claude-sonnet-5",
+          model: "claude-fable-5-1",
         },
         [201],
       );
@@ -498,7 +515,7 @@ async function startArchiveTestRun() {
   api.acceptTelemetryIngest();
   const runnerGroup = api.configureRunnerGroup();
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  await selectNativeGoalFixtureModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Historical delivery",
     visibility: "private",
@@ -508,7 +525,7 @@ async function startArchiveTestRun() {
     {
       agentId: agent.agentId,
       prompt: "ordinary historical input",
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     },
     [201],
   );

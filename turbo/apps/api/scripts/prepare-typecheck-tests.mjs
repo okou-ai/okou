@@ -160,7 +160,7 @@ export function prepareTestProjects(root) {
 
 if (
   process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+  fs.realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url)
 ) {
   prepareTestProjects(resolve(import.meta.dirname, ".."));
 }

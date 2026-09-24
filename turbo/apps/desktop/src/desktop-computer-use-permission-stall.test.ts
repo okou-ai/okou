@@ -28,7 +28,7 @@ it("recovers a ready helper's buffered reply after an isolated parent stall", as
       ready: boolean;
       writtenAfterMs: number;
       elapsedMs: number;
-      starts: number;
+      startsAfterStall: number;
       errors: unknown[];
     };
     // This isolated process must prove the helper wrote before the real native
@@ -39,7 +39,7 @@ it("recovers a ready helper's buffered reply after an isolated parent stall", as
     expect(result.outcome.ok).toBe(true);
     expect(result.ready).toBe(true);
     expect(result.freshGeneration).toBeGreaterThan(result.generation);
-    expect(result.starts).toBe(2);
+    expect(result.startsAfterStall).toBe(1);
     expect(result.errors).toEqual([
       expect.objectContaining({
         stage: "timeout",

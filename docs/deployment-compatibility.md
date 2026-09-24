@@ -233,8 +233,8 @@ recreated. No schema migration is needed.
 
 The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
 `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
-route those models through Pi when their existing product policy and PiLoop
-switch allow it. This change does not make a model newly addable to an
+route those models through Pi when their existing product policy allows it.
+This change does not make a model newly addable to an
 organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
 because neither is in the US endpoint allowlist.
 
@@ -1453,7 +1453,7 @@ CLI changes must ship through the same commit-addressed CLI artifact selection.
 Previously captured contexts retain their package and history reference; new
 contexts select the new reader. Old Runners already support 128 MiB history.
 
-Pi is enabled by default through `PiLoop`. Rolling the API back below this change
+Eligible routes use Pi. Rolling the API back below this change
 restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 There is no history truncation, migration, or alternate reader for that rollback.

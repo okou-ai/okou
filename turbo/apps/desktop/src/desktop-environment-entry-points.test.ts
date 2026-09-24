@@ -66,7 +66,8 @@ if (
   config.authPartition === config.sessionPartition ||
   config.environment !== process.env.TEST_EXPECTED_ENVIRONMENT ||
   config.identity.displayName !== process.env.TEST_EXPECTED_DISPLAY_NAME ||
-  config.sessionPartition !== process.env.TEST_EXPECTED_SESSION_PARTITION
+  config.sessionPartition !== process.env.TEST_EXPECTED_SESSION_PARTITION ||
+  config.clerkPublishableKey !== (process.env.TEST_EXPECTED_CLERK_PUBLISHABLE_KEY || null)
 ) {
   throw new Error("Installed Desktop configuration changed");
 }
@@ -90,11 +91,13 @@ Object.defineProperty(process, "platform", { value: "darwin" });
 interface EnvironmentValues {
   readonly canonicalPlatformUrl?: string;
   readonly canonicalProduct?: string;
+  readonly clerkPublishableKey?: string;
 }
 
 interface RuntimeFileConfig {
   readonly platformUrl: string;
   readonly product?: unknown;
+  readonly clerkPublishableKey?: unknown;
 }
 
 interface SurfaceCase {
@@ -105,6 +108,7 @@ interface SurfaceCase {
   readonly expectedProduct: "okou";
   readonly expectedPlatformUrl: string;
   readonly expectedDisplayName: string;
+  readonly expectedClerkPublishableKey?: string;
 }
 
 interface InstalledSurfaceCase extends SurfaceCase {
@@ -181,6 +185,7 @@ function applyEnvironmentValues(
   for (const [environmentName, value] of [
     [environmentNames.canonicalPlatformUrl, values.canonicalPlatformUrl],
     [environmentNames.canonicalProduct, values.canonicalProduct],
+    ["OKOU_DESKTOP_CLERK_PUBLISHABLE_KEY", values.clerkPublishableKey],
   ] as const) {
     if (value !== undefined) {
       environment[environmentName] = value;
@@ -205,6 +210,8 @@ function surfaceEnvironment(
   environment.TEST_EXPECTED_DISPLAY_NAME = testCase.expectedDisplayName;
   environment.TEST_EXPECTED_PLATFORM_URL = testCase.expectedPlatformUrl;
   environment.TEST_EXPECTED_PRODUCT = testCase.expectedProduct;
+  environment.TEST_EXPECTED_CLERK_PUBLISHABLE_KEY =
+    testCase.expectedClerkPublishableKey;
   environment.TEST_PLATFORM_ARGUMENT_DEFINED = String(
     testCase.platformArgument !== undefined,
   );
@@ -520,11 +527,13 @@ describe("installed Desktop configuration entry point", () => {
       fileConfig: {
         product: "okou",
         platformUrl: "https://staging-app.omby.ai",
+        clerkPublishableKey: "pk_test_packaged",
       },
       expectedProduct: "okou",
       expectedPlatformUrl: "https://staging-app.omby.ai/",
       expectedDisplayName: "Okou Dev",
       expectedEnvironment: "staging",
+      expectedClerkPublishableKey: "pk_test_packaged",
     },
   ] satisfies readonly (InstalledSurfaceCase & { readonly name: string })[];
 
@@ -549,6 +558,23 @@ describe("installed Desktop configuration entry point", () => {
     });
 
     expectSuccessfulEntryPoint(result);
+  });
+
+  it("allows a local Clerk publishable key to override the packaged key", () => {
+    expectSuccessfulEntryPoint(
+      runInstalledConfig({
+        environment: { clerkPublishableKey: "pk_test_local" },
+        fileConfig: {
+          platformUrl: "https://staging-app.omby.ai",
+          clerkPublishableKey: "pk_test_packaged",
+        },
+        expectedProduct: "okou",
+        expectedPlatformUrl: "https://staging-app.omby.ai/",
+        expectedDisplayName: "Okou Dev",
+        expectedEnvironment: "staging",
+        expectedClerkPublishableKey: "pk_test_local",
+      }),
+    );
   });
 
   it("keeps non-empty arguments ahead of canonical environment", () => {

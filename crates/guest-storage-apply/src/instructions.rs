@@ -291,6 +291,22 @@ fn copy_instruction_file(
     target_filename: InstructionFilename,
     success_message: &str,
 ) -> bool {
+    copy_instruction_file_with(
+        source_path,
+        final_mount_path,
+        target_filename,
+        success_message,
+        io::copy,
+    )
+}
+
+fn copy_instruction_file_with(
+    source_path: &Path,
+    final_mount_path: &Path,
+    target_filename: InstructionFilename,
+    success_message: &str,
+    copy: impl FnOnce(&mut fs::File, &mut fs::File) -> io::Result<u64>,
+) -> bool {
     let target_path = final_mount_path.join(target_filename.as_str());
     match lstat_instruction_path_state(&target_path) {
         InstructionPathState::RegularFile | InstructionPathState::Missing => {}
@@ -309,7 +325,7 @@ fn copy_instruction_file(
         }
     }
 
-    match copy_instruction_file_atomically(source_path, &target_path) {
+    match copy_instruction_file_atomically(source_path, &target_path, copy) {
         Ok(()) => {
             log_info!(LOG_TAG, "{}", success_message);
             remove_alternates_after_successful_copy(
@@ -326,12 +342,16 @@ fn copy_instruction_file(
     }
 }
 
-fn copy_instruction_file_atomically(source_path: &Path, target_path: &Path) -> io::Result<()> {
+fn copy_instruction_file_atomically(
+    source_path: &Path,
+    target_path: &Path,
+    copy: impl FnOnce(&mut fs::File, &mut fs::File) -> io::Result<u64>,
+) -> io::Result<()> {
     let mut source = fs::File::open(source_path)?;
     let source_permissions = source.metadata()?.permissions();
     let (mut temp_file, temp_path) = create_instruction_temp_file(target_path)?;
     let result = (|| {
-        io::copy(&mut source, &mut temp_file)?;
+        copy(&mut source, &mut temp_file)?;
         drop(temp_file);
         fs::set_permissions(&temp_path, source_permissions)?;
         fs::rename(&temp_path, target_path)
@@ -513,6 +533,68 @@ fn remove_instruction_file_if_safe(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
+    use std::io::{Read, Write};
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    struct FailAfterPrefixReader<'a> {
+        source: &'a mut fs::File,
+        remaining: usize,
+        bytes_read: &'a Cell<usize>,
+    }
+
+    impl Read for FailAfterPrefixReader<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            if self.remaining == 0 {
+                return Err(io::Error::other("injected read failure"));
+            }
+            let limit = self.remaining.min(buf.len());
+            let count = self.source.read(&mut buf[..limit])?;
+            self.remaining -= count;
+            self.bytes_read.set(self.bytes_read.get() + count);
+            Ok(count)
+        }
+    }
+
+    struct FailAfterPrefixWriter<'a> {
+        target: &'a mut fs::File,
+        remaining: usize,
+        bytes_written: &'a Cell<usize>,
+    }
+
+    impl Write for FailAfterPrefixWriter<'_> {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if buf.is_empty() {
+                return Ok(0);
+            }
+            if self.remaining == 0 {
+                return Err(io::Error::other("injected write failure"));
+            }
+            let count = self.target.write(&buf[..self.remaining.min(buf.len())])?;
+            self.remaining -= count;
+            self.bytes_written.set(self.bytes_written.get() + count);
+            Ok(count)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.target.flush()
+        }
+    }
+
+    fn assert_no_copy_temp_files(path: &Path) {
+        assert!(fs::read_dir(path).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".vm0-copy-")
+        }));
+    }
 
     fn disable_system_log() {
         guest_telemetry::log::clear_system_log_file();
@@ -733,6 +815,102 @@ mod tests {
             "old instructions"
         );
         assert_eq!(fs::read_dir(&final_home).unwrap().count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copy_instruction_file_write_failure_after_partial_copy_preserves_target() {
+        disable_system_log();
+        let dir = tempfile::tempdir().unwrap();
+        let staged = dir.path().join("staged");
+        let final_home = dir.path().join(".codex");
+        fs::create_dir_all(&staged).unwrap();
+        fs::create_dir_all(&final_home).unwrap();
+        let source = staged.join("AGENTS.md");
+        let target = final_home.join("AGENTS.md");
+        fs::write(&source, "new instructions").unwrap();
+        fs::write(&target, "old instructions").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
+        let old_mode = fs::metadata(&target).unwrap().permissions().mode();
+        let bytes_written = Cell::new(0);
+
+        assert!(!copy_instruction_file_with(
+            &source,
+            &final_home,
+            InstructionFilename::Agents,
+            "Copied instructions file",
+            |source, temp| {
+                io::copy(
+                    source,
+                    &mut FailAfterPrefixWriter {
+                        target: temp,
+                        remaining: 4,
+                        bytes_written: &bytes_written,
+                    },
+                )
+            },
+        ));
+
+        assert_eq!(bytes_written.get(), 4);
+        assert_eq!(fs::read(&target).unwrap(), b"old instructions");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode(),
+            old_mode
+        );
+        assert_no_copy_temp_files(&final_home);
+
+        assert!(copy_instruction_file(
+            &source,
+            &final_home,
+            InstructionFilename::Agents,
+            "Copied instructions file",
+        ));
+        assert_eq!(fs::read(&target).unwrap(), b"new instructions");
+        assert_no_copy_temp_files(&final_home);
+    }
+
+    #[test]
+    fn copy_instruction_file_read_failure_after_partial_copy_keeps_in_place_alternate() {
+        disable_system_log();
+        let dir = tempfile::tempdir().unwrap();
+        let mount = dir.path().join(".codex");
+        fs::create_dir_all(&mount).unwrap();
+        let alternate = mount.join("CLAUDE.md");
+        let target = mount.join("AGENTS.md");
+        fs::write(&alternate, "alternate instructions").unwrap();
+        let bytes_read = Cell::new(0);
+
+        assert!(!copy_instruction_file_with(
+            &alternate,
+            &mount,
+            InstructionFilename::Agents,
+            "Normalized instructions file",
+            |source, temp| {
+                io::copy(
+                    &mut FailAfterPrefixReader {
+                        source,
+                        remaining: 4,
+                        bytes_read: &bytes_read,
+                    },
+                    temp,
+                )
+            },
+        ));
+
+        assert_eq!(bytes_read.get(), 4);
+        assert_eq!(fs::read(&alternate).unwrap(), b"alternate instructions");
+        assert!(!target.exists());
+        assert_no_copy_temp_files(&mount);
+
+        assert!(copy_instruction_file(
+            &alternate,
+            &mount,
+            InstructionFilename::Agents,
+            "Normalized instructions file",
+        ));
+        assert_eq!(fs::read(&target).unwrap(), b"alternate instructions");
+        assert!(!alternate.exists());
+        assert_no_copy_temp_files(&mount);
     }
 
     #[test]

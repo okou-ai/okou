@@ -50,6 +50,7 @@ function createSession(
     event: DesktopAuthRefreshEvent,
     session: DesktopAuthSession,
   ) => void,
+  nativeTokenProvider = false,
 ) {
   const config = resolveDesktopConfig();
   const windows: DesktopAuthWindowRequest[] = [];
@@ -65,6 +66,9 @@ function createSession(
     }),
     tokenUrl: buildDesktopAuthTokenUrl(config.authUrl),
     selectOrgUrl: buildDesktopAuthSelectOrgUrl(config.authUrl, true),
+    ...(nativeTokenProvider
+      ? { signInUrl: "native-clerk://sign-in", nativeTokenProvider: true }
+      : {}),
     consumeUrl: (code, id) =>
       buildDesktopAuthConsumeUrl(config.authUrl, code, id),
     runAuthWindow: async (request) => {
@@ -128,6 +132,34 @@ function identityHandlers(
 }
 
 describe("Okou App session authority", () => {
+  it("keeps the same native session on a liveness read and withdraws it when Clerk loses the session", async () => {
+    identityHandlers({ userId: "native-user", sessionId: "sess_native" });
+    const { session, replies, windows } = createSession(
+      undefined,
+      undefined,
+      true,
+    );
+    const token = sessionToken(90, "native");
+    replies.push(Promise.resolve(token));
+    await session.signIn();
+    expect(windows[0]).toMatchObject({
+      url: "native-clerk://sign-in",
+      visible: true,
+    });
+    const authority = session.getAuthority();
+    expect(authority).not.toBeNull();
+
+    replies.push(Promise.resolve(token));
+    await session.checkNativeLiveness();
+    expect(session.getCachedToken()).toBe(token);
+    expect(session.getAuthority()).toBe(authority);
+
+    replies.push(Promise.resolve(null), Promise.resolve(null));
+    await session.checkNativeLiveness();
+    expect(session.getAuthority()).toBeNull();
+    expect(await session.getAuthState()).toEqual(signedOut);
+  });
+
   it("joins hidden restoration when a change subscriber synchronously reads auth state", async () => {
     identityHandlers();
     const reads: ReturnType<DesktopAuthSession["getAuthState"]>[] = [];

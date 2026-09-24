@@ -143,7 +143,9 @@ async function createAuthorizationReadFixture(args: {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  // Authorization reads target a queued native Runner chat run (Pi would
+  // execute Sonnet 5 API-first), so the org default stays on Fable.
+  await runs.ensureOrgModelProvider(actor, { model: "claude-fable-5-1" });
   const agent = await bdd.createAgent(owner, {
     displayName: `Authorization read ${randomUUID().slice(0, 8)}`,
     visibility: "public",
