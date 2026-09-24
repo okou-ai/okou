@@ -11,6 +11,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { testEmailOutboxStateRoutes } from "../../test-email-outbox-state";
 
 interface SeedEmailOutboxItemOptions {
+  readonly template?: "data-export-ready" | "morning-brief-result";
   readonly toAddress: string;
   readonly subject: string;
   readonly status: "pending" | "failed";
@@ -68,6 +69,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
     ): Promise<TestEmailOutboxStateItem> {
       const response = await postAction(context, {
         action: "seed-item",
+        ...(options.template ? { template: options.template } : {}),
         to_address: options.toAddress,
         subject: options.subject,
         status: options.status,

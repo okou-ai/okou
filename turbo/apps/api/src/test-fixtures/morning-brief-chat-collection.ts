@@ -93,7 +93,7 @@ export async function seedMorningBriefChatMemberFixture(
  * the owner, so this state cannot be built through the product and is written
  * here, exactly as the existing held-transfer fixture below already does.
  */
-export async function restrictAgentAccessFixture(args: {
+async function restrictAgentAccessFixture(args: {
   readonly agentId: string;
   readonly owner: string;
 }): Promise<void> {
@@ -114,7 +114,7 @@ export async function restrictAgentAccessFixture(args: {
  * suite starts from is already seeded that way; driving one member through a
  * real install while the other is seeded would compare two different states.
  */
-export async function replaceMorningBriefInstallationFixture(member: {
+async function replaceMorningBriefInstallationFixture(member: {
   readonly orgId: string;
   readonly userId: string;
   readonly workflowId: string;
@@ -137,7 +137,7 @@ export async function replaceMorningBriefInstallationFixture(member: {
  * this fixture commits the same delete/insert transition directly. The real
  * canonical reader and PostgreSQL rows remain the authority under test.
  */
-export async function replaceMorningBriefAutomationFixture(member: {
+async function replaceMorningBriefAutomationFixture(member: {
   readonly orgId: string;
   readonly userId: string;
   readonly workflowId: string;
@@ -183,7 +183,7 @@ export async function replaceMorningBriefAutomationFixture(member: {
  * then held, which is what makes the resumed caller a genuinely stale one
  * instead of a lookup that already observed the change.
  */
-export function holdMorningBriefChatMembershipLookupFixture(
+function holdMorningBriefChatMembershipLookupFixture(
   args: {
     readonly owner: MorningBriefChatMember;
     /** Lookups to let through untouched before suspending one. */
@@ -269,7 +269,7 @@ function isOwnerMembershipLookup(
  * queued e-mail", so this one assertion is made against the database; the read
  * watermark, which *is* observable through a second collection, is not.
  */
-export async function countMorningBriefChatWritesFixture(owner: {
+async function countMorningBriefChatWritesFixture(owner: {
   readonly orgId: string;
   readonly userId: string;
   readonly automationId: string;
@@ -323,7 +323,7 @@ export async function countMorningBriefChatWritesFixture(owner: {
  * owned binding row directly while keeping the real canonical reader and
  * PostgreSQL constraint behavior under test.
  */
-export async function bindMorningBriefThreadFixture(args: {
+async function bindMorningBriefThreadFixture(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly workflowId: string;
@@ -348,7 +348,7 @@ export async function bindMorningBriefThreadFixture(args: {
 }
 
 /** Create a thread through the production ordinary-Chat creator. */
-export const seedOrdinaryChatThreadFixture$ = command(
+const seedOrdinaryChatThreadFixture$ = command(
   async (
     { set },
     args: {
@@ -393,7 +393,7 @@ interface SeededChatRun {
  * A finished Run with its claimed input, one visible reply, and the terminal
  * marker that makes the thread unread.
  */
-export const seedFinishedChatRunFixture$ = command(
+const seedFinishedChatRunFixture$ = command(
   async (
     { set },
     args: {
@@ -579,7 +579,7 @@ export async function clearChatThreadProvenanceFixture(
 }
 
 /** Write a classification this API version does not understand. */
-export async function setUnsupportedChatThreadProvenanceFixture(
+async function setUnsupportedChatThreadProvenanceFixture(
   chatThreadId: string,
 ): Promise<void> {
   await db()
@@ -599,7 +599,7 @@ export async function readChatThreadProvenanceFixture(
   return thread?.provenance ?? null;
 }
 
-export async function renameChatThreadFixture(args: {
+async function renameChatThreadFixture(args: {
   readonly chatThreadId: string;
   readonly title: string;
 }): Promise<void> {
@@ -623,7 +623,7 @@ export async function uninstallMorningBriefFixture(
 }
 
 /** Commit the production Morning Brief exclusion write for one thread. */
-export async function excludeMorningBriefChatThreadFixture(args: {
+async function excludeMorningBriefChatThreadFixture(args: {
   readonly chatThreadId: string;
   readonly userId: string;
 }): Promise<void> {
@@ -640,7 +640,7 @@ export async function excludeMorningBriefChatThreadFixture(args: {
  * while this is held therefore queues behind a real uncommitted classification
  * change instead of racing it, and the test can prove it queued.
  */
-export async function holdMorningBriefExclusionWriteFixture(
+async function holdMorningBriefExclusionWriteFixture(
   args: {
     readonly chatThreadId: string;
     readonly userId: string;
@@ -662,7 +662,7 @@ export async function holdMorningBriefExclusionWriteFixture(
  * state — a new Run, a deletion — while the collection has already selected the
  * thread but has not yet read it.
  */
-export async function holdChatThreadReadBarrierFixture(
+async function holdChatThreadReadBarrierFixture(
   chatThreadId: string,
   signal: AbortSignal,
 ) {
@@ -684,10 +684,7 @@ export async function holdChatThreadReadBarrierFixture(
  * candidate selection and the content read — the window where a deletion has to
  * be observed rather than read around.
  */
-export async function holdAgentRowFixture(
-  agentId: string,
-  signal: AbortSignal,
-) {
+async function holdAgentRowFixture(agentId: string, signal: AbortSignal) {
   return await holdDeferredRow(signal, async (tx) => {
     await tx
       .select({ id: agents.id })
@@ -701,16 +698,14 @@ export async function holdAgentRowFixture(
  * Block the canonical ownership SELECT used by the final local authority gate.
  * This table-level fixture is limited to the focused final-authority proof.
  */
-export async function holdMorningBriefOwnershipReadFixture(
-  signal: AbortSignal,
-) {
+async function holdMorningBriefOwnershipReadFixture(signal: AbortSignal) {
   return await holdDeferredRow(signal, async (tx) => {
     await tx.execute(sql`LOCK TABLE ${workflows} IN ACCESS EXCLUSIVE MODE`);
   });
 }
 
 /** Hold an uncommitted Agent ownership transfer on the thread's Agent. */
-export async function holdAgentOwnerTransferFixture(
+async function holdAgentOwnerTransferFixture(
   args: { readonly agentId: string; readonly nextOwner: string },
   signal: AbortSignal,
 ) {
@@ -722,7 +717,7 @@ export async function holdAgentOwnerTransferFixture(
   });
 }
 
-export async function markChatThreadReadFixture(args: {
+async function markChatThreadReadFixture(args: {
   readonly chatThreadId: string;
   readonly lastReadAt: Date;
 }): Promise<void> {
@@ -732,7 +727,7 @@ export async function markChatThreadReadFixture(args: {
     .where(eq(chatThreads.id, args.chatThreadId));
 }
 
-export async function deleteSeededChatThreadFixture(
+async function deleteSeededChatThreadFixture(
   chatThreadId: string,
 ): Promise<void> {
   await db()

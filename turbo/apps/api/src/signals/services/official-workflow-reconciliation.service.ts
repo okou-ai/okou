@@ -150,16 +150,6 @@ export function clearAutomationStructureTransitionPreparedHookForTest(): void {
   automationStructureTransitionPreparedHookForTest.clear();
 }
 
-export function setReconfigurationPersistedHookForTest(
-  hook: ReconfigurationPersistedHook,
-): void {
-  reconfigurationPersistedHookForTest.set(hook);
-}
-
-export function clearReconfigurationPersistedHookForTest(): void {
-  reconfigurationPersistedHookForTest.clear();
-}
-
 export type ReconcileOfficialWorkflowInstallationArgs =
   OfficialWorkflowReconciliationArgs;
 

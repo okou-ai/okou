@@ -32,10 +32,11 @@ The old App's Native-only Debug card or a caller of an old preview API may
 receive 404 after API promotion; a new App no longer renders that card. The
 Official Workflow preference, installation and scheduler APIs are retained.
 An older API still in flight can read the persisted `simpleMorningBrief` key;
-new API writes of `true` remain rejected, and the dormant key stays registered
-for historical email admission until the receipt/retention boundary is reviewed.
-No migration drops Native columns or contracts needed by retained historical
-services. Do not remove their fail-closed outbox admission merely because the
+new API writes of `true` remain rejected even though the registry key and
+Native collection entrypoints are removed. Historical email admission still
+recognizes the distinct Native template and fails closed; it is not gated by
+the feature switch. No migration drops Native columns or contracts needed by
+retained historical cleanup and scheduling services. Do not remove their fail-closed outbox admission merely because the
 scheduler is gone. Releasing this PR needs a separate authorization and normal
 release/production checks; PR creation is not deployment approval.
 

@@ -6590,14 +6590,6 @@
           "title": "IndexedDB存储",
           "unavailable": "IndexedDB存储不可用。"
         },
-        "morningBriefTrigger": {
-          "description": "立即运行一次真实的Morning Brief。它会把你自己的下一次运行排入常规调度，一分钟内生成真实的简报并发送真实的邮件。在每日固定时间之前触发，当天早上你会收到两份简报。",
-          "failed": "无法将晨报加入队列，请重试。",
-          "queued": "已加入队列，定时任务会在一分钟内送达晨报。",
-          "title": "晨报",
-          "trigger": "立即运行晨报",
-          "triggering": "正在加入队列…"
-        },
         "welcomeThread": {
           "create": "创建欢迎会话",
           "creating": "创建中…",

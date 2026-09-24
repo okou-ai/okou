@@ -42,7 +42,7 @@ export async function readWorkflowScheduleSkipsFixture(automationId: string) {
     .where(eq(workflowScheduleSkips.automationId, automationId));
 }
 
-export async function readNativeScheduleSkipsFixture(owner: {
+async function readNativeScheduleSkipsFixture(owner: {
   readonly orgId: string;
   readonly userId: string;
 }) {

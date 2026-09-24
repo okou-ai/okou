@@ -1,5 +1,10 @@
 # Morning Brief Gmail collection and the shared OAuth reader
 
+> Historical Native design record: the dedicated Gmail collector, shared
+> connector reader and preview route were removed in retirement stage 2. This
+> does not change Official Workflow Gmail access. See
+> [deployment compatibility](deployment-compatibility.md).
+
 Simple Morning Brief ([#34637](https://github.com/vm0-ai/okou/issues/34637))
 needs real authorized source content without an agent Run. This document records
 the first consumed OAuth source, Gmail, and the shared authorization boundary

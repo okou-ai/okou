@@ -1,5 +1,9 @@
 # Morning Brief native delivery
 
+> Historical design record: Native preview and execution routes were removed in
+> retirement stage 2. Only historical outbox admission, delivery cleanup and
+> receipts remain. See [deployment compatibility](deployment-compatibility.md).
+
 How an accepted `simple-morning-brief` result reaches Chat and email without a
 Run. Generation and its platform cost are described in
 [the generation contract](morning-brief-generation.md); thread provenance is in

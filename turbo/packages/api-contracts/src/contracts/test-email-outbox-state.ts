@@ -41,6 +41,9 @@ export const testEmailOutboxStateActionBodySchema = z.discriminatedUnion(
   [
     z.object({
       action: z.literal("seed-item"),
+      template: z
+        .enum(["data-export-ready", "morning-brief-result"])
+        .optional(),
       to_address: z.string().min(1),
       subject: z.string().min(1),
       status: z.enum(["pending", "failed"]),

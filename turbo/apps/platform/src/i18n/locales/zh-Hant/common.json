@@ -6590,14 +6590,6 @@
           "title": "IndexedDB儲存",
           "unavailable": "IndexedDB儲存不可用。"
         },
-        "morningBriefTrigger": {
-          "description": "立即執行一次真實的Morning Brief。它會把你自己的下一次執行排入常規排程，一分鐘內生成真實的簡報併傳送真實的郵件。在每日固定時間之前觸發，當天早上你會收到兩份簡報。",
-          "failed": "無法將晨報加入佇列，請重試。",
-          "queued": "已加入佇列，定時任務會在一分鐘內送達晨報。",
-          "title": "晨報",
-          "trigger": "立即執行晨報",
-          "triggering": "正在加入佇列…"
-        },
         "welcomeThread": {
           "create": "建立歡迎會話",
           "creating": "建立中…",

@@ -152,7 +152,7 @@ export async function rejectEmailOutboxCompletion(
  * sees it, which is the divergence this barrier exists to exercise. The hold is
  * established before the helper returns, so the case needs no sleep.
  */
-export async function holdEmailOutboxRow(
+async function holdEmailOutboxRow(
   itemId: string,
   signal: AbortSignal,
 ): Promise<HeldEmailOutboxWrite> {

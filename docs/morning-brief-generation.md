@@ -1,5 +1,10 @@
 # Morning Brief platform-funded generation
 
+> Historical Native design record: preview and execution entrypoints were
+> removed in retirement stage 2. Expired historical generation content still
+> needs purging; an unknown provider outcome must never be retried. See
+> [deployment compatibility](deployment-compatibility.md).
+
 The `simple-morning-brief` pipeline replaces the Morning Brief Official Workflow
 Run with a server-side pipeline. [The collection contract](morning-brief-collection.md)
 owns how source data is admitted, claimed and read. This document owns the next

@@ -172,7 +172,7 @@ export async function seedInstalledMorningBrief(options: {
 }
 
 /** The owner's durable member row, including its revocation stamp. */
-export async function readMorningBriefCollectionOwnerRow(
+async function readMorningBriefCollectionOwnerRow(
   owner: MorningBriefCollectionOwner,
 ) {
   const [row] = await db()
@@ -192,7 +192,7 @@ export async function readMorningBriefCollectionOwnerRow(
 }
 
 /** Every occurrence this owner holds, oldest attempt order, for assertions. */
-export async function readMorningBriefCollectionOccurrences(
+async function readMorningBriefCollectionOccurrences(
   owner: MorningBriefCollectionOwner,
 ) {
   return await db()
@@ -208,7 +208,7 @@ export async function readMorningBriefCollectionOccurrences(
 }
 
 /** Hold the Agent row that begins final local authority admission. */
-export async function holdMorningBriefAdmissionAgent(
+async function holdMorningBriefAdmissionAgent(
   agentId: string,
   signal: AbortSignal,
 ): Promise<{
@@ -227,14 +227,12 @@ export async function holdMorningBriefAdmissionAgent(
 }
 
 /** Delete an Agent directly for endpoint-less foreign-key fixture cases. */
-export async function deleteMorningBriefAgent(agentId: string): Promise<void> {
+async function deleteMorningBriefAgent(agentId: string): Promise<void> {
   await db().delete(agents).where(eq(agents.id, agentId));
 }
 
 /** Construct a private foreign-owned Agent for canonical-reader unit cases. */
-export async function restrictMorningBriefAgent(
-  agentId: string,
-): Promise<void> {
+async function restrictMorningBriefAgent(agentId: string): Promise<void> {
   await db()
     .update(agents)
     .set({ visibility: "private", owner: `user_${randomUUID()}` })
@@ -248,7 +246,7 @@ export async function restrictMorningBriefAgent(
  * production change an administrator makes when the brief is rebuilt on another
  * Agent — it must not let an occurrence admitted under the old one be reused.
  */
-export async function repointMorningBriefInstallationAgent(installation: {
+async function repointMorningBriefInstallationAgent(installation: {
   readonly orgId: string;
   readonly userId: string;
   readonly workflowId: string;
@@ -282,7 +280,7 @@ export async function repointMorningBriefInstallationAgent(installation: {
  * Agent API exposes no way to unpublish, so the row is written directly; every
  * later read still goes through the canonical storage reader.
  */
-export async function clearMorningBriefInstructionsHead(
+async function clearMorningBriefInstructionsHead(
   agentId: string,
 ): Promise<void> {
   const [agent] = await db()
@@ -314,7 +312,7 @@ export async function clearMorningBriefInstructionsHead(
  * Agent's result delivery pauses: a global table lock would block unrelated
  * storage traffic and let another request masquerade as this read's arrival.
  */
-export async function withMorningBriefInstructionVersionReadFixture<T>(
+async function withMorningBriefInstructionVersionReadFixture<T>(
   agentId: string,
   work: (read: {
     readonly arm: () => void;
@@ -380,7 +378,7 @@ export async function withMorningBriefInstructionVersionReadFixture<T>(
  * The query and its result remain real, and only this member's delivery
  * pauses, so unrelated traffic against the same table is never blocked.
  */
-export async function withMorningBriefMemberLocaleReadFixture<T>(
+async function withMorningBriefMemberLocaleReadFixture<T>(
   owner: MorningBriefCollectionOwner,
   work: (read: {
     readonly waitForArrival: () => Promise<void>;
@@ -418,7 +416,7 @@ export async function withMorningBriefMemberLocaleReadFixture<T>(
 }
 
 /** Pause the seeded schedule the way the Settings surface would. */
-export async function pauseMorningBriefAutomation(
+async function pauseMorningBriefAutomation(
   automationId: string,
 ): Promise<void> {
   await db()
@@ -497,7 +495,7 @@ async function installClaimTrigger(
  * membership cleanup must either wait for the commit and then cascade the row
  * away, or find no parent at all.
  */
-export async function holdMorningBriefCollectionClaim(
+async function holdMorningBriefCollectionClaim(
   owner: MorningBriefCollectionOwner,
   signal: AbortSignal,
 ): Promise<{
@@ -528,7 +526,7 @@ export async function holdMorningBriefCollectionClaim(
  * elapse inside. The suspended transition is observed through
  * `pg_blocking_pids`, never a sleep.
  */
-export async function holdMorningBriefCollectionOccurrence(
+async function holdMorningBriefCollectionOccurrence(
   owner: MorningBriefCollectionOwner,
   signal: AbortSignal,
 ): Promise<{
@@ -561,7 +559,7 @@ export async function holdMorningBriefCollectionOccurrence(
  * observed here can be explained by the foreign-key cascade. A plain read still
  * sees the locked row, so admission itself is unaffected.
  */
-export async function holdCleanupAfterRevocation(
+async function holdCleanupAfterRevocation(
   connection: { readonly userId: string; readonly workspaceId: string },
   signal: AbortSignal,
 ): Promise<{
@@ -610,7 +608,7 @@ function isOwnerMembershipLookup(
  * which is what makes the resumed claim a genuinely stale one rather than a
  * lookup that observed the revocation.
  */
-export function holdMorningBriefMembershipLookup(
+function holdMorningBriefMembershipLookup(
   owner: MorningBriefCollectionOwner,
   signal: AbortSignal,
 ): {

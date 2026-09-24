@@ -1,6 +1,5 @@
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { randomUUID } from "node:crypto";
-
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -9,10 +8,12 @@ import {
   seedUsagePricingRows,
 } from "../../../test-fixtures/system-config-seeds";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createEmailApi } from "./helpers/api-bdd-email";
+import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
@@ -105,6 +106,29 @@ beforeEach(() => {
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   // Resend pacing is not part of these transactional delivery assertions.
   mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
+});
+
+describe("retired Native Morning Brief email", () => {
+  it("fails a provenance-free intent closed without asking the provider to send", async () => {
+    const outbox = createEmailOutboxStateApi(context);
+    const item = await outbox.seedItem({
+      template: "morning-brief-result",
+      toAddress: `recipient-${randomUUID()}@example.test`,
+      subject: "Historical Morning Brief",
+      status: "pending",
+      createdAt: nowDate(),
+    });
+    onTestFinished(async () => {
+      await outbox.deleteItems([item.id]);
+    });
+
+    expect(await outbox.drainItems([item.id])).toBe(1);
+    expect(await outbox.readItem(item.id)).toMatchObject({
+      status: "failed",
+      last_error: "Morning Brief email has no native delivery provenance",
+    });
+    expect(resendMocks.send).not.toHaveBeenCalled();
+  });
 });
 
 describe("low-credit email delivery", () => {

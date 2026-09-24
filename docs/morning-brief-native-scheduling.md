@@ -7,8 +7,9 @@
 > schedule journal, historical receipts, and fail-closed email admission stay
 > until their independent data-retention/compatibility review; do not replay
 > an unknown provider attempt or retroactively send an old brief. The dormant
-> `simpleMorningBrief` feature key remains inaccessible for enabling through
-> the public API and hidden from Lab during this retention window.
+> The `simpleMorningBrief` registry key and Lab entry are removed. The public
+> API still rejects a `true` write to the old persisted key during mixed-version
+> rollout; this is not a path to restart Native execution.
 
 This is the durable state that lets a Morning Brief run without the legacy
 Official Workflow scheduler, and the protocol that moves a member between the

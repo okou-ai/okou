@@ -65,7 +65,7 @@ test("Lab remains available while onboarding is required", async () => {
   );
 });
 
-test("Lab groups active feature switches but hides the retired native implementation", async () => {
+test("Lab groups active feature switches", async () => {
   await setupPage({
     context,
     path: "/_/lab",
@@ -82,7 +82,7 @@ test("Lab groups active feature switches but hides the retired native implementa
     return Array.from(group.querySelectorAll("li"));
   });
 
-  expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length - 1);
+  expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length);
   expect(screen.getAllByRole("switch")).toHaveLength(featureRows.length);
   expect(
     within(released).getByText(FeatureSwitchKey.AvatarNeckSweater),
@@ -91,10 +91,6 @@ test("Lab groups active feature switches but hides the retired native implementa
   expect(
     within(beta).getByText(FeatureSwitchKey.CustomTemplates),
   ).toBeVisible();
-  expect(screen.queryByText("Native Morning Brief")).not.toBeInTheDocument();
-  expect(
-    screen.queryByText(FeatureSwitchKey.NativeMorningBrief),
-  ).not.toBeInTheDocument();
   expect(
     within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),
   ).toBeVisible();

@@ -56,7 +56,7 @@ export async function readNativeSchedule(owner: MorningBriefNativeOwner) {
   return row;
 }
 
-export async function deleteLegacyMorningBriefInstallation(
+async function deleteLegacyMorningBriefInstallation(
   workflowId: string,
 ): Promise<void> {
   await db().delete(workflows).where(eq(workflows.id, workflowId));
@@ -71,7 +71,7 @@ export async function deleteLegacyMorningBriefInstallation(
  * journaled occurrence stay exactly as the real routes committed them; only the
  * durable row this member was not migrated into yet is removed.
  */
-export async function removeMorningBriefNativeScheduleForMigrationFixture(
+async function removeMorningBriefNativeScheduleForMigrationFixture(
   owner: MorningBriefNativeOwner,
 ): Promise<void> {
   const removed = await db()
@@ -97,7 +97,7 @@ export async function removeMorningBriefNativeScheduleForMigrationFixture(
  * tick here, so an owner-scoped trigger parks the insert on an advisory lock the
  * fixture holds.
  */
-export async function holdMorningBriefFirstMaterialization(
+async function holdMorningBriefFirstMaterialization(
   owner: MorningBriefNativeOwner,
   signal: AbortSignal,
 ): Promise<{
@@ -164,7 +164,7 @@ export async function holdMorningBriefFirstMaterialization(
   return { waitForBlocked: held.waitForBlocked, release: held.release };
 }
 
-export async function readNativeOccurrences(owner: MorningBriefNativeOwner) {
+async function readNativeOccurrences(owner: MorningBriefNativeOwner) {
   return await db()
     .select()
     .from(morningBriefNativeOccurrences)
@@ -176,7 +176,7 @@ export async function readNativeOccurrences(owner: MorningBriefNativeOwner) {
     );
 }
 
-export async function readNativeGenerations(owner: MorningBriefNativeOwner) {
+async function readNativeGenerations(owner: MorningBriefNativeOwner) {
   return await db()
     .select()
     .from(morningBriefGenerations)
@@ -188,7 +188,7 @@ export async function readNativeGenerations(owner: MorningBriefNativeOwner) {
     );
 }
 
-export async function readNativeDeliveries(owner: MorningBriefNativeOwner) {
+async function readNativeDeliveries(owner: MorningBriefNativeOwner) {
   return await db()
     .select()
     .from(morningBriefDeliveries)
@@ -214,7 +214,7 @@ export async function readLegacyAutomation(automationId: string) {
  * The cron remains the public boundary under test; no endpoint exposes a way to
  * stop between those two production transactions.
  */
-export async function setLegacyReconciliationState(
+async function setLegacyReconciliationState(
   automationId: string,
   state: "paused" | "current",
 ): Promise<void> {
@@ -236,7 +236,7 @@ export async function setLegacyReconciliationState(
     .where(eq(workflowAutomations.id, automationId));
 }
 
-export async function readThreadEventTypes(
+async function readThreadEventTypes(
   chatThreadId: string,
 ): Promise<readonly string[]> {
   const rows = await db()
@@ -248,7 +248,7 @@ export async function readThreadEventTypes(
   });
 }
 
-export async function countEmailOutboxRows(outboxId: string): Promise<number> {
+async function countEmailOutboxRows(outboxId: string): Promise<number> {
   const rows = await db()
     .select({ id: emailOutbox.id })
     .from(emailOutbox)
@@ -257,7 +257,7 @@ export async function countEmailOutboxRows(outboxId: string): Promise<number> {
 }
 
 /** Zero agent Runs is part of the product contract, so the suite asserts it. */
-export async function countOrgAgentRuns(orgId: string): Promise<number> {
+async function countOrgAgentRuns(orgId: string): Promise<number> {
   const rows = await db()
     .select({ id: agentRuns.id })
     .from(agentRuns)
@@ -265,7 +265,7 @@ export async function countOrgAgentRuns(orgId: string): Promise<number> {
   return rows.length;
 }
 
-export async function seedRecipientAddress(
+async function seedRecipientAddress(
   userId: string,
   email: string,
 ): Promise<void> {
@@ -276,7 +276,7 @@ export async function seedRecipientAddress(
 }
 
 /** Make the member's native obligation due right now. */
-export async function makeNativeOccurrenceDue(
+async function makeNativeOccurrenceDue(
   owner: MorningBriefNativeOwner,
 ): Promise<Date> {
   const due = new Date(now() - 60 * 1000);
@@ -370,7 +370,7 @@ async function installNativeOccurrenceInterruption(
  * transactions, while the native occurrence remains claimed and pending — the
  * exact restart state this suite needs without seeding a generation outcome.
  */
-export async function interruptNativeSettlementAfterGeneration(
+async function interruptNativeSettlementAfterGeneration(
   owner: MorningBriefNativeOwner,
   signal: AbortSignal,
 ): Promise<() => Promise<void>> {
@@ -378,7 +378,7 @@ export async function interruptNativeSettlementAfterGeneration(
 }
 
 /** Keep settled delivery obligations pending while a test builds a full batch. */
-export async function suppressNativeDeliveryRecovery(
+async function suppressNativeDeliveryRecovery(
   owner: MorningBriefNativeOwner,
   signal: AbortSignal,
 ): Promise<() => Promise<void>> {
@@ -397,7 +397,7 @@ export async function suppressNativeDeliveryRecovery(
  * therefore read the pre-commit absence and then be observed waiting on the
  * exact lock whose release makes that receipt durable.
  */
-export async function holdNativeDeliveryReceiptCommit(
+async function holdNativeDeliveryReceiptCommit(
   owner: MorningBriefNativeOwner,
   signal: AbortSignal,
 ): Promise<{
@@ -465,7 +465,7 @@ export async function holdNativeDeliveryReceiptCommit(
 }
 
 /** Hold the real schedule parent row so competing recovery ticks both arrive. */
-export async function holdNativeScheduleRow(
+async function holdNativeScheduleRow(
   owner: MorningBriefNativeOwner,
   signal: AbortSignal,
 ): Promise<{
@@ -488,7 +488,7 @@ export async function holdNativeScheduleRow(
 }
 
 /** Install a newer epoch with its own future obligation, as replacement does. */
-export async function replaceNativeEpochWithFutureObligation(
+async function replaceNativeEpochWithFutureObligation(
   owner: MorningBriefNativeOwner,
 ): Promise<{ readonly ownerEpoch: number; readonly nextRunAt: Date }> {
   const nextRunAt = new Date(now() + 24 * 60 * 60 * 1000);
@@ -514,7 +514,7 @@ export async function replaceNativeEpochWithFutureObligation(
 }
 
 /** Run the real bounded retention purge for this test owner only. */
-export async function purgeExpiredNativeGenerations(
+async function purgeExpiredNativeGenerations(
   owner: MorningBriefNativeOwner,
 ): Promise<number> {
   return await purgeExpiredMorningBriefGenerations(db(), new Date(now()), 25, [
@@ -531,7 +531,7 @@ export async function purgeExpiredNativeGenerations(
  * the Chat event, its receipt and the email intent are the ones the real
  * pipeline already committed.
  */
-export async function interruptNativeSettlement(
+async function interruptNativeSettlement(
   owner: MorningBriefNativeOwner,
   args: { readonly scheduledFor: Date; readonly leaseToken: string },
 ): Promise<void> {
@@ -573,7 +573,7 @@ export async function interruptNativeSettlement(
  * scan itself is global, so the result is narrowed to the owner under test —
  * other suites share this database.
  */
-export async function resumableOccurrenceAnchors(
+async function resumableOccurrenceAnchors(
   owner: MorningBriefNativeOwner,
 ): Promise<readonly Date[]> {
   const rows = await loadResumableOccurrences(db(), {
@@ -597,7 +597,7 @@ export async function resumableOccurrenceAnchors(
  * mid-collection, before the reservation — without sleeping or reaching into
  * the scheduler.
  */
-export async function revokeNativeAuthorityForTest(
+async function revokeNativeAuthorityForTest(
   owner: MorningBriefNativeOwner,
 ): Promise<void> {
   await db()
@@ -619,7 +619,7 @@ export async function revokeNativeAuthorityForTest(
  * is the work a rollback drain has to reconcile before it can hand the member
  * back to legacy.
  */
-export async function abandonClaimedOccurrence(
+async function abandonClaimedOccurrence(
   owner: MorningBriefNativeOwner,
   scheduledFor: Date,
 ): Promise<void> {
@@ -652,7 +652,7 @@ export async function abandonClaimedOccurrence(
  * count alone does not show that, because usage accounting is a separate
  * writer, so the suite snapshots both.
  */
-export async function countOrgUsageEvents(orgId: string): Promise<number> {
+async function countOrgUsageEvents(orgId: string): Promise<number> {
   const rows = await db()
     .select({ id: usageEvent.id })
     .from(usageEvent)
@@ -667,7 +667,7 @@ export async function countOrgUsageEvents(orgId: string): Promise<number> {
  * whose producer identity is the legacy automation, still owed a provider
  * request. The cutover has to treat that as reachable mail work.
  */
-export async function enqueueUnsentLegacyEmail(
+async function enqueueUnsentLegacyEmail(
   automationId: string,
   recipient: string,
   userId: string,

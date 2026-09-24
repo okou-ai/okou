@@ -71,14 +71,26 @@ async function applyAction(
           fromAddress: "Okou <outbox-fixture@mail.example.com>",
           toAddresses: body.to_address,
           subject: body.subject,
-          template: {
-            template: "data-export-ready",
-            props: {
-              downloadUrl: "https://storage.example/email-outbox-fixture.zip",
-              expiresAt: "January 1, 2030",
-              artifactCount: 1,
-            },
-          },
+          template:
+            body.template === "morning-brief-result"
+              ? {
+                  template: "morning-brief-result",
+                  props: {
+                    title: "Historical Morning Brief",
+                    resultMarkdown: "Historical content",
+                    threadUrl: "https://app.okou.test/threads/historical",
+                    manageUrl: "https://app.okou.test/settings/morning-brief",
+                  },
+                }
+              : {
+                  template: "data-export-ready",
+                  props: {
+                    downloadUrl:
+                      "https://storage.example/email-outbox-fixture.zip",
+                    expiresAt: "January 1, 2030",
+                    artifactCount: 1,
+                  },
+                },
           status: body.status,
           attempts: 0,
           createdAt: new Date(body.created_at),

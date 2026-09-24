@@ -77,16 +77,14 @@ describe("/api/feature-switches", () => {
     ).toBeFalsy();
   });
 
-  it("does not let staff or stored overrides re-enable the retiring native brief", async () => {
+  it("rejects the retired persisted override without changing Morning Brief", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
     clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
 
     const initial = await accept(client().get({ headers }), [200]);
-    expect(
-      initial.body.effectiveSwitches[FeatureSwitchKey.NativeMorningBrief],
-    ).toBeFalsy();
+    expect(initial.body.switches).toStrictEqual({});
     expect(
       initial.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
     ).toBeTruthy();
@@ -96,7 +94,7 @@ describe("/api/feature-switches", () => {
         headers,
         body: {
           switches: {
-            [FeatureSwitchKey.NativeMorningBrief]: true,
+            simpleMorningBrief: true,
             [FeatureSwitchKey.OkouModels]: true,
           },
         },
@@ -110,13 +108,11 @@ describe("/api/feature-switches", () => {
     const optedOut = await accept(
       client().update({
         headers,
-        body: { switches: { [FeatureSwitchKey.NativeMorningBrief]: false } },
+        body: { switches: { simpleMorningBrief: false } },
       }),
       [200],
     );
-    expect(
-      optedOut.body.effectiveSwitches[FeatureSwitchKey.NativeMorningBrief],
-    ).toBeFalsy();
+    expect(optedOut.body.switches).toStrictEqual({ simpleMorningBrief: false });
     expect(
       optedOut.body.effectiveSwitches[FeatureSwitchKey.MorningBrief],
     ).toBeTruthy();
