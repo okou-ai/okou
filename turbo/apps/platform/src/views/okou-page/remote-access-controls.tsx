@@ -275,7 +275,7 @@ function HostChoiceSelect({
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent align="end" className="w-(--anchor-width)">
+        <SelectContent align="end">
           {items.map((item) => {
             return (
               <SelectItem key={item.value} value={item.value}>
