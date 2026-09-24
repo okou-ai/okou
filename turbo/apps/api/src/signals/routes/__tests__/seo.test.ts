@@ -189,7 +189,11 @@ function noSearchResultsResponse(cost: number) {
 describe("SEO routes", () => {
   // The two Labs operations share one location resolver. Exercise every input
   // spelling/policy boundary, but do not repeat their full Cartesian product.
-  const supportedLabsLocations = {
+  type LabsOperation = "keyword-ideas" | "ranked-keywords";
+  const supportedLabsLocations: Record<
+    LabsOperation,
+    { location: string; code: number }[]
+  > = {
     "keyword-ideas": [
       { location: " us ", code: 2840 },
       { location: "GB", code: 2826 },
@@ -200,11 +204,11 @@ describe("SEO routes", () => {
       { location: "  united   states  ", code: 2840 },
       { location: "uk", code: 2826 },
     ],
-  } as const;
-  const unsupportedLabsLocations = {
+  };
+  const unsupportedLabsLocations: Record<LabsOperation, string[]> = {
     "keyword-ideas": ["Austin, Texas, United States", "Atlantis", "RU"],
     "ranked-keywords": ["Texas", "ZZ"],
-  } as const;
+  };
 
   describe.each([
     { operation: "keyword-ideas", endpoint: "keyword_ideas" },
