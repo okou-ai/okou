@@ -106,7 +106,7 @@ describe("POST /api/agents", () => {
     });
   });
 
-  it("creates agent metadata", async () => {
+  it("creates private agent metadata by default", async () => {
     const fixture = agentsFixture("create");
     mocks.clerk.session(fixture.userId, fixture.orgId);
     context.mocks.s3.send.mockClear();
@@ -134,9 +134,32 @@ describe("POST /api/agents", () => {
       modelProviderId: null,
       selectedModel: null,
       preferPersonalProvider: false,
-      visibility: "public",
+      visibility: "private",
     });
     expect(response.body.agentId).toStrictEqual(expect.any(String));
+
+    const ownerResponse = await accept(
+      agentsByIdClient().get({
+        headers: authHeaders(),
+        params: { id: response.body.agentId },
+      }),
+      [200],
+    );
+    expect(ownerResponse.body.visibility).toBe("private");
+
+    mocks.clerk.session(`user_${randomUUID()}`, fixture.orgId);
+    const memberList = await accept(
+      agentsClient().list({ headers: authHeaders() }),
+      [200],
+    );
+    expect(memberList.body).toStrictEqual([]);
+    await accept(
+      agentsByIdClient().get({
+        headers: authHeaders(),
+        params: { id: response.body.agentId },
+      }),
+      [404],
+    );
   });
 
   it("assigns a composer avatar when none is provided", async () => {
@@ -166,7 +189,10 @@ describe("POST /api/agents", () => {
       await accept(
         agentsClient().create({
           headers: authHeaders(),
-          body: { displayName: `Limit Agent ${index + 1}` },
+          body: {
+            displayName: `Limit Agent ${index + 1}`,
+            visibility: "public",
+          },
         }),
         [201],
       );
@@ -175,7 +201,7 @@ describe("POST /api/agents", () => {
     const response = await accept(
       agentsClient().create({
         headers: authHeaders(),
-        body: {},
+        body: { visibility: "public" },
       }),
       [409],
     );
@@ -199,7 +225,7 @@ describe("POST /api/agents", () => {
       const response = await accept(
         agentsClient().create({
           headers: authHeaders(),
-          body: { displayName: `Public ${index + 1}` },
+          body: { displayName: `Public ${index + 1}`, visibility: "public" },
         }),
         [201],
       );
@@ -209,7 +235,7 @@ describe("POST /api/agents", () => {
     const privateResponse = await accept(
       agentsClient().create({
         headers: authHeaders(),
-        body: { displayName: "Private", visibility: "private" },
+        body: { displayName: "Private" },
       }),
       [201],
     );
@@ -218,7 +244,7 @@ describe("POST /api/agents", () => {
     const publicResponse = await accept(
       agentsClient().create({
         headers: authHeaders(),
-        body: { displayName: "Public Over Limit" },
+        body: { displayName: "Public Over Limit", visibility: "public" },
       }),
       [409],
     );
@@ -236,7 +262,7 @@ describe("POST /api/agents", () => {
       const response = await accept(
         agentsClient().create({
           headers: authHeaders(),
-          body: { displayName: `Agent ${index + 1}` },
+          body: { displayName: `Agent ${index + 1}`, visibility: "public" },
         }),
         [201],
       );
@@ -246,7 +272,7 @@ describe("POST /api/agents", () => {
     const blocked = await accept(
       agentsClient().create({
         headers: authHeaders(),
-        body: { displayName: "Blocked" },
+        body: { displayName: "Blocked", visibility: "public" },
       }),
       [409],
     );
@@ -268,7 +294,7 @@ describe("POST /api/agents", () => {
     const response = await accept(
       agentsClient().create({
         headers: authHeaders(),
-        body: { displayName: "After Delete" },
+        body: { displayName: "After Delete", visibility: "public" },
       }),
       [201],
     );
@@ -285,7 +311,10 @@ describe("POST /api/agents", () => {
       await accept(
         agentsClient().create({
           headers: authHeaders(),
-          body: { displayName: `Concurrent Limit ${index + 1}` },
+          body: {
+            displayName: `Concurrent Limit ${index + 1}`,
+            visibility: "public",
+          },
         }),
         [201],
       );
@@ -317,7 +346,7 @@ describe("POST /api/agents", () => {
         return await accept(
           agentsClient().create({
             headers: authHeaders(),
-            body: { displayName },
+            body: { displayName, visibility: "public" },
           }),
           [201, 409],
         );

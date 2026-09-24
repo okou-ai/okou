@@ -67,8 +67,6 @@ import { serializeAvatarSvgConfig } from "../okou-page/avatar-svg-utils.ts";
 import { AvatarMaker } from "../okou-page/avatar-maker.tsx";
 import { platformEmptyPrivateAgentsImg } from "../../lib/static-assets.ts";
 
-const MAX_PUBLIC_AGENTS = 7;
-
 type Visibility = "public" | "private";
 
 async function createWithErrorToast(
@@ -115,18 +113,8 @@ export function AgentsPageTabs() {
     (!responsibilitySetupEnabled || trimmedResponsibility !== "") &&
     !creating;
 
-  const agentsLoadable = useLoadable(sortedAgents$);
-  const publicAgentCount =
-    agentsLoadable.state === "hasData"
-      ? agentsLoadable.data.filter((agent) => {
-          return agent.visibility !== "private";
-        }).length
-      : 0;
-  const atPublicLimit = publicAgentCount >= MAX_PUBLIC_AGENTS;
-
-  const openCreateDialog = (target: Visibility) => {
+  const openCreateDialog = () => {
     resetDialog();
-    setVisibility(target);
     setDialogOpen(true);
   };
 
@@ -151,6 +139,7 @@ export function AgentsPageTabs() {
       }),
       pageSignal,
     );
+    setActiveTab(visibility);
     setDialogOpen(false);
     toast.success(
       t(
@@ -195,7 +184,6 @@ export function AgentsPageTabs() {
           <AgentTabsView
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            atPublicLimit={atPublicLimit}
             onCreate={openCreateDialog}
           />
         </div>
@@ -221,13 +209,11 @@ export function AgentsPageTabs() {
 function AgentTabsView({
   activeTab,
   onTabChange,
-  atPublicLimit,
   onCreate,
 }: {
   activeTab: Visibility;
   onTabChange: (tab: Visibility) => void;
-  atPublicLimit: boolean;
-  onCreate: (visibility: Visibility) => void;
+  onCreate: () => void;
 }) {
   const { t } = useTranslation("agents");
   const agentsLoadable = useLoadable(sortedAgents$);
@@ -251,8 +237,6 @@ function AgentTabsView({
         ? a.visibility !== "private"
         : a.visibility === "private";
     }) ?? [];
-
-  const createDisabled = activeTab === "public" && atPublicLimit;
 
   return (
     <div className="flex flex-col gap-4">
@@ -279,10 +263,7 @@ function AgentTabsView({
           variant="neutral"
           size="sm"
           className="h-9 gap-2 shrink-0 rounded-lg"
-          disabled={createDisabled}
-          onClick={() => {
-            return onCreate(activeTab);
-          }}
+          onClick={onCreate}
         >
           <Plus size={14} />
           {t(($) => {
