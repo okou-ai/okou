@@ -38,7 +38,7 @@ interface ActiveAuthWindow {
 
 /**
  * An elapsed deadline aborts the attempt without anyone abandoning it, so it is
- * genuine unavailability rather than teardown and must keep reporting.
+ * genuine unavailability rather than teardown for fail-closed recovery.
  * `AbortSignal.timeout` marks it with the standard `TimeoutError` name.
  */
 function isDeadlineAbort(signal: AbortSignal): boolean {

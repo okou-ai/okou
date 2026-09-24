@@ -515,6 +515,10 @@ export type ConnectorCheckResponseBody = z.infer<
   typeof connectorCheckResponseBodySchema
 >;
 
+export const CONNECTOR_CHECK_AWS_CONTEXT_HEADER =
+  "x-okou-connector-check-aws-context";
+export const CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT = "insufficient";
+
 export const connectorCheckContract = c.router({
   check: {
     method: "POST",

@@ -177,7 +177,7 @@ describe("inline SSH resource creation", () => {
               return entry.id === result.credentialId;
             })?.hosts,
           ).toContainEqual({ id: result.id, displayName: result.displayName });
-          if (!("transport" in parsed)) {
+          if (!("transport" in parsed) || !("configId" in parsed.transport)) {
             throw new Error("Missing protected transport");
           }
           const selectedConfigId = parsed.transport.configId;
@@ -426,6 +426,120 @@ beforeEach(() => {
 
 describe("organization Cloudflare Access", () => {
   const scoped = { view: "scoped" as const };
+
+  it("lists retained hosts as needing rebind and recovers only after an explicit choice", async () => {
+    const admin = owner({}, "org:admin");
+    const shared = (
+      await accept(
+        configs().create({
+          headers,
+          query: scoped,
+          body: {
+            id: randomUUID(),
+            name: "Shared recovery gateway",
+            scope: "organization",
+            credentials: token,
+          },
+        }),
+        [201],
+      )
+    ).body;
+    const member = owner({ orgId: admin.orgId });
+    const saved = await host(shared.id);
+    const pinned = await accept(
+      state().action({
+        body: {
+          action: "set-learned-host-key",
+          ...member,
+          connectionId: saved.id,
+          ...hostKey,
+        },
+      }),
+      [200],
+    );
+    // Conversion is deferred to #36262, so only the test route can construct
+    // needsRebind before that production writer exists.
+    const retained = await accept(
+      state().action({
+        body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
+      }),
+      [200],
+    );
+    const listed = (await accept(connections().list({ headers }), [200])).body
+      .connections[0];
+    expect(listed).toMatchObject({
+      id: saved.id,
+      host: saved.host,
+      credentialId: saved.credentialId,
+      learnedHostKey: hostKey,
+      generation: retained.body.generation,
+      transport: { type: "cloudflare_access", needsRebind: true },
+    });
+    expect(listed).not.toHaveProperty("transport.configId");
+    expect(JSON.stringify(listed)).not.toContain(token.clientSecret);
+
+    const edit = (
+      transport?:
+        | { type: "direct" }
+        | { type: "cloudflare_access"; configId: string },
+    ) => {
+      return connections().update({
+        headers,
+        params: { connectionId: saved.id },
+        body: {
+          expectedGeneration: retained.body.generation!,
+          displayName: "Retained host",
+          ...(transport ? { transport } : {}),
+        },
+      });
+    };
+    await expect(accept(edit(), [400])).resolves.toMatchObject({
+      body: { error: { code: "SSH_INVALID_INPUT" } },
+    });
+    await expect(
+      accept(
+        edit({ type: "cloudflare_access", configId: randomUUID() }),
+        [404],
+      ),
+    ).resolves.toMatchObject({
+      body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
+    });
+    const rebound = await accept(
+      edit({ type: "cloudflare_access", configId: shared.id }),
+      [200],
+    );
+    expect(rebound.body).toMatchObject({
+      transport: { type: "cloudflare_access", configId: shared.id },
+      host: saved.host,
+      credentialId: saved.credentialId,
+      learnedHostKey: hostKey,
+    });
+    expect(pinned.body.generation).toBe(2);
+
+    const needsDirect = await accept(
+      state().action({
+        body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
+      }),
+      [200],
+    );
+    const direct = await accept(
+      connections().update({
+        headers,
+        params: { connectionId: saved.id },
+        body: {
+          expectedGeneration: needsDirect.body.generation!,
+          transport: { type: "direct" },
+        },
+      }),
+      [200],
+    );
+    expect(direct.body).not.toHaveProperty("transport");
+    expect(direct.body).toMatchObject({
+      host: saved.host,
+      credentialId: saved.credentialId,
+      learnedHostKey: hostKey,
+    });
+  });
 
   it("keeps old App responses personal-only while members can bind shared configurations without seeing other hosts", async () => {
     const admin = owner({}, "org:admin");

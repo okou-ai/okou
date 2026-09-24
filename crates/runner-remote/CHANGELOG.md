@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.2](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.1...runner-remote-v0.2.2) (2026-09-24)
+
+## [0.2.1](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.0...runner-remote-v0.2.1) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** consolidate shared API transport in provider ([#36447](https://github.com/okou-ai/okou/issues/36447)) ([193d460](https://github.com/okou-ai/okou/commit/193d460a94a242db4958f4a90631800cd9eed3e4))
+
 ## [0.2.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.1.2...runner-remote-v0.2.0) (2026-09-23)
 
 

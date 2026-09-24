@@ -75,15 +75,22 @@ describe("okou browser command", () => {
       browserCommand.commands.map((command) => {
         return command.name();
       }),
-    ).toStrictEqual([
-      "use",
-      "lease",
-      "new",
-      "status",
-      "view",
-      "input-request",
-      "interaction-request",
+    ).toStrictEqual(["use", "lease", "new", "status", "view", "input-request"]);
+  });
+
+  it("prints the existing Browser viewer URL for a user takeover", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/browsers/current", () => {
+        return HttpResponse.json({ browser: browser() }, { status: 200 });
+      }),
+    );
+
+    await browserCommand.parseAsync(["node", "cli", "view"]);
+
+    expect(consoleLog.mock.calls.flat()).toStrictEqual([
+      `https://app.okou.ai/browsers/${THREAD_ID}`,
     ]);
+    expect(spawnSyncMock).not.toHaveBeenCalled();
   });
 
   it("creates a fresh browser and passes its CDP URL directly to agent-browser", async () => {

@@ -1,3 +1,5 @@
+//! Active-run reuse state, exact sandbox handoff, and release ownership.
+
 use std::collections::{HashMap, HashSet, hash_map};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
@@ -9,7 +11,7 @@ use crate::idle_pool::{FinalizingHandoffCandidate, IdleParkCandidate};
 use runner_types::ids::RunId;
 
 #[derive(Clone)]
-pub(super) struct ActiveRuns {
+pub struct ActiveRuns {
     entries: Arc<Mutex<HashMap<RunId, ActiveRunEntry>>>,
     reuse_state_notify: Arc<Notify>,
 }
@@ -32,7 +34,7 @@ struct ActiveRunHandoffDelivery {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ActiveRunReuseState {
+pub enum ActiveRunReuseState {
     Pending,
     Finalizing { started_at: Instant },
     ExactSandboxPublished,
@@ -42,32 +44,29 @@ pub(super) enum ActiveRunReuseState {
 }
 
 impl ActiveRunReuseState {
-    pub(super) fn can_publish_exact(self) -> bool {
+    pub fn can_publish_exact(self) -> bool {
         matches!(self, Self::Pending | Self::Finalizing { .. })
     }
 }
 
-pub(super) struct ActiveRunReuseProof {
+pub struct ActiveRunReuseProof {
     reuse_state: watch::Receiver<ActiveRunReuseState>,
     handoff: Arc<Mutex<ActiveRunHandoffBroker>>,
 }
 
 impl ActiveRunReuseProof {
-    pub(super) fn state(&self) -> ActiveRunReuseState {
+    pub fn state(&self) -> ActiveRunReuseState {
         *self.reuse_state.borrow()
     }
 
-    pub(super) async fn changed(&mut self) -> ActiveRunReuseState {
+    pub async fn changed(&mut self) -> ActiveRunReuseState {
         if self.reuse_state.changed().await.is_err() {
             return ActiveRunReuseState::Released;
         }
         self.state()
     }
 
-    pub(super) fn request_handoff(
-        &self,
-        successor_run_id: RunId,
-    ) -> Option<ActiveRunHandoffRequest> {
+    pub fn request_handoff(&self, successor_run_id: RunId) -> Option<ActiveRunHandoffRequest> {
         let mut broker = lock_handoff(&self.handoff);
         if !self.state().can_publish_exact() || broker.delivery.is_some() {
             return None;
@@ -90,7 +89,7 @@ impl ActiveRunReuseProof {
     }
 }
 
-pub(super) struct ActiveRunHandoffRequest {
+pub struct ActiveRunHandoffRequest {
     successor_run_id: RunId,
     signal: SandboxFinalExecParkHandoff,
     receiver: oneshot::Receiver<Box<FinalizingHandoffCandidate>>,
@@ -98,24 +97,22 @@ pub(super) struct ActiveRunHandoffRequest {
 }
 
 impl ActiveRunHandoffRequest {
-    pub(super) async fn accepted(&self) -> bool {
+    pub async fn accepted(&self) -> bool {
         self.signal.wait_for_acceptance().await
     }
 
-    pub(super) async fn receive(
+    pub async fn receive(
         &mut self,
     ) -> Result<Box<FinalizingHandoffCandidate>, oneshot::error::RecvError> {
         (&mut self.receiver).await
     }
 
-    pub(super) fn cancel_and_recover_delivery(
-        &mut self,
-    ) -> Option<Box<FinalizingHandoffCandidate>> {
+    pub fn cancel_and_recover_delivery(&mut self) -> Option<Box<FinalizingHandoffCandidate>> {
         self.close_delivery();
         self.receiver.try_recv().ok()
     }
 
-    pub(super) fn expire_if_unaccepted(&mut self) -> bool {
+    pub fn expire_if_unaccepted(&mut self) -> bool {
         let mut broker = lock_handoff(&self.broker);
         if !self.signal.cancel() && self.signal.is_accepted() {
             return false;
@@ -152,19 +149,19 @@ impl Drop for ActiveRunHandoffRequest {
 }
 
 #[derive(Clone)]
-pub(super) struct ActiveRunReusePublisher {
+pub struct ActiveRunReusePublisher {
     reuse_state: watch::Sender<ActiveRunReuseState>,
     handoff: Arc<Mutex<ActiveRunHandoffBroker>>,
 }
 
-pub(super) enum ActiveRunHandoffDeliveryResult {
+pub enum ActiveRunHandoffDeliveryResult {
     Delivered,
     NotRequested(IdleParkCandidate),
     Failed(IdleParkCandidate),
 }
 
 impl ActiveRunReusePublisher {
-    pub(super) fn mark_finalizing(&self, started_at: Instant) -> bool {
+    pub fn mark_finalizing(&self, started_at: Instant) -> bool {
         self.reuse_state.send_if_modified(|state| {
             if *state != ActiveRunReuseState::Pending {
                 return false;
@@ -174,19 +171,19 @@ impl ActiveRunReusePublisher {
         })
     }
 
-    pub(super) fn publish_exact_sandbox(&self) -> bool {
+    pub fn publish_exact_sandbox(&self) -> bool {
         self.publish_without_handoff(ActiveRunReuseState::ExactSandboxPublished)
     }
 
-    pub(super) fn publish_no_exact_sandbox(&self) -> bool {
+    pub fn publish_no_exact_sandbox(&self) -> bool {
         self.publish_without_handoff(ActiveRunReuseState::NoExactSandbox)
     }
 
-    pub(super) fn handoff_signal(&self) -> SandboxFinalExecParkHandoff {
+    pub fn handoff_signal(&self) -> SandboxFinalExecParkHandoff {
         lock_handoff(&self.handoff).signal.clone()
     }
 
-    pub(super) fn deliver_exact_handoff(
+    pub fn deliver_exact_handoff(
         &self,
         candidate: IdleParkCandidate,
         predecessor_run_id: RunId,
@@ -230,8 +227,8 @@ impl ActiveRunReusePublisher {
         resolved
     }
 
-    #[cfg(test)]
-    pub(super) fn detached() -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn detached() -> Self {
         let (reuse_state, _reuse_state_rx) = watch::channel(ActiveRunReuseState::Pending);
         Self {
             reuse_state,
@@ -243,7 +240,7 @@ impl ActiveRunReusePublisher {
     }
 }
 
-pub(super) struct ActiveRunGuard {
+pub struct ActiveRunGuard {
     active_runs: ActiveRuns,
     run_id: Option<RunId>,
     has_reuse_key: bool,
@@ -252,14 +249,14 @@ pub(super) struct ActiveRunGuard {
 }
 
 impl ActiveRuns {
-    pub(super) fn new(reuse_state_notify: Arc<Notify>) -> Self {
+    pub fn new(reuse_state_notify: Arc<Notify>) -> Self {
         Self {
             entries: Arc::new(Mutex::new(HashMap::new())),
             reuse_state_notify,
         }
     }
 
-    pub(super) fn register(
+    pub fn register(
         &self,
         run_id: RunId,
         reuse_key: Option<String>,
@@ -295,7 +292,7 @@ impl ActiveRuns {
         }
     }
 
-    pub(super) fn finalizing_predecessor(
+    pub fn finalizing_predecessor(
         &self,
         run_id: RunId,
         reuse_key: &str,
@@ -313,7 +310,7 @@ impl ActiveRuns {
         proof.state().can_publish_exact().then_some(proof)
     }
 
-    pub(super) fn reuse_keys(&self) -> HashSet<String> {
+    pub fn reuse_keys(&self) -> HashSet<String> {
         lock_entries(&self.entries)
             .values()
             .filter(|entry| entry.reuse_state.borrow().can_publish_exact())
@@ -321,27 +318,27 @@ impl ActiveRuns {
             .collect()
     }
 
-    pub(super) fn has_reusable_run(&self) -> bool {
+    pub fn has_reusable_run(&self) -> bool {
         lock_entries(&self.entries).values().any(|entry| {
             entry.reuse_key.is_some() && entry.reuse_state.borrow().can_publish_exact()
         })
     }
 
-    #[cfg(test)]
-    pub(super) fn contains(&self, run_id: RunId) -> bool {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn contains(&self, run_id: RunId) -> bool {
         lock_entries(&self.entries).contains_key(&run_id)
     }
 }
 
 impl ActiveRunGuard {
-    pub(super) fn reuse_publisher(&self) -> ActiveRunReusePublisher {
+    pub fn reuse_publisher(&self) -> ActiveRunReusePublisher {
         ActiveRunReusePublisher {
             reuse_state: self.reuse_state.clone(),
             handoff: Arc::clone(&self.handoff),
         }
     }
 
-    pub(super) fn release(mut self) -> bool {
+    pub fn release(mut self) -> bool {
         self.release_inner()
     }
 

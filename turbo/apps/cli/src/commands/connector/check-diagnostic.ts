@@ -14,6 +14,9 @@ import type { ConnectorRuntimeTarget } from "@okouai/api-contracts/contracts/run
 import { isComputerUsePermissionTarget } from "./computer-use-guidance";
 import { customConnectorIdFromSelector } from "./custom-connector-guidance";
 
+export const AWS_INCOMPLETE_CONTEXT_GUIDANCE =
+  "AWS operation context is insufficient to identify a permission. Re-run with --aws-service and --aws-action, --aws-target, or applicable --aws-query-param/--aws-header-present selectors. Do not request __unknown__ from this incomplete check.";
+
 export interface CheckConnectorOptions {
   readonly json?: boolean;
   readonly connector?: string;

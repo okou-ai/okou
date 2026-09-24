@@ -34,7 +34,8 @@ static HTTP_AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
 /// tarballs staged over vsock.
 pub(crate) fn open_archive(
     url: &str,
-    metrics: Option<&RemoteArchiveAttemptMetrics>,
+    remote_metrics: Option<&RemoteArchiveAttemptMetrics>,
+    local_metrics: Option<&LocalArchiveAttemptMetrics>,
 ) -> Result<ArchiveSource, DownloadError> {
     if let Some(path) = url.strip_prefix("file://") {
         log_info!(LOG_TAG, "Reading local archive");
@@ -45,10 +46,15 @@ pub(crate) fn open_archive(
             .ok()
             .filter(|metadata| metadata.is_file())
             .map(|metadata| metadata.len());
-        return Ok(ArchiveSource::local(file, compressed_bytes));
+        return Ok(match local_metrics {
+            Some(metrics) => {
+                ArchiveSource::local_with_metrics(file, compressed_bytes, metrics.clone())
+            }
+            None => ArchiveSource::local(file, compressed_bytes),
+        });
     }
 
-    let metrics = metrics.cloned().unwrap_or_default();
+    let metrics = remote_metrics.cloned().unwrap_or_default();
     let observation = url
         .split_once("://")
         .is_some_and(|(scheme, _)| {
@@ -142,6 +148,18 @@ impl ArchiveSource {
         }
     }
 
+    fn local_with_metrics(
+        reader: impl Read + 'static,
+        compressed_bytes: Option<u64>,
+        metrics: LocalArchiveAttemptMetrics,
+    ) -> Self {
+        Self {
+            reader: Box::new(LocalBodyReader { reader, metrics }),
+            http_body_read_failure: HttpBodyReadFailure::disabled(),
+            compressed_bytes,
+        }
+    }
+
     fn http(reader: impl Read + 'static, metrics: RemoteArchiveAttemptMetrics) -> Self {
         let http_body_read_failure = HttpBodyReadFailure::enabled();
         Self {
@@ -161,6 +179,33 @@ impl ArchiveSource {
 
     pub(crate) fn into_parts(self) -> (Box<dyn Read>, HttpBodyReadFailure) {
         (self.reader, self.http_body_read_failure)
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct LocalArchiveAttemptMetrics {
+    body_read: Rc<Cell<Duration>>,
+}
+
+impl LocalArchiveAttemptMetrics {
+    pub(crate) fn body_read(&self) -> Duration {
+        self.body_read.get()
+    }
+}
+
+struct LocalBodyReader<R> {
+    reader: R,
+    metrics: LocalArchiveAttemptMetrics,
+}
+
+impl<R: Read> Read for LocalBodyReader<R> {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let start = Instant::now();
+        let result = self.reader.read(buffer);
+        self.metrics
+            .body_read
+            .set(self.metrics.body_read.get().saturating_add(start.elapsed()));
+        result
     }
 }
 

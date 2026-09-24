@@ -510,6 +510,9 @@
       "description": "Dê um nome ao agente e defina quem pode usá-lo.",
       "namePlaceholder": "Ex.: Assistente de pesquisa",
       "newAgentAlt": "Novo agente",
+      "responsibilityLabel": "O que você quer que este agente faça por você?",
+      "responsibilityPlaceholder": "Ex.: Toda segunda-feira, resumir o pipeline da semana anterior no HubSpot e sinalizar os negócios que precisam de atenção.",
+      "setupFailed": "A configuração do agente não foi concluída. Confira a lista de agentes antes de tentar novamente.",
       "success": "{{agentName}} foi criado com sucesso",
       "title": "Criar um novo agente",
       "visibility": {

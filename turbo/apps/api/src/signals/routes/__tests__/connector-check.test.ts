@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  CONNECTOR_CHECK_AWS_CONTEXT_HEADER,
+  CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
   type ConnectorCheckRequest,
   type ConnectorCheckRequestBody,
   connectorCheckContract,
@@ -17,8 +19,10 @@ import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import {
+  awsVerificationCode,
   createConnectorBddApi,
   manualHttpCustomConnectorCreateBody,
+  mockAwsExternalCodeProvider,
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -53,6 +57,7 @@ const store = createStore();
 interface ConnectedFixture {
   readonly actor: ApiTestUser;
   readonly connectorSlug:
+    | "aws"
     | "cloudflare"
     | "github"
     | "reap"
@@ -422,6 +427,9 @@ describe("POST /api/connectors/diagnostics/check", () => {
         policy: { outcome: "unavailable", basis: "not-run-scoped" },
       },
     });
+    expect(
+      withoutSelectors.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER),
+    ).toBe(CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT);
 
     const withSelectors = await checkWithSession(actor, {
       mode: "url",
@@ -449,6 +457,27 @@ describe("POST /api/connectors/diagnostics/check", () => {
         ],
       },
     });
+    expect(
+      withSelectors.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER),
+    ).toBeNull();
+
+    const unmatchedAction = await checkWithSession(actor, {
+      mode: "url",
+      method: "POST",
+      url,
+      connectorSlug: "aws",
+      aws: { sigv4Service: "sts", action: "NotACatalogOperation" },
+    });
+    expect(unmatchedAction.body).toMatchObject({
+      outcome: "resolved",
+      permission: {
+        kind: "unknown-endpoint",
+        policy: { outcome: "unavailable", basis: "not-run-scoped" },
+      },
+    });
+    expect(
+      unmatchedAction.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER),
+    ).toBeNull();
 
     const wrongEnvironment = await checkWithSession(actor, {
       mode: "url",
@@ -463,6 +492,126 @@ describe("POST /api/connectors/diagnostics/check", () => {
       connector: { connectorSlug: "aws" },
       environmentNames: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"],
     });
+  });
+
+  it("marks an AWS action with an omitted required query as incomplete", async () => {
+    const actor = bdd.user();
+    const base = {
+      mode: "url" as const,
+      method: "POST",
+      url: "https://sts.us-west-2.amazonaws.com/",
+      connectorSlug: "aws",
+    };
+    const action = { sigv4Service: "sts", action: "GetFederationToken" };
+    const incomplete = await checkWithSession(actor, { ...base, aws: action });
+    expect(incomplete.body).toMatchObject({
+      outcome: "resolved",
+      permission: { kind: "unknown-endpoint" },
+    });
+    expect(incomplete.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER)).toBe(
+      CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+    );
+
+    const matched = await checkWithSession(actor, {
+      ...base,
+      aws: {
+        ...action,
+        query: [{ key: "Version", value: "2011-06-15" }],
+      },
+    });
+    expect(matched.body).toMatchObject({
+      outcome: "resolved",
+      permission: {
+        kind: "matched",
+        permissions: [{ name: "sts:get-federation-token-versioned" }],
+      },
+    });
+    expect(matched.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER)).toBeNull();
+
+    const contradictory = await checkWithSession(actor, {
+      ...base,
+      aws: { ...action, query: [{ key: "Version", value: "wrong" }] },
+    });
+    expect(contradictory.body).toStrictEqual(incomplete.body);
+    expect(
+      contradictory.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER),
+    ).toBeNull();
+  });
+
+  it("reports AWS alias precedence and keeps incomplete checks on the unknown policy", async () => {
+    const actor = bdd.user();
+    await seedAdminMembership(actor);
+    mockAwsExternalCodeProvider();
+    const session = await connectorsApi.startExternalCode(actor, "aws", "cli");
+    await connectorsApi.completeExternalCode(actor, "aws", {
+      sessionId: session.sessionId,
+      sessionToken: session.sessionToken,
+      code: awsVerificationCode(session.authorizationUrl),
+    });
+    await trackConnectedFixture(
+      Promise.resolve({ actor, connectorSlug: "aws" }),
+    );
+    const { runId, agentId } = await createOwnedRun(actor, {
+      builtinConnectorSlugs: ["aws"],
+    });
+    await runsApi.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "aws",
+      permission: "sts:get-caller-identity-alias",
+      action: "deny",
+    });
+    await runsApi.applyUserPermissionGrant(actor, {
+      agentId,
+      connectorSlug: "aws",
+      permission: "sts:get-caller-identity",
+      action: "allow",
+    });
+    const token = okouToken(actor, runId, ["connector:read", "agent-run:read"]);
+    const response = await checkWithToken(token, {
+      mode: "url",
+      method: "POST",
+      url: "https://sts.us-west-2.amazonaws.com/",
+      connectorSlug: "aws",
+      aws: { sigv4Service: "sts", action: "GetCallerIdentity" },
+    });
+    expect(response.body).toMatchObject({
+      outcome: "resolved",
+      connector: { connectorSlug: "aws" },
+      permission: {
+        kind: "matched",
+        permissions: [
+          {
+            name: "sts:get-caller-identity",
+            policy: { outcome: "allow", basis: "allow-list" },
+          },
+        ],
+      },
+    });
+
+    const incomplete = await checkWithToken(token, {
+      mode: "url",
+      method: "POST",
+      url: "https://sts.us-west-2.amazonaws.com/",
+      connectorSlug: "aws",
+    });
+    const genuinelyUnknown = await checkWithToken(token, {
+      mode: "url",
+      method: "POST",
+      url: "https://sts.us-west-2.amazonaws.com/",
+      connectorSlug: "aws",
+      aws: { sigv4Service: "sts", action: "NotACatalogOperation" },
+    });
+    expect(incomplete.body).toMatchObject({
+      outcome: "resolved",
+      permission: { kind: "unknown-endpoint" },
+    });
+    expect(incomplete.body).toStrictEqual(genuinelyUnknown.body);
+    expect(incomplete.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER)).toBe(
+      CONNECTOR_CHECK_AWS_CONTEXT_INSUFFICIENT,
+    );
+    expect(
+      genuinelyUnknown.headers.get(CONNECTOR_CHECK_AWS_CONTEXT_HEADER),
+    ).toBeNull();
   });
 
   it("ignores stale stored connectors that are absent from the catalog", async () => {

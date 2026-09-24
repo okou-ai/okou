@@ -164,35 +164,6 @@ export async function holdMorningBriefFirstMaterialization(
   return { waitForBlocked: held.waitForBlocked, release: held.release };
 }
 
-/**
- * Hold the selected legacy automation row so a writer stops with durable
- * authority already decided.
- *
- * Every selected legacy writer takes durable authority — the owner key while no
- * row exists — before this row, so a transaction parked here has finished the
- * classification under test and nothing else. The returned pid is the waiter,
- * which lets a caller chain the next observation onto it.
- */
-export async function holdSelectedMorningBriefAutomationRow(
-  automationId: string,
-  signal: AbortSignal,
-): Promise<{
-  readonly waitForBlocked: (minimum?: number) => Promise<number>;
-  readonly release: () => Promise<void>;
-}> {
-  const held = await holdDeferredRow(signal, async (tx) => {
-    const rows = await tx
-      .select({ id: workflowAutomations.id })
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, automationId))
-      .for("update");
-    if (rows.length !== 1) {
-      throw new Error("Expected one selected Morning Brief automation row");
-    }
-  });
-  return { waitForBlocked: held.waitForBlocked, release: held.release };
-}
-
 export async function readNativeOccurrences(owner: MorningBriefNativeOwner) {
   return await db()
     .select()

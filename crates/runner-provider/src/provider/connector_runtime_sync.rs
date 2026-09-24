@@ -2137,10 +2137,11 @@ mod tests {
 
     fn api_client_for_url(api_url: String) -> ApiClient {
         ApiClient::new(
-            HttpClient::create(HttpClientConfig {
+            HttpClient::new(HttpClientConfig {
                 api_url,
                 vercel_bypass: None,
                 client_session_id: "runner-session-test".to_string(),
+                runner_version: env!("CARGO_PKG_VERSION"),
             })
             .expect("test API URL should be valid"),
             "runner-token".to_string(),

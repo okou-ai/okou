@@ -20,7 +20,7 @@ import {
 
 const context = testContext();
 
-const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const SLACK_QUESTION = "Keep work moving in Slack";
 const IMESSAGE_TILE = "iMessage";
 const CONNECTION_CODE = "12345678";
 
@@ -74,7 +74,7 @@ function mockChatChannelInstalls(): void {
   });
 }
 
-async function openSlackStep(agentPhone: boolean): Promise<void> {
+async function openSlackStep(): Promise<void> {
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,
@@ -89,7 +89,6 @@ async function openSlackStep(agentPhone: boolean): Promise<void> {
     path: ROUTES.onboardingSlack,
     featureSwitches: {
       [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-      [FeatureSwitchKey.AgentPhoneEntry]: agentPhone,
     },
   });
 
@@ -97,15 +96,6 @@ async function openSlackStep(agentPhone: boolean): Promise<void> {
     screen.findByRole("heading", { name: SLACK_QUESTION }),
   ).resolves.toBeInTheDocument();
 }
-
-test("The AgentPhone tile is absent while its switch is off", async () => {
-  await openSlackStep(false);
-
-  expect(queryChannelTile(IMESSAGE_TILE)).toBeUndefined();
-  // The channels that do not depend on that switch are untouched.
-  expect(queryChannelTile("Telegram")).toBeDefined();
-  expect(queryChannelTile("Teams")).toBeDefined();
-});
 
 test("The AgentPhone tile offers the real link and reports the real status", async () => {
   context.mocks.api(integrationsAgentPhoneContract.createLinkCode, () => {
@@ -118,7 +108,7 @@ test("The AgentPhone tile offers the real link and reports the real status", asy
     };
   });
 
-  await openSlackStep(true);
+  await openSlackStep();
 
   await waitFor(() => {
     expect(getChannelTile(IMESSAGE_TILE)).toBeEnabled();

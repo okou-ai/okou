@@ -242,14 +242,17 @@ test.each([
       await fill(search, "ssh");
       const entry = await findFastControl("link", "Manage SSH hosts", dialog);
       click(entry);
+      click(await findFastControl("button", "Add host"));
       await screen.findByRole("dialog", { name: "Add host" });
     }
     await waitFor(() => {
       return expect(window.location.pathname).toBe(
-        showEntry ? "/connectors/ssh" : `/agents/${SCOUT_AGENT_ID}/chat`,
+        showEntry ? "/connectors" : `/agents/${SCOUT_AGENT_ID}/chat`,
       );
     });
-    expect(window.location.search).toBe("");
+    expect(window.location.search).toBe(
+      showEntry ? "?scope=remote-control&type=ssh" : "",
+    );
   },
 );
 
@@ -325,6 +328,8 @@ test("Directory SSH setup follows shelves and categories", async () => {
   await within(dialog).findByTestId("connector-shelf-head");
   const entry = await findFastControl("link", "Manage SSH hosts", dialog);
   click(entry);
+  click(await findFastControl("button", "Add host"));
   await screen.findByRole("dialog", { name: "Add host" });
-  expect(window.location.pathname).toBe("/connectors/ssh");
+  expect(window.location.pathname).toBe("/connectors");
+  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
 });

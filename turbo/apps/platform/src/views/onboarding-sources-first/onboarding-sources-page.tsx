@@ -1,8 +1,11 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Lock } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { onboardingRecommendationLocaleSchema } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  userLocaleSchema,
+  type UserLocale,
+} from "@okouai/api-contracts/contracts/user-preferences";
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import {
   captureSourceOnboardingConnected$,
@@ -21,6 +24,21 @@ import {
   INDUSTRY_SOURCE_SLUGS,
 } from "./onboarding-sources-first-data.ts";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
+
+const SECURITY_PAGE_LOCALES: Readonly<Record<UserLocale, string>> = {
+  "de-DE": "de",
+  "en-US": "en",
+  "es-ES": "es",
+  "fr-FR": "fr",
+  "hi-IN": "hi",
+  "id-ID": "id",
+  "it-IT": "it",
+  "ja-JP": "ja",
+  "ko-KR": "ko",
+  "pt-BR": "pt-BR",
+  "zh-Hans": "zh-Hans",
+  "zh-Hant": "zh-Hant",
+};
 
 /** The field answered on the step before decides which sources appear. */
 function featuredSlugsFor(
@@ -70,6 +88,10 @@ export function OnboardingSourcesPage() {
       return featured === slug;
     });
   });
+  const securityLocale =
+    SECURITY_PAGE_LOCALES[
+      userLocaleSchema.parse(i18n.resolvedLanguage ?? i18n.language)
+    ];
 
   return (
     <OnboardingStepLayout
@@ -81,6 +103,23 @@ export function OnboardingSourcesPage() {
       description={t(($) => {
         return $.onboarding.sourcesFirst.sources.copy;
       })}
+      trustPoints={[
+        t(($) => {
+          return $.onboarding.sourcesFirst.sources.permissions;
+        }),
+      ]}
+      footnote={
+        <a
+          className="text-brand-text hover:text-brand-text-hover"
+          href={`https://www.okou.ai/${securityLocale}/security`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {t(($) => {
+            return $.onboarding.sourcesFirst.sources.securityLink;
+          })}
+        </a>
+      }
       primaryLabel={t(($) => {
         return $.onboarding.sourcesFirst.common.continue;
       })}
@@ -113,12 +152,6 @@ export function OnboardingSourcesPage() {
         onConnectStart={captureConnectStarted}
         onConnected={captureConnected}
       />
-      <p className="mt-5 flex items-center gap-2 text-xs text-muted-foreground">
-        <Lock size={14} aria-hidden="true" />
-        {t(($) => {
-          return $.onboarding.sourcesFirst.sources.note;
-        })}
-      </p>
     </OnboardingStepLayout>
   );
 }

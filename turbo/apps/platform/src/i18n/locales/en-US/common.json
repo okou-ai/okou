@@ -1411,6 +1411,7 @@
       "rename": "Rename",
       "saving": "Saving...",
       "send": "Send",
+      "shareMessage": "Share message",
       "stop": "Stop",
       "view": "View"
     },
@@ -1759,29 +1760,6 @@
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
     },
-    "browserInteraction": {
-      "applying": "Completing browser interaction",
-      "applyingDescription": "The browser is finishing this request.",
-      "callbackFailed": "Agent not notified.",
-      "cancel": "Cancel",
-      "cancelFailed": "Couldn't cancel this request. Try again.",
-      "cancelled": "Request cancelled",
-      "cancelling": "Cancelling…",
-      "completed": "Browser interaction complete",
-      "completeFailed": "Couldn't complete this request. Try again.",
-      "completing": "Completing…",
-      "continue": "Notify agent",
-      "continuing": "Notifying…",
-      "delivered": "Agent notified",
-      "description": "Open the browser, complete this step, then choose Done.",
-      "done": "Done",
-      "finish": "Finish step",
-      "stale": "Browser no longer available",
-      "staleDescription": "Ask the agent to create a new request.",
-      "title": "Take over the browser",
-      "uncertain": "Check the browser",
-      "uncertainDescription": "The interaction may have completed. Ask the agent to check before trying again."
-    },
     "cards": {
       "viewDetails": "View details"
     },
@@ -1936,11 +1914,10 @@
         "newChat": "New chat",
         "newChatDescription": "Start a new chat and include any important details you want to carry over.",
         "openClaude": "Open Claude",
-        "originalAccount": "Personal subscription {{account}}",
-        "originalAccountUnavailable": "Personal subscription disconnected",
-        "originalAccountUnknown": "Personal subscription unverified",
         "outputLimitDescription": "The response stopped before it finished. Continue to pick up from there.",
         "outputLimitTitle": "The response reached its length limit",
+        "personalAccount": "Personal subscription {{account}}",
+        "personalAccountDisconnected": "Personal subscription disconnected",
         "providerBalanceDescription": "Check your provider account's credit balance, then try again.",
         "providerBalanceTitle": "Your provider account needs more credit",
         "providerConnectionDescription": "Open Model Providers to reconnect or update your account, then try again.",
@@ -2165,11 +2142,14 @@
       "createFailed": "Could not create the shared conversation. Try again.",
       "deselectGroup": "Deselect message group",
       "linkCopied": "Link copied",
+      "messageShareFailed": "The shared link could not be created. Try again.",
       "publicDescription": "Selected messages and their attachments will be public.",
+      "selectAll": "Select all",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
       "shareLink": "Shared conversation link",
+      "shareLinkCopied": "Share link copied",
       "start": "Share messages",
       "tooLarge": "Select fewer messages to share"
     },
@@ -2955,12 +2935,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "Create new Cloudflare Access",
     "delete": "Delete Cloudflare Access",
-    "deleteHelp": "Delete this unused Cloudflare Access? Its stored Service Token cannot be recovered.",
+    "deleteHelp": "Delete this Cloudflare Access? Its stored Service Token cannot be recovered. Deletion is blocked while any host uses it.",
     "description": "Access protected applications with Cloudflare Access Service Tokens.",
     "edit": "Edit Cloudflare Access",
-    "empty": "No Cloudflare Access yet. Add a Service Token to access protected applications.",
     "failed": "Could not save the Cloudflare Access change. Try again.",
-    "inUse": "This Cloudflare Access is used by a host. Review the affected hosts and rebind or delete them first.",
+    "forbidden": "Only organization admins can change shared Cloudflare Access.",
+    "inUse": "This Cloudflare Access is used by an SSH host. Its owner must rebind or delete that host first.",
     "inUseHelp": "Select another Cloudflare Access for these hosts, switch them explicitly to Direct, or delete them before deleting this one.",
     "invalidInput": "Some Cloudflare Access settings are invalid. Check the fields and try again.",
     "keepChanges": "Keep my changes with this version",
@@ -2971,6 +2951,9 @@
     "missing": "This Cloudflare Access is no longer available. Select another one or create one.",
     "name": "Name",
     "namePlaceholder": "e.g. Production access",
+    "organization": "Organization",
+    "organizationHelp": "Anyone in this organization can use this Service Token. Only admins can change it.",
+    "personal": "Personal",
     "replace": "Replace Service Token",
     "resourceIdConflict": "This resource ID cannot be used. Close and reopen the form to try again.",
     "retry": "Retry",
@@ -2978,15 +2961,17 @@
     "revisionExhausted": "This configuration can no longer be updated. Create a new one.",
     "save": "Save",
     "saveUncertain": "We couldn't confirm whether your changes were saved. Retry the same save, or close and check the list before adding again.",
+    "scope": "Who can use this",
+    "sectionEmpty": "No configurations here yet.",
     "select": "Select Cloudflare Access",
     "summary_one": "{{count}} Cloudflare Access configured",
     "summary_other": "{{count}} Cloudflare Access configured",
     "title": "Cloudflare Access",
     "tokenHelp": "Access protected applications with Cloudflare Access Service Tokens.",
     "unavailable": "Cloudflare Access is not available for this account.",
-    "unused": "Not used by any hosts",
-    "usedBy_one": "Used by {{count}} host:",
-    "usedBy_other": "Used by {{count}} hosts:"
+    "unused": "Not used by any of your hosts",
+    "usedBy_one": "Used by {{count}} of your hosts:",
+    "usedBy_other": "Used by {{count}} of your hosts:"
   },
   "connectors": {
     "access": {
@@ -4251,13 +4236,14 @@
         "skills": "Import your skills",
         "slack": "Add Okou to Slack",
         "sources": "Connect your work",
-        "team": "Invite a teammate"
+        "team": "Invite a team member"
       },
       "experience": {
-        "copy": "Connect the plan you already pay for and your work runs there, not on Okou credits.",
-        "no": "No, I’m new to this",
-        "noCopy": "Okou picks a first task for you.",
-        "title": "Have you used Codex or Claude Code?"
+        "copy": "Start with guidance, or bring the Codex or Claude Code plan you already use.",
+        "no": "I'm new to AI agents",
+        "noCopy": "Okou helps you choose a useful first task.",
+        "title": "How would you like to start with Okou?",
+        "trust": "Run tasks on your Codex or Claude Code plan instead of Okou credits, so you can do more without worrying about usage. Connect now or later."
       },
       "industries": {
         "coaching": {
@@ -4306,7 +4292,7 @@
         }
       },
       "industry": {
-        "copy": "Okou uses this to pick your first task and the sources it starts from.",
+        "copy": "This helps Okou show relevant tools and suggest a first task that fits your work.",
         "title": "What kind of work do you do?"
       },
       "profile": {
@@ -4322,7 +4308,7 @@
       },
       "skills": {
         "copied": "Copied",
-        "copy": "Paste this prompt into your own {{provider}} session and it brings the skills on your machine into Okou.",
+        "copy": "Run this prompt in {{provider}} to import the skills you've already built, so Okou can use them from day one.",
         "copyError": "The prompt could not be copied.",
         "copyPrompt": "Copy prompt",
         "importedCopy": "Imported as an Okou workflow.",
@@ -4333,7 +4319,7 @@
         "promptLabel": "Skill import prompt",
         "promptTitle": "Run this in {{provider}}",
         "startError": "The import session could not be opened.",
-        "title": "Bring the skills you already wrote.",
+        "title": "Bring your existing skills into Okou",
         "tryAgain": "Try again",
         "waiting": "Imported skills appear here as they arrive."
       },
@@ -4345,7 +4331,7 @@
         "connectedCopy": "Open Slack and mention @Okou to give it a task.",
         "connectedStatus": "Added to your workspace",
         "connectedTitle": "Slack is connected",
-        "copy": "Add it once, then mention @Okou where the work already happens.",
+        "copy": "Mention @Okou to give it a task and keep the result in the same team conversation.",
         "name": "Slack",
         "otherAdded": "Added",
         "otherImessage": "iMessage",
@@ -4374,12 +4360,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Works in any channel you add it to.",
         "rowTitle": "Okou for Slack",
-        "title": "Give Okou a job without leaving Slack."
+        "title": "Keep work moving in Slack"
       },
       "sources": {
-        "copy": "It works in the cloud, from the tools your team already uses. 10x the output, less operational friction, lower cost. Connect one source to start.",
-        "note": "You choose which accounts to connect.",
-        "title": "Okou is for you, and shared across your whole team."
+        "copy": "The more Okou knows about your work, the smarter it gets. Connect a tool you use every day to start with a task built on your real work.",
+        "permissions": "Okou uses a small sample to tailor your first task. You decide what Agents can do and for how long.",
+        "securityLink": "How Okou protects your data",
+        "title": "Connect a work tool"
       },
       "startingPrompt": {
         "exact": {
@@ -4713,32 +4700,33 @@
         "connecting": "Connecting…",
         "failedNote": "We couldn’t connect {{provider}}. You can try again, or continue and connect it later.",
         "retry": "Try again",
-        "rowCopy": "Runs on your plan, not on Okou credits.",
+        "rowCopy": "Connect to run on your plan instead of Okou credits.",
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can try again, or continue and connect it later."
       },
       "team": {
-        "copy": "Invite a teammate now, or do it later from the workspace menu.",
+        "copy": "Invite a team member to run shared workflows with you.",
         "invite": "Send invite",
         "invited": "Invited",
-        "label": "Teammate’s email",
-        "note": "They join this workspace; their own accounts stay theirs.",
+        "label": "Team member’s email",
+        "note": "They can start working with Okou right away.",
         "notSent": "Not sent",
-        "panelTitle": "Invite a teammate",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invite a team member",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Their connected accounts stay theirs — nothing is shared without them.",
-          "workflows": "Anyone here can run the workflows this workspace already has.",
-          "workspace": "They land in this workspace, with the sources you just connected."
+          "accounts": "They connect their own tools when they need them.",
+          "workflows": "They can run any workflow your team has built.",
+          "workspace": "They join your workspace."
         },
         "sending": "Sending…",
-        "title": "Bring the people who do this work with you."
+        "title": "Make Okou useful to your whole team",
+        "trust": "Everyone uses the same workflows and connects their own tools."
       },
       "welcome": {
-        "copy": "Start with a first task, picked for the work you just connected.",
+        "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",
         "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
         "promptLabel": "Your starting prompt",
         "start": "Start with Okou",
-        "title": "Okou is ready for you"
+        "title": "Start with a task that matters"
       }
     },
     "templatePicker": {
@@ -4861,8 +4849,7 @@
       "preparedDescription": "{{assistantName}} prepares the next step from your tools.",
       "preparedTitle": "Workflow prepared",
       "reviewDescription": "{{assistantName}} completes the workflow and returns the result.",
-      "reviewTitle": "Ready for review",
-      "source": "Source"
+      "reviewTitle": "Ready for review"
     },
     "workflowPicker": {
       "categoryDescription": "Ready-to-run setups you can adapt to your tools and goals.",
@@ -6877,8 +6864,10 @@
       "keepChanges": "Keep my changes with this version",
       "latest": "Latest saved settings",
       "mode": "Connection",
+      "needsRebind": "This host needs a new Cloudflare Access configuration. Edit it to rebind or choose Direct. It will not connect until you do.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Published hostname",
+      "rebindHelp": "Choose a permitted Cloudflare Access configuration or Direct to restore this host. Nothing will change until you save.",
       "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access is not available for this account."
@@ -6924,7 +6913,6 @@
       "unused": "Not used by any hosts"
     },
     "credentialsHelp": "Credentials are write-only and stay outside the sandbox. Paste the complete key; whitespace is preserved. Fields are cleared when this form closes.",
-    "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
     "description": "Let your agents run commands on remote machines.",
@@ -6951,7 +6939,6 @@
     "fingerprint": "Learned host key",
     "host": "Public hostname or IP address",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "Could not load SSH settings. Try again.",
     "loading": "Loading SSH hosts…",
@@ -6980,7 +6967,6 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "SSH remote access",
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
@@ -7113,7 +7099,6 @@
       "usernamePasswordHint": "Enter the password for this username",
       "usernamePasswordMethod": "Username and password"
     },
-    "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this saved host? Its reusable credential will be kept.",
     "description": "Let your agents view and control remote desktops.",
@@ -7136,7 +7121,6 @@
     },
     "host": "RFB destination host",
     "hostHint": "e.g. desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "Could not load VNC configuration.",
     "loading": "Loading VNC configuration…",
@@ -7171,7 +7155,6 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "VNC remote access",
     "transport": {
       "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "RFB destination",

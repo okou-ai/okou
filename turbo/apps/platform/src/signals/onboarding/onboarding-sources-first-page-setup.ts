@@ -263,18 +263,9 @@ export const setupOnboardingProfilePage$ = createSourcesFirstPageSetup({
   Page: OnboardingProfilePage,
 });
 
-/**
- * The AgentPhone tile shows a real link, so the step watches that link for as
- * long as it is open. It is behind the same switch as the Works page entry,
- * and the watcher only runs where the tile does.
- */
+/** Keep the AgentPhone tile's link status current while this step is open. */
 const watchOnboardingAgentPhone$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const switches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    if (!switches[FeatureSwitchKey.AgentPhoneEntry]) {
-      return;
-    }
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     set(setAgentPhoneConnectDialogOpen$, false);
     await set(watchAgentPhoneConnection$, signal);
   },

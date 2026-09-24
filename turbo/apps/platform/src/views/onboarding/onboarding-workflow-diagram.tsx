@@ -4,7 +4,7 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import type { OnboardingWorkflow } from "./onboarding-data.ts";
-import { connectorCatalogStatusBySlug$ } from "../../signals/external/connectors.ts";
+import { onboardingWorkflowConnectorsBySlug$ } from "../../signals/onboarding/onboarding-workflow-connectors.ts";
 import { ConnectorIcon } from "../okou-page/components/settings/connector-icons.tsx";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
 
@@ -33,87 +33,33 @@ export function WorkflowConnectorIcon({
   readonly connectorSlug: ConnectorSlug;
   readonly size: number;
 }) {
-  const catalogBySlugLoadable = useLastLoadable(connectorCatalogStatusBySlug$);
+  const connectorsLoadable = useLastLoadable(
+    onboardingWorkflowConnectorsBySlug$,
+  );
   const icon =
-    catalogBySlugLoadable.state === "hasData"
-      ? catalogBySlugLoadable.data.get(connectorSlug)?.icon
+    connectorsLoadable.state === "hasData"
+      ? connectorsLoadable.data.get(connectorSlug)?.icon
       : undefined;
   return <ConnectorIcon icon={icon} size={size} />;
 }
 
-const CONNECTOR_LABELS: Readonly<Record<string, string>> = {
-  langfuse: "Langfuse",
-  productlane: "Productlane",
-  typeform: "Typeform",
-  posthog: "PostHog",
-  plausible: "Plausible",
-  cloudflare: "Cloudflare",
-  clerk: "Clerk",
-  snowflake: "Snowflake",
-  ahrefs: "Ahrefs",
-  strapi: "Strapi",
-  buffer: "Buffer",
-  mailchimp: "Mailchimp",
-  "google-ads": "Google Ads",
-  "google-analytics": "Google Analytics",
-  "google-cloud": "Google Cloud",
-  "meta-ads": "Meta Ads",
-  exa: "Exa",
-  apollo: "Apollo",
-  instantly: "Instantly",
-  resend: "Resend",
-  stripe: "Stripe",
-  deel: "Deel",
-  "cal-com": "Cal.com",
-  todoist: "Todoist",
-  reddit: "Reddit",
-  gamma: "Gamma",
-  figma: "Figma",
-  gong: "Gong",
-  "google-docs": "Docs",
-  sentry: "Sentry",
-  slack: "Slack",
-  github: "GitHub",
-  notion: "Notion",
-  vercel: "Vercel",
-  axiom: "Axiom",
-  asana: "Asana",
-  clickup: "ClickUp",
-  monday: "Monday",
-  heygen: "HeyGen",
-  elevenlabs: "ElevenLabs",
-  metabase: "Metabase",
-  linear: "Linear",
-  revenuecat: "RevenueCat",
-  "google-sheets": "Sheets",
-  hubspot: "HubSpot",
-  jira: "Jira",
-  firecrawl: "Firecrawl",
-  serpapi: "SerpAPI",
-  youtube: "YouTube",
-  x: "X",
-  gmail: "Gmail",
-  "google-calendar": "Calendar",
-  "google-drive": "Drive",
-  "google-forms": "Google Forms",
-  "google-meet": "Google Meet",
-  "google-search-console": "Search Console",
-  quickbooks: "QuickBooks",
-  xero: "Xero",
-  similarweb: "SimilarWeb",
-  salesforce: "Salesforce",
-  streak: "Streak",
-  airtable: "Airtable",
-  calendly: "Calendly",
-  intercom: "Intercom",
-  zendesk: "Zendesk",
-  chatwoot: "Chatwoot",
-  fireflies: "Fireflies",
-  tldv: "tl;dv",
-};
-
-function connectorLabel(connectorSlug: ConnectorSlug): string {
-  return CONNECTOR_LABELS[connectorSlug] ?? connectorSlug;
+/* A connector hidden from the caller has no entry and keeps its slug. */
+function WorkflowConnectorLabel({
+  connectorSlug,
+  additionalCount = 0,
+}: {
+  readonly connectorSlug: ConnectorSlug;
+  readonly additionalCount?: number;
+}) {
+  const connectorsLoadable = useLastLoadable(
+    onboardingWorkflowConnectorsBySlug$,
+  );
+  if (connectorsLoadable.state !== "hasData") {
+    return null;
+  }
+  const label =
+    connectorsLoadable.data.get(connectorSlug)?.label ?? connectorSlug;
+  return additionalCount > 0 ? `${label} + ${additionalCount}` : label;
 }
 
 const WORKFLOW_SOURCE_CONNECTOR_SLUGS: ReadonlySet<ConnectorSlug> = new Set([
@@ -173,13 +119,11 @@ function uniqueWorkflowConnectorSlugs(
 
 interface WorkflowDiagramModel {
   readonly sourceConnectorSlugs: readonly ConnectorSlug[];
-  readonly sourceLabel: string;
   readonly destinationConnectorSlug: ConnectorSlug | undefined;
 }
 
 function buildWorkflowDiagramModel(
   workflow: OnboardingWorkflow,
-  sourceFallback: string,
 ): WorkflowDiagramModel {
   const allConnectorSlugs = uniqueWorkflowConnectorSlugs(
     workflow.connectorSlugs,
@@ -215,19 +159,8 @@ function buildWorkflowDiagramModel(
       return connectorSlug !== destinationConnectorSlug;
     }),
   ]);
-  const primaryLabel = sourceConnectorSlugs[0]
-    ? connectorLabel(sourceConnectorSlugs[0])
-    : sourceFallback;
-  const sourceLabel =
-    sourceConnectorSlugs.length > 1
-      ? `${primaryLabel} + ${sourceConnectorSlugs.length - 1}`
-      : sourceConnectorSlugs[0]
-        ? connectorLabel(sourceConnectorSlugs[0])
-        : "";
-
   return {
     sourceConnectorSlugs,
-    sourceLabel,
     destinationConnectorSlug,
   };
 }
@@ -266,7 +199,7 @@ function WorkflowDiagramNode({
   dataSlot,
   children,
 }: {
-  readonly label: string;
+  readonly label?: ReactNode;
   readonly connectorSlug?: ConnectorSlug;
   readonly connectorSlugs?: readonly ConnectorSlug[];
   readonly className: string;
@@ -314,7 +247,6 @@ function WorkflowDiagramNode({
 function WorkflowDiagramOkouNode() {
   return (
     <WorkflowDiagramNode
-      label=""
       className="top-[45px] left-[277px] w-[72px]"
       iconClassName="size-[72px] p-[4px]"
     >
@@ -401,15 +333,11 @@ export function WorkflowPreviewDiagram({
   readonly workflow: OnboardingWorkflow;
 }) {
   const { t } = useTranslation();
-  const diagram = buildWorkflowDiagramModel(
-    workflow,
-    t(($) => {
-      return $.onboarding.workflowDiagram.source;
-    }),
-  );
+  const diagram = buildWorkflowDiagramModel(workflow);
   const firstStep = workflow.detailSteps[1] ?? workflow.detailSteps[0];
   const lastStep = workflow.detailSteps.at(-1) ?? firstStep;
-  const hasSource = diagram.sourceConnectorSlugs.length > 0;
+  const primarySourceSlug = diagram.sourceConnectorSlugs[0];
+  const hasSource = primarySourceSlug !== undefined;
   const destinationCurvePath =
     "M485 112V148.65C485 166.79 469.17 175.85 437.51 175.85H352.59C325.19 175.85 311.5 183.7 311.5 199.4V223";
   const beamPath = hasSource
@@ -459,10 +387,15 @@ export function WorkflowPreviewDiagram({
         <span className={DIAGRAM_VERTICAL_CONTROL_CLASS} aria-hidden="true" />
         <WorkflowDiagramDot className="top-[322px] left-[312.5px]" />
         <WorkflowDiagramDot className="top-[352px] left-[312.5px]" />
-        {diagram.sourceConnectorSlugs.length > 0 ? (
+        {primarySourceSlug ? (
           <WorkflowDiagramNode
-            label={diagram.sourceLabel}
-            connectorSlug={diagram.sourceConnectorSlugs[0]}
+            label={
+              <WorkflowConnectorLabel
+                connectorSlug={primarySourceSlug}
+                additionalCount={diagram.sourceConnectorSlugs.length - 1}
+              />
+            }
+            connectorSlug={primarySourceSlug}
             connectorSlugs={diagram.sourceConnectorSlugs}
             dataSlot="onboarding-diagram-source-node"
             className="top-[34px] left-[94px] w-[82px]"
@@ -471,7 +404,11 @@ export function WorkflowPreviewDiagram({
         <WorkflowDiagramOkouNode />
         {diagram.destinationConnectorSlug ? (
           <WorkflowDiagramNode
-            label={connectorLabel(diagram.destinationConnectorSlug)}
+            label={
+              <WorkflowConnectorLabel
+                connectorSlug={diagram.destinationConnectorSlug}
+              />
+            }
             connectorSlug={diagram.destinationConnectorSlug}
             className="top-[32px] left-[455px] w-[61px]"
           />

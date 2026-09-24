@@ -8,7 +8,7 @@
 //! The sibling modules keep focused responsibilities out of this orchestration
 //! file:
 //! - `factory_lifecycle`: sandbox factory creation and shutdown.
-//! - `idle_lifecycle`: idle-pool lifecycle, status updates, and destroy helpers.
+//! - `runner-supervisor`: idle-pool lifecycle, replenishment, status, and destroy policy.
 //! - `identity`: persistent runner id storage.
 //! - `job_discovery`: discovery branch handling and idle-reuse admission.
 //! - `job_lifecycle`: cleanup, budget, and completion ownership state.
@@ -91,13 +91,10 @@ use runner_provider::{
 };
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 
-mod active_runs;
-mod blank_pool;
 mod factory_lifecycle;
 mod finalizing_claim;
 mod heartbeat;
 mod identity;
-mod idle_lifecycle;
 mod job_discovery;
 mod job_lifecycle;
 mod job_spawn;
@@ -109,8 +106,6 @@ mod prune_idle;
 mod sandbox_finalization;
 mod signals;
 
-use active_runs::ActiveRuns;
-use blank_pool::BlankPoolReplenisher;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
 use heartbeat::{
     HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
@@ -118,7 +113,6 @@ use heartbeat::{
     refresh_initial_workspace_cache_snapshot,
 };
 use identity::load_runner_process_identity;
-use idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
 use job_spawn::{SpawnContext, handle_job_result};
 use mitm_restart::{
@@ -129,6 +123,9 @@ use mitm_restart::{
 use orphan_reap::{
     OrphanReapMode, OrphanReapProcessDiscovery, OrphanedActiveRuns, reap_orphaned_active_runs,
 };
+use runner_lifecycle::active_runs::ActiveRuns;
+use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 use signals::{
     EarlySignals, SignalController, SignalHandlerTask, handle_stopping_signal, recv_handler_task,
 };
@@ -532,7 +529,7 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
                     "failed to persist stopped status after live runner publication failure"
                 );
             }
-            Err(e)
+            Err(e.into())
         }
     }
 }
@@ -962,7 +959,7 @@ async fn run_start_with_home(
         let group_name = group.clone();
         let profiles: Vec<String> = runner_config.profiles.keys().cloned().collect();
         let provider = ApiProvider::new(
-            runner_provider::ProviderHttpClient::new(http.clone()),
+            http.clone(),
             server.token,
             ApiProviderConfig {
                 ably_side_message_handler: ssh
@@ -2107,8 +2104,22 @@ async fn run(config: RunConfig) -> RunnerResult<()> {
     let mut discover_fut = Box::pin(provider_state.provider.discover());
 
     let mut current_mode = startup_mode;
+    let blank_profiles = runner
+        .profiles
+        .iter()
+        .map(|(name, profile)| {
+            (
+                name.clone(),
+                BlankProfile {
+                    vcpu: profile.vcpu,
+                    memory_mb: profile.memory_mb,
+                    workspace_disk_mb: profile.workspace_disk_mb,
+                },
+            )
+        })
+        .collect();
     let mut blank_pool = BlankPoolReplenisher::new(
-        &runner.profiles,
+        &blank_profiles,
         &factories,
         &capacity.budget,
         capacity.max_idle,

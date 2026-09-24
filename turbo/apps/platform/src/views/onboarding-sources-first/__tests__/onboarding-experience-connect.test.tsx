@@ -24,11 +24,11 @@ const SOURCES_FIRST_ON = {
   [FeatureSwitchKey.OnboardingSourcesFirst]: true,
 } as const;
 
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
-const SKILLS_QUESTION = "Bring the skills you already wrote.";
-const SLACK_QUESTION = "Give Okou a job without leaving Slack.";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
+const SKILLS_QUESTION = "Bring your existing skills into Okou";
+const SLACK_QUESTION = "Keep work moving in Slack";
 const CODEX_CARD = "Codex";
-const NEW_TO_THIS_CARD = "No, I’m new to this";
+const NEW_TO_THIS_CARD = "I'm new to AI agents";
 const CONNECT_CODEX = "Connect Codex";
 const FAILED_NOTE =
   "We couldn’t connect Codex. You can try again, or continue and connect it later.";
@@ -118,11 +118,11 @@ async function openExperienceStep(fromStart = false): Promise<void> {
     await waitForContinueEnabled();
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Okou is for you, and shared across your whole team.",
+      name: "Connect a work tool",
     });
     click(getButtonByName("Continue"));
     await screen.findByRole("heading", {
-      name: "Bring the people who do this work with you.",
+      name: "Make Okou useful to your whole team",
     });
     click(getButtonByName("Not now"));
   }
@@ -161,6 +161,17 @@ function answerRadio(name: string): HTMLElement {
 function closeDeviceAuthDialog(): void {
   click(screen.getByLabelText("Close"));
 }
+
+test("The guided start comes before subscription plans", async () => {
+  await openExperienceStep();
+
+  const choices = screen.getAllByRole("radio").map((radio) => {
+    return radio.closest("label")?.textContent ?? "";
+  });
+  expect(choices[0]).toContain(NEW_TO_THIS_CARD);
+  expect(choices[1]).toContain(CODEX_CARD);
+  expect(choices[2]).toContain("Claude Code");
+});
 
 test("The step reports connected once the account lists the subscription", async () => {
   context.mocks.data.personalModelProviders([]);

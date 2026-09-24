@@ -55,7 +55,7 @@ test.each([true, false])(
     }
     expect(
       queryFastControl("link", "Manage VNC")?.getAttribute("href") ?? null,
-    ).toBe(enabled ? "/connectors/vnc?add=1" : null);
+    ).toBe(enabled ? "/connectors?scope=remote-control&type=vnc" : null);
   },
 );
 
@@ -88,7 +88,7 @@ test.each([false, true])(
     }
     expect(
       queryFastControl("link", "Manage VNC")?.getAttribute("href") ?? null,
-    ).toBe(directory ? null : "/connectors/vnc?add=1");
+    ).toBe(directory ? null : "/connectors?scope=remote-control&type=vnc");
     expect(queryFastControl("link", "Manage SSH hosts")).toBeNull();
   },
 );
@@ -237,7 +237,10 @@ test.each([true])(
     await fill(search, "vnc");
     await expect(
       findFastControl("link", "Manage VNC", dialog),
-    ).resolves.toHaveAttribute("href", "/connectors/vnc?add=1");
+    ).resolves.toHaveAttribute(
+      "href",
+      "/connectors?scope=remote-control&type=vnc",
+    );
     expect(queryFastControl("link", "Manage SSH hosts", dialog)).toBeNull();
   },
 );
@@ -287,7 +290,10 @@ test.each([true])(
     recovery.resolve();
     await expect(
       findFastControl("link", "Manage VNC", dialog),
-    ).resolves.toHaveAttribute("href", "/connectors/vnc?add=1");
+    ).resolves.toHaveAttribute(
+      "href",
+      "/connectors?scope=remote-control&type=vnc",
+    );
     expect(
       within(dialog).queryByText("Could not load VNC configuration."),
     ).toBeNull();

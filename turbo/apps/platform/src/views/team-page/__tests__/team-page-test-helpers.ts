@@ -119,7 +119,6 @@ export function mockConnectorOverview(
           return {
             slug: connector.slug,
             label: connector.label,
-            description: connector.description,
             icon: connector.icon,
             hasPermissions: connector.permissionSummary.hasPermissions,
           };

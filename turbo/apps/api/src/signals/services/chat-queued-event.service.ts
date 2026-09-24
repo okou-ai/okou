@@ -17,6 +17,7 @@ import {
   exists,
   isNull,
   lt,
+  not,
   notExists,
   or,
   sql,
@@ -311,6 +312,153 @@ function queuedUserMessageAutonomyBudget(
   return childAutonomyBudget(sourceAutonomyBudget);
 }
 
+interface QueuedUserMessageRow {
+  readonly id: string;
+  readonly createdAt: Date;
+  readonly userMessage: ChatEventUserMessage | null;
+  readonly requiredOfficialWorkflowIds: readonly string[] | null;
+  readonly selectedModel: string | null;
+  readonly contextType: QueuedUserMessageContextType | null;
+  readonly contextId: string | null;
+  readonly sourceAutonomyBudget: number | null;
+}
+
+async function materializeQueuedUserMessage(
+  db: Db,
+  event: QueuedUserMessageRow,
+): Promise<QueuedUserMessage> {
+  if (!event.userMessage) {
+    throw new Error("Queued input event is missing userMessage");
+  }
+  const contextType = requiredQueuedUserMessageContextType(event.contextType);
+  const requiredOfficialWorkflowIds =
+    parseCanonicalChatEventRequiredOfficialWorkflowIds(
+      event.requiredOfficialWorkflowIds,
+    );
+  const { webContext, officialAgentContext } =
+    resolveQueuedOfficialWorkflowContext({
+      contextType,
+      contextId: event.contextId,
+      requiredOfficialWorkflowIds,
+    });
+  const sourceAutonomyBudget = await loadQueuedSourceAutonomyBudget(db, {
+    userMessage: event.userMessage,
+    sourceAutonomyBudget: event.sourceAutonomyBudget,
+    officialAgentClaim: officialAgentContext !== null,
+  });
+  const { requiredOfficialWorkflowIds: _storedClaim, ...queuedEvent } = event;
+  return {
+    ...queuedEvent,
+    userMessage: event.userMessage,
+    ...(requiredOfficialWorkflowIds === null
+      ? {}
+      : { requiredOfficialWorkflowIds }),
+    modelProviderId: null,
+    modelProviderType: null,
+    modelProviderCredentialScope: null,
+    contextType,
+    publicBrand:
+      webContext?.publicBrand ?? officialAgentContext?.publicBrand ?? null,
+    autonomyBudget: queuedUserMessageAutonomyBudget(
+      contextType,
+      sourceAutonomyBudget,
+    ),
+  };
+}
+
+/** A post-commit hint only; the launch transaction still owns the final claim. */
+export async function resolveWebChatQueueFirstDispatchPreflight(
+  db: Db,
+  threadId: string,
+  queuedEventId: string,
+): Promise<
+  | { readonly kind: "wait" }
+  | { readonly kind: "drain" }
+  | { readonly kind: "self"; readonly queuedMessage: QueuedUserMessage }
+> {
+  const admission = db.$with("queue_first_dispatch_admission").as(
+    db
+      .select({
+        blocked: sql`${chatThreadAdmissionBlockerCondition(db, {
+          threadId,
+        })}`
+          .mapWith(pgBooleanDecoder)
+          .as("blocked"),
+        selectedModel: chatThreads.selectedModel,
+      })
+      .from(chatThreads)
+      .where(eq(chatThreads.id, threadId))
+      .limit(1),
+  );
+  const head = db.$with("queue_first_dispatch_head").as(
+    db
+      .select({
+        id: chatEvents.id,
+        createdAt: chatEvents.createdAt,
+        eventType: chatEvents.eventType,
+        payload: chatEvents.payload,
+        requiredOfficialWorkflowIds: chatEvents.requiredOfficialWorkflowIds,
+        contextType: chatEvents.contextType,
+        contextId: chatEvents.contextId,
+        sourceAutonomyBudget: agentRuns.autonomyBudget,
+      })
+      .from(chatEvents)
+      .innerJoin(admission, not(admission.blocked))
+      .leftJoin(
+        agentRuns,
+        and(
+          eq(chatEvents.contextType, "agent_run"),
+          eq(agentRuns.id, chatEvents.contextId),
+        ),
+      )
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, threadId),
+          pendingChatQueueEventCondition(db),
+        ),
+      )
+      .orderBy(
+        chatQueueEventPriority(),
+        asc(chatEvents.createdAt),
+        asc(chatEvents.id),
+      )
+      .limit(1),
+  );
+  const [projection] = await db
+    .with(admission, head)
+    .select({
+      blocked: admission.blocked,
+      selectedModel: admission.selectedModel,
+      head: {
+        id: head.id,
+        createdAt: head.createdAt,
+        eventType: head.eventType,
+        userMessage: canonicalChatEventUserMessage(head.payload),
+        requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
+        contextType: head.contextType,
+        contextId: head.contextId,
+        sourceAutonomyBudget: head.sourceAutonomyBudget,
+      },
+    })
+    .from(admission)
+    .leftJoin(head, sql`true`)
+    .limit(1);
+
+  if (projection?.blocked) {
+    return { kind: "wait" };
+  }
+  if (!projection?.head || projection.head.eventType !== "input.prompt") {
+    return { kind: "drain" };
+  }
+  const queuedMessage = await materializeQueuedUserMessage(db, {
+    ...projection.head,
+    selectedModel: projection.selectedModel,
+  });
+  return queuedMessage.id === queuedEventId
+    ? { kind: "self", queuedMessage }
+    : { kind: "drain" };
+}
+
 export async function loadNextUnclaimedQueuedUserMessage(
   db: Db,
   threadId: string,
@@ -357,46 +505,7 @@ export async function loadNextUnclaimedQueuedUserMessage(
       ),
     )
     .limit(1);
-  if (!event) {
-    return null;
-  }
-  if (!event.userMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  const contextType = requiredQueuedUserMessageContextType(event.contextType);
-  const requiredOfficialWorkflowIds =
-    parseCanonicalChatEventRequiredOfficialWorkflowIds(
-      event.requiredOfficialWorkflowIds,
-    );
-  const { webContext, officialAgentContext } =
-    resolveQueuedOfficialWorkflowContext({
-      contextType,
-      contextId: event.contextId,
-      requiredOfficialWorkflowIds,
-    });
-  const sourceAutonomyBudget = await loadQueuedSourceAutonomyBudget(db, {
-    userMessage: event.userMessage,
-    sourceAutonomyBudget: event.sourceAutonomyBudget,
-    officialAgentClaim: officialAgentContext !== null,
-  });
-  const autonomyBudget = queuedUserMessageAutonomyBudget(
-    contextType,
-    sourceAutonomyBudget,
-  );
-  const { requiredOfficialWorkflowIds: _storedClaim, ...queuedEvent } = event;
-  return {
-    ...queuedEvent,
-    userMessage: event.userMessage,
-    ...(requiredOfficialWorkflowIds === null
-      ? {}
-      : {
-          requiredOfficialWorkflowIds,
-        }),
-    publicBrand:
-      webContext?.publicBrand ?? officialAgentContext?.publicBrand ?? null,
-    contextType,
-    autonomyBudget,
-  };
+  return event ? await materializeQueuedUserMessage(db, event) : null;
 }
 
 async function loadNextUnclaimedQueuedUserMessageId(

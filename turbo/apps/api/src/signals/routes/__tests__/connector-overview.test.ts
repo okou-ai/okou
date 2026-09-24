@@ -230,7 +230,6 @@ test("overview projects connected connector briefs and default accounts for one 
     expect.objectContaining({
       slug: "gitlab",
       label: expect.any(String),
-      description: expect.any(String),
       icon: expect.objectContaining({ url: expect.any(String) }),
       hasPermissions: expect.any(Boolean),
     }),

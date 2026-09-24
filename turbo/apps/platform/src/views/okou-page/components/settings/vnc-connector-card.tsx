@@ -40,12 +40,13 @@ export function VncConnectorCard({
       interactive
       action={
         <Link
-          pathname={ROUTES.connectorVnc}
-          options={
-            configuredCount === 0
-              ? { searchParams: new URLSearchParams({ add: "1" }) }
-              : undefined
-          }
+          pathname={ROUTES.connectors}
+          options={{
+            searchParams: new URLSearchParams({
+              scope: "remote-control",
+              type: "vnc",
+            }),
+          }}
           aria-label={t(($) => {
             return $.vnc.manage;
           })}

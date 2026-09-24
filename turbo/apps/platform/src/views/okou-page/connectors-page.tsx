@@ -1171,6 +1171,74 @@ function ConnectorsToolbarActions({
   );
 }
 
+type LegacyConnectorsTab =
+  | "builtin"
+  | "custom"
+  | "remote-control"
+  | "private-network";
+
+function activeLegacyConnectorsTab(
+  scope: ConnectorsScope,
+  activeTab: "builtin" | "custom",
+): LegacyConnectorsTab {
+  return scope === "remote-control" || scope === "private-network"
+    ? scope
+    : activeTab;
+}
+
+function LegacyConnectorsTabBar({
+  tab,
+  setScope,
+  setActiveTab,
+  actions,
+}: {
+  readonly tab: LegacyConnectorsTab;
+  readonly setScope: (value: ConnectorsScope) => void;
+  readonly setActiveTab: (value: string) => void;
+  readonly actions: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <Tabs
+        value={tab}
+        className="min-w-0 w-full sm:w-auto"
+        onValueChange={(value) => {
+          if (value === "remote-control" || value === "private-network") {
+            setScope(value);
+            return;
+          }
+          setActiveTab(value === "custom" ? "custom" : "builtin");
+        }}
+      >
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:inline-flex sm:w-auto">
+          <TabsTrigger value="builtin" className="h-8">
+            {t(($) => {
+              return $.connectors.catalog.tabs.builtin;
+            })}
+          </TabsTrigger>
+          <TabsTrigger value="custom" className="h-8">
+            {t(($) => {
+              return $.connectors.catalog.tabs.custom;
+            })}
+          </TabsTrigger>
+          <TabsTrigger value="remote-control" className="h-8">
+            {t(($) => {
+              return $.connectors.catalog.scope.remoteControl;
+            })}
+          </TabsTrigger>
+          <TabsTrigger value="private-network" className="h-8">
+            {t(($) => {
+              return $.connectors.catalog.scope.privateNetwork;
+            })}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+      {(tab === "builtin" || tab === "custom") && actions}
+    </div>
+  );
+}
+
 function ConnectorCategoryGroupSection({
   group,
   renderCard,
@@ -1618,11 +1686,9 @@ function renderBuiltinList({
 }
 
 /**
- * Which list the page body shows. The directory has three scopes and the tabs
- * it replaces have two of their own, so the choice lives here rather than as
- * nested conditionals inside the page. Custom needs no branch of its own: the
- * directory content already renders that scope and nothing else when it is
- * the one open.
+ * Remote control and Private network are available in both layouts. The
+ * legacy layout uses tabs for Built-in and Custom; the directory uses scopes.
+ * The directory content renders Custom when that scope is selected.
  */
 function ConnectorsPagePanels({
   shelfEnabled,
@@ -1643,17 +1709,20 @@ function ConnectorsPagePanels({
   readonly remoteControlPanel: ReactNode;
   readonly privateNetworkPanel: ReactNode;
 }) {
-  if (!shelfEnabled) {
-    return activeTab === "custom" ? <CustomConnectorsPanel /> : builtinPanel;
-  }
-  if (scope === "connected") {
-    return connectedPanel;
-  }
   if (scope === "remote-control") {
     return remoteControlPanel;
   }
   if (scope === "private-network") {
     return privateNetworkPanel;
+  }
+  if (!shelfEnabled && activeTab === "custom") {
+    return <CustomConnectorsPanel />;
+  }
+  if (!shelfEnabled) {
+    return builtinPanel;
+  }
+  if (scope === "connected") {
+    return connectedPanel;
   }
   return directoryPanel;
 }
@@ -1882,7 +1951,7 @@ function ManagedConnectorAccessDialog() {
   const connectorSlug = useGet(managedConnectorAccessSlug$);
   const close = useSet(closeConnectorAccessManagement$);
   const catalogItemsLoadable = useLastLoadable(relatedCatalogItems$);
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   if (!connectorSlug || catalogItemsLoadable.state !== "hasData") {
@@ -2176,7 +2245,7 @@ export function ConnectorsPage() {
     filteredCloudflareAccessSummary$,
   );
   const catalogStatusLoadable = useLastLoadable(connectorCatalogDiscovery$);
-  const accountSummariesLoadable = useLoadable(
+  const accountSummariesLoadable = useLastLoadable(
     connectorOverviewAccountSummaryByTarget$,
   );
   const accountSummaryStatus = connectorAccountSummaryStatus(
@@ -2203,6 +2272,9 @@ export function ConnectorsPage() {
   const setManagedConnectorSlug = useSet(setManagedConnectorAccessSlug$);
   const activeTab = useGet(connectorsPageTab$);
   const setActiveTab = useSet(setConnectorsPageTab$);
+  const scope = useGet(connectorsScope$);
+  const setScope = useSet(setConnectorsScope$);
+  const legacyTab = activeLegacyConnectorsTab(scope, activeTab);
   const isAdmin = useLastResolved(isOrgAdmin$) ?? false;
   const openCreateCustom = useSet(openCustomConnectorCreateDialog$);
   const activeCategoryId = useGet(activeConnectorCategoryId$);
@@ -2210,7 +2282,7 @@ export function ConnectorsPage() {
   const resetActiveCategory = useSet(resetActiveConnectorCategory$);
   const categoryTrackingEnabled =
     !shelfEnabled &&
-    activeTab === "builtin" &&
+    legacyTab === "builtin" &&
     filteredCatalogItemsLoadable.state === "hasData";
   const scrollContainerRef = useScrollTrackingRef(
     categoryTrackingEnabled,
@@ -2224,8 +2296,6 @@ export function ConnectorsPage() {
   const setConnectionFilter = useSet(setConnectorsConnectionFilter$);
   const categoryFilter = useGet(connectorsCategoryFilter$);
   const setCategoryFilter = useSet(setConnectorsCategoryFilter$);
-  const scope = useGet(connectorsScope$);
-  const setScope = useSet(setConnectorsScope$);
   const connectedBadge = useLastLoadable(connectedConnectorsBadge$);
   const custom = directoryCustomConnectors(
     useLastLoadable(filteredDirectoryCustomConnectors$),
@@ -2475,7 +2545,7 @@ export function ConnectorsPage() {
       >
         <div className="relative mx-auto w-full max-w-[900px]">
           {!shelfEnabled &&
-            activeTab === "builtin" &&
+            legacyTab === "builtin" &&
             filteredCatalogItemsLoadable.state === "hasData" && (
               <ConnectorCategoryMenu
                 activeCategoryId={activeCategoryId}
@@ -2501,38 +2571,24 @@ export function ConnectorsPage() {
                 setCategoryFilter={setCategoryFilter}
               />
             ) : (
-              <div className="flex items-center justify-between gap-3">
-                <Tabs
-                  value={activeTab}
-                  onValueChange={(v) => {
-                    return setActiveTab(v === "custom" ? "custom" : "builtin");
-                  }}
-                >
-                  <TabsList>
-                    <TabsTrigger value="builtin">
-                      {t(($) => {
-                        return $.connectors.catalog.tabs.builtin;
-                      })}
-                    </TabsTrigger>
-                    <TabsTrigger value="custom">
-                      {t(($) => {
-                        return $.connectors.catalog.tabs.custom;
-                      })}
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
-                <ConnectorsToolbarActions
-                  activeTab={activeTab}
-                  search={search}
-                  setSearch={setSearch}
-                  showAccessManagement
-                  connectionFilter={connectionFilter}
-                  agents={agents}
-                  setConnectionFilter={setConnectionFilter}
-                  isAdmin={isAdmin}
-                  onCreateCustom={openCreateCustom}
-                />
-              </div>
+              <LegacyConnectorsTabBar
+                tab={legacyTab}
+                setScope={setScope}
+                setActiveTab={setActiveTab}
+                actions={
+                  <ConnectorsToolbarActions
+                    activeTab={activeTab}
+                    search={search}
+                    setSearch={setSearch}
+                    showAccessManagement
+                    connectionFilter={connectionFilter}
+                    agents={agents}
+                    setConnectionFilter={setConnectionFilter}
+                    isAdmin={isAdmin}
+                    onCreateCustom={openCreateCustom}
+                  />
+                }
+              />
             )}
 
             <ConnectorsPagePanels

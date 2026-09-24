@@ -156,7 +156,6 @@ const AGENT_ABNORMAL_EXIT_DIAGNOSTIC_SCRIPT: &str = concat!(
 );
 
 use crate::error::{RunnerError, RunnerResult};
-use crate::http::HttpClient;
 use crate::idle_pool::{IdleSandboxKind, ReusableIdleSandbox, ReusableIdleSandboxParts};
 use crate::network_log_drain::NetworkLogDrainCoordinator;
 use crate::network_log_manager::NetworkLogManager;
@@ -171,6 +170,7 @@ use crate::workspace_image_cache::{
 };
 use crate::workspace_promotion::abandon_unpublished_workspace_promotion;
 use runner_host::paths::{HomePaths, LogPaths};
+use runner_provider::http::HttpClient;
 use runner_types::types::{ExecutionContext, SandboxReuseResult, WorkspaceReuseResult};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {

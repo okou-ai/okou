@@ -1411,6 +1411,7 @@
       "rename": "Umbenennen",
       "saving": "Speichern...",
       "send": "Senden",
+      "shareMessage": "Nachricht teilen",
       "stop": "Stoppen",
       "view": "Anzeigen"
     },
@@ -1759,29 +1760,6 @@
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
     },
-    "browserInteraction": {
-      "applying": "Browserinteraktion wird abgeschlossen",
-      "applyingDescription": "Der Browser schließt diese Anfrage ab.",
-      "callbackFailed": "Der Agent wurde nicht benachrichtigt.",
-      "cancel": "Abbrechen",
-      "cancelFailed": "Diese Anfrage konnte nicht abgebrochen werden. Versuchen Sie es erneut.",
-      "cancelled": "Anfrage abgebrochen",
-      "cancelling": "Wird abgebrochen…",
-      "completed": "Browserinteraktion abgeschlossen",
-      "completeFailed": "Diese Anfrage konnte nicht abgeschlossen werden. Versuchen Sie es erneut.",
-      "completing": "Wird abgeschlossen…",
-      "continue": "Agent benachrichtigen",
-      "continuing": "Wird benachrichtigt…",
-      "delivered": "Agent benachrichtigt",
-      "description": "Öffnen Sie den Browser, schließen Sie diesen Schritt ab und wählen Sie dann „Fertig“.",
-      "done": "Fertig",
-      "finish": "Schritt abschließen",
-      "stale": "Browser nicht mehr verfügbar",
-      "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
-      "title": "Browser übernehmen",
-      "uncertain": "Browser prüfen",
-      "uncertainDescription": "Die Interaktion wurde möglicherweise abgeschlossen. Bitten Sie den Agenten um eine Prüfung, bevor Sie es erneut versuchen."
-    },
     "cards": {
       "viewDetails": "Details ansehen"
     },
@@ -1936,11 +1914,10 @@
         "newChat": "Neuer Chat",
         "newChatDescription": "Starten Sie einen neuen Chat und übernehmen Sie die wichtigen Angaben, die Sie weiter brauchen.",
         "openClaude": "Claude öffnen",
-        "originalAccount": "Persönliches Abonnement {{account}}",
-        "originalAccountUnavailable": "Persönliches Abonnement getrennt",
-        "originalAccountUnknown": "Persönliches Abonnement nicht verifiziert",
         "outputLimitDescription": "Die Antwort wurde vorzeitig beendet. Mit „Fortfahren“ können Sie dort weitermachen.",
         "outputLimitTitle": "Die Antwort hat ihre Längenbegrenzung erreicht",
+        "personalAccount": "Persönliches Abonnement {{account}}",
+        "personalAccountDisconnected": "Persönliches Abonnement getrennt",
         "providerBalanceDescription": "Prüfen Sie das Guthaben Ihres Anbieterkontos und versuchen Sie es erneut.",
         "providerBalanceTitle": "Das Guthaben beim Modellanbieter reicht nicht aus",
         "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Modellanbieter“ und versuchen Sie es erneut.",
@@ -2165,11 +2142,14 @@
       "createFailed": "Die geteilte Unterhaltung konnte nicht erstellt werden. Versuche es erneut.",
       "deselectGroup": "Nachrichtengruppe abwählen",
       "linkCopied": "Link kopiert",
+      "messageShareFailed": "Der geteilte Link konnte nicht erstellt werden. Versuche es erneut.",
       "publicDescription": "Ausgewählte Nachrichten und ihre Anhänge werden öffentlich.",
+      "selectAll": "Alles auswählen",
       "selectedCount_one": "{{count}} ausgewählt",
       "selectedCount_other": "{{count}} ausgewählt",
       "selectGroup": "Nachrichtengruppe auswählen",
       "shareLink": "Link zur geteilten Unterhaltung",
+      "shareLinkCopied": "Freigabelink kopiert",
       "start": "Nachrichten teilen",
       "tooLarge": "Wähle weniger Nachrichten zum Teilen aus"
     },
@@ -2955,12 +2935,12 @@
     "configuration": "Cloudflare Access",
     "createNew": "Neuen Cloudflare Access erstellen",
     "delete": "Cloudflare Access löschen",
-    "deleteHelp": "Diesen ungenutzten Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden.",
+    "deleteHelp": "Diesen Cloudflare Access löschen? Das gespeicherte Service-Token kann nicht wiederhergestellt werden. Solange ein Host ihn verwendet, ist das Löschen nicht möglich.",
     "description": "Greifen Sie mit Cloudflare Access Service-Tokens auf geschützte Anwendungen zu.",
     "edit": "Cloudflare Access bearbeiten",
-    "empty": "Noch kein Cloudflare Access. Fügen Sie ein Service-Token hinzu, um auf geschützte Anwendungen zuzugreifen.",
     "failed": "Die Cloudflare-Access-Änderung konnte nicht gespeichert werden. Versuche es erneut.",
-    "inUse": "Dieser Cloudflare Access wird von einem Host verwendet. Prüfen Sie die betroffenen Hosts und ändern Sie zuerst deren Zuordnung oder löschen Sie sie.",
+    "forbidden": "Nur Organisationsadministratoren können gemeinsam genutzten Cloudflare Access ändern.",
+    "inUse": "Ein SSH-Host verwendet diesen Cloudflare Access. Sein Besitzer muss ihn zuerst neu zuordnen oder löschen.",
     "inUseHelp": "Wählen Sie für diese Hosts einen anderen Cloudflare Access, wechseln Sie ausdrücklich zu Direkt oder löschen Sie die Hosts, bevor Sie diesen löschen.",
     "invalidInput": "Einige Cloudflare-Access-Einstellungen sind ungültig. Überprüfe die Felder und versuche es erneut.",
     "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
@@ -2971,6 +2951,9 @@
     "missing": "Dieser Cloudflare Access ist nicht mehr verfügbar. Wählen oder erstellen Sie einen anderen.",
     "name": "Name",
     "namePlaceholder": "z. B. Produktionszugriff",
+    "organization": "Organisation",
+    "organizationHelp": "Alle Mitglieder dieser Organisation können dieses Service-Token verwenden. Nur Administratoren können es ändern.",
+    "personal": "Persönlich",
     "replace": "Service-Token ersetzen",
     "resourceIdConflict": "Diese Ressourcen-ID kann nicht verwendet werden. Schließen Sie das Formular und öffnen Sie es erneut, um es noch einmal zu versuchen.",
     "retry": "Erneut versuchen",
@@ -2978,15 +2961,17 @@
     "revisionExhausted": "Diese Konfiguration kann nicht mehr aktualisiert werden. Erstelle eine neue.",
     "save": "Speichern",
     "saveUncertain": "Wir konnten nicht bestätigen, ob Ihre Änderungen gespeichert wurden. Wiederholen Sie denselben Speichervorgang, oder schließen Sie das Formular und prüfen Sie die Liste, bevor Sie erneut etwas hinzufügen.",
+    "scope": "Wer kann dies verwenden",
+    "sectionEmpty": "Hier gibt es noch keine Konfigurationen.",
     "select": "Cloudflare Access auswählen",
     "summary_one": "{{count}} Cloudflare Access eingerichtet",
     "summary_other": "{{count}} Cloudflare Access eingerichtet",
     "title": "Cloudflare Access",
     "tokenHelp": "Greifen Sie mit Cloudflare Access Service-Tokens auf geschützte Anwendungen zu.",
     "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar.",
-    "unused": "Von keinem Host verwendet",
-    "usedBy_one": "Von {{count}} Host verwendet:",
-    "usedBy_other": "Von {{count}} Hosts verwendet:"
+    "unused": "Von keinem deiner Hosts verwendet",
+    "usedBy_one": "Von {{count}} deiner Hosts verwendet:",
+    "usedBy_other": "Von {{count}} deiner Hosts verwendet:"
   },
   "connectors": {
     "access": {
@@ -4262,10 +4247,11 @@
         "team": "Teammitglied einladen"
       },
       "experience": {
-        "copy": "Verbinde den Plan, den du schon bezahlst: die Arbeit läuft dort statt auf Okou-Credits.",
-        "no": "Nein, das ist neu für mich",
-        "noCopy": "Okou wählt eine erste Aufgabe für dich.",
-        "title": "Hast du schon mit Codex oder Claude Code gearbeitet?"
+        "copy": "Lass dich beim Einstieg begleiten oder nutze deinen vorhandenen Codex- oder Claude-Code-Tarif.",
+        "no": "Ich bin neu bei KI-Agenten",
+        "noCopy": "Okou hilft dir, eine passende erste Aufgabe zu finden.",
+        "title": "Wie möchtest du mit Okou starten?",
+        "trust": "Aufgaben laufen über deinen Codex- oder Claude-Code-Tarif statt über Okou-Credits, so kannst du mehr erledigen, ohne auf den Verbrauch zu achten. Jetzt oder später verbinden."
       },
       "industries": {
         "coaching": {
@@ -4314,7 +4300,7 @@
         }
       },
       "industry": {
-        "copy": "Okou wählt daraus deine erste Aufgabe und die Quellen, mit denen sie startet.",
+        "copy": "So kann Okou passende Tools anzeigen und eine erste Aufgabe vorschlagen, die zu deiner Arbeit passt.",
         "title": "Welche Arbeit machst du?"
       },
       "profile": {
@@ -4330,7 +4316,7 @@
       },
       "skills": {
         "copied": "Kopiert",
-        "copy": "Füge diesen Prompt in deine eigene {{provider}}-Sitzung ein, und er holt die Skills von deinem Rechner nach Okou.",
+        "copy": "Führe diesen Prompt in {{provider}} aus, um deine vorhandenen Skills zu importieren, damit Okou sie sofort nutzen kann.",
         "copyError": "Der Prompt konnte nicht kopiert werden.",
         "copyPrompt": "Prompt kopieren",
         "importedCopy": "Als Okou-Workflow importiert.",
@@ -4341,7 +4327,7 @@
         "promptLabel": "Prompt für den Skill-Import",
         "promptTitle": "Führe das in {{provider}} aus",
         "startError": "Die Import-Sitzung konnte nicht geöffnet werden.",
-        "title": "Bring die Skills mit, die du schon geschrieben hast.",
+        "title": "Bring deine vorhandenen Skills zu Okou",
         "tryAgain": "Erneut versuchen",
         "waiting": "Importierte Skills erscheinen hier, sobald sie ankommen."
       },
@@ -4353,7 +4339,7 @@
         "connectedCopy": "Öffne Slack und erwähne @Okou, um eine Aufgabe zu übergeben.",
         "connectedStatus": "Zu deinem Workspace hinzugefügt",
         "connectedTitle": "Slack ist verbunden",
-        "copy": "Einmal hinzufügen, dann @Okou dort erwähnen, wo die Arbeit ohnehin läuft.",
+        "copy": "Erwähne @Okou für eine Aufgabe; dein Team sieht das Ergebnis in derselben Unterhaltung.",
         "name": "Slack",
         "otherAdded": "Hinzugefügt",
         "otherImessage": "iMessage",
@@ -4382,12 +4368,13 @@
         "previewWorkspace": "Northwind",
         "rowCopy": "Funktioniert in jedem Kanal, in dem du es hinzufügst.",
         "rowTitle": "Okou for Slack",
-        "title": "Gib Okou eine Aufgabe, ohne Slack zu verlassen."
+        "title": "Halte die Arbeit in Slack in Bewegung"
       },
       "sources": {
-        "copy": "Es arbeitet in der Cloud, mit den Tools, die dein Team ohnehin nutzt. 10x Output, weniger Reibung im Betrieb, geringere Kosten. Verbinde eine Quelle, um zu starten.",
-        "note": "Du entscheidest, welche Konten verbunden werden.",
-        "title": "Okou ist für dich – und für dein ganzes Team."
+        "copy": "Je mehr Okou über deine Arbeit weiß, desto klüger wird es. Verbinde ein Tool, das du täglich nutzt, und starte mit einer Aufgabe aus deiner echten Arbeit.",
+        "permissions": "Okou nutzt eine kleine Stichprobe, um deine erste Aufgabe anzupassen. Du entscheidest, was Agents tun dürfen und wie lange.",
+        "securityLink": "So schützt Okou deine Daten",
+        "title": "Ein Arbeitstool verbinden"
       },
       "startingPrompt": {
         "exact": {
@@ -4721,32 +4708,33 @@
         "connecting": "Wird verbunden …",
         "failedNote": "{{provider}} konnte nicht verbunden werden. Versuch es erneut oder verbinde es später.",
         "retry": "Erneut versuchen",
-        "rowCopy": "Läuft auf deinem Plan, nicht auf Okou-Credits.",
+        "rowCopy": "Verbinde deinen Plan, damit Aufgaben statt mit Okou-Credits darüber laufen.",
         "unconfirmedNote": "Deine {{provider}}-Verbindung konnte nicht geprüft werden. Versuch es erneut oder verbinde es später."
       },
       "team": {
-        "copy": "Lade jetzt jemanden ein – oder später über das Workspace-Menü.",
+        "copy": "Lade ein Teammitglied ein, um gemeinsame Workflows zu nutzen.",
         "invite": "Einladung senden",
         "invited": "Eingeladen",
         "label": "E-Mail des Teammitglieds",
-        "note": "Sie kommen in diesen Workspace; ihre eigenen Konten bleiben ihre.",
+        "note": "Es kann sofort mit Okou loslegen.",
         "notSent": "Nicht gesendet",
         "panelTitle": "Teammitglied einladen",
-        "placeholder": "teammate@company.com",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Verbundene Konten bleiben ihre – ohne sie wird nichts geteilt.",
-          "workflows": "Alle hier können die Workflows dieses Workspace ausführen.",
-          "workspace": "Sie landen in diesem Workspace, mit den Quellen, die du gerade verbunden hast."
+          "accounts": "Verbindet bei Bedarf eigene Tools.",
+          "workflows": "Kann alle Workflows deines Teams ausführen.",
+          "workspace": "Tritt deinem Workspace bei."
         },
         "sending": "Wird gesendet…",
-        "title": "Hol die Leute dazu, die diese Arbeit machen."
+        "title": "Mach Okou für dein ganzes Team nützlich",
+        "trust": "Alle nutzen dieselben Workflows und verbinden ihre eigenen Tools."
       },
       "welcome": {
-        "copy": "Starte mit einer ersten Aufgabe, passend zu der Arbeit, die du gerade verbunden hast.",
+        "copy": "Prüfe den Vorschlag für deine Arbeit, passe ihn an dein Ziel an und lass Okou loslegen.",
         "offerTitle": "Die erste Beratungsstunde geht auf uns, dazu bis zu 100 Credits —",
         "promptLabel": "Dein Startprompt",
         "start": "Mit Okou starten",
-        "title": "Okou ist bereit für dich"
+        "title": "Starte mit einer Aufgabe, die zählt"
       }
     },
     "templatePicker": {
@@ -4869,8 +4857,7 @@
       "preparedDescription": "{{assistantName}} bereitet aus Ihren Tools den nächsten Schritt vor.",
       "preparedTitle": "Workflow vorbereitet",
       "reviewDescription": "{{assistantName}} schließt den Workflow ab und gibt das Ergebnis zurück.",
-      "reviewTitle": "Bereit zur Überprüfung",
-      "source": "Quelle"
+      "reviewTitle": "Bereit zur Überprüfung"
     },
     "workflowPicker": {
       "categoryDescription": "Fertige Setups, die Sie an Ihre Tools und Ziele anpassen können.",
@@ -6885,8 +6872,10 @@
       "keepChanges": "Meine Änderungen mit dieser Version übernehmen",
       "latest": "Zuletzt gespeicherte Einstellungen",
       "mode": "Verbindung",
+      "needsRebind": "Dieser Host benötigt eine neue Cloudflare-Access-Konfiguration. Bearbeite ihn, um ihn neu zu verknüpfen oder Direct auszuwählen. Bis dahin ist keine Verbindung möglich.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Veröffentlichter Hostname",
+      "rebindHelp": "Wähle eine zulässige Cloudflare-Access-Konfiguration oder Direct, um diesen Host wiederherzustellen. Bis zum Speichern ändert sich nichts.",
       "reviewHelp": "Ihr Entwurf bleibt erhalten. Bestätigen Sie die zuletzt gespeicherten Einstellungen, bevor Sie Ihre Änderungen anwenden.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access ist für dieses Konto nicht verfügbar."
@@ -6932,7 +6921,6 @@
       "unused": "Von keinem Host verwendet"
     },
     "credentialsHelp": "Zugangsdaten können nur geschrieben werden und bleiben außerhalb der Sandbox. Fügen Sie den vollständigen Schlüssel ein; Leerzeichen bleiben erhalten. Die Felder werden beim Schließen des Formulars geleert.",
-    "credentialsTab": "Zugangsdaten",
     "delete": "Host löschen",
     "deleteHelp": "Diesen Host löschen? Seine Zugangsdaten bleiben erhalten. Agents sehen ihn nicht mehr im Inventar.",
     "description": "Konfiguriere SSH-Hosts, auf denen deine Agents Remote-Befehle ausführen können.",
@@ -6959,7 +6947,6 @@
     "fingerprint": "Gespeicherter Hostschlüssel",
     "host": "Öffentlicher Hostname oder IP-Adresse",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "SSH-Einstellungen konnten nicht geladen werden. Versuche es erneut.",
     "loading": "SSH-Hosts werden geladen…",
@@ -6988,7 +6975,6 @@
     },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
-    "title": "SSH-Hosts",
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
@@ -7121,7 +7107,6 @@
       "usernamePasswordHint": "Gib das Passwort für diesen Benutzernamen ein",
       "usernamePasswordMethod": "Benutzername und Passwort"
     },
-    "credentialsTab": "Anmeldeinformationen",
     "delete": "Host löschen",
     "deleteHelp": "Diesen gespeicherten Host löschen? Die wiederverwendbaren Zugangsdaten bleiben erhalten.",
     "description": "Lass deine Agents deine Remote-Desktops anzeigen und steuern.",
@@ -7144,7 +7129,6 @@
     },
     "host": "Hostname oder IP-Adresse",
     "hostHint": "z. B. desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "Die VNC-Konfiguration konnte nicht geladen werden.",
     "loading": "VNC-Konfiguration wird geladen…",
@@ -7179,7 +7163,6 @@
     },
     "summary_one": "{{count}} konfigurierter Host",
     "summary_other": "{{count}} konfigurierte Hosts",
-    "title": "VNC-Fernzugriff",
     "transport": {
       "appleDhDestinationHelp": "Geben Sie für Apple DH 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
       "destination": "RFB-Ziel",

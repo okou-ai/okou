@@ -1,6 +1,6 @@
 import {
   cloudflareAccessContract,
-  type CloudflareAccessConfig,
+  type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
@@ -8,7 +8,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   listAgent,
@@ -22,9 +22,10 @@ import {
 
 const context = testContext();
 const agentId = "c0000000-0000-4000-8000-000000000001";
-const config: CloudflareAccessConfig = Object.freeze({
+const config: ScopedCloudflareAccessConfig = Object.freeze({
   id: "a0000000-0000-4000-8000-000000000001",
   name: "Protected applications",
+  scope: "personal",
   revision: 1,
   generation: 1,
   sshHosts: [],
@@ -65,6 +66,22 @@ test("Private network lists Cloudflare Access configurations", async () => {
   expect(getAction("button", "Add Cloudflare Access")).toBeVisible();
   expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
   expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
+});
+
+test("Legacy Cloudflare Access card opens Private network", async () => {
+  mockRemoteAccess();
+  await setupPage({
+    context,
+    path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
+  const entry = await waitFor(() => {
+    return getAction("link", "Manage Cloudflare Access");
+  });
+  expect(entry).toHaveAttribute("href", "/connectors?scope=private-network");
+  click(entry);
+  await screen.findByRole("heading", { name: config.name });
+  expect(window.location.search).toBe("?scope=private-network");
 });
 
 test("Cloudflare Access is excluded from the Agent-sharing filter", async () => {

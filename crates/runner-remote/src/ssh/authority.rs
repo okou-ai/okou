@@ -10,14 +10,13 @@ use zeroize::Zeroizing;
 use super::{FailureReason, keys::SigningKey};
 use runner_types::ids::RunId;
 
-use crate::RemoteApiRequestFactory;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
-use std::sync::Arc;
+use runner_provider::HttpClient;
 
 const MAX_API_BYTES: usize = 512 * 1024;
 
 pub(super) struct Authority {
-    http: Arc<dyn RemoteApiRequestFactory>,
+    http: HttpClient,
     transport: reqwest::Client,
     token: Zeroizing<String>,
     identity: RunnerProcessIdentity,
@@ -120,7 +119,7 @@ impl Authority {
     }
 
     pub(super) fn new(
-        http: Arc<dyn RemoteApiRequestFactory>,
+        http: HttpClient,
         token: String,
         identity: RunnerProcessIdentity,
     ) -> Result<Self, FailureReason> {

@@ -510,6 +510,9 @@
       "description": "給智能體起個名字，並設定誰可以使用。",
       "namePlaceholder": "例如：調研助理",
       "newAgentAlt": "新建智能體",
+      "responsibilityLabel": "你想要這個智能體幫你做什麼？",
+      "responsibilityPlaceholder": "例如：每週一彙整 HubSpot 上週的銷售管道，並標出需要跟進的商機。",
+      "setupFailed": "智能體設定未完成。請先檢查智能體清單，再決定是否重試。",
       "success": "{{agentName}}建立成功",
       "title": "建立新智能體",
       "visibility": {

@@ -2,11 +2,18 @@
  * Current APIs cannot reproduce historical VM0 identities or rolling
  * deployments left by historical and rollback writers.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { HostedSitePrepareRequest } from "@okouai/api-contracts/contracts/host";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { ArtifactSharePolicy } from "@okouai/api-contracts/contracts/artifact-shares";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
-import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
+import {
+  hostedDeployments,
+  hostedSites,
+  privateHostedDeployments,
+} from "@okouai/db/runtime/hosted-site";
+import { artifactShares } from "@okouai/db/schema/artifact-share";
 import { createStore } from "ccstate";
 
 import { writeDb$ } from "../signals/external/db";
@@ -97,4 +104,116 @@ export async function insertLegacyHostedSiteHistoryFixture(args: {
     deployments.push({ id, artifactUrl, r2Prefix, deploymentVersion });
   }
   return { siteId, deployments };
+}
+
+/**
+ * Public-only prepare cannot create the historical private deployment and
+ * snapshot identity. Tests install only that persisted starting state here;
+ * policy storage stays at the R2 boundary and behavior uses production routes.
+ */
+export async function insertLegacyHostedSitePublicationFixture(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly site: string;
+  readonly files: HostedSitePrepareRequest["files"];
+  readonly publicBrand?: PublicBrand;
+}) {
+  const publicBrand = args.publicBrand ?? "okou";
+  const siteId = await insertLegacyHostedSiteFixture({ ...args, publicBrand });
+  const deploymentId = randomUUID();
+  const shareId = randomUUID();
+  const snapshotId = randomUUID();
+  const publicToken = randomBytes(12).toString("hex");
+  const privatePrefix = `private-sites/${publicBrand}/${deploymentId}`;
+  const snapshotPrefix = `shared-artifacts/${publicBrand}/${snapshotId}/${deploymentId}`;
+  const policyKey = `artifact-shares/${publicBrand}/${shareId}.json`;
+  const manifest = {
+    version: 1,
+    access: "owner-private-v1",
+    publicBrand,
+    deploymentId,
+    siteId,
+    site: args.site,
+    publicSlug: args.site,
+    deploymentVersion: 1,
+    createdAt: nowDate().toISOString(),
+    spaFallback: false,
+    files: Object.fromEntries(
+      args.files.map((file) => {
+        return [file.path, file];
+      }),
+    ),
+  } satisfies HostedSiteManifest;
+  const artifactUrl = new URL(
+    artifactReferencePath(deploymentId, "index.html"),
+    "https://app.okou.ai",
+  ).href;
+  const db = createStore().set(writeDb$);
+  await db.insert(privateHostedDeployments).values({
+    id: deploymentId,
+    siteId,
+    orgId: args.orgId,
+    userId: args.userId,
+    publicBrand,
+    status: "ready",
+    readyAt: nowDate(),
+    artifactUrl,
+    r2Prefix: privatePrefix,
+    manifest,
+    manifestHash: createHash("sha256")
+      .update(JSON.stringify(manifest))
+      .digest("hex"),
+    contentHash: createHash("sha256")
+      .update(JSON.stringify(args.files))
+      .digest("hex"),
+    fileCount: args.files.length,
+    sizeBytes: args.files.reduce((size, file) => {
+      return size + file.size;
+    }, 0),
+    url: artifactUrl,
+  });
+  await db.insert(artifactShares).values({
+    id: shareId,
+    userId: args.userId,
+    orgId: args.orgId,
+    publicBrand,
+    targetKind: "html",
+    targetId: siteId,
+  });
+  const policy = {
+    version: 1,
+    delivery: "artifact-registry-v1",
+    revision: randomUUID(),
+    shareId,
+    ownerId: args.userId,
+    orgId: args.orgId,
+    publicBrand,
+    audience: "public",
+    status: "active",
+    publicToken,
+    publicSlug: args.site,
+    target: {
+      kind: "html",
+      id: deploymentId,
+      siteId,
+      snapshotId,
+      deploymentVersion: 1,
+      manifest,
+    },
+  } satisfies ArtifactSharePolicy;
+  return {
+    siteId,
+    publicSlug: args.site,
+    publicBrand,
+    deploymentId,
+    shareId,
+    snapshotId,
+    publicToken,
+    manifest,
+    artifactUrl,
+    policy,
+    policyKey,
+    privatePrefix,
+    snapshotPrefix,
+  };
 }

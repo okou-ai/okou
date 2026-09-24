@@ -17,11 +17,7 @@ use sandbox::{
 };
 use tracing::{info, warn};
 
-use super::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
 use super::heartbeat::WorkspaceCacheStateSnapshot;
-use super::idle_lifecycle::{
-    SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
-};
 use super::job_lifecycle::{
     ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
 };
@@ -47,7 +43,11 @@ use crate::workspace_image_cache::{
     WorkspaceImagePromotionRequest,
 };
 use crate::workspace_promotion::prepare_workspace_image_from_active_sandbox;
+use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
 use runner_provider::RunCancellationHandle;
+use runner_supervisor::idle_lifecycle::{
+    SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
+};
 use runner_types::ids::RunId;
 use runner_types::types::reuse_key_kind;
 use runner_types::types::{
@@ -1249,8 +1249,6 @@ mod tests {
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
 
-    use super::super::active_runs::ActiveRuns;
-    use super::super::idle_lifecycle::SharedIdlePool;
     use super::super::job_lifecycle::{ActiveBudgetLease, RunCleanupDisposition, RunCleanupState};
     use crate::idle_pool::{
         IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig, ParkResult, ParkingGate,
@@ -1273,6 +1271,8 @@ mod tests {
         WorkspaceSessionHistorySidecarRepresentation,
     };
     use runner_host::paths::RunnerPaths;
+    use runner_lifecycle::active_runs::ActiveRuns;
+    use runner_supervisor::idle_lifecycle::SharedIdlePool;
     use runner_types::ids::RunId;
     use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
     use runner_types::types::SandboxReuseResult;

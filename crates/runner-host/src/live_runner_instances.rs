@@ -5,15 +5,15 @@ use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 
-use crate::error::{RunnerError, RunnerResult};
-use runner_host::paths::HomePaths;
-use runner_host::process;
-use runner_host::state_file::OwnerCheck;
+use crate::error::{HostError, HostResult};
+use crate::paths::HomePaths;
+use crate::process;
+use crate::state_file::OwnerCheck;
 
 const LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug)]
-pub(crate) struct LiveRunnerInstanceMetadata {
+pub struct LiveRunnerInstanceMetadata {
     pub config_path: PathBuf,
     pub base_dir: PathBuf,
     pub runner_group: String,
@@ -21,13 +21,13 @@ pub(crate) struct LiveRunnerInstanceMetadata {
 }
 
 #[derive(Debug)]
-pub(crate) struct LiveRunnerInstanceHandle {
+pub struct LiveRunnerInstanceHandle {
     path: PathBuf,
     identity: ProcessIdentity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct LiveRunnerInstance {
+pub struct LiveRunnerInstance {
     pub pid: u32,
     pub starttime: u64,
     pub config_path: PathBuf,
@@ -70,7 +70,7 @@ impl LivenessContext {
         }
     }
 
-    async fn boot_id(&self) -> RunnerResult<&str> {
+    async fn boot_id(&self) -> HostResult<&str> {
         self.boot_id
             .get_or_try_init(|| read_boot_id(&self.proc_root))
             .await
@@ -104,10 +104,10 @@ enum RecordRead {
     NotLive,
 }
 
-pub(crate) async fn publish(
+pub async fn publish(
     home: &HomePaths,
     metadata: LiveRunnerInstanceMetadata,
-) -> RunnerResult<LiveRunnerInstanceHandle> {
+) -> HostResult<LiveRunnerInstanceHandle> {
     let identity = current_process_identity().await?;
     let path = home.live_runner_instance_record_path(identity.pid, identity.starttime);
     let record = LiveRunnerInstanceRecord {
@@ -122,26 +122,26 @@ pub(crate) async fn publish(
         started_at: chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
     };
     let content = serde_json::to_vec_pretty(&record)
-        .map_err(|e| RunnerError::Internal(format!("serialize live runner instance: {e}")))?;
+        .map_err(|e| HostError::Internal(format!("serialize live runner instance: {e}")))?;
 
-    runner_host::host_file::ensure_dir(
+    crate::host_file::ensure_dir(
         &home.live_runner_instances_dir(),
-        runner_host::host_file::DirMode::Private,
+        crate::host_file::DirMode::Private,
         "live runner instances",
     )
     .map_err(|e| {
-        RunnerError::Internal(format!(
+        HostError::Internal(format!(
             "ensure live runner instances {}: {e}",
             home.live_runner_instances_dir().display()
         ))
     })?;
     remove_stale_records(home).await;
-    runner_host::state_file::write_private_atomic(&path, &content).await?;
+    crate::state_file::write_private_atomic(&path, &content).await?;
 
     Ok(LiveRunnerInstanceHandle { path, identity })
 }
 
-pub(crate) async fn try_list(home: &HomePaths) -> RunnerResult<Vec<LiveRunnerInstance>> {
+pub async fn try_list(home: &HomePaths) -> HostResult<Vec<LiveRunnerInstance>> {
     let liveness = LivenessContext::new();
     try_list_with_liveness(home, &liveness).await
 }
@@ -149,7 +149,7 @@ pub(crate) async fn try_list(home: &HomePaths) -> RunnerResult<Vec<LiveRunnerIns
 async fn try_list_with_liveness(
     home: &HomePaths,
     liveness: &LivenessContext,
-) -> RunnerResult<Vec<LiveRunnerInstance>> {
+) -> HostResult<Vec<LiveRunnerInstance>> {
     if !validate_existing_live_runner_instances_dir(home)? {
         return Ok(Vec::new());
     }
@@ -159,7 +159,7 @@ async fn try_list_with_liveness(
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "scan live runner instances {}: {e}",
                 dir.display()
             )));
@@ -172,7 +172,7 @@ async fn try_list_with_liveness(
             Ok(Some(entry)) => entry,
             Ok(None) => break,
             Err(e) => {
-                return Err(RunnerError::Internal(format!(
+                return Err(HostError::Internal(format!(
                     "read live runner instance entry in {}: {e}",
                     dir.display()
                 )));
@@ -188,7 +188,7 @@ async fn try_list_with_liveness(
                     continue;
                 }
                 RecordForIdentity::InvalidForLiveProcess => {
-                    return Err(RunnerError::Internal(format!(
+                    return Err(HostError::Internal(format!(
                         "live runner instance record {} is invalid for a live process identity",
                         path.display()
                     )));
@@ -220,26 +220,26 @@ async fn try_list_with_liveness(
     Ok(instances)
 }
 
-fn validate_existing_live_runner_instances_dir(home: &HomePaths) -> RunnerResult<bool> {
+fn validate_existing_live_runner_instances_dir(home: &HomePaths) -> HostResult<bool> {
     let dir = home.live_runner_instances_dir();
     match std::fs::symlink_metadata(&dir) {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "stat live runner instances {}: {e}",
                 dir.display()
             )));
         }
     }
 
-    runner_host::host_file::validate_dir(
+    crate::host_file::validate_dir(
         &dir,
-        runner_host::host_file::DirMode::Private,
+        crate::host_file::DirMode::Private,
         "live runner instances",
     )
     .map_err(|e| {
-        RunnerError::Internal(format!(
+        HostError::Internal(format!(
             "validate live runner instances {}: {e}",
             dir.display()
         ))
@@ -247,10 +247,7 @@ fn validate_existing_live_runner_instances_dir(home: &HomePaths) -> RunnerResult
     Ok(true)
 }
 
-pub(crate) async fn is_current(
-    home: &HomePaths,
-    instance: &LiveRunnerInstance,
-) -> RunnerResult<bool> {
+pub async fn is_current(home: &HomePaths, instance: &LiveRunnerInstance) -> HostResult<bool> {
     let liveness = LivenessContext::new();
     let identity = FileProcessIdentity {
         pid: instance.pid,
@@ -261,7 +258,7 @@ pub(crate) async fn is_current(
         RecordForIdentity::Valid(record) => record,
         RecordForIdentity::InvalidForStaleProcess => return Ok(false),
         RecordForIdentity::InvalidForLiveProcess => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "live runner instance record {} is invalid for a live process identity",
                 path.display()
             )));
@@ -275,7 +272,7 @@ pub(crate) async fn is_current(
 }
 
 impl LiveRunnerInstanceHandle {
-    pub(crate) async fn remove_if_current(&self) -> RunnerResult<bool> {
+    pub async fn remove_if_current(&self) -> HostResult<bool> {
         match read_record(&self.path).await? {
             RecordRead::Valid(record)
                 if record.boot_id == self.identity.boot_id
@@ -289,7 +286,7 @@ impl LiveRunnerInstanceHandle {
         match tokio::fs::remove_file(&self.path).await {
             Ok(()) => Ok(true),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(RunnerError::Internal(format!(
+            Err(e) => Err(HostError::Internal(format!(
                 "remove live runner instance record {}: {e}",
                 self.path.display()
             ))),
@@ -305,7 +302,7 @@ async fn read_valid_record(path: &Path) -> Option<LiveRunnerInstanceRecord> {
     }
 }
 
-async fn read_record(path: &Path) -> RunnerResult<RecordRead> {
+async fn read_record(path: &Path) -> HostResult<RecordRead> {
     let liveness = LivenessContext::new();
     read_record_with_liveness(path, &liveness).await
 }
@@ -313,8 +310,8 @@ async fn read_record(path: &Path) -> RunnerResult<RecordRead> {
 async fn read_record_with_liveness(
     path: &Path,
     liveness: &LivenessContext,
-) -> RunnerResult<RecordRead> {
-    let content = match runner_host::state_file::read_to_string(
+) -> HostResult<RecordRead> {
+    let content = match crate::state_file::read_to_string(
         path,
         LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES,
         OwnerCheck::CurrentEuid,
@@ -395,7 +392,7 @@ async fn read_record_for_identity(
     path: &Path,
     identity: FileProcessIdentity,
     liveness: &LivenessContext,
-) -> RunnerResult<RecordForIdentity> {
+) -> HostResult<RecordForIdentity> {
     let record = match read_record_with_liveness(path, liveness).await? {
         RecordRead::Valid(record) => record,
         RecordRead::Missing => return Ok(RecordForIdentity::InvalidForStaleProcess),
@@ -421,7 +418,7 @@ async fn read_record_for_identity(
 async fn invalid_record_for_identity(
     identity: FileProcessIdentity,
     liveness: &LivenessContext,
-) -> RunnerResult<RecordForIdentity> {
+) -> HostResult<RecordForIdentity> {
     if file_process_identity_is_live(identity, liveness).await? {
         Ok(RecordForIdentity::InvalidForLiveProcess)
     } else {
@@ -482,7 +479,7 @@ fn atomic_tmp_record_identity_from_file_name(name: &OsStr) -> Option<FileProcess
 async fn record_is_live(
     record: &LiveRunnerInstanceRecord,
     liveness: &LivenessContext,
-) -> RunnerResult<bool> {
+) -> HostResult<bool> {
     process_identity_is_live(
         ProcessIdentity {
             boot_id: record.boot_id.clone(),
@@ -498,7 +495,7 @@ async fn record_is_live(
 async fn file_process_identity_is_live(
     identity: FileProcessIdentity,
     liveness: &LivenessContext,
-) -> RunnerResult<bool> {
+) -> HostResult<bool> {
     let boot_id = liveness.boot_id().await?;
     let identity = ProcessIdentity {
         boot_id: boot_id.to_owned(),
@@ -512,7 +509,7 @@ async fn file_process_identity_is_live(
 async fn process_identity_is_live(
     identity: ProcessIdentity,
     liveness: &LivenessContext,
-) -> RunnerResult<bool> {
+) -> HostResult<bool> {
     let boot_id = liveness.boot_id().await?;
     process_identity_is_live_for_boot(&identity, boot_id, liveness.euid, &liveness.proc_root).await
 }
@@ -522,7 +519,7 @@ async fn process_identity_is_live_for_boot(
     boot_id: &str,
     euid: u32,
     proc_root: &Path,
-) -> RunnerResult<bool> {
+) -> HostResult<bool> {
     if identity.boot_id != boot_id {
         return Ok(false);
     }
@@ -533,13 +530,13 @@ async fn process_identity_is_live_for_boot(
         process::ProcessStatRead::Found(stat) => stat,
         process::ProcessStatRead::Missing => return Ok(false),
         process::ProcessStatRead::Unreadable(error) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "read initial process stat for live runner pid {}: {error}",
                 identity.pid
             )));
         }
         process::ProcessStatRead::Invalid => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "parse initial process stat for live runner pid {}",
                 identity.pid
             )));
@@ -558,13 +555,13 @@ async fn process_identity_is_live_for_boot(
         process::ProcessStatRead::Found(stat) => stat,
         process::ProcessStatRead::Missing => return Ok(false),
         process::ProcessStatRead::Unreadable(error) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "read final process stat for live runner pid {}: {error}",
                 identity.pid
             )));
         }
         process::ProcessStatRead::Invalid => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "parse final process stat for live runner pid {}",
                 identity.pid
             )));
@@ -573,13 +570,13 @@ async fn process_identity_is_live_for_boot(
     Ok(process::process_stat_is_live(&after) && after.starttime == identity.starttime)
 }
 
-async fn current_process_identity() -> RunnerResult<ProcessIdentity> {
+async fn current_process_identity() -> HostResult<ProcessIdentity> {
     let pid = std::process::id();
     let stat = process::read_process_stat(pid)
         .await
-        .ok_or_else(|| RunnerError::Internal(format!("read current process stat for pid {pid}")))?;
+        .ok_or_else(|| HostError::Internal(format!("read current process stat for pid {pid}")))?;
     if !process::process_stat_is_live(&stat) {
-        return Err(RunnerError::Internal(format!(
+        return Err(HostError::Internal(format!(
             "current process pid {pid} is not live"
         )));
     }
@@ -591,29 +588,29 @@ async fn current_process_identity() -> RunnerResult<ProcessIdentity> {
     })
 }
 
-async fn current_boot_id() -> RunnerResult<String> {
+async fn current_boot_id() -> HostResult<String> {
     read_boot_id(Path::new("/proc")).await
 }
 
-async fn read_boot_id(proc_root: &Path) -> RunnerResult<String> {
+async fn read_boot_id(proc_root: &Path) -> HostResult<String> {
     let path = proc_root.join("sys/kernel/random/boot_id");
     let content = tokio::fs::read_to_string(path)
         .await
-        .map_err(|e| RunnerError::Internal(format!("read boot id: {e}")))?;
+        .map_err(|e| HostError::Internal(format!("read boot id: {e}")))?;
     let boot_id = content.trim();
     if boot_id.is_empty() || !boot_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
-        return Err(RunnerError::Internal("read boot id: invalid format".into()));
+        return Err(HostError::Internal("read boot id: invalid format".into()));
     }
     Ok(boot_id.to_owned())
 }
 
-async fn read_process_euid(proc_root: &Path, pid: u32) -> RunnerResult<Option<u32>> {
+async fn read_process_euid(proc_root: &Path, pid: u32) -> HostResult<Option<u32>> {
     let path = proc_root.join(pid.to_string()).join("status");
     let content = match tokio::fs::read_to_string(&path).await {
         Ok(content) => content,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
-            return Err(RunnerError::Internal(format!(
+            return Err(HostError::Internal(format!(
                 "read process status for live runner pid {pid}: {error}"
             )));
         }
@@ -624,7 +621,7 @@ async fn read_process_euid(proc_root: &Path, pid: u32) -> RunnerResult<Option<u3
         .and_then(|value| value.split_whitespace().nth(1))
         .and_then(|value| value.parse().ok())
         .ok_or_else(|| {
-            RunnerError::Internal(format!(
+            HostError::Internal(format!(
                 "parse process status effective uid for live runner pid {pid}"
             ))
         })?;
@@ -851,9 +848,9 @@ mod tests {
         }
 
         fn ensure_dir(&self) {
-            runner_host::host_file::ensure_dir(
+            crate::host_file::ensure_dir(
                 &self.home.live_runner_instances_dir(),
-                runner_host::host_file::DirMode::Private,
+                crate::host_file::DirMode::Private,
                 "live runner instances",
             )
             .unwrap();
@@ -933,7 +930,7 @@ mod tests {
 
     async fn write_record(path: &Path, record: &LiveRunnerInstanceRecord) {
         let content = serde_json::to_vec_pretty(record).unwrap();
-        runner_host::state_file::write_private_atomic(path, &content)
+        crate::state_file::write_private_atomic(path, &content)
             .await
             .unwrap();
     }
@@ -1073,7 +1070,7 @@ mod tests {
         let registry = TestRegistry::new();
         let handle = publish(&registry.home, registry.metadata()).await.unwrap();
         let record = read_valid_record(&handle.path).await.unwrap();
-        runner_host::state_file::write_private_atomic(
+        crate::state_file::write_private_atomic(
             &handle.path,
             &serialize_record_without_subcommand(&record),
         )
@@ -1111,25 +1108,25 @@ mod tests {
         registry.ensure_dir();
         let stale_record = registry.stale_record().await;
         let stale_path = registry.record_path(&stale_record);
-        runner_host::state_file::write_private_atomic(
+        crate::state_file::write_private_atomic(
             &stale_path,
             &serialize_record_without_subcommand(&stale_record),
         )
         .await
         .unwrap();
-        runner_host::state_file::write_private_atomic(
+        crate::state_file::write_private_atomic(
             &registry.home.live_runner_instance_record_path(1, 1),
             b"{",
         )
         .await
         .unwrap();
-        runner_host::state_file::write_private_atomic(
+        crate::state_file::write_private_atomic(
             &registry.home.live_runner_instance_record_path(2, 2),
             &vec![b'a'; (LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES + 1) as usize],
         )
         .await
         .unwrap();
-        runner_host::state_file::write_private_atomic(
+        crate::state_file::write_private_atomic(
             &registry
                 .home
                 .live_runner_instances_dir()
@@ -1149,7 +1146,7 @@ mod tests {
     async fn try_list_fails_closed_for_invalid_record_with_live_file_identity() {
         let registry = TestRegistry::new();
         let handle = publish(&registry.home, registry.metadata()).await.unwrap();
-        runner_host::state_file::write_private_atomic(&handle.path, b"{")
+        crate::state_file::write_private_atomic(&handle.path, b"{")
             .await
             .unwrap();
 
@@ -1274,7 +1271,7 @@ mod tests {
             .home
             .live_runner_instances_dir()
             .join("malformed.json");
-        runner_host::state_file::write_private_atomic(&path, b"{")
+        crate::state_file::write_private_atomic(&path, b"{")
             .await
             .unwrap();
 
@@ -1291,7 +1288,7 @@ mod tests {
             .home
             .live_runner_instances_dir()
             .join("oversized.json");
-        runner_host::state_file::write_private_atomic(
+        crate::state_file::write_private_atomic(
             &path,
             &vec![b'a'; (LIVE_RUNNER_INSTANCE_RECORD_MAX_BYTES + 1) as usize],
         )
@@ -1490,7 +1487,7 @@ mod tests {
     async fn remove_if_current_removes_invalid_current_record() {
         let registry = TestRegistry::new();
         let handle = publish(&registry.home, registry.metadata()).await.unwrap();
-        runner_host::state_file::write_private_atomic(&handle.path, b"{")
+        crate::state_file::write_private_atomic(&handle.path, b"{")
             .await
             .unwrap();
 

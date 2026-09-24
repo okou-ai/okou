@@ -797,7 +797,7 @@ export function QueueDrawer() {
     >
       <SheetContent
         side="right"
-        className="w-[400px] sm:max-w-[400px] flex flex-col"
+        className="w-[400px] max-w-full sm:max-w-[400px] flex flex-col"
         initialFocus={false}
       >
         <SheetHeader className="shrink-0">

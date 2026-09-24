@@ -6,12 +6,10 @@ import { Check, Copy, FileText, Loader2 } from "lucide-react";
 import { Button, cn, buttonVariants } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   captureSourceOnboardingChannelClicked$,
   captureSourceOnboardingSlackInstallStarted$,
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   agentPhoneLinkStatus$,
   createAgentPhoneLinkCode$,
@@ -791,8 +789,7 @@ function ChatChannelTile({
 /**
  * iMessage is AgentPhone: the tile opens the same link this workspace uses
  * everywhere else, and what it reports is the link's own status rather than
- * anything this step remembers. It is behind the switch the Works entry uses,
- * so it is absent where that entry is.
+ * anything this step remembers.
  */
 function AgentPhoneChannelTile() {
   const { t } = useTranslation();
@@ -881,8 +878,6 @@ function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
 function OtherChatChannels() {
   const { t } = useTranslation();
   const captureChannelClicked = useSet(captureSourceOnboardingChannelClicked$);
-  const agentPhoneEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.AgentPhoneEntry];
   const teams = loadedChannelState(useLastLoadable(teamsOrgData$), (status) => {
     return {
       isConnected: status.isConnected,
@@ -914,7 +909,7 @@ function OtherChatChannels() {
             captureChannelClicked("telegram", true);
           }}
         />
-        {agentPhoneEnabled ? <AgentPhoneChannelTile /> : null}
+        <AgentPhoneChannelTile />
         <ChatChannelTile
           label={teamsName}
           mark="teams"

@@ -80,9 +80,9 @@ import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
 import {
-  setChatThreadArchivedFilter$,
-  setChatThreadUnreadFilter$,
-} from "../../signals/okou-page/chat-thread-filter.ts";
+  selectChatThreadFilter$,
+  type ChatThreadFilter,
+} from "../../signals/okou-page/chat-thread-filter-selection.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { markAgentThreadsRead$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
@@ -743,9 +743,18 @@ export function ChatThreadDialogs() {
   );
 }
 
+function useSelectChatThreadFilter() {
+  const selectFilter = useSet(selectChatThreadFilter$);
+  const pageSignal = useGet(pageSignal$);
+
+  return (filter: ChatThreadFilter) => {
+    detach(selectFilter(filter, pageSignal), Reason.DomCallback);
+  };
+}
+
 function ShowAllChatsRow() {
   const { t } = useTranslation();
-  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
+  const selectFilter = useSelectChatThreadFilter();
 
   return (
     <div data-testid="sidebar-chat-show-all-row" className="pb-1">
@@ -755,7 +764,7 @@ function ShowAllChatsRow() {
         size="sm"
         className="w-full justify-start px-2 font-normal leading-5 focus-visible:ring-inset focus-visible:ring-offset-0"
         onClick={() => {
-          setUnreadFilter(false);
+          selectFilter("all");
         }}
       >
         {t(($) => {
@@ -828,7 +837,7 @@ function VirtualizedChatThreads({
 
 function ArchivedChatThreadsEmptyState() {
   const { t } = useTranslation();
-  const setArchivedFilter = useSet(setChatThreadArchivedFilter$);
+  const selectFilter = useSelectChatThreadFilter();
 
   return (
     <div className="flex flex-col items-center px-2 py-6 text-center">
@@ -853,7 +862,7 @@ function ArchivedChatThreadsEmptyState() {
         variant="link"
         className="mt-1 h-auto p-0 text-xs"
         onClick={() => {
-          setArchivedFilter();
+          selectFilter("archived");
         }}
       >
         {t(($) => {
@@ -1001,8 +1010,7 @@ function ChatThreadFilterMenuItems() {
   const { t } = useTranslation();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
-  const setUnreadFilter = useSet(setChatThreadUnreadFilter$);
-  const setArchivedFilter = useSet(setChatThreadArchivedFilter$);
+  const selectFilter = useSelectChatThreadFilter();
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
 
@@ -1010,7 +1018,7 @@ function ChatThreadFilterMenuItems() {
     <>
       <DropdownMenuItem
         onClick={() => {
-          setUnreadFilter(false);
+          selectFilter("all");
         }}
       >
         <Check
@@ -1023,7 +1031,7 @@ function ChatThreadFilterMenuItems() {
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
-          setUnreadFilter(true);
+          selectFilter("unread");
         }}
         aria-keyshortcuts={
           GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.ariaKeyShortcuts
@@ -1040,7 +1048,7 @@ function ChatThreadFilterMenuItems() {
       {archiveEnabled ? (
         <DropdownMenuItem
           onClick={() => {
-            setArchivedFilter();
+            selectFilter("archived");
           }}
         >
           <Check

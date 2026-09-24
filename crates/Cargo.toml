@@ -28,6 +28,7 @@ members = [
     "runner-provider",
     "runner-remote",
     "runner-storage",
+    "runner-supervisor",
     "runner-types",
     "sandbox",
     "sandbox-firecracker",
@@ -74,6 +75,7 @@ runner-network = { path = "runner-network" }
 runner-provider = { path = "runner-provider" }
 runner-remote = { path = "runner-remote" }
 runner-storage = { path = "runner-storage" }
+runner-supervisor = { path = "runner-supervisor" }
 runner-types = { path = "runner-types" }
 sandbox = { path = "sandbox" }
 sandbox-firecracker = { path = "sandbox-firecracker" }
@@ -134,6 +136,7 @@ serde_json = { version = "1", default-features = false }
 serde_path_to_error = { version = "0.1", default-features = false }
 serde_yaml_ng = { version = "0.10", default-features = false }
 sha2 = { version = "0.11", default-features = false }
+subtle = { version = "2.6", default-features = false }
 tar = { version = "0.4", default-features = false }
 tempfile = { version = "3", default-features = false }
 thiserror = { version = "2", default-features = false }

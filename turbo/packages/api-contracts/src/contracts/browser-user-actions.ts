@@ -13,10 +13,6 @@ export const BROWSER_USER_ACTION_MAX_TARGET_ID_LENGTH = 512;
 export const BROWSER_USER_ACTION_MAX_VALUE_LENGTH = 4096;
 export const BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH = 200;
 
-export const browserUserActionKindSchema = z.enum([
-  "input",
-  "direct_interaction",
-]);
 export const browserUserActionStateSchema = z.enum([
   "pending",
   "applying",
@@ -87,20 +83,7 @@ const inputCreateSchema = z
     }
   });
 
-const directInteractionCreateSchema = z
-  .object({
-    kind: z.literal("direct_interaction"),
-    callbackPrompt: boundedNonblank(
-      BROWSER_USER_ACTION_MAX_CALLBACK_PROMPT_LENGTH,
-    ),
-    reason: boundedNonblank(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH),
-  })
-  .strict();
-
-export const browserUserActionCreateRequestSchema = z.discriminatedUnion(
-  "kind",
-  [inputCreateSchema, directInteractionCreateSchema],
-);
+export const browserUserActionCreateRequestSchema = inputCreateSchema;
 
 export const browserUserActionSubmittedValueSchema = z
   .object({
@@ -140,6 +123,36 @@ export const browserUserActionDisplayFieldSchema = z
       .optional(),
     fieldKind: browserUserActionFieldKindSchema,
     required: z.boolean(),
+    control: z
+      .object({
+        tagName: z.enum(["INPUT", "TEXTAREA"]),
+        inputType: z.enum([
+          "textarea",
+          "text",
+          "search",
+          "email",
+          "tel",
+          "url",
+          "password",
+          "number",
+        ]),
+        siteRequired: z.boolean().optional(),
+        multiple: z.boolean().optional(),
+        minLength: z
+          .number()
+          .int()
+          .min(0)
+          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+          .optional(),
+        maxLength: z
+          .number()
+          .int()
+          .min(0)
+          .max(BROWSER_USER_ACTION_MAX_VALUE_LENGTH)
+          .optional(),
+        pattern: z.string().max(512).optional(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -170,24 +183,16 @@ const responseBaseSchema = z.object({
   callbackDelivered: z.boolean().optional(),
 });
 
-export const browserUserActionResponseSchema = z.discriminatedUnion("kind", [
-  responseBaseSchema
-    .extend({
-      kind: z.literal("input"),
-      siteOrigin: z.url(),
-      fields: z
-        .array(browserUserActionDisplayFieldSchema)
-        .min(1)
-        .max(BROWSER_USER_ACTION_MAX_FIELDS),
-    })
-    .strict(),
-  responseBaseSchema
-    .extend({
-      kind: z.literal("direct_interaction"),
-      reason: boundedNonblank(BROWSER_USER_ACTION_MAX_DESCRIPTION_LENGTH),
-    })
-    .strict(),
-]);
+export const browserUserActionResponseSchema = responseBaseSchema
+  .extend({
+    kind: z.literal("input"),
+    siteOrigin: z.url(),
+    fields: z
+      .array(browserUserActionDisplayFieldSchema)
+      .min(1)
+      .max(BROWSER_USER_ACTION_MAX_FIELDS),
+  })
+  .strict();
 
 export const browserUserActionCreateResponseSchema = z
   .object({
@@ -218,7 +223,7 @@ export const browserUserActionsContract = c.router({
     headers: authHeadersSchema,
     body: browserUserActionCreateRequestSchema,
     responses: { 201: browserUserActionCreateResponseSchema, ...commonErrors },
-    summary: "Create an exact Browser input or direct-interaction request",
+    summary: "Create an exact Browser input request",
   },
   get: {
     method: "GET",
@@ -255,18 +260,8 @@ export const browserUserActionsContract = c.router({
     responses: { 200: browserUserActionResponseSchema, ...commonErrors },
     summary: "Cancel a pending Browser user-action request",
   },
-  complete: {
-    method: "POST",
-    path: "/api/browser/user-actions/:requestToken/complete",
-    headers: authHeadersSchema,
-    pathParams: requestTokenParamsSchema,
-    body: emptyBodySchema,
-    responses: { 200: browserUserActionResponseSchema, ...commonErrors },
-    summary: "Record user completion of direct Browser interaction",
-  },
 });
 
-export type BrowserUserActionKind = z.infer<typeof browserUserActionKindSchema>;
 export type BrowserUserActionState = z.infer<
   typeof browserUserActionStateSchema
 >;

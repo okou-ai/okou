@@ -226,7 +226,7 @@ pub async fn run_benchmark(
         Err(e) => {
             drop(resource_locks);
             stop_benchmark_proxy(&mut mitm, "live_runner_publish").await;
-            return Err(e);
+            return Err(e.into());
         }
     };
 

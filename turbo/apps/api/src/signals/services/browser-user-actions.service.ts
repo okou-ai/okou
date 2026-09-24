@@ -1,10 +1,11 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import type {
-  BrowserUserActionApplyRequest,
-  BrowserUserActionCreateRequest,
-  BrowserUserActionResponse,
-  BrowserUserActionState,
+import {
+  browserUserActionDisplayFieldSchema,
+  type BrowserUserActionApplyRequest,
+  type BrowserUserActionCreateRequest,
+  type BrowserUserActionResponse,
+  type BrowserUserActionState,
 } from "@okouai/api-contracts/contracts/browser-user-actions";
 import { BROWSER_IDLE_LEASE_MINUTES } from "@okouai/api-contracts/contracts/browser";
 import {
@@ -20,7 +21,17 @@ import {
   browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
-import { and, asc, eq, gt, inArray, isNotNull, lt, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
@@ -30,6 +41,7 @@ import { safeSync, settle, settleIncludingAbort } from "../utils";
 import {
   applyBrowserUseUserAction,
   BrowserUseProviderError,
+  type BrowserUseControlInspection,
   type BrowserUseUserActionValidation,
   BrowserUseUserActionValidationError,
   BrowserUseUserActionMutationError,
@@ -138,6 +150,7 @@ function publicRequest(
   row: RequestRow,
   requestToken: string,
   payload: BrowserUserActionPayload,
+  controls?: readonly BrowserUseControlInspection[],
 ): BrowserUserActionResponse {
   const common = {
     requestToken,
@@ -147,14 +160,12 @@ function publicRequest(
     threadId: row.chatThreadId,
     callbackIds: payload.callbackIds,
   };
-  if (payload.kind === "direct_interaction") {
-    return { ...common, kind: payload.kind, reason: payload.reason };
-  }
   return {
     ...common,
     kind: payload.kind,
     siteOrigin: payload.target.siteOrigin,
-    fields: payload.target.fields.map((field) => {
+    fields: payload.target.fields.map((field, index) => {
+      const observed = controls?.[index];
       return {
         key: field.key,
         label: field.label,
@@ -163,6 +174,24 @@ function publicRequest(
           : { description: field.description }),
         fieldKind: field.fieldKind,
         required: field.required,
+        control: browserUserActionDisplayFieldSchema.shape.control.parse({
+          ...field.fingerprint,
+          ...(observed === undefined
+            ? {}
+            : {
+                siteRequired: observed.siteRequired,
+                multiple: observed.multiple,
+                ...(observed.minLength === undefined
+                  ? {}
+                  : { minLength: observed.minLength }),
+                ...(observed.maxLength === undefined
+                  ? {}
+                  : { maxLength: observed.maxLength }),
+                ...(observed.pattern === undefined
+                  ? {}
+                  : { pattern: observed.pattern }),
+              }),
+        }),
       };
     }),
   };
@@ -399,6 +428,36 @@ async function convertClosedBrowserUserActions(
   return candidates.length;
 }
 
+async function deleteRetiredDirectBrowserUserActions(
+  db: Db,
+  limit: number,
+  chatThreadIds: readonly string[] | null,
+  signal: AbortSignal,
+): Promise<number> {
+  const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
+  const candidates = db
+    .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
+    .from(browserUserActionRequests)
+    .where(
+      and(
+        retiredKind,
+        chatThreadIds === null
+          ? undefined
+          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
+      ),
+    )
+    .orderBy(asc(browserUserActionRequests.requestTokenHash))
+    .limit(limit);
+  const removed = await db
+    .delete(browserUserActionRequests)
+    .where(inArray(browserUserActionRequests.requestTokenHash, candidates))
+    .returning({
+      requestTokenHash: browserUserActionRequests.requestTokenHash,
+    });
+  signal.throwIfAborted();
+  return removed.length;
+}
+
 async function deleteExpiredBrowserUserActions(
   db: Db,
   limit: number,
@@ -472,6 +531,12 @@ export async function reconcileBrowserUserActions(
   chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
+  const retired = await deleteRetiredDirectBrowserUserActions(
+    db,
+    limit,
+    chatThreadIds,
+    signal,
+  );
   const checkedForConversion = await convertClosedBrowserUserActions(
     db,
     limit,
@@ -484,7 +549,7 @@ export async function reconcileBrowserUserActions(
     chatThreadIds,
     signal,
   );
-  return checkedForConversion + checkedForCleanup;
+  return retired + checkedForConversion + checkedForCleanup;
 }
 
 interface CreateBrowserUserActionArgs {
@@ -497,7 +562,7 @@ interface CreateBrowserUserActionArgs {
 interface PreparedBrowserUserAction {
   readonly chatThreadId: string;
   readonly providerSessionId: string;
-  readonly validation: BrowserUseUserActionValidation | null;
+  readonly validation: BrowserUseUserActionValidation;
 }
 
 async function prepareBrowserUserAction(
@@ -541,16 +606,6 @@ async function prepareBrowserUserAction(
       "The current chat run has no live managed Browser",
       "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
     );
-  }
-  if (args.input.kind === "direct_interaction") {
-    return {
-      kind: "ok",
-      value: {
-        chatThreadId: run.chatThreadId,
-        providerSessionId: live.providerSessionId,
-        validation: null,
-      },
-    };
   }
   const providerResult = await settle(
     getBrowserUseSession(live.providerSessionId, signal),
@@ -619,20 +674,9 @@ async function prepareBrowserUserAction(
 
 function buildBrowserUserActionPayload(
   input: BrowserUserActionCreateRequest,
-  validation: BrowserUseUserActionValidation | null,
+  validation: BrowserUseUserActionValidation,
   callbackIds: BrowserUserActionCallbackIds,
 ): BrowserUserActionPayload {
-  if (input.kind === "direct_interaction") {
-    return {
-      version: 1,
-      kind: input.kind,
-      callbackIds,
-      reason: input.reason,
-    };
-  }
-  if (!validation) {
-    throw new Error("Browser input request has no validated targets");
-  }
   return {
     version: 1,
     kind: input.kind,
@@ -1135,7 +1179,7 @@ export const preflightBrowserUserAction$ = command(
         if (!checked.ok) {
           return providerFailure(checked.error);
         }
-        if (checked.value === "stale") {
+        if (checked.value.kind === "stale") {
           const stale = await markPendingBrowserUserActionStale(
             operationDb,
             current,
@@ -1150,7 +1194,12 @@ export const preflightBrowserUserAction$ = command(
         }
         return {
           kind: "ok",
-          value: publicRequest(current, args.requestToken, payload),
+          value: publicRequest(
+            current,
+            args.requestToken,
+            payload,
+            checked.value.controls,
+          ),
         };
       },
       signal,
@@ -1301,6 +1350,13 @@ async function applyClaimedBrowserUserAction(
         await restorePending(operationDb, current.requestTokenHash);
         return providerFailure(operation.error);
       }
+      if (operation.value === "invalid") {
+        await restorePending(operationDb, current.requestTokenHash);
+        return conflict(
+          "Browser input does not meet the website control constraints",
+          "BROWSER_USER_ACTION_INVALID_VALUE",
+        );
+      }
       const terminal = await finalize(
         operationDb,
         current.requestTokenHash,
@@ -1374,7 +1430,7 @@ async function mutatePendingRequest(
   args: {
     readonly row: RequestRow;
     readonly requestToken: string;
-    readonly terminal: "cancelled" | "succeeded";
+    readonly terminal: "cancelled";
   },
   signal: AbortSignal,
 ): Promise<ServiceResult<BrowserUserActionResponse>> {
@@ -1465,39 +1521,5 @@ export const cancelBrowserUserAction$ = command(
           signal,
         )
       : notFound();
-  },
-);
-
-export const completeBrowserUserAction$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly requestToken: string;
-    },
-    signal: AbortSignal,
-  ): Promise<ServiceResult<BrowserUserActionResponse>> => {
-    const db = set(writeDb$);
-    const row = await loadOwnedRequest(db, args);
-    signal.throwIfAborted();
-    if (!row) {
-      return notFound();
-    }
-    const payload = decodePayload(row);
-    if (!payload) {
-      return conflict(
-        "Browser user-action request payload is unavailable",
-        "BROWSER_USER_ACTION_UNAVAILABLE",
-      );
-    }
-    if (payload.kind !== "direct_interaction") {
-      return conflict("This Browser request is not a direct interaction");
-    }
-    return await mutatePendingRequest(
-      db,
-      { row, requestToken: args.requestToken, terminal: "succeeded" },
-      signal,
-    );
   },
 );

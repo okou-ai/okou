@@ -5,7 +5,6 @@ use std::time::Duration;
 use tokio_util::task::AbortOnDropHandle;
 use tracing::{Instrument, info};
 
-use super::active_runs::ActiveRuns;
 use crate::config::ProfileConfig;
 use crate::error::{RunnerError, RunnerResult};
 use crate::idle_pool::IdlePool;
@@ -15,6 +14,7 @@ use crate::workspace_image_cache::{
     WorkspaceCacheChange, WorkspaceImageCache, cap_held_workspace_states,
 };
 use runner_host::runner_process_identity::RunnerProcessIdentity;
+use runner_lifecycle::active_runs::ActiveRuns;
 use runner_provider::JobProvider;
 use runner_types::types::{
     HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_HELD_SANDBOX_STATES,
