@@ -1,6 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
-import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  cronExecuteMorningBriefsContract,
+  internalMorningBriefWorkerContract,
+} from "@okouai/api-contracts/contracts/cron";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -10,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -61,6 +65,7 @@ import {
 import { waitForDeferredBlocker } from "../../../test-fixtures/pi-deferred-lock";
 import { admitWorkflowAutomationEventFixture } from "../../../test-fixtures/workflow-queue";
 import { createScopedMorningBriefCronRoutesForTest } from "../cron-execute-morning-briefs";
+import { internalMorningBriefWorkerRoutes } from "../internal-morning-brief-worker";
 import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -71,6 +76,8 @@ import {
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
+
+const TEST_WORKER_SECRET = randomBytes(32).toString("hex");
 
 /**
  * The native Morning Brief cron, exercised through its registered route.
@@ -147,6 +154,33 @@ async function runRetentionMaintenance(owner: Fixture): Promise<number> {
     [200],
   );
   return response.body.purged;
+}
+
+function workerClient() {
+  return setupApp({ context, routes: internalMorningBriefWorkerRoutes })(
+    internalMorningBriefWorkerContract,
+  );
+}
+
+function signedWorkerTask(owner: Fixture, scheduledFor: Date) {
+  const body = {
+    orgId: owner.orgId,
+    userId: owner.userId,
+    scheduledFor: scheduledFor.toISOString(),
+  };
+  const timestamp = String(now());
+  const digest = createHmac("sha256", TEST_WORKER_SECRET)
+    .update(
+      `POST\n/api/internal/morning-brief-worker\n${timestamp}\n${JSON.stringify(body)}`,
+    )
+    .digest("hex");
+  return {
+    body,
+    headers: {
+      "x-morning-brief-timestamp": timestamp,
+      "x-morning-brief-signature": digest,
+    },
+  };
 }
 
 function preferenceClient() {
@@ -343,6 +377,174 @@ async function tickUntilNative(f: Fixture): Promise<void> {
 }
 
 describe("native Morning Brief cron", () => {
+  it("rejects unsigned worker requests without reading Morning Brief state", async () => {
+    mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
+    mockEnv("MORNING_BRIEF_WORKER_SECRET", TEST_WORKER_SECRET);
+    const body = {
+      orgId: `org_${randomUUID()}`,
+      userId: `user_${randomUUID()}`,
+      scheduledFor: new Date(now()).toISOString(),
+    };
+    expect((await accept(workerClient().execute({ body }), [401])).status).toBe(
+      401,
+    );
+    await accept(
+      workerClient().execute({
+        body,
+        headers: {
+          "x-morning-brief-timestamp": String(now()),
+          "x-morning-brief-signature": "0".repeat(64),
+        },
+      }),
+      [401],
+    );
+    const expired = String(now() - 120_000);
+    const signed = createHmac("sha256", TEST_WORKER_SECRET)
+      .update(
+        `POST\n/api/internal/morning-brief-worker\n${expired}\n${JSON.stringify(body)}`,
+      )
+      .digest("hex");
+    await accept(
+      workerClient().execute({
+        body,
+        headers: {
+          "x-morning-brief-timestamp": expired,
+          "x-morning-brief-signature": signed,
+        },
+      }),
+      [401],
+    );
+  });
+
+  it("fans out one due owner to an authenticated, independent invocation without waiting for generation", async () => {
+    const f = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(f);
+    const due = await makeNativeOccurrenceDue(f);
+    mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
+    mockEnv("MORNING_BRIEF_WORKER_SECRET", TEST_WORKER_SECRET);
+
+    let dispatch:
+      | {
+          body: { orgId: string; userId: string; scheduledFor: string };
+          headers: {
+            "x-morning-brief-timestamp": string;
+            "x-morning-brief-signature": string;
+          };
+        }
+      | undefined;
+    server.use(
+      http.post(
+        "https://api.okou.test/api/internal/morning-brief-worker",
+        async ({ request }) => {
+          dispatch = {
+            body: (await request.json()) as {
+              orgId: string;
+              userId: string;
+              scheduledFor: string;
+            },
+            headers: {
+              "x-morning-brief-timestamp":
+                request.headers.get("x-morning-brief-timestamp") ?? "",
+              "x-morning-brief-signature":
+                request.headers.get("x-morning-brief-signature") ?? "",
+            },
+          };
+          return HttpResponse.json({ accepted: true }, { status: 202 });
+        },
+      ),
+    );
+    const scheduled = await accept(tick(f), [200]);
+    expect(scheduled.body.dispatched).toBe(1);
+    expect(scheduled.body.claimed).toBe(0);
+    expect(calls.generation).toHaveLength(0);
+    expect((await readNativeSchedule(f))?.nextRunAt?.getTime()).toBe(
+      due.getTime(),
+    );
+    if (!dispatch) {
+      throw new Error("Expected a signed dispatch");
+    }
+    const task = dispatch;
+    expect(task.body).toStrictEqual({
+      orgId: f.orgId,
+      userId: f.userId,
+      scheduledFor: due.toISOString(),
+    });
+
+    const unsigned = await accept(
+      workerClient().execute({ body: task.body }),
+      [401],
+    );
+    expect(unsigned.status).toBe(401);
+    await accept(
+      workerClient().execute({
+        body: { ...task.body, userId: `user_${randomUUID()}` },
+        headers: task.headers,
+      }),
+      [401],
+    );
+    expect(calls.generation).toHaveLength(0);
+
+    const admissions = await Promise.all([
+      accept(
+        workerClient().execute({ body: task.body, headers: task.headers }),
+        [202],
+      ),
+      accept(
+        workerClient().execute({ body: task.body, headers: task.headers }),
+        [202],
+      ),
+    ]);
+    expect(admissions).toHaveLength(2);
+    await flushWaitUntilForTest();
+    expect(calls.generation).toHaveLength(1);
+    expect((await readNativeOccurrences(f))[0]?.outcome).toBe("delivered");
+    await accept(
+      workerClient().execute({ body: task.body, headers: task.headers }),
+      [202],
+    );
+    await flushWaitUntilForTest();
+    expect(calls.generation).toHaveLength(1);
+    await makeNativeOccurrenceDue(f);
+    await accept(
+      workerClient().execute({ body: task.body, headers: task.headers }),
+      [202],
+    );
+    await flushWaitUntilForTest();
+    expect(calls.generation).toHaveLength(1);
+  });
+
+  it("runs two signed owners as separate worker invocations", async () => {
+    const first = await fixture();
+    const second = await fixture();
+    scriptSlack();
+    const { calls } = scriptProviders();
+    await tickUntilNative(first);
+    await tickUntilNative(second);
+    const firstAnchor = await makeNativeOccurrenceDue(first);
+    const secondAnchor = await makeNativeOccurrenceDue(second);
+    mockEnv("MORNING_BRIEF_HTTP_FANOUT", "true");
+    mockEnv("MORNING_BRIEF_WORKER_SECRET", TEST_WORKER_SECRET);
+
+    const [firstAccepted, secondAccepted] = await Promise.all([
+      accept(
+        workerClient().execute(signedWorkerTask(first, firstAnchor)),
+        [202],
+      ),
+      accept(
+        workerClient().execute(signedWorkerTask(second, secondAnchor)),
+        [202],
+      ),
+    ]);
+    expect(firstAccepted.status).toBe(202);
+    expect(secondAccepted.status).toBe(202);
+    await flushWaitUntilForTest();
+    expect(calls.generation).toHaveLength(2);
+    expect((await readNativeOccurrences(first))[0]?.outcome).toBe("delivered");
+    expect((await readNativeOccurrences(second))[0]?.outcome).toBe("delivered");
+  });
+
   it("performs zero work without a valid cron secret", async () => {
     const f = await fixture();
     const { calls } = scriptProviders();

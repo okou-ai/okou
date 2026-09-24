@@ -623,10 +623,14 @@ export function productionNativeTickDependencies(args: {
   readonly executor: NativeSlotExecutor;
   readonly delivery: Pick<NativeDeliveryRecovery, "resolve">;
   readonly scope?: MorningBriefMemberIdentity;
+  readonly onlyScheduledFor?: Date;
+  readonly workerMode?: boolean;
 }): NativeTickDependencies {
   const { db } = args;
   return {
     scope: args.scope,
+    onlyScheduledFor: args.onlyScheduledFor,
+    workerMode: args.workerMode,
     executor: args.executor,
     delivery: {
       resolve: args.delivery.resolve,

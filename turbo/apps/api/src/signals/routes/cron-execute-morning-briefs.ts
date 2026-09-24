@@ -1,10 +1,18 @@
 import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 
+import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import type { MorningBriefMemberIdentity } from "../services/morning-brief-enrollment-data.service";
-import { executeNativeMorningBriefTick$ } from "../services/morning-brief-native-executor.service";
+import {
+  dispatchNativeMorningBriefTick$,
+  executeNativeMorningBriefTick$,
+} from "../services/morning-brief-native-executor.service";
+import {
+  dispatchNativeWorker,
+  nativeHttpFanoutEnabled,
+} from "../services/morning-brief-native-dispatch.service";
 import {
   executeNativeMorningBriefSlot$,
   productionNativeTickDependencies,
@@ -27,36 +35,43 @@ function createExecuteMorningBriefsRoute(
       return cronUnauthorized();
     }
 
+    const fanout = nativeHttpFanoutEnabled();
+    if (fanout && !env("MORNING_BRIEF_WORKER_SECRET")) {
+      throw new Error("Morning Brief worker dispatch secret is not configured");
+    }
     const db = set(writeDb$);
-    const result = await set(
-      executeNativeMorningBriefTick$,
-      productionNativeTickDependencies({
-        db,
-        scope,
-        // The real S5 generation engine and the real S6 delivery engine, bound
-        // here rather than inside the tick so a boundary double can replace the
-        // provider without replacing the scheduler.
-        executor: {
-          execute: async (owner, occurrence, executionSignal) => {
-            return await set(
-              executeNativeMorningBriefSlot$,
-              { owner, occurrence },
-              executionSignal,
-            );
-          },
+    const deps = productionNativeTickDependencies({
+      db,
+      scope,
+      // The real S5 generation engine and the real S6 delivery engine, bound
+      // here rather than inside the tick so a boundary double can replace the
+      // provider without replacing the scheduler.
+      executor: {
+        execute: async (owner, occurrence, executionSignal) => {
+          return await set(
+            executeNativeMorningBriefSlot$,
+            { owner, occurrence },
+            executionSignal,
+          );
         },
-        delivery: {
-          resolve: async (owner, occurrence, recoverySignal) => {
-            return await set(
-              recoverNativeMorningBriefDelivery$,
-              { owner, occurrence },
-              recoverySignal,
-            );
-          },
+      },
+      delivery: {
+        resolve: async (owner, occurrence, recoverySignal) => {
+          return await set(
+            recoverNativeMorningBriefDelivery$,
+            { owner, occurrence },
+            recoverySignal,
+          );
         },
-      }),
-      signal,
-    );
+      },
+    });
+    const result = fanout
+      ? await set(
+          dispatchNativeMorningBriefTick$,
+          { deps, dispatch: dispatchNativeWorker },
+          signal,
+        )
+      : await set(executeNativeMorningBriefTick$, deps, signal);
     signal.throwIfAborted();
 
     return { status: 200 as const, body: result };
