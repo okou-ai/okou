@@ -1,7 +1,7 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click } from "../../../__tests__/page-helper.ts";
@@ -131,29 +131,54 @@ test("A workspace member is directed to an admin for GitHub installation", async
   expect(queryAction("button", "Connect", githubCard)).toBeNull();
 });
 
-test("Open the official Telegram bot's connect page in a new tab from Integrations", async () => {
+test("Authorize the official Telegram bot directly in a new tab from Integrations", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: true });
-  context.mocks.api(integrationsTelegramContract.list, ({ respond }) => {
-    return respond(200, {
-      bots: [
-        {
-          id: "official",
-          kind: "official",
-          username: "okou_bot",
-          avatarUrl: null,
-          agent: null,
-          isOwner: false,
-          isConnected: false,
-          tokenStatus: "valid",
-          official: {
-            configured: true,
-            usesDefaultAgent: true,
-            linkedTelegramUserId: null,
-          },
+  context.mocks.data.telegramIntegration({
+    statuses: [
+      {
+        id: "official",
+        kind: "official",
+        username: "okou_bot",
+        avatarUrl: null,
+        agent: null,
+        isOwner: false,
+        isConnected: false,
+        tokenStatus: "valid",
+        domainConfigured: true,
+        environment: {
+          requiredSecrets: [],
+          requiredVars: [],
+          missingSecrets: [],
+          missingVars: [],
         },
-      ],
-    });
+        official: {
+          configured: true,
+          usesDefaultAgent: true,
+          linkedTelegramUserId: null,
+        },
+      },
+    ],
   });
+  context.mocks.api(
+    integrationsTelegramContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: false,
+        installation: {
+          id: "official",
+          botUsername: "okou_bot",
+          loginBotId: "987654321",
+          domainConfigured: true,
+        },
+      });
+    },
+  );
+  const authorizationWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authorizationWindow, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  const opened = context.mocks.browser.open(authorizationWindow);
 
   await setupIntegrationsPage(context);
 
@@ -167,13 +192,40 @@ test("Open the official Telegram bot's connect page in a new tab from Integratio
   ).resolves.toBeInTheDocument();
 
   const connect = await waitFor(() => {
-    return getAction("link", "Connect");
+    return getAction("button", "Connect");
   });
-  expect(connect).toHaveAttribute("href", "/telegram/connect?bot=official");
-  expect(connect).toHaveAttribute("target", "_blank");
-  expect(connect).toHaveAttribute("rel", "noopener noreferrer");
+  expect(connect).toBeEnabled();
   click(connect);
 
+  expect(opened.calls).toStrictEqual([
+    { url: "about:blank", target: "_blank", features: null },
+  ]);
+  const authUrl = await waitFor(() => {
+    const url = new URL(authorizationWindow.location.href);
+    expect(url.origin + url.pathname).toBe("https://oauth.telegram.org/auth");
+    expect(url.searchParams.get("bot_id")).toBe("987654321");
+    return url;
+  });
+  const callbackUrl = new URL(authUrl.searchParams.get("return_to") ?? "");
+  act(() => {
+    context.mocks.browser.message(
+      {
+        type: "telegram-auth",
+        data: {
+          id: "99001",
+          first_name: "Alice",
+          username: "alice",
+          auth_date: "1700000000",
+          hash: "b".repeat(64),
+        },
+      },
+      { source: authorizationWindow, origin: callbackUrl.origin },
+    );
+  });
+
+  await expect(
+    screen.findByText("Connected (@alice)"),
+  ).resolves.toBeInTheDocument();
   expect(pathname()).toBe("/settings/telegram");
   expect(getAction("link", "Back to integrations")).toBeInTheDocument();
 });

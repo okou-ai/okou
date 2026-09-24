@@ -3,7 +3,7 @@ import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Check, Copy, FileText, Loader2 } from "lucide-react";
-import { Button, cn, buttonVariants } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
@@ -25,8 +25,8 @@ import {
 } from "../../signals/onboarding/onboarding-skill-import.ts";
 import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import { teamsOrgData$ } from "../../signals/okou-page/teams.ts";
+import { startTelegramConnect$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   OnboardingIllustration,
@@ -35,7 +35,6 @@ import {
 import { OnboardingStepLayout } from "./onboarding-step-layout.tsx";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { platformStaticAssetUrl } from "../../lib/static-assets.ts";
-import { Link } from "../router/link.tsx";
 import { useSourcesFirstFlow } from "./use-sources-first-flow.ts";
 
 /* The scene's faces: Okou's own avatar, and a photo for each teammate. */
@@ -844,20 +843,22 @@ function AgentPhoneChannelTile() {
 /** Keep onboarding open while the official bot connects in another tab. */
 function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [connection, connect] = useLoadableSet(startTelegramConnect$);
 
   return (
-    <Link
-      pathname={ROUTES.telegramConnect}
-      options={{
-        searchParams: new URLSearchParams({ bot: OFFICIAL_TELEGRAM_BOT_ID }),
+    <Button
+      type="button"
+      variant="outline"
+      disabled={connection.state === "loading"}
+      onClick={() => {
+        onOpen();
+        detach(
+          connect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+          Reason.DomCallback,
+        );
       }}
-      target="_blank"
-      rel="noopener noreferrer"
-      onClick={onOpen}
-      className={cn(
-        buttonVariants({ variant: "outline" }),
-        CHAT_CHANNEL_TILE_CLASS,
-      )}
+      className={CHAT_CHANNEL_TILE_CLASS}
     >
       <ChatChannelTileContent
         label={t(($) => {
@@ -866,7 +867,7 @@ function TelegramTile({ onOpen }: { readonly onOpen: () => void }) {
         mark="telegram"
         added={false}
       />
-    </Link>
+    </Button>
   );
 }
 

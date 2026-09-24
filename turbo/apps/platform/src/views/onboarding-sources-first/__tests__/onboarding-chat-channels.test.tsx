@@ -2,6 +2,7 @@ import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
+import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   teamsConnectContract,
   type TeamsConnectStatus,
@@ -284,7 +285,7 @@ test("A workspace this user cannot add to names who can, instead of a dead butto
   expect(getChannelTile("Teams")).toBeDisabled();
 });
 
-test("Telegram opens the official bot's connect page in a new tab and keeps onboarding open", async () => {
+test("Telegram authorizes the official bot in a new tab and keeps onboarding open", async () => {
   mockOnboardingNeeded();
   mockConnectedSource();
   mockSlack({
@@ -300,6 +301,47 @@ test("Telegram opens the official bot's connect page in a new tab and keeps onbo
     isAdmin: true,
     connectUrl: TEAMS_CONNECT_URL,
   });
+  context.mocks.data.telegramIntegration({
+    statuses: [
+      {
+        id: "official",
+        kind: "official",
+        username: "okou_bot",
+        avatarUrl: null,
+        agent: null,
+        isOwner: false,
+        isConnected: false,
+        tokenStatus: "valid",
+        domainConfigured: true,
+        environment: {
+          requiredSecrets: [],
+          requiredVars: [],
+          missingSecrets: [],
+          missingVars: [],
+        },
+      },
+    ],
+  });
+  context.mocks.api(
+    integrationsTelegramContract.getLinkStatus,
+    ({ respond }) => {
+      return respond(200, {
+        linked: false,
+        installation: {
+          id: "official",
+          botUsername: "okou_bot",
+          loginBotId: "987654321",
+          domainConfigured: true,
+        },
+      });
+    },
+  );
+  const authorizationWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authorizationWindow, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  const opened = context.mocks.browser.open(authorizationWindow);
 
   await openChatChannelStep();
 
@@ -308,11 +350,42 @@ test("Telegram opens the official bot's connect page in a new tab and keeps onbo
   ).resolves.toBeInTheDocument();
 
   const telegram = getChannelTile("Telegram");
-  expect(telegram).toHaveAttribute("href", "/telegram/connect?bot=official");
-  expect(telegram).toHaveAttribute("target", "_blank");
-  expect(telegram).toHaveAttribute("rel", "noopener noreferrer");
+  expect(telegram).toBeEnabled();
   click(telegram);
 
+  expect(opened.calls).toStrictEqual([
+    { url: "about:blank", target: "_blank", features: null },
+  ]);
+  const authUrl = await waitFor(() => {
+    const url = new URL(authorizationWindow.location.href);
+    expect(url.origin + url.pathname).toBe("https://oauth.telegram.org/auth");
+    expect(url.searchParams.get("bot_id")).toBe("987654321");
+    return url;
+  });
+  const callbackUrl = new URL(authUrl.searchParams.get("return_to") ?? "");
+  expect(callbackUrl.pathname).toBe("/api/integrations/telegram/auth-callback");
+  expect(callbackUrl.searchParams.get("targetOrigin")).toBe(
+    window.location.origin,
+  );
+  act(() => {
+    context.mocks.browser.message(
+      {
+        type: "telegram-auth",
+        data: {
+          id: "99001",
+          first_name: "Alice",
+          username: "alice",
+          auth_date: "1700000000",
+          hash: "b".repeat(64),
+        },
+      },
+      { source: authorizationWindow, origin: callbackUrl.origin },
+    );
+  });
+
+  await expect(
+    screen.findByText("Connected to Telegram!"),
+  ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingSlack);
   expect(
     screen.getByRole("heading", { name: SLACK_TITLE }),

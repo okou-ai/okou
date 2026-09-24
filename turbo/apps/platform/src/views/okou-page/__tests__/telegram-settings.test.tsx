@@ -1,10 +1,11 @@
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { pathname } from "../../../signals/location.ts";
 import { getAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
@@ -27,6 +28,21 @@ function agent(agentId: string, displayName: string | null): AgentResponse {
 }
 
 test("An admin can set up a new Telegram bot", async () => {
+  const authTab = context.mocks.browser.authWindow();
+  Object.defineProperty(authTab, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  const opened = context.mocks.browser.open(authTab);
+  const auth = { id: 99_002, auth_date: 1_700_000_000, hash: "signed-auth" };
+  let linkedBody: unknown;
+  context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {
+    linkedBody = body;
+    return respond(200, {
+      botUsername: "registered_bot",
+      telegramUserId: "99002",
+    });
+  });
   const activatePrimary = (name: string, container: HTMLElement) => {
     const button = getAction("button", name, container);
     expect(button).toHaveAttribute("type", "submit");
@@ -39,6 +55,15 @@ test("An admin can set up a new Telegram bot", async () => {
   ]);
   context.mocks.data.telegramIntegration({
     statuses: [],
+    linkStatus: {
+      linked: false,
+      installation: {
+        id: "bot_registered",
+        botUsername: "registered_bot",
+        loginBotId: "123456789",
+        domainConfigured: true,
+      },
+    },
     setupStatus: {
       id: "bot_registered",
       username: "registered_bot",
@@ -134,8 +159,32 @@ test("An admin can set up a new Telegram bot", async () => {
 
   activatePrimary("Add bot", dialog);
 
+  expect(opened.calls).toStrictEqual([
+    { url: "about:blank", target: "_blank", features: null },
+  ]);
+  await waitFor(() => {
+    const authorization = new URL(authTab.location.href);
+    expect(authorization.origin + authorization.pathname).toBe(
+      "https://oauth.telegram.org/auth",
+    );
+    expect(authorization.searchParams.get("bot_id")).toBe("123456789");
+  });
+  expect(pathname()).toBe("/settings/telegram");
+  expect(screen.queryByText("Connect to Telegram")).not.toBeInTheDocument();
+
+  act(() => {
+    context.mocks.browser.message(
+      { event: "auth_result", result: auth },
+      { origin: "https://oauth.telegram.org", source: authTab },
+    );
+  });
   await expect(
-    screen.findByText("Connect to Telegram"),
+    screen.findByText("Connected to Telegram!"),
   ).resolves.toBeInTheDocument();
-  expect(getAction("link", "Back to Telegram settings")).toBeInTheDocument();
+  expect(linkedBody).toStrictEqual({
+    telegramBotId: "bot_registered",
+    telegramAuth: auth,
+  });
+  expect(authTab.closed).toBeTruthy();
+  expect(pathname()).toBe("/settings/telegram");
 });
