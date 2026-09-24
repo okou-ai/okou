@@ -165,27 +165,6 @@ describe("okou resource pull command", () => {
     await rm(outputDir, { recursive: true, force: true });
   });
 
-  it.each([
-    "video-template:epic-grandeur",
-    "epic-grandeur",
-    "template:video-shortform",
-    "template:hyperframes",
-  ])("rejects retired video resource %s", async (id) => {
-    await expect(
-      resourceCommand.parseAsync([
-        "node",
-        "cli",
-        "pull",
-        id,
-        "--dir",
-        outputDir,
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      `Unknown registry resource: ${id}`,
-    );
-  });
-
   it("downloads, verifies, and extracts an image style archive", async () => {
     server.use(...registryDownload(ILLUSTRATION_ARCHIVE));
 

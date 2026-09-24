@@ -1010,9 +1010,11 @@ test("A presentation template can be previewed and selected from a deep link", a
 test("An illustration template starts the chosen generation run", async () => {
   const template = firstItem(ILLUSTRATION_TEMPLATE_ITEMS);
   let runPrompt: string | undefined;
+  let generationType: string | undefined;
   mockChatLifecycle(context, {
     onRunCreate: (body) => {
       runPrompt = body.prompt;
+      generationType = templateFromUserMessage(body.userMessage)?.type;
     },
   });
 

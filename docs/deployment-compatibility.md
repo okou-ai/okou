@@ -27,6 +27,15 @@ re-enable submission. No database rewrite or migration is included. The public
 website is a separate deployment and must publish its companion removal of
 video galleries and built-in video/voice service pages to align discoverability.
 
+The old video-onboarding Stripe return handler is a bounded compatibility
+bridge tracked in [#36506](https://github.com/okou-ai/okou/issues/36506).
+Remove it after the replacement App is live, the client-version floor excludes
+old checkout creators, the old App is outside the rollback window, and issued
+video-onboarding sessions are terminal with payment and onboarding fulfillment
+reconciled. Remove its dedicated state reader and bridge tests at the same time.
+History rendering and the current editor's supported-template policy are not
+part of that cleanup: a current client can still copy an immutable old message.
+
 ## Codex OAuth workspace ID preparation
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for

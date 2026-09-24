@@ -214,7 +214,12 @@ export const setupOnboardingImageRunPage$ = createOnboardingPageSetup({
   fallbackPath: ROUTES.onboardingImageTemplate,
 });
 
-/** Recover links and Stripe returns created before video onboarding retired. */
+/**
+ * Bridge pre-retirement App checkout returns. Remove with #36506 after the
+ * replacement App is live, its version floor excludes old checkout creators,
+ * the old App is outside the rollback window, and all issued video-onboarding
+ * sessions are terminal with payment and onboarding fulfillment reconciled.
+ */
 export const setupRetiredOnboardingVideoPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(showAppSkeleton$);

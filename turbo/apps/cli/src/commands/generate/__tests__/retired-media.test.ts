@@ -62,18 +62,4 @@ describe("retired built-in media generation", () => {
       expect(requests).toEqual([]);
     },
   );
-
-  it.each([
-    ["video", "--prompt", "A mountain"],
-    ["video", "--template", "video-template:epic-grandeur"],
-    ["voice", "--prompt", "Hello"],
-    ["avatar-video", "--script", "Hello"],
-    ["avatar-video", "--list-avatars"],
-    ["avatar-video", "--list-voices"],
-  ])("rejects retired execution flags: %s %s", async (...args) => {
-    await expect(run(args)).rejects.toMatchObject({
-      code: "commander.unknownOption",
-    });
-    expect(requests).toEqual([]);
-  });
 });

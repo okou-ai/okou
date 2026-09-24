@@ -27,6 +27,16 @@ const JOGGAI_AVATAR_VIDEO_MODEL = "joggai-talking-avatar";
 const JOGGAI_AVATAR_VIDEO_PRICING_CATEGORY = "output_video_joggai_credits";
 const JOGGAI_CREDIT_DURATION_SECONDS = 120;
 
+function compactObject(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => {
+      return entry !== undefined;
+    }),
+  );
+}
+
 type ErrorStatus = 400 | 502;
 
 interface ErrorBody {

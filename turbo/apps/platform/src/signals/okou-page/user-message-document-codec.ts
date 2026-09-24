@@ -771,7 +771,12 @@ export function messageDocumentToEditorDoc(value: unknown): JSONContent | null {
   return parsed.success ? restoredEditorDoc(parsed.data) : null;
 }
 
-/** Restores editable draft content from a saved draft or copied message. */
+/**
+ * Restores editable content from a saved draft or copied message. Immutable
+ * history keeps its original template parts; a new editable document accepts
+ * only currently supported templates while preserving text and attachments.
+ * Current clients can copy old messages, so this policy is not rollout-limited.
+ */
 export function draftToEditorDoc(userMessage: unknown): JSONContent | null {
   const parsedUserMessage = userMessageDocumentSchema.safeParse(userMessage);
   if (!parsedUserMessage.success) {
