@@ -628,7 +628,7 @@ test("A Browser input card opens a preflighted dialog and completes without navi
       screen.queryByRole("dialog", { name: "Enter information in browser" }),
     ).toBeNull();
   });
-  expect(await findButton("Enter information")).toBeVisible();
+  await expect(findButton("Enter information")).resolves.toBeVisible();
   click(openButton);
   await expect(
     screen.findByRole("textbox", { name: "Notes" }),

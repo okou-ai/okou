@@ -22,7 +22,7 @@ import {
   Loader2,
   XCircle,
 } from "lucide-react";
-import { useState, type FormEvent, type ReactNode, type Ref } from "react";
+import type { FormEvent, ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -789,7 +789,6 @@ function PendingInlineAction({
   readonly request: PendingBrowserInputRequest;
 }) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
   const pageSignal = useGet(pageSignal$);
   const beginEntry = useSet(signals.beginEntry$);
   const dialogRef = useSet(signals.dialogRef$);
@@ -801,12 +800,10 @@ function PendingInlineAction({
       <PendingFormHeader siteOrigin={request.action.siteOrigin} compact />
       <div className="shrink-0 self-start pl-[26px] @[520px]:ml-auto @[520px]:self-auto @[520px]:pl-0">
         <Dialog
-          open={open}
           onOpenChange={(nextOpen) => {
             if (nextOpen) {
               detach(beginEntry(pageSignal), Reason.DomCallback);
             }
-            setOpen(nextOpen);
           }}
         >
           <DialogTrigger
