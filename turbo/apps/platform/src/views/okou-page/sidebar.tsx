@@ -65,6 +65,7 @@ import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.t
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
 const slackIcon = settingsIconAssetUrl("slack");
+const MANAGE_CONTENT_ID = "sidebar-manage-content";
 
 type ManageNavId = "agents" | "artifacts" | "connectors" | "workflows";
 type SidebarNavId = ManageNavId | "chat" | "works";
@@ -323,53 +324,60 @@ function ExpandedManageSection() {
   const { t } = useTranslation();
   return (
     <div className="shrink-0">
-      <div
-        className="group flex h-8 shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 hover:bg-state-hover transition-colors"
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        aria-expanded={!manageCollapsed}
+        aria-controls={MANAGE_CONTENT_ID}
+        className="group flex h-8 w-full shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
         onClick={() => {
           return setManageCollapsed(!manageCollapsed);
         }}
       >
-        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_50%,transparent))] group-hover:text-nav-copy transition-colors">
+        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_50%,transparent))] group-hover:text-nav-copy group-focus-visible:text-nav-copy transition-colors">
           {t(($) => {
             return $.appShell.sidebar.manage;
           })}
-          <span className="shrink-0 opacity-0 group-hover:opacity-100">
+          <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
             <ChevronRight
               className={`opacity-35 ${manageCollapsed ? "" : "rotate-90"}`}
               size={12}
             />
           </span>
         </span>
+      </Button>
+      <div id={MANAGE_CONTENT_ID} hidden={manageCollapsed}>
+        {!manageCollapsed && (
+          <div className="flex flex-col gap-1">
+            {manageNav.map(
+              ({ id, activeKeys, pathname: navPath, label, icon: Icon }) => {
+                const isActive =
+                  activeId !== null &&
+                  (activeKeys as readonly RouteKey[]).includes(activeId);
+                return (
+                  <Link
+                    key={id}
+                    pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
+                    onClick={onLinkClick}
+                    aria-current={isActive ? "page" : undefined}
+                    className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
+                      isActive
+                        ? "bg-state-selected text-sidebar-foreground font-medium"
+                        : "text-sidebar-foreground hover:bg-state-hover"
+                    }`}
+                  >
+                    <Icon size={16} className="shrink-0" />
+                    <span className="text-[color:var(--nav-copy,inherit)] truncate">
+                      {label}
+                    </span>
+                  </Link>
+                );
+              },
+            )}
+          </div>
+        )}
       </div>
-      {!manageCollapsed && (
-        <div className="flex flex-col gap-1">
-          {manageNav.map(
-            ({ id, activeKeys, pathname: navPath, label, icon: Icon }) => {
-              const isActive =
-                activeId !== null &&
-                (activeKeys as readonly RouteKey[]).includes(activeId);
-              return (
-                <Link
-                  key={id}
-                  pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
-                  onClick={onLinkClick}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
-                    isActive
-                      ? "bg-state-selected text-sidebar-foreground font-medium"
-                      : "text-sidebar-foreground hover:bg-state-hover"
-                  }`}
-                >
-                  <Icon size={16} className="shrink-0" />
-                  <span className="text-[color:var(--nav-copy,inherit)] truncate">
-                    {label}
-                  </span>
-                </Link>
-              );
-            },
-          )}
-        </div>
-      )}
     </div>
   );
 }
