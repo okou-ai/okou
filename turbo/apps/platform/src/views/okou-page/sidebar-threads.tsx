@@ -224,6 +224,10 @@ function ChatThreadArchiveMenuItem({
 
   return (
     <DropdownMenuItem
+      aria-label={label}
+      aria-keyshortcuts={
+        GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.ariaKeyShortcuts
+      }
       onClick={() => {
         detach(toggleArchived(pageSignal), Reason.DomCallback);
       }}
@@ -234,6 +238,9 @@ function ChatThreadArchiveMenuItem({
         <Archive size={16} className="mr-2" />
       )}
       {label}
+      <ChatThreadMenuShortcut
+        shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleChatArchive.binding}
+      />
     </DropdownMenuItem>
   );
 }
