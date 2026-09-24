@@ -7090,6 +7090,7 @@
       "add": "新增憑據",
       "appleDhFieldHelp": "每項 1–63 個 UTF-8 位元組，不允許 NUL 字元。",
       "appleDhMethod": "Apple DH 使用者名稱和密碼",
+      "appleSrpMethod": "Apple Direct SRP 使用者名稱和密碼",
       "authentication": "認證方式",
       "createNew": "新建憑據",
       "delete": "刪除憑據",
@@ -7158,6 +7159,8 @@
     "security": {
       "appleDh": "Mac 螢幕共享 (Apple DH)",
       "appleDhHelp": "需透過已儲存的 SSH 連線存取 macOS 螢幕共享。RFB 目標必須是該 Mac 上的 127.0.0.1 或 ::1；SSH 保護整個 VNC 工作階段。 請使用你控制的 Mac SSH 主機；其主機金鑰無法排除後續代理轉送。",
+      "appleSrp": "Mac 螢幕共享 (Apple Direct SRP)",
+      "appleSrpHelp": "需要已儲存的 Mac SSH 連線，RFB 目標必須是 127.0.0.1 或 ::1。SRP 驗證帳戶與伺服器證明；SSH 保護整個 VNC 工作階段。SSH 主機金鑰確認所選端點，但無法排除後續代理轉送。",
       "caBundle": "CA證書（PEM）",
       "caHelp": "最多8個CA證書，總大小64 KiB。請勿貼上私鑰或伺服器證書。",
       "caHint": "貼上簽發該伺服器證書的公開CA證書",
@@ -7177,6 +7180,7 @@
     "summary_other": "已配置{{count}}臺主機",
     "transport": {
       "appleDhDestinationHelp": "Apple DH 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
+      "appleSrpDestinationHelp": "Apple Direct SRP 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
       "destination": "RFB目標",
       "destinationHelp": "使用SSH路由時，將從所選SSH伺服器存取此主機和連接埠，而不是由Runner直接存取。",
       "direct": "Runner直接連線",

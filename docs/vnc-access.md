@@ -5,8 +5,8 @@ VNC is an independent remote-access capability alongside SSH. The
 staff. Explicit owner/Agent grants, metadata inventory and private Runner
 authority are described in [Runner VNC authority](runner-vnc-authority.md).
 The Runner, owner configuration and Agent inventory support the exact X509Vnc,
-X509Plain and SSH-protected Apple DH profiles. The feature remains unavailable
-until a separate activation decision.
+X509Plain, SSH-protected Apple DH, and SSH-protected Apple Direct SRP profiles.
+The feature remains unavailable until a separate activation decision.
 
 ## Supported profiles and rollout state
 
@@ -34,6 +34,17 @@ server, but cannot prove that server does not proxy its loopback connection
 onward; owners must select a Mac host they control. This profile also remains
 behind the default-off `VncAccess` switch.
 
+Apple Direct SRP adds a separate `apple_srp_username_password` / `apple_srp`
+pair for Apple RFB security type 36. It does not change the meaning of Apple DH
+or X.509 credentials. The SRP account and server proofs are verified by the
+Rust engine, while the saved SSH route protects the entire desktop stream.
+The same independently authorized SSH host and literal loopback destination
+restriction applies. SRP usernames accept 1–255 UTF-8 bytes and passwords
+1–1023 UTF-8 bytes, without NUL. Old Runners must return
+`unsupported_profile` before decrypting the credential. SSH host-key trust
+identifies the chosen endpoint but cannot rule out an onward proxy. This
+profile also remains behind the default-off `VncAccess` switch.
+
 ## Owner API
 
 Organization session authentication and a fresh Clerk membership check
@@ -55,7 +66,7 @@ A credential contains a display name and typed `authentication`. Classic
 **1–255 UTF-8 bytes** and a password of **1–1023 UTF-8 bytes**. Embedded NUL is
 rejected and password spaces are preserved. Metadata exposes `authMethod` and
 exposes `username` only for `username_password` or
-`apple_dh_username_password`; it never exposes a password or
+`apple_dh_username_password` or `apple_srp_username_password`; it never exposes a password or
 ciphertext. Credentials can be shared by multiple saved connections belonging
 to the same user and organization.
 
@@ -68,8 +79,10 @@ DNS name or IP identity for future certificate verification. Omitting it means
 use the saved VNC host; it never replaces the socket destination.
 The exact stored pairs are `vnc_password` / `x509_vnc`,
 `username_password` / `x509_plain`, and
-`apple_dh_username_password` / `apple_dh`. Apple DH has no X.509 trust bundle
-or certificate identity, and its route is restricted as described above.
+`apple_dh_username_password` / `apple_dh`, and
+`apple_srp_username_password` / `apple_srp`. Neither Apple profile has an
+X.509 trust bundle or certificate identity; both routes are restricted as
+described above.
 A custom bundle is at most 64 KiB and contains at most eight public CA
 certificates. Private keys, non-CA certificates, malformed material and insecure
 trust modes are rejected. Saving configuration does not dial or verify the host.
@@ -156,11 +169,12 @@ VNC route, switch it explicitly to Direct where that destination is valid, or
 delete it first. The app reports this dependency without cascading, clearing or
 silently converting the VNC route.
 
-For Mac Screen Sharing, choose the Apple DH profile and a saved SSH host for
+For Mac Screen Sharing, choose the Apple DH or Apple Direct SRP profile and a saved SSH host for
 that same Mac, then enter `127.0.0.1` or `::1` as the RFB destination. The app
 hides direct transport and X.509 trust fields for this profile and only shows
 Apple-compatible credentials. The SSH route protects the full VNC session;
-Apple DH alone does not. Saving does not verify the Mac's Screen Sharing
+Apple DH alone does not. Apple Direct SRP verifies the server proof, but does
+not replace SSH transport protection. Saving does not verify the Mac's Screen Sharing
 configuration or prove the SSH server has no downstream proxy.
 
 Adding the first VNC host automatically grants access to every Agent currently
@@ -254,8 +268,8 @@ database locks.
 
 Credential methods describe the supplied authentication material; connection
 security profiles describe the owner's selected wire authentication and server
-trust policy. Owner persistence accepts exactly `vnc_password` with `x509_vnc`
-and `username_password` with `x509_plain`. The connection stores the selected
+trust policy. Owner persistence accepts exactly the four pairs listed above.
+The connection stores the selected
 authentication method explicitly; a same-row check and composite credential
 foreign key enforce both pair and reference compatibility. Unknown methods,
 profiles and unsupported trust shapes are rejected, with no implicit default.
@@ -268,9 +282,9 @@ New credential requirements
 and length limits must not inherit classic VNC's eight-byte limit. Binding or
 changing a credential must remain compatible with every referencing connection;
 authentication changes invalidate those connection generations.
-Persisted discriminator meanings are immutable: Apple DH extends the values
-with a distinct method and profile and does not reinterpret X509Plain. A later
-profile extends the
+Persisted discriminator meanings are immutable: Apple DH and Apple Direct SRP
+each use distinct methods and profiles and do not reinterpret X509Plain or each
+other. A later profile extends the
 allowed values and adds its concrete typed fields or references, but cannot
 reinterpret an existing value or require clearing saved VNC state. Every schema
 extension must exercise its migration against populated credentials, connections
@@ -292,7 +306,8 @@ the exact server versions tested and distinguish client authentication, server
 identity verification and full-session encryption.
 
 The Rust protocol engine and private Runner contract support the policy-selected
-X509Vnc, X509Plain and SSH-only Apple DH authentication flows. SSH authentication belongs to an
+X509Vnc, X509Plain, SSH-only Apple DH and SSH-only Apple Direct SRP
+authentication flows. SSH authentication belongs to an
 outer transport and does not become a VNC password method. Shared/exclusive mode
 is a per-session Agent choice, independent of authentication. The VNC server
 decides how to admit clients; shared sessions can interact with the same desktop.
@@ -320,6 +335,15 @@ shape checks. It leaves retained X509 rows, generations, grants and the direct
 default untouched. API readers of Apple rows and Runner support must be
 deployed before admitting those rows; rollback below that reader floor is unsafe
 once they exist. No merge enables the switch or authorizes production rollout.
+
+The Apple Direct SRP migration similarly expands only the exact credential,
+profile and trust checks; existing row values, generations, grants and the
+direct default remain intact. New API readers and current Runners are required
+before an SRP row is admitted. An older Runner fails the exact capability check
+before KMS; an older API is not a safe rollback target after SRP rows are
+stored. The rollback floor is therefore the first API revision that reads and
+preserves these distinct SRP discriminators. Merging this migration does not
+activate `VncAccess`.
 
 The configuration API remains unavailable until the feature is explicitly
 enabled; merging this change does not enable it, authorize an out-of-band

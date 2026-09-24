@@ -2006,6 +2006,9 @@ pub mod runners {
             /// Apple DH username/password authentication with 63-byte fields.
             #[serde(rename = "apple_dh_username_password")]
             AppleDhUsernamePassword,
+            /// Apple Direct SRP username/password authentication with bounded UTF-8 fields.
+            #[serde(rename = "apple_srp_username_password")]
+            AppleSrpUsernamePassword,
         }
 
         /// Security profile advertised by this Runner.
@@ -2020,6 +2023,9 @@ pub mod runners {
             /// Apple DH type 30, requiring SSH to Mac loopback.
             #[serde(rename = "apple_dh")]
             AppleDh,
+            /// Apple Direct SRP type 36, requiring SSH to Mac loopback.
+            #[serde(rename = "apple_srp")]
+            AppleSrp,
         }
 
         /// Transport supported for this exact profile tuple.
@@ -2079,6 +2085,13 @@ pub mod runners {
                 /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
                 password: crate::SecretUtf8Text<1023>,
             },
+            /// Apple Direct SRP username/password fields; the Runner validates 255/1023-byte bounds.
+            AppleSrpUsernamePassword {
+                /// Bounded Plain username, preserving exact UTF-8 bytes.
+                username: String,
+                /// Bounded zeroizing password, preserving exact UTF-8 bytes and spaces.
+                password: crate::SecretUtf8Text<1023>,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedAuthentication {
@@ -2092,6 +2105,8 @@ pub mod runners {
                     UsernamePassword,
                     #[serde(rename = "apple_dh_username_password")]
                     AppleDhUsernamePassword,
+                    #[serde(rename = "apple_srp_username_password")]
+                    AppleSrpUsernamePassword,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2163,6 +2178,16 @@ pub mod runners {
                                 Some(username),
                             ) => Ok(
                                 ResolveResponseResolvedAuthentication::AppleDhUsernamePassword {
+                                    username,
+                                    password,
+                                },
+                            ),
+                            (
+                                Some(Kind::AppleSrpUsernamePassword),
+                                Some(password),
+                                Some(username),
+                            ) => Ok(
+                                ResolveResponseResolvedAuthentication::AppleSrpUsernamePassword {
                                     username,
                                     password,
                                 },
@@ -2270,6 +2295,8 @@ pub mod runners {
             },
             /// Apple DH type 30; only the separately verified SSH channel protects the RFB session.
             AppleDh,
+            /// Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.
+            AppleSrp,
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponseResolvedSecurity {
@@ -2283,6 +2310,8 @@ pub mod runners {
                     X509Plain,
                     #[serde(rename = "apple_dh")]
                     AppleDh,
+                    #[serde(rename = "apple_srp")]
+                    AppleSrp,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2336,6 +2365,9 @@ pub mod runners {
                             }
                             (Some(Kind::AppleDh), None) => {
                                 Ok(ResolveResponseResolvedSecurity::AppleDh)
+                            }
+                            (Some(Kind::AppleSrp), None) => {
+                                Ok(ResolveResponseResolvedSecurity::AppleSrp)
                             }
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),
                         }
@@ -2491,6 +2523,21 @@ pub mod runners {
                 /// Explicit saved transport and trust policy; never downgrade.
                 security: ResolveResponseResolvedSecurity,
             },
+            /// Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.
+            ResolvedAppleSrp {
+                /// Current private destination.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current saved configuration generation.
+                generation: i64,
+                /// Explicit direct or generation-bound SSH transport snapshot.
+                transport: ResolveResponseResolvedTransportTransport,
+                /// Credential for the explicitly saved method.
+                authentication: ResolveResponseResolvedAuthentication,
+                /// Explicit saved transport and trust policy; never downgrade.
+                security: ResolveResponseResolvedSecurity,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponse {
@@ -2508,6 +2555,8 @@ pub mod runners {
                     ResolvedTransport,
                     #[serde(rename = "resolved_apple_dh")]
                     ResolvedAppleDh,
+                    #[serde(rename = "resolved_apple_srp")]
+                    ResolvedAppleSrp,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -2685,6 +2734,23 @@ pub mod runners {
                                 None,
                                 Some(transport),
                             ) => Ok(ResolveResponse::ResolvedAppleDh {
+                                host,
+                                port,
+                                generation,
+                                transport,
+                                authentication,
+                                security,
+                            }),
+                            (
+                                Some(Kind::ResolvedAppleSrp),
+                                Some(host),
+                                Some(port),
+                                Some(generation),
+                                Some(authentication),
+                                Some(security),
+                                None,
+                                Some(transport),
+                            ) => Ok(ResolveResponse::ResolvedAppleSrp {
                                 host,
                                 port,
                                 generation,
