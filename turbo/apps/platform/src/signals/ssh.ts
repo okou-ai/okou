@@ -265,15 +265,6 @@ const finishSshSave$ = command(
   },
 );
 
-const view$ = state<"hosts" | "credentials">("hosts");
-export const sshView$ = computed((get) => {
-  return get(view$);
-});
-export const changeSshView$ = command(({ set }, value: string) => {
-  if (value === "hosts" || value === "credentials") {
-    set(view$, value);
-  }
-});
 const transportEditor$ = state<{ mode: string; configId: string | null }>({
   mode: "direct",
   configId: null,
@@ -431,7 +422,6 @@ export const sshObservationsSnapshot$ = computed(async (get) => {
 });
 export const refreshSsh$ = command(({ set }) => {
   set(abandonSshSave$);
-  set(view$, "hosts");
   set(cancelSshPrivateKeyFile$);
   set(dialog$, null);
   set(conflict$, null);

@@ -6894,7 +6894,6 @@
       "unused": "未被任何主机使用"
     },
     "credentialsHelp": "凭据只写入不回显，并且保存在沙箱之外。请粘贴完整的密钥，空白字符会原样保留。关闭此表单时各字段会被清空。",
-    "credentialsTab": "凭据",
     "delete": "删除主机",
     "deleteHelp": "确定删除该主机？它的凭据会保留。智能体将不再在可用主机列表中看到它。",
     "description": "让你的智能体在远程机器上执行命令。",
@@ -6921,7 +6920,6 @@
     "fingerprint": "已记录的主机密钥",
     "host": "公网主机名或IP地址",
     "hostSection": "主机",
-    "hostsTab": "主机",
     "label": "SSH",
     "loadFailed": "无法加载SSH设置，请重试。",
     "loading": "正在加载SSH主机…",
@@ -6950,7 +6948,6 @@
     },
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
-    "title": "SSH远程访问",
     "unavailable": "该账号无法使用SSH访问。",
     "username": "SSH用户名"
   },
@@ -7082,7 +7079,6 @@
       "usernamePasswordHint": "输入该用户名对应的密码",
       "usernamePasswordMethod": "用户名和密码"
     },
-    "credentialsTab": "凭据",
     "delete": "删除主机",
     "deleteHelp": "删除这台已保存的主机？它使用的可复用凭据会保留。",
     "description": "让你的智能体查看和控制远程桌面。",
@@ -7105,7 +7101,6 @@
     },
     "host": "主机名或IP地址",
     "hostHint": "例如：desktop.example.com",
-    "hostsTab": "主机",
     "label": "VNC",
     "loadFailed": "无法加载VNC配置。",
     "loading": "正在加载VNC配置…",
@@ -7140,7 +7135,6 @@
     },
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
-    "title": "VNC远程访问",
     "transport": {
       "appleDhDestinationHelp": "Apple DH 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
       "destination": "RFB目标",

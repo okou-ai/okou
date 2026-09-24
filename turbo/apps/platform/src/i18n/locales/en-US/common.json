@@ -6904,7 +6904,6 @@
       "unused": "Not used by any hosts"
     },
     "credentialsHelp": "Credentials are write-only and stay outside the sandbox. Paste the complete key; whitespace is preserved. Fields are cleared when this form closes.",
-    "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
     "description": "Let your agents run commands on remote machines.",
@@ -6931,7 +6930,6 @@
     "fingerprint": "Learned host key",
     "host": "Public hostname or IP address",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "Could not load SSH settings. Try again.",
     "loading": "Loading SSH hosts…",
@@ -6960,7 +6958,6 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "SSH remote access",
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
@@ -7093,7 +7090,6 @@
       "usernamePasswordHint": "Enter the password for this username",
       "usernamePasswordMethod": "Username and password"
     },
-    "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this saved host? Its reusable credential will be kept.",
     "description": "Let your agents view and control remote desktops.",
@@ -7116,7 +7112,6 @@
     },
     "host": "RFB destination host",
     "hostHint": "e.g. desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "Could not load VNC configuration.",
     "loading": "Loading VNC configuration…",
@@ -7151,7 +7146,6 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "VNC remote access",
     "transport": {
       "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
       "destination": "RFB destination",

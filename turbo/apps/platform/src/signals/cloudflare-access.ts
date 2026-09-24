@@ -222,11 +222,6 @@ export const closeCloudflareAccessDialog$ = command(({ set }) => {
   set(dialog$, null);
 });
 
-export const refreshCloudflareAccess$ = command(({ set }) => {
-  set(closeCloudflareAccessDialog$);
-  set(invalidateCloudflareAccess$);
-});
-
 function textField(form: HTMLFormElement, name: string): string {
   const field = form.elements.namedItem(name);
   if (!(field instanceof HTMLInputElement)) {

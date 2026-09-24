@@ -75,7 +75,7 @@ beforeEach(() => {
 async function page(add = false) {
   await setupPage({
     context,
-    path: `/connectors/ssh${add ? "?add=1" : ""}`,
+    path: "/connectors?scope=remote-control&type=ssh",
     auth: {
       user: { id: "access-owner", fullName: "Access Owner" },
       organization: {
@@ -84,6 +84,13 @@ async function page(add = false) {
       },
     },
   });
+  if (add) {
+    click(
+      await waitFor(() => {
+        return getAction("button", "Add host");
+      }),
+    );
+  }
 }
 async function selectConfig(dialog: HTMLElement, name = config.name) {
   await userEvent.click(
@@ -179,7 +186,7 @@ test("Resource selectors initialize once for a single saved resource", async () 
 test("SSH keeps Cloudflare Access in the host form without a management tab", async () => {
   await page();
   await screen.findByText("0 hosts configured");
-  expect(getAction("radio", "Hosts")).toBeInTheDocument();
+  expect(getAction("radio", "Connections")).toBeInTheDocument();
   expect(getAction("radio", "Credentials")).toBeInTheDocument();
   expect(queryAction("radio", "Cloudflare Access")).not.toBeInTheDocument();
   expect(

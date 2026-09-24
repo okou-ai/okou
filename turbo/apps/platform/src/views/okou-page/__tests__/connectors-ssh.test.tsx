@@ -22,6 +22,7 @@ import {
   publicStatusItem,
   queryConnectorAction,
 } from "./connector-page-test-helpers.ts";
+import { getAction } from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const agentId = "c0000000-0000-4000-8000-000000000001";
@@ -72,7 +73,7 @@ test.each([false])(
     expect(screen.getByText("Add access")).toBeInTheDocument();
     expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
       "href",
-      "/connectors/ssh",
+      "/connectors?scope=remote-control&type=ssh",
     );
   },
 );
@@ -124,7 +125,7 @@ test("The SSH directory summarizes attention like Connectors and recovers withou
   expect(screen.getByText("Add access")).toBeInTheDocument();
   expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
     "href",
-    "/connectors/ssh",
+    "/connectors?scope=remote-control&type=ssh",
   );
   failed = false;
   context.mocks.ably.trigger("ssh:changed", { orgId });
@@ -149,7 +150,7 @@ test("The SSH directory distinguishes unavailable diagnostics from failed hosts"
   expect(screen.queryByText("private error")).toBeNull();
   expect(getConnectorAction("link", "Manage SSH hosts")).toHaveAttribute(
     "href",
-    "/connectors/ssh",
+    "/connectors?scope=remote-control&type=ssh",
   );
   expect(screen.getByText("Add access")).toBeInTheDocument();
 });
@@ -310,6 +311,60 @@ async function page(path = "/connectors") {
   });
 }
 
+test("Legacy tabs remain usable after opening SSH management", async () => {
+  mockCatalog();
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  await page();
+  click(
+    await waitFor(() => {
+      return getConnectorAction("link", "Manage SSH hosts");
+    }),
+  );
+  await screen.findByText("0 hosts configured");
+  click(getConnectorAction("tab", "Custom"));
+  await waitFor(() => {
+    expect(window.location.search).toBe("?tab=custom");
+    expect(screen.queryByText("0 hosts configured")).toBeNull();
+  });
+});
+
+test("Opening the SSH card returns to connections after viewing credentials", async () => {
+  mockCatalog();
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [] });
+  });
+  await page();
+  click(getConnectorAction("tab", "Remote control"));
+  await screen.findByText("0 hosts configured");
+  click(getAction("radio", "Credentials"));
+  expect(getAction("radio", "Credentials")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  click(getConnectorAction("tab", "Built-in"));
+  click(
+    await waitFor(() => {
+      return getConnectorAction("link", "Manage SSH hosts");
+    }),
+  );
+  await screen.findByText("0 hosts configured");
+  expect(getAction("radio", "Connections")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
 test.each([0])(
   "Global SSH entry shows %i configured hosts and opens management without an Agent",
   async (count) => {
@@ -333,7 +388,7 @@ test.each([0])(
     const entry = getConnectorAction("link", "Manage SSH hosts");
     expect(entry).toHaveAttribute(
       "href",
-      count === 0 ? "/connectors/ssh?add=1" : "/connectors/ssh",
+      "/connectors?scope=remote-control&type=ssh",
     );
     expect(
       screen.getByRole("heading", { name: "Remote access" }),
@@ -357,13 +412,9 @@ test.each([0])(
       screen.getByText("Connect 2 services for your agents to use."),
     ).toBeInTheDocument();
     click(entry);
-    await screen.findByRole("heading", { name: "SSH remote access" });
-    expect(
-      screen.getByText("Let your agents run commands on remote machines."),
-    ).toBeInTheDocument();
-    if (count !== 0) {
-      click(getConnectorAction("button", "Add host"));
-    }
+    await screen.findByRole("heading", { name: "SSH" });
+    expect(window.location.search).toBe("?scope=remote-control&type=ssh");
+    click(getConnectorAction("button", "Add host"));
     const dialog = await screen.findByRole("dialog");
     const key = await within(dialog).findByLabelText("Private key");
     expect(key).toHaveValue("");
@@ -557,7 +608,7 @@ test("Deleting an SSH host referenced by VNC explains how to resolve the depende
       },
     });
   });
-  await page("/connectors/ssh");
+  await page("/connectors?scope=remote-control&type=ssh");
   await screen.findByText(host.displayName);
   click(getConnectorAction("button", "Delete host"));
   const dialog = await screen.findByRole("dialog", { name: "Delete host" });

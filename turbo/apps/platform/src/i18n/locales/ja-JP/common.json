@@ -6894,7 +6894,6 @@
       "unused": "使用中のホストはありません"
     },
     "credentialsHelp": "認証情報は書き込み専用で、サンドボックスの外部に保持されます。鍵全体を貼り付けてください。空白はそのまま保持されます。フォームを閉じたときに入力欄を消去します。",
-    "credentialsTab": "認証情報",
     "delete": "ホストを削除",
     "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
     "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
@@ -6921,7 +6920,6 @@
     "fingerprint": "記憶したホスト鍵",
     "host": "公開ホスト名または IP アドレス",
     "hostSection": "ホスト",
-    "hostsTab": "ホスト",
     "label": "SSH",
     "loadFailed": "SSH設定を読み込めませんでした。再試行してください。",
     "loading": "SSH ホストを読み込み中…",
@@ -6950,7 +6948,6 @@
     },
     "summary_one": "{{count}} 台のホストを設定済み",
     "summary_other": "{{count}} 台のホストを設定済み",
-    "title": "SSH ホスト",
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
@@ -7082,7 +7079,6 @@
       "usernamePasswordHint": "このユーザー名のパスワードを入力",
       "usernamePasswordMethod": "ユーザー名とパスワード"
     },
-    "credentialsTab": "認証情報",
     "delete": "ホストを削除",
     "deleteHelp": "このホストを削除しますか？再利用可能な認証情報は保持されます。",
     "description": "Agent がリモートデスクトップを表示・操作できるようにします。",
@@ -7105,7 +7101,6 @@
     },
     "host": "ホスト名または IP アドレス",
     "hostHint": "例：desktop.example.com",
-    "hostsTab": "ホスト",
     "label": "VNC",
     "loadFailed": "VNC 設定を読み込めませんでした。",
     "loading": "VNC 設定を読み込み中…",
@@ -7140,7 +7135,6 @@
     },
     "summary_one": "設定済みホスト {{count}} 台",
     "summary_other": "設定済みホスト {{count}} 台",
-    "title": "VNC リモートアクセス",
     "transport": {
       "appleDhDestinationHelp": "Apple DH には 127.0.0.1 または ::1 を入力してください。選択した SSH ホスト経由で到達する Mac 自身のループバックアドレスです。",
       "destination": "RFB接続先",

@@ -6894,7 +6894,6 @@
       "unused": "사용 중인 호스트 없음"
     },
     "credentialsHelp": "인증 정보는 쓰기 전용이며 샌드박스 외부에 보관됩니다. 전체 키를 붙여 넣으세요. 공백은 유지됩니다. 양식을 닫으면 입력란이 지워집니다.",
-    "credentialsTab": "자격 증명",
     "delete": "호스트 삭제",
     "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Agent의 호스트 목록에서 사라집니다.",
     "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
@@ -6921,7 +6920,6 @@
     "fingerprint": "저장된 호스트 키",
     "host": "공개 호스트 이름 또는 IP 주소",
     "hostSection": "호스트",
-    "hostsTab": "호스트",
     "label": "SSH",
     "loadFailed": "SSH 설정을 불러오지 못했습니다. 다시 시도하세요.",
     "loading": "SSH 호스트 로딩 중…",
@@ -6950,7 +6948,6 @@
     },
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
-    "title": "SSH 호스트",
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
@@ -7082,7 +7079,6 @@
       "usernamePasswordHint": "이 사용자 이름의 비밀번호를 입력하세요",
       "usernamePasswordMethod": "사용자 이름 및 비밀번호"
     },
-    "credentialsTab": "자격 증명",
     "delete": "호스트 삭제",
     "deleteHelp": "이 호스트를 삭제할까요? 재사용 가능한 자격 증명은 유지됩니다.",
     "description": "Agent가 원격 데스크톱을 보고 제어하도록 허용하세요.",
@@ -7105,7 +7101,6 @@
     },
     "host": "호스트 이름 또는 IP 주소",
     "hostHint": "예: desktop.example.com",
-    "hostsTab": "호스트",
     "label": "VNC",
     "loadFailed": "VNC 설정을 불러오지 못했습니다.",
     "loading": "VNC 설정을 불러오는 중…",
@@ -7140,7 +7135,6 @@
     },
     "summary_one": "설정된 호스트 {{count}}개",
     "summary_other": "설정된 호스트 {{count}}개",
-    "title": "VNC 원격 액세스",
     "transport": {
       "appleDhDestinationHelp": "Apple DH에서는 127.0.0.1 또는 ::1을 입력하세요. 선택한 SSH 호스트를 통해 접근하는 Mac 자체의 루프백 주소입니다.",
       "destination": "RFB 대상",

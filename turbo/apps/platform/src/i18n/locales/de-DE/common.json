@@ -6912,7 +6912,6 @@
       "unused": "Von keinem Host verwendet"
     },
     "credentialsHelp": "Zugangsdaten können nur geschrieben werden und bleiben außerhalb der Sandbox. Fügen Sie den vollständigen Schlüssel ein; Leerzeichen bleiben erhalten. Die Felder werden beim Schließen des Formulars geleert.",
-    "credentialsTab": "Zugangsdaten",
     "delete": "Host löschen",
     "deleteHelp": "Diesen Host löschen? Seine Zugangsdaten bleiben erhalten. Agents sehen ihn nicht mehr im Inventar.",
     "description": "Konfiguriere SSH-Hosts, auf denen deine Agents Remote-Befehle ausführen können.",
@@ -6939,7 +6938,6 @@
     "fingerprint": "Gespeicherter Hostschlüssel",
     "host": "Öffentlicher Hostname oder IP-Adresse",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "SSH-Einstellungen konnten nicht geladen werden. Versuche es erneut.",
     "loading": "SSH-Hosts werden geladen…",
@@ -6968,7 +6966,6 @@
     },
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
-    "title": "SSH-Hosts",
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
@@ -7101,7 +7098,6 @@
       "usernamePasswordHint": "Gib das Passwort für diesen Benutzernamen ein",
       "usernamePasswordMethod": "Benutzername und Passwort"
     },
-    "credentialsTab": "Anmeldeinformationen",
     "delete": "Host löschen",
     "deleteHelp": "Diesen gespeicherten Host löschen? Die wiederverwendbaren Zugangsdaten bleiben erhalten.",
     "description": "Lass deine Agents deine Remote-Desktops anzeigen und steuern.",
@@ -7124,7 +7120,6 @@
     },
     "host": "Hostname oder IP-Adresse",
     "hostHint": "z. B. desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "Die VNC-Konfiguration konnte nicht geladen werden.",
     "loading": "VNC-Konfiguration wird geladen…",
@@ -7159,7 +7154,6 @@
     },
     "summary_one": "{{count}} konfigurierter Host",
     "summary_other": "{{count}} konfigurierte Hosts",
-    "title": "VNC-Fernzugriff",
     "transport": {
       "appleDhDestinationHelp": "Geben Sie für Apple DH 127.0.0.1 oder ::1 ein. Dies ist die Loopback-Adresse des Mac, die über den ausgewählten SSH-Host erreicht wird.",
       "destination": "RFB-Ziel",

@@ -6894,7 +6894,6 @@
       "unused": "Tidak digunakan oleh host mana pun"
     },
     "credentialsHelp": "Kredensial hanya dapat ditulis dan tetap berada di luar sandbox. Tempelkan kunci lengkap; spasi dipertahankan. Kolom dikosongkan saat formulir ditutup.",
-    "credentialsTab": "Kredensial",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
     "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
@@ -6921,7 +6920,6 @@
     "fingerprint": "Kunci host tersimpan",
     "host": "Nama host publik atau alamat IP",
     "hostSection": "Host",
-    "hostsTab": "Host",
     "label": "SSH",
     "loadFailed": "Tidak dapat memuat pengaturan SSH. Coba lagi.",
     "loading": "Memuat host SSH…",
@@ -6950,7 +6948,6 @@
     },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
-    "title": "Host SSH",
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
@@ -7082,7 +7079,6 @@
       "usernamePasswordHint": "Masukkan kata sandi untuk nama pengguna ini",
       "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
-    "credentialsTab": "Kredensial",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host tersimpan ini? Kredensialnya yang dapat digunakan kembali akan tetap disimpan.",
     "description": "Izinkan agen Anda melihat dan mengendalikan desktop jarak jauh Anda.",
@@ -7105,7 +7101,6 @@
     },
     "host": "Nama host atau alamat IP",
     "hostHint": "mis. desktop.example.com",
-    "hostsTab": "Host",
     "label": "VNC",
     "loadFailed": "Tidak dapat memuat konfigurasi VNC.",
     "loading": "Memuat konfigurasi VNC…",
@@ -7140,7 +7135,6 @@
     },
     "summary_one": "{{count}} host terkonfigurasi",
     "summary_other": "{{count}} host terkonfigurasi",
-    "title": "Akses jarak jauh VNC",
     "transport": {
       "appleDhDestinationHelp": "Untuk Apple DH, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
       "destination": "Tujuan RFB",

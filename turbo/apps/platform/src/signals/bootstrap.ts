@@ -45,9 +45,6 @@ import { setupGithubConnectPage$ } from "./okou-page/github-connect-page.ts";
 import { setupTeamsConnectPage$ } from "./okou-page/teams-connect-page.ts";
 import { setupTelegramConnectPage$ } from "./okou-page/telegram-connect-page.ts";
 import { setupTelegramSettingsPage$ } from "./okou-page/telegram-settings-page.ts";
-import { setupSshConnectorPage$ } from "./okou-page/ssh-connector-page.ts";
-import { setupVncConnectorPage$ } from "./okou-page/vnc-connector-page.ts";
-import { setupCloudflareAccessConnectorPage$ } from "./okou-page/cloudflare-access-connector-page.ts";
 import { setupFeishuSettingsPage$ } from "./okou-page/feishu-settings-page.ts";
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
@@ -324,18 +321,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.connectors,
     setup: setupAuthSidebarPageWrapper(setupConnectorsPage$),
-  },
-  {
-    path: ROUTES.connectorSsh,
-    setup: setupAuthSidebarPageWrapper(setupSshConnectorPage$),
-  },
-  {
-    path: ROUTES.connectorVnc,
-    setup: setupAuthSidebarPageWrapper(setupVncConnectorPage$),
-  },
-  {
-    path: ROUTES.connectorCloudflareAccess,
-    setup: setupAuthSidebarPageWrapper(setupCloudflareAccessConnectorPage$),
   },
   {
     path: ROUTES.agentIdeas,

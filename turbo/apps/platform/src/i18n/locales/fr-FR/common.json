@@ -6978,7 +6978,6 @@
       "unused": "Aucun hôte ne les utilise"
     },
     "credentialsHelp": "Les identifiants sont accessibles uniquement en écriture et restent hors du sandbox. Collez la clé complète ; les espaces sont conservés. Les champs sont effacés à la fermeture du formulaire.",
-    "credentialsTab": "Identifiants",
     "delete": "Supprimer l’hôte",
     "deleteHelp": "Supprimer cet hôte ? Ses identifiants seront conservés. Les Agents ne le verront plus dans l’inventaire.",
     "description": "Configurez des hôtes SSH pour que vos agents exécutent des commandes à distance.",
@@ -7005,7 +7004,6 @@
     "fingerprint": "Clé d’hôte mémorisée",
     "host": "Nom d’hôte public ou adresse IP",
     "hostSection": "Hôte",
-    "hostsTab": "Hôtes",
     "label": "SSH",
     "loadFailed": "Impossible de charger les paramètres SSH. Réessayez.",
     "loading": "Chargement des hôtes SSH…",
@@ -7035,7 +7033,6 @@
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",
-    "title": "Hôtes SSH",
     "unavailable": "L’accès SSH n’est pas disponible pour ce compte.",
     "username": "Nom d’utilisateur SSH"
   },
@@ -7172,7 +7169,6 @@
       "usernamePasswordHint": "Saisissez le mot de passe de cet utilisateur",
       "usernamePasswordMethod": "Nom d’utilisateur et mot de passe"
     },
-    "credentialsTab": "Identifiants",
     "delete": "Supprimer l’hôte",
     "deleteHelp": "Supprimer cet hôte enregistré ? Ses identifiants réutilisables seront conservés.",
     "description": "Permettez à vos agents d’afficher et de contrôler vos bureaux distants.",
@@ -7195,7 +7191,6 @@
     },
     "host": "Nom d’hôte ou adresse IP",
     "hostHint": "p. ex. desktop.example.com",
-    "hostsTab": "Hôtes",
     "label": "VNC",
     "loadFailed": "Impossible de charger la configuration VNC.",
     "loading": "Chargement de la configuration VNC…",
@@ -7231,7 +7226,6 @@
     "summary_one": "{{count}} hôte configuré",
     "summary_many": "{{count}} hôtes configurés",
     "summary_other": "{{count}} hôtes configurés",
-    "title": "Accès à distance VNC",
     "transport": {
       "appleDhDestinationHelp": "Pour Apple DH, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
       "destination": "Destination RFB",
