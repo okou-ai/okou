@@ -1,8 +1,4 @@
 import {
-  browserContract,
-  type BrowserSession,
-} from "@okouai/api-contracts/contracts/browser";
-import {
   BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
   browserUserActionsContract,
   type BrowserUserActionResponse,
@@ -80,40 +76,6 @@ function mockPendingPreflight() {
   );
 }
 
-function directAction(
-  state: BrowserUserActionResponse["state"] = "pending",
-): Extract<BrowserUserActionResponse, { kind: "direct_interaction" }> {
-  return {
-    kind: "direct_interaction",
-    requestToken: REQUEST_TOKEN,
-    state,
-    completedAt: state === "pending" ? null : "2026-09-22T05:00:00.000Z",
-    agentId: AGENT_ID,
-    threadId: THREAD_ID,
-    reason: "Finish the visual challenge",
-    callbackIds: action("pending").callbackIds,
-  };
-}
-
-function browserSession(): BrowserSession {
-  return {
-    threadId: THREAD_ID,
-    name: "Research",
-    status: "suspended",
-    viewerUrl: `https://browser.example.test/view/${THREAD_ID}`,
-    liveUrl: null,
-    screenshotUrl: "https://images.example.test/browser-suspended.png",
-    proxyCountryCode: "US",
-    timeoutMinutes: 240,
-    screen: { width: 1440, height: 900, resizable: true },
-    idleExpiresAt: null,
-    suspendedAt: "2026-09-22T04:55:00.000Z",
-    suspensionReason: "idle",
-    createdAt: "2026-09-22T04:00:00.000Z",
-    updatedAt: "2026-09-22T04:55:00.000Z",
-  };
-}
-
 function route(args: { readonly threadId?: string } = {}): string {
   const params = new URLSearchParams({
     agentId: AGENT_ID,
@@ -129,16 +91,6 @@ function button(name: string): HTMLElement {
   });
   if (!result) {
     throw new Error(`Button not found: ${name}`);
-  }
-  return result;
-}
-
-function link(name: string): HTMLElement {
-  const result = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.getAttribute("aria-label") === name;
-  });
-  if (!result) {
-    throw new Error(`Link not found: ${name}`);
   }
   return result;
 }
@@ -403,26 +355,21 @@ test("A terminal standalone action retries only its stable callback", async () =
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
-test("A standalone direct interaction opens the existing Browser page and completes before its callback", async () => {
-  const ordering: string[] = [];
-  let state: BrowserUserActionResponse["state"] = "pending";
+test("A failed notification announces the error and remains retryable", async () => {
+  let rejectCallback = true;
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction(state));
-  });
-  context.mocks.api(browserContract.get, ({ params, respond }) => {
-    expect(params.threadId).toBe(THREAD_ID);
-    return respond(200, { browser: browserSession() });
-  });
-  context.mocks.api(browserUserActionsContract.complete, ({ respond }) => {
-    ordering.push("complete");
-    state = "succeeded";
-    return respond(200, directAction(state));
+    return respond(200, action("succeeded"));
   });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-    ordering.push("callback");
     expect(body.prompt).toBe(CALLBACK_PROMPT);
     expect(body.clientEventId).toBe(SUCCESS_CLIENT_ID);
     expect(body.chatThreadSortEventId).toBe(SUCCESS_SORT_ID);
+    if (rejectCallback) {
+      rejectCallback = false;
+      return respond(503, {
+        error: { code: "CHAT_UNAVAILABLE", message: "Chat unavailable" },
+      });
+    }
     return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
   });
 
@@ -433,55 +380,14 @@ test("A standalone direct interaction opens the existing Browser page and comple
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
-  await expect(
-    screen.findByText("Finish the visual challenge"),
-  ).resolves.toBeVisible();
-  expect(document.title).toContain("Browser action");
-  const browserLink = await waitFor(() => {
-    return link("Open Research browser");
+  await expect(screen.findByText("Information added")).resolves.toBeVisible();
+  click(button("Notify agent"));
+  await waitFor(() => {
+    expect(screen.getByText("Agent not notified.")).toBeVisible();
   });
-  expect(browserLink).toHaveAttribute("href", `/browsers/${THREAD_ID}`);
-  expect(browserLink).toHaveAttribute("target", "_blank");
-  expect(browserLink).toHaveAttribute("rel", "noreferrer");
-  click(button("Done"));
+  click(button("Retry"));
 
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(ordering).toStrictEqual(["complete", "callback"]);
-});
-
-test("A direct cancellation fails closed when the mutation response changes action kind", async () => {
-  let callbackCount = 0;
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, directAction());
-  });
-  context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "BROWSER_NOT_FOUND", message: "Browser not found" },
-    });
-  });
-  context.mocks.api(browserUserActionsContract.cancel, ({ respond }) => {
-    return respond(200, action("cancelled"));
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    callbackCount += 1;
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-
-  await screen.findByText("Finish the visual challenge");
-  click(button("Cancel"));
-
-  await waitFor(() => {
-    expect(button("Cancel")).toBeEnabled();
-  });
-  expect(callbackCount).toBe(0);
-  expect(screen.getByText("Finish the visual challenge")).toBeVisible();
 });
 
 test("A failed callback retries without repeating the Browser mutation", async () => {

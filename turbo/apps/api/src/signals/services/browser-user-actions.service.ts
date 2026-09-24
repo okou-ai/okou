@@ -20,7 +20,17 @@ import {
   browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
-import { and, asc, eq, gt, inArray, isNotNull, lt, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
@@ -147,9 +157,6 @@ function publicRequest(
     threadId: row.chatThreadId,
     callbackIds: payload.callbackIds,
   };
-  if (payload.kind === "direct_interaction") {
-    return { ...common, kind: payload.kind, reason: payload.reason };
-  }
   return {
     ...common,
     kind: payload.kind,
@@ -399,6 +406,36 @@ async function convertClosedBrowserUserActions(
   return candidates.length;
 }
 
+async function deleteRetiredDirectBrowserUserActions(
+  db: Db,
+  limit: number,
+  chatThreadIds: readonly string[] | null,
+  signal: AbortSignal,
+): Promise<number> {
+  const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
+  const candidates = db
+    .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
+    .from(browserUserActionRequests)
+    .where(
+      and(
+        retiredKind,
+        chatThreadIds === null
+          ? undefined
+          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
+      ),
+    )
+    .orderBy(asc(browserUserActionRequests.requestTokenHash))
+    .limit(limit);
+  const removed = await db
+    .delete(browserUserActionRequests)
+    .where(inArray(browserUserActionRequests.requestTokenHash, candidates))
+    .returning({
+      requestTokenHash: browserUserActionRequests.requestTokenHash,
+    });
+  signal.throwIfAborted();
+  return removed.length;
+}
+
 async function deleteExpiredBrowserUserActions(
   db: Db,
   limit: number,
@@ -472,6 +509,12 @@ export async function reconcileBrowserUserActions(
   chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
+  const retired = await deleteRetiredDirectBrowserUserActions(
+    db,
+    limit,
+    chatThreadIds,
+    signal,
+  );
   const checkedForConversion = await convertClosedBrowserUserActions(
     db,
     limit,
@@ -484,7 +527,7 @@ export async function reconcileBrowserUserActions(
     chatThreadIds,
     signal,
   );
-  return checkedForConversion + checkedForCleanup;
+  return retired + checkedForConversion + checkedForCleanup;
 }
 
 interface CreateBrowserUserActionArgs {
@@ -497,7 +540,7 @@ interface CreateBrowserUserActionArgs {
 interface PreparedBrowserUserAction {
   readonly chatThreadId: string;
   readonly providerSessionId: string;
-  readonly validation: BrowserUseUserActionValidation | null;
+  readonly validation: BrowserUseUserActionValidation;
 }
 
 async function prepareBrowserUserAction(
@@ -541,16 +584,6 @@ async function prepareBrowserUserAction(
       "The current chat run has no live managed Browser",
       "BROWSER_USER_ACTION_BROWSER_NOT_LIVE",
     );
-  }
-  if (args.input.kind === "direct_interaction") {
-    return {
-      kind: "ok",
-      value: {
-        chatThreadId: run.chatThreadId,
-        providerSessionId: live.providerSessionId,
-        validation: null,
-      },
-    };
   }
   const providerResult = await settle(
     getBrowserUseSession(live.providerSessionId, signal),
@@ -619,20 +652,9 @@ async function prepareBrowserUserAction(
 
 function buildBrowserUserActionPayload(
   input: BrowserUserActionCreateRequest,
-  validation: BrowserUseUserActionValidation | null,
+  validation: BrowserUseUserActionValidation,
   callbackIds: BrowserUserActionCallbackIds,
 ): BrowserUserActionPayload {
-  if (input.kind === "direct_interaction") {
-    return {
-      version: 1,
-      kind: input.kind,
-      callbackIds,
-      reason: input.reason,
-    };
-  }
-  if (!validation) {
-    throw new Error("Browser input request has no validated targets");
-  }
   return {
     version: 1,
     kind: input.kind,
@@ -1374,7 +1396,7 @@ async function mutatePendingRequest(
   args: {
     readonly row: RequestRow;
     readonly requestToken: string;
-    readonly terminal: "cancelled" | "succeeded";
+    readonly terminal: "cancelled";
   },
   signal: AbortSignal,
 ): Promise<ServiceResult<BrowserUserActionResponse>> {
@@ -1465,39 +1487,5 @@ export const cancelBrowserUserAction$ = command(
           signal,
         )
       : notFound();
-  },
-);
-
-export const completeBrowserUserAction$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly requestToken: string;
-    },
-    signal: AbortSignal,
-  ): Promise<ServiceResult<BrowserUserActionResponse>> => {
-    const db = set(writeDb$);
-    const row = await loadOwnedRequest(db, args);
-    signal.throwIfAborted();
-    if (!row) {
-      return notFound();
-    }
-    const payload = decodePayload(row);
-    if (!payload) {
-      return conflict(
-        "Browser user-action request payload is unavailable",
-        "BROWSER_USER_ACTION_UNAVAILABLE",
-      );
-    }
-    if (payload.kind !== "direct_interaction") {
-      return conflict("This Browser request is not a direct interaction");
-    }
-    return await mutatePendingRequest(
-      db,
-      { row, requestToken: args.requestToken, terminal: "succeeded" },
-      signal,
-    );
   },
 );

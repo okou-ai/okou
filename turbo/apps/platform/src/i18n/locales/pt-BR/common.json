@@ -1789,29 +1789,6 @@
       "uncertain": "Verifique o navegador",
       "uncertainDescription": "O navegador pode ter recebido as informações. Peça ao agente para verificar antes de tentar novamente."
     },
-    "browserInteraction": {
-      "applying": "Concluindo a interação no navegador",
-      "applyingDescription": "O navegador está concluindo esta solicitação.",
-      "callbackFailed": "O agente não foi avisado.",
-      "cancel": "Cancelar",
-      "cancelFailed": "Não foi possível cancelar esta solicitação. Tente novamente.",
-      "cancelled": "Solicitação cancelada",
-      "cancelling": "Cancelando…",
-      "completed": "Interação no navegador concluída",
-      "completeFailed": "Não foi possível concluir esta solicitação. Tente novamente.",
-      "completing": "Concluindo…",
-      "continue": "Avisar o agente",
-      "continuing": "Avisando o agente…",
-      "delivered": "Agente notificado",
-      "description": "Abra o navegador, conclua esta etapa e selecione Concluído.",
-      "done": "Concluído",
-      "finish": "Concluir etapa",
-      "stale": "O navegador não está mais disponível",
-      "staleDescription": "Peça ao agente para criar uma nova solicitação.",
-      "title": "Assumir o controle do navegador",
-      "uncertain": "Verifique o navegador",
-      "uncertainDescription": "A interação pode ter sido concluída. Peça ao agente para verificar antes de tentar novamente."
-    },
     "cards": {
       "viewDetails": "Ver detalhes"
     },

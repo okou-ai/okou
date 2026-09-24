@@ -1695,7 +1695,6 @@ function createCardRefRegistrar({
               browserUserActionCardSignals.register$,
               descriptor.descriptor,
             ),
-            browserSessionSignals,
           };
         }
         case "unavailable-action": {

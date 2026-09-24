@@ -46,16 +46,6 @@ const BROWSER_INPUT_SUCCESS_SORT_ID = "10000000-0000-4000-a000-000000001105";
 const BROWSER_INPUT_CANCEL_CLIENT_ID = "10000000-0000-4000-a000-000000001106";
 const BROWSER_INPUT_CANCEL_SORT_ID = "10000000-0000-4000-a000-000000001107";
 const BROWSER_INPUT_CALLBACK = "Continue after browser input";
-const BROWSER_INTERACTION_TOKEN = `vm0_browser_user_action_${"c".repeat(43)}`;
-const BROWSER_INTERACTION_SUCCESS_CLIENT_ID =
-  "10000000-0000-4000-a000-000000001108";
-const BROWSER_INTERACTION_SUCCESS_SORT_ID =
-  "10000000-0000-4000-a000-000000001109";
-const BROWSER_INTERACTION_CANCEL_CLIENT_ID =
-  "10000000-0000-4000-a000-000000001110";
-const BROWSER_INTERACTION_CANCEL_SORT_ID =
-  "10000000-0000-4000-a000-000000001111";
-const BROWSER_INTERACTION_CALLBACK = "Continue after browser interaction";
 
 function browserInputAction(
   state: BrowserUserActionResponse["state"],
@@ -121,41 +111,6 @@ function browserInputUrl(
 function browserInputRelativeUrl(): string {
   const url = new URL(browserInputUrl());
   return `${url.pathname}${url.search}`;
-}
-
-function browserInteractionAction(
-  state: BrowserUserActionResponse["state"],
-): Extract<BrowserUserActionResponse, { kind: "direct_interaction" }> {
-  return {
-    kind: "direct_interaction",
-    requestToken: BROWSER_INTERACTION_TOKEN,
-    state,
-    completedAt: state === "pending" ? null : "2026-09-22T04:00:00.000Z",
-    agentId: CAPABILITY_AGENT_ID,
-    threadId: RUN_THREAD_ID,
-    reason: "Finish the visual challenge",
-    callbackIds: {
-      success: {
-        clientEventId: BROWSER_INTERACTION_SUCCESS_CLIENT_ID,
-        chatThreadSortEventId: BROWSER_INTERACTION_SUCCESS_SORT_ID,
-      },
-      cancellation: {
-        clientEventId: BROWSER_INTERACTION_CANCEL_CLIENT_ID,
-        chatThreadSortEventId: BROWSER_INTERACTION_CANCEL_SORT_ID,
-      },
-    },
-  };
-}
-
-function browserInteractionUrl(): string {
-  const url = new URL(
-    `/browser/actions/${BROWSER_INTERACTION_TOKEN}`,
-    "https://app.okou.ai",
-  );
-  url.searchParams.set("agentId", CAPABILITY_AGENT_ID);
-  url.searchParams.set("threadId", RUN_THREAD_ID);
-  url.searchParams.set("callbackPrompt", BROWSER_INTERACTION_CALLBACK);
-  return url.href;
 }
 
 /**
@@ -655,31 +610,6 @@ test("A mounted transcript card rechecks callback delivery on page return", asyn
   expect(buttonsByName("Notify agent")).toHaveLength(0);
 });
 
-test("A freshly mounted direct-interaction card reads accepted cancellation delivery", async () => {
-  installCapabilityChat({
-    events: completedConversation(
-      `[Verify details](${browserInteractionUrl()})`,
-    ),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...browserInteractionAction("cancelled"),
-      callbackDelivered: true,
-    });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(buttonsByName("Notify agent")).toHaveLength(0);
-});
-
 test("Absolute and relative Browser input URLs open the same standalone form", async () => {
   installCapabilityChat({
     events: completedConversation(
@@ -709,71 +639,6 @@ test("Absolute and relative Browser input URLs open the same standalone form", a
   }
 });
 
-test("Complete a direct Browser interaction before its stable callback", async () => {
-  const ordering: string[] = [];
-  let state: BrowserUserActionResponse["state"] = "pending";
-  const browser = managedBrowserSession({
-    status: "active",
-    screenshotUrl: INITIAL_SCREENSHOT_URL,
-    liveUrl: ACTIVE_BROWSER_URL,
-  });
-  installCapabilityChat({
-    events: completedConversation(
-      `[Take over browser](${browserInteractionUrl()})`,
-    ),
-    onSend(send) {
-      ordering.push("callback");
-      expect(send.prompt).toBe(BROWSER_INTERACTION_CALLBACK);
-      expect(send.clientEventId).toBe(BROWSER_INTERACTION_SUCCESS_CLIENT_ID);
-      expect(send.chatThreadSortEventId).toBe(
-        BROWSER_INTERACTION_SUCCESS_SORT_ID,
-      );
-    },
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, browserInteractionAction(state));
-  });
-  context.mocks.api(browserUserActionsContract.complete, ({ respond }) => {
-    ordering.push("complete");
-    state = "succeeded";
-    return respond(200, browserInteractionAction(state));
-  });
-  context.mocks.api(browserContract.get, ({ params, respond }) => {
-    expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser });
-  });
-  context.mocks.api(browserContract.leaseByThread, ({ params, respond }) => {
-    expect(params.threadId).toBe(RUN_THREAD_ID);
-    return respond(200, { browser });
-  });
-
-  await setupPage({
-    context,
-    path: RUN_PATH,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  await readyChat();
-
-  await expect(
-    screen.findByText("Finish the visual challenge"),
-  ).resolves.toBeVisible();
-  const actionCard = await screen.findByTestId("browser-user-action-card");
-  click(buttonsByName("Open browser", actionCard)[0]!);
-  expect(
-    screen.queryByRole("dialog", { name: "Take over the browser" }),
-  ).toBeNull();
-  await expect(
-    screen.findByRole("complementary", { name: "Live browser" }),
-  ).resolves.toBeVisible();
-  click(await findButton("Finish step"));
-  await screen.findByRole("dialog", { name: "Take over the browser" });
-  click(await findButton("Done"));
-
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(ordering).toStrictEqual(["complete", "callback"]);
-});
-
 test("Keep feature-disabled and foreign Browser actions inert without hiding the ordinary Browser card", async () => {
   const trustedBrowserUrl = `https://app.okou.ai/browsers/${RUN_THREAD_ID}`;
   const browser = managedBrowserSession({
@@ -785,7 +650,6 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
     events: completedConversation(
       [
         `[Disabled input](${browserInputUrl()})`,
-        `[Disabled interaction](${browserInteractionUrl()})`,
         `[Foreign input](${browserInputUrl({ threadId: OTHER_THREAD_ID })})`,
         `[Research session](${trustedBrowserUrl})`,
       ].join("\n\n"),
@@ -803,7 +667,7 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
   });
   await readyChat();
   await waitFor(() => {
-    expect(screen.getAllByText("Request unavailable")).toHaveLength(2);
+    expect(screen.getAllByText("Request unavailable")).toHaveLength(1);
     expect(screen.getAllByText("Action unavailable")).toHaveLength(1);
   });
   expect(linksByName("Enter information")).toHaveLength(0);
