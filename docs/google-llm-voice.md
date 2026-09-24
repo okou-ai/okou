@@ -116,8 +116,15 @@ the project's live Maps Grounding entitlement are verified.
 
 | Use                                | Native model            | Location / hostname                       | Thinking | Output tokens |
 | ---------------------------------- | ----------------------- | ----------------------------------------- | -------- | ------------- |
-| Voice input segments               | `gemini-3.1-flash-lite` | `us` / `aiplatform.us.rep.googleapis.com` | MINIMAL  | 65,536        |
+| Voice input segments               | `gemini-3.1-flash-lite` | `us` / `aiplatform.us.rep.googleapis.com` | MINIMAL  | see below     |
 | Independent `/api/voice-io/polish` | `gemini-3.8-flash`      | `us` / `aiplatform.us.rep.googleapis.com` | LOW      | 65,536        |
+
+Voice input output caps bound generation time as well as size: a model that
+loops instead of stopping generates until the cap. A partial segment transcript
+gets 4,096 tokens. Polish rewrites saved text at no more than one token per
+character, so the final segment gets 8,192 tokens plus the saved transcript
+length and a text-only final polish gets 4,096 plus that length, both capped at
+the model maximum of 65,536.
 
 Both model cards currently list US/EU multi-region and global, with no Oregon
 region. US multi-region is an explicit exception and does not guarantee Oregon
@@ -156,10 +163,13 @@ refresh. Tokens are never persisted or logged.
 Inference reuses the existing voice recovery helper: HTTP 429/500/502/503/504,
 three attempts maximum, 1s/2s backoff respecting Retry-After, and a 15-second
 recovery budget starting after the first failed response. Healthy initial
-inference has no new 15-second limit. Retries retain their model/location and
-remaining cancellation deadline, including credential refresh. Auth is not
-retried, and a 401/403 never triggers automatic refresh/replay or another
-provider. Native Google responses use Google's own response contract.
+inference has no new 15-second limit. All provider work for one voice segment,
+including recovery, shares a 60-second deadline so the client receives a
+classified 503 / `PROVIDER_UNAVAILABLE` before the 100-second edge timeout; the
+segment diagnostic records it as `deadline_exceeded`. Retries retain their
+model/location and remaining cancellation deadline, including credential
+refresh. Auth is not retried, and a 401/403 never triggers automatic
+refresh/replay or another provider. Native Google responses use Google's own response contract.
 
 Capacity exhaustion, transient auth unavailability, and recognized Google
 fetch/body network or timeout failures use public 503 / `PROVIDER_UNAVAILABLE`.
@@ -196,8 +206,8 @@ cancellation do not add a failure record.
 standalone polish of a saved prefix, or output validation. `reason` is a fixed
 category: transport failure, HTTP rejection, blocked output,
 malformed/oversized response, truncated or non-stop output, empty/invalid
-output, missing configuration, excessive transcription/polish rate, discarded
-speech, or `unknown`. The unknown category never serializes the thrown value.
+output, missing configuration, segment deadline exceeded, excessive
+transcription/polish rate, discarded speech, or `unknown`. The unknown category never serializes the thrown value.
 
 Records include `model`/`provider` when the failed stage called Vertex,
 final/audio flags, audio/recording durations, and available

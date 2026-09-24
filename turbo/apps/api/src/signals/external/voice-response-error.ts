@@ -1,5 +1,6 @@
 type VoiceResponseFailureReason =
   | "not_configured"
+  | "deadline_exceeded"
   | "transcription_rate_exceeded"
   | "polish_rate_exceeded"
   | "polish_discarded_speech";

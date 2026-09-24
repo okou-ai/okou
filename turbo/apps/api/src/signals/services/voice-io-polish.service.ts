@@ -10,6 +10,7 @@ import { requestSignal$ } from "../context/hono";
 import { gcpLlmConfiguration, GcpLlmAuthError } from "../external/gcp-llm-auth";
 import {
   generateVertexVoice,
+  VERTEX_VOICE_MAX_OUTPUT_TOKENS,
   VertexVoiceError,
 } from "../external/vertex-voice";
 import { VoiceProviderUnavailableError } from "../external/voice-provider-request";
@@ -67,6 +68,7 @@ export const polishVoiceTranscript$ = command(
       generateVertexVoice(
         {
           model: "google/gemini-3.8-flash",
+          maxOutputTokens: VERTEX_VOICE_MAX_OUTPUT_TOKENS,
           systemPrompt: VOICE_IO_POLISH_SYSTEM_PROMPT,
           content: JSON.stringify(body),
         },

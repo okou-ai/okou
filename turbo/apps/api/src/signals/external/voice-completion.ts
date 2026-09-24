@@ -7,7 +7,11 @@ import {
 import { z } from "zod";
 
 import { safeJsonParse } from "../utils";
-import { generateVertexVoice, VOICE_INPUT_MODEL } from "./vertex-voice";
+import {
+  generateVertexVoice,
+  VERTEX_VOICE_MAX_OUTPUT_TOKENS,
+  VOICE_INPUT_MODEL,
+} from "./vertex-voice";
 import type {
   VoiceAudio,
   VoiceContentPart,
@@ -167,10 +171,24 @@ function audioContent(
   ];
 }
 
+// A transcript of one segment (at most 75 seconds of speech) needs well under
+// this. The cap bounds a model that loops instead of stopping, which otherwise
+// generates until the model maximum and outlasts the request deadline.
+const SEGMENT_TRANSCRIPT_MAX_OUTPUT_TOKENS = 4096;
+
+/** Polish rewrites the saved text, which costs at most one token per character. */
+function polishOutputTokens(savedTranscript: string, newSpeechTokens: number) {
+  return Math.min(
+    VERTEX_VOICE_MAX_OUTPUT_TOKENS,
+    savedTranscript.length + newSpeechTokens,
+  );
+}
+
 async function generateStructuredVoiceResponse<T>(
   args: VoiceCompletionRequest & {
     readonly jsonSchema: VoiceJsonSchema;
     readonly schema: z.ZodType<T>;
+    readonly maxOutputTokens: number;
   },
   signal: AbortSignal,
 ): Promise<T | null> {
@@ -217,6 +235,11 @@ export async function finishIncrementalVoice(
       ),
       jsonSchema: transcribeAndPolishJsonSchema(),
       schema: voiceIoTranscribeResponseSchema,
+      // The new transcript, then the complete recording including it.
+      maxOutputTokens: polishOutputTokens(
+        context.previousTranscript,
+        2 * SEGMENT_TRANSCRIPT_MAX_OUTPUT_TOKENS,
+      ),
     },
     signal,
   );
@@ -233,6 +256,7 @@ export async function transcribeVoice(
       content: audioContent(audio, context),
       jsonSchema: transcriptJsonSchema(),
       schema: transcriptResponseSchema,
+      maxOutputTokens: SEGMENT_TRANSCRIPT_MAX_OUTPUT_TOKENS,
     },
     signal,
   );
@@ -256,6 +280,10 @@ export async function polishLongVoiceTranscript(
       content,
       jsonSchema: polishedJsonSchema(),
       schema: polishedResponseSchema,
+      maxOutputTokens: polishOutputTokens(
+        transcript,
+        SEGMENT_TRANSCRIPT_MAX_OUTPUT_TOKENS,
+      ),
     },
     signal,
   );
