@@ -111,6 +111,11 @@ export const discordInteractionsContract = c.router({
   post: {
     method: "POST",
     path: "/api/discord/interactions",
+    headers: z.object({
+      "content-type": z.string().optional(),
+      "x-signature-ed25519": z.string().optional(),
+      "x-signature-timestamp": z.string().optional(),
+    }),
     body: c.type<string>(),
     responses: {
       200: z.object({ type: z.literal(1) }),
