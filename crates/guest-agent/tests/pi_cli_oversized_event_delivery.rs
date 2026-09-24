@@ -52,6 +52,10 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         "你好\"\\\n".repeat(450_000)
     );
     let input = format!("input-head-{SECRET}-{}-input-tail", "x".repeat(LIMIT));
+    // Numeric values reach the traversal bound without becoming reduction
+    // candidates. The final string makes the event oversized after that bound.
+    let mut structure_values = vec![json!(0); 4_100];
+    structure_values.push(json!("x".repeat(LIMIT)));
     let messages = vec![
         assistant(
             "small",
@@ -83,9 +87,7 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         ),
         assistant(
             "structure",
-            // Exceed both the delivery size and structural visit bounds with
-            // far fewer JSON nodes than a multi-million-element numeric array.
-            json!([{"type":"toolCall","id":"structure-id","name":"read","arguments":{"values":vec!["x".repeat(1100);4_100]}}]),
+            json!([{"type":"toolCall","id":"structure-id","name":"read","arguments":{"values":structure_values}}]),
             false,
         ),
         tool_result("tool-input-id", json!([{"type":"text","text":text}]), true),

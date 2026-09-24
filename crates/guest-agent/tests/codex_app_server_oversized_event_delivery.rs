@@ -60,7 +60,7 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         delivery_image::png_base64(1024, 1024)?
     );
     let image = |url: &str| serde_json::json!({"type":"input_image","image_url":url});
-    // A few thousand entries still exceed the reducer's structural visit bound;
+    // A few thousand entries still exceed the reducer's candidate bound;
     // long content keeps the event oversized without allocating 100,000 objects.
     let structure_text = "bounded-content".repeat(80);
     let mut delivery_items = serde_json::json!([
