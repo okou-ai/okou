@@ -37,11 +37,20 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
 
 4. Set the production environment variable `IOS_INTERNAL_GROUP_NAME` to the exact
    internal group name.
-5. Verify the existing `APP_STORE_CONNECT_API_KEY_BASE64`,
-   `APP_STORE_CONNECT_API_KEY_ID`, and `APP_STORE_CONNECT_API_ISSUER_ID` credentials
-   can access this app, upload builds, and manage internal build/group
-   relationships. Desktop notarization succeeding does not prove those rights.
-   Use an App Manager-capable team key for this workflow. Do not log key contents.
+5. Create a dedicated team API key with the **App Manager** role for iOS and
+   store it in the same production environment:
+
+   | Secret                                 | Value                                      |
+   | -------------------------------------- | ------------------------------------------ |
+   | `IOS_APP_STORE_CONNECT_API_KEY_BASE64` | Base64 of the downloaded `.p8` private key |
+   | `IOS_APP_STORE_CONNECT_API_KEY_ID`     | Key ID shown in App Store Connect          |
+   | `IOS_APP_STORE_CONNECT_API_ISSUER_ID`  | Team issuer ID shown in App Store Connect  |
+
+   Verify it can access this app, upload builds, and manage internal build/group
+   relationships. Keep Desktop's existing `APP_STORE_CONNECT_API_*` credentials
+   unchanged: its Developer-role notarization key does not provide the App
+   Manager permission required to assign builds to testing groups. API private
+   keys can only be downloaded once; retain a secure backup and never log them.
 
 The repository declares `ITSAppUsesNonExemptEncryption=false`: the app's
 networking uses OS TLS, Clerk uses system Security/CryptoKit, and Ably's optional
