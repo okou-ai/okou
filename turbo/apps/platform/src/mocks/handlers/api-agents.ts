@@ -70,6 +70,12 @@ export function setMockAgents(agents: MockAgentResponse[]): void {
   });
 }
 
+export function mockAgentIds(): string[] {
+  return mockAgents.map((agent) => {
+    return agent.agentId;
+  });
+}
+
 export function resetMockAgents(): void {
   mockAgents = [...DEFAULT_AGENTS];
 }
@@ -147,13 +153,38 @@ export const apiAgentsHandlers = [
     return respond(200, mockAgents);
   }),
 
-  // Exercise the staggered-deployment fallback in existing test fixtures.
-  // Tests for the new API override this handler with a bulk response.
-  mockApi(connectorAgentAccessContract.get, ({ respond }) =>
-    respond(404, {
-      error: { code: "NOT_FOUND", message: "Not found" },
-    }),
-  ),
+  // GET /api/connectors/agent-access
+  mockApi(connectorAgentAccessContract.get, ({ query, respond }) => {
+    const visibleAgentIds = mockAgentIds();
+    return respond(200, {
+      visibleAgentIds,
+      builtin: visibleAgentIds.flatMap((agentId) => {
+        return (mockEnabledConnectorSlugsByAgent.get(agentId) ?? [])
+          .filter((connectorSlug) => {
+            return !query.builtinSlug || connectorSlug === query.builtinSlug;
+          })
+          .map((connectorSlug) => {
+            return { connectorSlug, agentId };
+          });
+      }),
+      custom: visibleAgentIds.flatMap((agentId) => {
+        return (mockCustomConnectorGrantsByAgent.get(agentId) ?? [])
+          .filter((grant) => {
+            return (
+              !query.customConnectorId ||
+              grant.customConnectorId === query.customConnectorId
+            );
+          })
+          .map((grant) => {
+            return {
+              connectorId: grant.customConnectorId,
+              agentId,
+              permissionNames: grant.permissionNames,
+            };
+          });
+      }),
+    });
+  }),
 
   // GET /api/agents/:id/user-connectors
   mockApi(userBuiltinConnectorsContract.get, ({ params, respond }) => {
