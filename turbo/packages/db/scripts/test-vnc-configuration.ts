@@ -86,7 +86,7 @@ try {
     "1196_dizzy_archangel.sql",
     "1197_puzzling_aaron_stack.sql",
     "1207_smart_oracle.sql",
-    "1209_polite_sue_storm.sql",
+    "1210_equal_barracuda.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
