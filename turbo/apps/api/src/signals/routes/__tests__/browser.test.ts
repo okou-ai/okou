@@ -416,6 +416,7 @@ function mockNativeSelectTarget(args: {
     readonly empty: boolean;
   }[];
   readonly writeMatches: () => boolean;
+  readonly includeScalar?: () => boolean;
 }): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
     switch (command.method) {
@@ -448,29 +449,50 @@ function mockNativeSelectTarget(args: {
         };
       }
       case "DOM.resolveNode": {
-        return { object: { objectId: "native-select-object" } };
+        return {
+          object: {
+            objectId:
+              args.includeScalar?.() && command.params.backendNodeId === 46
+                ? "native-scalar-object"
+                : "native-select-object",
+          },
+        };
       }
       case "Runtime.callFunctionOn": {
         const declaration = String(command.params.functionDeclaration);
         if (declaration.includes("firstSpec")) {
           return { result: { value: args.writeMatches() } };
         }
-        return {
-          result: {
-            value: [
-              {
-                tagName: "SELECT",
-                inputType: args.mode(),
-                connected: true,
-                mainDocument: true,
-                writable: true,
-                siteRequired: false,
-                multiple: args.mode() === "select-multiple",
-                options: args.options(),
-              },
-            ],
-          },
+        if (declaration.includes("cloneNode")) {
+          return { result: { value: true } };
+        }
+        const select = {
+          tagName: "SELECT",
+          inputType: args.mode(),
+          connected: true,
+          mainDocument: true,
+          writable: true,
+          siteRequired: false,
+          multiple: args.mode() === "select-multiple",
+          options: args.options(),
         };
+        const scalar = {
+          tagName: "INPUT",
+          inputType: "text",
+          connected: true,
+          mainDocument: true,
+          writable: true,
+          siteRequired: false,
+          multiple: false,
+          options: [],
+        };
+        const controls =
+          args.includeScalar?.() &&
+          Array.isArray(command.params.arguments) &&
+          command.params.arguments.length > 0
+            ? [select, scalar]
+            : [select];
+        return { result: { value: controls } };
       }
       default: {
         return {};
@@ -619,6 +641,7 @@ describe("Browser user-action route", () => {
       },
     ];
     let writeMatches = true;
+    let includeScalar = false;
     mockNativeSelectTarget({
       mode: () => {
         return mode;
@@ -628,6 +651,9 @@ describe("Browser user-action route", () => {
       },
       writeMatches: () => {
         return writeMatches;
+      },
+      includeScalar: () => {
+        return includeScalar;
       },
     });
     server.use(
@@ -755,11 +781,7 @@ describe("Browser user-action route", () => {
     expect(JSON.stringify(chosen.body)).not.toContain('"same"');
     const write = browserSelectWrites().at(-1)?.[0];
     expect(write?.params.arguments).toMatchObject([
-      {
-        kind: "select",
-        mode: "select-one",
-        indices: [3],
-      },
+      { value: { kind: "select", mode: "select-one", indices: [3] } },
     ]);
     expect(JSON.stringify(write?.params.arguments)).not.toContain(
       "native-select-object",
@@ -779,10 +801,7 @@ describe("Browser user-action route", () => {
     );
     expect(chosenMulti.body.state).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
-      {
-        mode: "select-multiple",
-        indices: [2, 3],
-      },
+      { value: { mode: "select-multiple", indices: [2, 3] } },
     ]);
     const clear = await createSelect();
     const clearToken = clear.body.action.requestToken;
@@ -795,7 +814,7 @@ describe("Browser user-action route", () => {
       (await accept(apply(clearToken, [], clearFingerprint), [200])).body.state,
     ).toBe("succeeded");
     expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
-      { indices: [] },
+      { value: { indices: [] } },
     ]);
 
     const required = await createSelect(true);
@@ -824,6 +843,91 @@ describe("Browser user-action route", () => {
       (await accept(apply(requiredToken, [3], requiredFingerprint), [200])).body
         .state,
     ).toBe("uncertain");
+
+    includeScalar = true;
+    writeMatches = true;
+    const verifyMixed = async () => {
+      const createMixed = async () => {
+        return await accept(
+          userActionClient().create({
+            headers: current.claim.browserHeaders,
+            body: {
+              kind: "input",
+              callbackPrompt:
+                "Continue after selecting a region and entering a note",
+              pageTargetId: "native-input-target",
+              fields: [
+                {
+                  key: "region",
+                  label: "Region",
+                  fieldKind: "select",
+                  required: false,
+                  backendNodeId: 45,
+                },
+                {
+                  key: "note",
+                  label: "Note",
+                  fieldKind: "text",
+                  required: true,
+                  backendNodeId: 46,
+                },
+              ],
+            },
+          }),
+          [201],
+        );
+      };
+      const mixed = await createMixed();
+      const mixedToken = mixed.body.action.requestToken;
+      const mixedFingerprint =
+        (await preflight(mixedToken)).body.fields[0]?.control
+          .optionSetFingerprint ?? "";
+      expect(mixedFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      const appliedMixed = await accept(
+        userActionClient().apply({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { requestToken: mixedToken },
+          body: {
+            values: [
+              {
+                key: "region",
+                optionIndexes: [3],
+                optionSetFingerprint: mixedFingerprint,
+              },
+              { key: "note", value: "A short note" },
+            ],
+          },
+        }),
+        [200],
+      );
+      expect(appliedMixed.body.state).toBe("succeeded");
+      expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+        { value: { kind: "select", indices: [3] } },
+        { objectId: "native-scalar-object" },
+        { value: { kind: "scalar", value: "A short note" } },
+      ]);
+
+      const untouchedMixed = await createMixed();
+      const untouchedToken = untouchedMixed.body.action.requestToken;
+      expect(
+        (
+          await accept(
+            userActionClient().apply({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { requestToken: untouchedToken },
+              body: { values: [{ key: "note", value: "Only the note" }] },
+            }),
+            [200],
+          )
+        ).body.state,
+      ).toBe("succeeded");
+      expect(browserSelectWrites().at(-1)?.[0].params.arguments).toMatchObject([
+        { value: { kind: "select", indices: null } },
+        { objectId: "native-scalar-object" },
+        { value: { kind: "scalar", value: "Only the note" } },
+      ]);
+    };
+    await verifyMixed();
   });
 
   it("supports live number constraints, optional clear, and exact readback", async () => {
