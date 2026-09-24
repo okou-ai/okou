@@ -2228,7 +2228,6 @@ describe("Morning Brief preference", () => {
       status: "paused",
       enabled: false,
       unavailableReason: null,
-      lastRun: null,
     });
 
     const enabledResponses = await Promise.all([
@@ -2251,7 +2250,6 @@ describe("Morning Brief preference", () => {
       expect(response.body).toMatchObject({
         enabled: true,
         unavailableReason: null,
-        lastRun: null,
       });
     }
 
@@ -2332,7 +2330,6 @@ describe("Morning Brief preference", () => {
       status: "paused",
       enabled: false,
       unavailableReason: null,
-      lastRun: null,
     });
 
     const reenabled = await accept(
@@ -2345,7 +2342,6 @@ describe("Morning Brief preference", () => {
     expect(reenabled.body).toMatchObject({
       enabled: true,
       unavailableReason: null,
-      lastRun: null,
     });
     const after = await accept(
       installationClient().get({
@@ -2413,7 +2409,6 @@ describe("Morning Brief preference", () => {
     expect(unavailableTimezone.body).toMatchObject({
       enabled: false,
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
     const rejectedTimezone = await accept(
       morningBriefPreferenceClient().update({
@@ -2426,7 +2421,6 @@ describe("Morning Brief preference", () => {
       status: "preparing",
       enabled: true,
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
 
     const missingAgent = bdd.user();
@@ -2444,7 +2438,6 @@ describe("Morning Brief preference", () => {
     expect(unavailableAgent.body).toMatchObject({
       enabled: false,
       unavailableReason: "missing-default-agent",
-      lastRun: null,
     });
     const rejectedAgent = await accept(
       morningBriefPreferenceClient().update({
@@ -2457,7 +2450,6 @@ describe("Morning Brief preference", () => {
       status: "preparing",
       enabled: true,
       unavailableReason: "missing-default-agent",
-      lastRun: null,
     });
 
     for (const fixture of [missingTimezone.actor, missingAgent]) {
@@ -2523,7 +2515,6 @@ describe("Morning Brief preference", () => {
       enabled: true,
       status: "enabled",
       unavailableReason: null,
-      lastRun: null,
     });
 
     const paused = await accept(
@@ -2600,7 +2591,6 @@ describe("Morning Brief preference", () => {
       enabled: true,
       status: "enabled",
       unavailableReason: null,
-      lastRun: null,
     });
 
     const paused = await accept(
@@ -2757,7 +2747,6 @@ describe("Morning Brief preference", () => {
       enabled: true,
       status: "enabled",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(
       readMorningBriefAutomations(actor, onAlternateAgent),
@@ -2807,7 +2796,6 @@ describe("Morning Brief native preference projection", () => {
       enabled: true,
       status: "enabled",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
       nextRunAt: expect.any(String),
@@ -2833,7 +2821,6 @@ describe("Morning Brief native preference projection", () => {
       status: "paused",
       enabled: false,
       unavailableReason: null,
-      lastRun: null,
     });
     const projectedPause = await readBriefPreference(actor);
     expect(projectedPause.body).toStrictEqual(paused.body);
@@ -2923,7 +2910,6 @@ describe("Morning Brief native preference projection", () => {
       status: "paused",
       enabled: false,
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(readBriefSchedule(actor)).resolves.toStrictEqual({
       nextRunAt: null,
@@ -2988,7 +2974,6 @@ describe("Morning Brief native preference projection", () => {
       enabled: true,
       status: "enabled",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(
       readMorningBriefAutomations(actor, onAlternateAgent),
@@ -3005,7 +2990,6 @@ describe("Morning Brief native preference projection", () => {
     expect(unavailable.body).toMatchObject({
       enabled: false,
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
 
     // An explicit opt-out before any installation stays an opt-out, and the
@@ -3069,7 +3053,6 @@ describe("Morning Brief native preference projection", () => {
       status: "paused",
       enabled: false,
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(readBriefSchedule(pausedMember.actor)).resolves.toStrictEqual({
       nextRunAt: null,
@@ -3186,7 +3169,6 @@ describe("Morning Brief native preference projection", () => {
       enabled: false,
       status: "paused",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
     await expect(
@@ -3233,7 +3215,6 @@ describe("Morning Brief native preference projection", () => {
       status: "paused",
       enabled: false,
       unavailableReason: null,
-      lastRun: null,
     });
     // The failed copy never became the user's answer, never turned a committed
     // choice into an error, and never replayed the legacy mutation.
@@ -3324,7 +3305,6 @@ describe("Morning Brief native preference projection", () => {
       status: "paused",
       enabled: false,
       unavailableReason: null,
-      lastRun: null,
     });
     const settled = await readBriefPreference(actor);
     expect(settled.body).toStrictEqual(paused.body);
@@ -3907,7 +3887,6 @@ describe("Morning Brief default onboarding", () => {
         enabled: true,
         status: "preparing",
         unavailableReason: "missing-timezone",
-        lastRun: null,
       });
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
         0,
@@ -3947,7 +3926,6 @@ describe("Morning Brief default onboarding", () => {
         enabled: true,
         status: "preparing",
         unavailableReason: "missing-default-agent",
-        lastRun: null,
       });
       await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(
         0,
@@ -3975,7 +3953,6 @@ describe("Morning Brief default onboarding", () => {
       enabled: true,
       status: "enabled",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
     await Promise.all([tickBriefEnrollment(actor), tickBriefEnrollment(actor)]);
@@ -4005,7 +3982,6 @@ describe("Morning Brief default onboarding", () => {
       enabled: true,
       status: "enabled",
       unavailableReason: null,
-      lastRun: null,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
@@ -4054,7 +4030,6 @@ describe("Morning Brief default onboarding", () => {
     expect((await readBriefPreference(actor)).body).toMatchObject({
       status: "preparing",
       unavailableReason: "missing-timezone",
-      lastRun: null,
     });
     await Promise.all([
       initializeBriefMember(actor, "Asia/Shanghai"),

@@ -67,16 +67,17 @@ function MorningBriefStatus({
     });
   }
 
-  if (!status) {
-    return null;
-  }
   const showAlert =
     loadFailed || mutationFailed || conflicted || unavailable !== null;
+  // The live region stays mounted so a status appearing later is announced.
   return (
-    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-      {showAlert && <AlertCircle className="size-3.5 shrink-0" />}
-      {loading && <Loader2 className="size-3.5 animate-spin" />}
-      <span>{status}</span>
+    <div
+      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      aria-live="polite"
+    >
+      {status && showAlert && <AlertCircle className="size-3.5 shrink-0" />}
+      {status && loading && <Loader2 className="size-3.5 animate-spin" />}
+      {status && <span>{status}</span>}
     </div>
   );
 }
@@ -158,17 +159,12 @@ export function MorningBriefSettings() {
           return $.settings.preferences.morningBrief.description;
         })}
         status={
-          <div
-            className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-            aria-live="polite"
-          >
-            <MorningBriefStatus
-              state={state}
-              loading={loading || mutating}
-              loadFailed={loadFailed}
-              mutationFailed={mutationFailed}
-            />
-          </div>
+          <MorningBriefStatus
+            state={state}
+            loading={loading || mutating}
+            loadFailed={loadFailed}
+            mutationFailed={mutationFailed}
+          />
         }
       >
         <div className="flex shrink-0 items-center gap-2">

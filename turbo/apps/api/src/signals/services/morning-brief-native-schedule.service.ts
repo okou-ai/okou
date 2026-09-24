@@ -168,31 +168,6 @@ export async function readMorningBriefNativeSchedule(
 }
 
 /**
- * Read the member's most recent native occurrence, for the Settings account.
- *
- * Ordering is by the frozen scheduled anchor, never by `updated_at`: a
- * delivery recovery touching an older row must not make it look like the
- * latest brief. This never locks, creates, repairs or schedules anything.
- */
-export async function readLatestMorningBriefNativeOccurrence(
-  db: MorningBriefNativeReader,
-  owner: MorningBriefMemberIdentity,
-): Promise<MorningBriefNativeOccurrenceRow | undefined> {
-  const [row] = await db
-    .select()
-    .from(morningBriefNativeOccurrences)
-    .where(
-      and(
-        eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-        eq(morningBriefNativeOccurrences.userId, owner.userId),
-      ),
-    )
-    .orderBy(desc(morningBriefNativeOccurrences.scheduledFor))
-    .limit(1);
-  return row;
-}
-
-/**
  * Take the row lock in the documented order.
  *
  * Returns `undefined` when the member has no native row yet, which is the
