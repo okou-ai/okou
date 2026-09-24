@@ -812,8 +812,13 @@ describe("Discord account preferences through private controls", () => {
     const after = await accept(preference.get({ headers }), [200]);
     expect(after.body.selectedModel).toBe("claude-sonnet-5");
   });
-  it.each(["disconnect", "feature", "model policy"] as const)(
-    "rejects a model selection revoked by %s while Discord access is pending",
+  it.each([
+    "disconnect",
+    "feature",
+    "model policy",
+    "disconnect after binding read",
+  ] as const)(
+    "rejects a model selection revoked by %s during access revalidation",
     async (revocation) => {
       const scope = await fixture();
       const { headers, policies, preference, defaultPolicy } =
@@ -829,14 +834,34 @@ describe("Discord account preferences through private controls", () => {
       const reached = createDeferredPromise<void>(context.signal);
       const release = createDeferredPromise<void>(context.signal);
       let channelChecks = 0;
+      let holdMembership = false;
+      const membership =
+        context.mocks.clerk.organizations.getOrganizationMembershipList;
+      const membershipResponse = membership.getMockImplementation();
+      if (!membershipResponse) {
+        throw new Error("Expected the fixture's Clerk membership response");
+      }
+      membership.mockImplementation(async (...args) => {
+        const response = await membershipResponse(...args);
+        if (holdMembership) {
+          holdMembership = false;
+          reached.resolve();
+          await release.promise;
+        }
+        return response;
+      });
       server.use(
         http.get(
           `https://discord.com/api/v10/channels/${scope.channelId}`,
           async () => {
             channelChecks++;
             if (channelChecks === 2) {
-              reached.resolve();
-              await release.promise;
+              if (revocation === "disconnect after binding read") {
+                holdMembership = true;
+              } else {
+                reached.resolve();
+                await release.promise;
+              }
             }
             return HttpResponse.json({
               id: scope.channelId,
@@ -851,7 +876,10 @@ describe("Discord account preferences through private controls", () => {
         selectPayload(sender, menu.custom_id, "gpt-5.6-sol"),
       );
       await reached.promise;
-      if (revocation === "disconnect") {
+      if (
+        revocation === "disconnect" ||
+        revocation === "disconnect after binding read"
+      ) {
         await disconnect(scope.owner);
       } else if (revocation === "feature") {
         await enableDiscord(scope.owner, false);
