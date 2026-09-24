@@ -7,7 +7,6 @@ import {
   type PhoneUploadCompleteBody,
   type PhoneUploadInitBody,
 } from "@okouai/api-contracts/contracts/integrations";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { HttpResponse, http } from "msw";
 
@@ -163,8 +162,6 @@ export function createAgentPhoneBddApi(context: TestContext) {
     readonly timestamp: number;
     readonly signature: string;
     readonly channel: string | undefined;
-    readonly publicBrand: PublicBrand | undefined;
-    readonly publicBrandSignature: string | undefined;
   } {
     const prompt = [...capture.messages].reverse().find((message) => {
       return message.body?.includes("/agentphone/connect?") ?? false;
@@ -186,13 +183,6 @@ export function createAgentPhoneBddApi(context: TestContext) {
       timestamp,
       signature: params.get("sig") ?? "",
       channel: params.get("channel") ?? undefined,
-      publicBrand:
-        params.get("publicBrand") === "okou"
-          ? "okou"
-          : params.get("publicBrand") === "vm0"
-            ? "vm0"
-            : undefined,
-      publicBrandSignature: params.get("brandSig") ?? undefined,
     };
   }
 
