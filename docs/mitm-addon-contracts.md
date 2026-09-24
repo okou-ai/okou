@@ -49,6 +49,15 @@ without an active firewall match keeps the ordinary network fallback. The privat
 intent header is always stripped before upstream forwarding. Shared-base
 diagnostics also do not use intent to override a sole active owner.
 
+Firewall matching governs when managed connector credentials may be attached;
+it is not a blanket outbound deny rule. An inline API whose base cannot compile
+is omitted from matching. If no compiled API remains, the sandbox stays
+registered and requests use the ordinary `allow` path without resolving or
+injecting managed connector credentials. This differs from a structurally
+invalid registry entry, which is rejected. Independent request restrictions
+still apply, and a matched firewall may block a request under its permissions
+or network policy before any credentials are attached.
+
 For a shared base with a unique inactive route owner, a request that already
 carries that route's authentication material receives HTTP 409
 `connector_auth_owner_conflict` before the active base-only owner's credentials
