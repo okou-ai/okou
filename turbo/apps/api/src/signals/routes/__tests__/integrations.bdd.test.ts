@@ -7593,7 +7593,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(notConfigured.body).toStrictEqual({
       error: {
-        message: "AgentPhone is not configured",
+        message: "Phone messaging is not configured",
         code: "NOT_CONFIGURED",
       },
     });
@@ -7675,7 +7675,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(missingAgentMessage.body).toStrictEqual({
       error: {
-        message: "AgentPhone agent not found",
+        message: "Phone agent not found",
         code: "NOT_FOUND",
       },
     });
@@ -7763,7 +7763,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
     expect(unavailable.body).toStrictEqual({
       error: {
-        message: "AgentPhone verification text could not be sent",
+        message: "Verification text could not be sent",
         code: "PROVIDER_UNAVAILABLE",
       },
     });

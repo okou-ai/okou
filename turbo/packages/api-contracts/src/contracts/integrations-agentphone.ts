@@ -70,7 +70,7 @@ export const integrationsAgentPhoneContract = c.router({
       401: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Link the authenticated Okou user to an AgentPhone phone handle",
+    summary: "Link the authenticated Okou user to a phone handle",
   },
   webhook: {
     method: "POST",
@@ -83,7 +83,7 @@ export const integrationsAgentPhoneContract = c.router({
       401: z.string(),
       404: z.string(),
     },
-    summary: "Handle AgentPhone inbound message webhooks",
+    summary: "Handle inbound phone message webhooks",
   },
   getLinkStatus: {
     method: "GET",
@@ -93,7 +93,7 @@ export const integrationsAgentPhoneContract = c.router({
       200: agentPhoneLinkStatusResponseSchema,
       401: apiErrorSchema,
     },
-    summary: "Check the authenticated user's AgentPhone link status",
+    summary: "Check the authenticated user's phone link status",
   },
   startLink: {
     method: "POST",
@@ -108,7 +108,7 @@ export const integrationsAgentPhoneContract = c.router({
       409: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Send a verified AgentPhone connection link by SMS",
+    summary: "Send a verified phone connection link by SMS",
   },
   createLinkCode: {
     method: "POST",
@@ -121,7 +121,7 @@ export const integrationsAgentPhoneContract = c.router({
       409: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Create a one-time AgentPhone connection code",
+    summary: "Create a one-time phone connection code",
   },
   unlink: {
     method: "DELETE",
@@ -133,7 +133,7 @@ export const integrationsAgentPhoneContract = c.router({
       401: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Disconnect the authenticated user's AgentPhone link",
+    summary: "Disconnect the authenticated user's phone link",
   },
 });
 

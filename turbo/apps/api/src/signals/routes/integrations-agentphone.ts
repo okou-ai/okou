@@ -92,7 +92,7 @@ function notConfigured() {
     status: 503 as const,
     body: {
       error: {
-        message: "AgentPhone is not configured",
+        message: "Phone messaging is not configured",
         code: "NOT_CONFIGURED",
       },
     },
@@ -104,7 +104,7 @@ function unavailable() {
     status: 503 as const,
     body: {
       error: {
-        message: "AgentPhone verification text could not be sent",
+        message: "Verification text could not be sent",
         code: "PROVIDER_UNAVAILABLE",
       },
     },
@@ -503,7 +503,7 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
 
   if (deleted.length === 0) {
-    return notFound("No linked AgentPhone account");
+    return notFound("No linked phone number");
   }
 
   await publishAgentPhoneUserChanged(auth.userId);
@@ -807,7 +807,7 @@ function recentHistoryMessage(
 
   return {
     messageId: stringValue(item, ["messageId", "message_id", "id"]) ?? null,
-    content: content ?? (mediaUrl ? `[AgentPhone file] ${mediaUrl}` : null),
+    content: content ?? (mediaUrl ? `[Phone file] ${mediaUrl}` : null),
     direction: stringValue(item, ["direction"]) ?? null,
     channel: stringValue(item, ["channel"]) ?? null,
     fromNumber:

@@ -6,9 +6,9 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 export const messageCommand = new Command()
   .name("message")
-  .description("Send an AgentPhone text message")
+  .description("Send a phone text message")
   .requiredOption("--to <phone>", "Connected phone handle to message")
-  .option("--agent-id <id>", "AgentPhone agent ID (inferred when omitted)")
+  .option("--agent-id <id>", "Phone agent ID (inferred when omitted)")
   .option("-t, --text <message>", "Message text")
   .addHelpText(
     "after",

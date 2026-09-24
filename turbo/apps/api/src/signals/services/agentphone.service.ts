@@ -729,13 +729,10 @@ function formatAgentPhoneFileForContext(params: {
   readonly messageId: string;
   readonly mediaUrl: string;
 }): string {
-  const name = agentPhoneFilenameFromMediaUrl(
-    params.mediaUrl,
-    "agentphone-media",
-  );
+  const name = agentPhoneFilenameFromMediaUrl(params.mediaUrl, "phone-media");
   const mimetype = inferMimetype(name);
   return [
-    `[AgentPhone file] ${name} (${mimetype})`,
+    `[Phone file] ${name} (${mimetype})`,
     `   [ID] ${params.messageId}`,
   ].join("\n");
 }
@@ -912,11 +909,11 @@ function buildAgentPhoneContextBlock(
   isGroup: boolean,
 ): string {
   return [
-    "# AgentPhone Message Context",
+    "# Phone Message Context",
     "",
     isGroup
-      ? "The messages below are from an iMessage group conversation with the shared AgentPhone number. Messages closer to RELATIVE_INDEX 0 are more recent."
-      : "The messages below are from the user's text message conversation with the shared AgentPhone number. Messages closer to RELATIVE_INDEX 0 are more recent.",
+      ? "The messages below are from an iMessage group conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent."
+      : "The messages below are from the user's text message conversation with the shared phone number. Messages closer to RELATIVE_INDEX 0 are more recent.",
     "",
     formattedMessages.join("\n\n"),
     "",
@@ -1541,7 +1538,7 @@ function agentPhoneInputFiles(
             if (safeUrlParse(mediaUrl)?.protocol !== "https:") {
               throw new InputFileImportError(
                 "invalid-url",
-                "AgentPhone media URL must use HTTPS",
+                "Phone media URL must use HTTPS",
               );
             }
             return fetch(mediaUrl, { signal: downloadSignal });
