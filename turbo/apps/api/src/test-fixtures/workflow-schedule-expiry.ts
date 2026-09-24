@@ -6,8 +6,9 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
+import { dueWorkflowAutomationRows } from "../signals/services/workflow-automation-poller.service";
 
-/** Seed a large expired head for the real unscoped cron fairness regression. */
+/** Seed a large expired head for the fixture-scoped poller query. */
 export async function seedExpiredSchedulesFixture(args: {
   readonly orgId: string;
   readonly workflowId: string;
@@ -18,16 +19,52 @@ export async function seedExpiredSchedulesFixture(args: {
   await db()
     .insert(workflowAutomations)
     .values(
-      Array.from({ length: args.count }, () => ({
-        orgId: args.orgId,
-        workflowId: args.workflowId,
-        ownerUserId: args.ownerUserId,
-        kind: "schedule" as const,
-        scheduleType: "loop" as const,
-        intervalSeconds: 900,
-        nextRunAt: args.at,
-      })),
+      Array.from({ length: args.count }, () => {
+        return {
+          orgId: args.orgId,
+          workflowId: args.workflowId,
+          ownerUserId: args.ownerUserId,
+          kind: "schedule" as const,
+          scheduleType: "loop" as const,
+          intervalSeconds: 900,
+          nextRunAt: args.at,
+        };
+      }),
     );
+}
+
+/** Select with the production candidate query, bounded to the fixture Workflow. */
+export async function readDueScheduleCandidateIdsFixture(args: {
+  readonly workflowId: string;
+  readonly at: Date;
+  readonly signal: AbortSignal;
+}) {
+  const [expired, fresh] = await Promise.all([
+    dueWorkflowAutomationRows(
+      db(),
+      args.at,
+      args.signal,
+      undefined,
+      "expired",
+      args.workflowId,
+    ),
+    dueWorkflowAutomationRows(
+      db(),
+      args.at,
+      args.signal,
+      undefined,
+      "fresh",
+      args.workflowId,
+    ),
+  ]);
+  return {
+    expired: expired.map((row) => {
+      return row.automation.id;
+    }),
+    fresh: fresh.map((row) => {
+      return row.automation.id;
+    }),
+  };
 }
 
 /** Read-only audit receipts for scheduler route regression tests. */

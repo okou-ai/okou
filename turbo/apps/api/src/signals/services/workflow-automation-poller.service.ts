@@ -554,7 +554,7 @@ async function ensureDueWorkflowAutomationChatThread(
   });
 }
 
-async function dueWorkflowAutomationRows(
+export async function dueWorkflowAutomationRows(
   db: Db,
   currentTime: Date,
   signal: AbortSignal,
@@ -567,6 +567,7 @@ async function dueWorkflowAutomationRows(
     | "once"
     | "once-retry"
     | "once-expired" = "legacy",
+  workflowId?: string,
 ): Promise<DueWorkflowAutomationRow[]> {
   const cutoff = new Date(currentTime.getTime() - SCHEDULE_GRACE_MS);
   const eligibleDeferral = or(
@@ -672,6 +673,9 @@ async function dueWorkflowAutomationRows(
         automationId === undefined
           ? undefined
           : eq(workflowAutomations.id, automationId),
+        workflowId === undefined
+          ? undefined
+          : eq(workflowAutomations.workflowId, workflowId),
         eq(workflowAutomations.enabled, true),
         eq(workflowAutomations.kind, "schedule"),
         lte(workflowAutomations.nextRunAt, currentTime),

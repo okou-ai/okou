@@ -22,17 +22,24 @@ export const workflowScheduleSkips = pgTable(
   {
     automationId: uuid("automation_id")
       .notNull()
-      .references(() => workflowAutomations.id, { onDelete: "cascade" }),
+      .references(
+        () => {
+          return workflowAutomations.id;
+        },
+        { onDelete: "cascade" },
+      ),
     scheduledAnchorAt: timestamp("scheduled_anchor_at").notNull(),
     skippedAt: timestamp("skipped_at").notNull(),
   },
-  (table) => [
-    primaryKey({
-      name: "workflow_schedule_skips_pk",
-      columns: [table.automationId, table.scheduledAnchorAt],
-    }),
-    index("idx_workflow_schedule_skips_at").on(table.skippedAt),
-  ],
+  (table) => {
+    return [
+      primaryKey({
+        name: "workflow_schedule_skips_pk",
+        columns: [table.automationId, table.scheduledAnchorAt],
+      }),
+      index("idx_workflow_schedule_skips_at").on(table.skippedAt),
+    ];
+  },
 );
 
 /** Native Morning Brief has no required legacy automation identity. */
@@ -45,24 +52,26 @@ export const morningBriefNativeScheduleSkips = pgTable(
     scheduledAnchorAt: timestamp("scheduled_anchor_at").notNull(),
     skippedAt: timestamp("skipped_at").notNull(),
   },
-  (table) => [
-    primaryKey({
-      name: "morning_brief_native_schedule_skips_pk",
-      columns: [
-        table.orgId,
-        table.userId,
-        table.ownerEpoch,
-        table.scheduledAnchorAt,
-      ],
-    }),
-    foreignKey({
-      name: "fk_morning_brief_native_schedule_skips_owner",
-      columns: [table.orgId, table.userId],
-      foreignColumns: [
-        morningBriefNativeSchedules.orgId,
-        morningBriefNativeSchedules.userId,
-      ],
-    }).onDelete("cascade"),
-    index("idx_morning_brief_native_schedule_skips_at").on(table.skippedAt),
-  ],
+  (table) => {
+    return [
+      primaryKey({
+        name: "morning_brief_native_schedule_skips_pk",
+        columns: [
+          table.orgId,
+          table.userId,
+          table.ownerEpoch,
+          table.scheduledAnchorAt,
+        ],
+      }),
+      foreignKey({
+        name: "fk_morning_brief_native_schedule_skips_owner",
+        columns: [table.orgId, table.userId],
+        foreignColumns: [
+          morningBriefNativeSchedules.orgId,
+          morningBriefNativeSchedules.userId,
+        ],
+      }).onDelete("cascade"),
+      index("idx_morning_brief_native_schedule_skips_at").on(table.skippedAt),
+    ];
+  },
 );

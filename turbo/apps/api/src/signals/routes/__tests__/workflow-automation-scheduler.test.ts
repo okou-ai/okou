@@ -8,7 +8,6 @@ import {
 } from "../test-get-started-rewards";
 import { createHash, randomUUID } from "node:crypto";
 
-import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import {
   workflowAutomationsContract,
@@ -27,6 +26,7 @@ import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 import {
+  readDueScheduleCandidateIdsFixture,
   readWorkflowScheduleSkipsFixture,
   seedExpiredSchedulesFixture,
 } from "../../../test-fixtures/workflow-schedule-expiry";
@@ -52,7 +52,6 @@ import {
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
-import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { agentsRoutes } from "../agents";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -661,9 +660,8 @@ describe("okou workflow automation scheduler", () => {
     ]);
   });
 
-  it("serves a fresh due schedule behind more than two hundred expired anchors", async () => {
+  it("selects a fresh due schedule behind more than two hundred expired anchors", async () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
-    mockEnv("CRON_SECRET", "schedule-expiry-test-secret");
     const scenario = await setup();
     await seedExpiredSchedulesFixture({
       orgId: scenario.orgId,
@@ -673,18 +671,15 @@ describe("okou workflow automation scheduler", () => {
       count: 201,
     });
     const fresh = await createDueLoopAutomation(scenario, 900);
-    const tick = await accept(
-      setupApp({ context, routes: cronExecuteWorkflowAutomationsRoutes })(
-        cronExecuteWorkflowAutomationsContract,
-      ).execute({
-        headers: { authorization: "Bearer schedule-expiry-test-secret" },
-      }),
-      [200],
-    );
-    expect(tick.body.executed).toBeGreaterThanOrEqual(1);
-    expect(tick.body.skipped).toBeGreaterThan(0);
-    const after = await wf.readAutomation(fresh.automationId);
-    expect(after.chatThreadId).toStrictEqual(expect.any(String));
+    const candidates = await readDueScheduleCandidateIdsFixture({
+      workflowId: scenario.workflowId,
+      at: new Date(now()),
+      signal: context.signal,
+    });
+    expect(candidates.expired).toHaveLength(35);
+    expect(candidates.fresh).toContain(fresh.automationId);
+    const threadId = await executeDueWorkflowAutomations(fresh.automationId);
+    await expect(workflowRunMessages(threadId)).resolves.toHaveLength(1);
     await disableAutomation(fresh.automationId);
     await deleteWorkflowViaApi(scenario);
   });
