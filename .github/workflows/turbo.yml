@@ -41,6 +41,8 @@ on:
         required: false
       CLERK_WEBHOOK_SIGNING_SECRET:
         required: false
+      CODEX_OAUTH_E2E_AUTH_JSON:
+        required: false
       CODECOV_TOKEN:
         required: false
       CRON_SECRET:
