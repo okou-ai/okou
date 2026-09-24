@@ -1,3 +1,4 @@
+import { reserveFixtureChatEventSequence } from "./chat-event-sequences";
 import { createHash, randomUUID } from "node:crypto";
 
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
@@ -23,7 +24,7 @@ import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
@@ -2821,11 +2822,9 @@ async function appendHistoricalGoalMarker(
     readonly content?: string;
   },
 ) {
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({ lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1` })
-    .where(eq(chatThreads.id, event.chatThreadId))
-    .returning({ seqId: chatThreads.lastChatEventSeqId });
+  const thread = {
+    seqId: await reserveFixtureChatEventSequence(tx, event.chatThreadId, 1),
+  };
   if (!thread) {
     throw new Error("Missing historical marker thread");
   }

@@ -6,7 +6,7 @@ import {
 } from "@okouai/db/operations/account-erasure";
 import { accountErasureJobs } from "@okouai/db/schema/account-erasure";
 import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { morningBriefInstalledPreferences } from "@okouai/db/schema/morning-brief-installed-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import {

@@ -1,4 +1,5 @@
 import {
+  index,
   integer,
   pgTable,
   text,
@@ -44,6 +45,7 @@ export const githubChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      index("idx_github_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex("idx_github_chat_thread_routes_install_repo_subject_user").on(
         table.installationId,
         table.repo,

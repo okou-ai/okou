@@ -51,7 +51,7 @@ import {
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { parseScheduledAtTime } from "@okouai/core/timezone";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";

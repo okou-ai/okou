@@ -967,6 +967,41 @@
       "when": 1790257560119,
       "tag": "1215_retire_native_morning_brief_admission",
       "breakpoints": true
+    },
+    {
+      "idx": 1216,
+      "version": "7",
+      "when": 1790257660119,
+      "tag": "1216_chat_event_write_expansion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1217,
+      "version": "7",
+      "when": 1790257689693,
+      "tag": "1217_chat_event_sequence_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1218,
+      "version": "7",
+      "when": 1790257705338,
+      "tag": "1218_backfill_chat_event_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 1219,
+      "version": "7",
+      "when": 1790257715162,
+      "tag": "1219_prepare_chat_event_routing_and_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 1220,
+      "version": "7",
+      "when": 1790257729937,
+      "tag": "1220_chat_thread_sequence_erasure_index",
+      "breakpoints": true
     }
   ]
 }

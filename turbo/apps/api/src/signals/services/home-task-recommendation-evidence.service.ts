@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chatEventCompatibilityRole } from "@okouai/api-contracts/contracts/chat-events";
 import { agentRuns } from "@okouai/db/schema/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, desc, eq, inArray, notExists } from "drizzle-orm";
 
 import { stripMarkdown } from "../../lib/strip-markdown";
