@@ -1,7 +1,13 @@
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ChevronRight, Monitor, Terminal } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  Monitor,
+  Network,
+  Terminal,
+} from "lucide-react";
 
 import type {
   RemoteAccessProtocol,
@@ -208,8 +214,11 @@ export function ThreadRemoteAccessSection({
         render={
           <button
             type="button"
-            className="flex w-full items-center gap-2 border-t border-border/50 px-3 py-2 text-left text-sm text-foreground hover:bg-state-hover"
+            className="flex w-full items-center gap-2 rounded-md border-t border-border/50 px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-state-hover"
           >
+            <span className="flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground">
+              <Network size={16} aria-hidden="true" />
+            </span>
             <span className="min-w-0 flex-1 truncate">{title}</span>
             <span className="shrink-0 text-xs text-muted-foreground">
               {enabledCount === null
