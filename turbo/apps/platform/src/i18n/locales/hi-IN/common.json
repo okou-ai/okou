@@ -1183,7 +1183,7 @@
         "everythingInBuiltForTeams": "{{plan}} की हर सुविधा, टीमों के लिए तैयार",
         "included": "शामिल",
         "liveBrowser": "एजेंट का लाइव ब्राउज़र देखें और कमान लें",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "ज़्यादा कस्टम कनेक्टर और चैनल इंटीग्रेशन",
         "supportEmail": "ईमेल सहायता",
         "supportPriority": "प्राथमिकता सहायता",
@@ -4285,7 +4285,6 @@
       "documentTitles": {
         "experience": "आपका AI अनुभव",
         "industry": "अपना क्षेत्र चुनें",
-        "profile": "आपकी प्रोफ़ाइल",
         "ready": "Okou तैयार है",
         "skills": "अपनी skills इम्पोर्ट करें",
         "slack": "Slack में Okou जोड़ें",
@@ -4348,17 +4347,6 @@
       "industry": {
         "copy": "Okou आपके और आपकी टीम के लिए काम का सहायक है। यह बिखरी जानकारी को क्लाउड में पूरे हुए काम में बदलता है। अपने लिए सही पहला टास्क पाने के लिए अपना क्षेत्र चुनें।",
         "title": "आप किस तरह का काम करते हैं?"
-      },
-      "profile": {
-        "communicationStyle": "आप कैसे संवाद करते हैं",
-        "copy": "आपके जुड़े हुए खातों के आधार पर आपके काम की पहली झलक।",
-        "failed": "अभी आपकी प्रोफ़ाइल नहीं बन सकी। फिर कोशिश करें या आगे बढ़ें।",
-        "heading": "आपकी प्रोफ़ाइल",
-        "loading": "जुड़े हुए काम से आपकी प्रोफ़ाइल बनाई जा रही है…",
-        "priorities": "संभावित प्राथमिकताएँ",
-        "professionalIdentity": "आपका काम",
-        "retry": "फिर कोशिश करें",
-        "title": "हमें आपके बारे में यह पता चला"
       },
       "skills": {
         "copied": "कॉपी हो गया",

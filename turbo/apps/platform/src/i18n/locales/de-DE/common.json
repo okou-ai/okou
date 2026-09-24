@@ -1183,7 +1183,7 @@
         "everythingInBuiltForTeams": "Alles aus {{plan}}, gemacht für Teams",
         "included": "Enthalten",
         "liveBrowser": "Dem Live-Browser eines Agents zusehen und übernehmen",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "Mehr Custom Connectors & Kanal-Integrationen",
         "supportEmail": "E-Mail-Support",
         "supportPriority": "Priorisierter Support",
@@ -4285,7 +4285,6 @@
       "documentTitles": {
         "experience": "Deine KI-Erfahrung",
         "industry": "Bereich wählen",
-        "profile": "Ihr Profil",
         "ready": "Okou ist bereit",
         "skills": "Skills importieren",
         "slack": "Okou zu Slack hinzufügen",
@@ -4348,17 +4347,6 @@
       "industry": {
         "copy": "Okou ist der Arbeitsassistent für dich und dein Team. Es macht aus verstreuten Informationen erledigte Arbeit, in der Cloud. Wähle dein Feld für eine passende erste Aufgabe.",
         "title": "Welche Arbeit machst du?"
-      },
-      "profile": {
-        "communicationStyle": "So kommunizieren Sie",
-        "copy": "Ein erster Blick auf Ihre Arbeit, basierend auf den verbundenen Konten.",
-        "failed": "Wir konnten Ihr Profil gerade nicht erstellen. Versuchen Sie es erneut oder fahren Sie fort.",
-        "heading": "Ihr Profil",
-        "loading": "Ihr Profil wird aus Ihren verbundenen Konten erstellt…",
-        "priorities": "Mögliche Prioritäten",
-        "professionalIdentity": "Ihre Arbeit",
-        "retry": "Erneut versuchen",
-        "title": "Das haben wir über Sie erfahren"
       },
       "skills": {
         "copied": "Kopiert",

@@ -1182,7 +1182,7 @@
         "everythingInBuiltForTeams": "{{plan}} の全機能をチーム向けに",
         "included": "含まれるもの",
         "liveBrowser": "エージェントのライブブラウザを見て操作を奪う",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4 Pro",
+        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "カスタムコネクターとチャネル連携をより多く",
         "supportEmail": "メールサポート",
         "supportPriority": "優先サポート",
@@ -4269,7 +4269,6 @@
       "documentTitles": {
         "experience": "AI の利用経験",
         "industry": "分野を選ぶ",
-        "profile": "あなたのプロフィール",
         "ready": "Okou の準備ができました",
         "skills": "スキルをインポート",
         "slack": "Okou を Slack に追加",
@@ -4332,17 +4331,6 @@
       "industry": {
         "copy": "Okou は、あなたとチームのための仕事のアシスタントです。散らばった情報を、クラウドで完了した仕事に変えます。分野を選ぶと、合った最初のタスクを提案します。",
         "title": "どんな仕事をしていますか？"
-      },
-      "profile": {
-        "communicationStyle": "コミュニケーションのスタイル",
-        "copy": "接続したアカウントをもとに、あなたの仕事を初めて整理しました。",
-        "failed": "今はプロフィールを作成できません。再試行するか、次に進んでください。",
-        "heading": "あなたのプロフィール",
-        "loading": "接続した仕事からプロフィールを作成しています…",
-        "priorities": "考えられる優先事項",
-        "professionalIdentity": "あなたの仕事",
-        "retry": "再試行",
-        "title": "あなたについてわかったこと"
       },
       "skills": {
         "copied": "コピーしました",

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.5...runner-remote-v0.3.0) (2026-09-24)
+
+
+### Features
+
+* **vnc:** admit apple direct srp over mac ssh loopback ([#36556](https://github.com/okou-ai/okou/issues/36556)) ([737563c](https://github.com/okou-ai/okou/commit/737563c6c3d95b13cf53480ddb8f34ce9709cae9))
+
 ## [0.2.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.2.4...runner-remote-v0.2.5) (2026-09-24)
 
 

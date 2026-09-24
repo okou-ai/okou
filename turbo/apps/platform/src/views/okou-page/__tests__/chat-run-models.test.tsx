@@ -486,9 +486,9 @@ test("Preserve the current execution mode for an active-run follow-up", async ()
 
 test("Preserve which model a message was sent with", async () => {
   let sentDocument: MockChatEventInput["userMessage"];
-  configureModelPolicies(["claude-sonnet-4-6"]);
+  configureModelPolicies(["claude-sonnet-5"]);
   installRunChat({
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     onRunCreate: (body) => {
       sentDocument = body.userMessage;
     },
@@ -498,17 +498,15 @@ test("Preserve which model a message was sent with", async () => {
 
   await readyChat();
   await expect(
-    composerModelTrigger("Claude Sonnet 4.6"),
-  ).resolves.toHaveTextContent("Claude Sonnet 4.6");
+    composerModelTrigger("Claude Sonnet 5"),
+  ).resolves.toHaveTextContent("Claude Sonnet 5");
   await sendText("Preserve this model attribution");
   await expect(
     screen.findByText("Preserve this model attribution"),
   ).resolves.toBeVisible();
   expect(
     sentDocument?.parts.some((part) => {
-      return (
-        part.type === "model" && part.selectedModel === "claude-sonnet-4-6"
-      );
+      return part.type === "model" && part.selectedModel === "claude-sonnet-5";
     }),
   ).toBeTruthy();
 });

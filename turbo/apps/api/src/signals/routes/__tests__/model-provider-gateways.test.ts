@@ -283,6 +283,46 @@ describe("custom model provider gateway routes", () => {
         modelMappings: { "gpt-5.6-sol": "openai/gpt-5.5" },
       },
     },
+    {
+      name: "retired DeepSeek V4 Pro model mapping",
+      surface: {
+        protocol: "openai-responses",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "deepseek-v4-pro": "old-deployment" },
+      },
+    },
+    {
+      name: "retired DeepSeek V4 Pro upstream behind an active model mapping",
+      surface: {
+        protocol: "openai-responses",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "deepseek-v4-flash": "deepseek/deepseek-v4-pro" },
+      },
+    },
+    {
+      name: "retired Claude Sonnet 4.6 upstream behind an active model mapping",
+      surface: {
+        protocol: "anthropic-messages",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "claude-sonnet-5": "anthropic/claude-sonnet-4.6" },
+      },
+    },
+    {
+      name: "retired Claude Opus 4.8 upstream behind an active model mapping",
+      surface: {
+        protocol: "anthropic-messages",
+        apiBaseUrl: "https://gateway.example.com",
+        authHeaderName: "Authorization",
+        authHeaderTemplate: "Bearer {{secret}}",
+        modelMappings: { "claude-opus-5-5": "claude-opus-4-8" },
+      },
+    },
   ])("rejects $name", async ({ surface }) => {
     useSession();
     const response = await accept(

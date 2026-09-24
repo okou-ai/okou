@@ -1,6 +1,6 @@
 [package]
 name = "runner-supervisor"
-version = "0.1.4"
+version = "0.1.5"
 edition.workspace = true
 description = "Runner start-loop idle, heartbeat, and orphan orchestration"
 
@@ -8,6 +8,8 @@ description = "Runner start-loop idle, heartbeat, and orphan orchestration"
 test-support = []
 
 [dependencies]
+api-contracts.workspace = true
+chrono = { workspace = true, features = ["now"] }
 runner-executor.workspace = true
 runner-host.workspace = true
 runner-lifecycle.workspace = true
@@ -25,7 +27,6 @@ runner-lifecycle = { workspace = true, features = ["test-support"] }
 runner-storage.workspace = true
 sandbox-mock.workspace = true
 serde_json = { workspace = true, features = ["std"] }
-api-contracts.workspace = true
 async-trait.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["test-util"] }

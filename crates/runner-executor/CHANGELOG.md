@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.7...runner-executor-v0.1.8) (2026-09-24)
+
+
+### Bug Fixes
+
+* **runner:** reject codex backfill timeout sandbox reuse ([#36666](https://github.com/okou-ai/okou/issues/36666)) ([c26dd10](https://github.com/okou-ai/okou/commit/c26dd1068f4f1f6264253014100cff096492246f))
+
 ## [0.1.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.1.6...runner-executor-v0.1.7) (2026-09-24)
 
 

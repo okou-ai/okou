@@ -1182,7 +1182,7 @@
         "everythingInBuiltForTeams": "包含{{plan}}的全部功能，并为团队打造",
         "included": "已包含",
         "liveBrowser": "实时观看智能体的浏览器，随时接管",
-        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4 Pro",
+        "models": "Claude Opus 5、GPT 5.6 Sol、DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "更多自定义连接器和渠道集成",
         "supportEmail": "邮件支持",
         "supportPriority": "优先支持",
@@ -4269,7 +4269,6 @@
       "documentTitles": {
         "experience": "你的AI使用经验",
         "industry": "选择你的领域",
-        "profile": "你的用户画像",
         "ready": "Okou已就绪",
         "skills": "导入你的技能",
         "slack": "把Okou添加到Slack",
@@ -4332,17 +4331,6 @@
       "industry": {
         "copy": "Okou 是你和团队的工作助手，在云端把零散的信息变成完成的工作。选择你的领域，获取适合你的第一项任务。",
         "title": "你主要做哪类工作？"
-      },
-      "profile": {
-        "communicationStyle": "你的沟通方式",
-        "copy": "根据你连接的账号，初步了解你的工作。",
-        "failed": "暂时无法生成用户画像。你可以重试或继续。",
-        "heading": "你的用户画像",
-        "loading": "正在根据你连接的工作内容生成用户画像…",
-        "priorities": "可能关注的重点",
-        "professionalIdentity": "你的工作",
-        "retry": "重试",
-        "title": "这是我们对你的初步了解"
       },
       "skills": {
         "copied": "已复制",

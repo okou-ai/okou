@@ -205,13 +205,6 @@ describe("CHAT effort: thread configuration", () => {
       effectiveEffort: "high",
     },
     {
-      model: "deepseek-v4-pro",
-      effort: "max",
-      pi: true,
-      providerType: "openrouter-codex",
-      effectiveEffort: "high",
-    },
-    {
       model: "claude-fable-5-1",
       effort: "ultracode",
       pi: false,

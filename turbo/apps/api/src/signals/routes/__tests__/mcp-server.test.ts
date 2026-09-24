@@ -973,7 +973,7 @@ async function creationFixture(options: { withDefaultAgent?: boolean } = {}) {
   const { providerId } = await runs.ensureOrgModelProvider(f.actor);
   await runs.updateOrgModelPolicies(
     f.actor,
-    (["claude-sonnet-5", "claude-sonnet-4-6"] as const).map((model) => {
+    (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
       return {
         model,
         isDefault: model === "claude-sonnet-5",
@@ -1338,7 +1338,7 @@ describe("MCP chat discovery and creation", () => {
         requestId: requestId.toUpperCase(),
         agentId: f.agent.agentId.toUpperCase(),
         title: "Review the quarterly plan",
-        model: "claude-sonnet-4-6",
+        model: "claude-opus-5",
       },
     );
     expectSubstantialCompactSuccess(createdResult);
@@ -1351,8 +1351,8 @@ describe("MCP chat discovery and creation", () => {
       title: "Review the quarterly plan",
       titleTruncated: false,
       model: {
-        selectedModel: "claude-sonnet-4-6",
-        effectiveModel: "claude-sonnet-4-6",
+        selectedModel: "claude-opus-5",
+        effectiveModel: "claude-opus-5",
         source: "thread",
         admission: "checked_on_send",
       },
@@ -1516,7 +1516,7 @@ describe("MCP chat discovery and creation", () => {
         modelProviderId: f.providerId,
       },
       {
-        model: "claude-sonnet-4-6",
+        model: "claude-opus-5",
         isDefault: true,
         defaultProviderType: "anthropic-api-key",
         credentialScope: "org",
@@ -1672,7 +1672,7 @@ describe("MCP chat discovery and creation", () => {
       { ...args, message: "Changed message" },
       { ...args, agentId: secondAgent.agentId },
       { ...args, agentId: undefined },
-      { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: "claude-opus-5" },
       { ...args, model: undefined },
       {
         requestId: args.requestId,
@@ -1769,7 +1769,7 @@ describe("MCP chat discovery and creation", () => {
     await f.chat.updateThreadModelSelection(
       f.actor,
       args.requestId,
-      "claude-sonnet-4-6",
+      "claude-opus-5",
     );
     const before = await f.chat.readThreadMetadata(f.actor, args.requestId);
     await expect(createThread(token, args)).resolves.toMatchObject({
@@ -1777,8 +1777,8 @@ describe("MCP chat discovery and creation", () => {
       replayed: true,
       title: "Renamed after creation",
       model: {
-        selectedModel: "claude-sonnet-4-6",
-        effectiveModel: "claude-sonnet-4-6",
+        selectedModel: "claude-opus-5",
+        effectiveModel: "claude-opus-5",
       },
     });
     await expect(
@@ -1788,7 +1788,7 @@ describe("MCP chat discovery and creation", () => {
       { ...args, title: "Different intent" },
       { ...args, title: undefined },
       { ...args, agentId: undefined },
-      { ...args, model: "claude-sonnet-4-6" },
+      { ...args, model: "claude-opus-5" },
       { ...args, model: undefined },
     ]) {
       const result = await callTool(token, "create_chat_thread", conflicting);
@@ -1839,14 +1839,14 @@ describe("MCP chat discovery and creation", () => {
       threadId: created.threadId,
       patch: {
         title: "Newer combined state",
-        model: "claude-sonnet-4-6",
+        model: "claude-opus-5",
       },
     });
     expect(second).toMatchObject({
       title: "Newer combined state",
       model: {
-        selectedModel: "claude-sonnet-4-6",
-        effectiveModel: "claude-sonnet-4-6",
+        selectedModel: "claude-opus-5",
+        effectiveModel: "claude-opus-5",
       },
       replayed: false,
     });
@@ -1860,7 +1860,7 @@ describe("MCP chat discovery and creation", () => {
     ).resolves.toMatchObject({
       acceptedAt: first.acceptedAt,
       title: "Newer combined state",
-      model: { selectedModel: "claude-sonnet-4-6" },
+      model: { selectedModel: "claude-opus-5" },
       replayed: true,
     });
     expect(
@@ -2015,7 +2015,7 @@ describe("MCP chat discovery and creation", () => {
     for (const patch of [
       { model: "not-a-supported-model" },
       { title: "Must roll back", model: "not-a-supported-model" },
-      { title: "Must roll back denied model", model: "claude-opus-4-8" },
+      { title: "Must roll back denied model", model: "claude-opus-5-5" },
     ]) {
       const result = await callTool(token, "update_chat_thread", {
         requestId: randomUUID(),
@@ -2059,7 +2059,7 @@ describe("MCP chat discovery and creation", () => {
     const args = {
       requestId: randomUUID(),
       threadId: created.threadId,
-      patch: { title: "One accepted update", model: "claude-sonnet-4-6" },
+      patch: { title: "One accepted update", model: "claude-opus-5" },
     };
     const results = await Promise.all([
       updateThread(token, args),
@@ -2075,7 +2075,7 @@ describe("MCP chat discovery and creation", () => {
     await expect(getThread(token, created.threadId)).resolves.toMatchObject({
       thread: {
         title: "One accepted update",
-        model: { selectedModel: "claude-sonnet-4-6" },
+        model: { selectedModel: "claude-opus-5" },
       },
     });
   });
@@ -7564,7 +7564,7 @@ describe("external MCP entry", () => {
     const { providerId } = await runs.ensureOrgModelProvider(f.actor);
     await runs.updateOrgModelPolicies(
       f.actor,
-      (["claude-sonnet-5", "claude-sonnet-4-6"] as const).map((model) => {
+      (["claude-sonnet-5", "claude-opus-5"] as const).map((model) => {
         return {
           model,
           isDefault: model === "claude-sonnet-5",
@@ -7583,11 +7583,11 @@ describe("external MCP entry", () => {
     await f.chat.updateThreadModelSelection(
       f.actor,
       created.id,
-      "claude-sonnet-4-6",
+      "claude-opus-5",
     );
     expect((await getThread(token, created.id)).thread.model).toStrictEqual({
-      selectedModel: "claude-sonnet-4-6",
-      effectiveModel: "claude-sonnet-4-6",
+      selectedModel: "claude-opus-5",
+      effectiveModel: "claude-opus-5",
       source: "thread",
       admission: "checked_on_send",
     });

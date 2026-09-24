@@ -950,8 +950,22 @@
     {
       "idx": 1213,
       "version": "7",
-      "when": 1790254318468,
-      "tag": "1213_get_started_imessage_quest",
+      "when": 1790254313135,
+      "tag": "1213_retire_sonnet_4_6_opus_4_8_deepseek_v4_pro",
+      "breakpoints": true
+    },
+    {
+      "idx": 1214,
+      "version": "7",
+      "when": 1790255895068,
+      "tag": "1214_chat_search_user_tsv_gin",
+      "breakpoints": true
+    },
+    {
+      "idx": 1215,
+      "version": "7",
+      "when": 1790258576015,
+      "tag": "1215_get_started_imessage_quest",
       "breakpoints": true
     }
   ]
