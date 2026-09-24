@@ -6477,7 +6477,7 @@
       }
     },
     "paidTools": {
-      "description": "Scegli gli strumenti a pagamento che Okou può usare nelle tue attività. Ogni utilizzo consuma crediti.",
+      "description": "Questi strumenti consumano crediti integrati e Okou li usa automaticamente mentre lavora alle tue attività. Se disattivi uno strumento, Okou non lo userà.",
       "disabledForCreation": "{{tool}} è disattivato per te",
       "loadError": "Impossibile caricare le impostazioni.",
       "loading": "Caricamento delle impostazioni…",
@@ -6487,7 +6487,7 @@
       "saving": "Salvataggio…",
       "scope": "Queste impostazioni si applicano solo a te in {{workspace}}.",
       "timing": "Le modifiche valgono per le esecuzioni future. Le attività in corso o già preparate potrebbero mantenere le impostazioni precedenti.",
-      "title": "Strumenti a pagamento",
+      "title": "Strumenti integrati",
       "tools": {
         "avatar-video-generation": {
           "description": "Crea video con avatar parlanti.",
