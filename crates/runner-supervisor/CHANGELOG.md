@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.4...runner-supervisor-v0.1.5) (2026-09-24)
+
+
+### Refactoring
+
+* **runner:** move orphan ownership to supervisor ([#36668](https://github.com/okou-ai/okou/issues/36668)) ([f170598](https://github.com/okou-ai/okou/commit/f1705989c5e591f2c5ce1f7f26dafd245919b4c5))
+
 ## [0.1.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.1.3...runner-supervisor-v0.1.4) (2026-09-24)
 
 

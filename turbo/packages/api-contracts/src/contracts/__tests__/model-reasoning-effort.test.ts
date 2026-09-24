@@ -99,6 +99,20 @@ describe("chat reasoning effort capabilities", () => {
     ).toBe(false);
   });
 
+  it("keeps parsing persisted settings for retired run models", () => {
+    const stored = {
+      "claude-sonnet-4-6": { effort: "max" },
+      "claude-opus-4-8": { effort: "extra" },
+      "deepseek-v4-pro": { effort: "high" },
+      "gpt-5.5": { effort: "xhigh" },
+      "claude-sonnet-5": { effort: "medium" },
+    };
+    expect(modelSettingsSchema.parse(stored)).toStrictEqual(stored);
+    expect(defaultModelReasoningEffort("claude-sonnet-4-6")).toBe("high");
+    expect(defaultModelReasoningEffort("claude-opus-4-8")).toBe("high");
+    expect(defaultModelReasoningEffort("deepseek-v4-pro")).toBe("high");
+  });
+
   it("recognizes native and provider-prefixed model identities", () => {
     expect(getModelReasoningEfforts("openai/gpt-5.6-terra")).toStrictEqual(
       getModelReasoningEfforts("gpt-5.6-terra"),

@@ -8,6 +8,37 @@ Releases before September 2026 are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.671.0](https://github.com/okou-ai/okou/compare/api-v1.670.0...api-v1.671.0) (2026-09-24)
+
+
+### Features
+
+* **vnc:** admit apple direct srp over mac ssh loopback ([#36556](https://github.com/okou-ai/okou/issues/36556)) ([737563c](https://github.com/okou-ai/okou/commit/737563c6c3d95b13cf53480ddb8f34ce9709cae9))
+
+
+### Bug Fixes
+
+* **agentphone:** recognize imessage mentions without the at-sign ([#36683](https://github.com/okou-ai/okou/issues/36683)) ([7372271](https://github.com/okou-ai/okou/commit/7372271772f2c54f31a3098eb0a85a467e2f0b3d))
+* **agentphone:** remove vendor name and brand signature from phone surfaces ([#36651](https://github.com/okou-ai/okou/issues/36651)) ([bc12388](https://github.com/okou-ai/okou/commit/bc12388e72374f8ffa7d06a401a0b3235e08a015))
+* **api:** audit expired schedules and prevent poller starvation ([#36691](https://github.com/okou-ai/okou/issues/36691)) ([6f85fb5](https://github.com/okou-ai/okou/commit/6f85fb5862331ff5ac5683ca0ed749efb13c36a8))
+* **api:** delete model policies with an empty or deleted organization ([#36684](https://github.com/okou-ai/okou/issues/36684)) ([83f56c3](https://github.com/okou-ai/okou/commit/83f56c313ffa1e3f4e29aad1a881817e6b4ef520)), closes [#36680](https://github.com/okou-ai/okou/issues/36680)
+* **api:** remove audit links from integration messages ([#36675](https://github.com/okou-ai/okou/issues/36675)) ([6a677c0](https://github.com/okou-ai/okou/commit/6a677c04839fd7d2aee1aa5f3280c0638136068e))
+
+
+### Performance Improvements
+
+* **pi:** decrypt coherent codex first-turn credentials outside user lock ([#36658](https://github.com/okou-ai/okou/issues/36658)) ([03c8f46](https://github.com/okou-ai/okou/commit/03c8f467c858346237ee8eaa5510751137f6fa07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.0
+    * @okouai/core bumped to 8.708.3
+    * @okouai/db bumped to 1.295.0
+    * @okouai/pi-agent-runtime bumped to 1.40.9
+
 ## [1.670.0](https://github.com/okou-ai/okou/compare/api-v1.669.1...api-v1.670.0) (2026-09-24)
 
 

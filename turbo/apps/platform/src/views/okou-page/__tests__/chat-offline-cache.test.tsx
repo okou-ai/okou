@@ -71,7 +71,7 @@ function threadSnapshot(
     updatedAt: "2026-08-20T12:00:00.000Z",
     pinnedAt: null,
     renamedAt: null,
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     serviceTier: null,
     computerUseHostId: null,
     cloudBrowserEnabled: false,

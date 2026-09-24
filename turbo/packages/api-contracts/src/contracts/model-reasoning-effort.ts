@@ -69,6 +69,8 @@ export function getModelReasoningEfforts(
   const bareModel = model?.startsWith("openai/")
     ? model.slice("openai/".length)
     : model;
+  // Retired run models keep their cases: persisted member and thread
+  // model_settings maps still contain their keys and must keep parsing.
   switch (normalizeBuiltInModelId(bareModel ?? "")) {
     case "gpt-5.6-sol":
     case "gpt-5.6-terra":

@@ -41,7 +41,7 @@ teardown() {
 EOF
 )
 
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "claude-sonnet-4-6"
+    run runner_chat_send "$AGENT_ID" "$prompt" "" "claude-sonnet-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")
@@ -90,7 +90,7 @@ EOF
     assert_success
     AGENT_ID="$output"
 
-    run runner_chat_send "$AGENT_ID" "@orphan-pipe" "" "claude-sonnet-4-6"
+    run runner_chat_send "$AGENT_ID" "@orphan-pipe" "" "claude-sonnet-5"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

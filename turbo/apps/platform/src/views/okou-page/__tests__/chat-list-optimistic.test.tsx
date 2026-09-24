@@ -38,7 +38,7 @@ async function selectClaudeSonnet(): Promise<void> {
   const chatModels = await screen.findByRole("menu", {
     name: "Chat models",
   });
-  click(modelMenuOption(/Claude Sonnet 4\.6/u, chatModels));
+  click(modelMenuOption(/Claude Sonnet 5/u, chatModels));
 }
 
 async function sendComposerMessage(message: string): Promise<void> {
@@ -113,7 +113,7 @@ async function openUnconfirmedConversation(
       id: body.clientThreadId ?? "b7000000-0000-4000-a000-000000000009",
       title: null,
       createdAt: "2026-08-01T03:00:00.000Z",
-      selectedModel: body.model ?? "claude-sonnet-4-6",
+      selectedModel: body.model ?? "claude-sonnet-5",
       serviceTier: body.serviceTier ?? null,
     });
   });
@@ -268,11 +268,9 @@ test("The changed model survives the first send before server confirmation", asy
   await selectClaudeSonnet();
   await sendComposerMessage("Start the local conversation");
   await waitFor(() => {
-    expect(requests.model).toBe("claude-sonnet-4-6");
+    expect(requests.model).toBe("claude-sonnet-5");
   });
-  await expect(
-    composerModelTrigger("Claude Sonnet 4.6"),
-  ).resolves.toBeVisible();
+  await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
   expect(requests.draftRequested).toBeFalsy();
   expect(confirmation.settled()).toBeFalsy();
 });
@@ -350,7 +348,7 @@ test("Server confirmation settles a new conversation without duplication", async
       id: body.clientThreadId ?? "b7000000-0000-4000-a000-000000000013",
       title: null,
       createdAt: "2026-08-01T03:00:03.000Z",
-      selectedModel: body.model ?? "claude-sonnet-4-6",
+      selectedModel: body.model ?? "claude-sonnet-5",
       serviceTier: body.serviceTier ?? null,
     });
   });
@@ -386,7 +384,7 @@ test("Server confirmation settles a new conversation without duplication", async
   const persistedCreate = chatListEvent(13, 2, "created", createdThreadId, {
     id: createdEventId,
     title: "Confirmed conversation",
-    selectedModel: "claude-sonnet-4-6",
+    selectedModel: "claude-sonnet-5",
     createdAt: "2026-08-01T03:00:03.000Z",
   });
   stream.setEvents([persistedCreate]);
