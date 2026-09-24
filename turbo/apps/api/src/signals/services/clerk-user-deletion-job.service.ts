@@ -157,7 +157,7 @@ export const executeClerkUserDeletionWork$ = command(
           userId: job.userId,
           emptyOrgIds: checkpoint.emptyOrgIds,
           checkpointEmptyOrgIds: async (emptyOrgIds, checkpointSignal) => {
-            const next = { ...checkpoint, emptyOrgIds };
+            const next = { ...checkpoint, emptyOrgIds: [...emptyOrgIds] };
             const saved = await checkpointBackgroundJob(
               db,
               { job, checkpoint: next },
