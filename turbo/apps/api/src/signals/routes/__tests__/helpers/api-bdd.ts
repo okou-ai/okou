@@ -371,7 +371,7 @@ export function createBddApi(context: TestContext) {
       const response = await accept(
         agentsClient().create({
           headers: authenticate(nextUser),
-          body,
+          body: { visibility: "public", ...body },
         }),
         [201],
       );

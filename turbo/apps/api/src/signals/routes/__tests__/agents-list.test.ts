@@ -132,7 +132,7 @@ describe("GET /api/agents", () => {
     const second = await accept(
       apiClient().create({
         headers: authHeaders(),
-        body: { displayName: "Second Agent" },
+        body: { displayName: "Second Agent", visibility: "public" },
       }),
       [201],
     );

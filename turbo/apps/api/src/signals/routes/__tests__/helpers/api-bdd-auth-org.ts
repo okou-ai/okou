@@ -1228,7 +1228,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       const response = await accept(
         client.create({
           headers: authenticate(actor),
-          body,
+          body: { visibility: "public", ...body },
         }),
         [201],
       );
