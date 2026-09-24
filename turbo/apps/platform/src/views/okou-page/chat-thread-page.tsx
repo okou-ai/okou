@@ -2174,7 +2174,7 @@ function HeaderWorkflowAutomationCard({
               type="button"
               variant="neutral"
               size="sm"
-              className="h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
+              className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
               disabled={running}
               onClick={() => {
                 detach(

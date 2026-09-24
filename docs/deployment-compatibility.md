@@ -15,6 +15,19 @@ update that carries nothing but this field is rejected as empty. The
 neither reads nor writes it while an older API may still do so. Drop it in a
 separate migration after older API deployments drain.
 
+## Guest storage batch timing attribution (2026-09-24)
+
+Runner storage batch operations now include optional Guest-server duration, a
+nonnegative Runner-minus-Guest residual when the pair is consistent, and a
+fixed timing state. The API explicitly validates and forwards these fields to
+the sandbox operation log. An older Runner omits them and remains accepted by
+the new API. An older API strips the new optional fields; storage application
+still works, but the extra timing is unavailable until the API is promoted.
+Deploy the API before the Runner to retain the new samples. Mixed-version
+production comparisons must report field coverage and Runner version mix;
+missing timing is never a zero duration. The Guest protocol and storage apply
+behavior are unchanged.
+
 ## Codex 0.156.1 OAuth workspace routing
 
 The API supplies the selected workspace ID as `CODEX_OAUTH_ACCOUNT_ID` for
@@ -2753,6 +2766,42 @@ without first restoring a compatible authority reader. The temporary
 personal-only projection is retired only after #36261's rebind-capable App is
 live and #36262 raises the verified minimum App version.
 
+### Organization-to-personal Access conversion (#36262)
+
+PR #36449 (#36261) first shipped the rebind-capable App in `app-v0.954.0`.
+That tag targets commit `c0cb8cd57d3575a3a82045b0d4bfe8993cdf14b1`;
+the [production release run 35962027995](https://github.com/okou-ai/okou/actions/runs/35962027995)
+successfully promoted its App Worker at 2026-09-24 06:15 UTC and recorded
+version `0.954.0` on `app.okou.ai`. Production `app.okou.ai` was subsequently
+verified serving App `0.955.0` at commit
+`056f5ab8c347b116352f5353fb304b19796fa1c6`, a descendant of #36449's
+merge commit `f129327db18170f2bf9f43fae9bc9ec2245a9cf5`. The production
+App Worker promotion in [release run 35966963095](https://github.com/okou-ai/okou/actions/runs/35966963095)
+completed successfully on 2026-09-24. The later #36262 release raises the
+identified-App minimum version to `0.954.0`, so older identified Apps receive
+`426` before route matching and can refresh into the already-live recovery UI.
+It also retires the bounded personal-only Access response projection; current
+App requests already use `view=scoped`.
+
+The conversion preview contains only an aggregate count of other owners' SSH
+hosts and an opaque impact snapshot. The action requires a current organization
+admin, expected Access revision, and unchanged impact. The transaction locks
+the Access row before host rows, detaches other owners' references into
+`needs_rebind`, advances effective generations, then makes the same Access row
+personal to the admin without decrypting or replacing its Service Token.
+Admin-owned SSH references remain bound. After commit, Access-list and affected
+owner SSH/Runner invalidations are published. The existing best-effort notice
+limit still applies: a missed invalidation can leave cached authority usable
+for the remainder of an active Run; end the Run when immediate revocation is
+required.
+
+Migration `1210` must run before this API is promoted. Conversion writes cannot
+be rolled back to a pre-foundation API/Runner or an App older than `0.954.0`:
+those readers do not understand a retained protected host with no Access ID.
+Roll forward with compatible readers instead of interpreting such a host as
+Direct or deleting it. The API promotes before the App in the normal release;
+the prior production App verification makes that order safe for this writer.
+
 ## Feishu and Lark integration identity
 
 New runs use `triggerSource=feishu` or `triggerSource=lark` from the verified
@@ -3664,9 +3713,14 @@ heartbeat owns Browser access and lease renewal.
 The native input preflight endpoint uses the same team-only switch. It performs
 one bounded provider lookup and read-only CDP connection per explicit form
 entry, returning the verified control subtype and current applicable site
-constraints. A confirmed target mismatch marks a pending request stale;
-transient provider failures leave it pending for retry. The editable form uses
-that preflight response. Apply rechecks site constraints before any mutation.
+constraints. The editable form first uses the persisted request fields while
+preflight runs in the background, then adopts the observed controls without
+discarding the draft. A completed failed check blocks submission and offers
+retry. Preflight does not hold the thread write lock during provider or CDP
+I/O, so submission can proceed while the check is pending. A confirmed target
+mismatch marks a pending request stale; transient provider failures leave it
+pending for retry. Apply rechecks the exact target and site constraints before
+any mutation, even when preflight has not completed.
 Per `docs/fallback.md`, this pre-GA feature does not require compatibility with
 earlier Platform, API, or persisted-action shapes.
 The general number field kind expands the strict shared request and preflight
@@ -3749,7 +3803,7 @@ retries. Native member uploads have no Run; Run-scoped uploads retain their actu
 Run source. The API validates the stored bytes before publication, then records
 Discord delivery independently from the canonical file URL.
 
-Migration `1210_discord_canonical_delivery_state` adds nullable `provider_state`
+Migration `1211_discord_canonical_delivery_state` adds nullable `provider_state`
 to `canonical_asset_deliveries`. Existing Slack destinations keep their original
 JSON shape and have no Discord state. Outgoing API statements remain valid after
 the additive migration. The new API requires the migration before promotion;

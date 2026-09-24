@@ -364,6 +364,22 @@ async function config(name = "Service token") {
     )
   ).body;
 }
+async function sharedConfig(name = "Shared service token") {
+  return (
+    await accept(
+      configs().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          name,
+          scope: "organization",
+          credentials: token,
+        },
+      }),
+      [201],
+    )
+  ).body;
+}
 async function host(configId?: string) {
   return (
     await accept(
@@ -429,42 +445,50 @@ describe("organization Cloudflare Access", () => {
 
   it("lists retained hosts as needing rebind and recovers only after an explicit choice", async () => {
     const admin = owner({}, "org:admin");
-    const shared = (
-      await accept(
-        configs().create({
-          headers,
-          query: scoped,
-          body: {
-            id: randomUUID(),
-            name: "Shared recovery gateway",
-            scope: "organization",
-            credentials: token,
-          },
-        }),
-        [201],
-      )
-    ).body;
+    const shared = await sharedConfig("Shared recovery gateway");
+    const next = await sharedConfig("Next shared gateway");
     const member = owner({ orgId: admin.orgId });
+    const r = await runtime(member, { runnerGroup: `access-${randomUUID()}` });
     const saved = await host(shared.id);
     const pinned = await accept(
-      state().action({
+      runner().pin({
+        headers: runnerHeaders,
+        params: { runId: r.runId },
         body: {
-          action: "set-learned-host-key",
-          ...member,
           connectionId: saved.id,
-          ...hostKey,
+          runnerIdentity: r.runnerIdentity,
+          expectedGeneration: saved.generation,
+          observedHostKey: hostKey,
         },
       }),
       [200],
     );
-    // Conversion is deferred to #36262, so only the test route can construct
-    // needsRebind before that production writer exists.
-    const retained = await accept(
-      state().action({
-        body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
+    expect(pinned.body).toMatchObject({ outcome: "pinned" });
+    authenticate(admin, "org:admin");
+    const preview = (
+      await accept(
+        configs().conversionPreview({
+          headers,
+          params: { configId: shared.id },
+        }),
+        [200],
+      )
+    ).body;
+    expect(preview.otherHostCount).toBe(1);
+    await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: shared.id },
+        body: {
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
+        },
       }),
       [200],
     );
+    authenticate(member);
+    expect(pinned.body).toMatchObject({ generation: saved.generation + 1 });
+    const retainedGeneration = saved.generation + 2;
     const listed = (await accept(connections().list({ headers }), [200])).body
       .connections[0];
     expect(listed).toMatchObject({
@@ -472,7 +496,7 @@ describe("organization Cloudflare Access", () => {
       host: saved.host,
       credentialId: saved.credentialId,
       learnedHostKey: hostKey,
-      generation: retained.body.generation,
+      generation: retainedGeneration,
       transport: { type: "cloudflare_access", needsRebind: true },
     });
     expect(listed).not.toHaveProperty("transport.configId");
@@ -487,7 +511,7 @@ describe("organization Cloudflare Access", () => {
         headers,
         params: { connectionId: saved.id },
         body: {
-          expectedGeneration: retained.body.generation!,
+          expectedGeneration: retainedGeneration,
           displayName: "Retained host",
           ...(transport ? { transport } : {}),
         },
@@ -505,29 +529,43 @@ describe("organization Cloudflare Access", () => {
       body: { error: { code: "CLOUDFLARE_ACCESS_NOT_FOUND" } },
     });
     const rebound = await accept(
-      edit({ type: "cloudflare_access", configId: shared.id }),
+      edit({ type: "cloudflare_access", configId: next.id }),
       [200],
     );
     expect(rebound.body).toMatchObject({
-      transport: { type: "cloudflare_access", configId: shared.id },
+      transport: { type: "cloudflare_access", configId: next.id },
       host: saved.host,
       credentialId: saved.credentialId,
       learnedHostKey: hostKey,
     });
-    expect(pinned.body.generation).toBe(2);
-
-    const needsDirect = await accept(
-      state().action({
-        body: { action: "set-needs-rebind", ...member, connectionId: saved.id },
+    authenticate(admin, "org:admin");
+    const nextPreview = (
+      await accept(
+        configs().conversionPreview({
+          headers,
+          params: { configId: next.id },
+        }),
+        [200],
+      )
+    ).body;
+    await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: next.id },
+        body: {
+          expectedRevision: nextPreview.expectedRevision,
+          impactSnapshot: nextPreview.impactSnapshot,
+        },
       }),
       [200],
     );
+    authenticate(member);
     const direct = await accept(
       connections().update({
         headers,
         params: { connectionId: saved.id },
         body: {
-          expectedGeneration: needsDirect.body.generation!,
+          expectedGeneration: rebound.body.generation + 1,
           transport: { type: "direct" },
         },
       }),
@@ -541,7 +579,7 @@ describe("organization Cloudflare Access", () => {
     });
   });
 
-  it("keeps old App responses personal-only while members can bind shared configurations without seeing other hosts", async () => {
+  it("returns scoped configurations and lets members bind shared configurations without seeing other hosts", async () => {
     const admin = owner({}, "org:admin");
     const shared = (
       await accept(
@@ -561,31 +599,12 @@ describe("organization Cloudflare Access", () => {
     expect(shared).toMatchObject({ scope: "organization", sshHosts: [] });
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([]);
-    await accept(
-      configs().create({
-        headers,
-        body: {
-          id: randomUUID(),
-          name: "Old request shape",
-          scope: "organization",
-          credentials: token,
-        },
-      }),
-      [404],
-    );
-    await accept(
-      configs().delete({
-        headers,
-        params: { configId: shared.id },
-        body: { expectedRevision: 1 },
-      }),
-      [404],
-    );
+    ).toStrictEqual([shared]);
     const privateConfig = await config("Admin private");
     expect(privateConfig).toStrictEqual({
       id: privateConfig.id,
       name: "Admin private",
+      scope: "personal",
       revision: 1,
       generation: 1,
       createdAt: expect.any(String),
@@ -594,7 +613,7 @@ describe("organization Cloudflare Access", () => {
     });
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([privateConfig]);
+    ).toStrictEqual(expect.arrayContaining([shared, privateConfig]));
     const renamedPrivate = await accept(
       configs().update({
         headers,
@@ -611,11 +630,11 @@ describe("organization Cloudflare Access", () => {
     });
     expect(
       (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([renamedPrivate.body]);
+    ).toStrictEqual(expect.arrayContaining([shared, renamedPrivate.body]));
     expect(
       (await accept(configs().list({ headers, query: scoped }), [200])).body
         .configs,
-    ).toContainEqual({ ...renamedPrivate.body, scope: "personal" });
+    ).toContainEqual(renamedPrivate.body);
 
     const first = owner({ orgId: admin.orgId });
     const firstHost = await host(shared.id);
@@ -673,9 +692,9 @@ describe("organization Cloudflare Access", () => {
       configs().update({
         headers,
         params: { configId: shared.id },
-        body: { expectedRevision: 1, name: "Old App" },
+        body: { expectedRevision: 1, name: "Unauthorized member" },
       }),
-      [404],
+      [403],
     );
     await accept(
       configs().create({
@@ -1302,29 +1321,59 @@ describe("Cloudflare Access owner configuration", () => {
 
 describe("protected SSH authority", () => {
   it("treats a protected host awaiting rebind as unavailable, never Direct", async () => {
-    // Conversion is not exposed by the production API until the App floor is
-    // raised; the test-only route constructs that otherwise unreachable state.
     const kms = useSecretKmsProbe();
-    const f = await fixture();
+    const admin = owner({}, "org:admin");
+    const shared = await sharedConfig();
+    const member = owner({ orgId: admin.orgId });
+    const r = await runtime(member, { runnerGroup: `access-${randomUUID()}` });
+    const protectedHost = await host(shared.id);
+    const f = {
+      ...member,
+      ...r,
+      config: shared,
+      host: protectedHost,
+      body: {
+        connectionId: protectedHost.id,
+        runnerIdentity: r.runnerIdentity,
+      },
+      params: { runId: r.runId },
+    };
     const readyHost = await host();
     expect((await resolve(f)).outcome).toBe("resolved_access");
     const priorDecryptCalls = kms.decryptCalls;
-    const changed = await accept(
-      state().action({
+    authenticate(admin, "org:admin");
+    const preview = (
+      await accept(
+        configs().conversionPreview({
+          headers,
+          params: { configId: shared.id },
+        }),
+        [200],
+      )
+    ).body;
+    expect(preview.otherHostCount).toBe(1);
+    await accept(
+      configs().convertToPersonal({
+        headers,
+        params: { configId: shared.id },
         body: {
-          action: "set-needs-rebind",
-          orgId: f.orgId,
-          userId: f.userId,
-          connectionId: f.host.id,
+          expectedRevision: preview.expectedRevision,
+          impactSnapshot: preview.impactSnapshot,
         },
       }),
       [200],
     );
-    const generation = changed.body.generation;
-    if (generation === undefined) {
-      throw new Error("Missing rebind fixture generation");
-    }
-    expect(generation).toBe(f.host.generation + 1);
+    authenticate(member);
+    const generation = protectedHost.generation + 1;
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toContainEqual(
+      expect.objectContaining({
+        id: protectedHost.id,
+        generation,
+        transport: { type: "cloudflare_access", needsRebind: true },
+      }),
+    );
     await expect(resolve(f)).resolves.toStrictEqual({ outcome: "unavailable" });
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
       sshHostsContract,
@@ -1412,26 +1461,11 @@ describe("protected SSH authority", () => {
   });
 
   it("resolves a same-organization shared Access row for another member", async () => {
-    // Organization-level creation is activated by the next staged API PR;
-    // this foundation test constructs the row through the test-only route.
-    const first = owner();
-    const personal = await config();
+    const first = owner({}, "org:admin");
+    const shared = await sharedConfig();
     const second = owner({ orgId: first.orgId });
     const r = await runtime(second);
-    const h = await host();
-    const bound = await accept(
-      state().action({
-        body: {
-          action: "bind-shared-access",
-          orgId: second.orgId,
-          userId: second.userId,
-          connectionId: h.id,
-          sourceConfigId: personal.id,
-        },
-      }),
-      [200],
-    );
-    expect(bound.body.configId).toBeDefined();
+    const h = await host(shared.id);
     const resolved = await accept(
       runner().resolve({
         headers: runnerHeaders,
@@ -1442,7 +1476,7 @@ describe("protected SSH authority", () => {
     );
     expect(resolved.body).toMatchObject({
       outcome: "resolved_access",
-      access: { configId: bound.body.configId },
+      access: { configId: shared.id },
     });
     const inventory = setupApp({ context, routes: sshAccessRoutes })(
       sshHostsContract,

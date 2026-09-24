@@ -48,6 +48,12 @@ A protected SSH host whose shared configuration is no longer permitted can be
 retained in a **needs rebind** state. It cannot connect and is never silently
 changed to Direct. Its owner must edit the host and explicitly select another
 permitted Cloudflare Access configuration or Direct. The host, credential, and
-learned host key remain intact. Admin conversion that can create this state is
-not available until the exact recovery-capable App build is verified in
-production and the force-upgrade floor is applied in #36262.
+learned host key remain intact. An organization admin can convert a shared
+configuration to Personal after reviewing its current impact. The preview
+reports only the count of other members' referencing SSH hosts; their names and
+owners are never shown. When that count is positive, the admin must explicitly
+confirm that those hosts will need to be rebound. A changed revision or impact
+requires another review. Conversion retains the Access ID and stored Service
+Token. The admin's own hosts remain bound, while other members' hosts remain
+saved in needs-rebind state until their owners explicitly choose a permitted
+configuration or Direct.

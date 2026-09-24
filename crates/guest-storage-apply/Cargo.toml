@@ -17,6 +17,7 @@ guest-telemetry.workspace = true
 
 [dev-dependencies]
 httpmock = { workspace = true, features = ["cookies"] }
+proptest = { workspace = true, features = ["std"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]

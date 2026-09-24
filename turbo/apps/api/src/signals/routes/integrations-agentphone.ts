@@ -527,14 +527,31 @@ function connectConflict(reason: LinkConflictReason) {
   return conflict(agentPhoneLinkConflictMessage(reason));
 }
 
-function agentPhoneConnectedMessage(): string {
-  return `Your phone number is now connected to ${PUBLIC_BRAND_PRESENTATION.brandName}.
+const AGENTPHONE_CONTACT_CARD_URL =
+  "https://static.vm0.io/agentphone-contact/a0a9471cbcf783bd04620f1be71dd8efaf0f49c6a23eb77e3cb4584e731fd685/okou.vcf";
 
-You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.
+interface AgentPhoneConnectedMessage {
+  readonly body: string;
+  readonly mediaUrls?: readonly string[];
+}
 
-It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.
+function agentPhoneConnectedMessages(): readonly AgentPhoneConnectedMessage[] {
+  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  return [
+    {
+      body: `Your phone number is now connected to ${brandName}.
 
-A few things to try right now:
+You can text this number like a teammate and it will actually do the work: research something, draft and send emails, summarize long documents, update a spreadsheet, file or triage tickets, post to Slack, dig through your GitHub or Notion, and a lot more.`,
+    },
+    {
+      body: `Save ${brandName} to your contacts so you can find this chat anytime.`,
+      mediaUrls: [AGENTPHONE_CONTACT_CARD_URL],
+    },
+    {
+      body: "It is most useful once you connect the tools you already use. The ones people hook up most often are GitHub, Gmail, Notion, Google Drive / Sheets / Docs / Calendar, Slack, Sentry, and X. There are 100+ more available, and you can connect any of them whenever you need.",
+    },
+    {
+      body: `A few things to try right now:
 - "Summarize my unread Gmail from today"
 - "What's on my Google Calendar tomorrow?"
 - "List the open issues in my GitHub repo"
@@ -545,7 +562,36 @@ A few things to try right now:
 
 No tool connected yet? Just ask me anything and I'll still help, then point you to whatever I need access to.
 
-What would you like to start with?`;
+What would you like to start with?`,
+    },
+  ];
+}
+
+async function sendAgentPhoneConnectedMessages(
+  target: {
+    readonly agentphoneAgentId: string;
+    readonly toNumber: string;
+    readonly replyToMessageId?: string;
+  },
+  signal: AbortSignal,
+): Promise<void> {
+  // Send sequentially so the provider receives the messages in reading order;
+  // only the first message threads onto the inbound connection code.
+  for (const [index, message] of agentPhoneConnectedMessages().entries()) {
+    await sendAgentPhoneMessage(
+      {
+        agentphoneAgentId: target.agentphoneAgentId,
+        toNumber: target.toNumber,
+        ...(index === 0 && target.replyToMessageId
+          ? { replyToMessageId: target.replyToMessageId }
+          : {}),
+        body: message.body,
+        ...(message.mediaUrls ? { mediaUrls: message.mediaUrls } : {}),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+  }
 }
 
 const connectAgentPhone$ = command(
@@ -599,11 +645,10 @@ const connectAgentPhone$ = command(
     signal.throwIfAborted();
 
     await tapError(
-      sendAgentPhoneMessage(
+      sendAgentPhoneConnectedMessages(
         {
           agentphoneAgentId: body.agentphoneAgentId,
           toNumber: phoneHandle,
-          body: agentPhoneConnectedMessage(),
         },
         signal,
       ),
@@ -633,13 +678,13 @@ function okText(): Response {
   return textResponse("OK", 200);
 }
 
-function agentPhoneConnectionCodeReply(
-  result: Exclude<AgentPhoneConnectionCodeConsumeResult, { kind: "not-code" }>,
+function agentPhoneConnectionCodeFailureReply(
+  result: Extract<
+    AgentPhoneConnectionCodeConsumeResult,
+    { kind: "invalid" | "conflict" }
+  >,
 ): string {
   switch (result.kind) {
-    case "linked": {
-      return agentPhoneConnectedMessage();
-    }
     case "invalid": {
       return "This connection code is invalid or expired. Open Okou to get a new code.";
     }
@@ -1023,7 +1068,22 @@ async function handleAgentPhoneConnectionCode(
   }
 
   await tapError(
-    sendAgentPhoneText(event, agentPhoneConnectionCodeReply(result), signal),
+    result.kind === "linked"
+      ? sendAgentPhoneConnectedMessages(
+          {
+            agentphoneAgentId: event.agentphoneAgentId,
+            toNumber: event.fromNumber,
+            ...(event.channel === "imessage"
+              ? { replyToMessageId: event.messageId }
+              : {}),
+          },
+          signal,
+        )
+      : sendAgentPhoneText(
+          event,
+          agentPhoneConnectionCodeFailureReply(result),
+          signal,
+        ),
     (error) => {
       log.warn("Handled AgentPhone connection code but reply failed", {
         result: result.kind,
