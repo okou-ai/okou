@@ -17,7 +17,6 @@ use sandbox::{
 };
 use tracing::{info, warn};
 
-use super::heartbeat::WorkspaceCacheStateSnapshot;
 use super::job_lifecycle::{
     ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
 };
@@ -44,6 +43,7 @@ use crate::workspace_image_cache::{
 };
 use crate::workspace_promotion::prepare_workspace_image_from_active_sandbox;
 use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
+use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_provider::RunCancellationHandle;
 use runner_supervisor::idle_lifecycle::{
     SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,

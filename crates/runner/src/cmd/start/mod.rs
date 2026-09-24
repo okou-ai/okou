@@ -109,8 +109,7 @@ mod signals;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
 use heartbeat::{
     HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    HeartbeatSnapshotMetadata, WorkspaceCacheStateSnapshot, collect_heartbeat_state,
-    refresh_initial_workspace_cache_snapshot,
+    HeartbeatSnapshotMetadata, collect_heartbeat_state, refresh_initial_workspace_cache_snapshot,
 };
 use identity::load_runner_process_identity;
 use job_discovery::{DiscoveredJob, DiscoveredJobContext, handle_discovered_job};
@@ -124,6 +123,7 @@ use orphan_reap::{
     OrphanReapMode, OrphanReapProcessDiscovery, OrphanedActiveRuns, reap_orphaned_active_runs,
 };
 use runner_lifecycle::active_runs::ActiveRuns;
+use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_supervisor::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 use signals::{

@@ -16,7 +16,6 @@ use tokio::task::JoinSet;
 use tracing::{error, warn};
 
 use super::factory_lifecycle::SharedFactory;
-use super::heartbeat::WorkspaceCacheStateSnapshot;
 use super::job_lifecycle::{
     ActiveBudgetLease, CompletionPayload, FinalizationReady, RunCleanupDisposition, RunCleanupState,
 };
@@ -41,6 +40,7 @@ use crate::status::StatusTracker;
 use crate::storage_fingerprints::StorageFingerprints;
 use crate::telemetry::JobTelemetry;
 use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, ActiveRuns};
+use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapshot;
 use runner_provider::{ClaimedJob, CompletionReportTiming, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
 use runner_supervisor::blank_pool::BlankPoolDiagnostics;

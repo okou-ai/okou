@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio_util::task::AbortOnDropHandle;
@@ -10,15 +10,15 @@ use crate::error::{RunnerError, RunnerResult};
 use crate::idle_pool::IdlePool;
 use crate::lifecycle::RunnerMode;
 use crate::resource_budget::ResourceBudget;
-use crate::workspace_image_cache::{
-    WorkspaceCacheChange, WorkspaceImageCache, cap_held_workspace_states,
-};
+use crate::workspace_image_cache::{WorkspaceCacheChange, WorkspaceImageCache};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_lifecycle::active_runs::ActiveRuns;
+use runner_lifecycle::workspace_image_cache::snapshot::{
+    WorkspaceCacheRefreshOutcome, WorkspaceCacheStateSnapshot, filter_current_held_workspace_states,
+};
 use runner_provider::JobProvider;
 use runner_types::types::{
     HeartbeatState, HeldSandboxState, HeldWorkspaceState, MAX_HELD_SANDBOX_STATES,
-    MAX_WORKSPACE_CACHES_PER_REUSE_KEY,
 };
 
 /// Period between routine heartbeat ticks sent to the server. First tick is
@@ -264,170 +264,10 @@ impl HeartbeatController {
     }
 }
 
-/// Shared, bounded view of reusable workspaces backed by the workspace cache.
-///
-/// A runner shares one snapshot between heartbeat, discovery, and sandbox
-/// finalization. Heartbeats refresh it from an asynchronous cache scan, while
-/// finalization immediately upserts successful workspace-cache promotions.
-/// The refresh token prevents a scan that started earlier from replacing a
-/// promotion committed while that scan was in flight.
-///
-/// The mutex protects only the in-memory states and refresh metadata. Cache
-/// scans run without holding it. Stored states retain active reuse keys; active
-/// and just-claimed reuse keys are filtered only when a current workspace
-/// view is assembled for heartbeat emission or local discovery.
-#[derive(Clone, Default)]
-pub(super) struct WorkspaceCacheStateSnapshot {
-    inner: Arc<Mutex<WorkspaceCacheStateSnapshotInner>>,
-}
-
-#[derive(Default)]
-struct WorkspaceCacheStateSnapshotInner {
-    workspace_cache_states: Vec<HeldWorkspaceState>,
-    workspace_cache_loaded: bool,
-    workspace_cache_revision: u64,
-}
-
-/// Revision captured before a workspace-cache scan.
-///
-/// This is an opaque marker, not a lock guard. Pass it back to
-/// [`WorkspaceCacheStateSnapshot::finish_workspace_cache_refresh`] after the
-/// asynchronous scan so the commit can detect intervening snapshot updates.
-#[derive(Clone, Copy)]
-pub(super) struct WorkspaceCacheSnapshotRefresh {
-    revision: u64,
-}
-
-pub(super) struct WorkspaceCacheRefreshOutcome {
-    pub(super) states: Vec<HeldWorkspaceState>,
-    pub(super) changed: bool,
-}
-
 pub(super) struct InitialWorkspaceCacheRefreshOutcome {
     pub(super) states: Vec<HeldWorkspaceState>,
     pub(super) locked_commit_keys: BTreeSet<String>,
     pub(super) loaded_cache_keys: BTreeSet<String>,
-}
-
-impl WorkspaceCacheStateSnapshot {
-    /// Creates a snapshot whose workspace-cache contents are not yet known.
-    pub(super) fn new() -> Self {
-        Self::default()
-    }
-
-    /// Returns whether a refresh or promotion upsert has established cache state.
-    ///
-    /// Runner startup normally completes an initial refresh before discovery.
-    /// A completed empty refresh is still loaded because absence is then known.
-    pub(super) fn workspace_cache_loaded(&self) -> bool {
-        self.lock_inner().workspace_cache_loaded
-    }
-
-    /// Captures the revision to pair with a later refresh commit.
-    ///
-    /// The mutex is released before this method returns and is therefore not
-    /// held while the caller scans the workspace cache.
-    pub(super) fn begin_workspace_cache_refresh(&self) -> WorkspaceCacheSnapshotRefresh {
-        WorkspaceCacheSnapshotRefresh {
-            revision: self.lock_inner().workspace_cache_revision,
-        }
-    }
-
-    /// Commits scanned cache state and returns the bounded committed snapshot.
-    ///
-    /// When the revision still matches [`Self::begin_workspace_cache_refresh`],
-    /// the scan replaces the previous cache view. Otherwise, an update occurred
-    /// while the scan was in flight, so the scanned and current states are
-    /// merged before applying the existing ordering and limits. In particular,
-    /// this prevents an older scan from discarding a newly promoted cache.
-    ///
-    /// Finishing a refresh marks the snapshot loaded and advances its revision.
-    /// Active-key filtering is deferred until a current view is assembled.
-    pub(super) fn finish_workspace_cache_refresh(
-        &self,
-        refresh: WorkspaceCacheSnapshotRefresh,
-        states: Vec<HeldWorkspaceState>,
-    ) -> WorkspaceCacheRefreshOutcome {
-        let mut inner = self.lock_inner();
-        let mut next = if inner.workspace_cache_revision == refresh.revision {
-            states
-        } else {
-            merge_workspace_cache_snapshot_states(inner.workspace_cache_states.clone(), states)
-        };
-        cap_workspace_cache_snapshot_states(&mut next);
-        let changed = inner.workspace_cache_states != next;
-        inner.workspace_cache_states = next;
-        inner.workspace_cache_loaded = true;
-        inner.workspace_cache_revision = inner.workspace_cache_revision.wrapping_add(1);
-        WorkspaceCacheRefreshOutcome {
-            changed,
-            states: inner.workspace_cache_states.clone(),
-        }
-    }
-
-    /// Incorporates a successful workspace-cache promotion into the snapshot.
-    ///
-    /// The promoted state is merged with any existing state for the reuse key,
-    /// then the snapshot's deterministic ordering and bounds are reapplied.
-    /// Advancing the revision ensures that an in-flight refresh merges this
-    /// update instead of replacing it with an older scan result.
-    pub(super) fn upsert_workspace_cache_state(&self, state: HeldWorkspaceState) {
-        let mut inner = self.lock_inner();
-        inner.workspace_cache_loaded = true;
-        match inner
-            .workspace_cache_states
-            .iter_mut()
-            .find(|existing| existing.reuse_key == state.reuse_key)
-        {
-            Some(existing) => merge_held_workspace_state(existing, state),
-            None => inner.workspace_cache_states.push(state),
-        }
-        cap_workspace_cache_snapshot_states(&mut inner.workspace_cache_states);
-        inner.workspace_cache_revision = inner.workspace_cache_revision.wrapping_add(1);
-    }
-
-    /// Reports whether the workspace-cache snapshot may contain this reuse key.
-    ///
-    /// Before the first load, absence has not been established, so every
-    /// reuse key might be present. Once loaded, this becomes a membership check
-    /// against the stored states. Discovery uses a possible match to request an
-    /// immediate reuse-state heartbeat after claiming the key.
-    pub(super) fn might_contain_workspace_cache_reuse_key(&self, reuse_key: &str) -> bool {
-        let inner = self.lock_inner();
-        !inner.workspace_cache_loaded
-            || inner
-                .workspace_cache_states
-                .iter()
-                .any(|state| state.reuse_key == reuse_key)
-    }
-
-    /// Builds the current workspace-cache view.
-    ///
-    /// Active reuse keys and `extra_active_reuse_key` are filtered while
-    /// assembling this view, without removing them from the stored snapshot.
-    /// The shared merge path also applies heartbeat ordering and limits.
-    pub(super) fn current_held_workspace_states(
-        &self,
-        active_runs: &ActiveRuns,
-        extra_active_reuse_key: Option<&str>,
-    ) -> Vec<HeldWorkspaceState> {
-        let workspace_cache_states = self.lock_inner().workspace_cache_states.clone();
-        filter_current_held_workspace_states(
-            workspace_cache_states,
-            active_runs,
-            extra_active_reuse_key,
-        )
-    }
-
-    fn loaded_workspace_cache_states(&self) -> Vec<HeldWorkspaceState> {
-        self.lock_inner().workspace_cache_states.clone()
-    }
-
-    fn lock_inner(&self) -> MutexGuard<'_, WorkspaceCacheStateSnapshotInner> {
-        self.inner
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
 }
 
 /// Collect current runner state, refresh the local workspace-cache snapshot, and
@@ -621,117 +461,6 @@ fn filter_current_held_sandbox_states(
     states
 }
 
-fn filter_current_held_workspace_states(
-    states: Vec<HeldWorkspaceState>,
-    active_runs: &ActiveRuns,
-    extra_active_reuse_key: Option<&str>,
-) -> Vec<HeldWorkspaceState> {
-    let mut active_reuse_keys = active_runs.reuse_keys();
-    if let Some(reuse_key) = extra_active_reuse_key {
-        active_reuse_keys.insert(reuse_key.to_owned());
-    }
-    let mut states = states
-        .into_iter()
-        .filter(|state| !active_reuse_keys.contains(&state.reuse_key))
-        .collect::<Vec<_>>();
-    let observed_workspace_states = states.len();
-    let observed_workspace_caches = states
-        .iter()
-        .map(|state| state.workspace_caches.len())
-        .sum::<usize>();
-    states.sort_unstable_by(|a, b| {
-        b.last_completed_at
-            .cmp(&a.last_completed_at)
-            .then_with(|| a.reuse_key.cmp(&b.reuse_key))
-    });
-    states = cap_held_workspace_states(states);
-    let retained_workspace_caches = states
-        .iter()
-        .map(|state| state.workspace_caches.len())
-        .sum::<usize>();
-    if states.len() < observed_workspace_states
-        || retained_workspace_caches < observed_workspace_caches
-    {
-        info!(
-            observed_workspace_states,
-            retained_workspace_states = states.len(),
-            observed_workspace_caches,
-            retained_workspace_caches,
-            "heartbeat held workspace state truncated"
-        );
-    }
-    states.sort_unstable_by(|a, b| a.reuse_key.cmp(&b.reuse_key));
-    states
-}
-
-fn merge_held_workspace_state(existing: &mut HeldWorkspaceState, mut incoming: HeldWorkspaceState) {
-    if incoming.last_completed_at > existing.last_completed_at {
-        existing.last_completed_at = incoming.last_completed_at;
-    }
-    for incoming_workspace in incoming.workspace_caches.drain(..) {
-        match existing
-            .workspace_caches
-            .iter_mut()
-            .find(|workspace| workspace.profile == incoming_workspace.profile)
-        {
-            Some(existing_workspace)
-                if incoming_workspace.workspace_affinity_version
-                    >= existing_workspace.workspace_affinity_version =>
-            {
-                *existing_workspace = incoming_workspace;
-            }
-            Some(_) => {}
-            None => existing.workspace_caches.push(incoming_workspace),
-        }
-    }
-    existing
-        .workspace_caches
-        .sort_unstable_by(|a, b| a.profile.cmp(&b.profile));
-    existing
-        .workspace_caches
-        .truncate(MAX_WORKSPACE_CACHES_PER_REUSE_KEY);
-}
-
-fn merge_workspace_cache_snapshot_states(
-    existing_states: Vec<HeldWorkspaceState>,
-    refreshed_states: Vec<HeldWorkspaceState>,
-) -> Vec<HeldWorkspaceState> {
-    let mut by_reuse_key = std::collections::BTreeMap::<String, HeldWorkspaceState>::new();
-    for state in refreshed_states.into_iter().chain(existing_states) {
-        match by_reuse_key.get_mut(&state.reuse_key) {
-            Some(existing) => merge_held_workspace_state(existing, state),
-            None => {
-                by_reuse_key.insert(state.reuse_key.clone(), state);
-            }
-        }
-    }
-    by_reuse_key.into_values().collect()
-}
-
-fn cap_workspace_cache_snapshot_states(states: &mut Vec<HeldWorkspaceState>) {
-    let observed_workspace_states = states.len();
-    let observed_workspace_caches = states
-        .iter()
-        .map(|state| state.workspace_caches.len())
-        .sum::<usize>();
-    *states = cap_held_workspace_states(std::mem::take(states));
-    let retained_workspace_caches = states
-        .iter()
-        .map(|state| state.workspace_caches.len())
-        .sum::<usize>();
-    if states.len() < observed_workspace_states
-        || retained_workspace_caches < observed_workspace_caches
-    {
-        info!(
-            observed_workspace_states,
-            retained_workspace_states = states.len(),
-            observed_workspace_caches,
-            retained_workspace_caches,
-            "workspace cache snapshot truncated"
-        );
-    }
-}
-
 fn admittable_profiles_for_heartbeat(
     profiles: &BTreeMap<String, ProfileConfig>,
     budget: &ResourceBudget,
@@ -816,9 +545,7 @@ mod tests {
     };
     use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
     use runner_host::paths::RunnerPaths;
-    use runner_types::types::{
-        MAX_HELD_WORKSPACE_STATES, ReusableSandboxState, WorkspaceCacheCapability,
-    };
+    use runner_types::types::{ReusableSandboxState, WorkspaceCacheCapability};
     use sandbox::SandboxId;
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
@@ -1276,147 +1003,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn workspace_cache_snapshot_filters_active_reuse_keys() {
-        let snapshot = WorkspaceCacheStateSnapshot::new();
-        refresh_snapshot(
-            &snapshot,
-            vec![
-                held_workspace_state("sess-cache", "2026-06-01T00:00:02.000Z", &["vm0/default"]),
-                held_workspace_state("sess-claimed", "2026-06-01T00:00:03.000Z", &["vm0/default"]),
-                held_workspace_state("sess-active", "2026-06-01T00:00:04.000Z", &["vm0/default"]),
-            ],
-        );
-        let active_runs = test_active_runs();
-        let active_guard = active_runs.register(
-            runner_types::ids::RunId::new_v4(),
-            Some("sess-active".into()),
-            "vm0/default".into(),
-        );
-        let states = snapshot.current_held_workspace_states(&active_runs, Some("sess-claimed"));
-
-        assert_eq!(
-            states,
-            vec![held_workspace_state(
-                "sess-cache",
-                "2026-06-01T00:00:02.000Z",
-                &["vm0/default"],
-            )]
-        );
-
-        assert!(active_guard.reuse_publisher().publish_no_exact_sandbox());
-        let states = snapshot.current_held_workspace_states(&active_runs, Some("sess-claimed"));
-        assert_eq!(
-            states,
-            vec![
-                held_workspace_state("sess-active", "2026-06-01T00:00:04.000Z", &["vm0/default"],),
-                held_workspace_state("sess-cache", "2026-06-01T00:00:02.000Z", &["vm0/default"],),
-            ]
-        );
-    }
-
-    #[test]
-    fn workspace_cache_snapshot_treats_unloaded_cache_as_unknown() {
-        let snapshot = WorkspaceCacheStateSnapshot::new();
-
-        assert!(
-            !snapshot.workspace_cache_loaded(),
-            "new snapshot should start with unknown workspace-cache state"
-        );
-        assert!(
-            snapshot.might_contain_workspace_cache_reuse_key("sess-cache"),
-            "unloaded snapshot should trigger one refresh for cache-enabled runners"
-        );
-
-        refresh_snapshot(&snapshot, Vec::new());
-        assert!(
-            snapshot.workspace_cache_loaded(),
-            "refresh should mark workspace-cache state loaded even when empty"
-        );
-        assert!(
-            !snapshot.might_contain_workspace_cache_reuse_key("sess-cache"),
-            "loaded empty snapshot should not keep triggering cache refreshes"
-        );
-
-        refresh_snapshot(
-            &snapshot,
-            vec![held_workspace_state(
-                "sess-cache",
-                "2026-06-01T00:00:02.000Z",
-                &["vm0/default"],
-            )],
-        );
-        assert!(
-            snapshot.might_contain_workspace_cache_reuse_key("sess-cache"),
-            "loaded matching snapshot should trigger refresh when that reuse key is claimed"
-        );
-    }
-
-    #[test]
-    fn workspace_cache_snapshot_upsert_caps_states() {
-        let snapshot = WorkspaceCacheStateSnapshot::new();
-        for index in 0..=MAX_HELD_WORKSPACE_STATES {
-            snapshot.upsert_workspace_cache_state(HeldWorkspaceState {
-                reuse_key: format!("sess-{index:04}"),
-                last_completed_at: timestamp_for_index(index),
-                workspace_caches: vec![workspace_cache("vm0/default")],
-            });
-        }
-
-        let active_runs = test_active_runs();
-        let states = snapshot.current_held_workspace_states(&active_runs, None);
-
-        assert_eq!(states.len(), MAX_HELD_WORKSPACE_STATES);
-        assert!(
-            !states.iter().any(|state| state.reuse_key == "sess-0000"),
-            "oldest upserted workspace-cache state should be dropped at the cap"
-        );
-        assert!(
-            states
-                .iter()
-                .any(|state| state.reuse_key == format!("sess-{MAX_HELD_WORKSPACE_STATES:04}")),
-            "newest upserted workspace-cache state should be retained at the cap"
-        );
-    }
-
-    #[test]
-    fn workspace_cache_snapshot_refresh_preserves_concurrent_upsert() {
-        let snapshot = WorkspaceCacheStateSnapshot::new();
-        let original =
-            held_workspace_state("sess-shared", "2026-06-01T00:00:01.000Z", &["vm0/default"]);
-        let promoted =
-            held_workspace_state("sess-shared", "2026-06-01T00:00:02.000Z", &["vm0/large"]);
-        refresh_snapshot(&snapshot, vec![original.clone()]);
-
-        let refresh = snapshot.begin_workspace_cache_refresh();
-        snapshot.upsert_workspace_cache_state(promoted.clone());
-        let refreshed = snapshot.finish_workspace_cache_refresh(refresh, vec![original.clone()]);
-        let merged = held_workspace_state(
-            "sess-shared",
-            "2026-06-01T00:00:02.000Z",
-            &["vm0/default", "vm0/large"],
-        );
-        assert_eq!(refreshed.states, vec![merged.clone()]);
-        assert!(
-            !refreshed.changed,
-            "the concurrent upsert already installed the merged snapshot before refresh commit"
-        );
-
-        let active_runs = test_active_runs();
-        let states = snapshot.current_held_workspace_states(&active_runs, None);
-        assert_eq!(states, vec![merged]);
-
-        let refresh = snapshot.begin_workspace_cache_refresh();
-        snapshot.finish_workspace_cache_refresh(refresh, vec![original.clone()]);
-
-        let states = snapshot.current_held_workspace_states(&active_runs, None);
-        assert_eq!(states, vec![original]);
-    }
-
-    fn timestamp_for_index(index: usize) -> String {
-        format!("2026-06-01T00:{:02}:{:02}.000Z", index / 60, index % 60)
-    }
-
     #[test]
     fn held_sandbox_states_filter_active_reuse_keys() {
         let active_runs = test_active_runs();
@@ -1458,25 +1044,6 @@ mod tests {
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered[0].reuse_key, "thread-active");
         assert_eq!(filtered[1].reuse_key, "thread-held");
-    }
-
-    #[test]
-    fn merge_held_workspace_state_keeps_newest_timestamp_and_merges_profiles() {
-        let mut existing =
-            held_workspace_state("thread-1", "2026-06-01T00:00:02.000Z", &["vm0/default"]);
-        let incoming = held_workspace_state(
-            "thread-1",
-            "2026-06-01T00:00:01.000Z",
-            &["vm0/default", "vm0/large"],
-        );
-
-        merge_held_workspace_state(&mut existing, incoming);
-
-        assert_eq!(existing.last_completed_at, "2026-06-01T00:00:02.000Z");
-        assert_eq!(
-            existing.workspace_caches,
-            vec![workspace_cache("vm0/default"), workspace_cache("vm0/large")]
-        );
     }
 
     #[test]

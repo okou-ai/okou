@@ -45,7 +45,7 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked \
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-storage -- --test-threads=1
 
-# Extracted Runner active-run, idle sandbox, and workspace lifecycle owner tests
+# Extracted Runner active-run, idle sandbox, workspace and cache snapshot owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-lifecycle -- --test-threads=1
 

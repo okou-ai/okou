@@ -10,7 +10,7 @@ control and RPC services, shared contracts, and developer/test support.
 | runner                   | Process-wide composition, `start` orchestration, operational CLI and build packaging                  |
 | runner-executor          | Claimed-run sandbox execution, session history, results, diagnostics and per-run telemetry             |
 | runner-host              | Runner host filesystem, live process registry, local control IPC, locks, paths and logging primitives |
-| runner-lifecycle         | Active-run handoff, idle sandbox, memory prefetch, status and workspace image lifecycle               |
+| runner-lifecycle         | Active-run handoff, idle sandbox, memory prefetch, status, workspace image and cache snapshot lifecycle |
 | runner-network           | Runner proxy, DNS, CA, network log capture and bounded upload                                         |
 | runner-provider          | API/local job discovery, claiming, completion, active input, cancellation and queue coordination      |
 | runner-remote            | Guest RPC, remote usage, SSH authority/sessions/files, and VNC sessions                               |
