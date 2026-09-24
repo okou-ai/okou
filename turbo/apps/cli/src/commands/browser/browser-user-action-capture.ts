@@ -217,7 +217,7 @@ function runAgentBrowser(
     throw browserTimeoutError("agent-browser inspection timed out");
   }
   if (result.error || result.status !== 0) {
-    if (args[0] === "focus") {
+    if (!result.error && args[0] === "focus") {
       throw browserCaptureError(
         "the Browser element reference could not be focused",
         "BROWSER_INPUT_TARGET_UNAVAILABLE",
