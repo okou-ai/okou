@@ -65,23 +65,5 @@ export async function holdRunConversationDeletionForTest(
       }
       return result.count;
     },
-    cleanupWaiterCount: async () => {
-      signal.throwIfAborted();
-      const [result] = await executeRawRows(
-        db(),
-        sql`SELECT ${count()}::int AS count
-          FROM pg_stat_activity AS cleanup
-          WHERE EXISTS (
-            SELECT 1 FROM pg_stat_activity AS deletion
-            WHERE ${holderPid} = ANY(pg_blocking_pids(deletion.pid))
-              AND deletion.pid = ANY(pg_blocking_pids(cleanup.pid))
-          )`,
-        countSchema,
-      );
-      if (!result) {
-        throw new Error("Missing account cleanup waiter count");
-      }
-      return result.count;
-    },
   };
 }
