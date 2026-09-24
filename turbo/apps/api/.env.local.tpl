@@ -342,4 +342,4 @@ CRON_SECRET=local-dev-cron-secret
 # is accepted and a distinct 32+ character secret is provisioned on both sides.
 MORNING_BRIEF_HTTP_FANOUT=false
 MORNING_BRIEF_WORKER_CONCURRENCY=4
-# MORNING_BRIEF_WORKER_SECRET=<distinct random secret; never reuse CRON_SECRET>
+# Worker signatures use a purpose-derived key from SECRETS_ENCRYPTION_KEY.

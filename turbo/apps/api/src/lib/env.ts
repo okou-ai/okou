@@ -87,7 +87,6 @@ const SCHEMA = {
     .min(1)
     .max(20)
     .default(4),
-  MORNING_BRIEF_WORKER_SECRET: z.string().min(32).optional(),
   R2_ACCESS_KEY_ID: z.string().min(1),
   R2_ACCOUNT_ID: z.string().min(1),
   R2_SECRET_ACCESS_KEY: z.string().min(1),

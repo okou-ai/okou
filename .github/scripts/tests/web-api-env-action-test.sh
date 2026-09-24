@@ -371,7 +371,7 @@ run_machine_secret_action() {
     "$repo_secrets_json"
 }
 
-run_pi_memory_worker_switch_action() {
+run_api_boolean_switch_action() {
   local test_dir="$1"
   local input_app="$2"
   local input_environment="$3"
@@ -627,6 +627,7 @@ assert_web_url_canonical "$success_env_file" "https://pr-123-www.okou.test"
 assert_env_value "$success_env_file" CLI_PKG_URL "https://static.okou.io/okou-cli/test-sha/package.tgz"
 assert_env_key_count "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
 assert_env_value "$success_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
+assert_env_value "$success_env_file" MORNING_BRIEF_HTTP_FANOUT "false"
 assert_env_value "$success_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
 assert_env_absent_value "$success_env_file" "ONBOARDING_URL="
 assert_env_value "$success_env_file" OKOU_PRICE_PRO "price_test_pro"
@@ -681,6 +682,7 @@ assert_env_key_absent "$preview_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
 assert_env_key_absent "$preview_web_env_file" LANGFUSE_PUBLIC_KEY
 assert_env_key_absent "$preview_web_env_file" LANGFUSE_SECRET_KEY
 assert_env_key_absent "$preview_web_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
+assert_env_key_absent "$preview_web_env_file" MORNING_BRIEF_HTTP_FANOUT
 
 empty_job_ref_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_job_ref_dir")
@@ -726,6 +728,7 @@ assert_env_key_absent "$production_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
 assert_env_key_absent "$production_web_env_file" LANGFUSE_PUBLIC_KEY
 assert_env_key_absent "$production_web_env_file" LANGFUSE_SECRET_KEY
 assert_env_key_absent "$production_web_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED
+assert_env_key_absent "$production_web_env_file" MORNING_BRIEF_HTTP_FANOUT
 assert_env_value "$production_web_env_file" POSTHOG_KEY "github-posthog-key"
 assert_env_value "$production_web_env_file" POSTHOG_HOST "https://posthog.github.test"
 assert_env_value "$production_web_env_file" GIT_COMMIT_SHA "$EXPECTED_BUILD_COMMIT_SHA"
@@ -797,6 +800,8 @@ assert_env_absent_value "$production_api_env_file" "doppler-stripe-automation-we
 assert_preview_job_ref_absent "$production_api_env_file"
 assert_env_key_count "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED 1
 assert_env_value "$production_api_env_file" PI_MEMORY_BACKGROUND_WORKERS_ENABLED "false"
+assert_env_key_count "$production_api_env_file" MORNING_BRIEF_HTTP_FANOUT 1
+assert_env_value "$production_api_env_file" MORNING_BRIEF_HTTP_FANOUT "false"
 
 for worker_switch_case in \
   '{"PI_MEMORY_BACKGROUND_WORKERS_ENABLED":""}|false' \
@@ -806,7 +811,7 @@ for worker_switch_case in \
   worker_switch_dir="$(mktemp -d)"
   TEMP_DIRS+=("$worker_switch_dir")
   worker_switch_output="$(
-    run_pi_memory_worker_switch_action \
+    run_api_boolean_switch_action \
       "$worker_switch_dir" \
       api \
       production \
@@ -822,7 +827,7 @@ done
 preview_worker_switch_dir="$(mktemp -d)"
 TEMP_DIRS+=("$preview_worker_switch_dir")
 preview_worker_switch_output="$(
-  run_pi_memory_worker_switch_action \
+  run_api_boolean_switch_action \
     "$preview_worker_switch_dir" \
     api \
     preview \
@@ -837,7 +842,7 @@ assert_env_value "$preview_worker_switch_env_file" PI_MEMORY_BACKGROUND_WORKERS_
 web_worker_switch_dir="$(mktemp -d)"
 TEMP_DIRS+=("$web_worker_switch_dir")
 web_worker_switch_output="$(
-  run_pi_memory_worker_switch_action \
+  run_api_boolean_switch_action \
     "$web_worker_switch_dir" \
     web \
     production \
@@ -855,7 +860,7 @@ for invalid_worker_switch_vars in \
   TEMP_DIRS+=("$invalid_worker_switch_dir")
   status=0
   invalid_worker_switch_output="$(
-    run_pi_memory_worker_switch_action \
+    run_api_boolean_switch_action \
       "$invalid_worker_switch_dir" \
       api \
       production \
@@ -868,6 +873,58 @@ for invalid_worker_switch_vars in \
   assert_contains "$invalid_worker_switch_output" "::error::PI_MEMORY_BACKGROUND_WORKERS_ENABLED must be true or false when set"
   if [[ -e "${invalid_worker_switch_dir}/web-api-api-production.env" ]]; then
     fail "invalid Pi memory background worker switch must fail before creating an environment file"
+  fi
+done
+
+for fanout_switch_case in \
+  '{"MORNING_BRIEF_HTTP_FANOUT":""}|false' \
+  '{"MORNING_BRIEF_HTTP_FANOUT":"false"}|false' \
+  '{"MORNING_BRIEF_HTTP_FANOUT":"true"}|true'; do
+  IFS='|' read -r fanout_switch_vars fanout_switch_expected <<< "$fanout_switch_case"
+  fanout_switch_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$fanout_switch_dir")
+  fanout_switch_output="$(
+    run_api_boolean_switch_action \
+      "$fanout_switch_dir" api production "$fanout_switch_vars" 2>&1
+  )"
+  fanout_switch_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${fanout_switch_dir}/github-output")"
+  assert_contains "$fanout_switch_output" "Rendered"
+  assert_env_key_count "$fanout_switch_env_file" MORNING_BRIEF_HTTP_FANOUT 1
+  assert_env_value "$fanout_switch_env_file" MORNING_BRIEF_HTTP_FANOUT "$fanout_switch_expected"
+done
+
+preview_fanout_dir="$(mktemp -d)"
+TEMP_DIRS+=("$preview_fanout_dir")
+run_api_boolean_switch_action \
+  "$preview_fanout_dir" api preview \
+  '{"MORNING_BRIEF_HTTP_FANOUT":"true"}' >/dev/null
+preview_fanout_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${preview_fanout_dir}/github-output")"
+assert_env_value "$preview_fanout_env_file" MORNING_BRIEF_HTTP_FANOUT "false"
+
+web_fanout_dir="$(mktemp -d)"
+TEMP_DIRS+=("$web_fanout_dir")
+run_api_boolean_switch_action \
+  "$web_fanout_dir" web production \
+  '{"MORNING_BRIEF_HTTP_FANOUT":"true"}' >/dev/null
+web_fanout_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${web_fanout_dir}/github-output")"
+assert_env_key_absent "$web_fanout_env_file" MORNING_BRIEF_HTTP_FANOUT
+
+for invalid_fanout_vars in \
+  '{"MORNING_BRIEF_HTTP_FANOUT":"enabled"}' \
+  '{"MORNING_BRIEF_HTTP_FANOUT":"true\nINJECTED_ENV=true"}'; do
+  invalid_fanout_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$invalid_fanout_dir")
+  status=0
+  invalid_fanout_output="$(
+    run_api_boolean_switch_action \
+      "$invalid_fanout_dir" api production "$invalid_fanout_vars" 2>&1
+  )" || status=$?
+  if [[ "$status" -eq 0 ]]; then
+    fail "expected invalid Morning Brief fanout switch to fail"
+  fi
+  assert_contains "$invalid_fanout_output" "::error::MORNING_BRIEF_HTTP_FANOUT must be true or false when set"
+  if [[ -e "${invalid_fanout_dir}/web-api-api-production.env" ]]; then
+    fail "invalid Morning Brief fanout switch must fail before creating an environment file"
   fi
 done
 

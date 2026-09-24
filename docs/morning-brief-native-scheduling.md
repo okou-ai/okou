@@ -318,7 +318,13 @@ contract, and in `turbo/apps/api/vercel.json` at `* * * * *`. It uses the normal
 any write and any provider call.
 
 The default-off `MORNING_BRIEF_HTTP_FANOUT` setting preserves the inline tick
-until the staff canary is separately activated. With fanout enabled, the same
+until the staff canary is separately activated. Production API deployments render
+this value from the resolved `MORNING_BRIEF_HTTP_FANOUT` GitHub variable
+(production Environment override, or repository default); missing or empty
+means `false`, and previews always use `false`. Enable it only
+after the code is deployed, the enrolled native owner set is scoped to the
+staff canary, and the worker endpoint, self-dispatch origin, and function
+lifetime have been verified. With fanout enabled, the same
 Cron still bootstraps legacy-phase rows and advances cutover/rollback, but
 **never** collects or calls the model. It discovers due anchors, expired or
 deferred occurrences, and pending deliveries in bounded batches; it sends
@@ -329,8 +335,13 @@ lost admission leaves the database obligation discoverable for the next tick. Th
 `background_jobs` lease or new queue service participates in native ownership.
 
 `POST /api/internal/morning-brief-worker` is an HTTP route, not network-private
-ingress. It accepts only a recent HMAC-SHA256 signature made with the distinct
-`MORNING_BRIEF_WORKER_SECRET` over the method, path, timestamp and task identity.
+ingress. It accepts only a recent HMAC-SHA256 signature over the method, path,
+timestamp and task identity. Its signing key is derived with HKDF-SHA256 from
+the existing server-only `SECRETS_ENCRYPTION_KEY`, under the independent
+`okou:morning-brief-worker-dispatch:v1` context. The root is already injected
+into the API and is never transmitted in dispatch requests; neither the root
+nor the Cron or Runner bearer secrets are used directly as worker HMAC keys.
+Rotating the root must be coordinated with its other signing/encryption uses.
 It rejects unauthenticated requests before reading state. Each accepted request
 owns one Vercel invocation with `waitUntil`, restricted to the signed owner and
 frozen anchor. A late signed request cannot claim the owner's next anchor.

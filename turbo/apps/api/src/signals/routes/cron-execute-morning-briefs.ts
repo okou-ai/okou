@@ -1,7 +1,6 @@
 import { cronExecuteMorningBriefsContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 
-import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import type { MorningBriefMemberIdentity } from "../services/morning-brief-enrollment-data.service";
@@ -36,9 +35,6 @@ function createExecuteMorningBriefsRoute(
     }
 
     const fanout = nativeHttpFanoutEnabled();
-    if (fanout && !env("MORNING_BRIEF_WORKER_SECRET")) {
-      throw new Error("Morning Brief worker dispatch secret is not configured");
-    }
     const db = set(writeDb$);
     const deps = productionNativeTickDependencies({
       db,
