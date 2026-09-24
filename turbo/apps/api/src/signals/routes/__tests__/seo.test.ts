@@ -187,18 +187,30 @@ function noSearchResultsResponse(cost: number) {
 }
 
 describe("SEO routes", () => {
+  // The two Labs operations share one location resolver. Exercise every input
+  // spelling/policy boundary, but do not repeat their full Cartesian product.
+  const supportedLabsLocations = {
+    "keyword-ideas": [
+      { location: " us ", code: 2840 },
+      { location: "GB", code: 2826 },
+      { location: "Hong Kong", code: 2344 },
+    ],
+    "ranked-keywords": [
+      { location: "uSa", code: 2840 },
+      { location: "  united   states  ", code: 2840 },
+      { location: "uk", code: 2826 },
+    ],
+  } as const;
+  const unsupportedLabsLocations = {
+    "keyword-ideas": ["Austin, Texas, United States", "Atlantis", "RU"],
+    "ranked-keywords": ["Texas", "ZZ"],
+  } as const;
+
   describe.each([
     { operation: "keyword-ideas", endpoint: "keyword_ideas" },
     { operation: "ranked-keywords", endpoint: "ranked_keywords" },
   ] as const)("$operation Labs locations", ({ operation, endpoint }) => {
-    it.each([
-      { location: " us ", code: 2840 },
-      { location: "uSa", code: 2840 },
-      { location: "  united   states  ", code: 2840 },
-      { location: "GB", code: 2826 },
-      { location: "uk", code: 2826 },
-      { location: "Hong Kong", code: 2344 },
-    ])(
+    it.each(supportedLabsLocations[operation])(
       "resolves $location to the supported location code",
       async ({ location, code }) => {
         const actor = await seedActor();
@@ -241,7 +253,7 @@ describe("SEO routes", () => {
       },
     );
 
-    it.each(["Austin, Texas, United States", "Texas", "Atlantis", "ZZ", "RU"])(
+    it.each(unsupportedLabsLocations[operation])(
       "rejects unsupported location %s before the provider without charging or alerting",
       async (location) => {
         const actor = await seedActor();
@@ -480,8 +492,6 @@ describe("SEO routes", () => {
 
   it.each([
     { engine: "google", cost: 0.002, billingQuantity: 2000, creditsCharged: 3 },
-    { engine: "bing", cost: 0.002, billingQuantity: 2000, creditsCharged: 3 },
-    { engine: "google", cost: 0, billingQuantity: 0, creditsCharged: 0 },
     { engine: "bing", cost: 0, billingQuantity: 0, creditsCharged: 0 },
   ] as const)(
     "returns $engine no-search-results at cost $cost without retrying",

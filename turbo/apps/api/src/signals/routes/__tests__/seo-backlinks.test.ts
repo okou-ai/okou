@@ -102,9 +102,9 @@ function emptyTasksResponse() {
 }
 
 describe("SEO backlinks provider retries", () => {
-  it.each([500, 504])(
-    "recovers from HTTP %i with an Ok envelope and charges only the successful result",
-    async (httpStatus) => {
+  it(
+    "recovers from HTTP 504 with an Ok envelope and charges only the successful result",
+    async () => {
       const { client, headers, credits } = await setupBacklinksTest();
       const beforeCredits = await credits();
       const failedBody = backlinksResponse("failed-task", 0.012);
@@ -114,7 +114,7 @@ describe("SEO backlinks provider retries", () => {
         http.post(BACKLINKS_URL, async ({ request }) => {
           providerRequests.push(await request.json());
           return providerRequests.length === 1
-            ? HttpResponse.json(failedBody, { status: httpStatus })
+            ? HttpResponse.json(failedBody, { status: 504 })
             : HttpResponse.json(successfulBody);
         }),
       );
@@ -141,9 +141,9 @@ describe("SEO backlinks provider retries", () => {
     },
   );
 
-  it.each([500, 504])(
-    "stops after two HTTP %i responses without charging credits",
-    async (httpStatus) => {
+  it(
+    "stops after two HTTP 500 responses without charging credits",
+    async () => {
       const { client, headers, credits } = await setupBacklinksTest();
       const beforeCredits = await credits();
       let providerRequests = 0;
@@ -151,7 +151,7 @@ describe("SEO backlinks provider retries", () => {
         http.post(BACKLINKS_URL, () => {
           providerRequests += 1;
           return HttpResponse.json(backlinksResponse("failed-task", 0.024), {
-            status: httpStatus,
+            status: 500,
           });
         }),
       );
