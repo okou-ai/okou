@@ -623,7 +623,7 @@ export function GetStartedCheckinDialog({
       <DialogContent smMaxWidth={680}>
         {/* The confirmation joins the same two panels as every other quest
             screen. The amount takes display size so the reward is clear. */}
-        <div className="-m-6 flex items-stretch">
+        <div className="-m-6 flex min-h-72 items-stretch">
           {/* On a narrow viewport the copy needs the full width. */}
           <div className="hidden sm:contents">
             <QuestFigure art="checkinWeek" />
