@@ -600,18 +600,19 @@ function PendingFormGate({
   const pageSignal = useGet(pageSignal$);
   const entryState = useGet(signals.entryState$);
   const beginEntry = useSet(signals.beginEntry$);
+  const autoBeginEntryRef = useSet(signals.autoBeginEntryRef$);
   if (entryState === "ready") {
     return (
       <PendingForm signals={signals} request={request} showTitle={showTitle} />
     );
   }
   return (
-    <div className="flex flex-col gap-4" role="status">
+    <div ref={autoBeginEntryRef} className="flex flex-col gap-4" role="status">
       <PendingFormHeader
         siteOrigin={request.action.siteOrigin}
         showTitle={showTitle}
       />
-      {entryState === "checking" ? (
+      {entryState !== "unavailable" ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 size={16} className="animate-spin" />
           {t(($) => {
@@ -620,13 +621,11 @@ function PendingFormGate({
         </p>
       ) : (
         <>
-          {entryState === "unavailable" && (
-            <p role="alert" className="text-sm text-destructive">
-              {t(($) => {
-                return $.chat.browserInput.unavailable;
-              })}
-            </p>
-          )}
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return $.chat.browserInput.unavailable;
+            })}
+          </p>
           <Button
             type="button"
             onClick={() => {
@@ -634,9 +633,7 @@ function PendingFormGate({
             }}
           >
             {t(($) => {
-              return entryState === "unavailable"
-                ? $.chat.browserInput.retry
-                : $.chat.browserInput.open;
+              return $.chat.browserInput.retry;
             })}
           </Button>
         </>

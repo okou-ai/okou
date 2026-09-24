@@ -70,6 +70,10 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly busy$: Computed<boolean>;
   readonly entryState$: Computed<"idle" | "checking" | "ready" | "unavailable">;
   readonly beginEntry$: Command<Promise<void>, [AbortSignal]>;
+  readonly autoBeginEntryRef$: Command<
+    (() => void) | undefined,
+    [HTMLDivElement | null]
+  >;
   readonly endEntry$: Command<void, []>;
   readonly refresh$: Command<void, []>;
   readonly updateDraft$: Command<void, [string, string]>;
@@ -95,7 +99,10 @@ export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
 function createEntrySignals(
   descriptor: BrowserUserActionDescriptor,
   refresh$: BrowserUserActionSignals["refresh$"],
-): Pick<BrowserUserActionSignals, "entryState$" | "beginEntry$" | "endEntry$"> {
+): Pick<
+  BrowserUserActionSignals,
+  "entryState$" | "beginEntry$" | "autoBeginEntryRef$" | "endEntry$"
+> {
   const internalState$ = state<"idle" | "checking" | "ready" | "unavailable">(
     "idle",
   );
@@ -145,6 +152,11 @@ function createEntrySignals(
       return get(internalState$);
     }),
     beginEntry$,
+    autoBeginEntryRef$: onRef(
+      command(({ set }, _element: HTMLDivElement, signal: AbortSignal) => {
+        return set(beginEntry$, signal);
+      }),
+    ),
     endEntry$,
   };
 }

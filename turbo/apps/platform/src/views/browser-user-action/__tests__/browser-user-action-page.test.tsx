@@ -171,9 +171,11 @@ test("The standalone route reuses the native browser input form", async () => {
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
-  expect(screen.queryByRole("form")).toBeNull();
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
+  expect(
+    queryAllByRoleFast("button").some((candidate) => {
+      return candidate.textContent?.trim() === "Enter information";
+    }),
+  ).toBe(false);
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
@@ -222,8 +224,6 @@ test("The standalone form records cancellation before notifying the agent", asyn
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
   await screen.findByRole("form", { name: "Enter information in browser" });
   click(button("Cancel"));
 
@@ -267,13 +267,45 @@ test("Standalone preflight makes a confirmed changed target stale before showing
     host: "app.okou.ai",
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
   await expect(screen.findByText("Fields changed")).resolves.toBeVisible();
   expect(screen.queryByRole("form")).toBeNull();
   expect(
     screen.getByText("Ask the agent to create a new request."),
   ).toBeVisible();
+});
+
+test("A transient standalone preflight failure offers retry without showing fields", async () => {
+  let attempts = 0;
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, action("pending"));
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    attempts += 1;
+    return attempts === 1
+      ? respond(503, {
+          error: {
+            code: "BROWSER_UNAVAILABLE",
+            message: "Browser unavailable",
+          },
+        })
+      : respond(200, action("pending"));
+  });
+
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+
+  await waitFor(() => {
+    expect(button("Retry")).toBeVisible();
+  });
+  expect(attempts).toBe(1);
+  expect(screen.queryByRole("form")).toBeNull();
+  click(button("Retry"));
+  await screen.findByRole("form", { name: "Enter information in browser" });
+  expect(attempts).toBe(2);
 });
 
 test("A terminal standalone action retries only its stable callback", async () => {
@@ -415,8 +447,6 @@ test("A failed callback retries without repeating the Browser mutation", async (
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
-  await screen.findByText("Enter information");
-  click(button("Enter information"));
   const form = await screen.findByRole("form", {
     name: "Enter information in browser",
   });
