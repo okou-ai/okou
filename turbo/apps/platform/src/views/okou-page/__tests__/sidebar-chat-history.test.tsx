@@ -482,17 +482,14 @@ test("Find archived chats in All and Chats workspace search results", async () =
   );
 
   await waitFor(() => {
-    expect(buttonByText("All", dialog)).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
+    expect(buttonByText("All", dialog)).toHaveAttribute("aria-pressed", "true");
     expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
   });
 
   click(buttonByText("Chats", dialog));
   await waitFor(() => {
     expect(buttonByText("Chats", dialog)).toHaveAttribute(
-      "aria-selected",
+      "aria-pressed",
       "true",
     );
     expect(within(dialog).getByText("✅ Archived context")).toBeInTheDocument();
