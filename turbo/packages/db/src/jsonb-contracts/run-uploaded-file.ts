@@ -59,6 +59,7 @@ export interface CanonicalAssetDiscordDeliveryState {
     readonly startedAt: string;
   } | null;
   readonly attachmentId?: string;
+  readonly retryNotBeforeMs?: number;
 }
 
 export interface CanonicalAssetDeliveryError {

@@ -84,7 +84,12 @@ function printDelivery(result: DiscordUploadMaterializeResponse): void {
   if (result.delivery.status === "failed") {
     console.warn(`Discord delivery failed: ${result.delivery.message}`);
     if (result.delivery.retryable) {
-      console.warn(`Retry with --operation-id ${result.operationId}`);
+      const retryAfter = result.delivery.retryAfterSeconds;
+      console.warn(
+        retryAfter !== undefined && retryAfter > 0
+          ? `Retry after ${retryAfter} seconds with --operation-id ${result.operationId}`
+          : `Retry with --operation-id ${result.operationId}`,
+      );
     }
   } else if (result.delivery.status === "pending") {
     console.warn(

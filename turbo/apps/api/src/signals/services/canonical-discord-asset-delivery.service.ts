@@ -69,6 +69,11 @@ interface DiscordDeliveryOperation {
   readonly row: DiscordDeliveryRow;
 }
 
+interface DiscordDeliveryRetry {
+  readonly safeToRetrySend: boolean;
+  readonly retryNotBeforeMs?: number;
+}
+
 type DiscordDeliveryFailure = {
   readonly ok: false;
   readonly response:
@@ -230,6 +235,13 @@ function deliveryState(
       status: "failed",
       message: row.lastError.message,
       retryable: row.lastError.retryable,
+      ...(row.providerState.retryNotBeforeMs === undefined
+        ? {}
+        : {
+            retryAfterSeconds: Math.ceil(
+              Math.max(0, row.providerState.retryNotBeforeMs - now()) / 1000,
+            ),
+          }),
     };
   }
   return { status: "pending" };
@@ -352,7 +364,7 @@ async function markFailed(
   db: Db,
   { identity, row }: DiscordDeliveryOperation,
   failure: CanonicalAssetDeliveryError,
-  safeToRetrySend: boolean,
+  retry: DiscordDeliveryRetry,
   signal: AbortSignal,
 ): Promise<DiscordDeliveryResult> {
   await db
@@ -360,8 +372,15 @@ async function markFailed(
     .set({
       status: "failed",
       lastError: failure,
-      providerState: safeToRetrySend
-        ? { ...row.providerState, attempt: null }
+      providerState: retry.safeToRetrySend
+        ? {
+            provider: "discord",
+            nonce: row.providerState.nonce,
+            attempt: null,
+            ...(retry.retryNotBeforeMs === undefined
+              ? {}
+              : { retryNotBeforeMs: retry.retryNotBeforeMs }),
+          }
         : row.providerState,
       updatedAt: sql`now()`,
     })
@@ -376,6 +395,50 @@ const uncertainDeliveryError: CanonicalAssetDeliveryError = Object.freeze({
     "Discord delivery outcome is uncertain. Retry this same upload operation to reconcile it.",
   retryable: false,
 });
+
+function discordSendFailure(result: {
+  readonly status: number;
+  readonly retryAfterMs?: number;
+}): {
+  readonly error: CanonicalAssetDeliveryError;
+  readonly retry: DiscordDeliveryRetry;
+} {
+  const rejected =
+    result.status >= 400 && result.status < 500 && result.status !== 408;
+  if (!rejected) {
+    return { error: uncertainDeliveryError, retry: { safeToRetrySend: false } };
+  }
+  let retryNotBeforeMs: number | undefined;
+  if (
+    result.status === 429 &&
+    result.retryAfterMs !== undefined &&
+    result.retryAfterMs > 0
+  ) {
+    retryNotBeforeMs = now() + Math.ceil(result.retryAfterMs);
+    if (!Number.isSafeInteger(retryNotBeforeMs)) {
+      return {
+        error: {
+          code: "discord-retry-delay-unsupported",
+          message:
+            "Discord returned an unsupported retry delay. Delivery is blocked for this operation.",
+          retryable: false,
+        },
+        retry: { safeToRetrySend: true },
+      };
+    }
+  }
+  return {
+    error: {
+      code: "discord-send-rejected",
+      message: "Discord rejected the file delivery",
+      retryable: result.status === 429,
+    },
+    retry: {
+      safeToRetrySend: true,
+      ...(retryNotBeforeMs === undefined ? {} : { retryNotBeforeMs }),
+    },
+  };
+}
 
 function deliveredAttachment(
   message: DiscordMessage,
@@ -408,7 +471,7 @@ async function recordDelivered(
       db,
       { identity, row },
       uncertainDeliveryError,
-      false,
+      { safeToRetrySend: false },
       signal,
     );
   }
@@ -505,7 +568,7 @@ async function reconcileAttempt(
     db,
     { identity: args, row },
     uncertainDeliveryError,
-    false,
+    { safeToRetrySend: false },
     signal,
   );
 }
@@ -516,7 +579,8 @@ async function claimDeliveryAttempt(
   signal: AbortSignal,
 ): Promise<DiscordDeliveryRow | undefined> {
   const providerState: CanonicalAssetDiscordDeliveryState = {
-    ...row.providerState,
+    provider: "discord",
+    nonce: row.providerState.nonce,
     attempt: { id: randomUUID(), startedAt: nowDate().toISOString() },
   };
   const [claimed] = await db
@@ -567,6 +631,12 @@ export const completeCanonicalDiscordDelivery$ = command(
     if (row.status === "failed" && !row.lastError?.retryable) {
       return deliveryResult(row);
     }
+    if (
+      row.providerState.retryNotBeforeMs !== undefined &&
+      now() < row.providerState.retryNotBeforeMs
+    ) {
+      return deliveryResult(row);
+    }
     const verified = await set(verifiedFileBytes$, row, signal);
     if (!verified.ok) {
       return verified;
@@ -586,7 +656,7 @@ export const completeCanonicalDiscordDelivery$ = command(
           message: "Discord destination is no longer available",
           retryable: true,
         },
-        true,
+        { safeToRetrySend: true },
         signal,
       );
       return sendAccess;
@@ -616,7 +686,7 @@ export const completeCanonicalDiscordDelivery$ = command(
         db,
         { identity: args, row: attemptRow },
         uncertainDeliveryError,
-        false,
+        { safeToRetrySend: false },
         signal,
       );
     }
@@ -632,20 +702,12 @@ export const completeCanonicalDiscordDelivery$ = command(
         signal,
       );
     }
-    const result = sent.value;
-    const rejected =
-      result.status >= 400 && result.status < 500 && result.status !== 408;
+    const failure = discordSendFailure(sent.value);
     return await markFailed(
       db,
       { identity: args, row: attemptRow },
-      rejected
-        ? {
-            code: "discord-send-rejected",
-            message: "Discord rejected the file delivery",
-            retryable: result.status === 429,
-          }
-        : uncertainDeliveryError,
-      rejected,
+      failure.error,
+      failure.retry,
       signal,
     );
   },

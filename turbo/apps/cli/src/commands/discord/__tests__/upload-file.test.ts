@@ -199,6 +199,7 @@ describe("okou discord upload-file", () => {
         status: "failed",
         message: "Discord rate limited delivery",
         retryable: true,
+        retryAfterSeconds: 60,
       },
     };
     server.use(
@@ -221,6 +222,9 @@ describe("okou discord upload-file", () => {
     expect(output).toHaveBeenCalledWith(JSON.stringify(failed));
     expect(warnings.mock.calls.flat().join("\n")).toContain(
       "Discord rate limited delivery",
+    );
+    expect(warnings).toHaveBeenCalledWith(
+      `Retry after 60 seconds with --operation-id ${OPERATION_ID}`,
     );
     expect(warnings.mock.calls.flat().join("\n")).toContain(
       `--operation-id ${OPERATION_ID}`,

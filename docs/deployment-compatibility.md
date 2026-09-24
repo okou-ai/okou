@@ -3816,4 +3816,6 @@ receives an unavailable endpoint. No Runner protocol or production activation is
 introduced. A revoked or rebound Discord connection cannot reuse the stored
 delivery destination. If a send might have succeeded but its receipt is missing,
 retries reconcile the bot message by the persisted nonce and exact destination;
-absence from the bounded history scan does not authorize another send.
+absence from the bounded history scan does not authorize another send. Explicit
+Discord rate-limit delays are persisted with the delivery attempt; subsequent
+completion requests return the remaining delay without sending early.
