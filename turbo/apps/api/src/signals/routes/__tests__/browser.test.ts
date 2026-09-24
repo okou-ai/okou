@@ -2887,10 +2887,10 @@ describe("okou browser route", () => {
       "Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes",
     );
     expect(appendSystemPrompt).toContain(
-      "use `okou browser input-request` only when the user must personally enter values",
+      "use `okou browser input-request` only when the user must personally enter supported form values",
     );
     expect(appendSystemPrompt).toContain(
-      "It supports native form input only, gives the user a dedicated input form, and does not pass their values to the agent in the request or callback.",
+      "It opens a dedicated input form (not other Browser interactions); entered values are not included in the action URL or callback.",
     );
     expect(appendSystemPrompt).toContain(
       "Fill ordinary forms with `agent-browser` instead.",
