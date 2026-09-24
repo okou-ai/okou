@@ -8,6 +8,7 @@ import {
 import type { OnboardingIndustry } from "@okouai/core/onboarding-industry";
 import { z } from "zod";
 import { localStorageSignals } from "../external/local-storage.ts";
+import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { jsonParseOr } from "../utils.ts";
 
 /**
@@ -19,15 +20,31 @@ import { jsonParseOr } from "../utils.ts";
 
 export type SourcesFirstFlow = "owner" | "member";
 
-export type SourcesFirstStep =
-  | "sources"
-  | "industry"
-  | "team"
-  | "experience"
-  | "skills"
-  | "profile"
-  | "slack"
-  | "ready";
+const sourcesFirstStepSchema = z.enum([
+  "sources",
+  "industry",
+  "team",
+  "experience",
+  "skills",
+  "profile",
+  "slack",
+  "ready",
+]);
+
+export type SourcesFirstStep = z.infer<typeof sourcesFirstStepSchema>;
+
+export const SOURCES_FIRST_STEP_ROUTES: Readonly<
+  Record<SourcesFirstStep, RoutePath>
+> = {
+  industry: ROUTES.onboarding,
+  sources: ROUTES.onboardingSources,
+  team: ROUTES.onboardingTeam,
+  experience: ROUTES.onboardingExperience,
+  skills: ROUTES.onboardingSkills,
+  profile: ROUTES.onboardingProfile,
+  slack: ROUTES.onboardingSlack,
+  ready: ROUTES.onboardingReady,
+};
 
 export type SubscriptionProvider = OnboardingSubscriptionProvider;
 
@@ -105,6 +122,10 @@ const persistedDraftIdentitySchema = z.object({
   userId: z.string().min(1),
 });
 
+const persistedStepSchema = persistedDraftIdentitySchema.extend({
+  step: sourcesFirstStepSchema,
+});
+
 const persistedDraftSchema = persistedDraftIdentitySchema.extend({
   version: z.literal(2),
   industry: onboardingIndustrySchema.nullable(),
@@ -170,52 +191,80 @@ export const sourcesFirstDraftStorage = localStorageSignals(
   "onboarding:sources-first-draft",
 );
 const draftStorage = sourcesFirstDraftStorage;
+const stepStorage = localStorageSignals("onboarding:sources-first-step");
+const onboardingStorages = [draftStorage, stepStorage] as const;
 const internalDraftIdentity$ = state<SourcesFirstDraftIdentity | null>(null);
 const internalDraft$ = state<SourcesFirstDraft>(emptyDraft());
 
-/** Restore before a page checks whether the selected plan adds the skills step. */
+/**
+ * Restore answers and return the saved step once per identity/app lifetime.
+ * Only the entry page resumes it; explicit step URLs and Back keep their target.
+ */
 export const restoreSourcesFirstDraft$ = command(
-  ({ get, set }, identity: SourcesFirstDraftIdentity): void => {
+  (
+    { get, set },
+    identity: SourcesFirstDraftIdentity,
+  ): SourcesFirstStep | null => {
     const active = get(internalDraftIdentity$);
     if (active?.orgId === identity.orgId && active.userId === identity.userId) {
-      return;
+      return null;
     }
 
     const saved = savedDraftForIdentity(get(draftStorage.get$), identity);
     set(internalDraftIdentity$, identity);
     set(internalDraft$, restoredDraft(saved));
+    const step = persistedStepSchema.safeParse(
+      jsonParseOr<unknown>(get(stepStorage.get$) ?? "null", null),
+    );
+    return step.success &&
+      step.data.orgId === identity.orgId &&
+      step.data.userId === identity.userId
+      ? step.data.step
+      : null;
+  },
+);
+
+export const saveSourcesFirstStep$ = command(
+  ({ get, set }, step: SourcesFirstStep): void => {
+    const identity = get(internalDraftIdentity$);
+    if (identity !== null) {
+      set(stepStorage.set$, JSON.stringify({ ...identity, step }));
+    }
   },
 );
 
 export const clearSourcesFirstDraft$ = command(({ get, set }): void => {
   const identity = get(internalDraftIdentity$);
-  if (identity === null) {
-    set(internalDraft$, emptyDraft());
-    return;
+  if (identity !== null) {
+    for (const storage of onboardingStorages) {
+      const raw = get(storage.get$);
+      const parsed = persistedDraftIdentitySchema.safeParse(
+        raw === null ? null : jsonParseOr<unknown>(raw, null),
+      );
+      if (
+        parsed.success &&
+        parsed.data.orgId === identity.orgId &&
+        parsed.data.userId === identity.userId
+      ) {
+        set(storage.clear$);
+      }
+    }
   }
-  const raw = get(draftStorage.get$);
-  const parsed = persistedDraftIdentitySchema.safeParse(
-    raw === null ? null : jsonParseOr<unknown>(raw, null),
-  );
-  if (
-    parsed.success &&
-    parsed.data.orgId === identity.orgId &&
-    parsed.data.userId === identity.userId
-  ) {
-    set(draftStorage.clear$);
-  }
+  set(internalDraftIdentity$, null);
   set(internalDraft$, emptyDraft());
 });
 
 /** Clear a deleted user's onboarding draft without touching another account's. */
 export const clearSourcesFirstDraftForUser$ = command(
   ({ get, set }, userId: string): void => {
-    const raw = get(draftStorage.get$);
-    const parsed = persistedDraftIdentitySchema.safeParse(
-      raw === null ? null : jsonParseOr<unknown>(raw, null),
-    );
-    if (parsed.success && parsed.data.userId === userId) {
-      set(draftStorage.clear$);
+    for (const storage of onboardingStorages) {
+      const raw = get(storage.get$);
+      const parsed = persistedDraftIdentitySchema.safeParse(
+        raw === null ? null : jsonParseOr<unknown>(raw, null),
+      );
+      if (parsed.success && parsed.data.userId === userId) {
+        set(storage.clear$);
+      }
     }
     if (get(internalDraftIdentity$)?.userId === userId) {
       set(internalDraftIdentity$, null);

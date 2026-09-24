@@ -9,11 +9,15 @@ import { expect, test } from "vitest";
 
 import {
   click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
+import {
+  listLocalStorageEntries,
+  localStorageSignals,
+} from "../../../signals/external/local-storage.ts";
 import { ROUTES } from "../../../signals/route-paths.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
@@ -611,6 +615,7 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   expect(sentIndustry).toBe("marketing");
   expect(sentProvider).toBe("claudeCode");
   expect(context.store.get(completedDraftStorage.get$)).toBeNull();
+  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A member's run reaches the first request without the admin-only completion", async () => {
@@ -642,14 +647,19 @@ test("A member's run reaches the first request without the admin-only completion
     screen.findByRole("heading", { name: READY_TITLE }),
   ).resolves.toBeInTheDocument();
 
+  await fill(
+    screen.getByLabelText("Your starting prompt"),
+    "Draft my meeting agenda",
+  );
   click(getButtonByName(START_ACTION));
 
   await waitFor(() => {
-    expect(runPrompt).toBeTruthy();
+    expect(runPrompt).toBe("Draft my meeting agenda");
   });
   // `POST /api/onboarding/complete` is admin-only, so a member run would only
   // ever collect a 403 from it.
   expect(completions).toBe(0);
+  expect(listLocalStorageEntries("onboarding:")).toStrictEqual([]);
 });
 
 test("A step keeps the prompt handoff and redeem code it arrived with", async () => {
