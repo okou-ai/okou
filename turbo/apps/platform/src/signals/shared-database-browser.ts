@@ -76,8 +76,11 @@ function claimPreloadedSharedWorker(
   name: string,
 ): PreloadedSharedDatabaseWorker | null {
   const bootstrap = window.__okouSharedDatabaseWorkerBootstrap;
-  const preloaded = bootstrap?.preloaded;
-  if (!bootstrap || !preloaded) {
+  if (!bootstrap) {
+    throw new Error("Shared database worker bootstrap is unavailable");
+  }
+  const { preloaded } = bootstrap;
+  if (!preloaded) {
     return null;
   }
   delete bootstrap.preloaded;

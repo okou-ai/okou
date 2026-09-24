@@ -322,7 +322,7 @@ function sharedDatabaseWorkerPreloadScript(userId, orgId, requestUrl) {
   if (bypass !== null) {
     args.push(bypass);
   }
-  return `<script>window.__okouSharedDatabaseWorkerBootstrap?.start(${args
+  return `<script>window.__okouSharedDatabaseWorkerBootstrap.start(${args
     .map((arg) => {
       return serializeJsonForScript(arg);
     })

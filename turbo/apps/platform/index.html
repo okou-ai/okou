@@ -42,17 +42,13 @@
         // bundle. The bridge claims it later.
         var bootstrap = {
           start: function (userId, orgId, vercelProtectionBypass) {
-            var meta = document.querySelector(
-              'meta[name="okou-shared-database-worker"]',
-            );
-            if (
-              bootstrap.preloaded ||
-              !meta ||
-              typeof SharedWorker !== "function"
-            ) {
+            if (typeof SharedWorker !== "function") {
               return;
             }
-            var url = new URL(meta.content, location.origin);
+            var workerPath = document.querySelector(
+              'meta[name="okou-shared-database-worker"]',
+            ).content;
+            var url = new URL(workerPath, location.origin);
             var params = new URLSearchParams({ userId: userId, orgId: orgId });
             if (vercelProtectionBypass) {
               params.set("x-vercel-protection-bypass", vercelProtectionBypass);

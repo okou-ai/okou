@@ -2,7 +2,6 @@ import { screen } from "@testing-library/react";
 import sharedDatabaseWorkerAssetUrl from "virtual:shared-database-worker";
 import { expect, test, vi } from "vitest";
 
-import indexHtml from "../../index.html?raw";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
 import { SharedDatabaseMessagePortServer } from "../shared-database/message-port-server.ts";
 import { setupPage, startPage } from "./page-helper.ts";
@@ -44,19 +43,12 @@ function installSharedWorker(): ConstructedWorker[] {
   return workers;
 }
 
-/** Runs the deployed shell script, then the call the app worker injects. */
+/** Makes the call the app worker injects into the built app shell. */
 function preloadFromAppShell(
   page: { readonly host: string; readonly path: string },
   ...startArguments: [string, string, string?]
 ): void {
   context.mocks.browser.url(`https://${page.host}${page.path}`);
-  const shell = new DOMParser().parseFromString(indexHtml, "text/html");
-  const source = shell.querySelector(
-    "[data-okou-shared-database-worker-bootstrap]",
-  )?.textContent;
-  if (!source) {
-    throw new Error("index.html is missing the shared worker bootstrap");
-  }
   // The build publishes the emitted worker path; tests use Vite's served URL.
   const meta = document.createElement("meta");
   meta.name = "okou-shared-database-worker";
@@ -66,12 +58,14 @@ function preloadFromAppShell(
     "abort",
     () => {
       meta.remove();
-      delete window.__okouSharedDatabaseWorkerBootstrap;
     },
     { once: true },
   );
-  new Function(source)();
-  window.__okouSharedDatabaseWorkerBootstrap?.start(...startArguments);
+  const bootstrap = window.__okouSharedDatabaseWorkerBootstrap;
+  if (!bootstrap) {
+    throw new Error("The test context did not install the app shell bootstrap");
+  }
+  bootstrap.start(...startArguments);
 }
 
 test("Reuse the Worker the app shell preloaded for the signed-in identity", async () => {

@@ -437,7 +437,7 @@ function clerkEdgeSessionJson(html) {
 }
 
 const SHARED_DATABASE_WORKER_PRELOAD_PATTERN =
-  /<script>window\.__okouSharedDatabaseWorkerBootstrap\?\.start\(([\s\S]*?)\);<\/script>/u;
+  /<script>window\.__okouSharedDatabaseWorkerBootstrap\.start\(([\s\S]*?)\);<\/script>/u;
 
 function sharedDatabaseWorkerPreloadArguments(html) {
   const matches = [
