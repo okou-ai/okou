@@ -1,7 +1,11 @@
 import { command } from "ccstate";
 import { testClerkUserDeletionJobContract } from "@okouai/api-contracts/contracts/test-clerk-user-deletion-job";
+import {
+  accountErasureJobs,
+  accountErasureWork,
+} from "@okouai/db/schema/account-erasure";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
@@ -27,7 +31,8 @@ const retry$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   // Only tests mount this route. No production endpoint can advance a
   // test-owned job past its one-minute retry delay without waiting for time.
-  const jobs = await set(writeDb$)
+  const db = set(writeDb$);
+  const jobs = await db
     .update(backgroundJobs)
     .set({ availableAt: new Date(0) })
     .where(
@@ -40,9 +45,37 @@ const retry$ = command(async ({ get, set }, signal: AbortSignal) => {
     .returning({ id: backgroundJobs.id });
   signal.throwIfAborted();
   const [job] = jobs;
-  if (!job || jobs.length !== 1) {
+  if (jobs.length > 1) {
     throw new Error("Expected one pending Clerk user deletion job");
   }
+  if (!job) {
+    return { status: 200 as const, body: { processed: 0 } };
+  }
+  // The worker's per-sink retry delay also uses the database clock. Advance
+  // only this test-owned account's retryable, unleased work; preserve its
+  // outcome and evidence so the real worker must still verify completion.
+  await db
+    .update(accountErasureWork)
+    .set({ availableAt: new Date(0) })
+    .where(
+      and(
+        inArray(
+          accountErasureWork.jobId,
+          db
+            .select({ id: accountErasureJobs.id })
+            .from(accountErasureJobs)
+            .where(
+              and(
+                eq(accountErasureJobs.subjectKind, "user"),
+                eq(accountErasureJobs.subjectId, body.data.userId),
+              ),
+            ),
+        ),
+        eq(accountErasureWork.state, "retryable_failure"),
+        isNull(accountErasureWork.leaseId),
+      ),
+    );
+  signal.throwIfAborted();
   const result = await set(
     executeClerkUserDeletionWork$,
     { jobId: job.id },

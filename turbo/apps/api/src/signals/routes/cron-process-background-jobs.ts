@@ -8,6 +8,10 @@ import {
   executeOnboardingRecommendationWork$,
 } from "../services/onboarding-recommendation.service";
 import { executeClerkUserDeletionWork$ } from "../services/clerk-user-deletion-job.service";
+import {
+  cleanupAgentPhoneSignupJobs,
+  executeAgentPhoneSignupWork$,
+} from "../services/agentphone-signup.service";
 import { pruneExpiredBlobUploadIntents } from "../services/blob-upload-intent.service";
 import { writeDb$ } from "../external/db";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
@@ -17,30 +21,42 @@ const process$ = command(async ({ get, set }, signal: AbortSignal) => {
     return cronUnauthorized();
   }
   const workSignal = AbortSignal.any([signal, AbortSignal.timeout(50_000)]);
-  const [cleanedExports, cleanedRecommendations, cleanedBlobIntents] =
-    await Promise.all([
-      set(cleanupDurableUserExports$, {}, workSignal),
-      set(cleanupOnboardingRecommendationJobs$, {}, workSignal),
-      pruneExpiredBlobUploadIntents(set(writeDb$)),
-    ]);
+  const [
+    cleanedExports,
+    cleanedRecommendations,
+    cleanedBlobIntents,
+    cleanedPhoneSignups,
+  ] = await Promise.all([
+    set(cleanupDurableUserExports$, {}, workSignal),
+    set(cleanupOnboardingRecommendationJobs$, {}, workSignal),
+    pruneExpiredBlobUploadIntents(set(writeDb$)),
+    cleanupAgentPhoneSignupJobs(set(writeDb$)),
+  ]);
   signal.throwIfAborted();
   // Each kind owns a disjoint queue, so a long export cannot keep a fresh
   // onboarding result from using the same durable wakeup.
-  const [exports, recommendations, deletions] = await Promise.all([
-    set(executeDurableUserExportWork$, {}, workSignal),
-    set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
-    set(executeClerkUserDeletionWork$, {}, workSignal),
-  ]);
+  const [exports, recommendations, deletions, phoneSignups] = await Promise.all(
+    [
+      set(executeDurableUserExportWork$, {}, workSignal),
+      set(executeOnboardingRecommendationWork$, { maxJobs: 1 }, workSignal),
+      set(executeClerkUserDeletionWork$, {}, workSignal),
+      set(executeAgentPhoneSignupWork$, {}, workSignal),
+    ],
+  );
   signal.throwIfAborted();
   return {
     status: 200 as const,
     body: {
       processed:
-        exports.processed + recommendations.processed + deletions.processed,
+        exports.processed +
+        recommendations.processed +
+        deletions.processed +
+        phoneSignups.processed,
       cleaned:
         cleanedExports.processed +
         cleanedRecommendations.processed +
-        cleanedBlobIntents,
+        cleanedBlobIntents +
+        cleanedPhoneSignups,
     },
   };
 });

@@ -671,11 +671,7 @@ export function createAuthOrgAgentsBddApi(context: TestContext) {
       return await rawJsonRequest(actor, path, method, body, statuses);
     },
 
-    async readMe(actor: ApiTestUser): Promise<{
-      readonly userId: string;
-      readonly email: string;
-      readonly orgId: string | null;
-    }> {
+    async readMe(actor: ApiTestUser) {
       mockClerkUsers([actor]);
       const client = setupAppWithRoutes({ context, routes: authOrgRoutes })(
         authContract,

@@ -58,6 +58,8 @@ import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
+import { createAppWithRoutes } from "../../../../app-factory-core";
+import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import type { ApiTestUser, ApiTestUserOptions } from "./api-bdd";
 import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
 import { createRouteMocks } from "./route-test";
@@ -477,10 +479,12 @@ async function requestRawAgentPhoneWebhook(
     readonly "x-webhook-event"?: string;
     readonly "x-webhook-id"?: string;
   },
+  usagePricingResolution?: UsagePricingResolution,
 ): Promise<AgentPhoneWebhookResponse> {
-  const response = await createApp({
+  const response = await createAppWithRoutes({
     signal: context.signal,
     routes: TEST_APP_ROUTES,
+    usagePricingResolution,
   }).request(`${"https://api.okou.ai"}/api/agentphone/webhook`, {
     method: "POST",
     headers: {
@@ -1836,9 +1840,15 @@ export function createBddIntegrationApi(context: TestContext) {
         readonly "x-webhook-id"?: string;
       },
       statuses: readonly (200 | 400 | 401 | 404)[],
+      usagePricingResolution?: UsagePricingResolution,
     ) {
       return await accept(
-        requestRawAgentPhoneWebhook(context, body, headers),
+        requestRawAgentPhoneWebhook(
+          context,
+          body,
+          headers,
+          usagePricingResolution,
+        ),
         statuses,
       );
     },

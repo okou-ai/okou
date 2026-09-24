@@ -132,10 +132,20 @@ export interface ClerkEmailAddress {
   readonly emailAddress: string;
 }
 
+export interface ClerkPhoneNumber {
+  readonly id: string;
+  readonly phoneNumber: string;
+  readonly verification: { readonly status: string } | null;
+}
+
 export interface ClerkUser {
   readonly id: string;
   readonly emailAddresses: readonly ClerkEmailAddress[];
   readonly primaryEmailAddressId: string | null;
+  readonly phoneNumbers?: readonly ClerkPhoneNumber[];
+  readonly primaryPhoneNumberId?: string | null;
+  readonly banned?: boolean;
+  readonly locked?: boolean;
   readonly firstName: string | null;
   readonly lastName: string | null;
   readonly username: string | null;
@@ -151,6 +161,7 @@ export interface ClerkOrganization {
   readonly hasImage: boolean;
   readonly createdAt: number;
   readonly createdBy?: string;
+  readonly privateMetadata?: Record<string, unknown>;
 }
 
 export interface ClerkOrganizationMembershipPublicUserData {
@@ -188,12 +199,21 @@ export interface ClerkUsersApi {
     params?: {
       userId?: string[];
       emailAddress?: string[];
+      phoneNumber?: string[];
       limit?: number;
       offset?: number;
     },
     context?: ClerkReadContext,
     signal?: AbortSignal,
   ): Promise<ClerkPaginated<ClerkUser>>;
+  createUser(
+    params: {
+      phoneNumber: string[];
+      privateMetadata?: Record<string, unknown>;
+      skipPasswordRequirement?: true;
+    },
+    signal?: AbortSignal,
+  ): Promise<ClerkUser>;
   getOrganizationMembershipList(
     params: {
       userId: string;
@@ -213,6 +233,15 @@ export interface ClerkUsersApi {
 }
 
 export interface ClerkOrganizationsApi {
+  createOrganization(
+    params: {
+      name: string;
+      slug: string;
+      createdBy: string;
+      privateMetadata?: Record<string, unknown>;
+    },
+    signal?: AbortSignal,
+  ): Promise<ClerkOrganization>;
   getOrganization(
     params: {
       organizationId: string;
@@ -381,6 +410,20 @@ export function isClerkResourceNotFound(error: unknown): boolean {
   return isClerkAPIResponseError(error) && error.status === 404;
 }
 
+/** Only explicit uniqueness failures permit reconciling a competing create. */
+export function isClerkCreationConflict(error: unknown): boolean {
+  return (
+    isClerkAPIResponseError(error) &&
+    error.status === 422 &&
+    error.errors.length > 0 &&
+    error.errors.every(({ code }) => {
+      return (
+        code === "form_identifier_exists" || code === "form_already_exists"
+      );
+    })
+  );
+}
+
 export type ClerkOrganizationInvitationConflict =
   | "already_member"
   | "already_invited";
@@ -456,6 +499,11 @@ function clerkReadRetry(error: unknown): ClerkReadRetry | null {
     delayMs: CLERK_READ_PROVIDER_UNAVAILABLE_DELAY_MS,
     providerStatus: error.status,
   };
+}
+
+/** Reconcile an uncertain create with an exact read; do not replay the write. */
+export function isClerkWriteAmbiguous(error: unknown): boolean {
+  return clerkReadRetry(error) !== null;
 }
 
 /** Retry Clerk 5xx/transport reads; rate limits surface without another request. */
@@ -615,6 +663,14 @@ const clerkClient = singleton((): ClerkClient => {
           signal,
         );
       },
+      createUser: async (params, signal) => {
+        signal?.throwIfAborted();
+        const result = await settle(sdk.users.createUser(params), signal);
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result.value;
+      },
       getOrganizationMembershipList: (params, context, signal) => {
         return clerkRead(
           () => {
@@ -629,6 +685,17 @@ const clerkClient = singleton((): ClerkClient => {
       },
     },
     organizations: {
+      createOrganization: async (params, signal) => {
+        signal?.throwIfAborted();
+        const result = await settle(
+          sdk.organizations.createOrganization(params),
+          signal,
+        );
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result.value;
+      },
       getOrganization: (params, context, signal) => {
         return clerkRead(
           () => {

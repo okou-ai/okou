@@ -176,9 +176,13 @@ function HeroFooter({
   readonly permissionGranted?: boolean;
 }) {
   const signedIn = authState?.status === "signed_in" ? authState : null;
-  const email = signedIn?.user.email ?? "Signed in";
+  const userLabel =
+    signedIn?.user.email ??
+    signedIn?.user.phoneNumber ??
+    signedIn?.user.userId ??
+    "Signed in";
   const organization = signedIn?.organization?.name ?? null;
-  const identity = organization ? `${email} · ${organization}` : email;
+  const identity = organization ? `${userLabel} · ${organization}` : userLabel;
   return (
     <div className="hero-footer">
       <span className="hero-footer-id">

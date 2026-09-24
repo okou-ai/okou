@@ -214,11 +214,7 @@ export function createBddApi(context: TestContext) {
     user,
     acceptAgentStorageWrites,
 
-    async readMe(nextUser: ApiTestUser): Promise<{
-      readonly userId: string;
-      readonly email: string;
-      readonly orgId: string | null;
-    }> {
+    async readMe(nextUser: ApiTestUser) {
       const response = await accept(
         authClient().me({ headers: authenticate(nextUser) }),
         [200],

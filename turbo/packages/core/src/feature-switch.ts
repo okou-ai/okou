@@ -47,6 +47,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.AgentPhoneSignup]: {
+    maintainer: "yuma@okou.ai",
+    description: "Register and connect from a direct iMessage signup command",
+    enabled: false,
+  },
   [FeatureSwitchKey.SocialDataJobs]: {
     maintainer: "ethan@okou.ai",
     description: "Enable bounded public Social data jobs and saved results",

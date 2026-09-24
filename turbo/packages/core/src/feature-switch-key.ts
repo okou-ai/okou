@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  AgentPhoneSignup = "agentPhoneSignup",
   SocialDataJobs = "socialDataJobs",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",

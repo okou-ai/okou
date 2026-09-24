@@ -7,7 +7,8 @@ import type { DesktopLoginMethod } from "./desktop-login-method";
 
 export interface DesktopAuthUser {
   readonly userId: string;
-  readonly email: string;
+  readonly email: string | null;
+  readonly phoneNumber?: string;
 }
 
 export interface DesktopAuthOrganization {

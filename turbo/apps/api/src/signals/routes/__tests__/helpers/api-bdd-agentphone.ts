@@ -18,6 +18,7 @@ import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { server } from "../../../../mocks/server";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
+import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import type { ApiTestUser } from "./api-bdd";
 import {
   agentPhoneBddWebhookSecret,
@@ -198,6 +199,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
 
   async function postAgentPhoneInboundMessage(
     message: AgentPhoneInboundMessage,
+    usagePricingResolution?: UsagePricingResolution,
   ): Promise<string> {
     const messageId = message.messageId ?? `ap-msg-${randomUUID()}`;
     const groupId =
@@ -229,6 +231,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
       rawBody,
       agentPhoneWebhookHeaders(rawBody, `evt-bdd-agentphone-${randomUUID()}`),
       [200],
+      usagePricingResolution,
     );
     // Webhook handling is waitUntil-detached; drain it so follow-up steps
     // cannot observe provider sends before thread/session state is persisted.

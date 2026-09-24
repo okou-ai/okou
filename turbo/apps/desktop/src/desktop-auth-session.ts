@@ -697,6 +697,11 @@ export class DesktopAuthSession {
     signal.throwIfAborted();
     if (!user.userId)
       return { state: signedOutDesktopAuthState(), sessionId: null };
+    const profile = {
+      userId: user.userId,
+      email: user.email,
+      ...(user.phoneNumber ? { phoneNumber: user.phoneNumber } : {}),
+    };
     // Signed in without an active workspace is a state the user resolves by
     // selecting one. Reporting it as signed out would demand a pointless
     // sign-in and discard a valid session.
@@ -704,7 +709,7 @@ export class DesktopAuthSession {
       return {
         state: {
           status: "signed_in",
-          user: { userId: user.userId, email: user.email },
+          user: profile,
           organization: null,
         },
         sessionId: user.sessionId ?? null,
@@ -737,7 +742,7 @@ export class DesktopAuthSession {
     return {
       state: {
         status: "signed_in",
-        user: { userId: user.userId, email: user.email },
+        user: profile,
         organization: { id: user.orgId, name: organization.name },
       },
       sessionId: user.sessionId ?? null,

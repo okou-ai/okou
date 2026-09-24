@@ -38,6 +38,8 @@ surface; the index does not replace their detailed rules.
 
 ## Specialized Guidance
 
+- [AgentPhone signup](./agentphone-signup.md): direct iMessage registration,
+  provider prerequisites, durable recovery, and phone-only API/Desktop rollout.
 - [Personal paid-tool controls](./paid-tool-controls.md): workspace-member
   preferences, run snapshots, CLI enforcement and the disabled rollout boundary.
 - [External MCP server](./mcp-server.md): OAuth resource setup, organization
