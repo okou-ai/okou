@@ -73,6 +73,13 @@ export const setConnectorsPageTab$ = command(({ get, set }, value: string) => {
     set(resetConnectorAccountDialogs$);
   }
   const next = new URLSearchParams(get(searchParams$));
+  if (next.has("scope")) {
+    next.delete("scope");
+    next.delete("type");
+    next.delete("keywords");
+    next.delete("category");
+    next.delete("connection");
+  }
   if (tab === "builtin") {
     next.delete("tab");
   } else {

@@ -233,6 +233,29 @@ test("Legacy tabs open remote and private management with directory disabled", a
   expect(locationSearch()).toBe("");
 });
 
+test("Legacy tab navigation returns directly to Remote control", async () => {
+  installCustomDirectory();
+  await setupPage({
+    context,
+    path: "/connectors",
+    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
+  });
+  click(getConnectorAction("tab", "Remote control"));
+  await screen.findByRole("heading", { name: "SSH" });
+  click(getConnectorAction("tab", "Custom"));
+  await screen.findByText("Acme Reports");
+  expect(locationSearch()).toBe("?tab=custom");
+
+  window.history.back();
+  await waitFor(() => {
+    expect(locationSearch()).toBe("?scope=remote-control");
+    expect(getConnectorAction("tab", "Remote control")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+});
+
 test("Legacy Remote control tab includes VNC when its switch is enabled", async () => {
   installCustomDirectory();
   context.mocks.api(vncConnectionsContract.summary, ({ respond }) => {

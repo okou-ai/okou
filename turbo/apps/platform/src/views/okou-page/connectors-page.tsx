@@ -1188,13 +1188,11 @@ function activeLegacyConnectorsTab(
 
 function LegacyConnectorsTabBar({
   tab,
-  scope,
   setScope,
   setActiveTab,
   actions,
 }: {
   readonly tab: LegacyConnectorsTab;
-  readonly scope: ConnectorsScope;
   readonly setScope: (value: ConnectorsScope) => void;
   readonly setActiveTab: (value: string) => void;
   readonly actions: ReactNode;
@@ -1209,9 +1207,6 @@ function LegacyConnectorsTabBar({
           if (value === "remote-control" || value === "private-network") {
             setScope(value);
             return;
-          }
-          if (scope !== "discover") {
-            setScope("discover");
           }
           setActiveTab(value === "custom" ? "custom" : "builtin");
         }}
@@ -2578,7 +2573,6 @@ export function ConnectorsPage() {
             ) : (
               <LegacyConnectorsTabBar
                 tab={legacyTab}
-                scope={scope}
                 setScope={setScope}
                 setActiveTab={setActiveTab}
                 actions={
