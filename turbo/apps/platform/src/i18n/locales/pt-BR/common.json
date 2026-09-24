@@ -2190,6 +2190,7 @@
       "linkCopied": "Link copiado",
       "messageShareFailed": "Não foi possível criar o link compartilhado. Tente novamente.",
       "publicDescription": "As mensagens selecionadas e seus anexos serão públicos.",
+      "selectAll": "Selecionar tudo",
       "selectedCount_one": "{{count}} selecionado",
       "selectedCount_many": "{{count}} selecionados",
       "selectedCount_other": "{{count}} selecionados",

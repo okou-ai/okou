@@ -2145,6 +2145,7 @@
       "linkCopied": "Link copied",
       "messageShareFailed": "The shared link could not be created. Try again.",
       "publicDescription": "Selected messages and their attachments will be public.",
+      "selectAll": "Select all",
       "selectedCount_one": "{{count}} selected",
       "selectedCount_other": "{{count}} selected",
       "selectGroup": "Select message group",
