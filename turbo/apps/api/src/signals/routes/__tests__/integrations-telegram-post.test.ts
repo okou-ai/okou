@@ -2360,7 +2360,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it(
-    "rejects a split Telegram topic input whose context cannot be stored and accepts its redelivery",
+    "rejects a split Telegram topic input whose context cannot be stored and accepts a duplicate delivery",
     { timeout: 120_000 },
     async () => {
       await withSplitChatEventDatabase(async () => {

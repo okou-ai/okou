@@ -17,9 +17,6 @@ use sandbox::{
 };
 use tracing::{info, warn};
 
-use super::job_lifecycle::{
-    ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
-};
 #[cfg(test)]
 use super::{OuterJobPanicPoint, StartLoopTestObserver, maybe_panic_outer_job};
 use crate::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
@@ -46,6 +43,9 @@ use runner_lifecycle::workspace_image_cache::snapshot::WorkspaceCacheStateSnapsh
 use runner_provider::RunCancellationHandle;
 use runner_supervisor::idle_lifecycle::{
     SharedIdlePool, destroy_idle_jobs_and_wait, destroy_idle_payload_and_wait,
+};
+use runner_supervisor::job_lifecycle::{
+    ActiveBudgetLease, BudgetOwnership, FinalizationReady, RunCleanupState,
 };
 use runner_supervisor::ownership::OwnershipTransitions;
 use runner_types::ids::RunId;
@@ -1249,7 +1249,6 @@ mod tests {
     use tracing_subscriber::prelude::*;
     use tracing_test_support::{CapturedEvent, CapturedEvents};
 
-    use super::super::job_lifecycle::{ActiveBudgetLease, RunCleanupDisposition, RunCleanupState};
     use crate::idle_pool::{
         IdleParkRequest, IdleParkRequestParts, IdlePool, IdlePoolConfig, ParkResult, ParkingGate,
         RestoreReservedIdleResult, test_support::ParkedIdleCandidateBuilder,
@@ -1273,6 +1272,9 @@ mod tests {
     use runner_host::paths::RunnerPaths;
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_supervisor::idle_lifecycle::SharedIdlePool;
+    use runner_supervisor::job_lifecycle::{
+        ActiveBudgetLease, RunCleanupDisposition, RunCleanupState,
+    };
     use runner_types::ids::RunId;
     use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifest};
     use runner_types::types::SandboxReuseResult;

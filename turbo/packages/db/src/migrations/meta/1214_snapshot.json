@@ -1,6 +1,6 @@
 {
-  "id": "22a44505-01ed-4ffc-bec5-a8a81bcac5ff",
-  "prevId": "ae8a050b-3d2f-4aed-9992-71d4d1e1086c",
+  "id": "ae8a050b-3d2f-4aed-9992-71d4d1e1086c",
+  "prevId": "ef65329a-ebd1-41ed-8e2b-2db7cdffc6f7",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -38826,6 +38826,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "deferred_anchor_at": {
+          "name": "deferred_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_until": {
+          "name": "deferred_until",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deferred_reason": {
+          "name": "deferred_reason",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_run_at": {
           "name": "last_run_at",
           "type": "timestamp",
@@ -38915,9 +38933,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_workflow_automations_org": {
           "name": "idx_workflow_automations_org",
@@ -38930,9 +38948,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_workflow_automations_event_connector": {
           "name": "idx_workflow_automations_event_connector",
@@ -38945,9 +38963,9 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         },
         "idx_workflow_automations_next_run": {
           "name": "idx_workflow_automations_next_run",
@@ -38960,10 +38978,32 @@
             }
           ],
           "isUnique": false,
-          "with": {},
-          "method": "btree",
           "where": "enabled = true",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_workflow_automations_deferred_retry": {
+          "name": "idx_workflow_automations_deferred_retry",
+          "columns": [
+            {
+              "expression": "deferred_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_run_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"workflow_automations\".\"deferred_until\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         },
         "idx_workflow_automations_official_blueprint_unique": {
           "name": "idx_workflow_automations_official_blueprint_unique",
@@ -38982,44 +39022,48 @@
             }
           ],
           "isUnique": true,
-          "with": {},
-          "method": "btree",
           "where": "\"workflow_automations\".\"official_blueprint_key\" IS NOT NULL",
-          "concurrently": false
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
         "workflow_automations_workflow_id_workflows_id_fk": {
           "name": "workflow_automations_workflow_id_workflows_id_fk",
           "tableFrom": "workflow_automations",
+          "tableTo": "workflows",
           "columnsFrom": [
             "workflow_id"
           ],
-          "tableTo": "workflows",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         },
         "workflow_automations_event_connector_id_connectors_id_fk": {
           "name": "workflow_automations_event_connector_id_connectors_id_fk",
           "tableFrom": "workflow_automations",
+          "tableTo": "connectors",
           "columnsFrom": [
             "event_connector_id"
           ],
-          "tableTo": "connectors",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
+          "onDelete": "set null",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "workflow_automations_deferral_pair_check": {
+          "name": "workflow_automations_deferral_pair_check",
+          "value": "(\n          \"workflow_automations\".\"deferred_anchor_at\" IS NULL\n          AND \"workflow_automations\".\"deferred_until\" IS NULL\n          AND \"workflow_automations\".\"deferred_reason\" IS NULL\n        ) OR (\n          \"workflow_automations\".\"deferred_anchor_at\" IS NOT NULL\n          AND \"workflow_automations\".\"deferred_until\" IS NOT NULL\n          AND \"workflow_automations\".\"deferred_reason\" IS NOT NULL\n        )"
+        },
         "workflow_automations_schedule_config_check": {
           "name": "workflow_automations_schedule_config_check",
           "value": "(\n            kind = 'schedule'\n            AND event_type IS NULL\n            AND event_config IS NULL\n            AND (\n              (schedule_type = 'cron' AND cron_expression IS NOT NULL AND interval_seconds IS NULL AND at_time IS NULL)\n              OR (schedule_type = 'loop' AND interval_seconds IS NOT NULL AND cron_expression IS NULL AND at_time IS NULL)\n              OR (schedule_type = 'once' AND at_time IS NOT NULL AND cron_expression IS NULL AND interval_seconds IS NULL)\n            )\n          )\n          OR (\n            kind = 'event'\n            AND event_type IN ('chat-run-finished', 'gmail-new-message', 'gmail-label-applied', 'github-deployment-status-created', 'github-issue-comment-created', 'github-pull-request', 'github-pull-request-review-submitted', 'github-workflow-job-completed', 'github-workflow-run-completed', 'google-calendar-event-created', 'google-calendar-event-updated', 'google-calendar-event-cancelled', 'google-forms-response-submitted', 'google-meet-transcript-generated', 'notion-child-page-created', 'notion-database-item-created', 'notion-page-content-updated', 'stripe-invoice-paid', 'webhook-received')\n            AND event_config IS NOT NULL\n            AND schedule_type IS NULL\n            AND cron_expression IS NULL\n            AND interval_seconds IS NULL\n            AND at_time IS NULL\n          )"
@@ -39839,6 +39883,160 @@
           "value": "\"x_resource_reads\".\"resource_id\" ~ '^[0-9]{1,32}$'"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.morning_brief_native_schedule_skips": {
+      "name": "morning_brief_native_schedule_skips",
+      "schema": "",
+      "columns": {
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_epoch": {
+          "name": "owner_epoch",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_anchor_at": {
+          "name": "scheduled_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skipped_at": {
+          "name": "skipped_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_morning_brief_native_schedule_skips_at": {
+          "name": "idx_morning_brief_native_schedule_skips_at",
+          "columns": [
+            {
+              "expression": "skipped_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "fk_morning_brief_native_schedule_skips_owner": {
+          "name": "fk_morning_brief_native_schedule_skips_owner",
+          "tableFrom": "morning_brief_native_schedule_skips",
+          "tableTo": "morning_brief_native_schedules",
+          "columnsFrom": [
+            "org_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "org_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "morning_brief_native_schedule_skips_pk": {
+          "name": "morning_brief_native_schedule_skips_pk",
+          "columns": [
+            "org_id",
+            "user_id",
+            "owner_epoch",
+            "scheduled_anchor_at"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.workflow_schedule_skips": {
+      "name": "workflow_schedule_skips",
+      "schema": "",
+      "columns": {
+        "automation_id": {
+          "name": "automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_anchor_at": {
+          "name": "scheduled_anchor_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "skipped_at": {
+          "name": "skipped_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "idx_workflow_schedule_skips_at": {
+          "name": "idx_workflow_schedule_skips_at",
+          "columns": [
+            {
+              "expression": "skipped_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "workflow_schedule_skips_automation_id_workflow_automations_id_fk": {
+          "name": "workflow_schedule_skips_automation_id_workflow_automations_id_fk",
+          "tableFrom": "workflow_schedule_skips",
+          "tableTo": "workflow_automations",
+          "columnsFrom": [
+            "automation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "workflow_schedule_skips_pk": {
+          "name": "workflow_schedule_skips_pk",
+          "columns": [
+            "automation_id",
+            "scheduled_anchor_at"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     }
   },

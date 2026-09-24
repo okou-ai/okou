@@ -1029,13 +1029,13 @@ function canonicalChatEventValues(
   };
 }
 
-export interface PreparedChatEvent {
+interface PreparedChatEvent {
   readonly row: PreparedChatEventRow;
   readonly displayContext: NewDisplayContext | undefined;
 }
 
 /** Pure preparation: IDs, timestamps, payload and context do not require a lock. */
-export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
+function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
   const id = values.id ?? randomUUID();
   const createdAt = values.createdAt ?? nowDate();
   const displayContext = newDisplayContext(id, values);
@@ -1057,7 +1057,7 @@ export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
  * failure rejects the input; legacy mode writes it after the append inside the
  * caller's transaction.
  */
-export async function persistPreparedChatEventContext(
+async function persistPreparedChatEventContext(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
 ): Promise<void> {
@@ -1084,7 +1084,7 @@ function recordChatEventAppendTiming(timing: {
 }
 
 /** The caller independently prepares/persists context before this atomic append. */
-export async function appendPreparedChatEvent(
+async function appendPreparedChatEvent(
   db: ChatEventWriteTransaction,
   prepared: PreparedChatEvent,
   conflict: InsertChatEventConflict = "none",

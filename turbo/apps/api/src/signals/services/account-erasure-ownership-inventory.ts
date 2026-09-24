@@ -734,6 +734,10 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
     coverage: "user_root",
     ownership: ["user_id"],
   },
+  morning_brief_native_schedule_skips: {
+    coverage: "user_root",
+    ownership: ["user_id"],
+  },
   morning_brief_native_schedules: {
     coverage: "user_root",
     ownership: ["user_id"],
@@ -1036,6 +1040,10 @@ export const ACCOUNT_OWNERSHIP_INVENTORY: Readonly<
   vnc_credentials: { coverage: "user_root", ownership: ["user_id"] },
   workflow_automations: { coverage: "user_root", ownership: ["owner_user_id"] },
   workflow_github_processed_events: {
+    coverage: "user_descendant",
+    parents: ["workflow_automations"],
+  },
+  workflow_schedule_skips: {
     coverage: "user_descendant",
     parents: ["workflow_automations"],
   },

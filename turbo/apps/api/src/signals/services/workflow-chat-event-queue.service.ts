@@ -26,13 +26,7 @@ import {
   pendingChatQueueEventCondition,
   staleChatEventQueueThreadIds,
 } from "./chat-event-queue.service";
-import {
-  appendPreparedChatEvent,
-  insertChatEvent,
-  persistPreparedChatEventContext,
-  prepareChatEvent,
-  replaceChatEvent,
-} from "./chat-event.service";
+import { insertChatEvent, replaceChatEvent } from "./chat-event.service";
 import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { recordOfficialWorkflowThreadProvenance } from "./morning-brief-thread-provenance.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
@@ -62,7 +56,7 @@ async function chatEventQueueAdmissionLock(
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
 }
 
-async function pendingTickForAutomation(
+export async function pendingTickForAutomation(
   db: Pick<Db, "select">,
   automationId: string,
 ): Promise<string | undefined> {
@@ -240,10 +234,6 @@ async function attemptWorkflowQueueAdmission(
     publicBrand: args.publicBrand,
     triggerBrief: args.triggerBrief ?? null,
   } as const;
-  const prepared = prepareChatEvent(event);
-  if (splitWrites) {
-    await persistPreparedChatEventContext(db, prepared);
-  }
   return await db.transaction(async (tx) => {
     await chatEventQueueAdmissionLock(tx, args.chatThreadId);
 
@@ -272,9 +262,11 @@ async function attemptWorkflowQueueAdmission(
       workflowIds: [automation.workflowId],
     });
     const conflict = args.queueEventId === undefined ? "none" : "id";
-    const inserted = splitWrites
-      ? await appendPreparedChatEvent(tx, prepared, conflict, { splitWrites })
-      : await insertChatEvent(tx, event, conflict, { splitWrites });
+    // Context commits with the admitted event; a coalesced or superseded tick
+    // writes neither.
+    const inserted = await insertChatEvent(tx, event, conflict, {
+      splitWrites,
+    });
     if (!inserted) {
       if (args.queueEventId !== undefined) {
         return { kind: "coalesced" };
