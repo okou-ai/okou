@@ -85,6 +85,21 @@ function currentInputs(rows: readonly ChatEvent[]) {
   );
 }
 
+interface PublicThreadPermissionCase {
+  readonly name: string;
+  readonly allowed: boolean;
+  readonly senderPermissions?: string;
+  readonly botPermissions?: string;
+  readonly senderIsOwner?: boolean;
+  readonly channelType?: number;
+  readonly overwrites?: readonly {
+    readonly id: "senderRole" | "botRole" | "extraRole" | "sender" | "bot";
+    readonly type: 0 | 1;
+    readonly deny: string;
+    readonly allow: string;
+  }[];
+}
+
 function recover(actor: ConnectedDiscordActor) {
   return accept(
     setupApp({ context, routes: testDiscordIngressRoutes })(
@@ -283,6 +298,181 @@ describe("canonical Discord ingress", () => {
       expect(provider.sentMessages).toHaveLength(1);
     },
   );
+
+  // Discord's CREATE_PUBLIC_THREADS bit, independent of ordinary conversation
+  // permissions. The case data below are Discord role and overwrite payloads.
+  const createPublicThreads = "34359738368";
+  it.each<PublicThreadPermissionCase>([
+    { name: "both role grants", allowed: true },
+    {
+      name: "sender role deny",
+      allowed: false,
+      overwrites: [
+        { id: "senderRole", type: 0, deny: createPublicThreads, allow: "0" },
+      ],
+    },
+    {
+      name: "bot role deny",
+      allowed: false,
+      overwrites: [
+        { id: "botRole", type: 0, deny: createPublicThreads, allow: "0" },
+      ],
+    },
+    {
+      name: "sender member deny",
+      allowed: false,
+      overwrites: [
+        { id: "sender", type: 1, deny: createPublicThreads, allow: "0" },
+      ],
+    },
+    {
+      name: "bot member deny",
+      allowed: false,
+      overwrites: [
+        { id: "bot", type: 1, deny: createPublicThreads, allow: "0" },
+      ],
+    },
+    {
+      name: "aggregated role allow",
+      allowed: true,
+      senderPermissions: "0",
+      overwrites: [
+        { id: "senderRole", type: 0, deny: createPublicThreads, allow: "0" },
+        { id: "extraRole", type: 0, deny: "0", allow: createPublicThreads },
+      ],
+    },
+    {
+      name: "member allow after role deny",
+      allowed: true,
+      overwrites: [
+        { id: "senderRole", type: 0, deny: createPublicThreads, allow: "0" },
+        { id: "sender", type: 1, deny: "0", allow: createPublicThreads },
+      ],
+    },
+    {
+      name: "sender admin despite overwrite",
+      allowed: true,
+      senderPermissions: "8",
+      overwrites: [
+        { id: "sender", type: 1, deny: createPublicThreads, allow: "0" },
+      ],
+    },
+    {
+      name: "bot admin despite overwrite",
+      allowed: true,
+      botPermissions: "8",
+      overwrites: [
+        { id: "bot", type: 1, deny: createPublicThreads, allow: "0" },
+      ],
+    },
+    {
+      name: "sender owner despite overwrite",
+      allowed: true,
+      senderPermissions: "0",
+      senderIsOwner: true,
+      overwrites: [
+        { id: "sender", type: 1, deny: createPublicThreads, allow: "0" },
+      ],
+    },
+    { name: "announcement parent", allowed: true, channelType: 5 },
+    { name: "forum parent", allowed: false, channelType: 15 },
+    { name: "media parent", allowed: false, channelType: 16 },
+  ])("applies public-thread creation authority: $name", async (testCase) => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const base = "https://discord.com/api/v10";
+    const ids = {
+      senderRole: uniqueDiscordSnowflake(),
+      extraRole: uniqueDiscordSnowflake(),
+      botRole: uniqueDiscordSnowflake(),
+      sender: actor.discordUserId,
+      bot: actor.botUserId,
+    };
+    server.use(
+      http.get(`${base}/guilds/${actor.guildId}`, () => {
+        return HttpResponse.json({
+          id: actor.guildId,
+          name: "Permission test guild",
+          owner_id: testCase.senderIsOwner
+            ? actor.discordUserId
+            : uniqueDiscordSnowflake(),
+        });
+      }),
+      http.get(`${base}/guilds/${actor.guildId}/roles`, () => {
+        return HttpResponse.json([
+          {
+            id: actor.guildId,
+            name: "@everyone",
+            // VIEW_CHANNEL | SEND_MESSAGES | READ_MESSAGE_HISTORY |
+            // SEND_MESSAGES_IN_THREADS, without CREATE_PUBLIC_THREADS.
+            permissions: "274877975552",
+          },
+          {
+            id: ids.senderRole,
+            name: "sender",
+            permissions: testCase.senderPermissions ?? createPublicThreads,
+          },
+          { id: ids.extraRole, name: "extra", permissions: "0" },
+          {
+            id: ids.botRole,
+            name: "bot",
+            permissions: testCase.botPermissions ?? createPublicThreads,
+          },
+        ]);
+      }),
+      http.get(
+        `${base}/guilds/${actor.guildId}/members/:userId`,
+        ({ params }) => {
+          const userId = String(params.userId);
+          const isBot = userId === actor.botUserId;
+          return HttpResponse.json({
+            user: {
+              id: userId,
+              username: isBot ? "Okou" : "sender",
+              bot: isBot,
+            },
+            roles: isBot ? [ids.botRole] : [ids.senderRole, ids.extraRole],
+          });
+        },
+      ),
+    );
+    const parent = provider.channels.get(provider.guildChannelId);
+    if (!parent) {
+      throw new Error("Expected the source guild channel fixture");
+    }
+    parent.type = testCase.channelType ?? 0;
+    parent.permission_overwrites = (testCase.overwrites ?? []).map(
+      (overwrite) => {
+        return { ...overwrite, id: ids[overwrite.id] };
+      },
+    );
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> apply the current creation permissions`,
+    });
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    expect(provider.channels.has(message.id)).toBe(testCase.allowed);
+    const inputs = [];
+    for (const thread of await discordChatThreads(context, actor)) {
+      inputs.push(...currentInputs(await events(actor, thread.id)));
+    }
+    expect(inputs).toHaveLength(testCase.allowed ? 1 : 0);
+    if (testCase.allowed) {
+      expect(provider.channels.get(message.id)?.parent_id).toBe(
+        provider.guildChannelId,
+      );
+      const [input] = inputs;
+      if (!input?.runId) {
+        throw new Error("Expected one run for the permitted Discord input");
+      }
+      const run = await runsApi.readRun(actor.actor, input.runId);
+      expect(run.prompt).toBe("@Okou apply the current creation permissions");
+    }
+  });
 
   it("recovers a lost thread-create response without creating another physical thread", async () => {
     const actor = await connected();

@@ -39,7 +39,7 @@ const CHAT_EVENT_SCHEMA_HEADERS = {
 const CACHE_SCHEMA_VERSION_FILE = ".okou-chat-event-schema-version";
 const CACHE_SCHEMA_VERSION_BODY = `${CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString()}\n`;
 
-function rawEventRow(seqId: number): ChatEventRow {
+function rawEventRow(seqId: number) {
   return {
     id: `00000000-0000-4000-8000-${String(seqId).padStart(12, "0")}`,
     chatThreadId: THREAD_ID,
@@ -53,7 +53,7 @@ function rawEventRow(seqId: number): ChatEventRow {
     runEventId: null,
     seqId,
     createdAt: "2026-08-12T10:00:00.000Z",
-  };
+  } satisfies ChatEventRow;
 }
 
 function failedEventRow(seqId: number): ChatEventRow {
