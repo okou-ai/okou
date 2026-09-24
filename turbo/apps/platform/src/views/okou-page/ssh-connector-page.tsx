@@ -339,7 +339,7 @@ function CredentialFields({
             disabled={disabled}
             checked={editor.replace}
             onCheckedChange={(checked) => {
-              return replace(checked === true);
+              return replace(checked);
             }}
           />
           {t(($) => {
