@@ -27,7 +27,7 @@ import {
   chatEventSnapshotScanState,
   chatEventSnapshots,
 } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 
 import { env, optionalEnv } from "../../lib/env";

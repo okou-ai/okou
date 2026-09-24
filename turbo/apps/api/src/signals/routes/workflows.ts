@@ -14,7 +14,7 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { storages } from "@okouai/db/schema/storage";
 import {

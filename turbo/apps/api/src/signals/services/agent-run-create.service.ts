@@ -174,7 +174,7 @@ import type {
 } from "./agent-execution-config";
 import { agents } from "@okouai/db/schema/agent";
 import { connectors } from "@okouai/db/schema/connector";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
@@ -8852,7 +8852,7 @@ async function persistThreadSessionBinding(
             .select({ agentSessionId: chatThreads.agentSessionId })
             .from(chatThreads)
             .where(eq(chatThreads.id, chatThreadId))
-            .for("update")
+            .for("no key update")
             .limit(1);
           return loaded;
         },
@@ -8939,7 +8939,7 @@ async function validateThreadSessionSnapshot(
         })
         .from(chatThreads)
         .where(eq(chatThreads.id, chatThreadId))
-        .for("update")
+        .for("no key update")
         .limit(1);
     },
   );

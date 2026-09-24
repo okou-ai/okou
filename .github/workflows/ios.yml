@@ -29,11 +29,15 @@ jobs:
         with:
           # Merge groups and main pushes can contain more than one commit.
           fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 22
       - name: Verify CI change detection and gate behavior
         run: |
           bash -n ios/scripts/*.sh
           shellcheck ios/scripts/*.sh
           bash ios/scripts/test-ci.sh
+          node --test ios/scripts/testflight.test.mjs
       - name: Detect iOS changes
         id: changes
         env:

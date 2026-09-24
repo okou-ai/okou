@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.98.8](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.7...guest-agent-v0.98.8) (2026-09-24)
+
+## [0.98.7](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.6...guest-agent-v0.98.7) (2026-09-24)
+
+
+### Bug Fixes
+
+* **guest-agent:** avoid double-counting guest cpu time ([#36627](https://github.com/okou-ai/okou/issues/36627)) ([f9087f0](https://github.com/okou-ai/okou/commit/f9087f092b79d12b87632b32d6091f3121abdf14))
+
+
+### Documentation
+
+* **guest-agent:** clarify best-effort artifact membership ([#36593](https://github.com/okou-ai/okou/issues/36593)) ([2481198](https://github.com/okou-ai/okou/commit/24811983eafbb9785385da607b6afac4f36deeb6))
+
+
+### Performance Improvements
+
+* **test:** reduce rust coverage fixture overhead ([#36597](https://github.com/okou-ai/okou/issues/36597)) ([b89d4c3](https://github.com/okou-ai/okou/commit/b89d4c3688a8b2f14b03a2dd14a9e6792ae113c0))
+
 ## [0.98.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.98.5...guest-agent-v0.98.6) (2026-09-24)
 
 

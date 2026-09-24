@@ -6,7 +6,7 @@ import {
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { v5 as uuidv5 } from "uuid";

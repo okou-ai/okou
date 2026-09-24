@@ -202,7 +202,16 @@ describe("Lark integration", () => {
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
     await runsApi.grantProEntitlement(actor);
-    await runsApi.ensureOrgModelProvider(actor);
+    const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+    await runsApi.updateOrgModelPolicies(actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const feishuAgent = await authOrgApi.createAgent(actor, {
       displayName: "Feishu selected agent",
       visibility: "public",

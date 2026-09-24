@@ -16,7 +16,7 @@ import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contrac
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
@@ -38,6 +38,11 @@ import {
   readAcceptedOfficialWorkflowRevision,
 } from "./official-workflow-catalog-read.service";
 import { settle } from "../utils";
+import {
+  discordExportKindSchema,
+  nextDiscordUserExportKind,
+  readDiscordUserExportPage,
+} from "./user-export-discord.service";
 
 const log = logger("service:user-export-source");
 const CHAT_PAGE_SIZE = 100;
@@ -52,12 +57,14 @@ const checkpointSchema = z.object({
       "agents",
       "workflows",
       "memory",
+      "discord",
       "done",
     ])
     .default("init"),
   startedAt: z.string().datetime().optional(),
   orgIds: z.array(z.string()).default([]),
   cursor: z.string().optional(),
+  discordKind: discordExportKindSchema.optional(),
   thread: z
     .object({
       id: z.string().uuid(),
@@ -121,7 +128,13 @@ function nextPhase(
   checkpoint: SourceCheckpoint,
   phase: SourceCheckpoint["phase"],
 ) {
-  return step({ ...checkpoint, phase, cursor: undefined, thread: undefined });
+  return step({
+    ...checkpoint,
+    phase,
+    cursor: undefined,
+    thread: undefined,
+    discordKind: undefined,
+  });
 }
 
 function startedBefore(checkpoint: SourceCheckpoint): Date {
@@ -650,7 +663,12 @@ async function collectMemory(
     .limit(1);
   signal.throwIfAborted();
   if (!storage) {
-    return nextPhase(checkpoint, "done");
+    return await collectDiscord(
+      args,
+      { ...checkpoint, cursor: undefined },
+      "installations",
+      signal,
+    );
   }
   const next = { ...checkpoint, cursor: storage.id };
   if (storage.fileCount === 0) {
@@ -699,6 +717,46 @@ async function collectMemory(
       metadata,
     },
   ]);
+}
+
+async function collectDiscord(
+  args: SourceArgs,
+  checkpoint: SourceCheckpoint,
+  initialKind: z.infer<typeof discordExportKindSchema>,
+  signal: AbortSignal,
+) {
+  let kind: z.infer<typeof discordExportKindSchema> | undefined = initialKind;
+  let cursor = checkpoint.cursor;
+  while (kind) {
+    const rows = await readDiscordUserExportPage({
+      db: args.db,
+      userId: args.userId,
+      kind,
+      cursor,
+      startedAt: startedBefore(checkpoint),
+    });
+    signal.throwIfAborted();
+    const last = rows.at(-1);
+    if (last) {
+      return step(
+        {
+          ...checkpoint,
+          phase: "discord",
+          discordKind: kind,
+          cursor: last.key,
+        },
+        rows.map(({ key, row }) => {
+          return jsonEntry(`integrations/discord/${kind}/${key}.json`, row, {
+            sourceKind: "discord",
+            discordKind: kind,
+          });
+        }),
+      );
+    }
+    kind = nextDiscordUserExportKind(kind);
+    cursor = undefined;
+  }
+  return nextPhase(checkpoint, "done");
 }
 
 /** One resumable source page, independent of archive size or prior invocations. */
@@ -757,6 +815,17 @@ export const collectUserExportSourceStep$ = command(
       }
       case "memory": {
         return await collectMemory(args, checkpoint, signal);
+      }
+      case "discord": {
+        if (!checkpoint.discordKind) {
+          throw new Error("User export Discord source kind is missing");
+        }
+        return await collectDiscord(
+          args,
+          checkpoint,
+          checkpoint.discordKind,
+          signal,
+        );
       }
       case "done": {
         return step(checkpoint);

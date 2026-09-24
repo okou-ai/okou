@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import {
   browserUserActionDisplayFieldSchema,
+  browserUserActionFieldKindSchema,
   type BrowserUserActionApplyRequest,
   type BrowserUserActionCreateRequest,
   type BrowserUserActionResponse,
@@ -35,6 +36,7 @@ import {
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
@@ -59,6 +61,7 @@ const REQUEST_TOKEN_PREFIX = "vm0_browser_user_action";
 const APPLY_STUCK_AFTER_MS = 60_000;
 const IDLE_LEASE_MS = BROWSER_IDLE_LEASE_MINUTES * 60_000;
 const CALLBACK_RECOVERY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const L = logger("BrowserUserActions");
 const TERMINAL_STATES: readonly BrowserUserActionState[] = [
   "succeeded",
   "cancelled",
@@ -568,6 +571,46 @@ interface PreparedBrowserUserAction {
   readonly validation: BrowserUseUserActionValidation;
 }
 
+function browserCreationValidationMessage(
+  error: BrowserUseUserActionValidationError,
+): string {
+  const field = error.fieldPosition ? `--field ${error.fieldPosition}: ` : "";
+  switch (error.code) {
+    case "page_target_not_found": {
+      return "The selected Browser page no longer exists; inspect the active tab and recapture the controls";
+    }
+    case "unsupported_page": {
+      return "The selected Browser page is not an HTTP or HTTPS page";
+    }
+    case "backend_node_not_found": {
+      return `${field}the selected Browser control no longer exists; inspect the page and recapture it`;
+    }
+    case "unsupported_control": {
+      return `${field}the selected Browser control is not a writable top-level input or textarea`;
+    }
+  }
+}
+
+function browserCreationControlType(
+  fingerprint: BrowserUseUserActionValidation["fields"][number]["fingerprint"],
+): string {
+  if (fingerprint.tagName === "TEXTAREA") {
+    return "textarea";
+  }
+  const knownTypes = [
+    "text",
+    "password",
+    "email",
+    "tel",
+    "url",
+    "search",
+    "number",
+  ];
+  return knownTypes.includes(fingerprint.inputType)
+    ? `input type '${fingerprint.inputType}'`
+    : "input control";
+}
+
 async function prepareBrowserUserAction(
   db: Db,
   args: CreateBrowserUserActionArgs,
@@ -642,26 +685,34 @@ async function prepareBrowserUserAction(
   if (!validationResult.ok) {
     return validationResult.error instanceof BrowserUseUserActionValidationError
       ? conflict(
-          "The Browser page target or requested controls are not available",
+          browserCreationValidationMessage(validationResult.error),
           `BROWSER_USER_ACTION_${validationResult.error.code.toUpperCase()}`,
         )
       : providerFailure(validationResult.error);
   }
+  const mismatchedPosition = args.input.fields.findIndex((field, index) => {
+    const target = validationResult.value.fields[index];
+    return (
+      !target ||
+      !browserUserActionFieldSupportsTarget(field.fieldKind, target.fingerprint)
+    );
+  });
   if (
     validationResult.value.fields.length !== args.input.fields.length ||
-    args.input.fields.some((field, index) => {
-      const target = validationResult.value.fields[index];
-      return (
-        !target ||
-        !browserUserActionFieldSupportsTarget(
-          field.fieldKind,
-          target.fingerprint,
-        )
-      );
-    })
+    mismatchedPosition !== -1
   ) {
+    const position = mismatchedPosition === -1 ? 0 : mismatchedPosition + 1;
+    const field = args.input.fields[mismatchedPosition];
+    const target = validationResult.value.fields[mismatchedPosition];
+    const compatibleKinds = target
+      ? browserUserActionFieldKindSchema.options.filter((kind) => {
+          return browserUserActionFieldSupportsTarget(kind, target.fingerprint);
+        })
+      : [];
     return conflict(
-      "The requested Browser field kind does not match its control",
+      position > 0 && field && target
+        ? `--field ${position}: fieldKind '${field.fieldKind}' does not match the observed ${browserCreationControlType(target.fingerprint)}; use ${compatibleKinds.join(" or ")}`
+        : "The requested Browser fields do not match the observed controls",
       "BROWSER_USER_ACTION_UNSUPPORTED_CONTROL",
     );
   }
@@ -1095,6 +1146,67 @@ async function markPendingBrowserUserActionStale(
   return stale ?? null;
 }
 
+type BrowserInputInspection =
+  | { readonly kind: "stale" }
+  | {
+      readonly kind: "valid";
+      readonly controls: readonly BrowserUseControlInspection[];
+    };
+
+async function inspectPendingBrowserUserAction(
+  row: RequestRow,
+  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+  signal: AbortSignal,
+): Promise<ServiceResult<BrowserInputInspection>> {
+  const attemptId = randomUUID();
+  const providerStartedAt = performance.now();
+  const provider = await settle(
+    getBrowserUseSession(row.providerSessionId, signal),
+  );
+  signal.throwIfAborted();
+  const providerPhase = {
+    type: "browser_input_preflight_phase",
+    attemptId,
+    phase: "provider_session",
+    outcome: provider.ok ? "ok" : "error",
+    durationMs: Math.round(performance.now() - providerStartedAt),
+  };
+  if (provider.ok && providerPhase.durationMs < 1000) {
+    L.debug("Browser input preflight provider phase", providerPhase);
+  } else {
+    L.warn("Browser input preflight provider phase", providerPhase);
+  }
+  if (!provider.ok) {
+    return providerFailure(provider.error);
+  }
+  if (provider.value.status === "stopped") {
+    return { kind: "ok", value: { kind: "stale" } };
+  }
+  if (!provider.value.cdpUrl) {
+    return providerFailure(new Error("Browser provider is not active"));
+  }
+  const checked = await settle(
+    preflightBrowserUseUserAction(
+      provider.value.cdpUrl,
+      {
+        ...exactInputTarget(payload),
+        fields: payload.target.fields.map((field) => {
+          return {
+            backendNodeId: field.backendNodeId,
+            fingerprint: field.fingerprint,
+          };
+        }),
+      },
+      signal,
+      attemptId,
+    ),
+  );
+  signal.throwIfAborted();
+  return checked.ok
+    ? { kind: "ok", value: checked.value }
+    : providerFailure(checked.error);
+}
+
 export const preflightBrowserUserAction$ = command(
   async (
     { set },
@@ -1111,6 +1223,8 @@ export const preflightBrowserUserAction$ = command(
     if (!located) {
       return notFound();
     }
+    // Keep the admission and lease update short. The remote provider and CDP
+    // checks must not hold the thread lock while a user submits the form.
     const admitted = await withChatThreadContentWrite(
       db,
       {
@@ -1120,7 +1234,17 @@ export const preflightBrowserUserAction$ = command(
         },
         threadLock: "update",
       },
-      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
+      async (
+        tx,
+      ): Promise<
+        ServiceResult<{
+          readonly row: RequestRow;
+          readonly payload: Extract<
+            BrowserUserActionPayload,
+            { kind: "input" }
+          >;
+        }>
+      > => {
         const operationDb = tx as Db;
         const current = await loadExactRequest(operationDb, located);
         if (!current) {
@@ -1143,14 +1267,50 @@ export const preflightBrowserUserAction$ = command(
         if (!leased) {
           return expired();
         }
-        const provider = await settle(
-          getBrowserUseSession(current.providerSessionId, signal),
-        );
-        signal.throwIfAborted();
-        if (!provider.ok) {
-          return providerFailure(provider.error);
+        return { kind: "ok", value: { row: current, payload } };
+      },
+      signal,
+    );
+    if (admitted.outcome !== "written") {
+      return notFound();
+    }
+    if (admitted.value.kind === "error") {
+      return admitted.value;
+    }
+    const { row, payload } = admitted.value.value;
+    const inspected = await inspectPendingBrowserUserAction(
+      row,
+      payload,
+      signal,
+    );
+    if (inspected.kind === "error") {
+      return inspected;
+    }
+    const inspection = inspected.value;
+    // Re-enter admission after remote I/O: apply or cancellation may have
+    // consumed the request while the check was running.
+    const verified = await withChatThreadContentWrite(
+      db,
+      {
+        chatThreadId: row.chatThreadId,
+        authorize: (identity) => {
+          return authorized(row, identity);
+        },
+        threadLock: "update",
+      },
+      async (tx): Promise<ServiceResult<BrowserUserActionResponse>> => {
+        const operationDb = tx as Db;
+        const current = await loadExactRequest(operationDb, row);
+        if (!current) {
+          return notFound();
         }
-        if (provider.value.status === "stopped") {
+        if (current.status !== "pending") {
+          return conflict("Browser input state changed during preflight");
+        }
+        if (!(await requestHasLiveBrowser(operationDb, current))) {
+          return expired();
+        }
+        if (inspection.kind === "stale") {
           const stale = await markPendingBrowserUserActionStale(
             operationDb,
             current,
@@ -1162,55 +1322,19 @@ export const preflightBrowserUserAction$ = command(
               }
             : conflict("Browser input state changed during preflight");
         }
-        if (!provider.value.cdpUrl) {
-          return providerFailure(new Error("Browser provider is not active"));
-        }
-        const target = exactInputTarget(payload);
-        const checked = await settle(
-          preflightBrowserUseUserAction(
-            provider.value.cdpUrl,
-            {
-              ...target,
-              fields: payload.target.fields.map((field) => {
-                return {
-                  backendNodeId: field.backendNodeId,
-                  fingerprint: field.fingerprint,
-                };
-              }),
-            },
-            signal,
-          ),
-        );
-        signal.throwIfAborted();
-        if (!checked.ok) {
-          return providerFailure(checked.error);
-        }
-        if (checked.value.kind === "stale") {
-          const stale = await markPendingBrowserUserActionStale(
-            operationDb,
-            current,
-          );
-          if (!stale) {
-            return conflict("Browser input state changed during preflight");
-          }
-          return {
-            kind: "ok",
-            value: publicRequest(stale, args.requestToken, payload),
-          };
-        }
         return {
           kind: "ok",
           value: publicRequest(
             current,
             args.requestToken,
             payload,
-            checked.value.controls,
+            inspection.controls,
           ),
         };
       },
       signal,
     );
-    return admitted.outcome === "written" ? admitted.value : notFound();
+    return verified.outcome === "written" ? verified.value : notFound();
   },
 );
 

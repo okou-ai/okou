@@ -81,7 +81,6 @@ import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 import {
   readRunLaunchSnapshotFixture,
@@ -215,7 +214,6 @@ export type PiApiFirstTurnUsageProvider =
   | z.infer<typeof piNativeCatalogModelSchema>
   | "deepseek-v4-flash"
   | "deepseek-v4.1-flash"
-  | "deepseek-v4-pro"
   | "okou-1.0"
   | "okou-1.0-pro"
   | "okou-1.0-max"
@@ -729,6 +727,21 @@ export function createChatEventsFixture(context: TestContext) {
     return { actor, agentId: agent.agentId, runnerGroup, providerId };
   }
 
+  /**
+   * An entitled actor whose default model is Fable, which model policy keeps
+   * off Pi, for sends that must stay claimable by the native Runner.
+   */
+  async function entitledNativeChatActor(
+    options: ApiTestUserOptions = {},
+    tier: "pro" | "team" = "pro",
+  ): Promise<EntitledChatActor> {
+    const entitled = await entitledChatActor(options, tier);
+    await api.ensureOrgModelProvider(entitled.actor, {
+      model: "claude-fable-5-1",
+    });
+    return entitled;
+  }
+
   async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
     const fixture = await seedBuiltInModelKeyState(context, selectedModel);
     return fixture.selectedModel;
@@ -758,9 +771,6 @@ export function createChatEventsFixture(context: TestContext) {
     route: (typeof GPT_API_KEY_BDD_ROUTES)[number],
     secret: string,
   ): Promise<string> {
-    await authDeviceSupport.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PiLoop]: true,
-    });
     const { providerId } = await upsertOrgModelProvider(actor, {
       type: route.type,
       secret,
@@ -823,7 +833,6 @@ export function createChatEventsFixture(context: TestContext) {
   ) {
     await authDeviceSupport.updateFeatureSwitches(actor, {
       [FeatureSwitchKey.PersonalModelProviderAccounts]: true,
-      [FeatureSwitchKey.PiLoop]: true,
     });
     const oauth = mockCodexDeviceAuthProvider({
       tokenScope: "personal",
@@ -1665,7 +1674,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly outputTokens?: number;
     readonly nativeModel?: z.infer<typeof piNativeCatalogModelSchema>;
     readonly responsesModel?: {
-      readonly provider: "openai" | "deepseek";
+      readonly provider: "openai" | "openai-codex" | "deepseek";
       readonly model: string;
     };
     readonly checkpointObjects: Map<string, Buffer>;
@@ -1792,10 +1801,22 @@ export function createChatEventsFixture(context: TestContext) {
     }
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     await api.heartbeatRunner(args.runnerGroup);
+    const { providerId } = await api.ensureOrgModelProvider(args.actor);
+    await api.updateOrgModelPolicies(args.actor, [
+      {
+        model: "claude-fable-5-1",
+        isDefault: true,
+        defaultProviderType: "anthropic-api-key",
+        credentialScope: "org",
+        modelProviderId: providerId,
+      },
+    ]);
     const anchor = await sendChatRun(args.actor, {
       agentId: args.agentId,
       prompt: "hold capacity for a capability-proven Pi launch",
-      model: "claude-sonnet-5",
+      // The anchor must stay on the native Runner while the queued target
+      // proves Pi admission; Sonnet 5 now uses the Pi checkpoint format.
+      model: "claude-fable-5-1",
     });
     await flushWaitUntilForTest();
     const anchorState = await api.readRun(args.actor, anchor.runId);
@@ -1817,11 +1838,7 @@ export function createChatEventsFixture(context: TestContext) {
     } else {
       await configureBuiltInPiModel(args.actor, selectedModel);
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...args.actor, orgId: args.actor.orgId },
-      { [FeatureSwitchKey.PiLoop]: true },
-    );
+
     const usagePricingResolution =
       await createPiApiFirstTurnUsagePricingResolution(selectedModel);
     const run = await withModelRoute(async () => {
@@ -1855,6 +1872,7 @@ export function createChatEventsFixture(context: TestContext) {
     routeMocks,
     runStateStore,
     entitledChatActor,
+    entitledNativeChatActor,
     seedBuiltInModelKey,
     configureBuiltInPiModel,
     configureApiKeyGptPiModel,

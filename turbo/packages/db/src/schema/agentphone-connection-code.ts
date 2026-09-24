@@ -20,6 +20,10 @@ export const agentphoneConnectionCodes = pgTable(
     codeHash: varchar("code_hash", { length: 64 }).notNull(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
+    /**
+     * Retired: current APIs neither read nor write it and rely on the
+     * `okou` default; drop it after older API deployments drain.
+     */
     publicBrand: text("public_brand")
       .$type<PublicBrand>()
       .default("okou")

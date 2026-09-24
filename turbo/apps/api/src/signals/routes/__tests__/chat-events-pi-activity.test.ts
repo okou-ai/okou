@@ -130,7 +130,6 @@ describe("CHAT-02: model-first provider policies", () => {
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );

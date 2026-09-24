@@ -112,6 +112,16 @@ async function setupFixture(): Promise<{
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
+  const { providerId } = await runsApi.ensureOrgModelProvider(actor);
+  await runsApi.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   const agent = await wf.createAgent(actor, {
     displayName: "GitHub Webhook Agent",
   });
@@ -866,7 +876,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     }
   });
 
-  it("preserves Okou branding when queued GitHub chat dispatch fails", async () => {
+  it("delivers queued GitHub chat dispatch failures with the model footer", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const { actor, agentId, workflowId } = await setupFixture();
     if (!actor.orgId) {
@@ -938,10 +948,9 @@ describe("POST /api/webhooks/github for workflow automations", () => {
     await completeClaimedRunOk(admittedRunId, admittedClaim.sandboxToken);
     await flushWaitUntilForTest();
 
-    expect(postedComments).toHaveLength(1);
-    expect(postedComments[0]).toMatch(
-      /https:\/\/app\.okou\.ai\/activities\/[0-9a-f-]+/u,
-    );
+    expect(postedComments).toStrictEqual([
+      "Oops, something went wrong. Please try again later.\n\n<sub>Claude Fable 5.1</sub>",
+    ]);
   });
 
   it("validates pull request review actions before dispatching", async () => {
@@ -1240,7 +1249,7 @@ describe("POST /api/webhooks/github for workflow automations", () => {
       version: 1,
       parts: [
         ...admittedEvent.userMessage.parts,
-        { type: "model", selectedModel: "claude-sonnet-5" },
+        { type: "model", selectedModel: "claude-fable-5-1" },
       ],
     });
     expect(chatEventDisplayText(claimedEvent)).toBe(displayMessage);

@@ -305,7 +305,7 @@ describe("okou chat send command", () => {
       version: 1,
       parts: [
         { type: "text", text: "Continue" },
-        { type: "model", selectedModel: "claude-sonnet-4-6" },
+        { type: "model", selectedModel: "claude-sonnet-5" },
       ],
     });
 

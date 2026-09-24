@@ -1,3 +1,4 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { randomUUID } from "node:crypto";
 
 import { agents } from "@okouai/db/schema/agent";
@@ -6,7 +7,7 @@ import {
   chatEventSearchMessages,
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { db } from "../lib/db";
@@ -191,8 +192,17 @@ export async function readChatEventSearchProjectionFixture(
   chatThreadId: string,
 ): Promise<ChatEventSearchProjectionFixture> {
   const [thread] = await db()
-    .select({ lastChatEventSeqId: chatThreads.lastChatEventSeqId })
+    .select({
+      lastChatEventSeqId:
+        sql`COALESCE(${chatEventSequences.lastSeqId}, 0)`.mapWith(
+          chatEventSequences.lastSeqId,
+        ),
+    })
     .from(chatThreads)
+    .leftJoin(
+      chatEventSequences,
+      eq(chatEventSequences.chatThreadId, chatThreads.id),
+    )
     .where(eq(chatThreads.id, chatThreadId))
     .limit(1);
   if (!thread) {

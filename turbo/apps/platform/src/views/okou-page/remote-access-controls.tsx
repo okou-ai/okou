@@ -1,4 +1,10 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastResolved,
+  useLoadable,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -24,7 +30,7 @@ import {
   setThreadRemoteAccess$,
 } from "../../signals/remote-access.ts";
 import { invalidateRemoteAccess$ } from "../../signals/remote-access-refresh.ts";
-import { onDomEventFn } from "../../signals/utils.ts";
+import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
 import {
@@ -32,8 +38,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@okouai/ui/components/ui/select";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { vncConnections$, vncSshConnectionId } from "../../signals/vnc.ts";
+import { sshIdentity$ } from "../../signals/ssh.ts";
 
 export function RemoteHostDefaultToggle({
   protocol,
@@ -194,6 +208,16 @@ function visibleHostChoices(
       });
 }
 
+function resolvedDuringRefresh<T>(
+  loadable: Loadable<T>,
+  previous: T | undefined,
+): T | null {
+  if (loadable.state === "hasData") {
+    return loadable.data;
+  }
+  return loadable.state === "loading" ? (previous ?? null) : null;
+}
+
 function HostChoiceSelect({
   protocol,
   host,
@@ -208,8 +232,36 @@ function HostChoiceSelect({
   onChange: (enabled: boolean | null) => void | Promise<void>;
 }) {
   const { t } = useTranslation();
+  const items = [
+    {
+      value: "default",
+      label: `${t(($) => {
+        return $.chat.remoteAccess.useDefault;
+      })} (${
+        host.defaultEnabled
+          ? t(($) => {
+              return $.chat.remoteAccess.on;
+            })
+          : t(($) => {
+              return $.chat.remoteAccess.off;
+            })
+      })`,
+    },
+    {
+      value: "on",
+      label: t(($) => {
+        return $.chat.remoteAccess.on;
+      }),
+    },
+    {
+      value: "off",
+      label: t(($) => {
+        return $.chat.remoteAccess.off;
+      }),
+    },
+  ];
   return (
-    <label className="flex items-center gap-2 px-2 py-1.5 text-sm">
+    <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
       {protocol === "ssh" ? (
         <Terminal size={15} className="shrink-0 text-muted-foreground" />
       ) : (
@@ -218,42 +270,39 @@ function HostChoiceSelect({
       <span className="min-w-0 flex-1 truncate" title={host.displayName}>
         {host.displayName}
       </span>
-      <select
-        className="w-36 shrink-0 rounded-md border border-border bg-background px-1.5 py-1 text-xs"
-        aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+      <Select
+        items={items}
         value={value}
         disabled={disabled}
-        onChange={onDomEventFn((event) => {
-          const next = event.target.value;
-          return onChange(next === "default" ? null : next === "on");
-        })}
+        onValueChange={(next, details) => {
+          if (next !== "default" && next !== "on" && next !== "off") {
+            details.cancel();
+            return;
+          }
+          detach(
+            onChange(next === "default" ? null : next === "on"),
+            Reason.DomCallback,
+          );
+        }}
       >
-        <option value="default">
-          {t(($) => {
-            return $.chat.remoteAccess.useDefault;
-          })}{" "}
-          (
-          {host.defaultEnabled
-            ? t(($) => {
-                return $.chat.remoteAccess.on;
-              })
-            : t(($) => {
-                return $.chat.remoteAccess.off;
-              })}
-          )
-        </option>
-        <option value="on">
-          {t(($) => {
-            return $.chat.remoteAccess.on;
+        <SelectTrigger
+          variant="neutral"
+          className="h-8 w-40 shrink-0 py-1 text-sm"
+          aria-label={`${protocol.toUpperCase()} ${host.displayName}`}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align="start" className="w-(--anchor-width)">
+          {items.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
           })}
-        </option>
-        <option value="off">
-          {t(($) => {
-            return $.chat.remoteAccess.off;
-          })}
-        </option>
-      </select>
-    </label>
+        </SelectContent>
+      </Select>
+    </div>
   );
 }
 
@@ -353,27 +402,47 @@ function VncHostChoiceRow({
   );
 }
 
-export function ThreadRemoteAccessSection({
-  threadId,
-  remoteAccess$,
-  pendingRemoteAccess,
-  open,
-  onOpenChange,
-}: {
+interface ThreadRemoteAccessSectionProps {
   threadId?: string;
   remoteAccess$: ComposerSignals["remoteAccess$"];
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+}
+
+export function ThreadRemoteAccessSection(
+  props: ThreadRemoteAccessSectionProps,
+) {
+  const identity = useLoadable(sshIdentity$);
+  if (identity.state !== "hasData" || !identity.data) {
+    return null;
+  }
+  // Remount retained responses when the owner or chat changes.
+  return (
+    <OwnerThreadRemoteAccessSection
+      key={`${identity.data}:${props.threadId ?? "new"}`}
+      {...props}
+    />
+  );
+}
+
+function OwnerThreadRemoteAccessSection({
+  threadId,
+  remoteAccess$,
+  pendingRemoteAccess,
+  open,
+  onOpenChange,
+}: ThreadRemoteAccessSectionProps) {
   const { t } = useTranslation();
   const defaults = useLoadable(remoteHostDefaults$);
   const access = useLoadable(remoteAccess$);
+  const lastDefaults = useLastResolved(remoteHostDefaults$);
+  const lastAccess = useLastResolved(remoteAccess$);
   const pendingOverrides = useGet(pendingRemoteAccess.overrides$);
-  const defaultData = defaults.state === "hasData" ? defaults.data : null;
-  const accessData = access.state === "hasData" ? access.data : null;
+  const defaultData = resolvedDuringRefresh(defaults, lastDefaults);
+  const accessData = resolvedDuringRefresh(access, lastAccess);
   if (
-    defaults.state === "loading" ||
+    (defaults.state === "loading" && !defaultData) ||
     (defaults.state === "hasData" && !defaults.data)
   ) {
     return null;
@@ -478,10 +547,12 @@ function ThreadRemoteHostChoices({
   const retry = useSet(invalidateRemoteAccess$);
   const defaults = useLoadable(remoteHostDefaults$);
   const access = useLoadable(remoteAccess$);
+  const lastDefaults = useLastResolved(remoteHostDefaults$);
+  const lastAccess = useLastResolved(remoteAccess$);
   const pendingOverrides = useGet(pendingRemoteAccess.overrides$);
   const vncHosts = useLoadable(vncConnections$);
-  const defaultData = defaults.state === "hasData" ? defaults.data : null;
-  const accessData = access.state === "hasData" ? access.data : null;
+  const defaultData = resolvedDuringRefresh(defaults, lastDefaults);
+  const accessData = resolvedDuringRefresh(access, lastAccess);
   const accessFailed =
     Boolean(threadId) &&
     (access.state === "hasError" ||
@@ -519,7 +590,7 @@ function ThreadRemoteHostChoices({
           </Button>
         </div>
       )}
-      {threadId && access.state === "loading" ? (
+      {threadId && access.state === "loading" && !accessData ? (
         <p role="status" className="px-2 py-2 text-sm text-muted-foreground">
           {t(($) => {
             return $.chat.remoteAccess.loading;

@@ -90,6 +90,7 @@ export function buildAgentToolsPrompt(args: {
       ? [
           "- Okou Browser and Okou Computer Use are separate surfaces. `okou browser use` creates, reuses, or resumes a remote browser owned by the current chat thread, attaches it to `agent-browser`, and gives the user an authenticated `/browsers/:threadId` live view they can take over. `okou computer-use` drives apps on a desktop host the user connected separately. Running `agent-browser` on its own drives a local browser inside this sandbox: it creates no Okou Browser session and no user-viewable link.",
           "- Okou Browser lifetime: `okou browser use` and `okou browser lease` each extend the session's idle lease by a fixed 10 minutes and report when Okou will reclaim it. The session survives the end of this run, so a later run in the same thread attaches to the same live window and the user can keep working in it. Call `okou browser lease` while a long task keeps the browser idle; a reclaimed session can still resume its saved login profile and reopen its last captured HTTP(S) tab URLs on a best-effort basis.",
+          "- Browser form input: use `okou browser input-request` only when the user must personally enter supported form values. It opens a dedicated input form (not other Browser interactions); entered values are not included in the action URL or callback. Fill ordinary forms with `agent-browser` instead.",
         ]
       : []),
     ...(args.cloudBrowserEnabled === false

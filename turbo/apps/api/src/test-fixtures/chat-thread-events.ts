@@ -5,7 +5,7 @@ import {
   chatThreadEvents,
 } from "@okouai/db/schema/chat-thread-event";
 import { chatThreadSnapshots } from "@okouai/db/schema/chat-thread-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, asc, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 

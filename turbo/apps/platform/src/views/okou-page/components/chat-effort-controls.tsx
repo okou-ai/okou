@@ -6,12 +6,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import { useGet, useLastResolved } from "ccstate-react";
+import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { featureSwitch$ } from "../../../signals/external/feature-switch.ts";
 import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
 import {
   availableChatReasoningEfforts,
@@ -23,14 +22,13 @@ import type { ModelProviderSelection } from "./model-provider-picker.tsx";
 export function useChatEffort(
   selection: ModelProviderSelection | null | undefined,
 ) {
-  const switches = useGet(featureSwitch$);
   const policies = useLastResolved(orgModelPolicies$);
   const policy = policies?.policies.find((entry) => {
     return entry.model === selection?.selectedModel;
   });
   return {
-    efforts: availableChatReasoningEfforts(selection, switches, policy),
-    effort: effectiveChatReasoningEffort(selection, switches, policy),
+    efforts: availableChatReasoningEfforts(selection, policy),
+    effort: effectiveChatReasoningEffort(selection, policy),
   };
 }
 

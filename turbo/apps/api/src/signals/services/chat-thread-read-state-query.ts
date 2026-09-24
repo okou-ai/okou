@@ -3,7 +3,7 @@ import {
   chatEventTerminalPredicate,
   chatEvents,
 } from "@okouai/db/schema/chat-event";
-import type { chatThreads } from "@okouai/db/schema/chat-thread";
+import type { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import type { Db } from "../external/db";
 

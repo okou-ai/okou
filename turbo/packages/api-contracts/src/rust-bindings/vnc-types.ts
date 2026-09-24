@@ -54,6 +54,9 @@ export const vncTypeBindings = [
           apple_dh_username_password: [
             "Apple DH username/password authentication with 63-byte fields.",
           ],
+          apple_srp_username_password: [
+            "Apple Direct SRP username/password authentication with bounded UTF-8 fields.",
+          ],
         },
       },
       {
@@ -63,6 +66,9 @@ export const vncTypeBindings = [
           x509_vnc: ["VeNCrypt X509Vnc."],
           x509_plain: ["VeNCrypt X509Plain."],
           apple_dh: ["Apple DH type 30, requiring SSH to Mac loopback."],
+          apple_srp: [
+            "Apple Direct SRP type 36, requiring SSH to Mac loopback.",
+          ],
         },
       },
       {
@@ -121,6 +127,9 @@ export const vncTypeBindings = [
           resolved_apple_dh: [
             "Apple DH credential and verified SSH-to-Mac-loopback transport only.",
           ],
+          resolved_apple_srp: [
+            "Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.",
+          ],
         },
       },
       {
@@ -154,6 +163,9 @@ export const vncTypeBindings = [
           apple_dh_username_password: [
             "Apple DH username/password fields; the Runner validates 63-byte bounds.",
           ],
+          apple_srp_username_password: [
+            "Apple Direct SRP username/password fields; the Runner validates 255/1023-byte bounds.",
+          ],
         },
       },
       {
@@ -167,6 +179,9 @@ export const vncTypeBindings = [
           x509_plain: ["VeNCrypt X509Plain with verified TLS."],
           apple_dh: [
             "Apple DH type 30; only the separately verified SSH channel protects the RFB session.",
+          ],
+          apple_srp: [
+            "Apple Direct SRP type 36; only the separately verified SSH channel protects the RFB session.",
           ],
         },
       },

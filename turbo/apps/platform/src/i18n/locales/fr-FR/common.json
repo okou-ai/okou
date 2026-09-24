@@ -361,7 +361,7 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Événement d'automatisation",
       "automationSchedule": "Planification d'automatisation",
       "email": "Email",
@@ -1206,7 +1206,7 @@
         "everythingInBuiltForTeams": "Tout {{plan}}, conçu pour les équipes",
         "included": "Inclus",
         "liveBrowser": "Suivez le navigateur d'un agent et prenez la main",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "Plus de connecteurs personnalisés et d'intégrations de canaux",
         "supportEmail": "Assistance par e-mail",
         "supportPriority": "Assistance prioritaire",
@@ -1461,6 +1461,11 @@
         },
         "earned": "{{amount}} obtenus",
         "howRewardsWork": "Comment fonctionnent les récompenses",
+        "imessage": {
+          "action": "Ajouter",
+          "description": "Écrivez à {{assistantName}} depuis votre iPhone",
+          "name": "Ajouter à iMessage"
+        },
         "inReview": "En cours d'examen",
         "intro": {
           "checkin": {
@@ -1766,6 +1771,7 @@
       "cancelFailed": "Impossible d’annuler la demande. Réessayez.",
       "cancelled": "Demande annulée",
       "cancelling": "Annulation…",
+      "checkFailed": "Impossible de vérifier le navigateur. Vos saisies sont conservées ; réessayez avant de les envoyer.",
       "clearValue": "Effacer la valeur sur le site",
       "completed": "Informations ajoutées",
       "continue": "Prévenir l’agent",
@@ -2996,15 +3002,30 @@
     "clientSecret": "Secret client du Service Token",
     "clientSecretPlaceholder": "Collez le Client Secret du Service Token",
     "configuration": "Cloudflare Access",
+    "convert": "Rendre personnel",
+    "convertConfirm": "Je comprends que ces hôtes ne pourront pas se connecter avant que leurs propriétaires les associent à nouveau.",
+    "convertHelp": "Conservez ce Service Token pour votre usage personnel. Vos hôtes peuvent rester connectés.",
+    "convertUncertain": "Impossible de confirmer la conversion. Vérifiez la configuration actuelle avant de réessayer.",
+    "convertWarning_one": "Hôtes SSH d'autres utilisateurs concernés : {{count}}. Il sera indisponible jusqu'à ce que son propriétaire l'associe à nouveau ou choisisse Direct.",
+    "convertWarning_many": "Hôtes SSH d'autres utilisateurs concernés : {{count}}. Ils seront indisponibles jusqu'à ce que leurs propriétaires les associent à nouveau ou choisissent Direct.",
+    "convertWarning_other": "Hôtes SSH d'autres utilisateurs concernés : {{count}}. Ils seront indisponibles jusqu'à ce que leurs propriétaires les associent à nouveau ou choisissent Direct.",
     "createNew": "Créer un Cloudflare Access",
     "delete": "Supprimer Cloudflare Access",
-    "deleteHelp": "Supprimer ce Cloudflare Access ? Le Service Token enregistré ne pourra pas être récupéré. La suppression est bloquée tant qu'un hôte l'utilise.",
+    "deleteConfirm": "Je comprends que ces hôtes resteront indisponibles tant que leurs propriétaires ne les auront pas reliés à nouveau.",
+    "deleteHelp": "Supprimer ce Cloudflare Access ? Le Service Token enregistré ne pourra pas être récupéré. Vous devez d'abord relier vos propres hôtes à une autre configuration.",
+    "deleteImpact": "Les hôtes SSH des membres suivants devront être reliés à une autre configuration. Ils ne passeront pas automatiquement en accès direct.",
+    "deleteUncertain": "Impossible de confirmer la suppression. Vérifiez les conséquences actuelles avant de réessayer.",
     "description": "Accédez aux applications protégées avec des jetons de service Cloudflare Access.",
     "edit": "Modifier Cloudflare Access",
     "failed": "Impossible d’enregistrer la modification Cloudflare Access. Réessayez.",
     "forbidden": "Seuls les administrateurs de l'organisation peuvent modifier l'accès Cloudflare partagé.",
+    "formerMember": "Ancien membre (nom indisponible)",
+    "hostCount_one": "{{count}} hôte SSH",
+    "hostCount_many": "{{count}} hôtes SSH",
+    "hostCount_other": "{{count}} hôtes SSH",
+    "impactChanged": "Les hôtes concernés ont changé. Vérifiez les conséquences actuelles avant de confirmer à nouveau.",
     "inUse": "Un hôte SSH utilise ce Cloudflare Access. Son propriétaire doit d'abord le réassocier ou le supprimer.",
-    "inUseHelp": "Sélectionnez un autre Cloudflare Access pour ces hôtes, passez-les explicitement en connexion directe ou supprimez-les avant de supprimer celui-ci.",
+    "inUseHelp": "Vos hôtes SSH utilisent encore cette configuration. Reliez-les à une autre configuration, choisissez explicitement l'accès direct ou supprimez-les d'abord.",
     "invalidInput": "Certains paramètres Cloudflare Access ne sont pas valides. Vérifiez les champs et réessayez.",
     "keepChanges": "Appliquer mes modifications à cette version",
     "latest": "Derniers paramètres enregistrés",
@@ -3017,10 +3038,15 @@
     "organization": "Organisation",
     "organizationHelp": "Tous les membres de cette organisation peuvent utiliser ce jeton de service. Seuls les administrateurs peuvent le modifier.",
     "personal": "Personnel",
+    "promote": "Partager avec l'organisation",
+    "promoteConfirm": "Je comprends que tous les membres de l'organisation pourront utiliser ce Service Token.",
+    "promoteHelp": "Partagez votre Cloudflare Access personnel avec l'organisation. Le Service Token et vos liaisons d'hôtes SSH sont conservés.",
+    "promoteUncertain": "Impossible de confirmer la conversion. Fermez cette fenêtre et vérifiez la configuration actuelle avant de réessayer.",
     "replace": "Remplacer le Service Token",
     "resourceIdConflict": "Cet identifiant de ressource ne peut pas être utilisé. Fermez puis rouvrez le formulaire pour réessayer.",
     "retry": "Réessayer",
     "reviewHelp": "Votre brouillon est conservé. Confirmez les derniers paramètres enregistrés avant d’appliquer vos modifications.",
+    "reviewLatest": "Vérifier les conséquences actuelles",
     "revisionExhausted": "Cette configuration ne peut plus être mise à jour. Créez-en une nouvelle.",
     "save": "Enregistrer",
     "saveUncertain": "Nous n’avons pas pu confirmer si vos modifications ont été enregistrées. Réessayez le même enregistrement, ou fermez le formulaire et consultez la liste avant de les ajouter à nouveau.",
@@ -3521,7 +3547,7 @@
         "invalidSignature": "La signature de ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage de ce lien n'est pas valide.",
         "invalidTitle": "Le lien de connexion est invalide",
-        "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro AgentPhone.",
+        "risk": "Les réponses SMS et MMS peuvent ne pas être livrées de manière fiable. Pour une expérience la plus fiable, utilisez iMessage avec ce numéro.",
         "successDescription": "{{phone}} est connecté. Envoyez un message texte pour commencer à discuter avec {{assistantName}}.",
         "successTitle": "Numéro de téléphone connecté"
       },
@@ -3643,9 +3669,10 @@
       "agentphone": {
         "authorizedSender": "Expéditeur autorisé",
         "codeExpiry": "Expire dans 10 minutes",
+        "codeLabel": "Code",
         "connectAria": "Connecter le téléphone",
-        "connectDescription": "Scannez le code ou ouvrez Messages, puis envoyez le code prérempli.",
-        "connectTitle": "Connecter le téléphone",
+        "connectDescription": "Scannez avec votre appareil photo, puis envoyez le code prérempli.",
+        "connectTitle": "Écrivez à {{assistantName}} depuis votre iPhone",
         "copyAria": "Copier {{phone}}",
         "copyCodeAria": "Copier le code de connexion {{code}}",
         "copyCodeError": "Impossible de copier le code de connexion",
@@ -3656,13 +3683,12 @@
         "creatingCode": "Création du code de connexion…",
         "description": "Accès aux messages texte pour {{assistantName}}",
         "destination": "iMessage ou SMS à",
-        "manualSend": "ou envoyez",
-        "manualSendTo": "au",
         "openMessages": "Ouvrir Messages",
         "options": "Options de téléphone",
         "phoneLabel": "Téléphone",
         "qrTitle": "Scannez pour ouvrir Messages avec le code de connexion prérempli",
         "risk": "Utilisez iMessage lorsque c’est possible. Les réponses par SMS et MMS peuvent ne pas arriver de manière fiable.",
+        "sendToLabel": "Envoyer à",
         "tryAgain": "Réessayer"
       },
       "catalogDiagnostics": {
@@ -4072,8 +4098,8 @@
         "uninstallTitle": "Désinstaller le bot Telegram ?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone connecté",
-        "agentphoneDisconnected": "AgentPhone déconnecté",
+        "agentphoneConnected": "Numéro de téléphone connecté",
+        "agentphoneDisconnected": "Numéro de téléphone déconnecté",
         "slackConnected": "Slack connecté avec succès",
         "slackDisconnected": "Déconnecté de Slack",
         "slackInstalled": "Slack installé avec succès",
@@ -4328,7 +4354,6 @@
       "documentTitles": {
         "experience": "Votre expérience de l'IA",
         "industry": "Choisir votre domaine",
-        "profile": "Votre profil",
         "ready": "Okou est prêt",
         "skills": "Importer vos skills",
         "slack": "Ajouter Okou à Slack",
@@ -4391,17 +4416,6 @@
       "industry": {
         "copy": "Okou est l’assistant de travail pour vous et votre équipe. Il transforme les informations dispersées en travail accompli, dans le cloud. Choisissez votre domaine pour une première tâche adaptée.",
         "title": "Quel type de travail faites-vous ?"
-      },
-      "profile": {
-        "communicationStyle": "Votre façon de communiquer",
-        "copy": "Un premier aperçu de votre travail à partir des comptes connectés.",
-        "failed": "Nous ne pouvons pas créer votre profil pour le moment. Réessayez ou continuez.",
-        "heading": "Votre profil",
-        "loading": "Création de votre profil à partir de vos comptes connectés…",
-        "priorities": "Priorités possibles",
-        "professionalIdentity": "Votre travail",
-        "retry": "Réessayer",
-        "title": "Voici ce que nous avons appris sur vous"
       },
       "skills": {
         "copied": "Copié",
@@ -4801,7 +4815,7 @@
         "unconfirmedNote": "Nous n'avons pas pu vérifier votre connexion à {{provider}}. Vous pouvez réessayer ou le connecter plus tard."
       },
       "team": {
-        "copy": "Invitez un membre de l’équipe à utiliser avec vous les workflows partagés.",
+        "copy": "Invitez un membre de l’équipe à partager vos workflows, chacun connectant ses propres outils.",
         "invite": "Envoyer l'invitation",
         "invited": "Invité",
         "label": "E-mail du membre de l’équipe",
@@ -4815,12 +4829,10 @@
           "workspace": "Rejoint votre espace de travail."
         },
         "sending": "Envoi…",
-        "title": "Rendez Okou utile à toute votre équipe",
-        "trust": "Tout le monde utilise les mêmes workflows et connecte ses propres outils."
+        "title": "Rendez Okou utile à toute votre équipe"
       },
       "welcome": {
         "copy": "Examinez une tâche suggérée pour votre travail, adaptez-la à votre objectif, puis laissez Okou commencer.",
-        "offerTitle": "La première heure de conseil est offerte, plus jusqu'à 100 crédits —",
         "promptLabel": "Votre prompt de départ",
         "start": "Commencer avec Okou",
         "title": "Commencez par une tâche qui compte"
@@ -6681,9 +6693,6 @@
       "emailSubscription": {
         "description": "Recevez les synthèses, rappels et autres actualités de l’espace de travail par e-mail.",
         "descriptionWithEmail": "Recevez les synthèses, rappels et autres actualités de l’espace de travail à l’adresse {{email}}.",
-        "loading": "Vérification de l’abonnement aux e-mails…",
-        "retryMessage": "Impossible d’enregistrer ou de charger votre abonnement aux e-mails. Réessayez.",
-        "saving": "Enregistrement…",
         "sectionTitle": "Abonnements aux e-mails",
         "title": "Mises à jour par e-mail",
         "unavailable": "E-mail indisponible",
@@ -6709,17 +6718,11 @@
         "title": "Langue"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + e-mail",
-        "chatOnly": "Chat uniquement",
-        "checkEmailSubscription": "Consultez l’abonnement aux e-mails ci-dessus pour connaître l’état de la livraison.",
         "conflict": "Morning Brief est temporairement indisponible, car l'état de son installation est incohérent. Réessayez une fois la réconciliation terminée.",
         "description": "Vos priorités quotidiennes à 7 h dans votre fuseau horaire.",
-        "lastDelivered": "Dernière livraison : {{date}}",
         "loading": "Chargement des paramètres de Morning Brief...",
         "missingDefaultAgent": "Choisissez un Agent par défaut utilisable avant d'activer Morning Brief.",
         "missingTimezone": "Définissez un fuseau horaire valide avant d'activer Morning Brief.",
-        "nextBrief": "Prochaine synthèse {{date}}",
-        "paused": "En pause",
         "preparationFailed": "La configuration sera réessayée automatiquement. Vous pouvez aussi réessayer maintenant.",
         "preparing": "Préparation de votre premier briefing matinal. Vous pouvez le désactiver à tout moment.",
         "retry": "Réessayer",
@@ -7173,6 +7176,7 @@
       "add": "Ajouter des identifiants",
       "appleDhFieldHelp": "Chaque champ doit contenir de 1 à 63 octets UTF-8. NUL est interdit.",
       "appleDhMethod": "Nom d’utilisateur et mot de passe Apple DH",
+      "appleSrpMethod": "Nom d’utilisateur et mot de passe Apple Direct SRP",
       "authentication": "Méthode d’authentification",
       "createNew": "Créer des identifiants",
       "delete": "Supprimer les identifiants",
@@ -7244,6 +7248,8 @@
     "security": {
       "appleDh": "Partage d’écran Mac (Apple DH)",
       "appleDhHelp": "Nécessite le partage d’écran macOS via une connexion SSH enregistrée. La destination RFB doit être 127.0.0.1 ou ::1 sur ce Mac. SSH protège toute la session VNC. Utilisez un hôte SSH Mac que vous contrôlez ; sa clé d’hôte n’exclut pas un relais en aval.",
+      "appleSrp": "Partage d’écran Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Nécessite une connexion SSH enregistrée vers le Mac et 127.0.0.1 ou ::1 comme destination RFB. SRP vérifie le compte et la preuve du serveur ; SSH protège toute la session VNC. La clé d’hôte SSH identifie le point choisi, mais n’exclut pas un relais en aval.",
       "caBundle": "Certificats d’AC (PEM)",
       "caHelp": "Jusqu’à 8 certificats d’AC, pour un total de 64 KiB. Ne collez ni clé privée ni certificat de serveur.",
       "caHint": "Collez les certificats publics des AC ayant émis le certificat du serveur",
@@ -7264,6 +7270,7 @@
     "summary_other": "{{count}} hôtes configurés",
     "transport": {
       "appleDhDestinationHelp": "Pour Apple DH, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
+      "appleSrpDestinationHelp": "Pour Apple Direct SRP, saisissez 127.0.0.1 ou ::1. Il s’agit de l’adresse de bouclage du Mac, accessible via l’hôte SSH sélectionné.",
       "destination": "Destination RFB",
       "destinationHelp": "Pour une route SSH, cet hôte et ce port sont joints depuis le serveur SSH sélectionné, et non directement depuis le Runner.",
       "direct": "Direct depuis le Runner",

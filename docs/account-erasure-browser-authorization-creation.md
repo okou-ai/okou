@@ -65,12 +65,12 @@ is:
 The effective order is **subjects -> Agent -> thread -> run -> INSERT**, with
 all acquired barriers retained through `COMMIT`.
 
-The shared helper's thread `FOR KEY SHARE` is intentionally not strengthened for
-other callers. It blocks deletion but permits a non-key `chat_threads.user_id`
-or `.agent_id` update. That was sufficient before this caller added a possible
-run-lock wait, but it could leave this creation attempt holding admitted subjects
-for an old thread identity. Creation therefore acquires `FOR SHARE` before the
-run pin and compares the locked row to the identity already admitted.
+The shared helper retains thread `FOR KEY SHARE`. The `(id, user_id)` ownership
+key makes that lock block deletion and thread-user changes, while a non-key
+`agent_id` rebind can still commit. A possible run-lock wait could therefore
+leave creation holding admitted subjects for an old Agent identity. Creation
+acquires `FOR SHARE` before the run pin and compares the locked row to the
+identity already admitted.
 
 If that tuple changed, it throws the helper's existing
 `ChatThreadContentOwnershipChangedError`. The whole transaction rolls back and
@@ -205,10 +205,9 @@ includes:
   trigger changes, plus foreign canonical thread, null Agent and Agent
   owner/organization changes; thread deletion races use the production delete
   route and separately account for its legitimate tombstone publication;
-- non-key thread-user and Agent rebinds that commit under the shared helper's
-  `FOR KEY SHARE`, are caught by the local `FOR SHARE` re-read and force a whole
-  attempt retry; a newly discovered closed owner is denied, and a separate
-  distinct open same-org owner rebind demonstrates a successful retry;
+- thread-user changes before the initial shared pin and non-key Agent rebinds
+  under `FOR KEY SHARE` trigger a whole-attempt retry; a newly discovered closed
+  owner is denied, and a distinct open same-org Agent rebind succeeds;
 - retained run non-key update and delete blockers, retained canonical thread
   update and delete blockers, and simultaneous unrelated-run progress;
 - TTL sampled after a proved run-pin wait, with a second proved blocker edge

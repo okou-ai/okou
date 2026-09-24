@@ -246,7 +246,7 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   },
   {
     name: "phone",
-    description: "Send AgentPhone messages, upload files, and download media",
+    description: "Send phone messages, upload files, and download media",
     load: async () => {
       return (await import("./commands/phone")).phoneCommand;
     },
@@ -590,9 +590,9 @@ export function buildHelpText(
     "  Send Telegram?         okou telegram message send --help",
     "  Upload Telegram?       okou telegram upload-file --help",
     "  Download Telegram?     okou telegram download-file --help",
-    "  Send AgentPhone?       okou phone message --help",
-    "  Upload AgentPhone?     okou phone upload-file --help",
-    "  Download AgentPhone?   okou phone download-file --help",
+    "  Send phone message?   okou phone message --help",
+    "  Upload phone file?    okou phone upload-file --help",
+    "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
     "  Model routing?        okou model-provider ls",
     "  Update yourself?       okou agent --help",

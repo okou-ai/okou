@@ -220,6 +220,12 @@ async function fixture(
             }),
           })
           .parse(await request.json());
+        if (body.content.trim().length === 0) {
+          return HttpResponse.json(
+            { code: 50_006, message: "Cannot send an empty message" },
+            { status: 400 },
+          );
+        }
         sentBodies.push(body);
         const entry = {
           ...message(snowflake(), String(params.channelId), body.content),
@@ -488,6 +494,33 @@ describe("Discord native authorization and reads", () => {
     },
   );
 
+  it.each(["archived", "locked"] as const)(
+    "conceals %s thread state until both principals have access",
+    async (closedState) => {
+      const f = await fixture();
+      addThread(f, { [closedState]: true });
+      const missing = await accept(send(f, snowflake()), [404]);
+      const parent = f.channels.get(f.channelId)!;
+      for (const id of [f.discordUserId, f.botUserId]) {
+        parent.permission_overwrites = [
+          { id, type: 1, deny: String(VIEW), allow: "0" },
+        ];
+        expect((await accept(send(f, f.threadId), [404])).body).toStrictEqual(
+          missing.body,
+        );
+      }
+      parent.permission_overwrites = [];
+      addThread(f, { private: true, [closedState]: true });
+      for (const id of [f.discordUserId, f.botUserId]) {
+        f.threadMembers.delete(id);
+        expect((await accept(send(f, f.threadId), [404])).body).toStrictEqual(
+          missing.body,
+        );
+        f.threadMembers.add(id);
+      }
+    },
+  );
+
   it("reads a private thread with both memberships and inherits parent overwrites", async () => {
     const f = await fixture();
     addThread(f, { private: true });
@@ -563,6 +596,39 @@ describe("Discord native authorization and reads", () => {
 });
 
 describe("Discord native sends and transport failures", () => {
+  it.each([1988, 2005])(
+    "normalizes %i closing-fence spaces while preserving code within every message limit",
+    async (spaces) => {
+      const f = await fixture();
+      const text = "x".repeat(1990);
+      const source =
+        "```typescript\n" +
+        "x".repeat(1990) +
+        "\n```" +
+        " ".repeat(spaces) +
+        "\n";
+      const result = await accept(send(f, f.channelId, source), [200]);
+      const read = await accept(history(f), [200]);
+      const byId = new Map(
+        read.body.messages.map((entry) => {
+          return [entry.id, entry.content];
+        }),
+      );
+      const chunks = result.body.messages.map((receipt) => {
+        return byId.get(receipt.id);
+      });
+      expect(chunks.length).toBeGreaterThan(1);
+      for (const chunk of chunks) {
+        expect(chunk).toBeDefined();
+        expect(chunk!.length).toBeLessThanOrEqual(2000);
+        expect(chunk!.trim().length).toBeGreaterThan(0);
+      }
+      expect(chunks.join("").replaceAll(/```typescript\n|```|\n/g, "")).toBe(
+        text,
+      );
+    },
+  );
+
   it("preserves a long fenced answer and suppresses all mention notifications", async () => {
     const f = await fixture();
     const source =

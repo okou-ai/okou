@@ -1,6 +1,6 @@
 import { agents } from "@okouai/db/schema/agent";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
 import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import { users } from "@okouai/db/schema/user";

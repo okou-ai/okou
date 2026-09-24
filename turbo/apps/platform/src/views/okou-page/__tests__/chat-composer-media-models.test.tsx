@@ -414,7 +414,7 @@ async function selectModelsAcrossNewChatCategories(): Promise<void> {
   await chooseMenuMediaModel("Video", "Veo 3.1 fast");
   await chooseMenuMediaModel("Image", "GPT Image 2");
   await openMenuCategory("Chat");
-  click(menuRow("Claude Sonnet 4.6"));
+  click(menuRow("Claude Sonnet 5"));
 
   await waitFor(() => {
     expect(scopeCard("Model for this chat")).not.toBeNull();

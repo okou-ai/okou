@@ -169,24 +169,6 @@ async function resolvePermissionChannel(
     if (!channel.parent_id || !channel.thread_metadata) {
       return unavailable();
     }
-    if (
-      args.mode === "write" &&
-      (channel.thread_metadata.archived || channel.thread_metadata.locked)
-    ) {
-      return {
-        kind: "denied",
-        response: {
-          status: 403,
-          body: {
-            error: {
-              code: "DISCORD_THREAD_CLOSED",
-              message:
-                "This Discord thread is archived or locked. Reopen it in Discord before sending.",
-            },
-          },
-        },
-      };
-    }
     const parent = await discordClient.fetchDiscordChannel(
       { botToken: args.botToken, channelId: channel.parent_id },
       signal,
@@ -275,15 +257,10 @@ export async function resolveDiscordProviderAccess(
   if (!permissions) {
     return unavailable();
   }
-  return await requirePrivateThreadMembership(
-    args,
-    channel,
-    permissions,
-    signal,
-  );
+  return await requireThreadAccess(args, channel, permissions, signal);
 }
 
-async function requirePrivateThreadMembership(
+async function requireThreadAccess(
   args: DiscordProviderAccessArgs,
   channel: DiscordChannel,
   permissions: { user: bigint; bot: bigint },
@@ -313,6 +290,25 @@ async function requirePrivateThreadMembership(
         return unavailable();
       }
     }
+  }
+  if (
+    args.mode === "write" &&
+    isDiscordThread(channel) &&
+    (channel.thread_metadata?.archived || channel.thread_metadata?.locked)
+  ) {
+    return {
+      kind: "denied",
+      response: {
+        status: 403,
+        body: {
+          error: {
+            code: "DISCORD_THREAD_CLOSED",
+            message:
+              "This Discord thread is archived or locked. Reopen it in Discord before sending.",
+          },
+        },
+      },
+    };
   }
   return { kind: "allowed", channel };
 }

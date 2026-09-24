@@ -525,7 +525,7 @@ mock_claude_script = File.read(ARGV.fetch(1))
   /api/model-policies
   /api/feature-switches
   claude-code-oauth-token
-  claude-sonnet-4-6
+  claude-sonnet-5
   _realAgentInPreview
 ].each do |required_fragment|
   unless mock_claude_script.include?(required_fragment)
@@ -570,17 +570,19 @@ built_in_codex_script = built_in_codex_step.fetch("run")
   e2e-api-credentials-runner-real-codex-built-in.json
   /api/model-policies
   /api/feature-switches
+  gpt-6-astra
   gpt-5.6-luna
 ].each do |required_fragment|
   unless built_in_codex_script.include?(required_fragment)
     raise "built-in Codex bootstrap must include #{required_fragment}"
   end
 end
-unless built_in_codex_script.include?('"defaultProviderType":"built-in"') &&
+unless built_in_codex_script.include?('"model":"gpt-6-astra","isDefault":true') &&
+    built_in_codex_script.include?('"model":"gpt-5.6-luna","isDefault":false') &&
+    built_in_codex_script.include?('"defaultProviderType":"built-in"') &&
     built_in_codex_script.include?('"modelProviderId":null') &&
-    built_in_codex_script.include?('"_realAgentInPreview":true,"piLoop":false') &&
-    built_in_codex_script.include?('.effectiveSwitches.piLoop == false')
-  raise "built-in Luna must retain Codex execution in its isolated account"
+    built_in_codex_script.include?('"_realAgentInPreview":true')
+  raise "native Astra and Pi Luna must retain their isolated account setup"
 end
 claude_step = bootstrap_steps.find do |step|
   step["name"] == "Bootstrap real Claude account"

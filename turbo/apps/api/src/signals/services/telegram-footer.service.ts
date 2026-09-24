@@ -205,7 +205,7 @@ async function resolveRunUserLabel(
 }
 
 /**
- * Resolve the audit footer text appended to user-initiated Telegram messages.
+ * Resolve the attribution footer text appended to user-initiated Telegram messages.
  *
  * Preserves the legacy footer semantics for agent, automation, triggering user,
  * and selected model labels. Returns undefined when authRunId is undefined

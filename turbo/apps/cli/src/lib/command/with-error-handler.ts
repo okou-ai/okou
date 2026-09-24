@@ -16,11 +16,15 @@ import { getOkouToken } from "../okou-env";
  */
 export function withErrorHandler<T extends unknown[]>(
   fn: (...args: T) => Promise<void>,
+  renderError?: (error: unknown, ...args: T) => boolean,
 ): (...args: T) => Promise<void> {
   return async (...args: T) => {
     try {
       await fn(...args);
     } catch (error) {
+      if (renderError?.(error, ...args)) {
+        process.exit(1);
+      }
       if (error instanceof ApiRequestError) {
         if (error.code === "UNAUTHORIZED") {
           if (getOkouToken()) {

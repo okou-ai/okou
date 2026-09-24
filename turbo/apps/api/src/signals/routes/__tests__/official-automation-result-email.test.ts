@@ -97,6 +97,16 @@ function clerkUser(userId: string, email: string) {
 async function setupScenario(): Promise<Scenario> {
   const runnerGroup = runs.configureRunnerGroup();
   const { actor } = await workflows.setupWorkflowOrg();
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   if (!actor.orgId) {
     throw new Error("Expected an organization-scoped actor");
   }

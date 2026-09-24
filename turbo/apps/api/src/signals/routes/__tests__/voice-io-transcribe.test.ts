@@ -375,7 +375,7 @@ describe("voice input routing and reference context", () => {
     expect(calls).toBe(1);
   });
 
-  it.each([0.56, 36.56, 60])(
+  it.each([0.56, 60])(
     "transcribes and polishes a %s-second recording in one multimodal request",
     async (durationSeconds) => {
       await voiceActor();

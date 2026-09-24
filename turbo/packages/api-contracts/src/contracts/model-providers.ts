@@ -68,11 +68,6 @@ const DEEPSEEK_MODEL_CATALOG = {
       ...deepseekV41FlashCatalogModel,
       slug: "deepseek-v4-flash",
     },
-    {
-      ...deepseekV4FlashCatalogModel,
-      slug: "deepseek-v4-pro",
-      display_name: "DeepSeek-V4-Pro",
-    },
   ],
 };
 
@@ -234,10 +229,19 @@ export function isOkouRunModel(
   return typeof model === "string" && OKOU_RUN_MODEL_SET.has(model);
 }
 
-export type ActiveRunModel = Exclude<
-  SupportedRunModel,
-  "claude-fable-5" | "gpt-5.5"
->;
+const RETIRED_RUN_MODELS = [
+  "claude-fable-5",
+  "claude-opus-4-8",
+  "claude-sonnet-4-6",
+  "deepseek-v4-pro",
+  "gpt-5.5",
+] as const satisfies readonly SupportedRunModel[];
+
+type RetiredRunModel = (typeof RETIRED_RUN_MODELS)[number];
+
+const RETIRED_RUN_MODEL_SET: ReadonlySet<string> = new Set(RETIRED_RUN_MODELS);
+
+export type ActiveRunModel = Exclude<SupportedRunModel, RetiredRunModel>;
 
 // Historical IDs remain in the wire schemas and billing catalog. Availability
 // is a separate product decision, including for provider-prefixed aliases.
@@ -249,7 +253,7 @@ export function getRunModelAccess(
   restrictedBuiltInModels = false,
 ): "allowed" | "pro_required" | "retired" {
   const canonical = normalizeBuiltInModelId(model?.trim().toLowerCase() ?? "");
-  if (canonical === "claude-fable-5" || canonical === "gpt-5.5") {
+  if (RETIRED_RUN_MODEL_SET.has(canonical)) {
     return "retired";
   }
   return restrictedBuiltInModels && isLimitedFree1RestrictedRunModel(model)
@@ -392,30 +396,12 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       },
     ],
   },
-  "claude-opus-4-8": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-opus-4.8",
-      },
-    ],
-  },
   "claude-sonnet-5": {
     candidates: [
       { concreteType: "anthropic-api-key" },
       {
         concreteType: "openrouter-api-key",
         apiModel: "anthropic/claude-sonnet-5",
-      },
-    ],
-  },
-  "claude-sonnet-4-6": {
-    candidates: [
-      { concreteType: "anthropic-api-key" },
-      {
-        concreteType: "openrouter-api-key",
-        apiModel: "anthropic/claude-sonnet-4.6",
       },
     ],
   },
@@ -458,15 +444,6 @@ export const BUILT_IN_MODEL_TO_PROVIDER = {
       {
         concreteType: "openrouter-codex",
         apiModel: "deepseek/deepseek-v4-flash",
-      },
-    ],
-  },
-  "deepseek-v4-pro": {
-    candidates: [
-      { concreteType: "deepseek" },
-      {
-        concreteType: "openrouter-codex",
-        apiModel: "deepseek/deepseek-v4-pro",
       },
     ],
   },
@@ -584,6 +561,7 @@ export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
   "anthropic/claude-opus-4.8": "claude-opus-4-8",
   "anthropic/claude-sonnet-5": "claude-sonnet-5",
   "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
+  "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
 } as const satisfies Record<string, SupportedRunModel>;
 
 const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
@@ -595,7 +573,6 @@ const LIMITED_FREE1_ALLOWED_RUN_MODELS: ReadonlySet<string> = new Set([
   "gpt-5.6-luna",
   "deepseek-v4.1-flash",
   "deepseek-v4-flash",
-  "deepseek-v4-pro",
 ]);
 
 export function normalizeBuiltInModelId(model: string): string {
@@ -738,8 +715,6 @@ export const MODEL_PROVIDER_TYPES = {
       "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5",
-      "claude-sonnet-4-6",
-      "claude-opus-4-8",
     ] as string[],
     defaultModel: "claude-sonnet-5",
   },
@@ -759,8 +734,6 @@ export const MODEL_PROVIDER_TYPES = {
       "claude-opus-5-5",
       "claude-opus-5",
       "claude-sonnet-5",
-      "claude-sonnet-4-6",
-      "claude-opus-4-8",
     ] as string[],
     defaultModel: "claude-sonnet-5",
   },
@@ -784,9 +757,7 @@ export const MODEL_PROVIDER_TYPES = {
       "anthropic/claude-fable-5.1",
       "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
-      "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
-      "anthropic/claude-sonnet-4.6",
       "anthropic/claude-opus-4.5",
       "anthropic/claude-sonnet-4.5",
     ] as string[],
@@ -803,11 +774,7 @@ export const MODEL_PROVIDER_TYPES = {
       OPENAI_BASE_URL: "https://api.deepseek.com/",
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: [
-      "deepseek-flash",
-      "deepseek-v4-flash",
-      "deepseek-v4-pro",
-    ] as string[],
+    models: ["deepseek-flash", "deepseek-v4-flash"] as string[],
     defaultModel: "deepseek-flash",
   },
   "vercel-ai-gateway": {
@@ -830,10 +797,8 @@ export const MODEL_PROVIDER_TYPES = {
       "anthropic/claude-fable-5.1",
       "anthropic/claude-opus-5.5",
       "anthropic/claude-opus-5",
-      "anthropic/claude-opus-4.8",
       "anthropic/claude-sonnet-5",
       "anthropic/claude-opus-4.5",
-      "anthropic/claude-sonnet-4.6",
       "anthropic/claude-sonnet-4.5",
       "minimax/minimax-m2.5",
     ] as string[],
@@ -865,7 +830,6 @@ export const MODEL_PROVIDER_TYPES = {
       "openai/gpt-5.6-luna",
       "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash",
-      "deepseek/deepseek-v4-pro",
     ] as string[],
     defaultModel: "openai/gpt-5.6-luna",
   },
@@ -1142,25 +1106,7 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
     "azure-foundry",
     "aws-bedrock",
   ],
-  "claude-opus-4-8": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
   "claude-sonnet-5": [
-    "built-in",
-    "claude-code-oauth-token",
-    "anthropic-api-key",
-    "openrouter-api-key",
-    "vercel-ai-gateway",
-    "azure-foundry",
-    "aws-bedrock",
-  ],
-  "claude-sonnet-4-6": [
     "built-in",
     "claude-code-oauth-token",
     "anthropic-api-key",
@@ -1210,7 +1156,6 @@ const MODEL_FIRST_PROVIDER_COMPATIBILITY = {
   ],
   "deepseek-v4.1-flash": ["built-in", "openrouter-codex"],
   "deepseek-v4-flash": ["built-in", "deepseek", "openrouter-codex"],
-  "deepseek-v4-pro": ["built-in", "deepseek", "openrouter-codex"],
 } as const satisfies Record<ActiveRunModel, readonly ModelProviderType[]>;
 
 const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
@@ -1220,22 +1165,17 @@ const PROVIDER_RUNTIME_MODEL_ALIASES: Partial<
     "claude-fable-5-1": "anthropic/claude-fable-5.1",
     "claude-opus-5-5": "anthropic/claude-opus-5.5",
     "claude-opus-5": "anthropic/claude-opus-5",
-    "claude-opus-4-8": "anthropic/claude-opus-4.8",
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
-    "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
   },
   "vercel-ai-gateway": {
     "claude-fable-5-1": "anthropic/claude-fable-5.1",
     "claude-opus-5-5": "anthropic/claude-opus-5.5",
     "claude-opus-5": "anthropic/claude-opus-5",
-    "claude-opus-4-8": "anthropic/claude-opus-4.8",
     "claude-sonnet-5": "anthropic/claude-sonnet-5",
-    "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
   },
   "openrouter-codex": {
     "deepseek-v4.1-flash": "deepseek/deepseek-v4.1-flash",
     "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
-    "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
     "gpt-6-astra": "openai/gpt-6-astra",
     "gpt-6-sol": "openai/gpt-6-sol",
     "gpt-6-luna": "openai/gpt-6-luna",
@@ -1497,8 +1437,7 @@ export function getModelProviderCodexCatalogForModel(
   const disableApplyPatch =
     runtimeProviderType === "openrouter-codex" &&
     (logicalModel === "deepseek-v4.1-flash" ||
-      logicalModel === "deepseek-v4-flash" ||
-      logicalModel === "deepseek-v4-pro");
+      logicalModel === "deepseek-v4-flash");
   const catalogModel = normalizeRunModelId(logicalModel);
   // The native V4 alias serves V4.1. Other providers keep the original
   // legacy catalog until their upstream mapping is verified.

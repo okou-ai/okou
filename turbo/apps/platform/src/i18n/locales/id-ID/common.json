@@ -347,7 +347,7 @@
     },
     "sources": {
       "agent": "Agen",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Peristiwa otomatisasi",
       "automationSchedule": "Jadwal otomatisasi",
       "email": "Email",
@@ -1182,7 +1182,7 @@
         "everythingInBuiltForTeams": "Semua di {{plan}}, dibuat untuk tim",
         "included": "Termasuk",
         "liveBrowser": "Pantau browser langsung agen dan ambil alih kendali",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
+        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4.1 Flash",
         "moreConnectorsChannels": "Lebih banyak custom connector & integrasi saluran",
         "supportEmail": "Dukungan email",
         "supportPriority": "Dukungan prioritas",
@@ -1436,6 +1436,11 @@
         },
         "earned": "{{amount}} diperoleh",
         "howRewardsWork": "Cara kerja hadiah",
+        "imessage": {
+          "action": "Tambahkan",
+          "description": "Kirim pesan ke {{assistantName}} dari iPhone kamu",
+          "name": "Tambahkan ke iMessage"
+        },
         "inReview": "Sedang ditinjau",
         "intro": {
           "checkin": {
@@ -1734,6 +1739,7 @@
       "cancelFailed": "Permintaan tidak dapat dibatalkan. Coba lagi.",
       "cancelled": "Permintaan dibatalkan",
       "cancelling": "Membatalkan…",
+      "checkFailed": "Browser tidak dapat diperiksa. Isian Anda tetap tersimpan; coba lagi sebelum mengirim.",
       "clearValue": "Hapus nilai di situs",
       "completed": "Informasi ditambahkan",
       "continue": "Beri tahu agen",
@@ -2940,15 +2946,26 @@
     "clientSecret": "Rahasia klien Service Token",
     "clientSecretPlaceholder": "Tempel Client Secret Service Token",
     "configuration": "Cloudflare Access",
+    "convert": "Jadikan pribadi",
+    "convertConfirm": "Saya memahami bahwa host ini tidak dapat terhubung sampai pemiliknya mengikatnya kembali.",
+    "convertHelp": "Simpan Service Token ini untuk penggunaan pribadi Anda. Host Anda sendiri dapat tetap terhubung.",
+    "convertUncertain": "Konversi belum dapat dikonfirmasi. Tinjau konfigurasi terbaru sebelum mencoba lagi.",
+    "convertWarning_other": "Host SSH pengguna lain yang terdampak: {{count}}. Host tidak tersedia sampai pemiliknya mengikat ulang atau memilih Direct.",
     "createNew": "Buat Cloudflare Access baru",
     "delete": "Hapus Cloudflare Access",
-    "deleteHelp": "Hapus Cloudflare Access ini? Service Token yang tersimpan tidak dapat dipulihkan. Penghapusan diblokir selama masih digunakan oleh host.",
+    "deleteConfirm": "Saya memahami bahwa host ini tidak tersedia hingga pemiliknya menghubungkannya kembali.",
+    "deleteHelp": "Hapus Cloudflare Access ini? Service Token yang tersimpan tidak dapat dipulihkan. Hubungkan kembali host milik Anda terlebih dahulu.",
+    "deleteImpact": "Host SSH milik anggota berikut perlu dihubungkan kembali. Host tidak akan otomatis beralih ke Langsung.",
+    "deleteUncertain": "Penghapusan tidak dapat dipastikan. Tinjau dampak terbaru sebelum mencoba lagi.",
     "description": "Akses aplikasi terlindungi dengan Token Layanan Cloudflare Access.",
     "edit": "Edit Cloudflare Access",
     "failed": "Tidak dapat menyimpan perubahan Cloudflare Access. Coba lagi.",
     "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
+    "formerMember": "Mantan anggota (nama tidak tersedia)",
+    "hostCount_other": "{{count}} host SSH",
+    "impactChanged": "Host yang terdampak berubah. Tinjau dampak terbaru sebelum mengonfirmasi lagi.",
     "inUse": "Sebuah host SSH menggunakan Cloudflare Access ini. Pemiliknya harus mengikat ulang atau menghapus host tersebut terlebih dahulu.",
-    "inUseHelp": "Pilih Cloudflare Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus yang ini.",
+    "inUseHelp": "Host SSH Anda masih menggunakan konfigurasi ini. Hubungkan kembali ke konfigurasi lain, pilih Langsung secara eksplisit, atau hapus host tersebut terlebih dahulu.",
     "invalidInput": "Beberapa pengaturan Cloudflare Access tidak valid. Periksa kolom dan coba lagi.",
     "keepChanges": "Terapkan perubahan saya ke versi ini",
     "latest": "Pengaturan terakhir yang disimpan",
@@ -2961,10 +2978,15 @@
     "organization": "Organisasi",
     "organizationHelp": "Semua anggota organisasi ini dapat menggunakan Service Token ini. Hanya admin yang dapat mengubahnya.",
     "personal": "Pribadi",
+    "promote": "Bagikan ke organisasi",
+    "promoteConfirm": "Saya memahami semua anggota organisasi dapat menggunakan Service Token ini.",
+    "promoteHelp": "Bagikan Cloudflare Access pribadi Anda ke organisasi. Service Token dan ikatan host SSH Anda tetap sama.",
+    "promoteUncertain": "Konversi tidak dapat dipastikan. Tutup dialog ini dan periksa konfigurasi terbaru sebelum mencoba lagi.",
     "replace": "Ganti Service Token",
     "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
     "retry": "Coba lagi",
     "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
+    "reviewLatest": "Tinjau dampak terbaru",
     "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru.",
     "save": "Simpan",
     "saveUncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Coba simpan ulang isian yang sama, atau tutup dan periksa daftar sebelum menambahkannya lagi.",
@@ -3449,7 +3471,7 @@
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
         "invalidTitle": "Tautan koneksi tidak valid",
-        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor AgentPhone ini.",
+        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
         "successTitle": "Nomor telepon terhubung"
       },
@@ -3571,9 +3593,10 @@
       "agentphone": {
         "authorizedSender": "Pengirim yang diizinkan",
         "codeExpiry": "Kedaluwarsa dalam 10 menit",
+        "codeLabel": "Kode",
         "connectAria": "Hubungkan telepon",
-        "connectDescription": "Pindai kode atau buka Pesan, lalu kirim kode yang sudah terisi.",
-        "connectTitle": "Hubungkan telepon",
+        "connectDescription": "Pindai dengan kamera, lalu kirim kode yang sudah terisi.",
+        "connectTitle": "Kirim pesan ke {{assistantName}} dari iPhone",
         "copyAria": "Salin {{phone}}",
         "copyCodeAria": "Salin kode koneksi {{code}}",
         "copyCodeError": "Gagal menyalin kode koneksi",
@@ -3584,13 +3607,12 @@
         "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
         "destination": "iMessage atau SMS ke",
-        "manualSend": "atau kirim",
-        "manualSendTo": "ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
         "qrTitle": "Pindai untuk membuka Pesan dengan kode koneksi yang sudah terisi",
         "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim.",
+        "sendToLabel": "Kirim ke",
         "tryAgain": "Coba lagi"
       },
       "catalogDiagnostics": {
@@ -4000,8 +4022,8 @@
         "uninstallTitle": "Uninstall bot Telegram?"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone terhubung",
-        "agentphoneDisconnected": "AgentPhone terputus",
+        "agentphoneConnected": "Nomor telepon terhubung",
+        "agentphoneDisconnected": "Nomor telepon terputus",
         "slackConnected": "Slack berhasil terhubung",
         "slackDisconnected": "Terputus dari Slack",
         "slackInstalled": "Slack berhasil diinstal",
@@ -4256,7 +4278,6 @@
       "documentTitles": {
         "experience": "Pengalaman AI Anda",
         "industry": "Pilih bidang Anda",
-        "profile": "Profil Anda",
         "ready": "Okou sudah siap",
         "skills": "Impor skill Anda",
         "slack": "Tambahkan Okou ke Slack",
@@ -4319,17 +4340,6 @@
       "industry": {
         "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
         "title": "Pekerjaan Anda seperti apa?"
-      },
-      "profile": {
-        "communicationStyle": "Cara Anda berkomunikasi",
-        "copy": "Gambaran awal pekerjaan Anda berdasarkan akun yang terhubung.",
-        "failed": "Kami belum bisa membuat profil Anda. Coba lagi atau lanjutkan.",
-        "heading": "Profil Anda",
-        "loading": "Membuat profil dari pekerjaan yang terhubung…",
-        "priorities": "Kemungkinan prioritas",
-        "professionalIdentity": "Pekerjaan Anda",
-        "retry": "Coba lagi",
-        "title": "Inilah yang kami pelajari tentang Anda"
       },
       "skills": {
         "copied": "Tersalin",
@@ -4729,7 +4739,7 @@
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
       },
       "team": {
-        "copy": "Undang anggota tim untuk menjalankan alur kerja bersama.",
+        "copy": "Undang anggota tim untuk berbagi alur kerja Anda, sementara setiap orang menghubungkan alatnya sendiri.",
         "invite": "Kirim undangan",
         "invited": "Diundang",
         "label": "Email anggota tim",
@@ -4743,12 +4753,10 @@
           "workspace": "Bergabung ke workspace Anda."
         },
         "sending": "Mengirim…",
-        "title": "Buat Okou berguna bagi seluruh tim Anda",
-        "trust": "Semua orang menggunakan alur kerja yang sama dan menghubungkan alat mereka sendiri."
+        "title": "Buat Okou berguna bagi seluruh tim Anda"
       },
       "welcome": {
         "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",
-        "offerTitle": "Satu jam pertama konsultasi gratis dari kami, plus hingga 100 kredit —",
         "promptLabel": "Prompt awal Anda",
         "start": "Mulai dengan Okou",
         "title": "Mulai dengan tugas yang berarti"
@@ -6601,9 +6609,6 @@
       "emailSubscription": {
         "description": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya melalui email.",
         "descriptionWithEmail": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya di {{email}}.",
-        "loading": "Memeriksa langganan email…",
-        "retryMessage": "Tidak dapat menyimpan atau memuat langganan email. Coba lagi.",
-        "saving": "Menyimpan…",
         "sectionTitle": "Langganan email",
         "title": "Pembaruan email",
         "unavailable": "Email tidak tersedia",
@@ -6629,17 +6634,11 @@
         "title": "Bahasa"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + email",
-        "chatOnly": "Hanya Chat",
-        "checkEmailSubscription": "Periksa langganan email di atas untuk status pengiriman.",
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten. Coba lagi setelah rekonsiliasi selesai.",
         "description": "Prioritas harian pukul 07.00 sesuai zona waktu Anda.",
-        "lastDelivered": "Terakhir dikirim: {{date}}",
         "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "nextBrief": "Ringkasan berikutnya {{date}}",
-        "paused": "Dijeda",
         "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
@@ -7084,6 +7083,7 @@
       "add": "Tambah kredensial",
       "appleDhFieldHelp": "Setiap kolom harus berisi 1–63 byte UTF-8. NUL tidak diizinkan.",
       "appleDhMethod": "Nama pengguna dan kata sandi Apple DH",
+      "appleSrpMethod": "Nama pengguna dan kata sandi Apple Direct SRP",
       "authentication": "Metode autentikasi",
       "createNew": "Buat kredensial baru",
       "delete": "Hapus kredensial",
@@ -7152,6 +7152,8 @@
     "security": {
       "appleDh": "Berbagi Layar Mac (Apple DH)",
       "appleDhHelp": "Memerlukan Berbagi Layar macOS melalui koneksi SSH yang tersimpan. Tujuan RFB harus 127.0.0.1 atau ::1 pada Mac tersebut. SSH melindungi seluruh sesi VNC. Gunakan host SSH Mac yang Anda kendalikan; kunci host tidak dapat memastikan tidak ada proksi lanjutan.",
+      "appleSrp": "Berbagi Layar Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Memerlukan koneksi SSH tersimpan ke Mac dan tujuan RFB 127.0.0.1 atau ::1. SRP memverifikasi akun dan bukti server; SSH melindungi seluruh sesi VNC. Kunci host SSH mengenali endpoint yang dipilih, tetapi tidak dapat meniadakan proksi lanjutan.",
       "caBundle": "Sertifikat CA (PEM)",
       "caHelp": "Maksimal 8 sertifikat CA, total 64 KiB. Jangan tempel kunci privat atau sertifikat server.",
       "caHint": "Tempel sertifikat CA publik yang menerbitkan sertifikat server",
@@ -7171,6 +7173,7 @@
     "summary_other": "{{count}} host terkonfigurasi",
     "transport": {
       "appleDhDestinationHelp": "Untuk Apple DH, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
+      "appleSrpDestinationHelp": "Untuk Apple Direct SRP, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
       "destination": "Tujuan RFB",
       "destinationHelp": "Untuk rute SSH, host dan port ini dijangkau dari server SSH yang dipilih, bukan langsung dari Runner.",
       "direct": "Langsung dari Runner",

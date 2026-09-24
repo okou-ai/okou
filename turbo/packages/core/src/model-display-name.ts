@@ -35,6 +35,7 @@ const MODEL_DISPLAY_NAMES = Object.freeze<Record<string, string>>({
   "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
   "deepseek-v4-flash": "DeepSeek V4 Flash",
   "deepseek-v4-pro": "DeepSeek V4 Pro",
+  "deepseek/deepseek-v4-pro": "DeepSeek V4 Pro",
   // MiniMax via shared gateways
   "minimax/minimax-m2.5": "MiniMax M2.5",
   // Minimax via OpenRouter

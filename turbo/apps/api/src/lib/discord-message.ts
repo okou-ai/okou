@@ -24,15 +24,15 @@ function parseFenceLine(
   line: string,
   fence: string | undefined,
 ): { readonly next: string | undefined } | undefined {
-  // Keep oversized or malformed fence lines literal so an opening marker
-  // cannot exhaust a whole chunk before any source text fits.
-  if (line.length >= DISCORD_MESSAGE_LIMIT - 4) {
-    return undefined;
-  }
   if (fence !== undefined) {
     return /^```[ \t]*(?:\r?\n)?$/u.test(line)
       ? { next: undefined }
       : undefined;
+  }
+  // Keep oversized or malformed opening lines literal so an opening marker
+  // cannot exhaust a whole chunk before any source text fits.
+  if (line.length >= DISCORD_MESSAGE_LIMIT - 4) {
+    return undefined;
   }
   if (/^```([\w#+.-]{0,100})[ \t]*\r?\n$/u.test(line)) {
     return { next: "```" + line.slice(3).trim() + "\n" };
@@ -40,7 +40,7 @@ function parseFenceLine(
   return undefined;
 }
 
-/** Preserve source text and close/reopen multiline code fences across messages. */
+/** Preserve message text, normalizing closing-fence whitespace and wrapping code. */
 export function splitDiscordMessage(content: string): string[] {
   if (content.length === 0) {
     return [];
@@ -61,11 +61,16 @@ export function splitDiscordMessage(content: string): string[] {
   for (const match of content.matchAll(/[^\n]*\n|[^\n]+$/gu)) {
     const line = match[0];
     const fenceLine = parseFenceLine(line, fence);
-    if (fenceLine) {
-      if (
-        current.length + line.length + (fenceLine.next === undefined ? 0 : 4) >
-        DISCORD_MESSAGE_LIMIT
-      ) {
+    if (fenceLine && fenceLine.next === undefined) {
+      // Whitespace after a closing marker has no rendered meaning. Normalize it
+      // to the reserved four characters instead of sending an empty whitespace
+      // chunk, which Discord rejects. Code and ordinary message text stay intact.
+      current += line.endsWith("\n") ? "```\n" : "```";
+      sourceLength += line.length;
+      fence = undefined;
+      continue;
+    } else if (fenceLine) {
+      if (current.length + line.length + 4 > DISCORD_MESSAGE_LIMIT) {
         flush();
       }
       current += line;

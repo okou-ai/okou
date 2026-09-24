@@ -1,5 +1,61 @@
 # Changelog
 
+## [8.709.0](https://github.com/okou-ai/okou/compare/core-v8.708.4...core-v8.709.0) (2026-09-24)
+
+
+### Features
+
+* **core:** enable thread remote access for staff ([#36714](https://github.com/okou-ai/okou/issues/36714)) ([0433898](https://github.com/okou-ai/okou/commit/04338980409d5c6d6a72cc1074d8ad0f3e8d0bea))
+
+
+### Refactoring
+
+* **api:** decouple chat event writes behind a two-release bridge ([#36614](https://github.com/okou-ai/okou/issues/36614)) ([63ad2ee](https://github.com/okou-ai/okou/commit/63ad2eed786e3f36eb9341f4db436b95a1eac6e3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.506.0
+
+## [8.708.4](https://github.com/okou-ai/okou/compare/core-v8.708.3...core-v8.708.4) (2026-09-24)
+
+
+### Bug Fixes
+
+* retire claude sonnet 4.6, claude opus 4.8, and deepseek v4 pro ([#36698](https://github.com/okou-ai/okou/issues/36698)) ([66a5341](https://github.com/okou-ai/okou/commit/66a534132b49aee893bcbae2cb94b150f19396c8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.1
+
+## [8.708.3](https://github.com/okou-ai/okou/compare/core-v8.708.2...core-v8.708.3) (2026-09-24)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.505.0
+
+## [8.708.2](https://github.com/okou-ai/okou/compare/core-v8.708.1...core-v8.708.2) (2026-09-24)
+
+
+### Refactoring
+
+* remove piloop feature switch ([#36382](https://github.com/okou-ai/okou/issues/36382)) ([878bc6d](https://github.com/okou-ai/okou/commit/878bc6d48524830c3da02f9622f7d056c7905a79))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.504.0
+
 ## [8.708.1](https://github.com/okou-ai/okou/compare/core-v8.708.0...core-v8.708.1) (2026-09-24)
 
 

@@ -168,7 +168,17 @@ async function createAuthorizationRunFixture(options?: {
   runs.acceptTelemetryIngest();
   runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  const { providerId } = await runs.ensureOrgModelProvider(actor);
+  // Authorization requests need an active native run while the request is held.
+  await runs.updateOrgModelPolicies(actor, [
+    {
+      model: "claude-fable-5-1",
+      isDefault: true,
+      defaultProviderType: "anthropic-api-key",
+      credentialScope: "org",
+      modelProviderId: providerId,
+    },
+  ]);
   // Shared visibility: a private Agent can only be run by its owner, so a
   // thread user distinct from the Agent owner cannot exist for one.
   const agent = await bdd.createAgent(owner, {
@@ -180,6 +190,7 @@ async function createAuthorizationRunFixture(options?: {
     {
       agentId: agent.agentId,
       prompt: "Ask the user to enable a cloud browser",
+      model: "claude-fable-5-1",
     },
     [201],
   );
@@ -1959,7 +1970,7 @@ describe("account erasure fences cloud browser authorization request creation", 
   );
 
   it(
-    "retries the whole transaction when the thread user changes under the shared KEY SHARE",
+    "denies a thread user change before the shared KEY SHARE pin",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const fixture = await createAuthorizationRunFixture();
@@ -1969,13 +1980,13 @@ describe("account erasure fences cloud browser authorization request creation", 
         {
           chatThreadId: fixture.threadId,
           runId: fixture.runId,
-          stopAt: "thread-share",
+          stopAt: "thread-key-share",
           work: async (barrier) => {
             const creating = requestAuthorizationCreation(fixture, [404]);
             await barrier.entered;
-            // The shared helper's KEY SHARE permits this non-key update. The
-            // creation-only SHARE re-read must detect it and restart before the
-            // run is locked or any request is inserted.
+            // The owner is part of the Discord route's referenced unique key.
+            // Move it after identity resolution but before KEY SHARE can pin it;
+            // the retained re-read must restart and deny the stale caller.
             await setChatThreadUserFixture({
               chatThreadId: fixture.threadId,
               userId: `user_${randomUUID()}`,

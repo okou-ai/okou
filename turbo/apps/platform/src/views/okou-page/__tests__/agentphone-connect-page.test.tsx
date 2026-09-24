@@ -1,7 +1,9 @@
 import { screen } from "@testing-library/react";
+import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { expect, test } from "vitest";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -13,47 +15,74 @@ const AGENT_ID = "agt_provider_identity";
 const TIMESTAMP = 1_784_880_000;
 const SIGNATURE = "a".repeat(64);
 
-function connectPath(
-  params: {
-    readonly publicBrand?: "vm0" | "okou";
-    readonly publicBrandSignature?: string;
-  } = {},
-): string {
+function connectPath(signature: string): string {
   const search = new URLSearchParams({
     handle: PHONE_HANDLE,
     agent: AGENT_ID,
     ts: String(TIMESTAMP),
-    sig: SIGNATURE,
+    sig: signature,
     channel: "sms",
   });
-  if (params.publicBrand) {
-    search.set("publicBrand", params.publicBrand);
-  }
-  if (params.publicBrandSignature) {
-    search.set("brandSig", params.publicBrandSignature);
-  }
   return `/agentphone/connect?${search.toString()}`;
 }
 
-test.each([{}, { publicBrand: "okou" as const }])(
-  "rejects connection links without a complete signature binding (%j)",
-  async (params) => {
-    await setupPage({
-      context,
-      host: "app.okou.ai",
-      path: connectPath(params),
-    });
+function findConnectButton(): HTMLElement | undefined {
+  return queryAllByRoleFast("button").find((candidate) => {
+    return candidate.textContent?.replace(/\s+/gu, " ").trim() === "Connect";
+  });
+}
 
-    await expect(
-      screen.findByText("The signature on this link is not valid."),
-    ).resolves.toBeInTheDocument();
+function getConnectButton(): HTMLElement {
+  const button = findConnectButton();
+  if (!button) {
+    throw new Error('Expected button named "Connect"');
+  }
+  return button;
+}
 
-    expect(
-      queryAllByRoleFast("button").some((candidate) => {
-        return (
-          candidate.textContent?.replace(/\s+/gu, " ").trim() === "Connect"
-        );
-      }),
-    ).toBeFalsy();
-  },
-);
+test("rejects connection links with a malformed signature", async () => {
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: connectPath("not-a-signature"),
+  });
+
+  await expect(
+    screen.findByText("The signature on this link is not valid."),
+  ).resolves.toBeInTheDocument();
+  expect(findConnectButton()).toBeUndefined();
+});
+
+test("connects a signed link without sending brand fields", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(
+    integrationsAgentPhoneContract.connectAgentPhone,
+    ({ body, respond }) => {
+      requests.push(body);
+      return respond(200, { phoneHandle: PHONE_HANDLE });
+    },
+  );
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: connectPath(SIGNATURE),
+  });
+
+  await expect(
+    screen.findByText("Connect phone number"),
+  ).resolves.toBeInTheDocument();
+  click(getConnectButton());
+
+  await expect(
+    screen.findByText("Phone number connected"),
+  ).resolves.toBeInTheDocument();
+  expect(requests).toStrictEqual([
+    {
+      phoneHandle: PHONE_HANDLE,
+      agentphoneAgentId: AGENT_ID,
+      timestamp: TIMESTAMP,
+      signature: SIGNATURE,
+      channel: "sms",
+    },
+  ]);
+});
