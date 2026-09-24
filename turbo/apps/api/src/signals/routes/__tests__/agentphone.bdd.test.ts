@@ -1767,17 +1767,71 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     await waitForSendCount(sends, beforeMentionObject + 1);
 
-    // Group chatter that names no handle is still ignored.
+    // Mentioning the name inside ordinary group chatter does not address it.
     await ap.postAgentPhoneInboundMessage({
       channel: "imessage",
       from: phone,
-      body: "okou would probably know",
+      body: "I think okou would probably know",
       conversationId,
       isGroup: true,
     });
     await runs.heartbeatRunner(runnerGroup);
     const idle = await runs.pollRunner(runnerGroup);
     expect(idle.body.job).toBeNull();
+  });
+
+  it("replies in the group when iMessage drops the at-sign from an opening mention", async () => {
+    const runs = createRunsApi(context);
+    const ap = createAgentPhoneBddApi(context);
+    const { phone, runnerGroup, sends } = await entitledLinkedActor();
+    const conversationId = uniqueConversationId();
+
+    // The provider delivers native iMessage mentions as plain display names.
+    for (const body of [
+      "Okou hi",
+      "okou hi",
+      "  OKOU，帮我总结",
+      "Okou",
+      "okou would probably know",
+    ]) {
+      const beforeReply = sends.messages.length;
+      const messageId = await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body,
+        conversationId,
+        isGroup: true,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      expect(run.prompt).toBe(body.trim());
+      await completeSandboxRun(run.sandboxToken, run.runId, 0);
+      await waitForSendCount(sends, beforeReply + 1);
+      expect(lastSend(sends)).toMatchObject({
+        toNumber: bddGroupId(conversationId),
+        replyToMessageId: messageId,
+        body: "Task completed successfully.",
+      });
+    }
+
+    // A URL, a longer name, or an embedded name is not an opening address.
+    const beforeChatter = sends.messages.length;
+    for (const body of [
+      "okou.ai has the answer",
+      "OkouHelper hi",
+      "I think Okou would probably know",
+    ]) {
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body,
+        conversationId,
+        isGroup: true,
+      });
+      await runs.heartbeatRunner(runnerGroup);
+      const idle = await runs.pollRunner(runnerGroup);
+      expect(idle.body.job).toBeNull();
+    }
+    expect(sends.messages).toHaveLength(beforeChatter);
   });
 
   it("does not send a group reply to one member when the provider group id is missing", async () => {
