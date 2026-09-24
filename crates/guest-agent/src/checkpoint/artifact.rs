@@ -163,6 +163,8 @@ async fn build_artifact_snapshot_plan(
         entry.name,
         entry.mount_path
     );
+    // A successful walk is the artifact's readable subset by policy. Use it
+    // even when an unreadable descendant was present in the parent version.
     match vas::walk_files_for_checkpoint(&entry.mount_path).await {
         Ok(files) => Ok(ArtifactSnapshotPlan::Snapshot { entry, files }),
         Err(error)
