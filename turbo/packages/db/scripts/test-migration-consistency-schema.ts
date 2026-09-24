@@ -721,7 +721,38 @@ async function restoreMigrations(): Promise<void> {
   await fs.rm(BACKUP_DIR, { recursive: true, force: true });
 }
 
-async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void> {
+type ExtensionPrelude = {
+  readonly extension: string;
+  readonly label: string;
+  readonly usesExtension: (sql: string) => boolean;
+};
+
+// drizzle-kit does not emit CREATE EXTENSION, so a freshly generated chain
+// needs the extensions that shipped migrations create explicitly.
+const GENERATED_MIGRATION_EXTENSION_PRELUDES: readonly ExtensionPrelude[] = [
+  {
+    extension: "vector",
+    label: "pgvector",
+    usesExtension: (sql) => {
+      return (
+        /\bvector\s*\(/i.test(sql) ||
+        /\bvector_cosine_ops\b/i.test(sql) ||
+        /\bUSING\s+hnsw\b/i.test(sql)
+      );
+    },
+  },
+  {
+    extension: "btree_gin",
+    label: "btree_gin",
+    // Multi-column GIN indexes over scalar columns need btree_gin operator
+    // classes.
+    usesExtension: (sql) => {
+      return /\bUSING\s+gin\s*\(\s*"[^"]+"\s*,/i.test(sql);
+    },
+  },
+];
+
+async function addExtensionPreludesToGeneratedMigrations(): Promise<void> {
   const sqlFiles = (await fs.readdir(MIGRATIONS_DIR))
     .filter((file) => {
       return file.endsWith(".sql");
@@ -737,43 +768,34 @@ async function addPgVectorExtensionPreludeToGeneratedMigrations(): Promise<void>
     }),
   );
 
-  const usesPgVector = sqlByFile.some(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+  for (const prelude of GENERATED_MIGRATION_EXTENSION_PRELUDES) {
+    const createExtension = new RegExp(
+      `CREATE\\s+EXTENSION\\s+(IF\\s+NOT\\s+EXISTS\\s+)?"?${prelude.extension}"?`,
+      "i",
     );
-  });
-  if (!usesPgVector) {
-    return;
-  }
+    const hasExtension = sqlByFile.some(({ sql }) => {
+      return createExtension.test(sql);
+    });
+    if (hasExtension) {
+      continue;
+    }
 
-  const hasPgVectorExtension = sqlByFile.some(({ sql }) => {
-    return /CREATE\s+EXTENSION\s+(IF\s+NOT\s+EXISTS\s+)?"?vector"?/i.test(sql);
-  });
-  if (hasPgVectorExtension) {
-    return;
-  }
+    const firstMigration = sqlByFile.find(({ sql }) => {
+      return prelude.usesExtension(sql);
+    });
+    if (!firstMigration) {
+      continue;
+    }
 
-  const firstPgVectorMigration = sqlByFile.find(({ sql }) => {
-    return (
-      /\bvector\s*\(/i.test(sql) ||
-      /\bvector_cosine_ops\b/i.test(sql) ||
-      /\bUSING\s+hnsw\b/i.test(sql)
+    firstMigration.sql = `CREATE EXTENSION IF NOT EXISTS ${prelude.extension};--> statement-breakpoint\n${firstMigration.sql}`;
+    await fs.writeFile(
+      path.join(MIGRATIONS_DIR, firstMigration.file),
+      firstMigration.sql,
     );
-  });
-  if (!firstPgVectorMigration) {
-    return;
+    console.log(
+      `   Added ${prelude.label} extension prelude to generated migration ${firstMigration.file}`,
+    );
   }
-
-  const migrationPath = path.join(MIGRATIONS_DIR, firstPgVectorMigration.file);
-  await fs.writeFile(
-    migrationPath,
-    `CREATE EXTENSION IF NOT EXISTS vector;--> statement-breakpoint\n${firstPgVectorMigration.sql}`,
-  );
-  console.log(
-    `   Added pgvector extension prelude to generated migration ${firstPgVectorMigration.file}`,
-  );
 }
 
 async function generateFreshMigrations(): Promise<void> {
@@ -785,7 +807,7 @@ async function generateFreshMigrations(): Promise<void> {
 
   // Generate new migrations (non-interactive)
   execCommand("pnpm drizzle-kit generate", { cwd: PACKAGE_DIR });
-  await addPgVectorExtensionPreludeToGeneratedMigrations();
+  await addExtensionPreludesToGeneratedMigrations();
 }
 
 async function validateSnapshotFiles(): Promise<void> {

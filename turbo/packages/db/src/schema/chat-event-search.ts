@@ -53,6 +53,13 @@ export const chatEventSearchMessages = pgTable(
         table.createdAt.desc(),
       ),
       index("chat_event_search_messages_tsv_idx").using("gin", table.tsv),
+      // btree_gin: intersect the user's postings with keyword postings inside
+      // one GIN scan, so common keywords do not fall back to a table scan.
+      index("chat_event_search_messages_user_tsv_gin_idx").using(
+        "gin",
+        table.userId,
+        table.tsv,
+      ),
     ];
   },
 );
