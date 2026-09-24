@@ -20,7 +20,17 @@ import {
   browserSessions,
   browserUserActionRequests,
 } from "@okouai/db/schema/browser-session";
-import { and, asc, eq, gt, inArray, isNotNull, lt, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
@@ -396,6 +406,36 @@ async function convertClosedBrowserUserActions(
   return candidates.length;
 }
 
+async function deleteRetiredDirectBrowserUserActions(
+  db: Db,
+  limit: number,
+  chatThreadIds: readonly string[] | null,
+  signal: AbortSignal,
+): Promise<number> {
+  const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
+  const candidates = db
+    .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
+    .from(browserUserActionRequests)
+    .where(
+      and(
+        retiredKind,
+        chatThreadIds === null
+          ? undefined
+          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
+      ),
+    )
+    .orderBy(asc(browserUserActionRequests.requestTokenHash))
+    .limit(limit);
+  const removed = await db
+    .delete(browserUserActionRequests)
+    .where(inArray(browserUserActionRequests.requestTokenHash, candidates))
+    .returning({
+      requestTokenHash: browserUserActionRequests.requestTokenHash,
+    });
+  signal.throwIfAborted();
+  return removed.length;
+}
+
 async function deleteExpiredBrowserUserActions(
   db: Db,
   limit: number,
@@ -469,6 +509,12 @@ export async function reconcileBrowserUserActions(
   chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
+  const retired = await deleteRetiredDirectBrowserUserActions(
+    db,
+    limit,
+    chatThreadIds,
+    signal,
+  );
   const checkedForConversion = await convertClosedBrowserUserActions(
     db,
     limit,
@@ -481,7 +527,7 @@ export async function reconcileBrowserUserActions(
     chatThreadIds,
     signal,
   );
-  return checkedForConversion + checkedForCleanup;
+  return retired + checkedForConversion + checkedForCleanup;
 }
 
 interface CreateBrowserUserActionArgs {

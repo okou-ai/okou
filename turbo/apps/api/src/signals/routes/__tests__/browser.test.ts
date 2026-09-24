@@ -28,6 +28,7 @@ import { deleteChatThreadRootFixture } from "../../../test-fixtures/chat-thread-
 import {
   stageBrowserUserActionClosureFixture,
   stageBrowserUserActionCompletedAtFixture,
+  stageRetiredDirectBrowserUserActionFixture,
   stageStuckBrowserUserActionFixture,
 } from "../../../test-fixtures/browser-user-action";
 import { deleteAgentRunRootFixture } from "../../../test-fixtures/run-deletion";
@@ -1389,6 +1390,91 @@ describe("Browser user-action route", () => {
     expect(erased).toMatchObject({
       status: 404,
       body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+  }, 120_000);
+
+  it("retires legacy direct actions while preserving live Browser input requests", async () => {
+    const { routeMocks, runs, chat, actor, agent } =
+      await setupBrowserScenario();
+    const current = await createClaimedChatRun(
+      chat,
+      runs,
+      actor,
+      agent.agentId,
+      "Open a Browser for legacy action retirement",
+    );
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.BrowserNativeInput]: true,
+    });
+
+    const providerId = randomUUID();
+    acceptBrowserUseCdpSessions([providerId]);
+    mockNativeInputTarget();
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        return HttpResponse.json(providerBrowser(providerId), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, () => {
+        return HttpResponse.json(providerBrowser(providerId));
+      }),
+    );
+    await accept(
+      client().use({ headers: current.claim.browserHeaders, body: {} }),
+      [200],
+    );
+    routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+
+    const createAction = async (prompt: string) => {
+      return await accept(
+        userActionClient().create({
+          headers: current.claim.browserHeaders,
+          body: nativePasswordRequest(prompt),
+        }),
+        [201],
+      );
+    };
+    const legacy = await createAction("Legacy direct handoff");
+    const input = await createAction("Continue after native input");
+    await stageRetiredDirectBrowserUserActionFixture(
+      legacy.body.action.requestToken,
+    );
+
+    const reconciled = await reconcileBrowsers(current.threadId);
+    expect(reconciled.body).toMatchObject({ errors: 0 });
+    await expect(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: legacy.body.action.requestToken },
+      }),
+    ).resolves.toMatchObject({
+      status: 404,
+      body: { error: { code: "BROWSER_USER_ACTION_NOT_FOUND" } },
+    });
+    await expect(
+      userActionClient().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { requestToken: input.body.action.requestToken },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { kind: "input", state: "pending" },
+    });
+    await expect(
+      client().get({
+        headers: { authorization: "Bearer clerk-session" },
+        params: { threadId: current.threadId },
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { browser: { status: "active" } },
     });
   }, 120_000);
 
