@@ -83,7 +83,9 @@ async fn pi_rpc_bounds_delivery_and_preserves_truth_and_originals()
         ),
         assistant(
             "structure",
-            json!([{"type":"toolCall","id":"structure-id","name":"read","arguments":{"values":vec![0;2_200_000]}}]),
+            // Exceed both the delivery size and structural visit bounds with
+            // far fewer JSON nodes than a multi-million-element numeric array.
+            json!([{"type":"toolCall","id":"structure-id","name":"read","arguments":{"values":vec!["x".repeat(1100);4_100]}}]),
             false,
         ),
         tool_result("tool-input-id", json!([{"type":"text","text":text}]), true),
