@@ -430,9 +430,9 @@ describe("archived chat event consumers", () => {
   it("exports snapshot history plus the PostgreSQL tail after archived source rows are gone", async () => {
     const fixture = await createArchiveFixture("export");
     const archivedVisible = `archived-export-${randomUUID()} \`${escapedOpen}\` suffix`;
-    // Trial a smaller real search-and-snapshot fixture below the export range
-    // boundary; each message stays within PostgreSQL's indexed document limit.
-    const archivedTexts = Array.from({ length: 12 }, () => {
+    // Each message stays within PostgreSQL's indexed document limit while
+    // their combined compressed snapshot crosses the export range boundary.
+    const archivedTexts = Array.from({ length: 18 }, () => {
       return (
         withHiddenCitation(archivedVisible) +
         randomBytes(256 * 1024).toString("base64")
@@ -454,7 +454,7 @@ describe("archived chat event consumers", () => {
     const snapshot = recordedPuts.find((put) => {
       return put.key.startsWith(`chat-events/${fixture.threadId}/`);
     });
-    expect(snapshot?.body.length).toBeLessThan(4 * 1024 * 1024);
+    expect(snapshot?.body.length).toBeGreaterThan(4 * 1024 * 1024);
 
     const tailVisible = `hot-tail-${randomUUID()} \`${escapedOpen}\` suffix`;
     // Each 64 KiB payload counts twice toward the 2 MiB export page bound;
