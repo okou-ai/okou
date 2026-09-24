@@ -448,18 +448,22 @@ describe("organization Cloudflare Access", () => {
     const shared = await sharedConfig("Shared recovery gateway");
     const next = await sharedConfig("Next shared gateway");
     const member = owner({ orgId: admin.orgId });
+    const r = await runtime(member, { runnerGroup: `access-${randomUUID()}` });
     const saved = await host(shared.id);
     const pinned = await accept(
-      state().action({
+      runner().pin({
+        headers: runnerHeaders,
+        params: { runId: r.runId },
         body: {
-          action: "set-learned-host-key",
-          ...member,
           connectionId: saved.id,
-          ...hostKey,
+          runnerIdentity: r.runnerIdentity,
+          expectedGeneration: saved.generation,
+          observedHostKey: hostKey,
         },
       }),
       [200],
     );
+    expect(pinned.body).toMatchObject({ outcome: "pinned" });
     authenticate(admin, "org:admin");
     const preview = (
       await accept(
@@ -483,7 +487,7 @@ describe("organization Cloudflare Access", () => {
       [200],
     );
     authenticate(member);
-    expect(pinned.body.generation).toBe(saved.generation + 1);
+    expect(pinned.body).toMatchObject({ generation: saved.generation + 1 });
     const retainedGeneration = saved.generation + 2;
     const listed = (await accept(connections().list({ headers }), [200])).body
       .connections[0];
