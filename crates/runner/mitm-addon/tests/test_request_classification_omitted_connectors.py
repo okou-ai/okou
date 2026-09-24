@@ -1,10 +1,13 @@
 """Connector-intent classification for omitted runtime targets."""
 
+import json
 import tracemalloc
 
 import pytest
 
 import connector_intent
+import flow_metadata_keys as metadata_keys
+import mitm_addon
 import request_classification
 from tests.request_handler_helpers import (
     _sandbox_without_firewalls,
@@ -121,6 +124,66 @@ def test_omitted_connector_intent_still_enforces_sole_owner_denial(
     assert classification.firewall_block.name == "active"
     assert classification.firewall_block.reason == "permission_denied"
     assert _CONNECTOR_INTENT_HEADER not in flow.request.headers
+
+
+@pytest.mark.parametrize(
+    ("omitted_field", "intent"),
+    [
+        ("omittedBuiltinFirewalls", "removed-builtin"),
+        ("omittedCustomConnectorIds", "removed-custom"),
+    ],
+)
+async def test_omitted_intent_cannot_bypass_sole_owner_denial_in_request_hook(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    headers,
+    omitted_field,
+    intent,
+):
+    sandbox = _single_firewall_sandbox(
+        tmp_path,
+        firewall_name="active",
+        api_entry={
+            "base": "https://shared.example.com",
+            "auth": {"headers": {"Authorization": "Bearer ${{ secrets.ACTIVE_TOKEN }}"}},
+            "permissions": [{"name": "items-read", "rules": ["GET /items/{id}"]}],
+        },
+        network_policy={
+            "allow": [],
+            "deny": ["items-read"],
+            "ask": [],
+            "unknownPolicy": "deny",
+        },
+        sandbox_fields={omitted_field: [intent]},
+    )
+    registry_path = _write_registry(tmp_path, client_ip=_CLIENT_IP, sandbox_info=sandbox)
+    flow = real_flow(
+        with_response=False,
+        client_ip=_CLIENT_IP,
+        host="shared.example.com",
+        path="/items/123",
+        request_headers=headers(
+            ("Host", "shared.example.com"),
+            (_CONNECTOR_INTENT_HEADER, intent),
+        ),
+    )
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url=_API_URL),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        await mitm_addon.request(flow)
+
+    auth_fetch.assert_not_awaited()
+    assert flow.response is not None
+    assert flow.response.status_code == 403
+    assert json.loads(flow.response.content)["reason"] == "permission_denied"
+    assert flow.metadata[metadata_keys.FIREWALL_NAME] == "active"
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
+    assert _CONNECTOR_INTENT_HEADER not in flow.request.headers
+    assert "Authorization" not in flow.request.headers
 
 
 def test_omitted_connector_intent_without_active_owner_uses_ordinary_fallback(
