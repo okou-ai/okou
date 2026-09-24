@@ -178,6 +178,8 @@ function mockNativeInputTarget(): void {
                 connected: true,
                 mainDocument: true,
                 writable: true,
+                siteRequired: false,
+                multiple: false,
               };
             }),
           },
