@@ -674,8 +674,9 @@ raise "missing runner E2E cleanup scope" unless cleanup_scope_step
 unless account_cleanup.fetch("if").include?("always()")
   raise "runner E2E account cleanup must run after shard failures"
 end
-unless Array(account_cleanup["needs"]).include?("cli-e2e-03-runner")
-  raise "runner E2E account cleanup must wait for every shard"
+unless Array(account_cleanup["needs"]).include?("cli-e2e-03-runner") &&
+    Array(account_cleanup["needs"]).include?("cli-e2e-03-runner-codex-oauth")
+  raise "runner E2E account cleanup must wait for every run consumer"
 end
 if account_cleanup.fetch("if").include?("!= 'cancelled'")
   raise "runner E2E cleanup must run after cancelled account preparation"
@@ -684,16 +685,22 @@ end
 unless cleanup_scope_step.dig("env", "PREPARE_RESULT") ==
     "${{ needs.cli-e2e-03-runner-prepare.result }}" &&
     cleanup_scope_step.dig("env", "RUNNER_RESULT") ==
-      "${{ needs.cli-e2e-03-runner.result }}"
+      "${{ needs.cli-e2e-03-runner.result }}" &&
+    cleanup_scope_step.dig("env", "CODEX_OAUTH_NEEDED") ==
+      "${{ needs.prepare.outputs.codex-oauth-e2e-needed }}" &&
+    cleanup_scope_step.dig("env", "CODEX_OAUTH_RESULT") ==
+      "${{ needs.cli-e2e-03-runner-codex-oauth.result }}"
   raise "runner cleanup scope must use exact upstream results"
 end
-resolve_cleanup_scope = lambda do |prepare_result, runner_result|
+resolve_cleanup_scope = lambda do |prepare_result, runner_result, oauth_needed, oauth_result|
   Tempfile.create("runner-cleanup-scope") do |output|
     stdout, stderr, status = Open3.capture3(
       {
         "GITHUB_OUTPUT" => output.path,
         "PREPARE_RESULT" => prepare_result,
         "RUNNER_RESULT" => runner_result,
+        "CODEX_OAUTH_NEEDED" => oauth_needed,
+        "CODEX_OAUTH_RESULT" => oauth_result,
       },
       "bash",
       "-c",
@@ -710,13 +717,17 @@ resolve_cleanup_scope = lambda do |prepare_result, runner_result|
   end
 end
 {
-  ["skipped", "skipped"] => "none",
-  ["failure", "skipped"] => "generation",
-  ["cancelled", "success"] => "generation",
-  ["success", "success"] => "run",
-  ["success", "failure"] => "retain",
-  ["success", "cancelled"] => "retain",
-  ["success", "skipped"] => "retain",
+  ["skipped", "skipped", "false", "skipped"] => "none",
+  ["failure", "skipped", "false", "skipped"] => "generation",
+  ["cancelled", "success", "true", "success"] => "generation",
+  ["success", "success", "false", "skipped"] => "run",
+  ["success", "success", "true", "success"] => "run",
+  ["success", "success", "true", "failure"] => "retain",
+  ["success", "success", "true", "cancelled"] => "retain",
+  ["success", "success", "true", "skipped"] => "retain",
+  ["success", "failure", "false", "skipped"] => "retain",
+  ["success", "cancelled", "false", "skipped"] => "retain",
+  ["success", "skipped", "false", "skipped"] => "retain",
 }.each do |results, expected_scope|
   actual_scope = resolve_cleanup_scope.call(*results)
   unless actual_scope == expected_scope
@@ -817,6 +828,7 @@ gate_needs = Array(jobs.fetch("ci-gate-turbo")["needs"])
   cli-e2e-03-runner-prepare
   cli-e2e-03-runner-bootstrap
   cli-e2e-03-runner
+  cli-e2e-03-runner-codex-oauth
 ].each do |job_name|
   raise "CI gate must include #{job_name}" unless gate_needs.include?(job_name)
 end
@@ -847,6 +859,10 @@ end
 ].each do |job_name|
   expected = "check_result \"#{job_name}\" \"${{ needs.#{job_name}.result }}\" \"$RUNNER_E2E_SKIP_ALLOWED\""
   raise "CI gate must check #{job_name} with RUNNER_E2E_SKIP_ALLOWED" unless gate_script.include?(expected)
+end
+oauth_gate_check = 'check_result "cli-e2e-03-runner-codex-oauth" "${{ needs.cli-e2e-03-runner-codex-oauth.result }}" "$CODEX_OAUTH_E2E_SKIP_ALLOWED"'
+unless gate_script.include?(oauth_gate_check)
+  raise "CI gate must require the selected Codex OAuth job"
 end
 %w[
   cli-e2e-02-browser
