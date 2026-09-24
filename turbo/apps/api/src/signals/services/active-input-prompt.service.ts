@@ -239,6 +239,7 @@ async function loadIntegrationPromptMaterial(
 ): Promise<IntegrationPromptMaterial | null> {
   const loaderArgs = {
     eventId: event.id,
+    userMessageProjection: projectUserMessage(event.userMessage),
     chatThreadId: event.chatThreadId,
     orgId: args.orgId,
     userId: args.userId,

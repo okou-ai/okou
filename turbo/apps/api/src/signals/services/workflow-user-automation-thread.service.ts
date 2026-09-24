@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   workflowAutomations,
   workflowUserAutomationThreads,
@@ -335,7 +335,7 @@ async function discoverWorkflowUserAutomationThreadBinding(
   return inserted?.chatThreadId ?? null;
 }
 
-/** Lock a discovered destination exactly the way thread deletion locks it. */
+/** Fence deletion and rebinding while allowing independent event FK checks. */
 async function lockBoundAutomationChatThread(
   db: ChatThreadEventTransaction,
   chatThreadId: string,
@@ -344,7 +344,7 @@ async function lockBoundAutomationChatThread(
     .select({ id: chatThreads.id })
     .from(chatThreads)
     .where(eq(chatThreads.id, chatThreadId))
-    .for("update");
+    .for("no key update");
   return thread?.id ?? null;
 }
 

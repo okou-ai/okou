@@ -932,6 +932,41 @@
       "when": 1790238077209,
       "tag": "1210_cloudflare_access_conversion",
       "breakpoints": true
+    },
+    {
+      "idx": 1211,
+      "version": "7",
+      "when": 1790244775483,
+      "tag": "1211_chat_event_write_expansion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1212,
+      "version": "7",
+      "when": 1790244805057,
+      "tag": "1212_chat_event_sequence_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 1213,
+      "version": "7",
+      "when": 1790244820702,
+      "tag": "1213_backfill_chat_event_sequences",
+      "breakpoints": true
+    },
+    {
+      "idx": 1214,
+      "version": "7",
+      "when": 1790244830526,
+      "tag": "1214_prepare_chat_event_routing_and_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 1215,
+      "version": "7",
+      "when": 1790244845301,
+      "tag": "1215_chat_thread_sequence_erasure_index",
+      "breakpoints": true
     }
   ]
 }

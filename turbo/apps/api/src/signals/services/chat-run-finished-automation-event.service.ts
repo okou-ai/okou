@@ -23,7 +23,12 @@ import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
 import { insertChatEvent } from "./chat-event.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
+import {
+  touchChatThreadLastMessageAt,
+  touchChatThreadLastMessageAtIndependently,
+} from "./chat-event-shared.service";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
+import { attemptChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
 
 const CHAT_RUN_FINISHED_EVENT_TYPE = "chat-run-finished";
@@ -37,22 +42,37 @@ async function appendAutonomyBudgetError(args: {
   readonly chatThreadId: string;
   readonly sourceRunId: string;
 }): Promise<boolean> {
+  const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+  const event = {
+    id: uuidv5(
+      `${args.chatThreadId}:${args.sourceRunId}`,
+      AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
+    ),
+    chatThreadId: args.chatThreadId,
+    eventType: "output.error",
+    content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
+    runId: null,
+    error: "AUTONOMY_BUDGET_EXHAUSTED",
+  } as const;
+  if (splitWrites) {
+    const errorEvent = await insertChatEvent(args.db, event, "id", {
+      splitWrites,
+    });
+    if (!errorEvent) {
+      return false;
+    }
+    await attemptChatEventSideEffect("thread_touch", args.chatThreadId, () => {
+      return touchChatThreadLastMessageAtIndependently(
+        args.db,
+        args.chatThreadId,
+        errorEvent.createdAt,
+        errorEvent.id,
+      );
+    });
+    return true;
+  }
   return await args.db.transaction(async (tx) => {
-    const errorEvent = await insertChatEvent(
-      tx,
-      {
-        id: uuidv5(
-          `${args.chatThreadId}:${args.sourceRunId}`,
-          AUTONOMY_BUDGET_ERROR_EVENT_NAMESPACE,
-        ),
-        chatThreadId: args.chatThreadId,
-        eventType: "output.error",
-        content: AUTONOMY_BUDGET_EXHAUSTED_MESSAGE,
-        runId: null,
-        error: "AUTONOMY_BUDGET_EXHAUSTED",
-      },
-      "id",
-    );
+    const errorEvent = await insertChatEvent(tx, event, "id", { splitWrites });
     if (!errorEvent) {
       return false;
     }

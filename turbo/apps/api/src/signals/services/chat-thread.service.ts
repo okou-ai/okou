@@ -32,7 +32,8 @@ import {
   chatEventSearchMessages,
   chatEventSearchMessageWatermarks,
 } from "@okouai/db/schema/chat-event-search";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import {
   CANONICAL_ASSET_VERSION,
   runUploadedFiles,
@@ -58,6 +59,7 @@ import {
 
 import type { Tx } from "../../lib/db-types";
 import { now, nowDate } from "../../lib/time";
+import { isLockNotAvailable } from "../../lib/pg-errors";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { inferMimetype } from "./chat-event-shared.service";
@@ -967,6 +969,188 @@ interface ThreadRunToCancel {
   readonly orgId: string;
 }
 
+interface DeleteChatThreadArgs {
+  readonly threadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly eventId?: string;
+}
+
+async function deleteChatThreadInTransaction(
+  tx: Tx,
+  args: DeleteChatThreadArgs,
+) {
+  // Native authority is always fenced before the destination row. A
+  // delivery that already owns the schedule lock therefore commits first;
+  // this delete then bumps the epoch before the thread cascade is allowed.
+  await revokeMorningBriefNativeThreadAuthority(
+    tx,
+    {
+      orgId: args.orgId,
+      userId: args.userId,
+      chatThreadId: args.threadId,
+    },
+    nowDate(),
+  );
+
+  const ownedThreadCondition = and(
+    eq(chatThreads.id, args.threadId),
+    eq(chatThreads.userId, args.userId),
+    chatThreadOrganizationCondition(tx, args.orgId),
+  );
+  const [authorizedThread] = await tx
+    .select({ id: chatThreads.id })
+    .from(chatThreads)
+    .where(ownedThreadCondition);
+  if (!authorizedThread) {
+    return {
+      deleted: false,
+      activeRuns: [] as readonly ThreadRunToCancel[],
+      disabledAutomations: [],
+    };
+  }
+
+  // Output owns its run before reserving event IDs; an ordinary append owns
+  // the sequence before checking the thread FK. Take both children first so
+  // cascading deletion cannot invert either order. Lock every attached run:
+  // ON DELETE SET NULL also updates terminal runs.
+  await tx
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(eq(agentRuns.chatThreadId, args.threadId))
+    .orderBy(asc(agentRuns.id))
+    .for("no key update");
+  await tx
+    .select({ id: chatEventSequences.chatThreadId })
+    .from(chatEventSequences)
+    .where(eq(chatEventSequences.chatThreadId, args.threadId))
+    .for("update");
+
+  // Queue/control writers can already own the thread and wait for a run.
+  // Never wait for that reversed edge while holding the children: NOWAIT
+  // rolls the whole deletion attempt back before bounded rediscovery.
+  const [ownedThread] = await tx
+    .select({ id: chatThreads.id, agentId: chatThreads.agentId })
+    .from(chatThreads)
+    .where(ownedThreadCondition)
+    .for("update", { noWait: true });
+  if (!ownedThread?.agentId) {
+    return {
+      deleted: false,
+      activeRuns: [] as readonly ThreadRunToCancel[],
+      disabledAutomations: [],
+    };
+  }
+
+  // Include an attachment committed between discovery and the strong fence.
+  // A still-uncommitted attachment holds thread KEY SHARE, so NOWAIT above
+  // rolls back instead. Revalidation must likewise never wait out of order.
+  await tx
+    .select({ id: agentRuns.id })
+    .from(agentRuns)
+    .where(eq(agentRuns.chatThreadId, ownedThread.id))
+    .orderBy(asc(agentRuns.id))
+    .for("no key update", { noWait: true });
+
+  // Capture related active runs while the thread row blocks new FK attaches.
+  // Terminal runs (completed/failed/cancelled) are left untouched; only
+  // queued/pending/running runs need stopping.
+  const activeRuns = await tx
+    .select({ runId: agentRuns.id, orgId: agentRuns.orgId })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.chatThreadId, ownedThread.id),
+        eq(agentRuns.userId, args.userId),
+        inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
+        isNotNull(agentRuns.triggerSource),
+      ),
+    );
+
+  const disabledAutomations = await disableThreadBoundWorkflowAutomations(tx, {
+    userId: args.userId,
+    chatThreadId: ownedThread.id,
+    currentTime: nowDate(),
+  });
+
+  // Search rows are an eventually consistent derived projection without a
+  // parent FK. Remove them synchronously under the thread lock taken above:
+  // the projector now takes a conflicting KEY SHARE on this same row and
+  // revalidates the thread inside its transaction, so it either commits
+  // before this delete removes its rows or finds the thread gone and writes
+  // nothing. Delete the watermark first so the bounded orphan repair, which
+  // still covers pre-fence rows and older producers, keeps its anchor.
+  await tx
+    .delete(chatEventSearchMessageWatermarks)
+    .where(eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id));
+  await tx
+    .delete(chatEventSearchMessages)
+    .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
+
+  // A native Morning Brief delivery cascades away with this thread, and it
+  // is the only association to its still-unsent mail. Remove both here, so
+  // the cascade cannot orphan content-bearing email.
+  await revokeMorningBriefDeliveryOwnership(tx, {
+    kind: "thread",
+    chatThreadId: ownedThread.id,
+  });
+
+  // Delete the thread after cleanup under its row lock. Cascades chat_events.
+  // Captured active runs lose their canonical chatThreadId, while any retained legacy
+  // row is independently nulled by its own foreign key.
+  const [deletedThread] = await tx
+    .delete(chatThreads)
+    .where(eq(chatThreads.id, ownedThread.id))
+    .returning({ id: chatThreads.id });
+
+  if (deletedThread) {
+    // Acquire the user/org event sequence only after all cleanup and
+    // cascading deletes. A blocked child row must not hold this shared
+    // lock and stall events for other threads. Keep the tombstone in this
+    // transaction so deletion and its ordered event become visible
+    // together.
+    await appendChatThreadEvent(tx, {
+      kind: "deleted",
+      userId: args.userId,
+      orgId: args.orgId,
+      chatThreadId: ownedThread.id,
+      agentId: ownedThread.agentId,
+      eventId: args.eventId,
+    });
+  }
+
+  return {
+    deleted: Boolean(deletedThread),
+    activeRuns,
+    disabledAutomations,
+  };
+}
+
+/** Delete content under the FK attach fence; external cancellation follows commit. */
+export async function deleteChatThreadContent(
+  db: Db,
+  args: DeleteChatThreadArgs,
+  signal: AbortSignal,
+) {
+  for (let attempt = 0; ; attempt++) {
+    signal.throwIfAborted();
+    const result = await settle(
+      db.transaction(async (tx) => {
+        return await deleteChatThreadInTransaction(tx, args);
+      }),
+    );
+    signal.throwIfAborted();
+    if (result.ok) {
+      return result.value;
+    }
+    // A failed NOWAIT also rolls back native authority revocation. Retry only
+    // this bounded control transaction, never an allocator or external effect.
+    if (!isLockNotAvailable(result.error) || attempt >= 2) {
+      throw result.error;
+    }
+  }
+}
+
 /**
  * Delete a chat thread after winding down everything attached to it. Deleting a
  * thread on its own leaves the linked automations firing and any in-flight runs
@@ -988,12 +1172,7 @@ interface ThreadRunToCancel {
 export const deleteChatThread$ = command(
   async (
     { set },
-    args: {
-      readonly threadId: string;
-      readonly userId: string;
-      readonly orgId: string;
-      readonly eventId?: string;
-    },
+    args: DeleteChatThreadArgs,
     signal: AbortSignal,
   ): Promise<{
     readonly deleted: boolean;
@@ -1001,120 +1180,7 @@ export const deleteChatThread$ = command(
   }> => {
     const writeDb = set(writeDb$);
 
-    const deletion = await writeDb.transaction(async (tx) => {
-      // Native authority is always fenced before the destination row. A
-      // delivery that already owns the schedule lock therefore commits first;
-      // this delete then bumps the epoch before the thread cascade is allowed.
-      await revokeMorningBriefNativeThreadAuthority(
-        tx,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          chatThreadId: args.threadId,
-        },
-        nowDate(),
-      );
-
-      const [ownedThread] = await tx
-        .select({
-          id: chatThreads.id,
-          agentId: chatThreads.agentId,
-        })
-        .from(chatThreads)
-        .where(
-          and(
-            eq(chatThreads.id, args.threadId),
-            eq(chatThreads.userId, args.userId),
-            chatThreadOrganizationCondition(tx, args.orgId),
-          ),
-        )
-        .for("update");
-      if (!ownedThread?.agentId) {
-        return {
-          deleted: false,
-          activeRuns: [] as readonly ThreadRunToCancel[],
-          disabledAutomations: [],
-        };
-      }
-
-      // Capture related active runs while the thread row blocks new FK attaches.
-      // Terminal runs (completed/failed/cancelled) are left untouched; only
-      // queued/pending/running runs need stopping.
-      const activeRuns = await tx
-        .select({ runId: agentRuns.id, orgId: agentRuns.orgId })
-        .from(agentRuns)
-        .where(
-          and(
-            eq(agentRuns.chatThreadId, ownedThread.id),
-            eq(agentRuns.userId, args.userId),
-            inArray(agentRuns.status, [...ACTIVE_RUN_STATUSES]),
-            isNotNull(agentRuns.triggerSource),
-          ),
-        );
-
-      const disabledAutomations = await disableThreadBoundWorkflowAutomations(
-        tx,
-        {
-          userId: args.userId,
-          chatThreadId: ownedThread.id,
-          currentTime: nowDate(),
-        },
-      );
-
-      // Search rows are an eventually consistent derived projection without a
-      // parent FK. Remove them synchronously under the thread lock taken above:
-      // the projector now takes a conflicting KEY SHARE on this same row and
-      // revalidates the thread inside its transaction, so it either commits
-      // before this delete removes its rows or finds the thread gone and writes
-      // nothing. Delete the watermark first so the bounded orphan repair, which
-      // still covers pre-fence rows and older producers, keeps its anchor.
-      await tx
-        .delete(chatEventSearchMessageWatermarks)
-        .where(
-          eq(chatEventSearchMessageWatermarks.chatThreadId, ownedThread.id),
-        );
-      await tx
-        .delete(chatEventSearchMessages)
-        .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
-
-      // A native Morning Brief delivery cascades away with this thread, and it
-      // is the only association to its still-unsent mail. Remove both here, so
-      // the cascade cannot orphan content-bearing email.
-      await revokeMorningBriefDeliveryOwnership(tx, {
-        kind: "thread",
-        chatThreadId: ownedThread.id,
-      });
-
-      // Delete the thread after cleanup under its row lock. Cascades chat_events.
-      // Captured active runs lose their canonical chatThreadId, while any retained legacy
-      // row is independently nulled by its own foreign key.
-      const [deletedThread] = await tx
-        .delete(chatThreads)
-        .where(eq(chatThreads.id, ownedThread.id))
-        .returning({ id: chatThreads.id });
-
-      if (deletedThread) {
-        // Acquire the user/org event sequence only after all cleanup and
-        // cascading deletes. A blocked child row must not hold this shared
-        // lock and stall events for other threads. Keep the tombstone in this
-        // transaction so deletion and its ordered event become visible
-        // together.
-        await appendChatThreadEvent(tx, {
-          kind: "deleted",
-          userId: args.userId,
-          orgId: args.orgId,
-          chatThreadId: ownedThread.id,
-          agentId: ownedThread.agentId,
-          eventId: args.eventId,
-        });
-      }
-
-      return {
-        deleted: Boolean(deletedThread),
-        activeRuns,
-        disabledAutomations,
-      };
-    });
+    const deletion = await deleteChatThreadContent(writeDb, args, signal);
     signal.throwIfAborted();
     if (!deletion.deleted) {
       return { deleted: false, cancelledRuns: [] };

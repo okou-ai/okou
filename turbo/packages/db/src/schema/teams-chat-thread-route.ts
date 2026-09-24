@@ -1,4 +1,5 @@
 import {
+  index,
   pgTable,
   text,
   timestamp,
@@ -28,6 +29,9 @@ export const teamsChatThreadRoutes = pgTable(
       ),
     conversationId: varchar("conversation_id", { length: 255 }).notNull(),
     threadId: varchar("thread_id", { length: 255 }).notNull(),
+    conversationType: varchar("conversation_type", { length: 32 }),
+    channelId: varchar("channel_id", { length: 255 }),
+    serviceUrl: text("service_url"),
     userId: text("user_id").notNull(),
     chatThreadId: uuid("chat_thread_id")
       .notNull()
@@ -41,6 +45,7 @@ export const teamsChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      index("idx_teams_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex(
         "idx_teams_chat_thread_routes_conn_conversation_thread_user",
       ).on(

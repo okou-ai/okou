@@ -1,3 +1,4 @@
+import * as chatContentErasureSubjectSchema from "./schema/chat-content-erasure-subject";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
 import * as accountErasureSchema from "./schema/account-erasure";
@@ -112,6 +113,8 @@ import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools"
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
 import * as activeInputDeliverySchema from "./schema/active-input-delivery";
 import * as chatThreadSchema from "./schema/chat-thread";
+import * as chatEventSequenceSchema from "./schema/chat-event-sequence";
+import * as chatEventWriteControlSchema from "./schema/chat-event-write-control";
 import * as chatEventSchema from "./schema/chat-event";
 import * as chatEventSearchSchema from "./schema/chat-event-search";
 import * as chatEventSnapshotSchema from "./schema/chat-event-snapshot";
@@ -162,6 +165,7 @@ import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...chatContentErasureSubjectSchema,
   ...getStartedClaimSchema,
   ...accountErasureSchema,
   ...accountErasureBridgeSchema,
@@ -277,6 +281,8 @@ export const schema = {
   ...activeInputDeliverySchema,
   ...chatThreadSchema,
   ...chatEventSchema,
+  ...chatEventSequenceSchema,
+  ...chatEventWriteControlSchema,
   ...chatEventSearchSchema,
   ...chatEventSnapshotSchema,
   ...chatThreadEventSchema,

@@ -1,3 +1,6 @@
+import { z } from "zod";
+import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
+import { isSlackDirectMessageSessionThreadTs } from "./slack-chat-ingress.service";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
@@ -6,14 +9,12 @@ import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, isNull, or } from "drizzle-orm";
 
-import {
-  buildSlackSystemPrompt,
-  canonicalSlackAgentPrompt,
-  resolveUserMentions,
-} from "../../lib/slack-webhook-context";
-import type { SlackUserInfo } from "../external/slack-message-client";
+import { buildSlackSystemPrompt } from "../../lib/slack-webhook-context";
 import type { Db } from "../external/db";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  type QueuedLaunchContextArgs,
+  warnMissingQueuedLaunchEnrichment,
+} from "./queued-launch-enrichment.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface SlackQueuedLaunchMaterial {
@@ -52,11 +53,6 @@ function requiredSlackLaunchContext(row: SlackLaunchContextRow | undefined) {
     !row ||
     row.channelId === null ||
     row.botUserId === null ||
-    row.conversationContext === null ||
-    row.messageText === null ||
-    row.messageFiles === null ||
-    row.messageAssets === null ||
-    row.mentionDisplayNames === null ||
     row.channelType === null ||
     row.threadTs === null
   ) {
@@ -64,13 +60,19 @@ function requiredSlackLaunchContext(row: SlackLaunchContextRow | undefined) {
   }
   return {
     ...row,
+    enrichmentMissing:
+      row.conversationContext === null ||
+      row.messageText === null ||
+      row.messageFiles === null ||
+      row.messageAssets === null ||
+      row.mentionDisplayNames === null,
     channelId: row.channelId,
     botUserId: row.botUserId,
-    conversationContext: row.conversationContext,
-    messageText: row.messageText,
-    messageFiles: row.messageFiles,
-    messageAssets: row.messageAssets,
-    mentionDisplayNames: row.mentionDisplayNames,
+    conversationContext: row.conversationContext ?? "",
+    messageText: row.messageText ?? "",
+    messageFiles: row.messageFiles ?? [],
+    messageAssets: row.messageAssets ?? [],
+    mentionDisplayNames: row.mentionDisplayNames ?? {},
     channelType: row.channelType,
     threadTs: row.threadTs,
   };
@@ -152,51 +154,128 @@ async function loadSlackLaunchContext(
   return requiredSlackLaunchContext(row);
 }
 
-function mentionUserInfoMap(
-  mentionDisplayNames: Readonly<Record<string, string>>,
-): Map<string, SlackUserInfo> {
-  return new Map(
-    Object.entries(mentionDisplayNames).map(([id, name]) => {
-      return [id, { id, name }] as const;
-    }),
+const slackIngressRoutingSchema = z.object({
+  team_id: z.string(),
+  event: z.object({
+    channel: z.string(),
+    user: z.string(),
+    ts: z.string(),
+    thread_ts: z.string().optional(),
+    channel_type: z.string().optional(),
+  }),
+});
+
+async function loadSlackRouteLaunchMaterial(
+  db: Db,
+  args: QueuedLaunchContextArgs,
+): Promise<SlackQueuedLaunchMaterial | null> {
+  const [route] = await db
+    .select({
+      channelId: slackChatThreadRoutes.channelId,
+      routeThreadTs: slackChatThreadRoutes.threadTs,
+      publicBrand: slackChatIngress.publicBrand,
+      payload: slackChatIngress.payload,
+      slackUserId: slackOrgConnections.slackUserId,
+      workspaceId: slackOrgInstallations.slackWorkspaceId,
+    })
+    .from(chatEvents)
+    .innerJoin(slackChatIngress, eq(slackChatIngress.id, chatEvents.contextId))
+    .innerJoin(
+      slackChatThreadRoutes,
+      and(
+        eq(slackChatThreadRoutes.id, slackChatIngress.routeId),
+        eq(slackChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+        eq(slackChatThreadRoutes.userId, args.userId),
+      ),
+    )
+    .innerJoin(
+      slackOrgConnections,
+      and(
+        eq(slackOrgConnections.id, slackChatThreadRoutes.connectionId),
+        eq(slackOrgConnections.userId, args.userId),
+      ),
+    )
+    .innerJoin(
+      slackOrgInstallations,
+      and(
+        eq(
+          slackOrgInstallations.slackWorkspaceId,
+          slackOrgConnections.slackWorkspaceId,
+        ),
+        eq(slackOrgInstallations.orgId, args.orgId),
+      ),
+    )
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.chatThreadId, args.chatThreadId),
+        eq(chatEvents.contextType, "slack"),
+      ),
+    )
+    .limit(1);
+  if (!route) {
+    return null;
+  }
+  const payload = slackIngressRoutingSchema.parse(
+    JSON.parse(route.payload) as unknown,
   );
+  const event = payload.event;
+  const threadTs = event.thread_ts ?? event.ts;
+  const directSession =
+    event.channel_type === "im" &&
+    !event.thread_ts &&
+    isSlackDirectMessageSessionThreadTs(route.routeThreadTs);
+  if (
+    payload.team_id !== route.workspaceId ||
+    event.user !== route.slackUserId ||
+    event.channel !== route.channelId ||
+    (!directSession && threadTs !== route.routeThreadTs)
+  ) {
+    return null;
+  }
+  warnMissingQueuedLaunchEnrichment("slack", args);
+  return {
+    prompt: args.userMessageProjection.agentPrompt,
+    appendSystemPrompt: "",
+    publicBrand: route.publicBrand,
+    slackDelivery: {
+      channelId: route.channelId,
+      threadTs,
+      ...(threadTs === route.routeThreadTs
+        ? {}
+        : { routeThreadTs: route.routeThreadTs }),
+    },
+    userInfoExtras: { slackUserId: route.slackUserId },
+  };
 }
 
 export async function loadSlackQueuedLaunchMaterial(
   db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
+  args: QueuedLaunchContextArgs,
 ): Promise<SlackQueuedLaunchMaterial | null> {
   const context = await loadSlackLaunchContext(db, args);
   if (!context) {
-    return null;
+    return loadSlackRouteLaunchMaterial(db, args);
   }
-  const messagePrompt = resolveUserMentions(
-    context.messageText,
-    mentionUserInfoMap(context.mentionDisplayNames),
-  );
+  if (context.enrichmentMissing) {
+    warnMissingQueuedLaunchEnrichment("slack", args);
+  }
+
   return {
-    prompt: canonicalSlackAgentPrompt(
-      messagePrompt,
-      context.messageFiles,
-      context.messageAssets,
-    ),
-    appendSystemPrompt: buildSlackSystemPrompt({
-      botUserId: context.botUserId,
-      channelId: context.channelId,
-      channelType: context.channelType,
-      threadTs: context.threadTs,
-      integrationNote: resolveIntegrationNotePrompt({
-        triggerSource: "slack",
-        featureSwitchContext: args.featureSwitchContext,
-      }),
-      executionContext: context.conversationContext,
-    }),
+    prompt: args.userMessageProjection.agentPrompt,
+    appendSystemPrompt: context.enrichmentMissing
+      ? ""
+      : buildSlackSystemPrompt({
+          botUserId: context.botUserId,
+          channelId: context.channelId,
+          channelType: context.channelType,
+          threadTs: context.threadTs,
+          integrationNote: resolveIntegrationNotePrompt({
+            triggerSource: "slack",
+            featureSwitchContext: args.featureSwitchContext,
+          }),
+          executionContext: context.conversationContext,
+        }),
     publicBrand: context.publicBrand,
     slackDelivery: {
       channelId: context.channelId,

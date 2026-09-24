@@ -434,7 +434,7 @@ function catalogueResolves(
   return path.length > 0;
 }
 
-/** Resolves every declared descendant to the paths the sweep can delete it by.
+/** Resolves descendant paths, including a root's transitional parent reaches.
  *
  * A catalogue foreign key to a declared parent is the ordinary case. Where the
  * schema deliberately declines the key, the inventory's declared reach supplies
@@ -455,7 +455,11 @@ function resolveDescendantPaths(
   const unreachable: string[] = [];
   const unattributable: string[] = [];
   for (const [table, entry] of Object.entries(ACCOUNT_OWNERSHIP_INVENTORY)) {
-    if (entry.coverage !== "user_descendant") {
+    const parents =
+      entry.coverage === "user_descendant" || entry.coverage === "user_root"
+        ? entry.parents
+        : undefined;
+    if (!parents) {
       continue;
     }
     if (table in UNATTRIBUTABLE_DESCENDANTS) {
@@ -464,7 +468,7 @@ function resolveDescendantPaths(
     }
     const resolved: RelationalDescendantPath[] = keys
       .filter((key) => {
-        return key.child === table && entry.parents.includes(key.parent);
+        return key.child === table && parents.includes(key.parent);
       })
       .map((key) => {
         return {
@@ -854,7 +858,13 @@ const RELATIONAL_NAMESPACE = "6f5d2a90-5a1e-4c6a-9b6f-1d0c8a4b7e33";
  * this changes whenever the sweep's observable behaviour changes.
  */
 export const RELATIONAL_ERASURE_COLLECTOR_VERSION =
+  "f75c6bcb-b5f8-48a0-915e-c6e3b8f51f5a";
+// Already captured #36302 jobs retain their selectors and original contract.
+export const PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION =
   "a296ba1a-e288-4ad9-9238-29ad0ab2e36e";
+export type RelationalErasureCollectorVersion =
+  | typeof RELATIONAL_ERASURE_COLLECTOR_VERSION
+  | typeof PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION;
 
 // The fence's own deadlines. A sweep waits for admission behind the exclusive
 // subject lock, so its lock timeout is the fence's, not a route's.
@@ -1171,10 +1181,13 @@ export async function sweepRelationalErasure(
   });
 }
 
-function enumerationReference(plan: RelationalErasurePlan): string {
+function enumerationReference(
+  plan: RelationalErasurePlan,
+  collectorVersion: RelationalErasureCollectorVersion,
+): string {
   return reference([
     "relational-enumeration",
-    RELATIONAL_ERASURE_COLLECTOR_VERSION,
+    collectorVersion,
     plan.order.map((root) => {
       return [root.table, root.owners];
     }),
@@ -1240,6 +1253,7 @@ async function verifyRelationalErasure(
   plan: RelationalErasurePlan,
   lease: ErasureLease,
   producerBoundary: string,
+  collectorVersion: RelationalErasureCollectorVersion,
 ): Promise<ErasureProof | ErasureUnresolved> {
   // Rows this sink cannot reach are not rows it may report clean. The gate
   // is here rather than inside a `catch`, so the outcome is a typed
@@ -1295,10 +1309,10 @@ async function verifyRelationalErasure(
     ]),
     authenticatedReaderRef: reference([
       "relational-reader",
-      RELATIONAL_ERASURE_COLLECTOR_VERSION,
+      collectorVersion,
       reader.reader,
     ]),
-    enumerationRef: enumerationReference(plan),
+    enumerationRef: enumerationReference(plan, collectorVersion),
     observedAt: observed.observed_at,
   };
 }
@@ -1311,10 +1325,27 @@ async function verifyRelationalErasure(
  */
 export function createRelationalErasureCollector(
   db: Db,
-  plan: RelationalErasurePlan,
+  currentPlan: RelationalErasurePlan,
+  collectorVersion: RelationalErasureCollectorVersion = RELATIONAL_ERASURE_COLLECTOR_VERSION,
 ): ErasureHandler {
+  // Re-enumerating all sinks after legacy cleanup would lose selectors whose
+  // source rows are already gone. Replay the original relational coverage;
+  // thread cascade removes the new sequence rows, and recurring maintenance
+  // removes late provenance through its copied ownership after completion.
+  const plan =
+    collectorVersion === PRE_SPLIT_RELATIONAL_ERASURE_COLLECTOR_VERSION
+      ? {
+          ...currentPlan,
+          order: currentPlan.order.filter((root) => {
+            return root.table !== "chat_agent_run_context";
+          }),
+          descendants: currentPlan.descendants.filter((path) => {
+            return path.child !== "chat_event_sequences";
+          }),
+        }
+      : currentPlan;
   return {
-    version: RELATIONAL_ERASURE_COLLECTOR_VERSION,
+    version: collectorVersion,
     inventory: async (lease, cursor) => {
       const subject = await leaseSubject(db, lease);
       if (!subject) {
@@ -1349,7 +1380,7 @@ export function createRelationalErasureCollector(
         ]),
         inputCursorDigest: lease.item.cursorDigest,
         nextCursor: null,
-        enumerationRef: enumerationReference(plan),
+        enumerationRef: enumerationReference(plan, collectorVersion),
         items: [item],
       };
     },
@@ -1403,7 +1434,13 @@ export function createRelationalErasureCollector(
       };
     },
     verify: async (lease, producerBoundary) => {
-      return await verifyRelationalErasure(db, plan, lease, producerBoundary);
+      return await verifyRelationalErasure(
+        db,
+        plan,
+        lease,
+        producerBoundary,
+        collectorVersion,
+      );
     },
   };
 }

@@ -1,7 +1,4 @@
-import type {
-  ChatSlackMessageAssets,
-  ChatSlackMessageFile,
-} from "@okouai/db/jsonb-contracts/chat-slack-context";
+import type { ChatSlackMessageFile } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { CONVERSATION_GUIDANCE } from "./conversation-guidance";
 
 import {
@@ -361,43 +358,6 @@ function formatContextForAgent(
 
 function formatCurrentMessageFiles(files: readonly SlackFile[]): string {
   return files.map(formatFileInfo).join("\n");
-}
-
-function canonicalSlackFilesPrompt(
-  files: readonly SlackFile[] | undefined,
-  assets: ChatSlackMessageAssets,
-): string {
-  if (!files || files.length === 0) {
-    return "";
-  }
-  const assetBySlackFileId = new Map(
-    assets.map((asset) => {
-      return [asset.slackFileId, asset] as const;
-    }),
-  );
-  return files
-    .flatMap((file) => {
-      const asset =
-        file.id === undefined ? undefined : assetBySlackFileId.get(file.id);
-      if (asset?.status === "ready") {
-        return [
-          `[Web file] ${asset.filename} (${asset.contentType})\n   [ID] ${asset.assetId}`,
-        ];
-      }
-      return [formatCurrentMessageFiles([file])];
-    })
-    .filter(Boolean)
-    .join("\n");
-}
-
-export function canonicalSlackAgentPrompt(
-  messagePrompt: string,
-  files: readonly SlackFile[] | undefined,
-  assets: ChatSlackMessageAssets,
-): string {
-  return [messagePrompt, canonicalSlackFilesPrompt(files, assets)]
-    .filter(Boolean)
-    .join("\n\n");
 }
 
 export function buildSlackSystemPrompt(args: {

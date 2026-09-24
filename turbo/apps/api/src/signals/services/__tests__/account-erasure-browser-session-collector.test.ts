@@ -16,7 +16,7 @@ import {
 } from "@okouai/db/operations/account-erasure";
 import { accountErasureWork } from "@okouai/db/schema/account-erasure";
 import { browserSessionInstances } from "@okouai/db/schema/browser-session";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";

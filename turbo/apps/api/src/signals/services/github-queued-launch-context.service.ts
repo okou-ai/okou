@@ -4,7 +4,7 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { githubChatThreadRoutes } from "@okouai/db/schema/github-chat-thread-route";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -13,7 +13,10 @@ import {
   type GitHubDeliveryTarget,
 } from "./github-chat-callback-payload";
 import { buildGitHubPrompt } from "./github-chat-prompt.service";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  type QueuedLaunchContextArgs,
+  warnMissingQueuedLaunchEnrichment,
+} from "./queued-launch-enrichment.service";
 import { resolveIntegrationNotePrompt } from "./integration-note-prompt.service";
 
 export interface GitHubQueuedLaunchMaterial {
@@ -42,13 +45,14 @@ type GitHubLaunchContextRow = Pick<
 };
 
 function requiredGitHubLaunchContext(row: GitHubLaunchContextRow | undefined) {
-  if (!row || row.issueContext === null || row.messageText === null) {
+  if (!row) {
     return null;
   }
   return {
     ...row,
-    issueContext: row.issueContext,
-    messageText: row.messageText,
+    enrichmentMissing: row.issueContext === null || row.messageText === null,
+    issueContext: row.issueContext ?? "",
+    messageText: row.messageText ?? "",
   };
 }
 
@@ -123,35 +127,93 @@ async function loadGitHubLaunchContext(
   return requiredGitHubLaunchContext(row);
 }
 
+async function loadGitHubRouteLaunchMaterial(
+  db: Db,
+  args: QueuedLaunchContextArgs,
+): Promise<GitHubQueuedLaunchMaterial | null> {
+  const [route] = await db
+    .select({
+      repo: githubChatThreadRoutes.repo,
+      subjectNumber: githubChatThreadRoutes.subjectNumber,
+      subjectKind: githubChatThreadRoutes.subjectKind,
+      installationId: githubChatThreadRoutes.installationId,
+      publicBrand: githubInstallations.publicBrand,
+      agentId: agents.id,
+    })
+    .from(chatEvents)
+    .innerJoin(
+      githubChatThreadRoutes,
+      and(
+        eq(githubChatThreadRoutes.chatThreadId, chatEvents.chatThreadId),
+        eq(githubChatThreadRoutes.userId, args.userId),
+      ),
+    )
+    .innerJoin(
+      githubInstallations,
+      and(
+        eq(githubInstallations.id, githubChatThreadRoutes.installationId),
+        eq(githubInstallations.orgId, args.orgId),
+      ),
+    )
+    .innerJoin(
+      chatThreads,
+      and(
+        eq(chatThreads.id, chatEvents.chatThreadId),
+        eq(chatThreads.userId, args.userId),
+      ),
+    )
+    .innerJoin(
+      agents,
+      and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+    )
+    .where(
+      and(
+        eq(chatEvents.id, args.eventId),
+        eq(chatEvents.chatThreadId, args.chatThreadId),
+        eq(chatEvents.contextType, "github"),
+      ),
+    )
+    .limit(1);
+  if (!route?.subjectKind) {
+    return null;
+  }
+  warnMissingQueuedLaunchEnrichment("github", args);
+  return {
+    prompt: args.userMessageProjection.agentPrompt,
+    appendSystemPrompt: "",
+    publicBrand: route.publicBrand,
+    githubDelivery: githubDeliveryTargetSchema.parse(route),
+  };
+}
+
 export async function loadGitHubQueuedLaunchMaterial(
   db: Db,
-  args: {
-    readonly eventId: string;
-    readonly chatThreadId: string;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly featureSwitchContext: FeatureSwitchContext;
-  },
+  args: QueuedLaunchContextArgs,
 ): Promise<GitHubQueuedLaunchMaterial | null> {
   const context = await loadGitHubLaunchContext(db, args);
   if (!context) {
-    return null;
+    return loadGitHubRouteLaunchMaterial(db, args);
+  }
+  if (context.enrichmentMissing) {
+    warnMissingQueuedLaunchEnrichment("github", args);
   }
   return {
-    prompt: context.messageText,
+    prompt: args.userMessageProjection.agentPrompt,
     publicBrand: context.publicBrand,
-    appendSystemPrompt: buildGitHubPrompt({
-      issueContext: context.issueContext,
-      repo: context.repo,
-      issueNumber: context.subjectNumber,
-      subjectKind: context.subjectKind,
-      appId: context.appId,
-      appSlug: context.appSlug,
-      integrationNote: resolveIntegrationNotePrompt({
-        triggerSource: "github",
-        featureSwitchContext: args.featureSwitchContext,
-      }),
-    }),
+    appendSystemPrompt: context.enrichmentMissing
+      ? ""
+      : buildGitHubPrompt({
+          issueContext: context.issueContext,
+          repo: context.repo,
+          issueNumber: context.subjectNumber,
+          subjectKind: context.subjectKind,
+          appId: context.appId,
+          appSlug: context.appSlug,
+          integrationNote: resolveIntegrationNotePrompt({
+            triggerSource: "github",
+            featureSwitchContext: args.featureSwitchContext,
+          }),
+        }),
     githubDelivery: githubDeliveryTargetSchema.parse({
       installationId: context.installationId,
       repo: context.repo,

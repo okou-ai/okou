@@ -4,6 +4,8 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
@@ -217,7 +219,7 @@ async function preflightAgentDeletion(tx: Tx, args: DeleteAgentArgs) {
     : { kind: "ready" as const };
 }
 
-async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
+export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
   );
@@ -241,6 +243,17 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   if (lifecycle.kind !== "ready") {
     return lifecycle;
   }
+  // The Agent cascade strongly locks its threads before deleting sequence
+  // children. A direct append already owns a sequence before its thread FK
+  // check, so take existing sequences first. NOWAIT preserves the established
+  // Run lock order and the caller's transient 55P03 conflict response.
+  await tx
+    .select({ id: chatEventSequences.chatThreadId })
+    .from(chatEventSequences)
+    .innerJoin(chatThreads, eq(chatThreads.id, chatEventSequences.chatThreadId))
+    .where(eq(chatThreads.agentId, args.agentId))
+    .orderBy(asc(chatEventSequences.chatThreadId))
+    .for("update", { of: chatEventSequences, noWait: true });
   const revokedAt = nowDate();
   for (const owner of nativeOwners) {
     await revokeMorningBriefNativeAuthority(

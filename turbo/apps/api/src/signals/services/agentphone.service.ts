@@ -1,3 +1,7 @@
+import { withNativeChatEventThreadTouch } from "./native-chat-event-write.service";
+import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
+import type { Tx } from "../../lib/db-types";
+import { isSplitChatEventWriteEnabled } from "./chat-event-write-mode.service";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { command } from "ccstate";
 import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
@@ -32,6 +36,7 @@ import { now } from "../../lib/time";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChanged,
+  publishThreadListChangedSafely,
   publishUserSignal,
 } from "../external/realtime";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
@@ -62,7 +67,6 @@ import {
 import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
 import { drainChatThreadQueueForThread$ } from "./chat-thread-queue-drain.service";
 import { listOrgModelPolicies$ } from "./model-policy.service";
-import { touchChatThreadLastMessageAt } from "./chat-event-shared.service";
 import { insertChatEvent } from "./chat-event.service";
 import {
   chatEventTypeIn,
@@ -1569,6 +1573,15 @@ function agentPhoneInputFiles(
     : [];
 }
 
+type PersistedAgentPhoneChatMessage =
+  | {
+      readonly inserted: true;
+      readonly splitWrites: boolean;
+      readonly chatThreadId: string;
+      readonly chatEventId: string;
+    }
+  | { readonly inserted: false };
+
 const persistAgentPhoneChatMessage$ = command(
   async (
     { set },
@@ -1585,14 +1598,7 @@ const persistAgentPhoneChatMessage$ = command(
       readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
-  ): Promise<
-    | {
-        readonly inserted: true;
-        readonly chatThreadId: string;
-        readonly chatEventId: string;
-      }
-    | { readonly inserted: false }
-  > => {
+  ): Promise<PersistedAgentPhoneChatMessage> => {
     const currentTime = new Date(args.apiStartTime);
     const route = await ensureAgentPhoneChatThreadRoute(args.db, {
       agentphoneUserLinkId: args.userLink.id,
@@ -1632,7 +1638,9 @@ const persistAgentPhoneChatMessage$ = command(
           .filter(Boolean)
           .join("\n\n")
       : args.prompt;
-    const inserted = await args.db.transaction(async (tx) => {
+    const splitWrites = await isSplitChatEventWriteEnabled(args.db);
+    signal.throwIfAborted();
+    const persist = async (tx: Db | Tx, touchThread: () => Promise<void>) => {
       const event = await insertChatEvent(
         tx,
         {
@@ -1668,23 +1676,30 @@ const persistAgentPhoneChatMessage$ = command(
           createdAt: currentTime,
         },
         "id",
+        { splitWrites },
       );
       signal.throwIfAborted();
       if (!event) {
         return false;
       }
-      await touchChatThreadLastMessageAt(
-        tx,
-        route.chatThreadId,
-        currentTime,
-        chatEventId,
-      );
+      await touchThread();
       return true;
-    });
+    };
+    const inserted = await withNativeChatEventThreadTouch(
+      args.db,
+      {
+        splitWrites,
+        chatThreadId: route.chatThreadId,
+        createdAt: currentTime,
+        eventId: chatEventId,
+      },
+      persist,
+    );
     signal.throwIfAborted();
     return inserted
       ? {
           inserted: true,
+          splitWrites,
           chatThreadId: route.chatThreadId,
           chatEventId,
         }
@@ -1779,7 +1794,11 @@ const runAgentForAgentPhone$ = command(
       threadId: persisted.chatThreadId,
     });
     signal.throwIfAborted();
-    await publishThreadListChanged({
+    await (
+      persisted.splitWrites
+        ? publishThreadListChangedSafely
+        : publishThreadListChanged
+    )({
       userId: args.userLink.userId,
       orgId: args.userLink.orgId,
     });
@@ -1884,15 +1903,26 @@ export const handleAgentPhoneMessage$ = command(
           selectedModel: modelRoute?.selectedModel ?? null,
           serviceTier: modelRoute?.serviceTier ?? null,
         });
-    const { executionContext } = await fetchAgentPhoneContext(db, {
-      userLinkId: params.userLink.id,
-      phoneHandle: params.event.fromNumber,
-      channel: params.event.channel,
-      conversationId: params.event.conversationId,
-      isGroup,
-      recentHistory: params.event.recentHistory,
-      currentMessageId: params.event.messageId,
-    });
+    const userLinkId = params.userLink.id;
+    const { executionContext } = await loadOptionalChatEnrichment(
+      db,
+      "agentphone",
+      () => {
+        return fetchAgentPhoneContext(db, {
+          userLinkId,
+          phoneHandle: params.event.fromNumber,
+          channel: params.event.channel,
+          conversationId: params.event.conversationId,
+          isGroup,
+          recentHistory: params.event.recentHistory,
+          currentMessageId: params.event.messageId,
+        });
+      },
+      () => {
+        return { executionContext: "" };
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const prompt = enrichAgentPhonePrompt({

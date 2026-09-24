@@ -5,7 +5,7 @@ import type {
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { eq, sql } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
+import type { ApiDb, Tx } from "../../lib/db-types";
 
 export interface ChatThreadDraftWrite {
   readonly chatThreadId: string;
@@ -66,7 +66,7 @@ export async function persistChatThreadDraftRow(
  * row and its created_at prevents a later legacy fallback from reviving it.
  */
 export async function clearExistingChatThreadDraftRow(
-  tx: Tx,
+  tx: ApiDb | Tx,
   chatThreadId: string,
 ): Promise<void> {
   await tx

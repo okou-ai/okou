@@ -14,29 +14,6 @@ export function formatTeamsFileForContext(file: TeamsPromptFile): string {
   ].join("\n");
 }
 
-export function appendTeamsFilesToPrompt(
-  prompt: string,
-  files: readonly TeamsPromptFile[],
-): string {
-  if (files.length === 0) {
-    return prompt;
-  }
-
-  const fileContext = files
-    .map((file) => {
-      const asset = file.canonicalAsset;
-      return asset
-        ? `[Web file] ${asset.filename} (${asset.contentType})\n   [ID] ${asset.assetId}`
-        : formatTeamsFileForContext(file);
-    })
-    .join("\n");
-  return [prompt, fileContext]
-    .filter((part) => {
-      return part.length > 0;
-    })
-    .join("\n\n");
-}
-
 function optionalLine(
   label: string,
   value: string | null | undefined,

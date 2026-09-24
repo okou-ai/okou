@@ -1,4 +1,5 @@
 import {
+  index,
   integer,
   pgTable,
   text,
@@ -28,6 +29,9 @@ export const githubChatThreadRoutes = pgTable(
         { onDelete: "cascade" },
       ),
     repo: varchar("repo", { length: 255 }).notNull(),
+    subjectKind: varchar("subject_kind", { length: 32 }).$type<
+      "issue" | "pull_request"
+    >(),
     subjectNumber: integer("subject_number").notNull(),
     userId: text("user_id").notNull(),
     chatThreadId: uuid("chat_thread_id")
@@ -44,6 +48,7 @@ export const githubChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      index("idx_github_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex("idx_github_chat_thread_routes_install_repo_subject_user").on(
         table.installationId,
         table.repo,

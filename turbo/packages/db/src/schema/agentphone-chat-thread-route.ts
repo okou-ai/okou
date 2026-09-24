@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   pgTable,
   timestamp,
@@ -27,6 +28,16 @@ export const agentphoneChatThreadRoutes = pgTable(
         { onDelete: "cascade" },
       ),
     rootMessageId: varchar("root_message_id", { length: 255 }).notNull(),
+    // Delivery identity must survive missing optional prompt enrichment.
+    isGroup: boolean("is_group"),
+    groupId: varchar("group_id", { length: 255 }),
+    channel: varchar("channel", { length: 16 }).$type<
+      "imessage" | "sms" | "mms"
+    >(),
+    fromNumber: varchar("from_number", { length: 254 }),
+    toNumber: varchar("to_number", { length: 254 }),
+    agentphoneAgentId: varchar("agentphone_agent_id", { length: 255 }),
+    deliveryMessageId: varchar("delivery_message_id", { length: 255 }),
     conversationId: varchar("conversation_id", { length: 255 }),
     chatThreadId: uuid("chat_thread_id")
       .notNull()
@@ -40,6 +51,7 @@ export const agentphoneChatThreadRoutes = pgTable(
   },
   (table) => {
     return [
+      index("idx_agentphone_chat_thread_routes_thread").on(table.chatThreadId),
       uniqueIndex("idx_agentphone_chat_thread_routes_link_root").on(
         table.agentphoneUserLinkId,
         table.rootMessageId,

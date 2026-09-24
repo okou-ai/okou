@@ -38,6 +38,7 @@ require_env() {
 
 for name in \
   AWS_METAL_RUNNER_HOSTS \
+  DATABASE_URL \
   GH_TOKEN \
   GITHUB_OUTPUT \
   GITHUB_REPOSITORY \
@@ -170,6 +171,34 @@ fi
 if ! git merge-base --is-ancestor "$PI_SESSION_CONSTRUCTION_READER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Pi session-construction digest reader: ${PI_SESSION_CONSTRUCTION_READER_COMMIT}."
 fi
+
+# Expansion alone must not raise the floor: a preactivation rollback is valid.
+# Read the durable, irreversible activation marker before resolving artifacts.
+# A connection/schema error fails closed instead of pretending activation is off.
+chat_event_control_present=$(PGDATABASE="$DATABASE_URL" PGOPTIONS='-c statement_timeout=5000 -c lock_timeout=1000' \
+  psql -X -qAt --set ON_ERROR_STOP=1 --command "SELECT to_regclass('public.chat_event_write_control') IS NOT NULL")
+case "$chat_event_control_present" in
+  f) chat_event_split_activated=f ;;
+  t)
+    chat_event_split_activated=$(PGDATABASE="$DATABASE_URL" PGOPTIONS='-c statement_timeout=5000 -c lock_timeout=1000' \
+      psql -X -qAt --set ON_ERROR_STOP=1 --command "SELECT activated_at IS NOT NULL FROM public.chat_event_write_control WHERE id = 'global'")
+    ;;
+  *) fail "Cannot establish chat event rollout state." ;;
+esac
+case "$chat_event_split_activated" in
+  f) ;;
+  t)
+    chat_event_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+      origin/main -- turbo/apps/api/src/signals/services/chat-event-write-mode.service.ts | sed -n '1p')
+    if [[ ! "$chat_event_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+      fail "Cannot resolve the merged split chat event reader on main."
+    fi
+    if ! git merge-base --is-ancestor "$chat_event_reader_commit" "$TARGET_COMMIT"; then
+      fail "Rollback target predates activated split chat event writes: ${chat_event_reader_commit}."
+    fi
+    ;;
+  *) fail "Chat event rollout control row is missing or invalid." ;;
+esac
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \

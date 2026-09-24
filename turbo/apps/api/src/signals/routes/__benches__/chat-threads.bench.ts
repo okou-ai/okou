@@ -1,12 +1,13 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { createHash, randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { delay } from "msw";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   connectorCatalogActiveSnapshot,
   connectorCatalogSyncState,
@@ -581,9 +582,14 @@ async function seedTargetThreadRuns(
     return db.insert(chatEvents).values(chunk);
   });
   await db
-    .update(chatThreads)
-    .set({ lastChatEventSeqId: eventRows.length })
-    .where(eq(chatThreads.id, fixture.threadId));
+    .insert(chatEventSequences)
+    .values({ chatThreadId: fixture.threadId, lastSeqId: eventRows.length })
+    .onConflictDoUpdate({
+      target: chatEventSequences.chatThreadId,
+      set: {
+        lastSeqId: sql`GREATEST(${chatEventSequences.lastSeqId}, ${eventRows.length})`,
+      },
+    });
 }
 
 async function seedSideEffectFreeGetData(

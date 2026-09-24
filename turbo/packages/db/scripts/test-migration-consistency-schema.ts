@@ -245,10 +245,9 @@ async function validateCanonicalChatMessageStorage(
 ): Promise<void> {
   const sequenceReservation = await client.query<{ lastSeqId: string }>(
     `
-      UPDATE "chat_threads"
-      SET "last_chat_event_seq_id" = "last_chat_event_seq_id" + 2
-      WHERE "id" = $1
-      RETURNING "last_chat_event_seq_id" AS "lastSeqId"
+      INSERT INTO "chat_event_sequences" ("chat_thread_id", "last_seq_id") VALUES ($1, 2)
+      ON CONFLICT ("chat_thread_id") DO UPDATE SET "last_seq_id" = "chat_event_sequences"."last_seq_id" + 2
+      RETURNING "last_seq_id" AS "lastSeqId"
     `,
     [threadId],
   );
@@ -326,9 +325,9 @@ async function validateCanonicalChatMessageStorage(
 
   const sequenceState = await client.query<{ lastSeqId: string }>(
     `
-      SELECT "last_chat_event_seq_id" AS "lastSeqId"
-      FROM "chat_threads"
-      WHERE "id" = $1
+      SELECT "last_seq_id" AS "lastSeqId"
+      FROM "chat_event_sequences"
+      WHERE "chat_thread_id" = $1
     `,
     [threadId],
   );
@@ -529,18 +528,21 @@ async function validateChatEventContextPointerConstraints(
           "id",
           "user_id",
           "agent_id",
-          "last_chat_event_seq_id",
           "title"
         )
         VALUES (
           $1,
           'context-pointer-test-user',
           $2,
-          2,
           'context pointer test'
         )
       `,
       [threadId, agentId],
+    );
+
+    await client.query(
+      "INSERT INTO chat_event_sequences(chat_thread_id, last_seq_id) VALUES($1, 2)",
+      [threadId],
     );
 
     const accepted = await client.query<{
@@ -1257,6 +1259,20 @@ type PermanentFunction = {
 const EXPECTED_PERMANENT_TRIGGERS = [
   {
     definition:
+      "CREATE TRIGGER bridge_chat_event_sequence_allocation BEFORE UPDATE OF last_chat_event_seq_id ON public.chat_threads FOR EACH ROW EXECUTE FUNCTION bridge_chat_event_sequence_allocation()",
+    schemaName: "public",
+    tableName: "chat_threads",
+    triggerName: "bridge_chat_event_sequence_allocation",
+  },
+  {
+    definition:
+      "CREATE TRIGGER preserve_chat_event_write_activation BEFORE DELETE OR UPDATE ON public.chat_event_write_control FOR EACH ROW EXECUTE FUNCTION preserve_chat_event_write_activation()",
+    schemaName: "public",
+    tableName: "chat_event_write_control",
+    triggerName: "preserve_chat_event_write_activation",
+  },
+  {
+    definition:
       "CREATE TRIGGER capture_billing_run_attribution BEFORE INSERT ON public.agent_runs FOR EACH ROW EXECUTE FUNCTION capture_billing_run_attribution()",
     schemaName: "public",
     tableName: "agent_runs",
@@ -1321,6 +1337,20 @@ const EXPECTED_PERMANENT_TRIGGERS = [
 ] as const satisfies readonly PermanentTrigger[];
 
 const EXPECTED_PERMANENT_FUNCTIONS = [
+  {
+    bodyHash: "1fa222f5cedf2d5f5899fcbd5605e860",
+    functionName: "bridge_chat_event_sequence_allocation",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
+  {
+    bodyHash: "0d37e98a01767d7416f0ae9e69f1311b",
+    functionName: "preserve_chat_event_write_activation",
+    identityArguments: "",
+    kind: "f",
+    schemaName: "public",
+  },
   {
     bodyHash: "8838fc6fbf2d02e7ca8294efda788e90",
     functionName: "billing_usage_source",

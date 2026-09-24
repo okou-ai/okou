@@ -2,7 +2,7 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
 import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";

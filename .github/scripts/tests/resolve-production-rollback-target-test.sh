@@ -50,6 +50,8 @@ case "${1:-}" in
       [ "${MOCK_ARTIFACT_CHAT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dddddddddddddddddddddddddddddddddddddddd" ]; then
       [ "${MOCK_PRIVACY_CLEANUP_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ffffffffffffffffffffffffffffffffffffffff" ]; then
+      [ "${MOCK_CHAT_EVENT_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" ]; then
       [ "${MOCK_SNAPSHOT_R2_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "6e1abbb785dc1613d0f5cd1b1dd80fae694abb46" ]; then
@@ -77,7 +79,9 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   log)
-    if [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
+    if [[ "$*" == *chat-event-write-mode.service.ts* ]]; then
+      printf '%s\n' "${MOCK_CHAT_EVENT_READER_COMMIT-ffffffffffffffffffffffffffffffffffffffff}"
+    elif [[ "$*" == *chat-thread-snapshot-object.ts* ]]; then
       printf '%s\n' "${MOCK_SNAPSHOT_R2_READER_COMMIT-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee}"
     else
       printf '%s\n' "${MOCK_PRIVACY_READER_COMMIT-dddddddddddddddddddddddddddddddddddddddd}"
@@ -136,6 +140,17 @@ case "$host" in
   *) exit 255 ;;
 esac
 SH
+cat >"${fake_bin}/psql" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "${MOCK_CHAT_EVENT_DB_AVAILABLE:-1}" = 1 ] || exit 1
+if [[ "$*" == *to_regclass* ]]; then
+  printf '%s\n' "${MOCK_CHAT_EVENT_CONTROL_PRESENT-t}"
+else
+  printf '%s\n' "${MOCK_CHAT_EVENT_ACTIVATED-f}"
+fi
+SH
+chmod +x "${fake_bin}/psql"
 chmod +x "${fake_bin}/git" "${fake_bin}/curl" "${fake_bin}/ssh"
 
 run_resolver() {
@@ -146,6 +161,7 @@ run_resolver() {
     PATH="${fake_bin}:$PATH" \
     HOME="${HOME:-/tmp}" \
     AWS_METAL_RUNNER_HOSTS=arm-1,x86-1 \
+    DATABASE_URL=postgresql://fixture.invalid/test \
     GH_TOKEN=test-github-token \
     GITHUB_OUTPUT="$output_file" \
     GITHUB_REPOSITORY=okou-ai/okou \
@@ -716,3 +732,14 @@ if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
 fi
 
 echo "resolve-production-rollback-target tests passed"
+
+# Reader floor is conditional on live activation, never the expansion commit alone.
+run_resolver "${tmp_dir}/preactivation.output" MOCK_CHAT_EVENT_READER_VALID=0 >/dev/null
+run_resolver "${tmp_dir}/preexpansion.output" MOCK_CHAT_EVENT_CONTROL_PRESENT=f MOCK_CHAT_EVENT_READER_VALID=0 >/dev/null
+assert_failure "predates activated split chat event writes" run_resolver "${tmp_dir}/activated.output" MOCK_CHAT_EVENT_ACTIVATED=t MOCK_CHAT_EVENT_READER_VALID=0
+run_resolver "${tmp_dir}/new-reader.output" MOCK_CHAT_EVENT_ACTIVATED=t >/dev/null
+assert_failure "rollout control row is missing" run_resolver "${tmp_dir}/missing-control.output" MOCK_CHAT_EVENT_ACTIVATED=
+assert_failure "Cannot resolve the merged split chat event reader" run_resolver "${tmp_dir}/unknown-floor.output" MOCK_CHAT_EVENT_ACTIVATED=t MOCK_CHAT_EVENT_READER_COMMIT=
+if run_resolver "${tmp_dir}/db-unavailable.output" MOCK_CHAT_EVENT_DB_AVAILABLE=0 >/dev/null 2>&1; then
+  fail "an unavailable rollout authority must block rollback"
+fi
