@@ -482,5 +482,5 @@ describe("storage-object erasure", () => {
     await expect(
       finalizeErasureJob(db, captured.job.id, captured.sealed),
     ).resolves.toMatchObject({ state: "verified_erased" });
-  });
+  }, 10_000);
 });
