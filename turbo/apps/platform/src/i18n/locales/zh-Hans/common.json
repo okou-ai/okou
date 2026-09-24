@@ -6382,7 +6382,7 @@
       }
     },
     "paidTools": {
-      "description": "这些工具会消耗内置 credits，Okou 在执行任务时会按需自动使用。关闭后，Okou 在执行过程中就不会再使用该工具。",
+      "description": "这些工具会消耗内置积分，Okou 在执行任务时会按需自动使用。关闭后，Okou 在执行过程中就不会再使用该工具。",
       "disabledForCreation": "{{tool}}已在你的内置工具设置中关闭。",
       "loadError": "无法加载你的工具设置。",
       "loading": "正在加载你的工具设置…",
