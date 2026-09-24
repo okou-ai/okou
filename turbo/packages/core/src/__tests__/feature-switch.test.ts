@@ -133,12 +133,8 @@ describe("isFeatureEnabled", () => {
     ).toBe("released");
   });
 
-  it("keeps chat thread archiving disabled by default and honors explicit overrides", () => {
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
+  it("enables chat thread archiving for staff and honors explicit overrides", () => {
+    for (const context of [{}, { orgId: "org_nonexistent" }]) {
       expect(
         isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, context),
       ).toBe(false);
@@ -149,6 +145,16 @@ describe("isFeatureEnabled", () => {
         }),
       ).toBe(true);
     }
+    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, staffContext),
+    ).toBe(true);
+    expect(
+      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
+        ...staffContext,
+        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
+      }),
+    ).toBe(false);
   });
 
   it("enables OpenRouter US routing for staff and honors explicit overrides", () => {
@@ -541,7 +547,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.MorningBrief]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(false);
+    expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.UserMessageLinks]).toBe(true);
 
