@@ -15,7 +15,7 @@ hmac = { workspace = true, features = ["zeroize"] }
 md-5 = { workspace = true }
 png = { workspace = true }
 rustls = { workspace = true, features = ["aws_lc_rs", "std", "tls12"] }
-sha2 = { workspace = true }
+sha2 = { workspace = true, features = ["zeroize"] }
 subtle = { workspace = true }
 thiserror = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["io-util", "time", "rt"] }
