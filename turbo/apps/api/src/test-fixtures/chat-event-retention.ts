@@ -69,10 +69,14 @@ export const seedRetentionOutputEvents$ = command(
     args: {
       readonly chatThreadId: string;
       readonly count: number;
+      readonly contents?: readonly string[];
       readonly offsetMs?: number;
     },
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
+    if (args.contents !== undefined && args.contents.length !== args.count) {
+      throw new Error("Expected one retention output content per event");
+    }
     const inserted = await set(writeDb$).transaction(async (tx) => {
       return await insertChatEvents(
         tx,
@@ -81,7 +85,9 @@ export const seedRetentionOutputEvents$ = command(
             chatThreadId: args.chatThreadId,
             eventType: "output.message" as const,
             runId: null,
-            content: `retention-output-${index.toString()}-${randomUUID()}`,
+            content:
+              args.contents?.[index] ??
+              `retention-output-${index.toString()}-${randomUUID()}`,
             createdAt: retentionCreatedAt(args.offsetMs),
           };
         }),
