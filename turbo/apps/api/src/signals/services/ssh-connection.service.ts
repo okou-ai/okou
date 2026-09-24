@@ -307,6 +307,19 @@ async function validateAccessTransition(
   return bindingFailure ?? { ok: true, value: accessId };
 }
 
+function shouldClearLearnedHostKey(
+  current: SshConnectionRow,
+  host: string,
+  port: number,
+  selectedAccessId: string | null,
+): boolean {
+  return (
+    (host !== current.host || port !== current.port) &&
+    current.cloudflareAccessId === null &&
+    selectedAccessId === null
+  );
+}
+
 async function lockAccessBeforeHostUpdate(
   tx: Transaction,
   args: UpdateSshConnectionArgs,
@@ -647,10 +660,12 @@ export async function updateSshConnection(
       preparedAccess,
       binding.value,
     );
-    const endpointChanged =
-      (host !== current.host || port !== current.port) &&
-      current.cloudflareAccessId === null &&
-      selectedAccess.id === null;
+    const endpointChanged = shouldClearLearnedHostKey(
+      current,
+      host,
+      port,
+      selectedAccess.id,
+    );
     const [updated] = await tx
       .update(sshConnections)
       .set({
