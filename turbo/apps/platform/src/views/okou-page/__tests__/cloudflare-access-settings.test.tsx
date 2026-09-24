@@ -2,7 +2,7 @@ import {
   cloudflareAccessContract,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
 
@@ -209,6 +209,41 @@ test("An admin can edit and delete a shared configuration through scoped mutatio
   expect(deletes).toStrictEqual([
     { query: { view: "scoped" }, body: { expectedRevision: 2 } },
   ]);
+});
+
+test("Switching organizations navigates away from an open shared Access editor", async () => {
+  const otherOrgId = "org_cloudflare_access_other";
+  const shared = {
+    ...config,
+    name: "Old workspace gateway",
+    scope: "organization" as const,
+  };
+  context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+    return respond(200, { configs: [shared] });
+  });
+  await page(undefined, "admin");
+  await screen.findByText(shared.name);
+  click(
+    getAction(
+      "button",
+      "Edit Cloudflare Access",
+      screen.getByRole("region", { name: "Organization" }),
+    ),
+  );
+  await screen.findByRole("dialog", { name: "Edit Cloudflare Access" });
+
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.organization({
+      activeOrg: { id: otherOrgId, name: "Other workspace" },
+      memberships: [{ id: orgId }, { id: otherOrgId }],
+    });
+    clerk.stateChanged();
+  });
+
+  await waitFor(() => {
+    expect(window.location.pathname).toBe("/");
+  });
 });
 
 async function tokenFields(dialog: HTMLElement, name = config.name) {
