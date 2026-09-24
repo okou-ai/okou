@@ -602,114 +602,127 @@ test("An optional multiple select distinguishes untouched from an explicit clear
   await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
 });
 
-test("A changed select snapshot requires a fresh confirmation before submitting", async () => {
-  let state: BrowserUserActionResponse["state"] = "pending";
-  let preflights = 0;
-  let applies = 0;
-  const submissions: unknown[] = [];
-  const nextFingerprint = "b".repeat(64);
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    return respond(200, {
-      ...selectAction({ required: true, multiple: false }),
-      state,
-    });
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    preflights += 1;
-    const checked = selectAction({
-      required: true,
-      multiple: false,
-      preflight: true,
-      fingerprint: preflights === 1 ? SELECT_FINGERPRINT : nextFingerprint,
-    });
-    if (preflights === 1) {
-      return respond(200, checked);
-    }
-    return respond(200, {
-      ...checked,
-      fields: checked.fields.map((field) => {
-        return {
-          ...field,
-          control: {
-            ...field.control,
-            options: field.control.options?.map((option) => {
-              return {
-                ...option,
-                selected: option.index === 1,
-                label:
-                  option.index === 1 ? "Current site choice" : option.label,
-              };
-            }),
-          },
-        };
-      }),
-    });
-  });
-  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
-    applies += 1;
-    submissions.push(body.values);
-    if (applies === 1) {
-      return respond(409, {
-        error: {
-          code: "BROWSER_USER_ACTION_INVALID_VALUE",
-          message: "Website choices changed",
-        },
+test.each([
+  { siteSelection: 1, confirmedIndex: 1, canKeep: true },
+  { siteSelection: 0, confirmedIndex: 2, canKeep: false },
+])(
+  "A changed select snapshot requires a fresh choice or valid website confirmation ($siteSelection)",
+  async ({ siteSelection, confirmedIndex, canKeep }) => {
+    let state: BrowserUserActionResponse["state"] = "pending";
+    let preflights = 0;
+    let applies = 0;
+    const submissions: unknown[] = [];
+    const nextFingerprint = "b".repeat(64);
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      return respond(200, {
+        ...selectAction({ required: true, multiple: false }),
+        state,
       });
-    }
-    state = "succeeded";
-    return respond(200, {
-      ...selectAction({ required: true, multiple: false }),
-      state,
     });
-  });
-  context.mocks.api(chatEventsContract.send, ({ respond }) => {
-    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
-  });
-  await setupPage({
-    context,
-    path: route(),
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  const form = await screen.findByRole("form", {
-    name: "Enter information in browser",
-  });
-  const region = within(form).getByLabelText(/Region/u);
-  await waitFor(() => {
-    expect(region).toBeEnabled();
-  });
-  const user = userEvent.setup({ delay: null });
-  await user.selectOptions(region, "2");
-  click(button("Add to browser"));
-  await screen.findByRole("alert");
-  click(button("Retry"));
-  await waitFor(() => {
-    expect(preflights).toBe(2);
-  });
-  expect(region).toHaveValue("1");
-  expect(button("Add to browser")).toBeDisabled();
-  click(button("Leave website value unchanged"));
-  expect(button("Add to browser")).toBeEnabled();
-  click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
-  expect(applies).toBe(2);
-  expect(submissions).toStrictEqual([
-    [
-      {
-        key: "region",
-        optionIndexes: [2],
-        optionSetFingerprint: SELECT_FINGERPRINT,
-      },
-    ],
-    [
-      {
-        key: "region",
-        optionIndexes: [1],
-        optionSetFingerprint: nextFingerprint,
-      },
-    ],
-  ]);
-});
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      preflights += 1;
+      const checked = selectAction({
+        required: true,
+        multiple: false,
+        preflight: true,
+        fingerprint: preflights === 1 ? SELECT_FINGERPRINT : nextFingerprint,
+      });
+      if (preflights === 1) {
+        return respond(200, checked);
+      }
+      return respond(200, {
+        ...checked,
+        fields: checked.fields.map((field) => {
+          return {
+            ...field,
+            control: {
+              ...field.control,
+              options: field.control.options?.map((option) => {
+                return {
+                  ...option,
+                  selected: option.index === siteSelection,
+                  label:
+                    option.index === 1 ? "Current site choice" : option.label,
+                };
+              }),
+            },
+          };
+        }),
+      });
+    });
+    context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+      applies += 1;
+      submissions.push(body.values);
+      if (applies === 1) {
+        return respond(409, {
+          error: {
+            code: "BROWSER_USER_ACTION_INVALID_VALUE",
+            message: "Website choices changed",
+          },
+        });
+      }
+      state = "succeeded";
+      return respond(200, {
+        ...selectAction({ required: true, multiple: false }),
+        state,
+      });
+    });
+    context.mocks.api(chatEventsContract.send, ({ respond }) => {
+      return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: route(),
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    const form = await screen.findByRole("form", {
+      name: "Enter information in browser",
+    });
+    const region = within(form).getByLabelText(/Region/u);
+    await waitFor(() => {
+      expect(region).toBeEnabled();
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.selectOptions(region, "2");
+    click(button("Add to browser"));
+    await screen.findByRole("alert");
+    click(button("Retry"));
+    await waitFor(() => {
+      expect(preflights).toBe(2);
+    });
+    expect(region).toHaveValue(String(siteSelection));
+    expect(button("Add to browser")).toBeDisabled();
+    expect(screen.queryByText("Leave website value unchanged") !== null).toBe(
+      canKeep,
+    );
+    if (canKeep) {
+      click(button("Leave website value unchanged"));
+    } else {
+      await user.selectOptions(region, "2");
+    }
+    expect(button("Add to browser")).toBeEnabled();
+    click(button("Add to browser"));
+    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    expect(applies).toBe(2);
+    expect(submissions).toStrictEqual([
+      [
+        {
+          key: "region",
+          optionIndexes: [2],
+          optionSetFingerprint: SELECT_FINGERPRINT,
+        },
+      ],
+      [
+        {
+          key: "region",
+          optionIndexes: [confirmedIndex],
+          optionSetFingerprint: nextFingerprint,
+        },
+      ],
+    ]);
+  },
+);
 
 test("Changed site constraints require a fresh preflight without losing ordinary draft text", async () => {
   let preflights = 0;

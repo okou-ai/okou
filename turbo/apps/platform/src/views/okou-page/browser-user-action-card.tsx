@@ -538,11 +538,8 @@ function canKeepSiteSelectChoice(
   field: PendingBrowserInputField,
   choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>,
 ): boolean {
-  if (choiceDraft.has(field.key)) {
-    return true;
-  }
   if (!field.required) {
-    return false;
+    return choiceDraft.has(field.key);
   }
   return selectedSelectIndices(field, undefined).some((index) => {
     const option = field.control.options?.[index];

@@ -904,7 +904,7 @@ function browserUseControlInspectionFunction(): string {
         inputType: input ? control.type : textarea ? "textarea" : select ? (control.multiple ? "select-multiple" : "select-one") : "",
         connected: control.isConnected === true,
         mainDocument: control.ownerDocument === document,
-        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.disabled,
+        writable: supported && boundedNumberConstraints && boundedOptions && !control.readOnly && !control.matches(":disabled"),
         siteRequired: supported && control.required === true,
         multiple: select ? control.multiple : input && control.type === "email" && control.multiple === true,
         ...(select && boundedOptions ? { options: options.map((option, index) => ({
@@ -1679,7 +1679,12 @@ async function writeBrowserUseMixedSelectFields(
           options: field.inspection.options,
           indices: field.selection?.optionIndexes ?? null,
         }
-      : { kind: "scalar", value: field.value ?? null };
+      : {
+          kind: "scalar",
+          tagName: field.inspection.tagName,
+          inputType: field.inspection.inputType,
+          value: field.value ?? null,
+        };
   };
   mutation.writeStarted = true;
   const result = browserUseCdpValueSchema.parse(
@@ -1698,8 +1703,13 @@ async function writeBrowserUseMixedSelectFields(
             specs.push(rest[index + 1]);
           }
           const matches = (control, spec, final) => {
-            if (!control.isConnected || control.ownerDocument !== document) return false;
-            if (spec.kind === "scalar") return !final || spec.value === null || control.value === spec.value;
+            if (!control.isConnected || control.ownerDocument !== document || control.matches(":disabled")) return false;
+            if (spec.kind === "scalar") {
+              const actualType = control instanceof HTMLInputElement ? control.type
+                : control instanceof HTMLTextAreaElement ? "textarea" : null;
+              if (control.tagName !== spec.tagName || actualType !== spec.inputType || control.readOnly) return false;
+              return !final || spec.value === null || control.value === spec.value;
+            }
             if (!(control instanceof HTMLSelectElement) ||
                 (control.multiple ? "select-multiple" : "select-one") !== spec.mode ||
                 control.required !== spec.required || !spec.options ||

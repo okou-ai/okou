@@ -417,6 +417,7 @@ function mockNativeSelectTarget(args: {
   }[];
   readonly writeMatches: () => boolean;
   readonly includeScalar?: () => boolean;
+  readonly writable?: () => boolean;
 }): void {
   context.mocks.browserUseCdp.command.mockImplementation((command) => {
     switch (command.method) {
@@ -471,7 +472,7 @@ function mockNativeSelectTarget(args: {
           inputType: args.mode(),
           connected: true,
           mainDocument: true,
-          writable: true,
+          writable: args.writable?.() ?? true,
           siteRequired: false,
           multiple: args.mode() === "select-multiple",
           options: args.options(),
@@ -642,7 +643,11 @@ describe("Browser user-action route", () => {
     ];
     let writeMatches = true;
     let includeScalar = false;
+    let writable = true;
     mockNativeSelectTarget({
+      writable: () => {
+        return writable;
+      },
       mode: () => {
         return mode;
       },
@@ -928,6 +933,17 @@ describe("Browser user-action route", () => {
       ]);
     };
     await verifyMixed();
+
+    // A control disabled by its containing fieldset is not writable, even
+    // though its own `disabled` property remains false in the browser.
+    const restricted = await createSelect();
+    const priorWrites = browserSelectWrites().length;
+    writable = false;
+    const restrictedPreflight = await preflight(
+      restricted.body.action.requestToken,
+    );
+    expect(restrictedPreflight.body.state).toBe("stale");
+    expect(browserSelectWrites()).toHaveLength(priorWrites);
   });
 
   it("supports live number constraints, optional clear, and exact readback", async () => {
